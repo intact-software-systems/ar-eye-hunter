@@ -16,6 +16,7 @@ import {
     toResourceEntryWithKey,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
+import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 
 import {
     createRuntimeStatePostgresSql,
@@ -228,6 +229,34 @@ describe('Postgres observed QueueBox reservation', () => {
         expect(await first.getItem(entry.key)).toMatchObject({ dequeueAudit: { attempts: 2 } });
         expect(await first.reserveTimeoutEntries({ typeIds: new Set([entry.typeId]), reservationInput: 3, timeSinceStartTs: duration, observedEntries: [] }))
             .toEqual(new Map());
+    });
+
+    postgresIt('advertises the NEW and TIMEOUT lanes from the rows a probe finds, and nothing once they are gone', async () => {
+        const { first, second, entry } = await createStorage();
+        const typeIds = new Set([entry.typeId]);
+        const options = {
+            maxAttempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
+            finalizationStaleAfterMs: 5 * 60_000,
+            reservationLeaseMs: 60_000,
+            staleDueThresholdMs: 30_000
+        };
+        await first.enqueue(entry);
+        await first.enqueue({
+            ...entry,
+            key: { ...entry.key, resourceId: 'abandoned' },
+            status: EntityStatus.RESERVED,
+            dequeueAudit: { attempts: 1, startTs: Temporal.Now.instant().subtract({ seconds: 61 }) }
+        });
+
+        expect(await second.readWorkAdvertisement(typeIds, options))
+            .toEqual({ FINALIZATION: false, NEW: true, RETRY: false, FAIRNESS: false, TIMEOUT: true });
+        expect(await second.readWorkAdvertisement(typeIds, options))
+            .toEqual({ FINALIZATION: false, NEW: true, RETRY: false, FAIRNESS: false, TIMEOUT: true });
+
+        await first.removeItem(entry.key);
+        await first.removeItem({ ...entry.key, resourceId: 'abandoned' });
+        expect(await second.readWorkAdvertisement(typeIds, options))
+            .toEqual({ FINALIZATION: false, NEW: false, RETRY: false, FAIRNESS: false, TIMEOUT: false });
     });
 
     postgresIt('does not claim an identical new row through an observation of a deleted row', async () => {

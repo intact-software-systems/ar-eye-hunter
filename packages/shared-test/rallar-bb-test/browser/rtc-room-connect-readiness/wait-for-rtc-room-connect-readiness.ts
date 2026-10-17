@@ -115,6 +115,7 @@ export async function waitForRtcRoomConnectReadiness(
     try {
         const refreshed = await raceRtcRoomReadinessStep(step, () =>
             runtime.refreshRoom({
+                refresh: 'when-absent',
                 signal: abortScope.signal,
                 timeoutMs: Math.max(0, deadlineEpochMs - Date.now())
             }));

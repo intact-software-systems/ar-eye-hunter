@@ -37,7 +37,14 @@ The configuration reader recognizes only these operational overrides:
 - Authentication: `AUTH_REGISTRATION_MODE`, `AUTH_ADMIN_CLIENT_IDS`,
   `AUTH_STATIC_CLIENTS_MODE`, `RALLAR_LOGIN_IP_RATE_LIMIT`,
   `RALLAR_LOGIN_USER_RATE_LIMIT`, `RALLAR_REGISTRATION_IP_RATE_LIMIT`,
-  `RALLAR_REGISTRATION_USER_RATE_LIMIT`.
+  `RALLAR_REGISTRATION_USER_RATE_LIMIT`,
+  `RALLAR_AUTH_MAX_CONCURRENT_PASSWORD_DERIVATIONS`. The derivation bound
+  (`authentication.maxConcurrentPasswordDerivations`) caps how many PBKDF2
+  derivations (registration, login, replay verification) run at once; it must
+  be a positive integer. No committed profile names it: the decoder computes
+  the host's logical cores minus one (at least one) from the core count every
+  configuration reader supplies, and a profile or the environment variable
+  overrides that.
 - State API: `RALLAR_STATE_STRICT_READ_AUTH`.
 - Group admission: `RALLAR_GROUP_DEFAULT_MAX_MEMBERS`,
   `RALLAR_GROUP_JOIN_ADMISSION_PRINCIPAL_RATE_LIMIT`,
@@ -52,10 +59,12 @@ The configuration reader recognizes only these operational overrides:
   `RALLAR_RTC_TOPOLOGY_RTT_REFINEMENT_MIN_INTERVAL_MS`,
   `RALLAR_RTC_TOPOLOGY_RTT_VIVALDI_DELTA_MS`, `RALLAR_RTC_TOPOLOGY_REPLAY`,
   `RALLAR_API_QUEUE_WORKERS`.
-- AppInbox and observability: `RALLAR_APP_INBOX_PHASE_TIMING`,
+- AppInbox and observability: `RALLAR_APP_INBOX_PHASE_TIMING`, `RALLAR_APP_INBOX_LANE_BUDGET_POLICY`,
   `RALLAR_APP_INBOX_WAIT_MAX_ELAPSED_MS`, `RALLAR_APP_INBOX_WAIT_RETRY_INTERVAL_MS`,
   `RALLAR_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MS`, `RALLAR_APP_INBOX_WAIT_JITTER_RATIO`,
   `RALLAR_TIMING_LOGS`.
+  The lane budget policy is one of `drain`, `fixed-one`, `adaptive-retry` and `fixed-retry-two`; every
+  committed profile serves due retries with `fixed-retry-two`, and the other arms stay selectable.
 - ICE: `RALLAR_ICE_MODE`, `RALLAR_ICE_RATE_LIMIT_REQUESTS`, `METERED_APP_NAME`, `METERED_REGION`.
   The request allowance must be a positive integer and overrides `ice.rateLimit.requests`.
   All committed profiles retain 20 requests per 60000ms; cache lifetime remains 300000ms.

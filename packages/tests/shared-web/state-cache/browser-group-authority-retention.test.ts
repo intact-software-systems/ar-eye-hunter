@@ -3,10 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import {
     initHeartbeat,
+    SESSION_HEARTBEAT_RENEWAL_MARGIN_MS,
     stopHeartbeat
 } from '@shared-web/browser/session/browser-session-heartbeat.ts';
 import { adoptGroupSnapshotsFromHeartbeat } from '@shared-web/browser/state-cache/group-heartbeat-snapshot-adoption.ts';
-import { initialiseBrowserCacheRepositories } from '@shared-web/browser/state-cache/initialise-browser-cache-repositories.ts';
+import {
+    BROWSER_STATE_CACHE_TTL_MS,
+    initialiseBrowserCacheRepositories
+} from '@shared-web/browser/state-cache/initialise-browser-cache-repositories.ts';
 import {
     newALEventRoute,
     newALMulticastMessage
@@ -537,6 +541,9 @@ async function runSuccessfulHeartbeat(group: GroupSnapshot): Promise<string[]> {
         })
     );
 
+    const heartbeatAtEpochMs = Date.now();
+    const firstRenewalMs = BROWSER_STATE_CACHE_TTL_MS - SESSION_HEARTBEAT_RENEWAL_MARGIN_MS;
+    vi.setSystemTime(heartbeatAtEpochMs - firstRenewalMs);
     const heartbeat = await initHeartbeat(clientData, {
         authSession,
         scope: {
@@ -545,13 +552,12 @@ async function runSuccessfulHeartbeat(group: GroupSnapshot): Promise<string[]> {
         },
         policies: { command: { maxAttempts: 1 } }
     });
-    await vi.waitFor(() => {
-        expect(
-            clientStateSnapshotsRepository.findClientStateSnapshotByPrincipalId(
-                clientData.clientId
-            )
-        ).toBeDefined();
-    });
+    await vi.advanceTimersByTimeAsync(firstRenewalMs);
+    expect(
+        clientStateSnapshotsRepository.findClientStateSnapshotByPrincipalId(
+            clientData.clientId
+        )
+    ).toBeDefined();
     heartbeat.stop();
     await waitForGroupStateSnapshotChangesIdle();
     return fetchUrls;
@@ -606,6 +612,7 @@ function createAcceptedOverlay(): OverlayInfo {
         createdByClientId: 'server',
         createdAtEpochMs: 1,
         nextHopSessionIds: ['origin'],
+        nextHopsBySessionId: undefined,
         degreeLimit: 2,
         overlayVersion: 1,
         updatedAtEpochMs: 1

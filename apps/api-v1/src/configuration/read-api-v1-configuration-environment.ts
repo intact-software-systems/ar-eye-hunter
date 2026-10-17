@@ -226,6 +226,11 @@ const ENVIRONMENT_SETTINGS: readonly EnvironmentSetting[] = [
         apply: (source, value) => source.authentication.staticClientsMode = value
     },
     {
+        name: 'RALLAR_AUTH_MAX_CONCURRENT_PASSWORD_DERIVATIONS',
+        decode: decodeNumber,
+        apply: (source, value) => source.authentication.maxConcurrentPasswordDerivations = value
+    },
+    {
         name: 'RALLAR_LOGIN_IP_RATE_LIMIT',
         decode: decodeNumber,
         apply: (source, value) => source.authentication.rateLimits.loginIp = value
@@ -339,6 +344,11 @@ const ENVIRONMENT_SETTINGS: readonly EnvironmentSetting[] = [
         name: 'RALLAR_APP_INBOX_PHASE_TIMING',
         decode: decodeBoolean,
         apply: (source, value) => source.appInbox.phaseTiming = value
+    },
+    {
+        name: 'RALLAR_APP_INBOX_LANE_BUDGET_POLICY',
+        decode: decodeString,
+        apply: (source, value) => source.appInbox.laneBudgetPolicy = value
     },
     {
         name: 'RALLAR_APP_INBOX_WAIT_MAX_ELAPSED_MS',

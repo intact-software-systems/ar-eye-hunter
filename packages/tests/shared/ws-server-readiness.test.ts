@@ -139,6 +139,7 @@ function createServerRuntime(): ServerRuntime {
     engine.start();
     onTestFinished(() => engine.stop());
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         name: 'server',
         socket: server,
         outbox: new InMemoryQueueBox(),

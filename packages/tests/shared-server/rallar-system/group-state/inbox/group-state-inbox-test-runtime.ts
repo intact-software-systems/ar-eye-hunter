@@ -17,6 +17,7 @@ import {
     createCachedGroupStateService,
     type CachedGroupStateServiceCache
 } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
+import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
@@ -55,6 +56,8 @@ export interface AuthorityHarness {
 interface HarnessOptions {
     readonly wakeQueue?: () => void;
     readonly serviceOptions?: AppInboxOptions;
+    /** Receives every timing event the inbox service and its group-state service emit. */
+    readonly timing?: RallarTimingSink;
     /** The stored planned layout a fenced command reads, when a case needs one. */
     readonly readPlannedLayoutRow?: Parameters<typeof createGroupStateService>[0]['readPlannedLayoutRow'];
     /** Lets a case seed durable rows before the harness is constructed. */
@@ -76,7 +79,7 @@ export async function createAuthorityHarness(
     const authSessions = new AuthSessionRepository(runtimeRepository);
     const sessions = await provisionAuthoritySessions(principalIds, authSessions, nowEpochMs);
     const queue = new TestResourceInbox();
-    const reader = new InboxQueueReader(queue);
+    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
     const results = new TestResourceInboxResults();
     const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
     const durableGroupStateService = createGroupStateService({
@@ -86,6 +89,7 @@ export async function createAuthorityHarness(
         readPlannedLayoutRow: options.readPlannedLayoutRow ?? (async () => null),
         readAcceptedLayoutRow: async () => null,
         now: () => nowEpochMs,
+        timing: options.timing,
         authSessionRepository: authSessions
     });
     const groupStateService = options.snapshotCache
@@ -107,7 +111,8 @@ export async function createAuthorityHarness(
             database,
             groupStateService,
             wakeQueue: options.wakeQueue,
-            serviceOptions: options.serviceOptions
+            serviceOptions: options.serviceOptions,
+            timing: options.timing
         }),
         database,
         reader,
@@ -153,6 +158,7 @@ interface AuthorityAppInboxServiceInput {
     readonly groupStateService: GroupStateService;
     readonly wakeQueue?: () => void;
     readonly serviceOptions?: AppInboxOptions;
+    readonly timing?: RallarTimingSink;
 }
 
 function createAuthorityAppInboxService(
@@ -172,7 +178,7 @@ function createAuthorityAppInboxService(
         },
         {
             serviceId: 'server-12345678',
-            timing: undefined,
+            timing: input.timing,
             options: input.serviceOptions,
             wakeOwningQueue: input.wakeQueue
         }

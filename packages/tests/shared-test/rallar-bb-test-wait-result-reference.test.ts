@@ -50,7 +50,7 @@ async function executeSend(runtime: ReturnType<typeof createRuntimeWithSentMessa
 }
 
 describe('rallar-bb-test wait result references', () => {
-    it('pins a wait on a value an earlier command returned, and reports the resolved match', async () => {
+    it('pins a wait on a value an earlier command returned, and reports the resolved match when it fails', async () => {
         const runtime = createRuntimeWithSentMessage();
         await executeSend(runtime);
         const wait = toNackWait('nack-2', '"targetMsgId":"{resultCache.send-2.value.msgId}"');
@@ -62,8 +62,12 @@ describe('rallar-bb-test wait result references', () => {
 
         expect(early.status).toBe('failed');
         expect(early.error?.code).toBe('RALLAR_BLACK_BOX_WAIT_TIMEOUT');
+        expect(early.error?.details).toHaveProperty('match.contains', '"targetMsgId":"msg-2"');
         expect(pinned.status).toBe('ok');
-        expect(pinned.value).toHaveProperty('match.contains', '"targetMsgId":"msg-2"');
+        expect(pinned.value).toEqual({
+            matched: true,
+            event: expect.objectContaining({ payload: { data: expect.objectContaining({ targetMsgId: 'msg-2' }) } })
+        });
     });
 
     it('refuses a wait whose reference names no string or number result value', async () => {
@@ -89,8 +93,7 @@ describe('rallar-bb-test wait result references', () => {
         );
 
         expect(result.status).toBe('ok');
-        expect(result.value)
-            .toHaveProperty('match.contains', '{"kind":"control-admission","typeId":"al.control.nack.v2","targetMsgId":"msg-2"');
+        expect(result.value).toHaveProperty('event.payload.data.targetMsgId', 'msg-2');
     });
 
     it('refuses a wait whose reference resolves to an object', async () => {
@@ -121,7 +124,8 @@ describe('rallar-bb-test wait result references', () => {
         });
 
         expect(violated.error?.code).toBe('RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED');
-        expect(violated.value).toHaveProperty('match.contains', '"targetMsgId":"msg-2"');
+        expect(violated.error?.details).toHaveProperty('match.contains', '"targetMsgId":"msg-2"');
+        expect(violated.value).not.toHaveProperty('match');
         expect(unresolved.error?.code).toBe('RALLAR_BLACK_BOX_WAIT_INVALID');
     });
 });

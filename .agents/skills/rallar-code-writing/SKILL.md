@@ -247,6 +247,10 @@ checker does not substitute for following production symbols.
 - No pass-through factory, wrapper, or facade without a real ownership,
   lifecycle, translation, policy, or protocol boundary.
 - No parallel implementations of the same algorithm.
+- No business-named class around a generic mechanism (gate, limiter, backoff,
+  timer seam, repeating sweep, flush, single-flight, bounded buffer): the
+  mechanism is a `packages/shared` primitive with its own tests, and the domain
+  class composes it.
 - No app-local duplicate of behavior that already belongs in `packages/**`.
 - No unconditional authoritative upsert after a read-derived decision.
 - No lock-based concurrency test where a conflict, rebase, retry exhaustion,

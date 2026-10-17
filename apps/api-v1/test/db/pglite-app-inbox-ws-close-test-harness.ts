@@ -69,8 +69,12 @@ export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql): Promis
     const runtime = new PSqlRuntimeStateRepository(sql);
     const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date());
     const resourceResults = new ResourceInboxResultsRepository(sql);
-    const reader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant));
-    const secondReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant));
+    const reader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
+        laneBudgetPolicy: 'fixed-retry-two'
+    });
+    const secondReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
+        laneBudgetPolicy: 'fixed-retry-two'
+    });
     const authSessions = new AuthSessionRepository(runtime);
     const authority = await createPGliteCloseOwnerSession(authSessions);
     const options = {

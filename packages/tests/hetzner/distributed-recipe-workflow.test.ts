@@ -128,6 +128,11 @@ interface RemoteRecipeScenario {
 const repoRoot = path.resolve(__dirname, '../../..');
 const dispatchScriptPath = path.join(repoRoot, 'scripts/hosted-rallar/dispatch-distributed-recipe.sh');
 
+/** The run phase records its start as a journalctl epoch and exports both service journals from it on exit. */
+const runJournalExportEffect = expect.stringMatching(
+    /^journals\|--since @\d{10} --output-dir \/tmp\/rallar-distributed-operations\/owned-distributed$/
+);
+
 const distributedWorkflowPath = '.github/workflows/hetzner-distributed-recipe.yml';
 
 const distributedRunnerWorkflowPath = '.github/workflows/hetzner-distributed-recipe-runner.yml';
@@ -386,6 +391,7 @@ async function writeRemoteRecipeControllerPorts(fixture: RemoteRecipeFixture): P
         '09-start-headless-workers.sh': 'printf "start|%s|%s\\n" "${RALLAR_WRITE_HEADLESS_ENV}" "${RALLAR_INSTALL_PLAYWRIGHT}" >> "${OWNED_EFFECTS}"',
         '16-wait-for-control-agents.sh': 'printf "wait\\n" >> "${OWNED_EFFECTS}"',
         '14-run-distributed-recipe.sh': 'printf "recipe\\n" >> "${OWNED_EFFECTS}"; exit "${OWNED_RECIPE_EXIT}"',
+        '17-export-run-journals.sh': 'printf "journals|%s\\n" "$*" >> "${OWNED_EFFECTS}"',
         'rallar-deployment-readiness.sh': 'validate_rallar_deployment_readiness() { printf "deployment|%s\\n" "$2" >> "${OWNED_EFFECTS}"; }'
     };
     for (const [name, body] of Object.entries(scripts)) {
@@ -537,7 +543,14 @@ describe('Hetzner workflow contracts and effects', () => {
                 RALLAR_RTC_TOPOLOGY_MESH_PARAM_K: '5'
             }
         });
-        expect((await readFile(fixture.effectsPath, 'utf8')).trim().split('\n')).toEqual(['stop', 'rollout|2|3|4|5', 'stop', 'start|1|0', 'recipe']);
+        expect((await readFile(fixture.effectsPath, 'utf8')).trim().split('\n')).toEqual([
+            'stop',
+            'rollout|2|3|4|5',
+            'stop',
+            'start|1|0',
+            'recipe',
+            runJournalExportEffect
+        ]);
         expect(await readFile(path.join(fixture.directory, 'run-output.txt'), 'utf8')).toContain('exit_code=0\n');
         await expect(readFile(path.join(fixture.directory, 'remote.env'))).rejects.toMatchObject({ code: 'ENOENT' });
     });
@@ -566,10 +579,10 @@ describe('Hetzner workflow contracts and effects', () => {
         });
         await writeFile(fixture.manifestPath, '{"materializedIdentity":"run"}\n');
         await runRemoteRecipe(context, fixture, { ...scenario, phase: 'run', rollout: false });
-        const successfulEffects = ['stop', 'rollout||2||', 'wait', 'recipe'];
+        const successfulEffects = ['stop', 'rollout||2||', 'wait', 'recipe', runJournalExportEffect];
         expect((await readFile(fixture.effectsPath, 'utf8')).trim().split('\n')).toEqual(successfulEffects);
         await runRemoteRecipe(context, fixture, { ...scenario, phase: 'run', rollout: false, sourceHash: 'different-source-hash' });
-        expect((await readFile(fixture.effectsPath, 'utf8')).trim().split('\n')).toEqual(successfulEffects);
+        expect((await readFile(fixture.effectsPath, 'utf8')).trim().split('\n')).toEqual([...successfulEffects, runJournalExportEffect]);
         expect((await readFile(path.join(fixture.directory, 'run-output.txt'), 'utf8')).match(/exit_code=\d+/g)).toEqual([
             'exit_code=0',
             'exit_code=0',
@@ -587,16 +600,77 @@ describe('Hetzner workflow contracts and effects', () => {
             recipeExit: 17,
             topology: {}
         });
-        expect((await readFile(fixture.effectsPath, 'utf8')).trim().split('\n')).toEqual(['wait', 'recipe']);
+        expect((await readFile(fixture.effectsPath, 'utf8')).trim().split('\n')).toEqual(['wait', 'recipe', runJournalExportEffect]);
         expect(await readFile(path.join(fixture.directory, 'run-output.txt'), 'utf8')).toContain('exit_code=17\n');
         expect(await readFile(path.join(fixture.directory, 'hetzner-operation.log'), 'utf8')).toContain('RALLAR_OPERATION_STAGE=agent-readiness');
-        const steps = (await readWorkflow(distributedRunnerWorkflowPath)).jobs.run.steps;
-        expect(steps?.find((step) => step.name === 'Generate Hetzner operation diagnostics')?.if).toBe('always()');
+        const steps = (await readWorkflow(distributedRunnerWorkflowPath)).jobs.run.steps ?? [];
+        const stepIndex = (name: string) => steps.findIndex((step) => step.name === name);
+        expect(steps[stepIndex('Copy run journals')]?.if).toBe(
+            'always() && inputs.operator_phase != \'prepare\' && steps.manifest_materialization.outcome == \'success\''
+        );
+        expect(stepIndex('Copy run journals')).toBeGreaterThan(stepIndex('Run distributed recipe'));
+        expect(stepIndex('Copy run journals')).toBeLessThan(stepIndex('Generate Hetzner operation diagnostics'));
+        expect(stepIndex('Generate Hetzner operation diagnostics')).toBeLessThan(stepIndex('Upload Hetzner operation diagnostics'));
+        expect(steps.find((step) => step.name === 'Generate Hetzner operation diagnostics')?.if).toBe('always()');
         expect(steps?.find((step) => step.name === 'Upload Hetzner operation diagnostics')).toMatchObject({
             if: 'always()',
             uses: expect.stringContaining('actions/upload-artifact@')
         });
         await expect(readFile(path.join(fixture.directory, 'remote.env'))).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+    it.for([0, 1])('complete journal copy body lands the run-window journals in the operation artifact and survives scp exit %i', async (scpExit, context) => {
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-owned-journal-copy-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const scpPath = path.join(directory, 'scp');
+        await writeFile(
+            scpPath,
+            [
+                '#!/usr/bin/env bash',
+                'set -euo pipefail',
+                'printf "%s\\n" "$*" >> "${OWNED_SCP_ARGS}"',
+                'source="${@: -2:1}"',
+                'destination="${@: -1}"',
+                'if [[ "${OWNED_SCP_EXIT}" != "0" ]]; then echo "scp: owned failure" >&2; exit "${OWNED_SCP_EXIT}"; fi',
+                'mkdir -p "${destination}/${source##*/}"',
+                'printf "api\\n" > "${destination}/${source##*/}/api-journal.log"',
+                'printf "control\\n" > "${destination}/${source##*/}/control-journal.log"'
+            ].join('\n')
+        );
+        await chmod(scpPath, 0o755);
+        const step = (await readWorkflow(distributedRunnerWorkflowPath)).jobs.run.steps?.find((candidate) => candidate.name === 'Copy run journals');
+        if (!step?.run) {
+            throw new Error('Workflow must own its complete run journal copy body.');
+        }
+        await runOwnedTestProcess(context, {
+            executable: 'bash',
+            args: ['-c', step.run],
+            options: {
+                cwd: directory,
+                env: {
+                    PATH: `${directory}${path.delimiter}${process.env.PATH ?? ''}`,
+                    RUNNER_TEMP: directory,
+                    HETZNER_USER: 'owned-user',
+                    HETZNER_HOST: 'owned-host',
+                    DISTRIBUTED_RUN_ID: 'owned-distributed',
+                    OWNED_SCP_ARGS: path.join(directory, 'scp-args.txt'),
+                    OWNED_SCP_EXIT: String(scpExit)
+                }
+            }
+        });
+        expect((await readFile(path.join(directory, 'scp-args.txt'), 'utf8')).trim()).toMatch(
+            /^-i \S+\/\.ssh\/hetzner -r owned-user@owned-host:\/tmp\/rallar-distributed-operations\/owned-distributed \.artifacts\/hetzner-operation\/$/
+        );
+        const operationLog = await readFile(path.join(directory, 'hetzner-operation.log'), 'utf8').catch(() => '');
+        if (scpExit === 0) {
+            expect(await readFile(path.join(directory, '.artifacts/hetzner-operation/owned-distributed/api-journal.log'), 'utf8')).toBe('api\n');
+            expect(await readFile(path.join(directory, '.artifacts/hetzner-operation/owned-distributed/control-journal.log'), 'utf8')).toBe('control\n');
+            expect(operationLog).not.toContain('Run journal copy exited');
+        }
+        else {
+            expect(operationLog).toContain('scp: owned failure');
+            expect(operationLog).toContain('Run journal copy exited with code 1.');
+        }
     });
 
     it.for(['bogus', 'OFF', ' native '])('RUN forwarding complete workflow refuses %s before output effects', async (mode, context) => {

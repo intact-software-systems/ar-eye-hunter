@@ -1,11 +1,15 @@
 import {
     configureServerWsQBoxALRuntimeStores,
     resolveServerWsQBoxALInboundRuntimeStores,
-    resolveServerWsQBoxALOutboundRuntimeStores
+    resolveServerWsQBoxALOutboundRuntimeStores,
+    toServerWsQBoxALRuntimeStoreId
 } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { initResourceInboxExpiryEviction } from '@shared-server/queuebox/postgres/resource-inbox-maintenance.ts';
-import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
+import {
+    normalizeAppInboxOptions,
+    type AppInboxOptions
+} from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import { initPresenceExpiryReconciliation } from '@shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.ts';
 import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/create-rallar-middleware.ts';
 import type { CreateRallarMiddlewareOptions } from '@shared-server/rallar-system/middleware/rallar-middleware-construction.ts';
@@ -16,6 +20,7 @@ import {
     type RallarAlmReceiptDiagnosticsRecorder
 } from '@shared-server/rallar-system/observability/alm-receipt-diagnostics.ts';
 import { type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
+import type { AppInboxCompletionNoticeChannel } from '@shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.ts';
 import { RtcRttInboxService } from '@shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-inbox-service.ts';
 import {
     initRtcRttReceiptFamilyCleanup
@@ -28,6 +33,8 @@ import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbo
 import { WsOutboxProvenanceReader } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { RuntimeStateExpiryWorker } from '@shared-server/runtime-state/postgres/runtime-state-expiry-worker.ts';
+import { createVolatileALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import type { ALVolatileInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { WsQueueBoxServerReceiptObserver } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
@@ -43,6 +50,7 @@ import type {
 import { findCurrentClientSnapshot } from '../crdt/create-api-crdt-document-authorizer.ts';
 import type { ApiV1DatabaseNotificationPort } from '../db/api-v1-database-lifecycle.ts';
 import { createApiV1LiveWsNoticeTransport } from '../db/api-v1-live-ws-notice-transport.ts';
+import { createApiV1AppInboxCompletionNotices } from '../db/create-postgres-app-inbox-completion-notice-transport.ts';
 import { createApiV1RelayedAckNotices } from '../db/create-postgres-relayed-ack-notice-transport.ts';
 import type { LocalQueuePubSubBus } from '../db/local-queue-pubsub-bridge.ts';
 import {
@@ -91,10 +99,12 @@ export interface CreateApiV1RuntimeInput {
     readonly queuePubSubLocalBus: LocalQueuePubSubBus;
     readonly wsRuntimeName: string;
     readonly authCredentialSecret: string;
+    readonly maxConcurrentPasswordDerivations: number;
     readonly nowEpochMs: () => number;
     readonly timing: RallarTimingSink;
     readonly wsReceiptObserver?: WsQueueBoxServerReceiptObserver;
     readonly appInboxOptions: AppInboxOptions;
+    readonly appInboxLaneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
     readonly groupCapacity: GroupPolicyCapacityConfig;
     readonly groupFormationRecomputeDebounceMs: number;
     readonly databasePubSubMode: ApiV1DatabaseConfiguration['pubSub'];
@@ -118,6 +128,7 @@ interface StartRuntimeStateExpiryInput {
 
 interface CreateSharedMiddlewareInput {
     readonly mutation: ApiV1MutationRuntime;
+    readonly appInboxCompletionNotices: AppInboxCompletionNoticeChannel | undefined;
     readonly rtcTopology: ApiRtcTopologyRuntime;
     readonly topology: ApiV1TopologyServices;
     readonly wsRuntimeName: string;
@@ -173,7 +184,12 @@ export function constructApiV1Runtime(
         nowEpochMs: input.nowEpochMs,
         capacity: RALLAR_ALM_RECEIPT_DIAGNOSTICS_CAPACITY
     });
-    const mutation = operations.createMutationRuntime(toMutationRuntimeInput(input));
+    const appInboxCompletionNotices = createApiV1AppInboxCompletionNotices({
+        mode: input.databasePubSubMode,
+        notification: input.databaseNotification,
+        publisherId: input.queuePubSubPublisherId
+    });
+    const mutation = operations.createMutationRuntime(toMutationRuntimeInput(input, appInboxCompletionNotices));
     const { rtcTopology, topology } = createRuntimeTopology(input, mutation, operations);
     input.backgroundTasks.register(rtcTopology.stop);
     operations.configureWsRuntimeStores(input.wsRuntimeName, mutation.runtimeStateRepository);
@@ -186,6 +202,7 @@ export function constructApiV1Runtime(
     });
     const runtime = operations.createMiddleware({
         mutation,
+        appInboxCompletionNotices,
         rtcTopology,
         topology,
         wsRuntimeName: input.wsRuntimeName,
@@ -206,6 +223,7 @@ export function constructApiV1Runtime(
     return operations.requireRuntime({
         runtime,
         authSessionRepository: mutation.authSessionRepository,
+        passwordDerivationAdmission: mutation.passwordDerivationAdmission,
         ...selectors,
         groupFormationMetrics: mutation.groupFormationMetrics,
         almReceiptDiagnostics,
@@ -250,15 +268,19 @@ function createRuntimeTopology(
 }
 
 function toMutationRuntimeInput(
-    input: CreateApiV1RuntimeInput
+    input: CreateApiV1RuntimeInput,
+    appInboxCompletionNotices: AppInboxCompletionNoticeChannel | undefined
 ): CreateApiV1MutationRuntimeInput {
     return {
+        appInboxCompletionNotices,
         database: input.database,
         serviceId: input.serviceId,
         authCredentialSecret: input.authCredentialSecret,
+        maxConcurrentPasswordDerivations: input.maxConcurrentPasswordDerivations,
         nowEpochMs: input.nowEpochMs,
         timing: input.timing,
         appInboxOptions: input.appInboxOptions,
+        appInboxLaneBudgetPolicy: input.appInboxLaneBudgetPolicy,
         groupCapacity: input.groupCapacity,
         groupFormationRecomputeDebounceMs: input.groupFormationRecomputeDebounceMs,
         adminClientIds: input.adminClientIds,
@@ -303,6 +325,12 @@ function createSharedMiddleware(
 ): RallarMiddlewareRuntime {
     const { mutation, rtcTopology } = input;
     const inboundStores = resolveServerWsQBoxALInboundRuntimeStores(input.wsRuntimeName);
+    const relayedAckNotices = createApiV1RelayedAckNotices({
+        mode: input.databasePubSubMode,
+        notification: input.databaseNotification,
+        channel: input.queuePubSubChannel,
+        publisherId: input.queuePubSubPublisherId
+    });
     const wsOutboxProvenance = new WsOutboxProvenanceReader({
         repository: mutation.runtimeStateRepository,
         nowMs: input.nowEpochMs
@@ -311,6 +339,9 @@ function createSharedMiddleware(
         inbox: mutation.queueBox,
         outbox: mutation.queueBox,
         appInboxDequeueOptions: mutation.appInboxDequeueOptions,
+        appInboxDequeuePassTiming: normalizeAppInboxOptions(mutation.appInboxOptions).phaseTiming
+            ? { database: mutation.database, serviceId: mutation.serviceId, sink: input.timing }
+            : undefined,
         webSocketServer: mutation.webSocketServer,
         readAuthenticatedConnectionScope: readAuthorisedWsConnectionEligibility,
         readWsOutboxProducerProvenance: (message, entry) => wsOutboxProvenance.readProducerProvenance(message, entry),
@@ -318,6 +349,9 @@ function createSharedMiddleware(
         findGroupSnapshotByRef: (ref) => mutation.groupSnapshotCache.findByRef(ref),
         findClientSnapshotByRef: (ref) => findCurrentClientSnapshot(mutation.clientSnapshotCache, ref),
         inboundStores,
+        inboundVolatileStores: relayedAckNotices === undefined
+            ? createServerWsQBoxALVolatileInboundRuntimeStores(input.wsRuntimeName)
+            : undefined,
         outboundStores: resolveServerWsQBoxALOutboundRuntimeStores(input.wsRuntimeName),
         wsDeliveryDiagnostics: mutation.groupFormationMetrics.wsDelivery,
         wsOutboundDiagnostics: mutation.groupFormationMetrics.outboundWork,
@@ -341,15 +375,19 @@ function createSharedMiddleware(
         rtcTopologyReplay: rtcTopology.topologyReplay,
         queuePubSubBridge: createApiV1QueuePubSubBridge(input),
         liveWsNoticeSubscriber: createApiV1LiveWsNoticeSubscriber(input),
-        relayedAckNotices: createApiV1RelayedAckNotices({
-            mode: input.databasePubSubMode,
-            notification: input.databaseNotification,
-            channel: input.queuePubSubChannel,
-            publisherId: input.queuePubSubPublisherId
-        }),
+        relayedAckNotices,
+        appInboxCompletionNotices: input.appInboxCompletionNotices,
         readiness: rtcTopology.readiness,
         healthFailure: rtcTopology.healthFailure
     });
+}
+
+/** No volatile budget: the server sends nothing of its own on this lane, and an arrival is never refused. */
+function createServerWsQBoxALVolatileInboundRuntimeStores(wsRuntimeName: string): ALVolatileInboundRuntimeStores {
+    return createVolatileALInboundRuntimeStores(
+        { namespace: `${toServerWsQBoxALRuntimeStoreId(wsRuntimeName)}:volatile` },
+        undefined
+    );
 }
 
 function createApiV1QueuePubSubBridge(

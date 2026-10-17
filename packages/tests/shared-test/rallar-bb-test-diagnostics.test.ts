@@ -10,6 +10,7 @@ import {
     toRallarBlackBoxDiagnostics,
     toRallarBlackBoxRuntimeDiagnostic
 } from '../../shared-test/rallar-bb-test/mod.ts';
+import { isJsonRecordValue } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { createBrowserRallarRequiredMethodsTestDouble } from './browser-rallar-required-methods-test-double.ts';
 
 describe('rallar-bb-test runtime diagnostics', () => {
@@ -372,5 +373,72 @@ describe('rallar-bb-test runtime diagnostics', () => {
                 code: 'RALLAR_BB_RTC_NO_PEERS'
             }
         });
+    });
+
+    it('emits composite result events with child counts while the command result keeps the nested tree', async () => {
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
+        const result = await runtime.execute({
+            kind: 'recipe.run',
+            commandId: 'nested-run',
+            recipe: {
+                schemaVersion: 1,
+                recipeId: 'nested-composites',
+                commands: [{
+                    kind: 'loop',
+                    commandId: 'repeat',
+                    count: 2,
+                    commands: [{
+                        kind: 'parallel',
+                        commandId: 'fan-out',
+                        groups: [
+                            { groupId: 'left', commands: [{ kind: 'health' }] },
+                            { groupId: 'right', commands: [{ kind: 'health' }, { kind: 'health' }] }
+                        ]
+                    }]
+                }]
+            }
+        });
+        const compositeEventValues = runtime.state().events
+            .filter((event) => event.topic === 'rallar.bb.command.result')
+            .map((event) => isJsonRecordValue(event.payload) ? { kind: event.payload.kind, value: event.payload.value } : {})
+            .filter((payload) => payload.kind === 'recipe.run' || payload.kind === 'loop' || payload.kind === 'parallel');
+
+        expect(compositeEventValues).toEqual([
+            {
+                kind: 'parallel',
+                value: expect.objectContaining({
+                    childResultCount: 3,
+                    passed: 3,
+                    failed: 0,
+                    groups: [
+                        expect.objectContaining({ groupId: 'left', commandCount: 1, passed: 1, failed: 0 }),
+                        expect.objectContaining({ groupId: 'right', commandCount: 2, passed: 2, failed: 0 })
+                    ]
+                })
+            },
+            { kind: 'parallel', value: expect.objectContaining({ childResultCount: 3, passed: 3, failed: 0 }) },
+            { kind: 'loop', value: expect.objectContaining({ childResultCount: 2, passed: 2, failed: 0 }) },
+            { kind: 'recipe.run', value: expect.objectContaining({ childResultCount: 1, passed: 1, failed: 0 }) }
+        ]);
+        expect(JSON.stringify(compositeEventValues)).not.toContain('"results"');
+        const compositeEvents = runtime.state().events.filter((event) =>
+            event.topic === 'rallar.bb.command.result' && isJsonRecordValue(event.payload) &&
+            ['recipe.run', 'loop', 'parallel'].includes(String(event.payload.kind))
+        );
+        expect(compositeEvents.every((event) => isJsonRecordValue(event.payload) && event.payload.capture === undefined)).toBe(true);
+        expect(runtime.state().commandHistory.every((result) => result.capture !== undefined)).toBe(true);
+        const nestedParallel = {
+            kind: 'parallel',
+            value: {
+                groups: [
+                    { results: [{ result: { kind: 'health', ok: true } }] },
+                    { results: [{ result: { kind: 'health', ok: true } }, { result: { kind: 'health', ok: true } }] }
+                ]
+            }
+        };
+        expect(result.value).toMatchObject({
+            results: [{ kind: 'loop', value: { results: [{ result: nestedParallel }, { result: nestedParallel }] } }]
+        });
+        expect(runtime.state().resultCache['nested-run']).toEqual(result);
     });
 });

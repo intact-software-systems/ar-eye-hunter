@@ -189,6 +189,7 @@ function createFixture(
     const engine = new InboxOutboxEngine();
     const input: WsQueueBoxServerService.Input = {
         name: 'server',
+        inboundVolatileStores: undefined,
         socket,
         outbox: stores.workQueue,
         outboundStores: stores,

@@ -1,5 +1,6 @@
 import type { LoginClientData } from '@shared-server/rallar-system/auth/login/authenticate-auth-user.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
+import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 export interface ApiV1ConfigurationProfile {
     readonly name: 'dev' | 'prod' | 'prod-hardened' | 'prod-in-memory';
@@ -77,6 +78,7 @@ export interface ApiV1AuthenticationConfiguration {
     readonly sessionTtlMs: number;
     readonly webSocketTicketTtlMs: number;
     readonly agentSessionTicketTtlMs: number;
+    readonly maxConcurrentPasswordDerivations: number;
     readonly rateLimits: ApiV1AuthenticationRateLimits;
 }
 
@@ -142,7 +144,6 @@ export interface ApiV1QueueResilienceConfiguration extends ApiV1CircuitBreakerCo
     readonly maxRate: number;
     readonly increaseRate: number;
     readonly decreaseRate: number;
-    readonly maxFairnessSelectionsPerWindow: number;
 }
 
 export interface ApiV1TopologyDeliveryConfiguration {
@@ -177,6 +178,7 @@ export interface ApiV1AppInboxCompletionWaitConfiguration {
 
 export interface ApiV1AppInboxConfiguration {
     readonly phaseTiming: boolean;
+    readonly laneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
     readonly completionWait: ApiV1AppInboxCompletionWaitConfiguration;
 }
 

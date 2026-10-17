@@ -93,6 +93,18 @@ describe('waitForRtcConnectReadiness for the room transport', () => {
         expect(result.room).toBe(ROOM_READY);
     });
 
+    it('refreshes the room at connect only when the store holds no snapshot for it', async () => {
+        const runtime = createRtcRoomRuntime(async () => ROOM_READY);
+
+        await waitForRtcConnectReadiness({
+            runtime,
+            transport: 'messages.rtc',
+            options: { minReadyPeers: 1, timeoutMs: 5_000, intervalMs: 5 }
+        });
+
+        expect(runtime.refreshRoom.mock.calls[0]?.[0]).toMatchObject({ refresh: 'when-absent' });
+    });
+
     it('stops retrying once the deadline passes between attempts and returns the last not-ready result', async () => {
         const now = vi.spyOn(Date, 'now');
         let virtualNow = 1_000;

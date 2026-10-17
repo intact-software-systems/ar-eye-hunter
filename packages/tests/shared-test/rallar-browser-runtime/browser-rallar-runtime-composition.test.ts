@@ -9,7 +9,14 @@ import {
     vi
 } from 'vitest';
 
+import {
+    blackBoxRallarRoomRefOf,
+    blackBoxRallarScopeDiagnosticsOf,
+    blackBoxRallarScopeOf
+} from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-policy.ts';
 import type { BlackBoxBrowserRallarRuntimeDependency } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
+import { resolveBlackBoxRallarTransport } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-connection-policy.ts';
+import { BlackBoxRallarDirectorController } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/director-controller.ts';
 import { refreshBlackBoxBrowserRoomState } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/refresh-black-box-browser-room-state.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { RallarRtcCaptureConnectionRequiredError } from '@shared-web/browser/connection/rallar-rtc-capture-connection-required-error.ts';
@@ -109,6 +116,73 @@ describe('black-box browser room-state refresh composition', () => {
         await expect(runtime.refreshRoomState(groupRefOf(group), { scope, timeoutMs: 1_000, rtcCaptureMode: 'off' }))
             .rejects.toBeInstanceOf(RallarRtcCaptureConnectionRequiredError);
         expect(runtime.rtcCapture()).toBe(receipt);
+    });
+
+    it('refreshes a director status through the one room\'s group read, never the workspace collections', async () => {
+        const unappointed = createGroupSnapshot();
+        const appointed = createAppointedGroupSnapshot(unappointed, 'session-b');
+        const fetch = vi.fn(async (url: RequestInfo | URL) =>
+            new Response(JSON.stringify(toDirectorStatusReadBody(String(url), appointed)), {
+                headers: {
+                    'cache-control': 'no-store',
+                    'content-type': 'application/json',
+                    'rallar-state-source': 'cache',
+                    'rallar-group-revision': String(appointed.causalRevision.groupRevision),
+                    'rallar-presence-revision': String(appointed.causalRevision.presenceRevision)
+                }
+            })
+        );
+        vi.stubGlobal('fetch', fetch);
+        const runtime = await createOwnedRuntime();
+        onTestFinished(() => runtime.disconnect());
+        await runtime.connect();
+        const cache = await import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts');
+        vi.mocked(cache.browserStateCacheLifecycle.hydrate).mockRestore();
+        groupStateSnapshotsRepository.setGroupStateSnapshot(unappointed);
+        const director = createDirectorController(runtime, groupRefOf(unappointed));
+
+        const status = await director.status({ roomRef: groupRefOf(unappointed), refresh: true, timeoutMs: 1_000 });
+
+        const groupsPath = `/api/state/apps/${scope.applicationId}/workspaces/${scope.workspaceId}/groups`;
+        const readPaths = fetch.mock.calls.map(([url]) => new URL(String(url)).pathname);
+        expect(readPaths.filter((path) => path === `${groupsPath}/room-a`)).toHaveLength(1);
+        expect(readPaths.filter((path) => path === groupsPath || path.endsWith('/clients'))).toEqual([]);
+        expect(status).toMatchObject({ appointment: { sessionId: 'session-b' }, directorStatus: { active: true } });
+    });
+
+    it('reads a when-absent director status over REST only until the page holds the room snapshot', async () => {
+        const appointed = createAppointedGroupSnapshot(createGroupSnapshot(), 'session-b');
+        const fetch = vi.fn(async (url: RequestInfo | URL) =>
+            new Response(JSON.stringify(toDirectorStatusReadBody(String(url), appointed)), {
+                headers: {
+                    'cache-control': 'no-store',
+                    'content-type': 'application/json',
+                    'rallar-state-source': 'cache',
+                    'rallar-group-revision': String(appointed.causalRevision.groupRevision),
+                    'rallar-presence-revision': String(appointed.causalRevision.presenceRevision)
+                }
+            })
+        );
+        vi.stubGlobal('fetch', fetch);
+        const runtime = await createOwnedRuntime();
+        onTestFinished(() => runtime.disconnect());
+        await runtime.connect();
+        const cache = await import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts');
+        vi.mocked(cache.browserStateCacheLifecycle.hydrate).mockRestore();
+        const roomRef = groupRefOf(appointed);
+        const director = createDirectorController(runtime, roomRef);
+        const roomPath = `/api/state/apps/${scope.applicationId}/workspaces/${scope.workspaceId}/groups/room-a`;
+        const roomReads = () => fetch.mock.calls.filter(([url]) => new URL(String(url)).pathname === roomPath).length;
+
+        expect(runtime.hasRoomSnapshot(roomRef)).toBe(false);
+        const absent = await director.status({ roomRef, refresh: 'when-absent', timeoutMs: 1_000 });
+        expect(roomReads()).toBe(1);
+        expect(runtime.hasRoomSnapshot(roomRef)).toBe(true);
+        const present = await director.status({ roomRef, refresh: 'when-absent', timeoutMs: 1_000 });
+
+        expect(roomReads()).toBe(1);
+        expect(absent).toMatchObject({ appointment: { sessionId: 'session-b' }, directorStatus: { active: true } });
+        expect(present).toMatchObject({ appointment: { sessionId: 'session-b' }, directorStatus: { active: true } });
     });
 
     it('enforces one caller deadline across a stalled topology hydration', async () => {
@@ -238,6 +312,60 @@ async function createOwnedRuntime(): Promise<BlackBoxBrowserRallarRuntimeDepende
     const runtime = createBlackBoxBrowserRallarRuntimeDependency({ readVolatileSessionLimits: limits.get });
     runtime.setDefaults({ ...scope, diagnosticsPorts: { signalingDiagnostics: () => {} } });
     return runtime;
+}
+
+function createDirectorController(
+    runtime: BlackBoxBrowserRallarRuntimeDependency,
+    roomRef: GroupRef
+): BlackBoxRallarDirectorController {
+    return new BlackBoxRallarDirectorController({
+        facade: runtime,
+        generation: () => 1,
+        isCurrent: () => true,
+        now: Date.now,
+        requireConfig: () => ({
+            connection: 'director-status',
+            roomRef,
+            rallar: { apiBaseUrl: 'https://api.example.test', ...scope, roomRef }
+        }),
+        transportOf: resolveBlackBoxRallarTransport,
+        roomRefOf: blackBoxRallarRoomRefOf,
+        scopeOf: blackBoxRallarScopeOf,
+        scopeDiagnostics: blackBoxRallarScopeDiagnosticsOf,
+        emit: () => undefined,
+        emitError: () => undefined
+    });
+}
+
+function toDirectorStatusReadBody(url: string, group: GroupSnapshot): GroupSnapshot | TestTopologyView | readonly never[] {
+    const path = new URL(url).pathname;
+    if (path.endsWith('/topology')) {
+        return topologyView(group, null, null);
+    }
+    return path.endsWith('/groups') || path.endsWith('/clients') ? [] : group;
+}
+
+function createAppointedGroupSnapshot(group: GroupSnapshot, sessionId: string): GroupSnapshot {
+    return {
+        ...group,
+        causalRevision: { ...group.causalRevision, groupRevision: group.causalRevision.groupRevision + 1 },
+        group: {
+            ...group.group,
+            snapshotVersion: group.group.snapshotVersion + 1,
+            metadataVersion: group.group.metadataVersion + 1,
+            metadata: {
+                rallarDirector: {
+                    version: 1,
+                    mode: 'appointed-spa',
+                    sessionId,
+                    principalId: sessionId,
+                    epoch: 1,
+                    appointedAtEpochMs: Date.now(),
+                    heartbeatTtlMs: 60_000
+                }
+            }
+        }
+    };
 }
 
 function createRefreshInput(group: GroupSnapshot): Omit<Parameters<typeof refreshBlackBoxBrowserRoomState>[0], 'options'> {

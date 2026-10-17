@@ -7,13 +7,16 @@ import {
 } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
-import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
+import {
+    type AppInboxOptions
+} from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import { createAppInboxRetryFinalizer } from '@shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
 import {
     createHmacAuthCredentialIssuer
 } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
+import { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
@@ -54,6 +57,10 @@ import {
     recordRallarTiming,
     type RallarTimingSink
 } from '@shared-server/rallar-system/observability/timing.ts';
+import {
+    createAppInboxCompletionRelay,
+    type AppInboxCompletionNoticeChannel
+} from '@shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import {
@@ -62,9 +69,9 @@ import {
 } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
-import type { DequeueResourceEntryOptions } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
 import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
+import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { createApiCrdtDocumentAuthorizer } from '../crdt/create-api-crdt-document-authorizer.ts';
@@ -84,14 +91,18 @@ export interface CreateApiV1MutationRuntimeInput {
     readonly database: PSqlSql;
     readonly serviceId: string;
     readonly authCredentialSecret: string;
+    readonly maxConcurrentPasswordDerivations: number;
     readonly nowEpochMs: () => number;
     readonly timing: RallarTimingSink;
     readonly appInboxOptions: AppInboxOptions;
+    readonly appInboxLaneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
     readonly groupCapacity: GroupPolicyCapacityConfig;
     readonly groupFormationRecomputeDebounceMs: number;
     readonly adminClientIds: readonly string[];
     readonly crdtPolicies: readonly RallarCrdtDocumentTypePolicy[];
     readonly resilience: ApiV1MutationRuntimeResilience;
+    /** Relays a completion no local waiter observed to the other instances; undefined on a single instance. */
+    readonly appInboxCompletionNotices: AppInboxCompletionNoticeChannel | undefined;
 }
 
 export interface ApiV1MutationRuntime {
@@ -110,10 +121,11 @@ export interface ApiV1MutationRuntime {
     readonly groupSnapshotCache: GroupStateSnapshotReadThroughCache;
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
     readonly groupStateService: CachedGroupStateService;
-    readonly appInboxDequeueOptions: DequeueResourceEntryOptions;
+    readonly appInboxDequeueOptions: InboxQueueReader.Options;
     readonly createGroupStateInboxService: CreateRallarMiddlewareOptions['createGroupStateInboxService'];
     readonly createAppClientInboxService: CreateRallarMiddlewareOptions['createAppClientInboxService'];
     readonly createAppAuthInboxService: RallarAuthInboxServiceFactory;
+    readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
     readonly createAppAdminInboxService: RallarAdminInboxServiceFactory;
     readonly createAppCrdtInboxService: RallarCrdtInboxServiceFactory;
     readonly resilience: RallarMiddlewareResilience;
@@ -158,18 +170,26 @@ interface CreateGroupStateInboxServiceFactoryInput extends ApiV1StateMutationDep
 
 interface CreateAppAuthInboxServiceFactoryInput extends ApiV1StateMutationDependencies {
     readonly authCredentialSecret: string;
+    readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
 }
 
 export function createApiV1MutationRuntime(
     input: CreateApiV1MutationRuntimeInput
 ): ApiV1MutationRuntime {
-    const completionNotifications = ResourceInboxCompletionNotifications.createDefault();
+    const completionNotifications = ResourceInboxCompletionNotifications.createDefault(
+        input.appInboxCompletionNotices === undefined
+            ? undefined
+            : createAppInboxCompletionRelay(input.appInboxCompletionNotices)
+    );
     const appInboxDequeueOptions = createAppInboxDequeueOptions(input, completionNotifications);
     const resources = createApiV1MutationResources(input.database, input.nowEpochMs);
     const stateDependencies = createApiV1StateMutationDependencies(input, resources);
     const mutationFactories = createApiV1MutationInboxFactories(input, resources);
     const groupStateService = createMutationGroupStateService(input, resources);
 
+    const passwordDerivationAdmission = new AuthPasswordDerivationAdmission({
+        maxConcurrentDerivations: input.maxConcurrentPasswordDerivations
+    });
     return {
         database: input.database,
         serviceId: input.serviceId,
@@ -196,8 +216,10 @@ export function createApiV1MutationRuntime(
         createAppClientInboxService: createAppClientInboxServiceFactory(stateDependencies),
         createAppAuthInboxService: createAppAuthInboxServiceFactory({
             ...stateDependencies,
-            authCredentialSecret: input.authCredentialSecret
+            authCredentialSecret: input.authCredentialSecret,
+            passwordDerivationAdmission
         }),
+        passwordDerivationAdmission,
         ...mutationFactories,
         resilience: input.resilience
     };
@@ -335,7 +357,8 @@ function createGroupStateInboxServiceFactory(
             serviceId: input.serviceId,
             wakeQueue: wakeQueueEngine,
             now: input.nowEpochMs,
-            formationMetrics: input.groupFormationMetrics.presenceSummary
+            formationMetrics: input.groupFormationMetrics.presenceSummary,
+            timing: input.timing
         });
         outboxQueueReader.onOutboxMessageDo(AppOutboxType.GROUP_PRESENCE_SUMMARY, {
             onMessage: async (message, entry) => await presenceSummary.processReservedEntry(message, entry)
@@ -397,6 +420,7 @@ function createAppAuthInboxServiceFactory(
     input: CreateAppAuthInboxServiceFactoryInput
 ): RallarAuthInboxServiceFactory {
     const credentialIssuer = createHmacAuthCredentialIssuer(input.authCredentialSecret);
+    const { passwordDerivationAdmission } = input;
 
     return ({ inboxQueueReader, wakeQueueEngine }) =>
         new AppAuthInboxService(
@@ -409,7 +433,8 @@ function createAppAuthInboxServiceFactory(
                     runtimeRepository: input.runtimeStateRepository,
                     serviceId: input.serviceId
                 }),
-                credentialIssuer: credentialIssuer
+                credentialIssuer: credentialIssuer,
+                passwordDerivationAdmission
             },
             {
                 serviceId: input.serviceId,
@@ -424,13 +449,14 @@ function createAppAuthInboxServiceFactory(
 function createAppInboxDequeueOptions(
     input: CreateApiV1MutationRuntimeInput,
     completionNotifications: ResourceInboxCompletionNotifications
-): DequeueResourceEntryOptions {
+): InboxQueueReader.Options {
     const finalizeAppInboxRetry = createAppInboxRetryFinalizer({
         completionNotifications,
         database: input.database,
         timing: input.timing
     });
     return {
+        laneBudgetPolicy: input.appInboxLaneBudgetPolicy,
         completionNotifications,
         nowEpochMs: input.nowEpochMs,
         onRetryExhausted: finalizeAppInboxRetry,

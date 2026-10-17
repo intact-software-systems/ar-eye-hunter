@@ -28,13 +28,16 @@ export function parseGroupStateDeltaEnvelope(
     scope: StateScope
 ): GroupStateDeltaEnvelope | undefined {
     try {
-        const value: unknown = JSON.parse(serialized);
-        validateGroupStateDeltaEnvelope(value, scope);
-        return value;
+        return decodeGroupStateDeltaEnvelope(JSON.parse(serialized), scope);
     }
     catch {
         return undefined;
     }
+}
+
+function decodeGroupStateDeltaEnvelope(value: unknown, scope: StateScope): GroupStateDeltaEnvelope {
+    validateGroupStateDeltaEnvelope(value, scope);
+    return value;
 }
 
 export async function acceptGroupStateDeltaEnvelope(
@@ -96,9 +99,11 @@ export function toGroupSnapshotFromDeltaEnvelope(
 
 /**
  * A cached snapshot that strictly dominates the envelope is a no-op. At an
- * equal resulting tuple, an envelope for an older group event still requires
- * a refresh: a newer event may have advanced the cached revision without
- * carrying the older event's affected member slice.
+ * equal resulting tuple, a delta that wrote (predecessor below resulting) is
+ * already reflected: the cache reached that revision through the batch's
+ * first delta or a snapshot. A write-nothing envelope for an older group
+ * event still requires a refresh: a newer event may have advanced the cached
+ * revision without carrying the older event's affected member slice.
  */
 function resolveGroupStateDeltaDisposition(
     cached: GroupSnapshot | undefined,
@@ -115,16 +120,24 @@ function resolveGroupStateDeltaDisposition(
         return 'no-op';
     }
     if (againstResulting === 'equal') {
-        return envelope.event.causalRevision.groupRevision ===
-                envelope.resultingCausalRevision.groupRevision
-            ? 'no-op'
-            : 'causal-gap';
+        return isWriteNothingEnvelope(envelope) &&
+                envelope.event.causalRevision.groupRevision !==
+                    envelope.resultingCausalRevision.groupRevision
+            ? 'causal-gap'
+            : 'no-op';
     }
     const againstPredecessor = compareGroupCausalRevision(
         cached.causalRevision,
         envelope.predecessorCausalRevision
     );
     return againstPredecessor === 'equal' ? 'apply' : 'causal-gap';
+}
+
+function isWriteNothingEnvelope(envelope: GroupStateDeltaEnvelope): boolean {
+    return compareGroupCausalRevision(
+        envelope.predecessorCausalRevision,
+        envelope.resultingCausalRevision
+    ) === 'equal';
 }
 
 /**

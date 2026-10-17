@@ -102,6 +102,7 @@ function createOverlay(
         degreeLimit: 8,
         overlayVersion: 1,
         updatedAtEpochMs: 1_000,
+        nextHopsBySessionId: undefined,
         ...overrides
     };
 }

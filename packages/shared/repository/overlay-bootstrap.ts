@@ -71,6 +71,7 @@ export function toBoundedBootstrapOverlay(
         createdByClientId: readGroupCreatedByPrincipalId(group),
         createdAtEpochMs: readGroupCreatedAtEpochMs(group),
         nextHopSessionIds,
+        nextHopsBySessionId: undefined,
         degreeLimit: Math.max(
             1,
             Math.min(policy.bootstrapDegree, memberSessionIds.length - 1)

@@ -5,7 +5,6 @@ import {
 } from '../schema/rallar-black-box-command-fields.ts';
 import { toControlCommandIssue, type ControlCommandIssue } from './control-command-issue.ts';
 import {
-    validateBooleanField,
     validateIntegerField,
     validateNumberField,
     validateStringField
@@ -48,7 +47,7 @@ export function validateDirectorControlCommand(
         case 'director.status':
             return [
                 ...validateControlCommandRoomFields(command, kind),
-                ...validateBooleanField(command, 'refresh', kind),
+                ...validateDirectorStatusRefreshField(command),
                 ...validateNumberField(command, 'now', kind)
             ];
         case 'director.relay.start':
@@ -64,6 +63,14 @@ export function validateDirectorControlCommand(
         case 'director.relay.stop':
             return validateStringField(command, 'handle', kind);
     }
+}
+
+/** `when-absent` re-reads the room over REST only while the page holds no snapshot of it; `true` always does. */
+function validateDirectorStatusRefreshField(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
+    const value = command.refresh;
+    return value === undefined || typeof value === 'boolean' || value === 'when-absent'
+        ? []
+        : [toControlCommandIssue('director.status.refresh must be a boolean or when-absent.')];
 }
 
 function validateDirectorRelayStartCommand(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {

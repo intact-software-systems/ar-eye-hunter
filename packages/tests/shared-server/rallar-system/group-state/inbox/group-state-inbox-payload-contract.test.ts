@@ -103,14 +103,17 @@ function assertAuthenticatedGroupMutationEnqueueTypes(): void {
     };
     const removeEnqueue = {
         type: AppInboxType.GROUP_MEMBER_REMOVE,
+        contextId: 'test-context',
         data: removePayload
     } satisfies AuthenticatedGroupMutationEnqueue;
     const banEnqueue = {
         type: AppInboxType.GROUP_MEMBER_BAN,
+        contextId: 'test-context',
         data: banPayload
     } satisfies AuthenticatedGroupMutationEnqueue;
     const unbanEnqueue = {
         type: AppInboxType.GROUP_MEMBER_UNBAN,
+        contextId: 'test-context',
         data: unbanPayload
     } satisfies AuthenticatedGroupMutationEnqueue;
 
@@ -119,7 +122,7 @@ function assertAuthenticatedGroupMutationEnqueueTypes(): void {
     toGroupMutationDescriptor(unbanEnqueue);
 
     // @ts-expect-error GROUP_UPDATE requires the payload selected by its discriminator.
-    toGroupMutationDescriptor({ type: AppInboxType.GROUP_UPDATE, data: groupCreatePayload });
+    toGroupMutationDescriptor({ type: AppInboxType.GROUP_UPDATE, contextId: 'test-context', data: groupCreatePayload });
     // @ts-expect-error GROUP_CREATE requires the payload selected by its discriminator.
     toGroupMutationDescriptor({ type: AppInboxType.GROUP_CREATE, data: groupUpdatePayload });
     assertRemoveEnqueue(removeEnqueue);

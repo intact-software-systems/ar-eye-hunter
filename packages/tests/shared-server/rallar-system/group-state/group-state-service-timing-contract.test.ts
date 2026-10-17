@@ -1,7 +1,14 @@
+import { Temporal } from '@js-temporal/polyfill';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { createTimedGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-timing.ts';
+import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
-import { describe, expect, expectTypeOf, it } from 'vitest';
+import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
+
 import {
     createGroupStateServiceTimingFake,
     invokeEveryTimedGroupStateOperation,
@@ -16,6 +23,9 @@ import {
     type TimedAsyncOperation,
     type TimedOperationArgument
 } from './group-state-service-timing-fixture.ts';
+import { activateMember, presenceConnectEnqueue } from './inbox/group-state-inbox-presence-fixtures.ts';
+import { createAuthorityHarness, createRoom, processAuthenticated } from './inbox/group-state-inbox-test-runtime.ts';
+import { createGroupDeltaProducer } from './presence/group-delta-producer-fixture.ts';
 
 interface OptionalAsyncCoverageProbe {
     readonly value: string;
@@ -119,6 +129,103 @@ describe('group-state service timing contract', () => {
                 durationMs: expect.any(Number),
                 atEpochMs: expect.any(Number)
             }
+        ]);
+    });
+});
+
+describe('group mutation lane phase timing', () => {
+    it('attributes the ingress capture and its persistence as app-inbox phases of the lane item', async () => {
+        const timingEvents: RallarTimingEvent[] = [];
+        const harness = await createAuthorityHarness(['owner', 'alice'], {
+            serviceOptions: { phaseTiming: true },
+            timing: (event) => timingEvents.push(event)
+        });
+        await createRoom(harness, 'lane-timing-room', 'Lane timing room');
+        await activateMember(harness, 'lane-timing-room', 'alice');
+
+        const connected = await processAuthenticated({
+            service: harness.service,
+            reader: harness.reader,
+            authority: harness.sessions.alice,
+            input: presenceConnectEnqueue('lane-timing-room', 'alice', harness.nowEpochMs)
+        });
+        expect(connected.right).toMatchObject({ commandId: expect.any(String) });
+
+        const lanePhases = timingEvents.filter(
+            (event) => event.component === 'app-inbox-phase' && event.requestId === 'connect-alice'
+        );
+        const phaseOrder = lanePhases.map((event) => event.operation);
+        expect(phaseOrder.indexOf('ingress-capture')).toBeGreaterThanOrEqual(0);
+        expect(phaseOrder.indexOf('ingress-capture')).toBeLessThan(phaseOrder.indexOf('ingress-persist'));
+        expect(phaseOrder.indexOf('ingress-persist')).toBeLessThan(phaseOrder.indexOf('transaction'));
+        for (const operation of ['ingress-capture', 'ingress-persist'] as const) {
+            expect(lanePhases.find((event) => event.operation === operation), operation).toEqual({
+                type: 'rallar.timing',
+                component: 'app-inbox-phase',
+                operation,
+                serviceId: 'server-12345678',
+                requestId: 'connect-alice',
+                status: 'ok',
+                durationMs: expect.any(Number),
+                atEpochMs: expect.any(Number),
+                details: {
+                    type: AppInboxType.GROUP_PRESENCE_CONNECT,
+                    topicId: expect.any(String),
+                    contextId: expect.any(String),
+                    resourceId: 'connect-alice',
+                    senderId: 'alice'
+                }
+            });
+        }
+    });
+
+    it('emits no lane phases while phase timing is off', async () => {
+        const timingEvents: RallarTimingEvent[] = [];
+        const harness = await createAuthorityHarness(['owner'], {
+            timing: (event) => timingEvents.push(event)
+        });
+        await createRoom(harness, 'silent-lane-room', 'Silent lane room');
+
+        expect(
+            timingEvents.filter((event) => event.component === 'app-inbox-phase').map((event) => event.operation)
+        ).not.toContain('ingress-capture');
+        expect(timingEvents.map((event) => event.component)).toContain('group-state-service');
+    });
+});
+
+describe('group presence summary phase timing', () => {
+    it('times the read, compute and write of one summary expansion with its recipient count', async () => {
+        const producer = await createGroupDeltaProducer();
+        const timingEvents: RallarTimingEvent[] = [];
+        const worker = new GroupPresenceSummaryWork({
+            database: producer.database,
+            runtimeRepository: producer.repository,
+            outboxQueueReader: new OutboxQueueReader(new PSqlQueueBox(producer.resources, Temporal.Now.instant)),
+            recomputeDebounceMs: 0,
+            serviceId: 'producer-api',
+            now: () => producer.now,
+            timing: (event) => timingEvents.push(event)
+        });
+
+        await worker.processReservedEntry(producer.message, producer.entry);
+
+        const identity = {
+            type: 'rallar.timing',
+            component: 'group-presence-summary',
+            serviceId: 'producer-api',
+            requestId: `connect-${producer.ref.groupId}`,
+            applicationId: producer.ref.applicationId,
+            workspaceId: producer.ref.workspaceId,
+            groupId: producer.ref.groupId,
+            status: 'ok',
+            durationMs: expect.any(Number),
+            atEpochMs: expect.any(Number)
+        };
+        expect(timingEvents.filter((event) => event.component === 'group-presence-summary')).toEqual([
+            { ...identity, operation: 'claim', details: { coalescedWorkCount: 1 } },
+            { ...identity, operation: 'read', details: { coalescedWorkCount: 1 } },
+            { ...identity, operation: 'compute', details: { coalescedWorkCount: 1, recipientCount: 1, deltaCount: 1 } },
+            { ...identity, operation: 'write', details: { coalescedWorkCount: 1, recipientCount: 1, deltaCount: 1 } }
         ]);
     });
 });

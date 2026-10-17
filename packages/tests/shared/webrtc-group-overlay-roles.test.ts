@@ -114,6 +114,7 @@ function createOverlayInfo(
         createdByClientId: 'server',
         createdAtEpochMs: 1,
         nextHopSessionIds: [...nextHopSessionIds],
+        nextHopsBySessionId: undefined,
         degreeLimit: 1,
         overlayVersion,
         updatedAtEpochMs: overlayVersion

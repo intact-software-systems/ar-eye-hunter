@@ -14,6 +14,7 @@ import { createAlmScaleRecipes } from '../../shared-test/rallar-bb-test/conforma
 import type { RallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import { isJsonRecordValue, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { toOverlayLayoutIdentity } from '../../shared/repository/overlays-repository.ts';
 
 const GROUP = { applicationId: 'scale-app', workspaceId: 'scale-workspace', groupId: 'scale-room' };
 
@@ -125,7 +126,6 @@ describe('ALM scale recipes', () => {
             expect(connect).toMatchObject({
                 roomRef: GROUP,
                 transport: 'messages.rtc',
-                readiness: { minReadyPeers: 1, timeoutMs: 45_000 },
                 rallar: {
                     username: '{auth.username}',
                     password: '',
@@ -153,7 +153,7 @@ describe('ALM scale recipes', () => {
                 }),
                 expect.objectContaining({ kind: 'parallel', maxConcurrency: 2 }),
                 expect.objectContaining({ kind: 'barrier', barrierId: 'alm-scale-shots-complete' }),
-                expect.objectContaining({ kind: 'director.status', refresh: true }),
+                expect.objectContaining({ kind: 'director.status', refresh: 'when-absent' }),
                 expect.objectContaining({ kind: 'assert', source: expect.stringContaining('body.activeSessions.length'), expected: participantCount })
             ]));
             for (const send of commands.filter((command) => command.kind === 'messages.send')) {
@@ -205,7 +205,6 @@ describe('ALM scale recipes', () => {
         }
     });
 
-    // A cohort's registrations serialize on the API, so the lazy sign-in must not spend the group requests' 5 s.
     it.each(['director', 'player'] as const)('signs the %s in under the 45 s setup allowance before any group request', (role) => {
         const scale = createAlmScaleRecipes({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
         const recipe = scale.recipes.find((candidate) => candidate.recipeId === `alm-scale-${role}`)!;
@@ -218,12 +217,162 @@ describe('ALM scale recipes', () => {
             timeoutMs: 45_000
         });
         const groupRequests = flattenCommands(recipe.commands).filter((command) => command.kind === 'http.request').slice(1);
-        expect(groupRequests.map((command) => command.commandId)).toEqual([
-            `alm-scale-${role}-ensure-group`,
-            `alm-scale-${role}-ensure-member`,
-            `alm-scale-${role}-audience`
+        expect(groupRequests.map((command) => [command.commandId, command.timeoutMs])).toEqual(
+            role === 'director'
+                ? [['alm-scale-director-ensure-group', 8_750], ['alm-scale-director-ensure-member', 8_750], ['alm-scale-director-audience', 5_000]]
+                : [['alm-scale-player-audience', 5_000]]
+        );
+    });
+
+    it('creates the scale group under the default replanning, one plan after the join stream, because hosted acceptances of capped-debounce plans queued behind the joins', () => {
+        const scale = createAlmScaleRecipes({ participantCount: 50, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
+        const ensureGroup = flattenCommands(scale.recipes[0].commands).find((command) => command.commandId === 'alm-scale-director-ensure-group');
+
+        expect(ensureGroup).toMatchObject({
+            request: { method: 'POST', body: { groupId: 'scale-room', displayName: 'scale-room', kind: 'room', joinMode: 'open' } }
+        });
+        expect(ensureGroup?.kind === 'http.request' ? ensureGroup.request.body : undefined).not.toHaveProperty('lifecyclePolicy');
+    });
+
+    it.each([[15, 54_750], [30, 64_500], [50, 77_500]] as const)(
+        'allows the %i-member cohort\'s player connect and connected barrier %i ms, 650 ms per participant beyond the setup allowance, because the hosted lane serves about 1.5 joining players per second at 50 members',
+        (participantCount, allowanceMs) => {
+            const scale = createAlmScaleRecipes({ participantCount, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
+            const [director, player] = scale.recipes.map((recipe) => flattenCommands(recipe.commands));
+            const byId = (commands: readonly RallarBlackBoxTestCommand[], commandId: string) => commands.find((command) => command.commandId === commandId);
+
+            expect(byId(player, 'alm-scale-player-connect')).toMatchObject({
+                timeoutMs: allowanceMs,
+                readiness: { minReadyPeers: 1, timeoutMs: allowanceMs - 5_000 },
+                rallar: { timeoutMs: 45_000 }
+            });
+            expect(byId(director, 'alm-scale-director-connect')).toMatchObject({ timeoutMs: 50_000, rallar: { timeoutMs: 45_000 } });
+            expect([byId(director, 'alm-scale-director-connected'), byId(player, 'alm-scale-player-connected')]).toEqual([
+                expect.objectContaining({ barrierId: 'alm-scale-connected', timeoutMs: allowanceMs }),
+                expect.objectContaining({ barrierId: 'alm-scale-connected', timeoutMs: allowanceMs })
+            ]);
+            expect(byId(player, 'alm-scale-player-group-created')).toMatchObject({ timeoutMs: 45_000 });
+        }
+    );
+
+    it('appoints the director on its own connection before the group-created barrier releases the players, who join the room inside their connect', () => {
+        const scale = createAlmScaleRecipes({ participantCount: 30, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
+        const [director, player] = scale.recipes;
+
+        expect(director.commands.slice(0, 6).map((command) => command.commandId)).toEqual([
+            'alm-scale-director-sign-in',
+            'alm-scale-director-ensure-group',
+            'alm-scale-director-ensure-member',
+            'alm-scale-director-connect',
+            'alm-scale-director-appoint',
+            'alm-scale-director-group-created'
         ]);
-        expect(groupRequests.map((command) => command.timeoutMs)).toEqual([5_000, 5_000, 5_000]);
+        expect(director.commands[3]).not.toHaveProperty('readiness');
+        expect(flattenCommands(director.commands).filter((command) => command.kind === 'director.appoint')).toHaveLength(1);
+        expect(player.commands.slice(0, 3).map((command) => command.commandId)).toEqual([
+            'alm-scale-player-sign-in',
+            'alm-scale-player-group-created',
+            'alm-scale-player-connect'
+        ]);
+        expect(player.commands[2]).toMatchObject({ roomId: 'scale-room', readiness: { minReadyPeers: 1 } });
+    });
+
+    it.each([15, 30, 50] as const)(
+        'allows the %i-member cohort\'s joins, the director\'s group requests and each player\'s room join inside its connect, more than their serial cost at the 4 joins per second measured hosted, and keeps reads at 5 s',
+        (participantCount) => {
+            const hostedJoinsPerSecond = 4;
+            const serialJoinCostMs = participantCount / hostedJoinsPerSecond * 1_000;
+            const scale = createAlmScaleRecipes({ participantCount, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
+            const requests = scale.recipes.flatMap((recipe) => flattenCommands(recipe.commands))
+                .filter((command) => command.kind === 'http.request');
+            const timeoutOf = (suffix: string) => requests.filter((command) => command.commandId?.endsWith(suffix)).map((command) => command.timeoutMs);
+
+            const roomJoins = flattenCommands(scale.recipes[1].commands)
+                .filter((command) => command.kind === 'rtc.connect')
+                .map((command) => command.rallar?.timeoutMs);
+            expect(roomJoins).toHaveLength(1);
+            for (const allowance of [...timeoutOf('-ensure-group'), ...timeoutOf('-ensure-member'), ...roomJoins]) {
+                expect(allowance).toBeGreaterThan(serialJoinCostMs);
+                expect(allowance).toBeGreaterThanOrEqual(5_000);
+                expect(allowance).toBeLessThanOrEqual(45_000);
+            }
+            expect(timeoutOf('-audience')).toEqual([5_000, 5_000]);
+        }
+    );
+
+    it.each([[15, 8_750], [30, 12_500], [50, 17_500]] as const)(
+        'allows the %i-member cohort\'s single ready-status read %i ms like its group requests, because hosted it queues behind the formation burst on the serial lane, while the director-ready loop retries at 5 s',
+        (participantCount, allowanceMs) => {
+            const scale = createAlmScaleRecipes({ participantCount, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
+
+            for (const [role, recipe] of [['director', scale.recipes[0]], ['player', scale.recipes[1]]] as const) {
+                const commands = flattenCommands(recipe.commands);
+                expect(commands.find((command) => command.commandId === `alm-scale-${role}-ready-status`)).toMatchObject({
+                    kind: 'director.status',
+                    refresh: 'when-absent',
+                    timeoutMs: allowanceMs
+                });
+                expect(commands.find((command) => command.commandId === `alm-scale-${role}-director-status`)).toMatchObject({
+                    kind: 'director.status',
+                    refresh: 'when-absent',
+                    timeoutMs: 5_000
+                });
+                expect(commands.filter((command) => command.kind === 'director.status' && command.refresh === true)).toEqual([]);
+            }
+        }
+    );
+
+    it.each(['director', 'player'] as const)('holds the %s at setup-complete until no newer plan replaces the ready layout', (role) => {
+        const scale = createAlmScaleRecipes({ participantCount: 50, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
+        const recipe = scale.recipes.find((candidate) => candidate.recipeId === `alm-scale-${role}`)!;
+        const prefix = `alm-scale-${role}`;
+        const setupComplete = recipe.commands.findIndex((command) => command.commandId === `${prefix}-setup-complete`);
+
+        expect(recipe.commands[setupComplete - 2]).toMatchObject({ kind: 'director.status', commandId: `${prefix}-ready-status` });
+        expect(recipe.commands[setupComplete - 1]).toEqual({
+            kind: 'loop',
+            commandId: `${prefix}-layout-stable`,
+            count: 12,
+            timeoutMs: 48_500,
+            until: 'first-success',
+            commands: [
+                { kind: 'formation.readiness', commandId: `${prefix}-layout-readiness`, roomRef: GROUP, timeoutMs: 5_000 },
+                {
+                    kind: 'wait',
+                    commandId: `${prefix}-layout-replan`,
+                    absent: true,
+                    timeoutMs: 3_500,
+                    match: {
+                        topic: 'rallar.browser.formation.layout',
+                        payloadFields: { 'data.kind': 'layoutPlanned', 'data.role': 'planned' },
+                        payloadPath: 'data.identity',
+                        contains: `"groupRevision":{resultCache.${prefix}-layout-stable:i{loop.iteration}:c1:` +
+                            `${prefix}-layout-readiness.value.formation.causalRevision.groupRevision},`
+                    }
+                }
+            ]
+        });
+    });
+
+    it('matches a re-plan from exactly the ready revision because the layout event serializes its group revision first', () => {
+        const identity = toOverlayLayoutIdentity({
+            sourceGroupStateCausalRevision: { groupRevision: 56, presenceRevision: 7 },
+            provenance: 'server',
+            state: 'active',
+            overlayId: 'overlay-1',
+            groupRef: GROUP,
+            topology: 'tree',
+            name: 'scale-room',
+            createdByClientId: 'director',
+            createdAtEpochMs: 1_000,
+            nextHopSessionIds: [],
+            degreeLimit: 4,
+            overlayVersion: 5,
+            updatedAtEpochMs: 1_000,
+            nextHopsBySessionId: {}
+        });
+
+        expect(JSON.stringify(identity)).toMatch(/^\{"groupRevision":56,"presenceRevision"/);
     });
 
     it.each([false, true])('connects both roles with the ALM diagnostic stream %s', (almDiagnostics) => {

@@ -58,6 +58,7 @@ for (const placement of ['publisher', 'remote'] as const) {
             const publisherSocket = placement === 'publisher' ? recipientSocket : new JsonWebSocketServer();
             const remoteSocket = placement === 'remote' ? recipientSocket : new JsonWebSocketServer();
             const publisher = createDefaultWsQueueBoxServerService({
+                inboundVolatileStores: undefined,
                 name: 'publisher',
                 socket: publisherSocket,
                 outbox: stores.workQueue,
@@ -67,6 +68,7 @@ for (const placement of ['publisher', 'remote'] as const) {
                 readProducerProvenance: (message, row) => reader.readProducerProvenance(message, row)
             });
             const remote = createDefaultWsQueueBoxServerService({
+                inboundVolatileStores: undefined,
                 name: 'remote',
                 socket: remoteSocket,
                 outbox: stores.workQueue,

@@ -238,6 +238,7 @@ function createGameService(
     playerIds: readonly string[]
 ): WsQueueBoxServerService {
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         outbox: new InMemoryQueueBox(new Map()),
         socket,
         name: 'server-1',

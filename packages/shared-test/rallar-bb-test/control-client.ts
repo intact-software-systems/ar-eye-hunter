@@ -1,3 +1,5 @@
+import { FailureBackoff } from '@shared/resilience/failure-backoff.ts';
+import { SingleFlight } from '@shared/resilience/single-flight.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { decodeResultReleaseEnvelope, type ResultReleaseRequest } from './result-release/result-release-protocol.ts';
 import { computeAppendedResultHistory, createRuntimeResultHistory } from './runtime/runtime-result-history.ts';
@@ -191,6 +193,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
     private publishedHistory: RallarBlackBoxEventHistory | undefined;
     private readonly completedControlCommandIds = new Set<string>();
     private readonly admittedControlCommandIds = new Set<string>();
+    private readonly runningControlCommands = new SingleFlight<string, void>();
     private completedControlResults = new WeakSet<RallarBlackBoxTestResult>();
     private frameLimitedResults = new WeakMap<RallarBlackBoxTestResult, RallarBlackBoxTestResult>();
     private assignmentGeneration = 0;
@@ -207,6 +210,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
     private heartbeatTimer: ReturnType<typeof globalThis.setInterval> | undefined;
     private statsTimer: ReturnType<typeof globalThis.setInterval> | undefined;
     private reconnectTimer: ReturnType<typeof globalThis.setTimeout> | undefined;
+    private readonly reconnectBackoff: FailureBackoff;
     private manualClose = false;
     private disposed = false;
     private disconnectReported = false;
@@ -219,6 +223,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
 
     constructor(options: RallarBlackBoxControlClientOptions) {
         this.options = Object.freeze({ ...options });
+        this.reconnectBackoff = new FailureBackoff({ baseMs: options.reconnectBaseMs, maxMs: options.reconnectMaxMs });
         this.rtcCaptureSupport = decodeRtcCaptureSupport(this.options.runtime.rtcCaptureSupport).right?.support;
         this.observedRuntimeGeneration = this.options.runtime.state().eventHistory.generation;
         this.unsubscribeRuntime = this.options.runtime.subscribe((state) => {
@@ -254,6 +259,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
             this.completedControlResults = new WeakSet<RallarBlackBoxTestResult>();
             this.frameLimitedResults = new WeakMap<RallarBlackBoxTestResult, RallarBlackBoxTestResult>();
             this.admittedControlCommandIds.clear();
+            this.runningControlCommands.clear();
             this.publishedEvents = new WeakSet<RallarBlackBoxTestEvent>();
             this.lastTerminalReportKey = undefined;
             const history = this.options.runtime.state().eventHistory;
@@ -341,6 +347,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
     }
 
     private readonly onSocketOpen = (): void => {
+        this.reconnectBackoff.recordSuccess();
         this.publishSnapshotUpdate({
             state: 'registered',
             connectedAtEpochMs: this.options.now(),
@@ -386,7 +393,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
             return;
         }
 
-        void this.runCommand(parsed.envelope);
+        void this.admitCommand(parsed.envelope);
     };
 
     private async releaseCapturedResults(request: ResultReleaseRequest): Promise<void> {
@@ -435,16 +442,21 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
             return;
         }
 
-        const attempt = this.snapshot.reconnectAttempt + 1;
-        const delayMs = Math.min(
-            this.options.reconnectMaxMs,
-            this.options.reconnectBaseMs * 2 ** Math.max(0, attempt - 1)
-        );
-        this.publishSnapshotUpdate({ state: 'reconnecting', reconnectAttempt: attempt });
+        const nowMs = this.options.now();
+        const delayMs = this.reconnectBackoff.recordFailure(nowMs) - nowMs;
+        this.publishSnapshotUpdate({
+            state: 'reconnecting',
+            reconnectAttempt: this.reconnectBackoff.getConsecutiveFailures()
+        });
         this.reconnectTimer = globalThis.setTimeout(() => {
             this.reconnectTimer = undefined;
             this.openSocket('reconnecting');
         }, delayMs);
+    }
+
+    /** A redispatch of a command still running joins that execution, which sends the one result on the open socket. */
+    private admitCommand(envelope: ControlCommandEnvelope): Promise<void> {
+        return this.runningControlCommands.run(envelope.commandId, () => this.runCommand(envelope));
     }
 
     private async runCommand(envelope: ControlCommandEnvelope): Promise<void> {
@@ -976,6 +988,7 @@ function toControlResultEnvelope(
     };
 }
 
+/** The bounded result keeps the verdict of the result it replaces, without that result's value or error details. */
 function toFrameLimitedResult(
     result: RallarBlackBoxTestResult,
     frameBytes: number,
@@ -993,7 +1006,17 @@ function toFrameLimitedResult(
             code: 'RALLAR_BLACK_BOX_CONTROL_FRAME_TOO_LARGE',
             message:
                 `The result frame of ${frameBytes} bytes exceeds the control frame limit of ${maxFrameBytes} bytes.`,
-            details: { frameBytes, maxFrameBytes }
+            details: {
+                frameBytes,
+                maxFrameBytes,
+                oversizeResult: {
+                    status: result.status,
+                    ok: result.ok,
+                    ...(result.error === undefined
+                        ? {}
+                        : { error: { code: result.error.code, message: result.error.message } })
+                }
+            }
         }
     };
 }

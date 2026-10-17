@@ -258,6 +258,7 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         const controller = createDefaultResourceInboxDequeuer<string>({
             repository: backend.workQueue,
             typesToDequeue: () => types,
+            newLaneClaimOrder: 'queue',
             maxToReserve: () => 1,
             maxNumToDequeue: 10,
             resilience: resilience
@@ -311,6 +312,7 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         const controller = createDefaultResourceInboxDequeuer<string>({
             repository: backend.workQueue,
             typesToDequeue: () => new Set(admitType ? [entry.typeId] : []),
+            newLaneClaimOrder: 'queue',
             maxToReserve: () => 1,
             maxNumToDequeue: 10,
             resilience: resilience

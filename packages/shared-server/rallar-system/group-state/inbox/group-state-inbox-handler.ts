@@ -1,3 +1,4 @@
+import { toGroupLayoutIdentity, type GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type {
     GroupEvent,
     GroupRef,
@@ -8,6 +9,7 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 import { toError } from '@shared/resilience/to-error.ts';
 import type { GroupFormationMutationOutcome } from '@shared/rtc/group-formation-metrics.ts';
 import { type AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
+import { toAppInboxTimingDetails } from '../../app-inbox/handler/app-inbox-attempt-timing.ts';
 import {
     computeAppInboxCompletion,
     validateAppInboxCompletion,
@@ -16,6 +18,7 @@ import {
 } from '../../app-inbox/handler/app-inbox-completion-computation.ts';
 import type { AppInboxMutationTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
 import type { GroupFormationGroupMutationSink } from '../../observability/formation-metrics.ts';
+import { nowMs, recordRallarTiming, timeRallarAsync, type RallarTimingSink } from '../../observability/timing.ts';
 import type { WsSessionGenerationLifecycleComputed } from '../../websocket/ws-session-generation-computation.ts';
 import { validateWsSessionConnectGuard } from '../../websocket/ws-session-generation-computation.ts';
 import type { WsSessionGenerationLifecycleService } from '../../websocket/ws-session-generation-lifecycle.ts';
@@ -27,7 +30,11 @@ import type {
     GroupStateMutationService
 } from '../group-state-service-contracts.ts';
 import { GroupMutationIdempotencyConflictError } from '../group-state-service.ts';
-import type { GroupMutationComputed, GroupMutationRead } from '../mutation/group-mutation-contracts.ts';
+import type {
+    GroupMutationCommand,
+    GroupMutationComputed,
+    GroupMutationRead
+} from '../mutation/group-mutation-contracts.ts';
 import { toGroupMutationRejectionError } from '../mutation/group-mutation-result.ts';
 import {
     readAndComputeGroupPresenceConnect,
@@ -48,6 +55,21 @@ export interface GroupStateInboxResultReader {
     readEvent(ref: GroupRef, eventId: string): Promise<GroupEvent | undefined>;
 }
 
+/** A timing sink and the service its lines name. */
+export interface GroupStateInboxTiming {
+    readonly sink: RallarTimingSink;
+    readonly serviceId: string;
+}
+
+type GroupStateLanePhase = 'ingress-capture' | 'ingress-persist';
+
+interface PlannedLayoutPromotionAttempt {
+    readonly command: Extract<GroupMutationCommand, { operation: 'applyPlannedLayout'; }>;
+    readonly read: GroupMutationRead;
+    readonly computed: GroupMutationComputed;
+    readonly startedAtMs: number;
+}
+
 export interface GroupStateInboxHandlerDependencies {
     readonly mutationService: GroupStateMutationService;
     readonly sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
@@ -56,6 +78,10 @@ export interface GroupStateInboxHandlerDependencies {
         AppInboxMutationTransactionWriter,
         'readCompletionFacts' | 'writeComputedMutation'
     >;
+    /** Present only while AppInbox phase timing is on; each lane phase then reports as `app-inbox-phase`. */
+    readonly lanePhaseTiming: GroupStateInboxTiming | undefined;
+    /** Present while the service is timed; a layout promotion attempt then reports as `group-topology-publication`. */
+    readonly publicationTiming: GroupStateInboxTiming | undefined;
     readonly wakeQueue?: () => void;
     readonly formationMetrics?: GroupFormationGroupMutationSink;
     readonly captureAuthenticatedMutationIngress: (
@@ -75,6 +101,8 @@ interface CommitGroupStateMutationInput {
     readonly durableResult: GroupStateInboxDurableResult;
     readonly completion: AppInboxCompletionComputed<GroupStateInboxDurableResult>;
     readonly lifecycleGuard?: WsSessionGenerationLifecycleComputed;
+    /** A layout promotion's timing line, recorded once its transaction committed. */
+    readonly promotion?: PlannedLayoutPromotionAttempt;
 }
 
 interface CapturedGroupMutationIngress {
@@ -126,10 +154,17 @@ export class GroupStateInboxHandler {
         if (command.command.operation === 'connectPresence') {
             return await this.processPresenceConnect(context, command);
         }
+        const startedAtMs = nowMs();
         const resultRead = await this.readResultFacts(command);
         const computed = this.dependencies.mutationService.compute(command, resultRead.mutationRead);
+        const promotion = command.command.operation === 'applyPlannedLayout'
+            ? { command: command.command, read: resultRead.mutationRead, computed, startedAtMs }
+            : undefined;
         if (!isCommittableMutation(computed)) {
             this.validateMutation(command, resultRead.mutationRead, computed);
+            if (promotion !== undefined) {
+                this.recordPlannedLayoutPromotion(promotion);
+            }
             throwNonCommittableMutation(command, computed);
         }
         const resultInput = {
@@ -152,7 +187,7 @@ export class GroupStateInboxHandler {
         this.validateMutation(command, resultRead.mutationRead, computed);
         this.validateInboxResult(resultInput, result);
         this.validateCompletion(completionInput, completion);
-        return await this.commitMutation({ context, command, computed, durableResult, completion });
+        return await this.commitMutation({ context, command, computed, durableResult, completion, promotion });
     }
 
     private async processPresenceConnect(
@@ -229,12 +264,43 @@ export class GroupStateInboxHandler {
         if (authority.kind === 'ingress') {
             return { ingress: authority.mutation, entry: context.entry };
         }
-        const ingress = await this.dependencies.captureAuthenticatedMutationIngress(
-            authority.mutation.descriptor,
-            authority.mutation.authorityProof
+        const ingress = await this.timeLanePhase(
+            context,
+            'ingress-capture',
+            async () =>
+                await this.dependencies.captureAuthenticatedMutationIngress(
+                    authority.mutation.descriptor,
+                    authority.mutation.authorityProof
+                )
         );
-        const entry = await this.dependencies.persistMutationIngress(context, ingress);
+        const entry = await this.timeLanePhase(
+            context,
+            'ingress-persist',
+            async () => await this.dependencies.persistMutationIngress(context, ingress)
+        );
         return { ingress, entry };
+    }
+
+    private async timeLanePhase<Result>(
+        context: AppInboxMessageContext<GroupStateInboxDurableResult>,
+        operation: GroupStateLanePhase,
+        action: () => Promise<Result>
+    ): Promise<Result> {
+        const timing = this.dependencies.lanePhaseTiming;
+        if (timing === undefined) {
+            return await action();
+        }
+        return await timeRallarAsync(
+            timing.sink,
+            {
+                component: 'app-inbox-phase',
+                operation,
+                serviceId: timing.serviceId,
+                requestId: context.enqueue.resourceId,
+                details: toAppInboxTimingDetails(context.enqueue, context.entry.key)
+            },
+            action
+        );
     }
 
     private async commitMutation(
@@ -257,6 +323,9 @@ export class GroupStateInboxHandler {
                 }
             );
         this.dependencies.wakeQueue?.();
+        if (input.promotion !== undefined) {
+            this.recordPlannedLayoutPromotion(input.promotion);
+        }
         this.recordGroupMutation(
             input.command,
             input.computed.outcome === 'write'
@@ -308,6 +377,36 @@ export class GroupStateInboxHandler {
         }
     }
 
+    private recordPlannedLayoutPromotion(attempt: PlannedLayoutPromotionAttempt): void {
+        const timing = this.dependencies.publicationTiming;
+        if (timing === undefined) {
+            return;
+        }
+        const { command, read, computed } = attempt;
+        recordRallarTiming({
+            sink: timing.sink,
+            event: {
+                component: 'group-topology-publication',
+                operation: 'promote',
+                serviceId: timing.serviceId,
+                requestId: command.requestId ?? undefined,
+                applicationId: command.aggregateRef.applicationId,
+                workspaceId: command.aggregateRef.workspaceId,
+                groupId: command.aggregateRef.groupId,
+                details: {
+                    expected: toLayoutIdentityLabel(command.input.expectedLayout),
+                    planned: read.plannedLayoutRow === null
+                        ? 'none'
+                        : toLayoutIdentityLabel(toGroupLayoutIdentity(read.plannedLayoutRow.snapshot)),
+                    outcome: toPlannedLayoutPromotionOutcome(computed),
+                    rejection: computed.outcome === 'rejected' ? computed.receipt.rejection ?? undefined : undefined
+                }
+            },
+            status: 'ok',
+            durationMs: nowMs() - attempt.startedAtMs
+        });
+    }
+
     private recordGroupMutation(
         command: GroupStateMutationCommand,
         outcome: GroupFormationMutationOutcome
@@ -351,6 +450,23 @@ function throwNonCommittableMutation(
         );
     }
     throw toGroupMutationRejectionError(computed);
+}
+
+function toPlannedLayoutPromotionOutcome(computed: GroupMutationComputed): string {
+    switch (computed.outcome) {
+        case 'write':
+            return computed.acceptedLayoutPromotion?.promoted === 'newer' ? 'promoted-newer' : 'promoted';
+        case 'no-op':
+            return 'already-applied';
+        default:
+            return computed.outcome;
+    }
+}
+
+function toLayoutIdentityLabel(identity: GroupLayoutIdentity | null): string {
+    return identity === null
+        ? 'none'
+        : `group=${identity.groupRevision};presence=${identity.presenceRevision};version=${identity.version};state=${identity.state}`;
 }
 
 function isPresenceOperation(operation: GroupStateMutationCommand['command']['operation']): boolean {

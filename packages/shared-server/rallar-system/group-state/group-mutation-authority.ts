@@ -22,12 +22,8 @@ import {
 } from './group-state-service-contracts.ts';
 import { assertGroupMutationCommand } from './mutation/command-validation/assert-group-mutation-command.ts';
 import { type GroupMutationCommand, type GroupMutationFacts } from './mutation/group-mutation-contracts.ts';
-import {
-    constantTimeHexEqual,
-    constantTimeSecretEqual,
-    hmacSha256Hex
-} from './mutation/group-state-crypto.ts';
-import { isScopedGroupMutationCommandId, toScopedGroupMutationCommandId } from './scoped-group-mutation-command-id.ts';
+import { constantTimeSecretEqual, hmacSha256Hex } from './mutation/group-state-crypto.ts';
+import { toScopedGroupMutationCommandId } from './scoped-group-mutation-command-id.ts';
 import { toLifecycleMutationCommand } from './to-lifecycle-mutation-command.ts';
 import { toTransportMutationCommand } from './to-transport-mutation-command.ts';
 
@@ -48,9 +44,11 @@ interface VerifiedGroupMutationAuthority {
 interface VerifyGroupMutationAuthorityInput {
     readonly repository: Pick<AuthSessionRepository, 'findBySessionId'>;
     readonly descriptor: GroupMutationDescriptor;
-    readonly authority: GroupMutationAuthority;
+    readonly authority: IssuedAuthSession;
     readonly nowEpochMs: number;
 }
+
+type ClaimedAuthSession = Pick<IssuedAuthSession, 'clientId' | 'sessionId' | 'issuedAtEpochMs' | 'expiresAtEpochMs'>;
 
 interface CaptureAuthorizedGroupMutationIngressInput {
     readonly dependencies: GroupMutationAuthorityDependencies;
@@ -72,7 +70,7 @@ export class GroupMutationAuthorizationError extends Error {
 export async function captureGroupMutationIngress(
     dependencies: GroupMutationAuthorityDependencies,
     descriptor: GroupMutationDescriptor,
-    authority: GroupMutationAuthority
+    authority: IssuedAuthSession
 ): Promise<GroupMutationIngress> {
     return await captureAuthorizedGroupMutationIngress({
         dependencies,
@@ -99,7 +97,9 @@ async function captureAuthorizedGroupMutationIngress(
     input: CaptureAuthorizedGroupMutationIngressInput
 ): Promise<GroupMutationIngress> {
     const { dependencies, descriptor, authority, useScopedCommandId } = input;
-    const authorized = await authorizeGroupMutation(dependencies, descriptor, authority);
+    const authorized = isGroupMutationAuthorityProof(authority)
+        ? reuseGroupMutationAuthorityProof(descriptor, authority)
+        : await authorizeGroupMutation(dependencies, descriptor, authority);
     const materialized = materializeAuthenticatedGroupMutationCommand({
         descriptor: authorized.descriptor,
         authorityProof: authorized.authorityProof,
@@ -156,7 +156,7 @@ async function captureAuthorizedGroupMutationIngress(
 export async function authorizeGroupMutation(
     dependencies: Pick<GroupMutationAuthorityDependencies, 'authSessionRepository' | 'now'>,
     descriptor: GroupMutationDescriptor,
-    authority: GroupMutationAuthority
+    authority: IssuedAuthSession
 ): Promise<AuthorizedGroupMutation> {
     const verified = await verifyGroupMutationAuthority({
         repository: dependencies.authSessionRepository,
@@ -164,55 +164,41 @@ export async function authorizeGroupMutation(
         authority,
         nowEpochMs: dependencies.now()
     });
-    requireGroupMutationRequestId(verified.descriptor);
-    const command = toDescriptorCommand(verified.descriptor, () => {
-        throw new NonRetryableException('Authenticated group mutation requestId is required.');
-    });
-    assertGroupMutationCommand(command);
+    assertAuthenticatedGroupMutationDescriptor(verified.descriptor);
     return {
         authorityProof: await createGroupMutationAuthorityProof(verified.session, verified.descriptor),
         descriptor: verified.descriptor
     };
 }
 
-export async function readAndVerifyGroupMutationIngressAuthority(
-    dependencies: Pick<GroupMutationAuthorityDependencies, 'authSessionRepository' | 'now' | 'randomId'>,
+/**
+ * The route verified the credential and minted this proof before the queue
+ * entry was written; the lane trusts it and re-checks only session liveness
+ * at execution, through readAndVerifyLiveGroupMutationSession.
+ */
+function reuseGroupMutationAuthorityProof(
+    descriptor: GroupMutationDescriptor,
+    authorityProof: GroupMutationAuthorityProof
+): AuthorizedGroupMutation {
+    const trustedDescriptor = toTrustedMutationDescriptor(descriptor, authorityProof);
+    assertAuthenticatedGroupMutationDescriptor(trustedDescriptor);
+    return { authorityProof, descriptor: trustedDescriptor };
+}
+
+export async function readAndVerifyLiveGroupMutationSession(
+    dependencies: Pick<GroupMutationAuthorityDependencies, 'authSessionRepository' | 'now'>,
     ingress: GroupStateMutationCommand
 ): Promise<void> {
     if (ingress.authorityProof === null || ingress.descriptor === null) {
         throw new GroupMutationAuthorizationError('Authenticated group mutation authority is missing.');
     }
-    const verified = await verifyGroupMutationAuthority({
-        repository: dependencies.authSessionRepository,
-        descriptor: ingress.descriptor,
-        authority: ingress.authorityProof,
-        nowEpochMs: dependencies.now()
-    });
-    if (serializeCanonicalJson(verified.descriptor) !== serializeCanonicalJson(ingress.descriptor)) {
-        throw new GroupMutationAuthorizationError(
-            'Authenticated mutation descriptor changed before execution.'
-        );
-    }
-    const materialized = materializeAuthenticatedGroupMutationCommand({
-        descriptor: verified.descriptor,
-        authorityProof: ingress.authorityProof,
-        randomId: dependencies.randomId,
-        useScopedCommandId: isScopedGroupMutationCommandId(ingress.command.commandId)
-    });
-    const { command } = materialized;
-    const commandHash = computeMutationCommandDigest(
-        decodeJsonWireValue(materialized.semanticCommand, 'Group semantic mutation command')
-    );
-    if (
-        serializeCanonicalJson(command) !== serializeCanonicalJson(ingress.command) ||
-        commandHash !== ingress.facts.commandHash ||
-        ingress.facts.authenticatedAuthority?.principalId !== verified.session.clientId ||
-        ingress.facts.authenticatedAuthority?.sessionId !== verified.session.sessionId
-    ) {
-        throw new GroupMutationAuthorizationError(
-            'Durable group mutation facts differ from authenticated command.'
-        );
-    }
+    const proof = ingress.authorityProof;
+    await readLiveAuthSession(dependencies.authSessionRepository, {
+        clientId: proof.principalId,
+        sessionId: proof.sessionId,
+        issuedAtEpochMs: proof.sessionIssuedAtEpochMs,
+        expiresAtEpochMs: proof.sessionExpiresAtEpochMs
+    }, dependencies.now());
 }
 
 interface MaterializeAuthenticatedGroupMutationInput {
@@ -298,14 +284,29 @@ async function verifyGroupMutationAuthority(
     input: VerifyGroupMutationAuthorityInput
 ): Promise<VerifiedGroupMutationAuthority> {
     const { authority, descriptor, nowEpochMs, repository } = input;
-    const claimed = isGroupMutationAuthorityProof(authority)
-        ? {
-            clientId: authority.principalId,
-            sessionId: authority.sessionId,
-            issuedAtEpochMs: authority.sessionIssuedAtEpochMs,
-            expiresAtEpochMs: authority.sessionExpiresAtEpochMs
-        }
-        : authority;
+    const session = await readLiveAuthSession(repository, authority, nowEpochMs);
+    if (
+        !(await constantTimeSecretEqual(
+            session.accessTokenDigest,
+            await authSessionProofSecret(authority)
+        ))
+    ) {
+        throw new GroupMutationAuthorizationError('Authenticated session credential is invalid.');
+    }
+    return {
+        session,
+        descriptor: toTrustedMutationDescriptor(descriptor, {
+            principalId: session.clientId,
+            sessionId: session.sessionId
+        })
+    };
+}
+
+async function readLiveAuthSession(
+    repository: Pick<AuthSessionRepository, 'findBySessionId'>,
+    claimed: ClaimedAuthSession,
+    nowEpochMs: number
+): Promise<PersistedAuthSession> {
     const session = await repository.findBySessionId(claimed.sessionId);
     if (
         !session ||
@@ -319,28 +320,7 @@ async function verifyGroupMutationAuthority(
             'Authenticated session is missing, expired, revoked, or mismatched.'
         );
     }
-    if (
-        !isGroupMutationAuthorityProof(authority) &&
-        !(await constantTimeSecretEqual(
-            session.accessTokenDigest,
-            await authSessionProofSecret(authority)
-        ))
-    ) {
-        throw new GroupMutationAuthorizationError('Authenticated session credential is invalid.');
-    }
-    const trustedDescriptor = toTrustedMutationDescriptor(descriptor, {
-        principalId: session.clientId,
-        sessionId: session.sessionId
-    });
-    if (isGroupMutationAuthorityProof(authority)) {
-        const expected = await createGroupMutationAuthorityProof(session, trustedDescriptor);
-        if (!constantTimeHexEqual(expected.commandMac, authority.commandMac)) {
-            throw new GroupMutationAuthorizationError(
-                'Authenticated mutation proof does not match the command.'
-            );
-        }
-    }
-    return { session, descriptor: trustedDescriptor };
+    return session;
 }
 
 function toTrustedMutationDescriptor(
@@ -421,11 +401,14 @@ function isGroupMutationAuthorityProof(
     return 'version' in authority && authority.version === 1 && 'commandMac' in authority;
 }
 
-function requireGroupMutationRequestId(descriptor: GroupMutationDescriptor): void {
+function assertAuthenticatedGroupMutationDescriptor(descriptor: GroupMutationDescriptor): void {
     const requestId = descriptor.request.requestId;
     if (typeof requestId !== 'string' || requestId.length === 0) {
         throw new NonRetryableException('Authenticated app inbox mutation requestId is required.');
     }
+    assertGroupMutationCommand(toDescriptorCommand(descriptor, () => {
+        throw new NonRetryableException('Authenticated group mutation requestId is required.');
+    }));
 }
 
 function resolveCommandJoinCode(command: GroupMutationCommand, commandHash: string): string | null {

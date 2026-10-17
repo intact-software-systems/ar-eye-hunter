@@ -10,6 +10,7 @@ describe('public WS publication scope', () => {
     it('refuses the old unscoped public publication before enqueue', async () => {
         const outbox = new InMemoryQueueBox();
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             name: 'server',
             socket: new JsonWebSocketServer(),
@@ -28,6 +29,7 @@ describe('public WS publication scope', () => {
         async (publication) => {
             const outbox = new InMemoryQueueBox();
             const service = createDefaultWsQueueBoxServerService({
+                inboundVolatileStores: undefined,
                 readAuthenticatedConnectionScope: () => undefined,
                 name: 'server',
                 socket: new JsonWebSocketServer(),
@@ -45,6 +47,7 @@ describe('public WS publication scope', () => {
         async (scope) => {
             const outbox = new InMemoryQueueBox();
             const service = createDefaultWsQueueBoxServerService({
+                inboundVolatileStores: undefined,
                 readAuthenticatedConnectionScope: () => undefined,
                 name: 'server',
                 socket: new JsonWebSocketServer(),
@@ -68,6 +71,7 @@ describe('public WS publication scope', () => {
     it('fails a group-addressed publication that also carries a scope', async () => {
         const outbox = new InMemoryQueueBox();
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             name: 'server',
             socket: new JsonWebSocketServer(),
@@ -84,6 +88,7 @@ describe('public WS publication scope', () => {
     it('queues a room unicast without a DTO scope: its groupRef scopes it', async () => {
         const outbox = new InMemoryQueueBox();
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             name: 'server',
             socket: new JsonWebSocketServer(),

@@ -10,6 +10,7 @@ import type {
     RallarBlackBoxDistributedRunState,
     RallarBlackBoxDistributedTargetResolution
 } from './distributed-run.ts';
+import type { ControlRunCompletion } from './control/control-run-completion.ts';
 import type { RallarBlackBoxDistributedRunRollup } from './distributed/distributed-run-rollup.ts';
 import type {
     ControlFleetAgentRunOutcome,
@@ -66,6 +67,11 @@ export type ControlRunSnapshot = Readonly<{
     stats: readonly ControlEventEnvelope[];
     reports: readonly ControlEventEnvelope[];
     heartbeats: readonly ControlHeartbeatEnvelope[];
+    /**
+     * Present once the run completed and its rows moved to its own file: the collections above are then empty in
+     * the server's listing and persisted snapshot, and a read of the run itself serves the file's rows.
+     */
+    completion?: ControlRunCompletion;
 }>;
 
 export type ControlDistributedRunCommandPhase = 'stage' | 'barrier' | 'start' | 'cancel';

@@ -1265,6 +1265,7 @@ function createRouter(
     });
     const outbox = outboundStores.workQueue;
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         outbox,
         outboundStores,
         socket,
@@ -1302,6 +1303,7 @@ function createIngressRouter(
     const socket = new RouterIngressWebSocket();
     server.addConnection(new ConnectionContext({ id: 'conn-1', socket }));
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         outbox: new InMemoryQueueBox(new Map()),
         socket: server,
         name: 'server-1',
@@ -1356,6 +1358,7 @@ function createAudienceRouter(input: AudienceRouterInput): AudienceRouterFixture
     }
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         outbox: outboundStores.workQueue,
         outboundStores,
         socket: server,
@@ -1408,6 +1411,7 @@ function createLargeOutboxRoom(sessionIds: readonly string[]): Omit<AudienceRout
     }
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         outbox: outboundStores.workQueue,
         outboundStores,
         socket: server,
@@ -1544,6 +1548,7 @@ function createPublicRouterFixture(options: PublicRouterFixtureInput = {}): Publ
     });
     const outbox = outboundStores.workQueue;
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         readAuthenticatedConnectionScope: () => undefined,
         outbox,
         outboundStores,

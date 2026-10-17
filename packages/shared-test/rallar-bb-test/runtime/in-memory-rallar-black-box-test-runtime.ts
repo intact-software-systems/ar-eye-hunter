@@ -1,5 +1,9 @@
 import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
-import type { ResultCaptureReceipt, ResultReleaseOutcome, ResultReleaseRequest } from '../result-release/result-release-protocol.ts';
+import type {
+    ResultCaptureReceipt,
+    ResultReleaseOutcome,
+    ResultReleaseRequest
+} from '../result-release/result-release-protocol.ts';
 import type { CreateRallarBlackBoxTestRuntimeInput } from './create-rallar-black-box-test-runtime.ts';
 import {
     computeReleasedRuntimeResults,
@@ -64,6 +68,7 @@ import {
     toTerminalCleanupReason,
     type ResultCachePolicy
 } from './runtime-command-outcomes.ts';
+import { toCommandResultEventPayload } from './to-command-result-event-payload.ts';
 import { toMergedRuntimeConfig } from './to-merged-runtime-config.ts';
 import { computeCommandDeadlineEpochMs } from './to-runtime-command-values.ts';
 import {
@@ -1154,7 +1159,7 @@ export class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRunt
                 topic: 'rallar.bb.command.result',
                 commandId: result.commandId,
                 severity: result.ok ? 'info' : 'error',
-                payload: result
+                payload: toCommandResultEventPayload(result)
             },
             input,
             true

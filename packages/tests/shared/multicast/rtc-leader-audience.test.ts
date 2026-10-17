@@ -187,6 +187,97 @@ describe('the RTC leg of a group-leader room send', () => {
         }
     });
 
+    it.each(
+        [
+            {
+                director: '09',
+                position: 'a depth-3 leaf',
+                adjacency: 'the accepted tree',
+                legs: ['00->01', '01->04', '02->00', '04->09', '06->02', '12->06']
+            },
+            { director: '00', position: 'the root', adjacency: 'the accepted tree', legs: ['02->00', '06->02', '12->06'] },
+            { director: '02', position: 'an interior node', adjacency: 'the accepted tree', legs: ['06->02', '12->06'] },
+            { director: '09', position: 'a depth-3 leaf', adjacency: 'no accepted adjacency', legs: undefined }
+        ] as const
+    )(
+        'routes a leader shot from a far leaf to a director at $position with $adjacency, and no copy past the director',
+        async ({ director, adjacency, legs: expectedLegs }) => {
+            vi.useRealTimers();
+            const tree: Readonly<Record<string, readonly string[]>> = {
+                '00': ['01', '02', '03'],
+                '01': ['00', '04', '05'],
+                '02': ['00', '06', '07'],
+                '03': ['00', '08'],
+                '04': ['01', '09', '10'],
+                '05': ['01', '11'],
+                '06': ['02', '12', '13'],
+                '07': ['02', '14'],
+                '08': ['03', '15'],
+                '09': ['04'],
+                '10': ['04'],
+                '11': ['05'],
+                '12': ['06'],
+                '13': ['06'],
+                '14': ['07'],
+                '15': ['08']
+            };
+            const sessionIds = Object.keys(tree);
+            const message = newALMulticastMessage(
+                '12',
+                { topicId: 'room.ar-eye-hunter.director', resourceId: 'far-leaf-shot', contextId: room.groupId },
+                room,
+                'room.ar-eye-hunter.director.intent.v1',
+                { kind: 'player-shot-intent', senderId: '12', seq: 1 },
+                { ack: 'group-leader', reliability: 'at-least-once', ttlMs: 30_000, qos: { durability: { algo: 'volatile' } } }
+            );
+            const receipt = Promise.withResolvers<ALDeliverySettlement>();
+            const endpoints = sessionIds.map((sessionId) => {
+                const endpoint = new RtcEndpointFixture(sessionId, tree[sessionId]!, {
+                    outboundSettlements: (settlement) => {
+                        if (settlement.kind === 'acknowledgement' && settlement.msgId === message.id.msgId && settlement.complete) {
+                            receipt.resolve(settlement);
+                        }
+                    }
+                });
+                onTestFinished(() => endpoint.close());
+                return endpoint;
+            });
+            const bySession = new Map(endpoints.map((endpoint) => [endpoint.sessionId, endpoint]));
+            for (const endpoint of endpoints) {
+                endpoint.observe(1, room, sessionIds);
+                endpoint.observeOverlay(1, adjacency === 'the accepted tree' ? tree : undefined);
+                const key = toScopedOverlayId(room);
+                endpoint.groups.set(key, toOriginDirectedSnapshot(endpoint.groups.read(key)!, director, Date.now()));
+                for (const peerId of endpoint.peers.keys()) {
+                    endpoint.connect(bySession.get(peerId)!);
+                }
+            }
+
+            const admitted = await bySession.get('12')!.multicast.enqueueIfAbsent(message);
+
+            expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
+            expect(await receipt.promise).toMatchObject({
+                mode: 'leader',
+                expectedRecipientPeerIds: [director],
+                confirmedRecipientPeerIds: [director],
+                unconfirmedRecipientPeerIds: [],
+                complete: true
+            });
+            const legs = endpoints.flatMap((endpoint) =>
+                endpoint.sent
+                    .filter((copy) => copy.id.msgId === message.id.msgId)
+                    .map((copy) => `${endpoint.sessionId}->${copy.forwarding?.nextHopPeerIds?.[0]}`)
+            );
+            const receivers = new Set(legs.map((leg) => leg.split('->')[1]));
+            if (expectedLegs !== undefined) {
+                expect(legs.toSorted()).toEqual(expectedLegs);
+            }
+            else {
+                expect([...receivers].toSorted()).toEqual(sessionIds.filter((sessionId) => sessionId !== '12').toSorted());
+            }
+        }
+    );
+
     it('confirms a leader receipt from a director that relays to a silent leaf, with one ACK reaching the origin', async () => {
         const message = newALMulticastMessage(
             'origin',
@@ -283,6 +374,33 @@ describe('the RTC leg of a group-leader room send', () => {
                 .toMatchObject({ mode: 'leader', expectedPeerIds: ['d'] });
         }
     );
+
+    it('hands over a leader send whose path edge is down while an off-path child is ready, then sends along the path', async () => {
+        const directed = toOriginDirectedSnapshot(createOriginSnapshot(['a', 'b', 'c', 'd'], 4), 'd', Date.now());
+        const snapshot = { ...directed, causalRevision: { groupRevision: 4, presenceRevision: 4 } };
+        validateAuthoritativeGroupSnapshot(snapshot, ORIGIN_ROOM);
+        const fixture = createRtcOriginOverlayFixture({
+            snapshot,
+            nextHopPeerIds: ['b', 'c'],
+            nextHopsBySessionId: { a: ['b', 'c'], b: ['a'], c: ['a', 'd'], d: ['c'] }
+        });
+        const message = createLeaderSend('room multicast', []);
+        fixture.ready.peerIds = ['b'];
+
+        const result = await fixture.manager.enqueueLegIfAbsent(message, 'hand-over');
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(result.verdict).toMatchObject({ kind: 'unroutable', reason: 'no-route' });
+        expect(Object.values(fixture.channels).flatMap((channel) => channel.sent)).toEqual([]);
+
+        fixture.ready.peerIds = ['b', 'c'];
+        const admitted = await fixture.manager.enqueueLegIfAbsent(message, 'hand-over');
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
+        expect(readSentTargets(fixture.channels.c!)).toEqual([toLeaderFrozenTargets(['d'])]);
+        expect(fixture.channels.b!.sent).toEqual([]);
+    });
 
     it.each(['direct', 'hold'] as const)('keeps %s RTC route waiting when the accepted edge is absent', async (strategy) => {
         const directed = toOriginDirectedSnapshot(createOriginSnapshot(['a', 'b', 'c', 'd'], 4), 'd', Date.now());

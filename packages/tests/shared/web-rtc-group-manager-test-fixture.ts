@@ -147,6 +147,7 @@ export function createOverlayInfo(
         createdByClientId: group.group.ownerPrincipalId,
         createdAtEpochMs: group.group.created.atEpochMs,
         nextHopSessionIds,
+        nextHopsBySessionId: undefined,
         degreeLimit: Math.max(1, nextHopSessionIds.length),
         overlayVersion,
         updatedAtEpochMs: overlayVersion,

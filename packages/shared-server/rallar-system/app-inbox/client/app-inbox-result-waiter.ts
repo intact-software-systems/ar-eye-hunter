@@ -26,7 +26,7 @@ import {
     toUnavailableAppInboxFailure,
     type AppInboxFailure
 } from '../app-inbox-failure.ts';
-import type { NormalizedAppInboxOptions } from '../app-inbox-options.ts';
+import { APP_INBOX_WAIT_SAFETY_TICK_MSECS, type NormalizedAppInboxOptions } from '../app-inbox-options.ts';
 import { toAppInboxTimingDetails } from '../handler/app-inbox-attempt-timing.ts';
 import type { AppInboxReservationClient } from './app-inbox-reservation-client.ts';
 
@@ -275,12 +275,10 @@ export class AppInboxResultWaiter {
         key: Key,
         subscription: ResourceInboxCompletionNotifications.Subscription | undefined
     ): TryWithPolicy {
-        let policy = TryWithPolicy.defaults()
+        const labelled = TryWithPolicy.defaults()
             .label(`app-inbox:${key.topicId}:${key.resourceId}`)
-            .maxElapsedMsecs(this.options.waitMaxElapsedMsecs)
-            .retryIntervalMsecs(this.options.waitRetryIntervalMsecs)
-            .maxRetryIntervalMsecs(this.options.waitMaxRetryIntervalMsecs)
-            .jitterRatio(this.options.waitJitterRatio);
+            .maxElapsedMsecs(this.options.waitMaxElapsedMsecs);
+        let policy = subscription ? this.toSubscribedWaitPolicy(labelled) : this.toPollingWaitPolicy(labelled);
         if (this.options.phaseTiming) {
             policy = policy.onRetry((context) => {
                 recordRallarTiming({
@@ -308,6 +306,23 @@ export class AppInboxResultWaiter {
             });
         }
         return subscription ? policy.waitBeforeRetry((context) => subscription.wait(context.delayMsecs)) : policy;
+    }
+
+    /** A wake ends the wait early; the safety tick, cut to what remains of the budget, is the only timed re-read. */
+    private toSubscribedWaitPolicy(policy: TryWithPolicy): TryWithPolicy {
+        return policy
+            .retryIntervalMsecs(APP_INBOX_WAIT_SAFETY_TICK_MSECS)
+            .maxRetryIntervalMsecs(APP_INBOX_WAIT_SAFETY_TICK_MSECS)
+            .backoffFactor(1)
+            .jitterRatio(0)
+            .fitDelayToElapsedBudget();
+    }
+
+    private toPollingWaitPolicy(policy: TryWithPolicy): TryWithPolicy {
+        return policy
+            .retryIntervalMsecs(this.options.waitRetryIntervalMsecs)
+            .maxRetryIntervalMsecs(this.options.waitMaxRetryIntervalMsecs)
+            .jitterRatio(this.options.waitJitterRatio);
     }
 
     private async timePhase<Result>(

@@ -273,6 +273,7 @@ function acceptedOverlay(group: GroupSnapshot): OverlayInfo {
         createdByClientId: 'server',
         createdAtEpochMs: 1,
         nextHopSessionIds: ['peer-accepted', 'peer-shared'],
+        nextHopsBySessionId: undefined,
         degreeLimit: 2,
         overlayVersion: 1,
         updatedAtEpochMs: 1

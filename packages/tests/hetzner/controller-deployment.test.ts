@@ -390,6 +390,58 @@ describe('Hetzner controller contracts and effects', () => {
         }
     });
 
+    it('deploys the hosted API with timing and AppInbox phase timing logs and keeps them through the rollout env sanitizer', async (context) => {
+        const deployScript = await readFile(
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/02-deploy-controller.sh'),
+            'utf8'
+        );
+        expect(deployScript).toContain('\nRALLAR_TIMING_LOGS=1\n');
+        expect(deployScript).toContain('\nRALLAR_APP_INBOX_PHASE_TIMING=true\n');
+
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-api-env-sanitize-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const envFile = path.join(directory, 'api-v1.env');
+        await writeFile(
+            envFile,
+            [
+                'PORT=8080',
+                'RALLAR_TIMING_LOGS=1',
+                'RALLAR_APP_INBOX_PHASE_TIMING=true',
+                'RALLAR_UNEXPECTED_KEY=dropped',
+                ''
+            ].join('\n')
+        );
+
+        const { stdout } = await runControllerSelfTest(context, {
+            scriptPath: rolloutScriptPath,
+            environment: { RALLAR_API_ENV_FILE: envFile, RALLAR_ROLLOUT_SCRIPT_SELF_TEST: 'normalize-api-environment' }
+        });
+
+        expect(stdout).toContain('normalizedApiEnvironment=true');
+        expect((await readFile(envFile, 'utf8')).trim().split('\n')).toEqual([
+            'PORT=8080',
+            'RALLAR_TIMING_LOGS=1',
+            'RALLAR_APP_INBOX_PHASE_TIMING=true',
+            'RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory'
+        ]);
+    });
+
+    it('turns timing and AppInbox phase timing on through the rollout of an API deployed without them', async (context) => {
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-api-env-timing-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const envFile = path.join(directory, 'api-v1.env');
+        await writeFile(envFile, 'PORT=8080\nRALLAR_TIMING_LOGS=0\n');
+
+        const { stdout } = await runControllerSelfTest(context, {
+            scriptPath: rolloutScriptPath,
+            environment: { RALLAR_API_ENV_FILE: envFile, RALLAR_ROLLOUT_SCRIPT_SELF_TEST: 'write-api-timing-environment' }
+        });
+
+        expect(stdout).toContain('wroteApiTimingEnvironment=true');
+        expect(await readFile(envFile, 'utf8')).toBe('PORT=8080\nRALLAR_TIMING_LOGS=1\nRALLAR_APP_INBOX_PHASE_TIMING=true\n');
+        expect(await readFile(rolloutScriptPath, 'utf8')).toContain('\nwrite_api_timing_environment\n');
+    });
+
     it('installs latest Deno but enforces 2.9.0 as the minimum Hetzner runtime version', async () => {
         const installScript = await readFile(
             path.join(repoRoot, 'scripts/hosted-rallar/controller/01-install-runtime.sh'),

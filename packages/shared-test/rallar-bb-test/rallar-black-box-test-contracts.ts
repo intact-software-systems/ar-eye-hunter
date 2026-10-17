@@ -684,7 +684,8 @@ export type RallarBlackBoxTestDirectorStatusCommand =
     & RallarBlackBoxTestCommandBase<'director.status'>
     & RallarBlackBoxTestRoomFields
     & Readonly<{
-        refresh?: boolean;
+        /** `true` re-reads the room over REST first; `when-absent` only while the page holds no snapshot of the room. */
+        refresh?: boolean | 'when-absent';
         now?: number;
     }>;
 
@@ -1036,12 +1037,10 @@ export interface RallarBlackBoxTestParallelResultValue {
 }
 
 export interface RallarBlackBoxTestWaitResultValue {
-    readonly commandId: string;
     readonly matched: boolean;
     readonly absent?: true;
     readonly timedOut?: boolean;
     readonly cancelled?: boolean;
-    readonly match: RallarBlackBoxTestWaitMatch;
     readonly event?: RallarBlackBoxTestEvent;
 }
 

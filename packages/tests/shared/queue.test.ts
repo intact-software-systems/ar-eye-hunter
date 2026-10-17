@@ -25,7 +25,6 @@ import {
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, type ResourceInboxFairnessTelemetry } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { EitherCollectors } from '@shared/resilience/Either.ts';
-import { RateLimiter } from '@shared/resilience/Resilience.ts';
 import {
     afterEach,
     describe,
@@ -77,6 +76,7 @@ describe('enqueue and dequeue', () => {
         const dequeued = await createDefaultResourceInboxDequeuer<string>({
             repository: repository,
             typesToDequeue: () => new Set(['APP_INBOX']),
+            newLaneClaimOrder: 'queue',
             maxToReserve: () => 1,
             maxNumToDequeue: 1,
             resilience: toTestResilience(),
@@ -153,6 +153,7 @@ describe('enqueue and dequeue', () => {
             createDefaultResourceInboxDequeuer<string>({
                 repository: repository,
                 typesToDequeue: () => new Set(['APP_INBOX']),
+                newLaneClaimOrder: 'queue',
                 maxToReserve: () => 1,
                 maxNumToDequeue: 1,
                 resilience: toTestResilience(),
@@ -233,6 +234,7 @@ describe('enqueue and dequeue', () => {
         const dequeued = await createDefaultResourceInboxDequeuer<string>({
             repository: queue,
             typesToDequeue: () => types,
+            newLaneClaimOrder: 'queue',
             maxToReserve: () => 1,
             maxNumToDequeue: 100,
             resilience: resilienceDto
@@ -272,6 +274,7 @@ describe('released ResourceInbox outcomes', () => {
             const results = await createDefaultResourceInboxDequeuer<string>({
                 repository: queue,
                 typesToDequeue: () => new Set(['APP_INBOX']),
+                newLaneClaimOrder: 'queue',
                 maxToReserve: () => 1,
                 maxNumToDequeue: 3,
                 resilience: toTestResilience(),
@@ -321,15 +324,16 @@ describe('handler-finalized ResourceInbox success', () => {
         const completion = completionNotifications.subscribe(enqueued.key);
         const announced: string[] = [];
         const publish = completionNotifications.publish.bind(completionNotifications);
-        completionNotifications.publish = (key) => {
+        completionNotifications.publish = (key, awaitability) => {
             announced.push(key.resourceId);
-            publish(key);
+            publish(key, awaitability);
         };
         let committed: ResourceEntry | undefined;
 
         const results = await createDefaultResourceInboxDequeuer<ResourceInboxHandlerFinalizedSuccess>({
             repository: queue,
             typesToDequeue: () => new Set(['APP_INBOX']),
+            newLaneClaimOrder: 'queue',
             maxToReserve: () => 1,
             maxNumToDequeue: 1,
             resilience: toTestResilience(),
@@ -338,7 +342,7 @@ describe('handler-finalized ResourceInbox success', () => {
             .dequeueForCompute(async (_key, attempt) => {
                 committed = { ...attempt.entry, status: EntityStatus.COMPLETED };
                 expect(await queue.replaceIfObserved(attempt.entry, committed)).not.toBeNull();
-                completionNotifications.publish(committed.key);
+                completionNotifications.publish(committed.key, 'awaitable');
                 return new ResourceInboxHandlerFinalizedSuccess(committed);
             });
 
@@ -359,12 +363,10 @@ describe('resource inbox retry and fairness lanes', () => {
         ] as const
     )('rejects a work advertisement with an invalid $field before checking queue state', ({ field, value, message }) => {
         const valid = {
-            checkTimeout: RateLimiter.init(60_000, 1),
-            checkFairness: RateLimiter.init(60_000, 1),
-            checkFinalization: RateLimiter.init(60_000, 1),
             maxAttempts: 20,
             finalizationStaleAfterMs: 300_000,
-            reservationLeaseMs: 60_000
+            reservationLeaseMs: 60_000,
+            staleDueThresholdMs: 30_000
         };
 
         expect(() => toResourceInboxWorkAdvertisementOptions({ ...valid, [field]: value })).toThrow(message);
@@ -382,7 +384,6 @@ describe('resource inbox retry and fairness lanes', () => {
             maxRate: 10,
             concurrencyIncreaseStep: 1,
             concurrencyReduceStep: 1,
-            maxFairnessSelectionsInWindow: ResourceInboxResilience.MAX_NUM_DEQUEUE_IN_WINDOW,
             retryPolicy: retryPolicy
         });
 
@@ -425,6 +426,7 @@ describe('resource inbox retry and fairness lanes', () => {
         await createDefaultResourceInboxDequeuer<string>({
             repository: repository,
             typesToDequeue: () => new Set(['APP_INBOX']),
+            newLaneClaimOrder: 'queue',
             maxToReserve: () => 1,
             maxNumToDequeue: 10,
             resilience: toTestResilience(retryPolicy)
@@ -452,6 +454,7 @@ describe('resource inbox retry and fairness lanes', () => {
         await createDefaultResourceInboxDequeuer<string>({
             repository: repository,
             typesToDequeue: () => types,
+            newLaneClaimOrder: 'queue',
             maxToReserve: () => 1,
             maxNumToDequeue: 10,
             resilience: toTestResilience()
@@ -497,6 +500,7 @@ describe('resource inbox retry and fairness lanes', () => {
         await createDefaultResourceInboxDequeuer<string>({
             repository: repository,
             typesToDequeue: () => new Set(['APP_INBOX']),
+            newLaneClaimOrder: 'queue',
             maxToReserve: () => 1,
             maxNumToDequeue: 10,
             resilience: toTestResilience(),
@@ -540,6 +544,7 @@ describe('resource inbox retry and fairness lanes', () => {
         await createDefaultResourceInboxDequeuer<string>({
             repository: repository,
             typesToDequeue: () => new Set(['APP_INBOX']),
+            newLaneClaimOrder: 'queue',
             maxToReserve: () => 1,
             maxNumToDequeue: 10,
             resilience: toTestResilience(),
@@ -586,6 +591,7 @@ describe('resource inbox retry and fairness lanes', () => {
         const dequeued = await createDefaultResourceInboxDequeuer<string>({
             repository: repository,
             typesToDequeue: () => new Set(['APP_INBOX']),
+            newLaneClaimOrder: 'queue',
             maxToReserve: () => 1,
             maxNumToDequeue: 10,
             resilience: toTestResilience(),
@@ -609,47 +615,6 @@ describe('resource inbox retry and fairness lanes', () => {
             type: 'APP_INBOX',
             lane: Reservator.FAIRNESS
         });
-    });
-
-    it('rate-limits the fairness selector independently from timeout recovery', async () => {
-        const resilience = toTestResilience();
-        for (let index = 0; index < ResourceInboxResilience.MAX_NUM_DEQUEUE_IN_WINDOW; index += 1) {
-            expect(resilience.checkFairness.lockEntryRateLimiter.allow()).toBe(true);
-        }
-        let fairnessSelections = 0;
-        const fairnessSelector = vi.fn(async () => {
-            fairnessSelections += 1;
-            return new Map();
-        });
-        const repository = createDequeueRepository({
-            reserveOverdueRetryEntries: fairnessSelector
-        });
-
-        await createDefaultResourceInboxDequeuer<string>({
-            repository: repository,
-            typesToDequeue: () => new Set(['APP_INBOX']),
-            maxToReserve: () => 1,
-            maxNumToDequeue: 10,
-            resilience: resilience
-        }).dequeueForCompute(async () => 'done');
-
-        expect(fairnessSelections).toBe(0);
-        expect(resilience.checkReserveTimeouts.lockEntryRateLimiter.isAllowed()).toBe(true);
-    });
-
-    it('accepts an app-specific fairness selection rate limit', () => {
-        const duration = Temporal.Duration.from({ seconds: 10 });
-        const resilience = ResourceInboxResilience.createDefault({
-            circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-            initialRate: 1,
-            maxRate: 10,
-            concurrencyIncreaseStep: 1,
-            concurrencyReduceStep: 1,
-            maxFairnessSelectionsInWindow: 1
-        });
-
-        expect(resilience.checkFairness.lockEntryRateLimiter.allow()).toBe(true);
-        expect(resilience.checkFairness.lockEntryRateLimiter.allow()).toBe(false);
     });
 });
 
@@ -705,7 +670,6 @@ function toTestResilience(
         maxRate: 10,
         concurrencyIncreaseStep: 1,
         concurrencyReduceStep: 1,
-        maxFairnessSelectionsInWindow: ResourceInboxResilience.MAX_NUM_DEQUEUE_IN_WINDOW,
         retryPolicy: retryPolicy
     });
 }

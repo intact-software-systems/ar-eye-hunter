@@ -44,7 +44,7 @@ describe('OutboxQueueReader', () => {
 
     it('does not reserve APP_INBOX work', async () => {
         const queue = new InMemoryQueueBox();
-        const inbox = new InboxQueueReader(queue);
+        const inbox = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
         const outbox = new OutboxQueueReader(queue);
         const inboxMessages: ALMessage[] = [];
         const outboxMessages: ALMessage[] = [];
@@ -78,7 +78,7 @@ describe('OutboxQueueReader', () => {
 
     it('does not reserve APP_OUTBOX work from the inbox reader', async () => {
         const queue = new InMemoryQueueBox();
-        const inbox = new InboxQueueReader(queue);
+        const inbox = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
         const outbox = new OutboxQueueReader(queue);
         const inboxMessages: ALMessage[] = [];
         const outboxMessages: ALMessage[] = [];
@@ -108,6 +108,36 @@ describe('OutboxQueueReader', () => {
         );
 
         expect(outboxMessages).toHaveLength(1);
+    });
+
+    it('tells its dequeue-pass observer about the probe, the pass and each claimed handler', async () => {
+        const queue = new InMemoryQueueBox();
+        const outbox = new OutboxQueueReader(queue);
+        const observed: string[] = [];
+        outbox.onDequeuePassDo({
+            onProbeStarted: () => observed.push('probe-started'),
+            onProbeFinished: (advertisedLanes) => observed.push(`probe-finished:${advertisedLanes.NEW}`),
+            onPassStarted: () => observed.push('pass-started'),
+            onHandlerStarted: (attempt) => observed.push(`handler-started:${attempt.entry.key.resourceId}`),
+            onHandlerFinished: (attempt) => observed.push(`handler-finished:${attempt.entry.key.resourceId}`),
+            onPassFinished: () => observed.push('pass-finished')
+        });
+        outbox.onOutboxMessageDo('observed.work', { onMessage: async () => {} });
+        const message = createAppMessage('observed.work', 'outbox');
+        await outbox.enqueueIfAbsent(message);
+
+        const advertisedLanes = await outbox.readWorkAdvertisement(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, createResilience());
+        await outbox.dequeueOutbox(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, createResilience(), advertisedLanes);
+
+        expect(observed).toEqual([
+            'probe-started',
+            'probe-finished:true',
+            'pass-started',
+            `handler-started:${message.route.resourceId}`,
+            `handler-finished:${message.route.resourceId}`,
+            'pass-finished'
+        ]);
+        expect(() => outbox.onDequeuePassDo({} as never)).toThrow(/already installed/u);
     });
 
     it('resolves with the number of entries it claimed, whether their handlers succeeded, failed or were not ready', async () => {

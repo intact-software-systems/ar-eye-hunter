@@ -1,3 +1,4 @@
+import { recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import {
     decodeBarrierArrival,
     type ControlBarrierEnvelope,
@@ -34,6 +35,8 @@ export interface ControlRecipeBarrierDeliveryRead {
 
 export interface ControlRecipeBarrierDelivery {
     readonly barriers: readonly ControlRecipeBarrierState[];
+    /** The barriers this delivery resolved; every later delivery reuses their resolution. */
+    readonly resolved: readonly ControlRecipeBarrierState[];
     readonly envelopes: readonly ControlBarrierEnvelope[];
 }
 
@@ -59,24 +62,58 @@ export function computeControlRecipeBarrierArrival(
         return barrier;
     }
     const issue = resolveArrivalIssue(barrier, arrival, agentId);
-    const arrivedAgentIds = [...barrier.arrivedAgentIds, agentId];
+    const arrived = {
+        ...barrier,
+        arrivedAgentIds: [...barrier.arrivedAgentIds, agentId],
+        lastArrivedAtEpochMs: read.nowEpochMs
+    };
     if (barrier.resolution === undefined || issue === undefined) {
-        return { ...barrier, arrivedAgentIds, issue: barrier.issue ?? issue };
+        return { ...arrived, issue: barrier.issue ?? issue };
     }
-    return { ...barrier, arrivedAgentIds, lateArrivalIssues: { ...barrier.lateArrivalIssues, [agentId]: issue } };
+    return { ...arrived, lateArrivalIssues: { ...barrier.lateArrivalIssues, [agentId]: issue } };
 }
 
 /** Every barrier with the resolution now due, and the envelopes this agent has not heard on its current connection. */
 export function computeControlRecipeBarrierDelivery(
     read: ControlRecipeBarrierDeliveryRead
 ): ControlRecipeBarrierDelivery {
-    const delivered = [...read.run.barriers.values()].map((barrier) =>
-        toDeliveredBarrier({ ...barrier, resolution: computeControlRecipeBarrierResolution(barrier, read) }, read.agent)
-    );
+    const resolved: ControlRecipeBarrierState[] = [];
+    const delivered = [...read.run.barriers.values()].map((barrier) => {
+        const resolution = computeControlRecipeBarrierResolution(barrier, read);
+        if (resolution === barrier.resolution) {
+            return toDeliveredBarrier(barrier, read.agent);
+        }
+        resolved.push({ ...barrier, resolution });
+        return toDeliveredBarrier({ ...barrier, resolution }, read.agent);
+    });
     return {
         barriers: delivered.map((entry) => entry.barrier),
+        resolved,
         envelopes: delivered.flatMap((entry) => entry.envelope === undefined ? [] : [entry.envelope])
     };
+}
+
+/** One timing line per resolved barrier: how long after the last arrival the server resolved it. */
+export function recordControlRecipeBarrierResolutionTiming(
+    sink: RallarTimingSink | undefined,
+    barrier: ControlRecipeBarrierState,
+    nowEpochMs: number
+): void {
+    recordRallarTiming({
+        sink,
+        event: {
+            component: 'rallar-black-box-control',
+            operation: 'barrier.resolution',
+            details: {
+                barrierId: barrier.barrierId,
+                outcome: barrier.resolution?.outcome,
+                arrivals: barrier.arrivedAgentIds.length,
+                participants: barrier.participants.length
+            }
+        },
+        status: barrier.resolution?.outcome === 'released' ? 'ok' : 'error',
+        durationMs: nowEpochMs - barrier.lastArrivedAtEpochMs
+    });
 }
 
 function computeControlRecipeBarrierResolution(
@@ -86,9 +123,8 @@ function computeControlRecipeBarrierResolution(
     if (barrier.resolution !== undefined) {
         return barrier.resolution;
     }
-    const missing = barrier.participants.filter((participant) =>
-        !barrier.arrivedAgentIds.includes(participant.agentId)
-    );
+    const arrived = new Set(barrier.arrivedAgentIds);
+    const missing = barrier.participants.filter((participant) => !arrived.has(participant.agentId));
     if (barrier.issue === undefined && missing.length === 0) {
         return { outcome: 'released', arrivedAgentIds: barrier.arrivedAgentIds };
     }
@@ -120,6 +156,7 @@ function toOpenedBarrier(
         participants: participants.right ?? [],
         openedAtEpochMs: read.nowEpochMs,
         arrivedAgentIds: [],
+        lastArrivedAtEpochMs: read.nowEpochMs,
         issue: participants.left,
         resolution: undefined,
         lateArrivalIssues: {},

@@ -819,6 +819,20 @@ created, including preparation, SSH, browser, or service failures that happen
 before distributed artifacts exist. No AI analysis is required to distinguish
 those failures.
 
+For the `run` and `full` phases the same artifact also carries `api-journal.log`
+and `control-journal.log`: the redacted raw journals of `rallar-api-v1.service`
+and `rallar-black-box-control.service` since the run phase began on the
+controller, each capped at its last 50 000 lines. The remote run phase records
+its start and exports both through `17-export-run-journals.sh` when it exits,
+whatever the recipe's outcome. The agents disconnect after the recipe reports
+its terminal state, so the export re-reads the API journal every 5 s until every
+WS connect it logged since the run start has its disconnect, for at most 120 s,
+and reports the balance it exported with. Connects and disconnects count by
+distinct request id, since a retried or rejected item logs once per attempt. The API deploys with `RALLAR_TIMING_LOGS=1` and
+`RALLAR_APP_INBOX_PHASE_TIMING=true`, so a hosted failure can be attributed on
+the server side; with both on, a 50-agent run writes about 9 000 API journal
+lines.
+
 If `recipeStarted` is `true`, continue with `analysis/fix-proposal.md` for a
 failed recipe or `analysis/performance.md` for a passed run. If it is `false`,
 the missing distributed artifact is expected; use the operation report rather
@@ -859,7 +873,26 @@ RALLAR_BLACKBOX_HOST=blackbox.rallar.intactss.com
 RALLAR_API_CORS_ORIGINS=https://blackbox.rallar.intactss.com,https://ar-eye-hunter.pages.dev,https://relic-hunters-v1.intact-software-systems.workers.dev
 RALLAR_BLACK_BOX_ALLOWED_ORIGINS=https://blackbox.rallar.intactss.com
 RALLAR_CONTROL_HTTP_URL=https://control.rallar.intactss.com
+RALLAR_RETENTION_MAX_RUNS=5
 ```
+
+`RALLAR_RETENTION_MAX_RUNS` is how many control runs the control server keeps in
+its heap and in every snapshot write; older runs, their distributed runs, fleet
+reports and artifact JSONL files leave the controller at the next write. Five
+keeps the control service's memory near one large run: a 50-agent run's evidence
+is tens of megabytes, and every retained run is serialized again on each
+snapshot write. The distributed-recipe workflow exports each run's artifacts
+when the run ends, so the controller is not the archive; raise the value only
+when you need an older run's controller-side files.
+
+Once a distributed run with group assertions settles (terminal, with its rollup
+evaluated), the control server also compacts its start results in memory:
+child payloads are omitted, as for any ordinary result. This applies to the
+scale manifests `19/20/21-alm-conformance-*.json` too, because their family is
+`alm-scale`; only family `alm-conformance` keeps its start results whole. After
+settlement `control-run.json`, the observation drill-downs and the fleet report
+see compacted start results, and the whole rows remain only in the run's
+`results.jsonl`.
 
 Override any default by prefixing the deploy command:
 
@@ -960,4 +993,55 @@ systemctl status rallar-black-box-control --no-pager
 systemctl status caddy --no-pager
 journalctl -u rallar-api-v1 -n 80 --no-pager
 journalctl -u rallar-black-box-control -n 80 --no-pager
+```
+
+## Control Server Memory
+
+The control server keeps its retained runs in the heap and writes them all to
+`/var/lib/rallar-black-box-control/control-snapshot.json` at most once every ten
+seconds on the hosted controller (`RALLAR_BLACK_BOX_SNAPSHOT_FLUSH_INTERVAL_MS=10000`
+in the deploy env; two seconds by default elsewhere), and at once when a
+distributed run changes state or the service stops. A crash therefore loses at
+most ten seconds of restorable state, which a test harness can afford; each
+write serializes tens of megabytes on the VM's slow CPU, so fewer writes leave
+more of the event loop to the agents. The write is streamed in one-megabyte
+slices, and agent frames, barrier resolutions among them, are handled between
+slices. The journal shows each write and each barrier resolution as a
+`rallar.timing` line (`operation` `snapshot.flush` with `bytes`, `serializeMs`
+and `writeMs`; `barrier.resolution` with the milliseconds from the last arrival
+to the resolution):
+
+````sh
+journalctl -u rallar-black-box-control --no-pager | grep '"rallar.timing"' | tail -40
+``` The unit runs without
+`--v8-flags` or a systemd `MemoryMax`, so V8 sizes its heap from the VM's RAM.
+When the control service stops answering (502 to the operator and to the agents'
+control sockets), confirm whether it ran out of memory before changing code:
+
+```sh
+journalctl -u rallar-black-box-control --no-pager | grep -iE 'heap limit|out of memory'
+dmesg -T | grep -i 'killed process'
+systemctl show -p NRestarts rallar-black-box-control
+free -m
+nproc
+ls -l /var/lib/rallar-black-box-control/control-snapshot.json
+````
+
+- `Reached heap limit` or `JavaScript heap out of memory` in the journal: V8's
+  own limit stopped the process.
+- `Killed process <pid> (deno)` in `dmesg`: the kernel OOM killer chose it; API-v1
+  and Caddy share the VM, so check which process it killed.
+- A rising `NRestarts`: systemd restarted the service (`Restart=always`,
+  `RestartSec=5`); each restart restores the snapshot and forgets open barriers.
+- A snapshot file of tens of megabytes: many retained runs or large start
+  results; see `RALLAR_RETENTION_MAX_RUNS` above.
+
+Record the VM here when it is provisioned or resized, so a memory finding can be
+read against it:
+
+```text
+Server type:  <fill in, for example the Hetzner type>
+vCPU:         <fill in from nproc>
+RAM (MiB):    <fill in from free -m, total>
+Recorded on:  <date>
 ```

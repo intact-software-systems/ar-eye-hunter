@@ -28,6 +28,25 @@ export function trimControlRunEvidence(
     trimArrayToTail(run.heartbeats, bounds.heartbeats);
 }
 
+/** Empties a run's evidence in place and zeroes each agent's counters; agents and their connections stay. A completed run becomes live again, without its file. */
+export function clearControlRunEvidence(run: ControlRunState): void {
+    run.completion = undefined;
+    run.commands.clear();
+    run.results.clear();
+    run.events = [];
+    run.stats = [];
+    run.reports = [];
+    run.reportKeys.clear();
+    run.heartbeats = [];
+    for (const agent of run.agents.values()) {
+        agent.receivedResultCount = 0;
+        agent.receivedEventCount = 0;
+        agent.completedCommandIds.clear();
+        agent.resumeCompletedCommandIds.clear();
+        agent.commandEnqueueTimestamps = [];
+    }
+}
+
 export function trimControlReportDedupeKeys(run: ControlRunState): void {
     for (const key of run.reportKeys) {
         if (run.reportKeys.size <= REPORT_DEDUPE_KEY_LIMIT) {

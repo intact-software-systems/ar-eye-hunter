@@ -185,7 +185,7 @@ export function createLiveRtcFormationOperations(): LiveRtcFormationOperations {
         async readiness(input) {
             const timeoutMs = input.timeoutMs ?? READINESS_TIMEOUT_MS;
             const startedAtMs = performance.now();
-            await input.agent.refreshRoom({ timeoutMs });
+            await input.agent.refreshRoom({ refresh: 'always', timeoutMs });
             const remainingTimeoutMs = Math.max(
                 0,
                 timeoutMs - (performance.now() - startedAtMs)

@@ -2526,6 +2526,36 @@ moved or changed test.
       }
     },
     {
+      "id": "shared-web-state-delta-coalesced-batch-apply",
+      "domain": "Shared-web coalesced presence batch delta application",
+      "owner": "Shared Web maintainers",
+      "summary": "A coalesced presence batch applies through its first delta, whose merged slice brings the cache to the resulting revision; the sibling deltas at that revision are already applied. Executable assertion: “applies a coalesced batch through its first delta and takes the sibling deltas as applied”.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#applies a coalesced batch through its first delta and takes the sibling deltas as applied",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Group-state floored HTTP read port",
+        "observableEffect": "The first delta materializes canonical state and the sibling deltas resolve as no-ops without a fetch.",
+        "requiredConstraint": "Recovery fetch remains unused for every delta of a batch the cache applied through its first delta.",
+        "failureRationale": "A refresh per sibling delta multiplies snapshot reads by the batch size at every recipient."
+      }
+    },
+    {
+      "id": "shared-web-state-delta-coalesced-batch-stale-floor",
+      "domain": "Shared-web coalesced presence batch stale-cache recovery",
+      "owner": "Shared Web maintainers",
+      "summary": "A cache behind a coalesced batch's predecessor pulls once at the batch's resulting floor, after which the sibling deltas are already applied. Executable assertion: “pulls at the floor for a coalesced batch when the cache is behind its predecessor”.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#pulls at the floor for a coalesced batch when the cache is behind its predecessor",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Group-state floored HTTP read port",
+        "observableEffect": "One request at the resulting floor returns canonical state and the sibling deltas resolve as no-ops.",
+        "requiredConstraint": "Exactly one floored recovery fetch occurs for the whole batch.",
+        "failureRationale": "Applying crosses an unproven predecessor; a fetch per sibling delta repeats the same read."
+      }
+    },
+    {
       "id": "shared-web-state-delta-predecessor-apply",
       "domain": "Shared-web predecessor-matched delta application",
       "owner": "Shared Web maintainers",
@@ -4361,6 +4391,141 @@ moved or changed test.
         "observableEffect": "Database.begin opens a database transaction; observeCommittedTopology updates or removes the in-memory committed topology through the topology service. Neither effect may occur for incomparable work that has no accepted prepared write.",
         "requiredConstraint": "An incomparable-work retry exits before any Database.begin invocation and emits no observeCommittedTopology call during that queue attempt.",
         "failureRationale": "The retry exception and unchanged durable rows do not exclude an unnecessary empty or rolled-back transaction, or an in-memory observation emitted before rejection. Either invocation would cross a commit boundary without an accepted prepared write."
+      }
+    },
+    {
+      "id": "resource-inbox-dequeue-unexpected-failure-logged-once-with-key",
+      "domain": "Resource inbox dequeue failure reporting",
+      "owner": "Rallar shared maintainers",
+      "summary": "An unexpected computer failure on a dequeued entry is reported once, naming the entry's topic, resource and context ids; a committed typed rejection keeps its own report (the ticket-rejection log contract).",
+      "semanticCoverage": "packages/tests/shared/queuebox/resource-inbox-dequeue-failure-log.test.ts#logs an unexpected handler failure once with the key identity",
+      "coverageRelation": "The test drives the real default resource inbox dequeuer over an in-memory queue, throws a plain error from the computer on the first attempt and captures the console error adapter.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "DequeueController error log and its console error adapter",
+        "observableEffect": "One unexpected failure produces one operator-visible report that names the dequeued key by its identity fields.",
+        "requiredConstraint": "Report each unexpected computer failure exactly once with the key rendered by its ids, never as [object Object].",
+        "failureRationale": "A repeated report doubles operator alerts and an anonymous key hides which entry failed."
+      }
+    },
+    {
+      "id": "resource-inbox-dequeue-typed-rejection-logged-once-as-value",
+      "domain": "Resource inbox dequeue failure reporting",
+      "owner": "Rallar shared maintainers",
+      "summary": "A handler-finalized typed rejection reaches the dequeue batch as a value and is reported once, naming the key and the rejection code, with the cause chain as data and no stack frames.",
+      "semanticCoverage": "packages/tests/shared/queuebox/resource-inbox-dequeue-failure-log.test.ts#logs a handler-finalized typed rejection once as a value with its cause chain and no stack frames",
+      "coverageRelation": "The test drives the real default resource inbox dequeuer over an in-memory queue, finalizes the entry as FAILED inside the handler and returns the typed rejection, and captures the console error adapter.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "DequeueController error log and its console error adapter",
+        "observableEffect": "One typed rejection produces one operator-visible report carrying the key, the rejection code and the cause chain's summary.",
+        "requiredConstraint": "Report each finalized typed rejection exactly once, as a value, without stack frames and without a failure entry.",
+        "failureRationale": "The FAILED status and the release record do not reveal a duplicate or missing report; a second report doubles operator alerts for an expected outcome and a missing one hides why the command failed."
+      }
+    },
+    {
+      "id": "dequeue-lane-short-round-ends-the-lane",
+      "domain": "QueueBox dequeue lane budgets",
+      "owner": "Rallar shared maintainers",
+      "summary": "A lane ends after a reservation round that claimed fewer rows than it asked for, so a pass never issues an empty reservation round trip.",
+      "semanticCoverage": "packages/tests/shared/dequeue-lane-budgets.test.ts#ends a lane after a round that claimed fewer rows than it asked for, so the pass issues no empty reservation",
+      "coverageRelation": "The test drives the real dequeue controller with a scalar budget of eight and a per-round reservation of four whose store returns one row, and counts the reservation port's calls.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "DequeueController NEW-lane reservation callback (the storage reservation round trip)",
+        "observableEffect": "Each reservation call is one storage round trip on the single executor; an empty round costs a statement and returns nothing.",
+        "requiredConstraint": "A pass whose first round claims fewer rows than requested issues exactly one reservation call for that lane.",
+        "failureRationale": "The claimed keys are the same with or without the extra empty round, so only the call count shows the wasted round trip this budget rule removes."
+      }
+    },
+    {
+      "id": "rtc-receiver-heartbeat-answered-without-al-admission",
+      "domain": "RTC data-channel receive admission",
+      "owner": "Rallar shared maintainers",
+      "summary": "A heartbeat ping on the data channel is answered with a pong and never decoded or admitted as an AL message, so it produces no warning and no admission event.",
+      "semanticCoverage": "packages/tests/shared/services/web-rtc-rx-streamer-admission.test.ts#answers a heartbeat ping without admitting it as an AL message",
+      "coverageRelation": "The test delivers a real heartbeat payload through the recording data channel to the real receive streamer and captures the console warn adapter and the inbound diagnostics sink.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "WebRtcRxStreamerService console warn adapter and inbound diagnostics sink",
+        "observableEffect": "A heartbeat yields exactly one pong and zero AL admissions, warnings or diagnostics.",
+        "requiredConstraint": "Never admit, warn about or record a heartbeat value as an AL message.",
+        "failureRationale": "Each heartbeat admitted as an AL message costs a full decode and authorization pass per edge every five seconds and floods the console."
+      }
+    },
+    {
+      "id": "rtc-receiver-undecodable-value-recorded-once",
+      "domain": "RTC data-channel receive admission",
+      "owner": "Rallar shared maintainers",
+      "summary": "A data-channel value that is no AL envelope is recorded to the inbound diagnostics sink as one undecoded rejection with its code instead of a console warning.",
+      "semanticCoverage": "packages/tests/shared/services/web-rtc-rx-streamer-admission.test.ts#records a value that is no AL envelope as one undecoded rejection instead of warning about it",
+      "coverageRelation": "The test delivers a non-envelope object through the recording data channel and captures the console warn adapter and the inbound diagnostics sink.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "WebRtcRxStreamerService console warn adapter and inbound diagnostics sink",
+        "observableEffect": "One undecodable value produces exactly one undecoded-rejection diagnostic and no warning.",
+        "requiredConstraint": "Record each undecodable value once through the sink; never warn per message.",
+        "failureRationale": "A console warning per rejected message is invisible to the harness and costs a console write on every malformed frame."
+      }
+    },
+    {
+      "id": "rtc-receiver-initial-rejection-recorded-not-warned",
+      "domain": "RTC data-channel receive admission",
+      "owner": "Rallar shared maintainers",
+      "summary": "An AL message the initial admission rejects is recorded by the inbound runtime's admission-outcome diagnostic and produces no console warning.",
+      "semanticCoverage": "packages/tests/shared/services/web-rtc-rx-streamer-admission.test.ts#records an AL message rejected on its initial admission instead of warning about it",
+      "coverageRelation": "The test delivers a unicast envelope addressed to another peer through the recording data channel and captures the console warn adapter and the inbound diagnostics sink.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "WebRtcRxStreamerService console warn adapter and inbound diagnostics sink",
+        "observableEffect": "One rejected admission produces one admission-outcome diagnostic naming the rejection and no warning.",
+        "requiredConstraint": "Report a rejected initial admission once through the sink; never warn per message.",
+        "failureRationale": "Warnings per rejected message hide in the console and are not counted by any harness evidence."
+      }
+    },
+    {
+      "id": "rtc-receiver-refresh-rejection-recorded-not-warned",
+      "domain": "RTC data-channel receive admission",
+      "owner": "Rallar shared maintainers",
+      "summary": "An AL message rejected on its re-admission after an authority refresh is recorded by the admission-outcome diagnostic and produces no console warning.",
+      "semanticCoverage": "packages/tests/shared/services/web-rtc-rx-streamer-admission.test.ts#records an AL message rejected after authority refresh instead of warning about it",
+      "coverageRelation": "The test lets the first admission pass as pending, refreshes authority, delivers the unicast envelope addressed to another peer and captures the console warn adapter and the inbound diagnostics sink.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "WebRtcRxStreamerService console warn adapter and inbound diagnostics sink",
+        "observableEffect": "One rejected re-admission produces one admission-outcome diagnostic naming the rejection and no warning.",
+        "requiredConstraint": "Report a rejected re-admission once through the sink; never warn per message.",
+        "failureRationale": "The after-refresh path previously warned separately; a silent or duplicated report hides authority refresh failures."
+      }
+    },
+    {
+      "id": "app-inbox-completion-notice-not-taken-back-by-its-publisher",
+      "domain": "AppInbox completion relay",
+      "owner": "Rallar shared maintainers",
+      "summary": "A completion relayed over the pub/sub bridge wakes the waiters of the other instance and is never accepted again by the instance that published it.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.test.ts#wakes a waiter on the other instance and never takes its own notice back",
+      "coverageRelation": "The test connects two completion relay owners through an in-memory notice transport, publishes from the handler side and spies on each side's local acceptance.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "AppInbox completion notice subscriber's local acceptance callback",
+        "observableEffect": "The waiter on the other instance wakes; the publishing instance's own acceptance is not invoked for its notice.",
+        "requiredConstraint": "The publisher's acceptance callback is invoked zero times for a notice it published.",
+        "failureRationale": "A publisher that takes its own notice back wakes its local waiters twice and, if it relayed again, would loop notices between instances; the woken waiter alone cannot show it."
+      }
+    },
+    {
+      "id": "app-inbox-completion-notice-publication-failure-reported-once",
+      "domain": "AppInbox completion relay",
+      "owner": "Rallar shared maintainers",
+      "summary": "A completion notice whose publication fails is dropped with one warning, never thrown into the committing handler; the waiter keeps its safety tick.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.test.ts#drops a notice whose publication fails, leaving the waiter its safety tick",
+      "coverageRelation": "The test builds the relay over a transport whose publish rejects, calls the relay and captures the console warning adapter.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "AppInbox completion relay's console warning adapter",
+        "observableEffect": "One failed publication produces one operator-visible warning and no exception in the caller.",
+        "requiredConstraint": "Report each failed completion publication exactly once and never throw from the relay call.",
+        "failureRationale": "A missing warning hides a broken pub/sub bridge (remote waiters silently fall back to the tick); repeated warnings flood the log under a sustained outage."
       }
     }
   ],
@@ -7347,6 +7512,28 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#does not amplify a lease-only group authority renewal to RTC or state-cache listeners"
     },
     {
+      "id": "test-structure-coupling-1b3d4d2848352f1b",
+      "path": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-state-delta-coalesced-batch-stale-floor",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The exactly-one recovery fetch assertion directly proves that a stale cache pulls once at the batch's resulting floor and then takes the sibling deltas as applied.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#pulls at the floor for a coalesced batch when the cache is behind its predecessor"
+    },
+    {
+      "id": "test-structure-coupling-46eb6ae3b5c09fa2",
+      "path": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-state-delta-coalesced-batch-apply",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The recovery-fetch absence assertion directly proves that a coalesced batch applies through its first delta without a snapshot refresh for the sibling deltas.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#applies a coalesced batch through its first delta and takes the sibling deltas as applied"
+    },
+    {
       "id": "test-structure-coupling-505ac7ff6ccdc8a1",
       "path": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts",
       "kind": "mock-invocation-count-or-order",
@@ -9699,6 +9886,105 @@ moved or changed test.
       "owner": "Rallar operations maintainers",
       "rationale": "Reads the materializer's repeated output and record files to prove that a second materialization of the same source is byte-identical, the operator's reproducibility contract; the isolated group scope is asserted independently from the manifest content.",
       "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#materializes a deterministic isolated group throughout executable manifest data"
+    },
+    {
+      "id": "test-structure-coupling-c3cb61e482d2cdb2",
+      "path": "packages/tests/shared/queuebox/resource-inbox-dequeue-failure-log.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "resource-inbox-dequeue-unexpected-failure-logged-once-with-key",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The single captured console error proves an unexpected failure is reported once and names the key by its ids; the failure value itself is asserted independently.",
+      "semanticCoverage": "packages/tests/shared/queuebox/resource-inbox-dequeue-failure-log.test.ts#logs an unexpected handler failure once with the key identity"
+    },
+    {
+      "id": "test-structure-coupling-913d97c62b77a63e",
+      "path": "packages/tests/shared/queuebox/resource-inbox-dequeue-failure-log.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "resource-inbox-dequeue-typed-rejection-logged-once-as-value",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The single captured console error proves a typed rejection is reported once as a value; its content, the absent failure entry and the release record are asserted independently.",
+      "semanticCoverage": "packages/tests/shared/queuebox/resource-inbox-dequeue-failure-log.test.ts#logs a handler-finalized typed rejection once as a value with its cause chain and no stack frames"
+    },
+    {
+      "id": "test-structure-coupling-eede33515130c692",
+      "path": "packages/tests/shared/dequeue-lane-budgets.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "dequeue-lane-short-round-ends-the-lane",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The reservation call count is the round-trip cost under test: one call proves the short round ended the lane; the claimed key is asserted independently.",
+      "semanticCoverage": "packages/tests/shared/dequeue-lane-budgets.test.ts#ends a lane after a round that claimed fewer rows than it asked for, so the pass issues no empty reservation"
+    },
+    {
+      "id": "test-structure-coupling-8889c17e5d0c84ef",
+      "path": "packages/tests/shared/services/web-rtc-rx-streamer-admission.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-receiver-heartbeat-answered-without-al-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The absent warn call, beside the recorded pong and the empty diagnostics, proves a heartbeat never reaches the AL admission.",
+      "semanticCoverage": "packages/tests/shared/services/web-rtc-rx-streamer-admission.test.ts#answers a heartbeat ping without admitting it as an AL message"
+    },
+    {
+      "id": "test-structure-coupling-a0da04408e50b39d",
+      "path": "packages/tests/shared/services/web-rtc-rx-streamer-admission.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-receiver-undecodable-value-recorded-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The absent warn call, beside the single undecoded-rejection diagnostic, proves the rejection is reported through the sink and not the console.",
+      "semanticCoverage": "packages/tests/shared/services/web-rtc-rx-streamer-admission.test.ts#records a value that is no AL envelope as one undecoded rejection instead of warning about it"
+    },
+    {
+      "id": "test-structure-coupling-20ce3aa931de230c",
+      "path": "packages/tests/shared/services/web-rtc-rx-streamer-admission.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-receiver-initial-rejection-recorded-not-warned",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The absent warn call, beside the single admission-outcome diagnostic, proves an initial rejection is reported through the sink and not the console.",
+      "semanticCoverage": "packages/tests/shared/services/web-rtc-rx-streamer-admission.test.ts#records an AL message rejected on its initial admission instead of warning about it"
+    },
+    {
+      "id": "test-structure-coupling-3ce5024ae534aa5e",
+      "path": "packages/tests/shared/services/web-rtc-rx-streamer-admission.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-receiver-refresh-rejection-recorded-not-warned",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The absent warn call, beside the single admission-outcome diagnostic after the refresh, proves the re-admission rejection is reported through the sink and not the console.",
+      "semanticCoverage": "packages/tests/shared/services/web-rtc-rx-streamer-admission.test.ts#records an AL message rejected after authority refresh instead of warning about it"
+    },
+    {
+      "id": "test-structure-coupling-12a09d81ef2b31cc",
+      "path": "packages/tests/shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "app-inbox-completion-notice-not-taken-back-by-its-publisher",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The zero calls on the publisher's acceptance callback prove the notice is not taken back; the woken waiter on the other instance is asserted independently.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.test.ts#wakes a waiter on the other instance and never takes its own notice back"
+    },
+    {
+      "id": "test-structure-coupling-62c673d537d6bcf6",
+      "path": "packages/tests/shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "app-inbox-completion-notice-publication-failure-reported-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The single captured warning proves a failed publication is reported once; that the relay call does not throw is asserted independently.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.test.ts#drops a notice whose publication fails, leaving the waiter its safety tick"
     }
   ]
 }

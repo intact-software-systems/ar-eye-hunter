@@ -642,7 +642,7 @@ export class LiveRtcControlClient {
                 `RTC room refresh for ${input.agent.agentId} exceeded the readiness deadline.`
             );
         }
-        await input.agent.refreshRoom({ timeoutMs: refreshTimeoutMs });
+        await input.agent.refreshRoom({ refresh: 'always', timeoutMs: refreshTimeoutMs });
         const healthTimeoutMs = Math.min(
             15_000,
             deadlineMs - this.#monotonicNow()

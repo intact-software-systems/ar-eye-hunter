@@ -109,6 +109,7 @@ async function startControlServerOnce(
         stderr: 'piped',
         env: {
             RALLAR_BLACK_BOX_RETENTION_MAX_RUNS: '0',
+            RALLAR_BLACK_BOX_SNAPSHOT_FLUSH_INTERVAL_MS: '20',
             ...env,
             PORT: String(port),
             RALLAR_BLACK_BOX_STORAGE_DIR: storageDir

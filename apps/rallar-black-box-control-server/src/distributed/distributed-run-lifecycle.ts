@@ -11,12 +11,59 @@ export interface DistributedRunLifecycleInput {
 
 export type DistributedRunNextStep = 'hold' | 'queue-barrier' | 'mark-ready' | 'queue-start';
 
+export type QueuedDistributedPhaseFields = Pick<
+    ControlDistributedRunState,
+    | 'state'
+    | 'stagedAtEpochMs'
+    | 'barrierStartedAtEpochMs'
+    | 'startedAtEpochMs'
+    | 'cancelledAtEpochMs'
+    | 'completedAtEpochMs'
+    | 'updatedAtEpochMs'
+>;
+
 export interface DistributedRunAdvance {
     readonly completesBarrier: boolean;
     readonly next: DistributedRunNextStep;
 }
 
 const HOLD: DistributedRunAdvance = { completesBarrier: false, next: 'hold' };
+
+/** The lifecycle fields a distributed run takes once a phase's commands are queued; first phase times are kept. */
+export function toQueuedDistributedPhaseFields(
+    distributedRun: ControlDistributedRunState,
+    phase: ControlDistributedRunCommandPhase,
+    nowEpochMs: number
+): QueuedDistributedPhaseFields {
+    const updatedAtEpochMs = nowEpochMs;
+    switch (phase) {
+        case 'stage':
+            return {
+                state: 'waiting-for-ack',
+                stagedAtEpochMs: distributedRun.stagedAtEpochMs ?? nowEpochMs,
+                updatedAtEpochMs
+            };
+        case 'barrier':
+            return {
+                state: 'waiting-for-barrier',
+                barrierStartedAtEpochMs: distributedRun.barrierStartedAtEpochMs ?? nowEpochMs,
+                updatedAtEpochMs
+            };
+        case 'start':
+            return {
+                state: 'running',
+                startedAtEpochMs: distributedRun.startedAtEpochMs ?? nowEpochMs,
+                updatedAtEpochMs
+            };
+        case 'cancel':
+            return {
+                state: 'cancelled',
+                cancelledAtEpochMs: nowEpochMs,
+                completedAtEpochMs: nowEpochMs,
+                updatedAtEpochMs
+            };
+    }
+}
 
 export function resolveDistributedRunAdvance(input: DistributedRunLifecycleInput): DistributedRunAdvance {
     const { distributedRun, run, nowEpochMs } = input;

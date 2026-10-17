@@ -78,6 +78,7 @@ async function createReplayFixture(): Promise<ReplayFixture> {
     const engine = new InboxOutboxEngine();
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         name: 'server',
         socket,
         outbox: outboundStores.workQueue,

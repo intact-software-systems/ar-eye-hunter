@@ -9,7 +9,10 @@ export type ControlServiceFailureCode =
     | 'command-rate-limited'
     | 'distributed-run-exists'
     | 'distributed-run-not-found'
-    | 'distributed-run-terminal';
+    | 'distributed-run-terminal'
+    | 'run-changed'
+    | 'run-completed'
+    | 'run-not-found';
 
 export interface ControlServiceFailure {
     readonly code: ControlServiceFailureCode;
@@ -25,6 +28,13 @@ export function toControlServiceFailure<TValue>(
 
 export function toDistributedRunNotFound<TValue>(distributedRunId: string): Either<ControlServiceFailure, TValue> {
     return toControlServiceFailure('distributed-run-not-found', `Distributed run not found: ${distributedRunId}.`);
+}
+
+export function toRunCompleted<TValue>(runId: string): Either<ControlServiceFailure, TValue> {
+    return toControlServiceFailure(
+        'run-completed',
+        `Run ${runId} is completed and its rows were moved to its file; use another run id.`
+    );
 }
 
 export function toDistributedRunTerminal<TValue>(

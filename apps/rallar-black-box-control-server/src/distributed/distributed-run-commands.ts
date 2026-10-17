@@ -32,6 +32,11 @@ export interface RecoveredDistributedCommandLink {
     readonly evidenceQueuedAtEpochMs: number | undefined;
 }
 
+export type ReconciledDistributedRunFields = Pick<
+    ControlDistributedRunState,
+    'commandLinks' | 'startedAtEpochMs' | 'barrierStartedAtEpochMs' | 'updatedAtEpochMs'
+>;
+
 interface DistributedPhaseTarget {
     readonly distributedRun: ControlDistributedRunState;
     readonly phase: ControlDistributedRunCommandPhase;
@@ -162,6 +167,28 @@ export function toRecoveredDistributedCommandLinks(
         }
     }
     return recovered;
+}
+
+/** The run's links with those its control run's commands prove appended; undefined when none is missing. */
+export function toReconciledDistributedRunFields(
+    distributedRun: ControlDistributedRunState,
+    run: ControlRunState | undefined,
+    nowEpochMs: number
+): ReconciledDistributedRunFields | undefined {
+    const recovered = toRecoveredDistributedCommandLinks(distributedRun, run);
+    if (recovered.length === 0) {
+        return undefined;
+    }
+    let { startedAtEpochMs, barrierStartedAtEpochMs, updatedAtEpochMs } = distributedRun;
+    const commandLinks = [...distributedRun.commandLinks];
+    for (const { evidenceQueuedAtEpochMs, ...link } of recovered) {
+        const queuedAtEpochMs = evidenceQueuedAtEpochMs ?? updatedAtEpochMs;
+        commandLinks.push({ ...link, queuedAtEpochMs });
+        startedAtEpochMs ??= link.phase === 'start' ? queuedAtEpochMs : undefined;
+        barrierStartedAtEpochMs ??= link.phase === 'barrier' ? queuedAtEpochMs : undefined;
+        updatedAtEpochMs = nowEpochMs;
+    }
+    return { commandLinks, startedAtEpochMs, barrierStartedAtEpochMs, updatedAtEpochMs };
 }
 
 /** Absent when the manifest's barrier is disabled. */

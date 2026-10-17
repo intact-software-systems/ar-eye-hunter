@@ -20,6 +20,8 @@ export namespace DequeueController {
     export type LaneBudgets = Readonly<Record<Reservator, LaneBudget>>;
     /** Read once before claims. Every lane requires a positive finite budget, including recovery. */
     export type ReadLaneBudgets = (types: ReadonlySet<string>) => LaneBudgets | Promise<LaneBudgets>;
+    /** Which lanes hold a row a reservation could claim now; a lane reported empty is offered no reservation. */
+    export type WorkAdvertisement = Readonly<Record<Reservator, boolean>>;
 
     export interface Failure<K, V> {
         readonly key: K;
@@ -43,6 +45,7 @@ export class DequeueController<K, V, T> {
 
     private returnDequeuedEntries = DequeueController.DEFAULT_RETURN_DEQUEUED_ENTRIES;
     private readLaneBudgets: DequeueController.ReadLaneBudgets | undefined;
+    private workAdvertisement: DequeueController.WorkAdvertisement | undefined;
     private maxNumDequeue = DequeueController.DEFAULT_MAX_NUM_TO_DEQUEUE;
 
     private maxNumToReserve: () => number = () => DequeueController.DEFAULT_MAX_NUM_TO_RESERVE;
@@ -77,6 +80,12 @@ export class DequeueController<K, V, T> {
 
     withLaneBudgets(readLaneBudgets: DequeueController.ReadLaneBudgets | undefined): this {
         this.readLaneBudgets = readLaneBudgets;
+        return this;
+    }
+
+    /** The probe that preceded this pass; without one every lane is offered a reservation. */
+    withWorkAdvertisement(workAdvertisement: DequeueController.WorkAdvertisement | undefined): this {
+        this.workAdvertisement = workAdvertisement;
         return this;
     }
 
@@ -197,7 +206,12 @@ export class DequeueController<K, V, T> {
             Reservator,
             Map<K, Either<DequeueController.Failure<K, V>, DequeueController.Success<K, V, T | K>>>
         >();
-        byReservator.set(Reservator.FINALIZATION, await this.dequeueFinalizations(laneBudgets?.FINALIZATION));
+        byReservator.set(
+            Reservator.FINALIZATION,
+            this.isOffered(Reservator.FINALIZATION)
+                ? await this.dequeueFinalizations(laneBudgets?.FINALIZATION)
+                : new Map()
+        );
         const lanes = [
             [Reservator.NEW, this.newReservator],
             [Reservator.FAIRNESS, this.fairnessReservator],
@@ -207,10 +221,16 @@ export class DequeueController<K, V, T> {
         for (const [lane, reservator] of lanes) {
             byReservator.set(
                 lane,
-                reservator ? await this.dequeueLane(reservator, computer, laneBudgets?.[lane]) : new Map()
+                reservator && this.isOffered(lane)
+                    ? await this.dequeueLane(reservator, computer, laneBudgets?.[lane])
+                    : new Map()
             );
         }
         return byReservator;
+    }
+
+    private isOffered(lane: Reservator): boolean {
+        return this.workAdvertisement === undefined || this.workAdvertisement[lane];
     }
 
     private async dequeueFinalizations(
@@ -237,7 +257,11 @@ export class DequeueController<K, V, T> {
         return this.returnDequeuedEntries ? finalized : new Map();
     }
 
-    /** A reservation or release error leaves the lane at once: the caller owns its backoff, never this slot. */
+    /**
+     * A round that claimed fewer than it asked for found every row it could claim, so the lane ends for this pass;
+     * rows that arrive meanwhile wait for the next pass. A reservation or release error leaves the lane at once:
+     * the caller owns its backoff, never this slot.
+     */
     private async dequeueLane(
         reservator: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>,
         computer: (key: K, value: V) => Promise<T>,
@@ -259,7 +283,8 @@ export class DequeueController<K, V, T> {
             }
             const reserved = await reservator(this.typesToDequeue(), numToReserve) ?? new Map<K, V>();
             claimedCount += reserved.size;
-            if (await this.computeAndReleaseReserved(reserved, computer, allComputed) === 0) {
+            const computedCount = await this.computeAndReleaseReserved(reserved, computer, allComputed);
+            if (computedCount === 0 || reserved.size < numToReserve) {
                 return allComputed;
             }
         }
@@ -286,6 +311,10 @@ export class DequeueController<K, V, T> {
         }
         return computed.size;
     }
+}
+
+export function hasAdvertisedDequeueWork(advertisement: DequeueController.WorkAdvertisement): boolean {
+    return Object.values(Reservator).some((lane) => advertisement[lane]);
 }
 
 function toValidatedLaneBudgets(budgets: DequeueController.LaneBudgets): DequeueController.LaneBudgets {

@@ -11,8 +11,12 @@ import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-
 import { WsQueueBoxServerTargetResolution } from '@shared/services/ws-queue-box-server/ws-queue-box-server-target-resolution.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { toAppInboxEntryCompletionAwaitability } from '../app-inbox/app-inbox-command-identity.ts';
 import { isAppInboxRetryableConflict } from '../app-inbox/app-inbox-error-classification.ts';
+import { AppInboxDequeuePassTiming } from '../app-inbox/handler/app-inbox-dequeue-pass-timing.ts';
 import { validateRtcSignalingMessage } from '../communication/decode-rtc-signaling-route.ts';
+import { nowMs } from '../observability/timing.ts';
+import { installAppInboxCompletionNoticeSubscriber } from '../queue-pubsub/app-inbox-completion-notice.ts';
 import { installLiveWsNoticeSubscriber } from '../queue-pubsub/live-ws-notice-subscriber.ts';
 import { installQueueBoxPubSubBridge } from '../queue-pubsub/queue-box-pub-sub-bridge.ts';
 import { installRelayedAckNoticeSubscriber } from '../queue-pubsub/relayed-ack-notice-subscriber.ts';
@@ -21,6 +25,7 @@ import { createWsServerTargetResolver } from '../websocket/targets/create-ws-ser
 import { initialiseRallarServerCacheRepositories } from './cache-repositories.ts';
 import type {
     CreateRallarMiddlewareOptions,
+    RallarMiddlewareDequeuePassTimingOptions,
     RallarMiddlewareInfrastructure
 } from './rallar-middleware-construction.ts';
 
@@ -42,6 +47,7 @@ export function createRallarMiddlewareInfrastructure(
     options: CreateRallarMiddlewareOptions,
     queueEngine: InboxOutboxEngine
 ): RallarMiddlewareInfrastructure {
+    assertSharedInboundStoreAcrossInstances(options);
     initialiseRallarServerCacheRepositories();
     const webSocketServer = options.webSocketServer ?? new JsonWebSocketServer();
     const targetResolver = options.targetResolver ??
@@ -76,22 +82,63 @@ export function createRallarMiddlewareInfrastructure(
                 ...options.relayedAckNotices,
                 acceptRelayedAck: (message, publisherId) => wsQBoxServerService.acceptRelayedAck(message, publisherId)
             })
-            : Promise.resolve()
+            : Promise.resolve(),
+        installMiddlewareAppInboxCompletionNoticeSubscriber(options)
     ]).then(() => undefined);
 
     return {
         wsQBoxServerService,
-        inboxQueueReader: new InboxQueueReader(
-            options.inbox,
-            { ...options.appInboxDequeueOptions, isRetryableConflict: isAppInboxRetryableConflict }
-        ),
-        outboxQueueReader: new OutboxQueueReader(options.outbox ?? options.inbox),
+        inboxQueueReader: createMiddlewareInboxQueueReader(options),
+        outboxQueueReader: createMiddlewareOutboxQueueReader(options),
         appInboxResilience: options.resilience.appInbox ?? options.resilience.inbox,
         appOutboxResilience: options.resilience.appOutbox,
         queuePubSubBridgeReadiness,
         liveWsNoticeSubscriberReadiness,
         wakeQueueEngine: () => queueEngine.wakeAfterExternalWrite()
     };
+}
+
+function installMiddlewareAppInboxCompletionNoticeSubscriber(options: CreateRallarMiddlewareOptions): Promise<void> {
+    const notifications = options.appInboxDequeueOptions.completionNotifications;
+    if (options.appInboxCompletionNotices === undefined || notifications === undefined) {
+        return Promise.resolve();
+    }
+    return installAppInboxCompletionNoticeSubscriber({ ...options.appInboxCompletionNotices, notifications });
+}
+
+function createMiddlewareInboxQueueReader(options: CreateRallarMiddlewareOptions): InboxQueueReader {
+    const inboxQueueReader = new InboxQueueReader(
+        options.inbox,
+        {
+            ...options.appInboxDequeueOptions,
+            isRetryableConflict: isAppInboxRetryableConflict,
+            toCompletionAwaitability: toAppInboxEntryCompletionAwaitability
+        }
+    );
+    installDequeuePassTiming(inboxQueueReader, options.appInboxDequeuePassTiming);
+    return inboxQueueReader;
+}
+
+function createMiddlewareOutboxQueueReader(options: CreateRallarMiddlewareOptions): OutboxQueueReader {
+    const outboxQueueReader = new OutboxQueueReader(options.outbox ?? options.inbox);
+    installDequeuePassTiming(outboxQueueReader, options.appInboxDequeuePassTiming);
+    return outboxQueueReader;
+}
+
+/** Each reader observes its own passes, so each gets its own timing with the server's one sink. */
+function installDequeuePassTiming(
+    reader: Pick<InboxQueueReader, 'onDequeuePassDo'>,
+    timing: RallarMiddlewareDequeuePassTimingOptions | undefined
+): void {
+    if (timing === undefined) {
+        return;
+    }
+    reader.onDequeuePassDo(
+        new AppInboxDequeuePassTiming({ database: timing.database, nowMs }, {
+            serviceId: timing.serviceId,
+            sink: timing.sink
+        })
+    );
 }
 
 function createMiddlewareWsQueueBoxServer(
@@ -106,6 +153,7 @@ function createMiddlewareWsQueueBoxServer(
         readProducerProvenance: options.readWsOutboxProducerProvenance,
         readAuthenticatedConnectionScope: options.readAuthenticatedConnectionScope,
         inboundStores: options.inboundStores,
+        inboundVolatileStores: options.inboundVolatileStores,
         outboundStores: options.outboundStores,
         dequeueResilience: options.resilience.outbox,
         deliveryDiagnostics: options.wsDeliveryDiagnostics,
@@ -119,6 +167,18 @@ function createMiddlewareWsQueueBoxServer(
             : undefined,
         forwardsRoomScopedMessages: false
     });
+}
+
+/**
+ * Another instance proves a relayed acknowledgement's sender against the message's admission, and reads an oversized
+ * live notice's message, from the shared inbound store: a memory pair would hide both from it.
+ */
+function assertSharedInboundStoreAcrossInstances(options: CreateRallarMiddlewareOptions): void {
+    if (options.inboundVolatileStores !== undefined && options.relayedAckNotices !== undefined) {
+        throw new TypeError(
+            'A WS server relaying acknowledgements to other instances admits every message to its shared inbound store.'
+        );
+    }
 }
 
 function installMiddlewareLiveWsNoticeSubscriber(
@@ -172,10 +232,13 @@ function authorizeMiddlewareALIngress(message: ALMessage): Either<ALMessageRejec
 
 function isStateSnapshotPageResource(resource: string): boolean {
     try {
-        const value: unknown = JSON.parse(resource);
-        return typeof value === 'object' && value !== null && 'kind' in value && value.kind === 'state-snapshot-page';
+        return isStateSnapshotPageValue(JSON.parse(resource));
     }
     catch {
         return false;
     }
+}
+
+function isStateSnapshotPageValue(value: unknown): value is Readonly<{ kind: 'state-snapshot-page'; }> {
+    return typeof value === 'object' && value !== null && 'kind' in value && value.kind === 'state-snapshot-page';
 }

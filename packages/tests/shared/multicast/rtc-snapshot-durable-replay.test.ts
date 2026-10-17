@@ -410,6 +410,7 @@ function createReplayPlanner(observed: ReplayObservedState, relay: boolean): ALI
                 name: 'Room',
                 sourceGroupStateCausalRevision: { groupRevision: 1, presenceRevision: 1 },
                 nextHopSessionIds: ['sender', 'upstream-relay', 'downstream'],
+                nextHopsBySessionId: undefined,
                 degreeLimit: 3,
                 overlayVersion: 1,
                 createdByClientId: 'sender',

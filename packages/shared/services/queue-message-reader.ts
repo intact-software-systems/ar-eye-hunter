@@ -2,12 +2,12 @@ import type { ALMessage } from '../al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '../al-contracts/al-message-persistence-validation.ts';
 import { EnqueuedType } from '../api/api-config.ts';
 import type { DequeueController } from '../queuebox/dequeue/dequeue-controller.ts';
-import type { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
+import type { QueueBoxResourceEntryRepository, ResourceInboxClaimOrder } from '../queuebox/queue-box-types.ts';
 import {
     NonRetryableException,
     ResourceInboxHandlerEntryError,
     type DequeueResourceEntryOptions,
-    type ResourceInboxHandlerFinalizedSuccess
+    type ResourceInboxHandlerFinalized
 } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceInboxAttemptTelemetry } from '../queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import type { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
@@ -22,17 +22,44 @@ export namespace QueueMessageReader {
         readonly creationNow: QueueBoxUtilities.CreationClock;
         readonly dequeueOptions: DequeueResourceEntryOptions;
     }
+
+    export interface DequeueInput {
+        readonly typesToDequeue: Set<string>;
+        readonly resilience: ResourceInboxResilience;
+        readonly newLaneClaimOrder: ResourceInboxClaimOrder;
+        readonly readLaneBudgets: DequeueController.ReadLaneBudgets | undefined;
+        readonly workAdvertisement: DequeueController.WorkAdvertisement | undefined;
+    }
+
+    /**
+     * The lifecycle of one engine pass over this queue: a probe, then the pass it advertised, with the
+     * handler of every claimed entry. One observer at a time; the owner measures what it will at each step.
+     */
+    export interface DequeuePassObserver extends QueueBoxUtilities.DequeueHandlerObserver {
+        onProbeStarted(): void;
+        onProbeFinished(advertisedLanes: DequeueController.WorkAdvertisement): void;
+        onPassStarted(): void;
+        onPassFinished(): void;
+    }
 }
 
 export class QueueMessageReader {
     private readonly callbacks = new Map<string, OnQueuedMessageCallback>();
     private rejectedMessageCallback: OnRejectedQueuedMessageCallback | undefined;
+    private dequeuePassObserver: QueueMessageReader.DequeuePassObserver | undefined;
     private readonly repository: QueueBoxResourceEntryRepository;
     private readonly config: QueueMessageReader.Config;
 
     constructor(repository: QueueBoxResourceEntryRepository, config: QueueMessageReader.Config) {
         this.repository = repository;
         this.config = config;
+    }
+
+    /** The persisted message a claimed entry carries, as the dispatcher reads it; malformed throws. */
+    static decodeQueuedMessage(entry: ResourceEntry): ALMessage {
+        return entry.typeId === EnqueuedType.APP_OUTBOX && entry.key.topicId === RTC_TOPOLOGY_OUTBOX_TOPIC
+            ? readRtcTopologyWorkEntry(entry)
+            : decodePersistedALMessage(entry.resource);
     }
 
     onMessageDo(type: string, callback: OnQueuedMessageCallback): void {
@@ -47,38 +74,64 @@ export class QueueMessageReader {
         this.rejectedMessageCallback = callback;
     }
 
+    onDequeuePassDo(observer: QueueMessageReader.DequeuePassObserver): void {
+        if (this.dequeuePassObserver !== undefined) {
+            throw new Error('A dequeue-pass observer is already installed on this queue reader');
+        }
+        this.dequeuePassObserver = observer;
+    }
+
     async enqueueIfAbsent(message: ALMessage): Promise<ResourceEntry> {
         return await this.repository.enqueueIfAbsent(
             QueueBoxUtilities.toResourceEntryFromMsg(message, this.config.enqueueType, this.config.creationNow())
         );
     }
 
-    async dequeue(
+    /** One storage read naming the lanes the next pass may claim from; the engine's work probe for this queue. */
+    async readWorkAdvertisement(
         typesToDequeue: Set<string>,
-        resilience: ResourceInboxResilience,
-        readLaneBudgets?: DequeueController.ReadLaneBudgets
-    ): Promise<number> {
-        return await QueueBoxUtilities.defaultDequeue(
-            {
-                qbox: this.repository,
-                typesToDequeue: typesToDequeue,
-                resilience: resilience,
-                onDequeuedDo: (entry, attemptTelemetry) => this.dispatchQueuedMessage(entry, attemptTelemetry),
-                options: this.config.dequeueOptions,
-                readLaneBudgets
-            }
+        resilience: ResourceInboxResilience
+    ): Promise<DequeueController.WorkAdvertisement> {
+        this.dequeuePassObserver?.onProbeStarted();
+        const advertisedLanes = await this.repository.readWorkAdvertisement(
+            typesToDequeue,
+            resilience.toWorkAdvertisementOptions()
         );
+        this.dequeuePassObserver?.onProbeFinished(advertisedLanes);
+        return advertisedLanes;
+    }
+
+    /** Resolves with the number of entries this invocation claimed; a preceding probe limits the lanes it offers. */
+    async dequeue(input: QueueMessageReader.DequeueInput): Promise<number> {
+        const observer = this.dequeuePassObserver;
+        observer?.onPassStarted();
+        try {
+            return await QueueBoxUtilities.defaultDequeue(
+                {
+                    qbox: this.repository,
+                    typesToDequeue: input.typesToDequeue,
+                    resilience: input.resilience,
+                    newLaneClaimOrder: input.newLaneClaimOrder,
+                    onDequeuedDo: (entry, attemptTelemetry) => this.dispatchQueuedMessage(entry, attemptTelemetry),
+                    options: this.config.dequeueOptions,
+                    readLaneBudgets: input.readLaneBudgets,
+                    workAdvertisement: input.workAdvertisement,
+                    handlerObserver: observer
+                }
+            );
+        }
+        finally {
+            observer?.onPassFinished();
+        }
     }
 
     private async dispatchQueuedMessage(
         entry: ResourceEntry,
         attemptTelemetry: ResourceInboxAttemptTelemetry
-    ): Promise<void | ResourceInboxHandlerFinalizedSuccess> {
+    ): Promise<void | ResourceInboxHandlerFinalized> {
         let message: ALMessage;
         try {
-            message = entry.typeId === EnqueuedType.APP_OUTBOX && entry.key.topicId === RTC_TOPOLOGY_OUTBOX_TOPIC
-                ? readRtcTopologyWorkEntry(entry)
-                : decodePersistedALMessage(entry.resource);
+            message = QueueMessageReader.decodeQueuedMessage(entry);
         }
         catch {
             const error = new NonRetryableException('Persisted queue message is malformed or unsupported');

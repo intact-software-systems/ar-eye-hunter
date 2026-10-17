@@ -12,6 +12,7 @@ import type {
     ControlDistributedRunCommandLink,
     ControlDistributedRunSnapshot
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { ControlRunCompletion } from '@shared-test/rallar-bb-test/control/control-run-completion.ts';
 import type {
     RallarBlackBoxControlAgentIdentity,
     RallarBlackBoxDistributedRunManifest,
@@ -75,6 +76,8 @@ export interface ControlRunState {
     retentionRevision: number;
     issuedRunTokenStateRevision: number;
     barriers: Map<string, ControlRecipeBarrierState>;
+    /** Undefined while the run is live; set once its rows moved to its own file, which empties the collections above. */
+    completion: ControlRunCompletion | undefined;
 }
 
 export interface ControlRecipeBarrierParticipant {
@@ -92,6 +95,8 @@ export interface ControlRecipeBarrierState {
     readonly participants: readonly ControlRecipeBarrierParticipant[];
     readonly openedAtEpochMs: number;
     readonly arrivedAgentIds: readonly string[];
+    /** When the server accepted the latest arrival; the resolution's delay is measured from it. */
+    readonly lastArrivedAtEpochMs: number;
     /** Undefined until an arrival makes the barrier unpassable. */
     readonly issue: ControlBarrierFailureReason | undefined;
     /** Undefined until every participant arrived or the barrier failed; then it never changes. */
@@ -153,7 +158,8 @@ export function toInitialControlRunState(runId: string, nowEpochMs: number): Con
         tokens: new Map(),
         retentionRevision: 0,
         issuedRunTokenStateRevision: 0,
-        barriers: new Map()
+        barriers: new Map(),
+        completion: undefined
     };
 }
 

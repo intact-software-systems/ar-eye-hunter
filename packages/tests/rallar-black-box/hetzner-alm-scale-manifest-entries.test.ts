@@ -118,13 +118,18 @@ describe('ALM scale manifest acceptance', () => {
             for (const [role, recipeId] of [['sender', 'alm-scale-director'], ['receiver', 'alm-scale-player']] as const) {
                 const selection = entry.manifest.recipes.find((recipe) => recipe.role === role);
                 const commands = toHetznerRecipeCommands(selection?.recipe?.commands ?? []);
-                expect(commands.find((command) => command.commandId === `${recipeId}-connect`)).toMatchObject({
-                    readiness: { minReadyPeers: 1, timeoutMs: 45_000, intervalMs: 100 },
+                const connect = commands.find((command) => command.commandId === `${recipeId}-connect`);
+                expect(connect).toMatchObject({
                     rallar: {
                         almDiagnostics: entry.diagnostic,
                         messageTypeIds: ['room.ar-eye-hunter.director.intent.v1', 'room.ar-eye-hunter.director.event.v1']
                     }
                 });
+                // The director connects before any player exists, so only a player waits for a ready peer, 650 ms
+                // per participant beyond the setup allowance while the hosted lane admits the cohort's joins.
+                expect(connect !== undefined && 'readiness' in connect ? connect.readiness : undefined).toEqual(
+                    role === 'sender' ? undefined : { minReadyPeers: 1, timeoutMs: 40_000 + 650 * entry.agentCount, intervalMs: 100 }
+                );
                 expect(commands.find((command) => command.commandId === `${recipeId}-window`)).toMatchObject({ kind: 'parallel', timeoutMs: 30_000 });
                 expect(commands.find((command) => command.commandId === `${recipeId}-sampler`)).toMatchObject({ kind: 'parallel', maxConcurrency: 7 });
                 const sends = commands.filter((command) => command.kind === 'messages.send');

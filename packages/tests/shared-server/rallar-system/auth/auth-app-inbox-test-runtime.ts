@@ -2,6 +2,7 @@ import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app
 import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
 import type { AuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
+import { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -33,6 +34,7 @@ interface CreateAuthInboxTestRuntimeInput {
     readonly credentialSecret: string;
     readonly databaseOptions?: AppInboxTestDatabaseOptions;
     readonly credentialIssuer?: AuthCredentialIssuer;
+    readonly passwordDerivationAdmission?: AuthPasswordDerivationAdmission;
     readonly nowEpochMs?: () => number;
     readonly newAuthMessageId?: () => string;
 }
@@ -61,12 +63,13 @@ export function createAuthInboxTestRuntime({
     credentialSecret,
     databaseOptions,
     credentialIssuer: credentialIssuerInput,
+    passwordDerivationAdmission,
     nowEpochMs,
     newAuthMessageId
 }: CreateAuthInboxTestRuntimeInput): AuthInboxTestRuntime {
     const queue = new TestResourceInbox();
     const results = new TestResourceInboxResults();
-    const reader = new InboxQueueReader(queue);
+    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
     const credentialIssuer = credentialIssuerInput ??
         createHmacAuthCredentialIssuer(credentialSecret);
     const database = createAppInboxTestDatabase(queue, results, {
@@ -80,7 +83,9 @@ export function createAuthInboxTestRuntime({
             resourceInboxResultsRepository: results,
             database: database,
             authMutationService: createAuthMutationService({ runtimeRepository, serviceId }),
-            credentialIssuer: credentialIssuer
+            credentialIssuer: credentialIssuer,
+            passwordDerivationAdmission: passwordDerivationAdmission ??
+                new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 2 })
         },
         {
             serviceId: serviceId,

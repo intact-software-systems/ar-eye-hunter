@@ -623,6 +623,15 @@ jobs:
             exit 0
           fi
 
+          run_phase_started_at="@$(date -u +%s)"
+          export_run_journals() {
+            ./17-export-run-journals.sh \
+              --since "${run_phase_started_at}" \
+              --output-dir "/tmp/rallar-distributed-operations/${RALLAR_DISTRIBUTED_RUN_ID}" ||
+              echo "Run journal export failed with code $?." >&2
+          }
+          trap 'export_run_journals; rm -f /tmp/rallar-distributed-recipe.env' EXIT
+
           if [[ "${RALLAR_HETZNER_OPERATOR_PHASE}" == "run" &&
             "${RALLAR_BLACK_BOX_AGENT_SOURCE}" != "external" ]]; then
             echo "RALLAR_OPERATION_STAGE=deployment-readiness"
@@ -659,6 +668,27 @@ jobs:
           printf 'exit_code=%s\n' "${operation_exit_code}" >> "${GITHUB_OUTPUT}"
           printf 'started_at=%s\n' "${operation_started_at}" >> "${GITHUB_OUTPUT}"
           printf 'finished_at=%s\n' "${operation_finished_at}" >> "${GITHUB_OUTPUT}"
+
+      - name: Copy run journals
+        if: always() && inputs.operator_phase != 'prepare' && steps.manifest_materialization.outcome == 'success'
+        shell: bash
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          DISTRIBUTED_RUN_ID: ${{ steps.ids.outputs.distributed_run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p ".artifacts/hetzner-operation"
+          operation_log="${RUNNER_TEMP}/hetzner-operation.log"
+          set +e
+          scp -i ~/.ssh/hetzner -r \
+            "${HETZNER_USER}@${HETZNER_HOST}:/tmp/rallar-distributed-operations/${DISTRIBUTED_RUN_ID}" \
+            ".artifacts/hetzner-operation/" 2>&1 | tee -a "${operation_log}"
+          copy_exit_code="${PIPESTATUS[0]}"
+          set -e
+          if [[ "${copy_exit_code}" != "0" ]]; then
+            echo "Run journal copy exited with code ${copy_exit_code}." | tee -a "${operation_log}"
+          fi
 
       - name: Copy distributed artifacts
         if: always() && inputs.operator_phase != 'prepare' && steps.manifest_materialization.outcome == 'success'

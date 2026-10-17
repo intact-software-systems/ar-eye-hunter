@@ -1,86 +1,121 @@
-import type { ControlRunSnapshotBounds, ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
+import type {
+    ControlRunSnapshot,
+    ControlRunSnapshotBounds,
+    ControlServerSnapshot
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { decodeControlRunCompletion } from '@shared-test/rallar-bb-test/control/control-run-completion.ts';
 import { decodeArrayItems } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/artifact-json-value-guards.ts';
 import { decodeControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-distributed-run-snapshot.ts';
 import { decodeControlRunSnapshot } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-run-snapshot.ts';
 import { validateControlFleetRunReportCollection } from '@shared-test/rallar-bb-test/fleet-report-validation.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { ThrottledFlush } from '@shared/resilience/throttled-flush.ts';
+import type { Timers } from '@shared/resilience/timers.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 
+import type { ControlSnapshotRevision } from './control-service-snapshots.ts';
 import type { RallarBlackBoxControlService } from './control-service.ts';
+import {
+    toJsonPieces,
+    writeSlicedJsonFile,
+    type SlicedJsonFileWrite
+} from './run-completion/control-sliced-json-file.ts';
 
-export interface ControlSnapshotPersistence {
-    restore(): Promise<void>;
-    persist(): void;
-}
-
-export interface CreateControlSnapshotPersistenceInput {
+export interface ControlSnapshotPersistenceInput {
     readonly storageDir: string | undefined;
     readonly retentionMaxRuns: number;
     readonly snapshotBounds: ControlRunSnapshotBounds;
+    /** The least time between two snapshot writes; a distributed-run lifecycle change writes at once. */
+    readonly flushIntervalMs: number;
     readonly controlService: Pick<
         RallarBlackBoxControlService,
-        'applyRunRetention' | 'restoreSnapshot' | 'snapshotForPersistence'
+        | 'applyRunRetention'
+        | 'restoreSnapshot'
+        | 'snapshotForPersistence'
+        | 'snapshotLifecycleRevision'
+        | 'snapshotRevision'
     >;
     readonly deleteRuns: (runIds: readonly string[]) => void;
+    readonly timers: Timers;
+    /** Absent when flushes are not timed. */
+    readonly timingSink: RallarTimingSink | undefined;
 }
 
-const SNAPSHOT_PERSIST_DEBOUNCE_MS = 100;
+interface WriteControlSnapshotFileInput {
+    readonly path: string;
+    readonly tempPath: string;
+    readonly savedAtEpochMs: number;
+    readonly snapshot: ControlServerSnapshot;
+}
+
 const SNAPSHOT_FILE_SCHEMA_VERSION = 1;
 
-export function createControlSnapshotPersistence(
-    input: CreateControlSnapshotPersistenceInput
-): ControlSnapshotPersistence {
-    const path = input.storageDir ? toSnapshotPath(input.storageDir) : undefined;
-    let sequence = 0;
-    let scheduled = false;
-    let persisting = false;
-    let dirty = false;
-    let writtenSnapshotJson: string | undefined;
+/**
+ * Writes the whole snapshot at most once per flush interval: at once when the interval has passed or the
+ * distributed-run lifecycle moved since the last write, otherwise trailing the changes inside the interval. It skips the serialization when the service revision has not
+ * moved since the last write. One write is in flight at a time.
+ */
+export class ControlSnapshotPersistence {
+    private readonly input: ControlSnapshotPersistenceInput;
+    private readonly flush: ThrottledFlush;
+    private sequence = 0;
+    private flushedLifecycle: string | undefined;
+    private written: ControlSnapshotRevision | undefined;
 
-    async function flush(): Promise<void> {
-        scheduled = false;
-        if (!dirty || persisting || !path || !input.storageDir) {
-            return;
-        }
-        dirty = false;
-        persisting = true;
-        try {
-            const snapshotJson = JSON.stringify(input.controlService.snapshotForPersistence(input.snapshotBounds));
-            if (snapshotJson === writtenSnapshotJson) {
-                return;
-            }
-            const tempPath = `${path}.tmp-${Deno.pid}-${Date.now()}-${sequence += 1}`;
-            if (await writeSnapshotFile(input.storageDir, tempPath, toSnapshotFileText(snapshotJson))) {
-                writtenSnapshotJson = snapshotJson;
-            }
-        }
-        finally {
-            persisting = false;
-            if (dirty) {
-                schedulePersistence();
-            }
+    constructor(input: ControlSnapshotPersistenceInput) {
+        this.input = input;
+        this.flush = new ThrottledFlush(
+            { timers: input.timers, write: () => this.writeChangedSnapshot() },
+            { minIntervalMs: input.flushIntervalMs }
+        );
+    }
+
+    async restore(): Promise<void> {
+        if (this.input.storageDir) {
+            await restoreSnapshotFile(toSnapshotPath(this.input.storageDir), this.input.controlService);
         }
     }
 
-    function schedulePersistence(): void {
-        applyAutomaticRetention(input);
-        if (!path) {
+    persist(): void {
+        applyAutomaticRetention(this.input);
+        if (!this.input.storageDir) {
             return;
         }
-        dirty = true;
-        if (!scheduled && !persisting) {
-            scheduled = true;
-            setTimeout(() => void flush(), SNAPSHOT_PERSIST_DEBOUNCE_MS);
-        }
+        const snapshotPath = toSnapshotPath(this.input.storageDir);
+        this.flush.mark(this.input.controlService.snapshotLifecycleRevision() !== this.flushedLifecycle).catch((
+            error
+        ) => console.warn(`Could not persist control snapshot to ${snapshotPath}: ${toError(error).message}`));
     }
 
-    return {
-        restore: () => path ? restoreSnapshotFile(path, input.controlService) : Promise.resolve(),
-        persist: schedulePersistence
-    };
+    /** Writes an unsaved change at once; shutdown awaits it. */
+    async stop(): Promise<void> {
+        await this.flush.stop();
+    }
+
+    private async writeChangedSnapshot(): Promise<void> {
+        const { storageDir, controlService, snapshotBounds, timers } = this.input;
+        const savedAtEpochMs = timers.nowMs();
+        const revision = controlService.snapshotRevision();
+        this.flushedLifecycle = revision.lifecycle;
+        if (!storageDir || revision.content === this.written?.content) {
+            return;
+        }
+        const write = await writeControlSnapshotFile({
+            path: toSnapshotPath(storageDir),
+            tempPath: `${toSnapshotPath(storageDir)}.tmp-${Deno.pid}-${savedAtEpochMs}-${this.sequence += 1}`,
+            savedAtEpochMs,
+            snapshot: controlService.snapshotForPersistence(snapshotBounds)
+        });
+        recordSnapshotFlushTiming(this.input.timingSink, write);
+        if (write.written) {
+            this.written = revision;
+        }
+    }
 }
 
-function applyAutomaticRetention(input: CreateControlSnapshotPersistenceInput): void {
+function applyAutomaticRetention(input: ControlSnapshotPersistenceInput): void {
     const deletedRunIds = input.controlService.applyRunRetention(input.retentionMaxRuns);
     if (deletedRunIds.length > 0) {
         input.deleteRuns(deletedRunIds);
@@ -91,30 +126,45 @@ function toSnapshotPath(storageDir: string): string {
     return `${storageDir.replace(/\/+$/, '')}/control-snapshot.json`;
 }
 
-/** Embeds the already serialized snapshot, so change detection and the file share one serialization. */
-function toSnapshotFileText(snapshotJson: string): string {
-    return `{"schemaVersion":${SNAPSHOT_FILE_SCHEMA_VERSION},"savedAtEpochMs":${Date.now()},"snapshot":${snapshotJson}}`;
+function recordSnapshotFlushTiming(sink: RallarTimingSink | undefined, write: SlicedJsonFileWrite): void {
+    recordRallarTiming({
+        sink,
+        event: {
+            component: 'rallar-black-box-control',
+            operation: 'snapshot.flush',
+            details: {
+                bytes: write.bytes,
+                serializeMs: Math.round(write.serializeMs),
+                writeMs: Math.round(write.writeMs)
+            }
+        },
+        status: write.written ? 'ok' : 'error',
+        durationMs: write.serializeMs + write.writeMs
+    });
 }
 
-async function writeSnapshotFile(storageDir: string, tempPath: string, payload: string): Promise<boolean> {
-    const path = toSnapshotPath(storageDir);
-    try {
-        await Deno.mkdir(storageDir, { recursive: true });
-        await Deno.writeTextFile(tempPath, payload);
-        await Deno.rename(tempPath, path);
-        return true;
+/** The file holds the sliced snapshot inside a small envelope; see `writeSlicedJsonFile` for the slicing. */
+async function writeControlSnapshotFile(input: WriteControlSnapshotFileInput): Promise<SlicedJsonFileWrite> {
+    const write = await writeSlicedJsonFile({
+        path: input.path,
+        tempPath: input.tempPath,
+        pieces: toSnapshotFilePieces(input.snapshot, input.savedAtEpochMs)
+    });
+    if (write.failure !== undefined) {
+        console.warn(`Could not persist control snapshot to ${input.path}: ${write.failure}`);
     }
-    catch (error) {
-        Deno.remove(tempPath).catch(() => undefined);
-        const message = error instanceof Error ? error.message : String(error);
-        console.warn(`Could not persist control snapshot to ${path}: ${message}`);
-        return false;
-    }
+    return write;
+}
+
+function* toSnapshotFilePieces(snapshot: ControlServerSnapshot, savedAtEpochMs: number): Generator<string> {
+    yield `{"schemaVersion":${SNAPSHOT_FILE_SCHEMA_VERSION},"savedAtEpochMs":${savedAtEpochMs},"snapshot":`;
+    yield* toJsonPieces(snapshot, 0);
+    yield '}';
 }
 
 async function restoreSnapshotFile(
     path: string,
-    controlService: CreateControlSnapshotPersistenceInput['controlService']
+    controlService: ControlSnapshotPersistenceInput['controlService']
 ): Promise<void> {
     try {
         decodeSnapshotFile(JSON.parse(await Deno.readTextFile(path))).fold(
@@ -156,7 +206,7 @@ function decodeSnapshotFile(value: unknown): Either<string, ControlServerSnapsho
     return decodeArrayItems(
         runs,
         'runs',
-        (run, runPath) => decodeControlRunSnapshot(run).mapLeft((issue) => `${runPath}: ${issue}`)
+        (run, runPath) => decodePersistedControlRun(run).mapLeft((issue) => `${runPath}: ${issue}`)
     ).flatMap(
         (issue) => Either.ofLeft(issue),
         (restoredRuns) =>
@@ -165,5 +215,17 @@ function decodeSnapshotFile(value: unknown): Either<string, ControlServerSnapsho
                 distributedRuns: restoredDistributedRuns,
                 fleetReports: fleet.reports
             }))
+    );
+}
+
+/** The run decoder keeps the collections; a completed run's index entry is decoded beside them. */
+function decodePersistedControlRun(value: unknown): Either<string, ControlRunSnapshot> {
+    const completion = isJsonRecordValue(value) ? value.completion : undefined;
+    return decodeControlRunSnapshot(value).flatMap(
+        (issue) => Either.ofLeft(issue),
+        (run) =>
+            completion === undefined
+                ? Either.ofRight(run)
+                : decodeControlRunCompletion(completion).mapRight((decoded) => ({ ...run, completion: decoded }))
     );
 }

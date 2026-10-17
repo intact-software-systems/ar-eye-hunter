@@ -32,7 +32,7 @@ export async function computeDequeueBatch<K, V, T>(
             const exception = error instanceof Error ? error : new Error(String(error));
             if (purpose === 'finalization-recovery' || !isNotReadyException(exception)) {
                 const operation = purpose === 'finalization-recovery' ? 'Finalization recovery' : 'Computer';
-                log.error(`${operation} failed on dequeued key ${String(key)}.`, exception);
+                log.error(`${operation} failed on dequeued key ${toDequeuedKeyText(key)}.`, exception);
             }
             computed.set(key, Either.ofLeft({ key, value, exception }));
         }
@@ -61,4 +61,8 @@ export async function releaseDequeueBatch<K, V, T>(
         }
         release.onFailed?.(EitherCollectors.toMapFoldLefts(computed));
     }
+}
+
+export function toDequeuedKeyText<K>(key: K): string {
+    return typeof key === 'object' && key !== null ? JSON.stringify(key) : String(key);
 }

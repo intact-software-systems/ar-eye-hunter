@@ -189,6 +189,35 @@ describe('TryWith', () => {
         expect(attempts).toBe(2);
     });
 
+    it('drops a delay that would overshoot the elapsed budget unless the policy fits delays to it', async () => {
+        vi.useFakeTimers();
+        const attemptsAt: number[] = [];
+        const run = (policy: TryWithPolicy): Promise<never> => {
+            const startedAt = Date.now();
+            return policy.run(() => {
+                attemptsAt.push(Date.now() - startedAt);
+                throw new Error('still pending');
+            });
+        };
+        const budgeted = TryWithPolicy.defaults()
+            .retryIntervalMsecs(400)
+            .maxRetryIntervalMsecs(400)
+            .backoffFactor(1)
+            .jitterRatio(0)
+            .maxElapsedMsecs(1_000);
+
+        const dropped = expect(run(budgeted)).rejects.toBeInstanceOf(TryWithExhaustedError);
+        await vi.advanceTimersByTimeAsync(1_000);
+        await dropped;
+        expect(attemptsAt).toEqual([0, 400, 800]);
+
+        attemptsAt.length = 0;
+        const fitted = expect(run(budgeted.fitDelayToElapsedBudget())).rejects.toBeInstanceOf(TryWithExhaustedError);
+        await vi.advanceTimersByTimeAsync(1_000);
+        await fitted;
+        expect(attemptsAt).toEqual([0, 400, 800, 1_000]);
+    });
+
     it('continues to invoke a successful handler at the configured interval', async () => {
         vi.useFakeTimers();
 

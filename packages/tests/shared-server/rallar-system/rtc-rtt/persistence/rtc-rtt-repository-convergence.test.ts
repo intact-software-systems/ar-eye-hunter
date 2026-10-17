@@ -24,9 +24,9 @@ describe('RTC RTT repository convergence', () => {
         });
         let waiting = 0;
         const together = Promise.withResolvers<void>();
-        const originalList = repository.listMeasurementEntries.bind(repository);
-        vi.spyOn(repository, 'listMeasurementEntries').mockImplementation(async () => {
-            const values = await originalList();
+        const originalList = repository.listMeasurementEntriesForEndpoints.bind(repository);
+        vi.spyOn(repository, 'listMeasurementEntriesForEndpoints').mockImplementation(async (endpointIds) => {
+            const values = await originalList(endpointIds);
             waiting += 1;
             if (waiting === 2) {
                 together.resolve();
@@ -362,7 +362,7 @@ describe('RTC RTT repository convergence', () => {
             };
             vi.spyOn(repository, 'findMeasurementEntry')
                 .mockRejectedValue(new Error('RTT receipt replay measurement'));
-            vi.spyOn(repository, 'listMeasurementEntries')
+            vi.spyOn(repository, 'listMeasurementEntriesForEndpoints')
                 .mockRejectedValue(new Error('RTT receipt replay measurement list'));
             vi.spyOn(repository, 'findEndpointAdmissionEntry')
                 .mockRejectedValue(new Error('RTT receipt replay admission'));

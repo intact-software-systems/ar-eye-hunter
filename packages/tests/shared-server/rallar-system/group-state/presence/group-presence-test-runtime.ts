@@ -1,5 +1,8 @@
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-import type { GroupPresenceSummaryReservationRead } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-effects.ts';
+import type {
+    GroupPresenceSummaryReservationRead,
+    GroupPresenceSummaryWorkRead
+} from '@shared-server/rallar-system/group-state/presence/group-presence-summary-effects.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
@@ -73,7 +76,7 @@ export async function convergeSummaryForTest({
         acceptedCausalRevision: event.causalRevision,
         event
     };
-    const read = await work.read(command, summaryReservationRead(command.commandId), nowEpochMs);
+    const read = await readSummaryWork(work, command, nowEpochMs);
     const computed = work.compute(command, read);
     assertGroupPresenceSummaryWorkValid({ work, command, read, computed });
     await runtime.begin(async (transaction) => {
@@ -98,7 +101,7 @@ export async function convergeSummaryForTest({
 interface AssertGroupPresenceSummaryWorkValidInput {
     readonly work: GroupPresenceSummaryWork;
     readonly command: GroupPresenceSummaryWorkData;
-    readonly read: Awaited<ReturnType<GroupPresenceSummaryWork['read']>>;
+    readonly read: GroupPresenceSummaryWorkRead;
     readonly computed: ReturnType<GroupPresenceSummaryWork['compute']>;
 }
 
@@ -109,6 +112,22 @@ function assertGroupPresenceSummaryWorkValid(
     if (issue !== undefined) {
         throw issue.cause;
     }
+}
+
+/** The single-item read: one work row expanded alone under its own reservation, as the delta and replan cases exercise it. */
+export async function readSummaryWork(
+    work: GroupPresenceSummaryWork,
+    command: GroupPresenceSummaryWorkData,
+    nowEpochMs: number
+): Promise<GroupPresenceSummaryWorkRead> {
+    const [read] = await work.read(
+        [{ work: command, reservation: summaryReservationRead(command.commandId) }],
+        nowEpochMs
+    );
+    if (read === undefined) {
+        throw new Error(`Expected one presence summary read for ${command.commandId}`);
+    }
+    return read;
 }
 
 export function summaryReservationRead(commandId: string): GroupPresenceSummaryReservationRead {

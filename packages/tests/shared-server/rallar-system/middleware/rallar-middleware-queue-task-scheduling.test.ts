@@ -43,7 +43,7 @@ function createQueueTaskSchedulingHarness(
             return undefined;
         }
     });
-    const reader = new InboxQueueReader(queue, { nowEpochMs: () => Date.now() });
+    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'adaptive-retry', nowEpochMs: () => Date.now() });
     registerApplicationQueueReaderTasks({
         engine,
         nowEpochMs: () => Date.now(),
@@ -74,12 +74,14 @@ class ProbedQueueBox extends InMemoryQueueBox {
         super(new Map(), () => Temporal.Instant.fromEpochMilliseconds(Date.now()));
     }
 
-    override async isAnyEntryToLock(...input: Parameters<InMemoryQueueBox['isAnyEntryToLock']>): Promise<boolean> {
+    override async readWorkAdvertisement(
+        ...input: Parameters<InMemoryQueueBox['readWorkAdvertisement']>
+    ): ReturnType<InMemoryQueueBox['readWorkAdvertisement']> {
         this.probes += 1;
         if (this.failProbes) {
             throw new Error('Readiness probe unavailable');
         }
-        return await super.isAnyEntryToLock(...input);
+        return await super.readWorkAdvertisement(...input);
     }
 
     override async reserveEntries(

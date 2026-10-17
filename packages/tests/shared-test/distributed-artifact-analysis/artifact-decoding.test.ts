@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { toControlArtifactOverflowRow } from '../../../shared-test/rallar-bb-test/control/control-artifact-overflow.ts';
 import {
     computeDistributedRunArtifactAnalysis,
     toDistributedArtifactBundle,
@@ -276,6 +277,52 @@ describe('distributed run artifact decoding', () => {
         expect(snapshots?.controlRun.results.map((result) => result.commandId)).toEqual(['health']);
         expect(snapshots?.controlRun.events.map((event) => event.commandId)).toEqual(['health']);
         expect(snapshots?.parseWarnings).toEqual(analysis.parseWarnings);
+    });
+
+    it('reads the recorder overflow row as the control server diagnostic in events.jsonl and as no result', () => {
+        const overflow = JSON.stringify(toControlArtifactOverflowRow({
+            omittedResults: 3,
+            omittedEventRows: 7,
+            omittedBytes: 4_096,
+            maxPendingBytes: 2_048
+        }, 1_500));
+        const files = toDistributedRunArtifactFiles({
+            distributedRun: createDistributedRunSnapshot({
+                distributedRunId: 'dist-jsonl-overflow',
+                controlRunId: 'run-jsonl-overflow',
+                state: 'passed',
+                agentIds: ['agent-a']
+            }),
+            controlRun: createControlRunSnapshot({ runId: 'run-jsonl-overflow', agents: [{ agentId: 'agent-a' }] }),
+            files: {
+                'results.jsonl': [
+                    overflow,
+                    JSON.stringify({ resultKey: 'agent-a:health', status: 'SUCCESS', agentId: 'agent-a' })
+                ].join('\n'),
+                'events.jsonl': overflow
+            }
+        });
+
+        const analysis = computeDistributedRunAnalysis(files, GENERATED_AT_EPOCH_MS);
+        const snapshots = toDistributedArtifactSnapshots(files, GENERATED_AT_EPOCH_MS).right;
+
+        expect(analysis.parseWarnings).toEqual([]);
+        expect(snapshots?.controlRun.results.map((result) => result.commandId)).toEqual(['health']);
+        expect(snapshots?.controlRun.events).toEqual([{
+            kind: 'diagnostic',
+            protocolVersion: 1,
+            runId: 'run-jsonl-overflow',
+            agentId: 'control-server',
+            atEpochMs: 1_500,
+            payload: {
+                topic: 'rallar.bb.control.artifact-overflow',
+                severity: 'warning',
+                omittedResults: 3,
+                omittedEventRows: 7,
+                omittedBytes: 4_096,
+                maxPendingBytes: 2_048
+            }
+        }]);
     });
 
     it('rejects artifacts that hold neither a distributed run snapshot nor a failed control request record', () => {

@@ -78,8 +78,8 @@ export async function createAppInboxWsCloseHarness(
     options: AppInboxWsCloseHarnessOptions = {}
 ): Promise<AppInboxWsCloseHarness> {
     const queue = new TestResourceInbox();
-    const reader = new InboxQueueReader(queue);
-    const secondReader = new InboxQueueReader(queue);
+    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+    const secondReader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
     const results = new TestResourceInboxResults();
     const runtimeRepository = new FakeRuntimeStateRepository();
     runtimeRepository.beforeConditionalWrite = options.onConditionalWrite;

@@ -1,10 +1,12 @@
 import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type {
+    ALInboundRuntimeStores,
+    ALVolatileInboundRuntimeStores
+} from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
-import type { DequeueResourceEntryOptions } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
@@ -19,6 +21,7 @@ import type { WsQueueBoxServerReceiptObserver } from '@shared/services/ws-queue-
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import type { AppAdminInboxService } from '../admin-operations/inbox/app-admin-inbox-service.ts';
 import type { AppAuthInboxService } from '../auth/inbox/app-auth-inbox-service.ts';
 import type { AppClientInboxService } from '../client-state/inbox/app-client-inbox-service.ts';
@@ -26,6 +29,8 @@ import type { ClientStateRepository } from '../client-state/persistence/client-s
 import type { AppCrdtInboxService } from '../crdt/inbox/app-crdt-inbox-service.ts';
 import type { GroupStateInboxService } from '../group-state/inbox/group-state-inbox-service.ts';
 import type { GroupStateRepository } from '../group-state/persistence/group-state-repository.ts';
+import type { RallarTimingSink } from '../observability/timing.ts';
+import type { AppInboxCompletionNoticeChannel } from '../queue-pubsub/app-inbox-completion-notice.ts';
 import type { InstallLiveWsNoticeSubscriberInput } from '../queue-pubsub/live-ws-notice-subscriber.ts';
 import type { InstallQueueBoxPubSubBridgeOptions } from '../queue-pubsub/queue-box-pub-sub-bridge.ts';
 import type { RelayedAckNoticeChannel } from '../queue-pubsub/relayed-ack-notice.ts';
@@ -70,6 +75,13 @@ export interface RallarAppClientInboxServiceFactoryInput {
     readonly wakeQueueEngine: () => void;
 }
 
+/** The dequeue-pass timing on the shared inbox and outbox readers: the server's lines, not any one service's. */
+export interface RallarMiddlewareDequeuePassTimingOptions {
+    readonly database: Pick<PSqlSql, 'getExecutorCounters'>;
+    readonly serviceId: string;
+    readonly sink: RallarTimingSink;
+}
+
 export interface RallarMiddlewareResilience {
     readonly inbox: ResourceInboxResilience;
     readonly outbox: ResourceInboxResilience;
@@ -80,7 +92,9 @@ export interface RallarMiddlewareResilience {
 export interface CreateRallarMiddlewareOptions {
     readonly inbox: QueueBoxResourceEntryRepository;
     readonly outbox?: QueueBoxResourceEntryRepository;
-    readonly appInboxDequeueOptions?: DequeueResourceEntryOptions;
+    readonly appInboxDequeueOptions: InboxQueueReader.Options;
+    /** Absent when AppInbox phase timing is off. */
+    readonly appInboxDequeuePassTiming?: RallarMiddlewareDequeuePassTimingOptions;
     readonly webSocketServer?: JsonWebSocketServer;
     readonly wsRuntimeName?: string;
     readonly targetResolver?: WsServerTargetResolver;
@@ -90,6 +104,12 @@ export interface CreateRallarMiddlewareOptions {
     readonly findClientSnapshotByRef?: WsServerTargetResolutionOptions['findClientSnapshotByRef'];
     readonly now?: WsServerTargetResolutionOptions['now'];
     readonly inboundStores?: ALInboundRuntimeStores;
+    /**
+     * The instance-local memory pair a volatile message is admitted and delivered from. `undefined` keeps every
+     * message in `inboundStores`, which an instance relaying acknowledgements to other instances must do: their
+     * readers resolve a message's canonical copy from the shared store.
+     */
+    readonly inboundVolatileStores: ALVolatileInboundRuntimeStores | undefined;
     readonly outboundStores?: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
     readonly wsDeliveryDiagnostics?: WsDeliveryDiagnosticsSink;
     readonly wsOutboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
@@ -126,6 +146,8 @@ export interface CreateRallarMiddlewareOptions {
     >;
     /** The notice channel that carries receiver ACKs between instances; absent on a single instance. */
     readonly relayedAckNotices?: RelayedAckNoticeChannel;
+    /** The notice channel that wakes a waiter whose entry another instance completed; absent on a single instance. */
+    readonly appInboxCompletionNotices?: AppInboxCompletionNoticeChannel;
     readonly readiness?: Promise<void>;
     readonly healthFailure?: Promise<never>;
 }

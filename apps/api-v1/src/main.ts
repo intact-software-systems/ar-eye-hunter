@@ -21,6 +21,7 @@ import { createApiTimingSink } from './services/timing-service.ts';
 
 const configuration = await readApiV1Configuration({
     environment: Deno.env,
+    hardwareConcurrency: navigator.hardwareConcurrency,
     readTextFile: Deno.readTextFile,
     defaultsUrl: new URL('../resources/configuration/defaults-config.json', import.meta.url),
     profileUrls: {

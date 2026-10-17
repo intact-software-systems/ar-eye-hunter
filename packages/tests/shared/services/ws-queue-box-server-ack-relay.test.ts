@@ -375,6 +375,7 @@ async function createServerInstance(input: ServerInstanceInput): Promise<ServerI
     engine.start();
     const relayed: ALMessage[] = [];
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         outbox: new InMemoryQueueBox(new Map()),
         socket,
         name: 'server',

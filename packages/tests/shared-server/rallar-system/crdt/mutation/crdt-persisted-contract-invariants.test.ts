@@ -149,6 +149,7 @@ describe('CRDT persisted mutation contract invariants', () => {
     it('never configures update topics for live-only fanout without mutation ingress', () => {
         const socket = new JsonWebSocketServer();
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(),
             socket: socket,
@@ -294,7 +295,8 @@ function metadata(): RallarCrdtDocumentMetadata {
     };
 }
 
-function rehash(value: Record<string, unknown>) {
-    const { commandHash: _commandHash, ...stable } = value;
-    return { ...stable, commandHash: hashRallarCrdtJson(stable) };
+/** Re-seals a forged command, so the decoder judges its fields rather than its stale hash. */
+function rehash<Command extends { readonly commandHash: string; }>(command: Command): Command {
+    const { commandHash: _commandHash, ...stable } = command;
+    return { ...command, commandHash: hashRallarCrdtJson(stable) };
 }

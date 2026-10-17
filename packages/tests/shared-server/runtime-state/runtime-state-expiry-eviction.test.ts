@@ -151,16 +151,19 @@ describe('runtime state expiry eviction', () => {
         };
         const scheduled: Array<
             Readonly<{
-                callback: () => void | Promise<void>;
+                run: () => void;
                 delayMs: number;
             }>
         > = [];
         const worker = new RuntimeStateExpiryWorker({
             repository,
             intervalMs: 100,
-            schedule: (callback, delayMs) => {
-                scheduled.push({ callback, delayMs });
-                return { cancel: () => undefined };
+            timers: {
+                nowMs: () => 0,
+                schedule: (run, delayMs) => {
+                    scheduled.push({ run, delayMs });
+                    return () => undefined;
+                }
             }
         });
 

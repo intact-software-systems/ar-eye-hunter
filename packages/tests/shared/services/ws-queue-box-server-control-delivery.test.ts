@@ -260,6 +260,7 @@ function createControlInstance(
     const recipients = () => [...socket.connections.keys()].map((peerId) => ({ peerId, connectionId: peerId }));
     const engine = new InboxOutboxEngine();
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         outbox: stores.outbox,
         socket,
         name: SERVER_ID,

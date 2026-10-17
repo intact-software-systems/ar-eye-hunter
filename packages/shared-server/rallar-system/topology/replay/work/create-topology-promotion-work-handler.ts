@@ -15,7 +15,8 @@ export interface TopologyPromotionWorkHandlerOptions {
  * Consumes the durable promotion request the planned-publication transaction
  * committed and enqueues the route-less applyPlannedLayout command. The
  * command id spells the same fence the entry carries, so at-least-once
- * delivery converges on one promotion: replays are inbox replays and a
+ * delivery converges on one promotion: replays are inbox replays, a fence
+ * the slot's newer plan dominates promotes that plan, and any other
  * superseded fence is a typed rejection at compute.
  */
 export function createTopologyPromotionWorkHandler(

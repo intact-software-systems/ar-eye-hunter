@@ -35,7 +35,7 @@ describe('AppInbox durable enqueue', () => {
         }).mockReturnValueOnce('generated-command');
         const writer = new AppInboxQueueEntryWriter({
             repository: queue,
-            inboxQueueReader: new InboxQueueReader(queue, undefined, creationNow),
+            inboxQueueReader: new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' }, creationNow),
             creationNow,
             newResourceId,
             createMessage: createAppInboxQueueMessageFixture
@@ -59,7 +59,7 @@ describe('AppInbox durable enqueue', () => {
         let createdAt = Temporal.Instant.from('2026-10-13T23:59:59.123456789Z');
         const writer = new AppInboxQueueEntryWriter({
             repository: queue,
-            inboxQueueReader: new InboxQueueReader(queue),
+            inboxQueueReader: new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' }),
             creationNow: () => createdAt,
             newResourceId: () => 'unused-command',
             createMessage: createAppInboxQueueMessageFixture
@@ -187,7 +187,7 @@ function createService(
             creationNow: Temporal.Now.instant,
             createMessage: createAppInboxQueueMessageFixture,
             newResourceId: crypto.randomUUID.bind(crypto),
-            inboxQueueReader: new InboxQueueReader(queue),
+            inboxQueueReader: new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' }),
             repository: queue
         },
         {

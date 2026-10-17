@@ -172,6 +172,7 @@ export function createAcceptedOverlayFixture(
         createdByClientId: 'server',
         createdAtEpochMs: 1,
         nextHopSessionIds: [...nextHopSessionIds],
+        nextHopsBySessionId: undefined,
         degreeLimit: 5,
         overlayVersion: version,
         updatedAtEpochMs: version

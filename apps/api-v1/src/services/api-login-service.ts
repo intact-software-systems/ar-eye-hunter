@@ -1,3 +1,4 @@
+import type { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 import {
     authenticateAuthUser,
     type LoginClientData
@@ -18,6 +19,7 @@ export interface LoginInput {
     readonly request: LoginRequest;
     readonly userRepository: AuthUserRepository;
     readonly staticClients: readonly LoginClientData[];
+    readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
 }
 
 export async function register(
@@ -37,6 +39,7 @@ export async function register(
 export async function login(input: LoginInput) {
     return await authenticateAuthUser(input.request, {
         userRepository: input.userRepository,
-        staticClients: input.staticClients
+        staticClients: input.staticClients,
+        passwordDerivationAdmission: input.passwordDerivationAdmission
     });
 }

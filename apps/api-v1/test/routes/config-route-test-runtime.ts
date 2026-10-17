@@ -1,5 +1,7 @@
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 
+import { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
+
 import type { ConfigRouteDependencies } from '../../src/routes/config-route.ts';
 import { registerConfigRoutes } from '../../src/routes/config-route.ts';
 
@@ -19,6 +21,7 @@ export function createConfigRouteTestDependencies(
         now: () => 2_000,
         createTokenId: () => 'token-id-1',
         appAuthInbox: {} as never,
+        passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 1 }),
         authUserRepository: {} as never,
         authentication: {
             adminClientIds: ['admin'],

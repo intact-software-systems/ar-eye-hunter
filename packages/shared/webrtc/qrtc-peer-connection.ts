@@ -1,4 +1,5 @@
 import { IceConfig } from '../api/api-config.ts';
+import { toExponentialBackoffMs } from '../resilience/ComputeAsyncTask.ts';
 import { toError } from '../resilience/to-error.ts';
 import { applyRtcMediaPolicy } from './apply-rtc-media-policy.ts';
 import {
@@ -232,6 +233,8 @@ export namespace QRtcPeerConnection {
 
 export class QRtcPeerConnection {
     private readonly MAX_RECONNECT_ATTEMPTS: number = 5;
+    private readonly RECONNECT_BASE_DELAY_MS: number = 2_000;
+    private readonly MAX_RECONNECT_DELAY_MS: number = 32_000;
     private readonly DISCONNECT_TIMEOUT_MSECS: number = 5000;
 
     private signalingChain: Promise<void | RtcSignalingDiagnostics.CallerRelease> = Promise.resolve();
@@ -1533,7 +1536,11 @@ export class QRtcPeerConnection {
         }
         this.status.reconnectAttempts++;
         this.diagnostics.reconnectAttemptCount++;
-        const delay = Math.pow(2, this.status.reconnectAttempts) * 1000;
+        const delay = toExponentialBackoffMs(
+            this.status.reconnectAttempts,
+            this.MAX_RECONNECT_DELAY_MS,
+            this.RECONNECT_BASE_DELAY_MS
+        );
         this.status.reconnectTimer = setTimeout(() => this.restartIceAfterBackoff(pc), delay);
     }
 

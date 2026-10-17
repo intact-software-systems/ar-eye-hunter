@@ -11,9 +11,11 @@ Deno.test('mutation runtime keeps one database identity and performs no construc
         database: databaseProbe.database,
         serviceId: 'api-test',
         authCredentialSecret: 'a'.repeat(32),
+        maxConcurrentPasswordDerivations: 1,
         nowEpochMs: () => 1_000,
         timing: () => {},
         appInboxOptions: { nowEpochMs: () => 1_000 },
+        appInboxLaneBudgetPolicy: 'fixed-retry-two',
         groupCapacity: { defaultMaxMembers: 10 },
         groupFormationRecomputeDebounceMs: 250,
         adminClientIds: ['admin-1'],
@@ -22,7 +24,8 @@ Deno.test('mutation runtime keeps one database identity and performs no construc
             inbox: createApiV1TestQueueResilience(),
             outbox: createApiV1TestQueueResilience(),
             appOutbox: createApiV1TestQueueResilience()
-        }
+        },
+        appInboxCompletionNotices: undefined
     });
 
     assert.equal(mutation.runtimeStateRepository.sql, databaseProbe.database);

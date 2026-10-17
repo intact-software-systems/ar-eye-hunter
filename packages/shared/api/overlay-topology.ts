@@ -54,6 +54,7 @@ export function toOverlayInfoForSession(
         nextHopSessionIds: snapshot.nextHopsBySessionId[sessionId] ?? [],
         degreeLimit: snapshot.degreeLimit,
         overlayVersion: snapshot.version,
-        updatedAtEpochMs: snapshot.updatedAtEpochMs
+        updatedAtEpochMs: snapshot.updatedAtEpochMs,
+        nextHopsBySessionId: snapshot.nextHopsBySessionId
     };
 }

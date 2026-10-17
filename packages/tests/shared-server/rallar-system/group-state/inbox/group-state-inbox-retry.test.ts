@@ -41,7 +41,7 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
         async () => {
             const nowEpochMs = Date.now();
             const queue = new TestResourceInbox();
-            const reader = new InboxQueueReader(queue);
+            const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
             const results = new TestResourceInboxResults();
             const attempts: RetryAttempt[] = [];
             let authorized = true;

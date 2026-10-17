@@ -77,6 +77,35 @@ Deno.test('configuration reader selects only absent or exact canonical profiles'
     }
 });
 
+Deno.test('configuration reader bounds password derivations by the host cores minus one unless the environment names a bound', async () => {
+    const fromHost = await readApiV1Configuration(readerInput(validConfigurationEnvironment(), 4));
+    assert.equal(fromHost.authentication.maxConcurrentPasswordDerivations, 3);
+
+    const singleCore = await readApiV1Configuration(readerInput(validConfigurationEnvironment(), 1));
+    assert.equal(singleCore.authentication.maxConcurrentPasswordDerivations, 1);
+
+    const fromEnvironment = await readApiV1Configuration(readerInput({
+        ...validConfigurationEnvironment(),
+        RALLAR_AUTH_MAX_CONCURRENT_PASSWORD_DERIVATIONS: '7'
+    }, 4));
+    assert.equal(fromEnvironment.authentication.maxConcurrentPasswordDerivations, 7);
+    assert.equal(
+        fromEnvironment.profile.appliedEnvironmentOverrideNames.includes(
+            'RALLAR_AUTH_MAX_CONCURRENT_PASSWORD_DERIVATIONS'
+        ),
+        true
+    );
+});
+
+Deno.test('configuration reader rejects a password derivation bound below one', async () => {
+    const error = await captureConfigurationError(readerInput({
+        ...validConfigurationEnvironment(),
+        RALLAR_AUTH_MAX_CONCURRENT_PASSWORD_DERIVATIONS: '0'
+    }, 4));
+
+    assert.equal(error.issues.some((issue) => issue.path === 'authentication.maxConcurrentPasswordDerivations'), true);
+});
+
 Deno.test('configuration reader keeps production hardening profile-owned', async () => {
     const environment = {
         ...validConfigurationEnvironment('prod'),
@@ -354,9 +383,25 @@ Deno.test('all committed profiles preserve the default finite ICE admission poli
     }
 });
 
-function readerInput(environmentValues: Record<string, string>): ReadApiV1ConfigurationInput {
+Deno.test('every committed profile serves due retries at the fixed two per pass unless the environment selects another arm', async () => {
+    for (const profile of ['dev', 'prod', 'prod-hardened', 'prod-in-memory'] as const) {
+        const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));
+        assert.equal(configuration.appInbox.laneBudgetPolicy, 'fixed-retry-two', profile);
+    }
+    const selected = await readApiV1Configuration(readerInput({
+        ...validConfigurationEnvironment('prod-in-memory'),
+        RALLAR_APP_INBOX_LANE_BUDGET_POLICY: 'adaptive-retry'
+    }));
+    assert.equal(selected.appInbox.laneBudgetPolicy, 'adaptive-retry');
+});
+
+function readerInput(
+    environmentValues: Record<string, string>,
+    hardwareConcurrency = 4
+): ReadApiV1ConfigurationInput {
     return {
         environment: { get: (name) => environmentValues[name] },
+        hardwareConcurrency,
         readTextFile: (url) => Deno.readTextFile(url),
         defaultsUrl: DEFAULTS_URL,
         profileUrls: {

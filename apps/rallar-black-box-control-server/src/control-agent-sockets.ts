@@ -1,10 +1,16 @@
-import type { ControlClientEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
+import {
+    RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+    type ControlClientEnvelope,
+    type ControlEventEnvelope
+} from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type {
     ResultReleaseEnvelope,
     ResultReleaseOutcome
 } from '@shared-test/rallar-bb-test/result-release/result-release-protocol.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { Either } from '@shared/resilience/Either.ts';
+
+import { toCommandIdSegment } from './control-command-queue-policy.ts';
 import type { RallarBlackBoxControlService } from './control-service.ts';
 
 export interface ControlAgentSocket {
@@ -161,6 +167,15 @@ export class ControlAgentSockets {
         this.sendDispatchableCommandsToAgents(runId, [...this.socketsByRun.get(runId)?.keys() ?? []]);
     }
 
+    /** The deadline sweep over every run with a registered socket; answers how many runs it swept. */
+    sendDispatchableCommandsForConnectedRuns(): number {
+        const runIds = [...this.socketsByRun.keys()];
+        for (const runId of runIds) {
+            this.sendDispatchableCommandsForRun(runId);
+        }
+        return runIds.length;
+    }
+
     private sendDispatchableCommandsToAgents(runId: string, agentIds: readonly string[]): void {
         const sockets = this.socketsByRun.get(runId);
         const openSockets = new Map(agentIds.flatMap((agentId) => {
@@ -180,4 +195,27 @@ export class ControlAgentSockets {
             }
         }
     }
+}
+
+/** The run-level record of a socket replaced by a later registration of the same agent. */
+export function toDuplicateAgentSocketDiagnostic(
+    runId: string,
+    agentId: string,
+    atEpochMs: number
+): ControlEventEnvelope {
+    return {
+        kind: 'diagnostic',
+        protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+        runId,
+        agentId,
+        atEpochMs,
+        eventId: `duplicate-agent-socket-${toCommandIdSegment(agentId, 'segment')}-${atEpochMs}`,
+        payload: {
+            topic: 'rallar.bb.control.duplicate-agent-socket',
+            severity: 'warning',
+            message: 'Another websocket registered with the same runId and agentId; replacing the previous socket.',
+            runId,
+            agentId
+        }
+    };
 }

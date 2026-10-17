@@ -166,6 +166,7 @@ const sockets = new Map(sessionIds.map((id) => {
 }));
 
 const service = createDefaultWsQueueBoxServerService({
+    inboundVolatileStores: undefined,
     outbox: new InMemoryQueueBox(new Map()),
     socket: server,
     name: 'rtc-rtt-traffic-diagnostic',

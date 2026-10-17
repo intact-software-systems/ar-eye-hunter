@@ -113,7 +113,9 @@ async function bootstrapWorkerBrowser(role: 'director' | 'player'): Promise<Rall
 }
 
 // Registrations serialize on the API (≈350 ms each), so the back of a cohort waits seconds for its session.
-it.each(['director', 'player'] as const)('signs a queued %s in under the setup allowance so its group requests keep 5 s', async (role) => {
+// Only the director writes the group; a player joins inside its connect, under the whole setup allowance.
+it('signs a queued director in under the setup allowance so its group requests keep their own allowance', async () => {
+    const role = 'director';
     const browser = await configureWorkerBrowser('if-needed');
     vi.useFakeTimers();
     facade.behavior.registerAndLogin.mockImplementation(async () => {
@@ -171,7 +173,8 @@ it.each<AlmScalePhaseCase>([
     { role: 'director', delayMs: 45_001, readinessDelayMs: 0, outcome: 'connect-timeout' },
     { role: 'player', delayMs: 45_001, readinessDelayMs: 0, outcome: 'connect-timeout' },
     { role: 'player', delayMs: 40_000, readinessDelayMs: 20_000, outcome: 'connected' },
-    { role: 'player', delayMs: 0, readinessDelayMs: 45_001, outcome: 'readiness-timeout' }
+    // A player's readiness waits 650 ms per participant beyond the setup allowance, less the connect's completion margin.
+    { role: 'player', delayMs: 0, readinessDelayMs: 49_751, outcome: 'readiness-timeout' }
 ])('bounds separate $role phases: $delayMs ms socket, $readinessDelayMs ms RTC readiness ($outcome)', async (phaseCase) => {
     const browser = await bootstrapWorkerBrowser(phaseCase.role);
     vi.useFakeTimers();
@@ -211,7 +214,7 @@ it.each<AlmScalePhaseCase>([
     }
     else {
         expect(connected.error).toMatchObject({ code: 'RALLAR_BB_RTC_READY_TIMEOUT' });
-        expect(connected.durationMs).toBe(45_000);
+        expect(connected.durationMs).toBe(49_750);
     }
     expect(facade.records.loginAttempts).toHaveLength(1);
     expect(facade.records.registrationAttempts).toHaveLength(0);

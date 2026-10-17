@@ -1138,6 +1138,7 @@ function createOverlay(peerId: string): OverlayInfo {
         name: 'Room',
         sourceGroupStateCausalRevision: { groupRevision: 1, presenceRevision: 2 },
         nextHopSessionIds: [peerId],
+        nextHopsBySessionId: undefined,
         degreeLimit: 2,
         overlayVersion: 1,
         createdByClientId: 'sender',

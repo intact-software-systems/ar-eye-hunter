@@ -43,6 +43,7 @@ export function createRoomTransportFixture(input: RoomTransportFixtureInput): Ro
         createdByClientId: 'server',
         createdAtEpochMs: 1,
         nextHopSessionIds: input.acceptedPeerIds,
+        nextHopsBySessionId: undefined,
         degreeLimit: 2,
         overlayVersion: input.version,
         updatedAtEpochMs: 1

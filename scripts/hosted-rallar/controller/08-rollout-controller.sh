@@ -190,7 +190,7 @@ sanitize_api_environment_file() {
 	local env_file="$1"
 	local tmp_file key line
 	local allowed_names="|PORT|CORS_ORIGINS|RALLAR_API_BASE_URL|RALLAR_WS_BASE_URL|"
-	allowed_names+="RALLAR_LOGIN_USER_RATE_LIMIT|RALLAR_TIMING_LOGS|"
+	allowed_names+="RALLAR_LOGIN_USER_RATE_LIMIT|RALLAR_TIMING_LOGS|RALLAR_APP_INBOX_PHASE_TIMING|"
 	allowed_names+="RALLAR_REGISTRATION_IP_RATE_LIMIT|RALLAR_LOGIN_IP_RATE_LIMIT|"
 	allowed_names+="RALLAR_AUTH_CREDENTIAL_SECRET|RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET|"
 	allowed_names+="RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS|RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS|"
@@ -250,6 +250,12 @@ update_env_value() {
 	rm -f "${tmp_file}"
 }
 
+# Hosted runs are attributed from the API journal, so every rollout turns the timing lines on.
+write_api_timing_environment() {
+	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_TIMING_LOGS" "1"
+	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_APP_INBOX_PHASE_TIMING" "true"
+}
+
 run_rollout_self_test() {
 	case "${RALLAR_ROLLOUT_SCRIPT_SELF_TEST:-}" in
 	checkout-ref)
@@ -272,6 +278,10 @@ run_rollout_self_test() {
 	normalize-api-environment)
 		sanitize_api_environment_file "${RALLAR_API_ENV_FILE}"
 		echo "normalizedApiEnvironment=true"
+		;;
+	write-api-timing-environment)
+		write_api_timing_environment
+		echo "wroteApiTimingEnvironment=true"
 		;;
 	write-api-optional-environment)
 		local name
@@ -571,6 +581,9 @@ update_api_cors_origins
 
 echo "==> Updating API RTC topology env"
 update_api_rtc_topology_env
+
+echo "==> Writing API timing env"
+write_api_timing_environment
 
 echo "==> Updating control-server browser origins"
 update_control_allowed_origins

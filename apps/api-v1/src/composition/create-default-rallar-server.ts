@@ -184,6 +184,7 @@ function createConfiguredApiV1Runtime(
         queuePubSubLocalBus: createLocalQueuePubSubBus(),
         wsRuntimeName: 'default-qbox-server',
         authCredentialSecret: configuration.authentication.credentialSecret,
+        maxConcurrentPasswordDerivations: configuration.authentication.maxConcurrentPasswordDerivations,
         nowEpochMs,
         timing,
         wsReceiptObserver: createApiV1WsReceiptObserver({
@@ -193,6 +194,7 @@ function createConfiguredApiV1Runtime(
             publisherId: myPublisherId
         }),
         appInboxOptions: toApiAppInboxServiceOptions(configuration.appInbox),
+        appInboxLaneBudgetPolicy: configuration.appInbox.laneBudgetPolicy,
         groupCapacity: {
             defaultMaxMembers: configuration.group.defaultMaxMembers
         },

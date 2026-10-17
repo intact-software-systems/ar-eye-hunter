@@ -17,7 +17,6 @@ import {
     ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import { RateLimiter } from '@shared/resilience/Resilience.ts';
 import {
     afterEach,
     describe,
@@ -312,6 +311,29 @@ describe('IndexedDbQueueBox indexed reads', () => {
         ).resolves.toBe(false);
     });
 
+    it('readWorkAdvertisement names the lanes holding a claimable row and isAnyEntryToLock folds them', async () => {
+        const typeId = 'probe.lanes.v1';
+        const queue = new IndexedDbQueueBox({
+            dbName: `indexeddb-indexed-reads-lanes-${crypto.randomUUID()}`,
+            observer: createPassThroughIndexedDbOperationObserver()
+        });
+        const now = Temporal.Now.instant();
+        const nothingAdvertised = { FINALIZATION: false, NEW: false, RETRY: false, FAIRNESS: false, TIMEOUT: false };
+
+        expect(await queue.readWorkAdvertisement(new Set([typeId]), createWorkAdvertisementOptions())).toEqual(nothingAdvertised);
+        await queue.enqueue(createEntry(typeId, 'due-retry', { status: EntityStatus.RETRY, attempts: 1, nextTs: now.subtract({ seconds: 5 }) }));
+        expect(await queue.readWorkAdvertisement(new Set([typeId]), createWorkAdvertisementOptions()))
+            .toEqual({ ...nothingAdvertised, RETRY: true });
+        await queue.enqueue(createEntry(typeId, 'overdue-retry', { status: EntityStatus.RETRY, attempts: 1, nextTs: now.subtract({ seconds: 31 }) }));
+        await queue.enqueue(createEntry(typeId, 'abandoned', { status: EntityStatus.RESERVED, attempts: 1, startTs: now.subtract({ minutes: 6 }) }));
+        const options = createWorkAdvertisementOptions();
+        expect(await queue.readWorkAdvertisement(new Set([typeId]), options))
+            .toEqual({ ...nothingAdvertised, RETRY: true, FAIRNESS: true, TIMEOUT: true });
+        expect(await queue.readWorkAdvertisement(new Set([typeId]), options))
+            .toEqual({ ...nothingAdvertised, RETRY: true, FAIRNESS: true, TIMEOUT: true });
+        expect(await queue.isAnyEntryToLock(new Set([typeId]), options)).toBe(true);
+    });
+
     it('deletes the whole-store reader from the store module', () => {
         expect('readAllStoredQueueEntries' in indexedDbQueueBoxStoreModule).toBe(false);
     });
@@ -433,11 +455,9 @@ function firstValue<K, V>(map: Map<K, V>): V {
 
 function createWorkAdvertisementOptions() {
     return {
-        checkTimeout: RateLimiter.init(60_000, 1),
-        checkFairness: RateLimiter.init(60_000, 1),
-        checkFinalization: RateLimiter.init(60_000, 1),
         maxAttempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
         finalizationStaleAfterMs: 5 * 60 * 1000,
-        reservationLeaseMs: 5 * 60 * 1000
+        reservationLeaseMs: 5 * 60 * 1000,
+        staleDueThresholdMs: 30_000
     };
 }

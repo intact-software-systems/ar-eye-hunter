@@ -172,6 +172,8 @@ function createTransactionBoundaryExecution(
             storage.database.groupEventStore
         ),
         transactionWriter,
+        lanePhaseTiming: undefined,
+        publicationTiming: undefined,
         wakeQueue: () => {
             wakeCount += 1;
         },

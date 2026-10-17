@@ -1,13 +1,14 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     ResourceInboxHandlerEntryError,
-    ResourceInboxHandlerFinalizedSuccess
+    ResourceInboxHandlerFinalizedRejection,
+    ResourceInboxHandlerFinalizedSuccess,
+    type ResourceInboxHandlerFinalized
 } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type {
     ResourceInboxAttempt,
     ResourceInboxAttemptTelemetry
 } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
-import { ResourceInboxCommandRejectedError } from '@shared/queuebox/resource-inbox/resource-inbox-command-rejected-error.ts';
 import {
     EntityStatus,
     toResourceEntryWithUpdatedResource,
@@ -15,6 +16,7 @@ import {
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 
+import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import {
     recordRallarTiming,
     timeRallarAsync,
@@ -30,6 +32,7 @@ import type { AppInboxResultRepository } from '../app-inbox-persistence-ports.ts
 import { toAppInboxAttemptTimingDetails, toAppInboxTimingDetails } from './app-inbox-attempt-timing.ts';
 import { computeAppInboxCompletion, validateAppInboxCompletion } from './app-inbox-completion-computation.ts';
 import type { AppInboxHandlerRegistration } from './app-inbox-handler-registration.ts';
+import { timeAppInboxPhase } from './app-inbox-phase-timing.ts';
 import { AppInboxTransactionWriter } from './app-inbox-transaction-writer.ts';
 
 interface AppInboxExecutionAttempt<Command, Result> extends AppInboxHandlerExecutor.Input<Command, Result> {
@@ -66,6 +69,8 @@ export namespace AppInboxHandlerExecutor {
     export interface Dependencies {
         readonly resultRepository: AppInboxResultRepository;
         readonly transactionWriter: AppInboxTransactionWriter;
+        /** The executor whose statement and wait counters the phase lines report. */
+        readonly database: Pick<PSqlSql, 'getExecutorCounters'>;
         readonly nowEpochMs: () => number;
     }
 
@@ -79,6 +84,7 @@ export namespace AppInboxHandlerExecutor {
 export class AppInboxHandlerExecutor {
     private readonly resultRepository: AppInboxResultRepository;
     private readonly transactionWriter: AppInboxTransactionWriter;
+    private readonly database: Pick<PSqlSql, 'getExecutorCounters'>;
     private readonly nowEpochMs: () => number;
     private readonly serviceId: string;
     private readonly timing: RallarTimingSink | undefined;
@@ -90,6 +96,7 @@ export class AppInboxHandlerExecutor {
     ) {
         this.resultRepository = dependencies.resultRepository;
         this.transactionWriter = dependencies.transactionWriter;
+        this.database = dependencies.database;
         this.nowEpochMs = dependencies.nowEpochMs;
         this.serviceId = config.serviceId;
         this.timing = config.timing;
@@ -97,13 +104,13 @@ export class AppInboxHandlerExecutor {
     }
 
     /**
-     * Resolves with the committed entry when the handler's own transaction finalized it, so the queue releases nothing.
-     * A handler that outlives its reservation lease is reported, not stopped: the claim may already be reclaimed, and a
-     * reclaimed attempt's late finish fails its attempt guard.
+     * Resolves with the committed entry when the handler's own transaction finalized it, as a success or as a typed
+     * rejection, so the queue releases nothing. A handler that outlives its reservation lease is reported, not
+     * stopped: the claim may already be reclaimed, and a reclaimed attempt's late finish fails its attempt guard.
      */
     async execute<Command, Result>(
         input: AppInboxHandlerExecutor.Input<Command, Result>
-    ): Promise<ResourceInboxHandlerFinalizedSuccess | undefined> {
+    ): Promise<ResourceInboxHandlerFinalized | undefined> {
         const { registration, entry } = input;
         const undecodedEnqueue: AppInboxEnqueueInput = {
             type: registration.type,
@@ -157,7 +164,7 @@ export class AppInboxHandlerExecutor {
 
     private async executeAttempt<Command, Result>(
         attempt: AppInboxExecutionAttempt<Command, Result>
-    ): Promise<ResourceInboxHandlerFinalizedSuccess | undefined> {
+    ): Promise<ResourceInboxHandlerFinalized | undefined> {
         let context: AppInboxMessageContext<Result> | undefined;
         let finalizedEntry: ResourceEntry;
         try {
@@ -240,9 +247,10 @@ export class AppInboxHandlerExecutor {
         });
     }
 
+    /** A retryable failure rethrows for redelivery; a typed rejection commits its terminal entry and is a value. */
     private async finishFailedExecution<Command, Result>(
         input: FailedAppInboxExecution<Command, Result>
-    ): Promise<ResourceInboxHandlerFinalizedSuccess> {
+    ): Promise<ResourceInboxHandlerFinalized> {
         if (input.context) {
             const finalization = this.transactionWriter.read(input.context);
             if (
@@ -278,12 +286,14 @@ export class AppInboxHandlerExecutor {
             throw issues[0].cause;
         }
         await this.transactionWriter.writeComputedTerminalFailure(terminalContext, computed);
-        throw new ResourceInboxHandlerEntryError(
-            computed.finalizedEntry,
-            input.classification.queueFailure === 'command-rejected'
-                ? new ResourceInboxCommandRejectedError(input.classification.code, input.error)
-                : input.error
-        );
+        if (input.classification.queueFailure === 'command-rejected') {
+            return new ResourceInboxHandlerFinalizedRejection(
+                computed.finalizedEntry,
+                input.classification.code,
+                input.error
+            );
+        }
+        throw new ResourceInboxHandlerEntryError(computed.finalizedEntry, input.error);
     }
 
     private recordQueueRetryTiming<Command, Result>(
@@ -351,14 +361,17 @@ export class AppInboxHandlerExecutor {
         if (!(this.options.phaseTiming ?? false)) {
             return await phase.action();
         }
-        return await timeRallarAsync(
-            this.timing,
+        return await timeAppInboxPhase(
             {
-                component: 'app-inbox-phase',
-                operation: phase.operation,
-                serviceId: this.serviceId,
-                requestId: phase.enqueue.resourceId,
-                details: { ...toAppInboxTimingDetails(phase.enqueue, phase.key), ...phase.details }
+                sink: this.timing,
+                database: this.database,
+                event: {
+                    component: 'app-inbox-phase',
+                    operation: phase.operation,
+                    serviceId: this.serviceId,
+                    requestId: phase.enqueue.resourceId,
+                    details: { ...toAppInboxTimingDetails(phase.enqueue, phase.key), ...phase.details }
+                }
             },
             phase.action
         );

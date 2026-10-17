@@ -47,6 +47,13 @@ and V1d:
   skills and governance, and prefer an existing pattern (`Either`, `LatestRepository`, lane
   budgets, `RateLimiter`, the AppInbox doctrine) over a new one.
 - Test-driven and sub-agent-driven development with distinct implementation and review seats.
+- Added 2026-10-15 during step 2e: a generic mechanism (concurrency gate, rate limiter, backoff,
+  timer seam, repeating sweep, trailing flush, serialized or single-flight chain, bounded buffer,
+  coalescing claim) is written once as a `packages/shared` primitive with its own tests, and the
+  business case composes it under its domain name; a purpose-named copy in a feature folder is
+  duplication. The code standard now carries this rule (`repo-code-style.md`, "Reusable mechanisms
+  over business-specific one-offs"). The V1c audit of such copies and its ranked candidates are
+  listed under step 2e.
 
 ## Binding workload and acceptance
 
@@ -186,7 +193,7 @@ binds the two slices that follow from them; step 2a is merged (#662) and step 2b
 
 Step 2a (the leader-ACK path and the harness amplification, D199, D200, D202) is merged as #662.
 
-### Step 2b: the engine, the handler cost, the director-rooted tree and the diagnostic volume (this PR)
+### Step 2b: the engine, the handler cost, the director-rooted tree and the diagnostic volume (merged, #664)
 
 Delivered on `claude/alm-v1c-step-2b-engine-topology` (draft PR #664) as D194–D205, D207 and D208, with
 D206 refuted and withdrawn (a probe showed a relay already forwards in the committing batch; the
@@ -202,21 +209,23 @@ assertion are unchanged. Hosted 15 from the branch passes through `Run GitHub Fr
 `hetzner-control` mode (15/15, 231/231, run 38662616218); the all-on-one-VM Hetzner run still fails at RTC
 readiness because the co-located host stalls once the browsers start (recorded in the proposal §1.7).
 
-### Step 2c: the acknowledgement tail at scale, the control plane at 50, then 15 → 30 → 50 hosted
+### Step 2c: the acknowledgement tail at scale, the control plane at 50, then 15 → 30 → 50 hosted (this PR)
 
-After step 2b is manually merged, on a fresh branch, from the measured 50-agent evidence (proposal
+Step 2b is merged (#664 as `9f71ea2`). On branch `claude/alm-v1c-step-2c-ack-tail`, from the measured 50-agent evidence (proposal
 §1.8): the shot-ACK tail grows with depth (p50 49 ms at depth 1, 1.5 s at depth 3, 1.8 s at depth 4)
 and completes in steps (≈1.25 s, then every 0.5 s), which is a retry or acknowledgement timer, not
 queue draining; attempts per acknowledged shot equal the sender's degree, so every shot still floods
 the tree; the per-session 20/s limiter refuses 4,793 hand-offs at 50 (1,228 at 30, 72 at 15) on every
-agent, the director included, and its imposed wait is unmeasured. Owners: `packages/shared` ALM
-outbound repair and acknowledgement timers, the multicast manager's hand-off limiter. First measure
-(per-message hop timestamps, the acknowledgement-timeout schedule, the limiter's wait), then one
-change at a time with RED → GREEN at the owner, judged by the local 50-agent run under the unchanged
-window. Harness: barrier resolution takes 0.75–1.65 s at 50 (0.004–0.23 s at 30) because parent
-result frames re-embed their children's results (≈58 MB of 159 MB); measure the control server's
-receive and resolution times, then stop re-embedding. Topology: the accepted layout landed 0.95 s
-before traffic; the `traffic-ready` barrier should follow a stable layout. Harness fault tolerance: on a control-socket outage the control server redispatches unfinished
+agent, the director included, and its imposed wait is unmeasured. The survey located both: the stepped completion is the per-session 20/s hand-off
+limiter whose 250 ms buckets forecast refusals of up to 1,251 ms (exactly 20 ACKs leave, then a gap),
+and a leader-addressed send floods every overlay neighbour because the audience freeze narrows the
+receipt but not the route. Decisions D209 and D210 (proposal §3) take control hand-offs off the limiter
+(the breaker stays) and route frozen-audience sends along the accepted tree with a pure
+subtree-contains-a-recipient filter at the origin, the relays and the repair. One change at a time with
+RED → GREEN at the owner, judged by the local 50-agent run under the unchanged window. Harness (D211–D213): composite result events carry counts and no child results (the root
+envelope stays nested; 88.5 MB of 159 MB at 50 were re-embedded children behind which the barrier
+resolution waited); a redispatched command joins its in-flight execution instead of starting a second
+run; the scale recipes wait for a stable accepted layout before `setup-complete`. Harness fault tolerance: on a control-socket outage the control server redispatches unfinished
 commands and an agent whose run is in flight starts a second run of the same command id; the agent
 must join the in-flight run (one run per command id) and the barriers must keep arrivals made during
 the outage. Hosted: the single Hetzner VM stalls its API and control server once 15 co-located
@@ -226,6 +235,114 @@ GitHub runners, the VM left to the servers), 15 before 30 before 50, and the fou
 AppInbox concurrency and the cross-server AppInbox wake (F4, F5) still need Postgres evidence and stay
 outcome-shaped. A failed run earns exact evidence review and a meaningful change before another
 workload; no unchanged acceptance retry is selected.
+
+**As applied (PR #666).** D209–D213 landed with two review-driven fix waves recorded as D214–D218
+in the proposal (§3, §6): no command echoes in the result envelopes and a frame-limited result
+that keeps its verdict; the rejection-log contract kept after the Deno gate pinned it; the
+director prunes its own legs, a stale layout falls back to the flood for its subtree, and relays
+arm no doomed repair hints; heartbeats out of the AL admission; a cohort-proportional group-request
+allowance. Measured (proposal §1.9): the local 50-agent manifest passes for the first time
+(50/50, 231/231, shot-ACK p50 33 ms against 1,290 ms on the step 2b head, the end event
+acknowledged with ≈3 s of the window left), 15 and 30 pass locally, hosted 15 passes through
+GitHub Free `hetzner-control` (231/231, shot-ACK p99 190 ms against 1,326 ms). Hosted 30 fails
+after setup: the single-lane hosted API relays one offer→answer in 7.1 s p50 (4.3 s at 15; 0.17 to
+0.93 s locally), RTC formation takes 52–59 s per agent, and the director-rooted rebuild after the
+appointment re-forms the overlay behind the same queue while 5 s status reads time out. That bound
+is the next slice.
+
+### Step 2d: hosted formation throughput, then 30 → 50 hosted
+
+Static analysis of the hosted plane's serial path first (the `prod-in-memory` AppInbox lane, the
+WS outbox worker's wake cadence, the signal relay and the audience reads: where a relay, a presence
+update and a status read wait), then one change at a time at the owner (per-key or per-lane
+concurrency for the in-memory profile, F4, or a relay path that does not queue behind mutations),
+each RED first and judged by the hosted 30-agent run; then 50 and the four-arm lane-policy benefit
+gate. The recipes need no further harness change for this: they pass locally at 50 and hosted at
+15. Also carried: the three IndexedDB abort errors at page teardown (queue engine tasks still
+running when the database closes) and the hosted worker's `session.expected_mismatch` diagnostic
+(the agent id passed as the expected session id).
+
+**Designed (PR for step 2d).** Two surveys (proposal §4) located the bound: the server builds its
+WS inbound runtime without the volatile store pair, so every best-effort RTC signal is admitted
+through the durable PGlite lane (≈20 statements on one mutex, FIFO behind every mutation and
+list read), and formation-time rebuilds plus the appointment rebuild churn most edges. Decisions
+D219–D224 (proposal §3): the server carries the volatile lane; additions-only deltas never rebuild;
+a plan with an unchanged leader keeps its adjacency and the recipes appoint the director before
+the players connect; the status refresh reads one room; the outbound breaker is verified under a
+burst; ICE coalescing is held in reserve. Each RED first, judged by the hosted 30-agent run.
+
+**As applied (PR #667).** D219–D224 landed with three review-driven fix waves and the hosted
+50 evidence recorded as D225–D231 (proposal §3, §6): the server's volatile signalling lane on
+single-instance profiles, typed retries off the outbox breaker, breadth-first joins from the
+leader within the depth bound, the eccentricity rule for an unchanged leader, the director
+appointed before the players connect, the players joining through the room connect, one-room
+status refresh, cohort-proportional connect and status allowances, a refinement that keeps the
+tree unless clearly faster, compact streamed artifact bundles, and a control server that survives
+50 agents. Measured (proposal §1.10):
+local 50 setup-complete 36.2 s against 41.8 s on main with one offer per edge and no peer churn;
+hosted 30 passes (offer→answer 0.81 s against 7.1 s, formation 32.9 s against 52–59 s); hosted 50
+failed four times, each one phase further, and passes on the control-server head (D232: the
+control server had died ≈70 s into every 50-agent run; it now persists on a bounded cadence, scans
+per agent and records under a cap). Next slice (2e): the hosted lane's per-player membership and presence cost (≈0.65 s per
+player at 50, serial) measured with the AppInbox phase timing on a hosted run, the sign-in
+derivation under 50 concurrent logins, ICE coalescing (D223) and the known-member join path (D228).
+
+### Step 2e: the hosted lane's per-player cost (this PR)
+
+Step 2d is merged (#667 as `e623aa7`). The phase-timing capture and the lane survey (proposal §4)
+located the cost: six serial lane items per player, an authorization capture repeated inside every
+group mutation, an O(N²) presence follow-on, no-op client heartbeats that still read the audience,
+three PBKDF2 derivations per agent and per-measurement RTT submissions. Decisions D233–D238
+(proposal §3), each RED first and judged by the local timing table and then the hosted 50-agent
+`rtc.connect` and sign-in medians; D239 records that the four-arm lane-policy benefit gate needs an
+arm selector, backend-operation counters and a retry-inducing workload before it can be evaluated,
+and stays an open item of this plan; D240–D241 record the join contract and a typed second lane as
+not taken. The first local rerun showed the handlers halved but the lane per-item fixed
+statements dominating the setup window, so D242 (executor statement counters in the phase timing) and
+D243 (one lane presence probe per pass, reservations only for non-empty lanes, a one-statement NEW claim)
+follow in the same step, each RED first and judged by statements per lane item and the inter-item gap.
+
+**As applied (PR #668).** D233–D238, D242–D249 and the shared primitives landed with four review-driven
+fix waves (proposal §3, §6). Measured (proposal §1.11): local 50 join wait 6.5 → 3.9 s and a lane item at 3
+statements in one transaction; hosted 30 connect p50 35.0 → 28.3 s; hosted 50 passes with sign-in 12.5 → 9.6 s,
+connect 64.9 → 54.9 s, director-status 4.3 s and 15 timeouts → 2 ms and none, setup-complete 8.9 s → 0.27 s,
+traffic-ready 82 s against 113 s. Open after this step: the six medium consolidation candidates of the audit
+(keyed rate limiter, trailing flush, serialized chain, queuebox sibling claim, JSON streaming, abort scope), the
+four-arm lane-policy gate (D239, now with executor counters), the join still waiting ≈9 s behind the hosted lane
+(the lane's remaining fixed cost and the per-player item count), and the RTT submission per round (D238).
+
+### Step 2f: the hosted lane's gaps and the overlay acceptance (this PR)
+
+Step 2e is merged (#668 as `4f6a6fa`). The step 2e hosted 50 journals (proposal §4 step 2f) split the players'
+connect into 27.7 s behind the lane and 24.0 s waiting for the overlay acceptance, and the lane's 59 s window into
+25 s of its own work and 41 s of gaps spent on route-side statements. Decisions D250–D259 (proposal §3), each RED
+first and judged by the hosted 50 readiness wait, connect p50, join queue age, inter-item gap, zero heartbeat items
+and zero superseded rejections in the setup window, and the four-arm gate's recorded verdict (D258 closes D239);
+D260 records the deferred harness items. The six medium consolidation candidates other than the trailing flush
+(D256) stay open for their own slice.
+
+**As applied (PR #669).** D250–D254 and D257–D265 landed with two implementer takeovers after a model
+usage limit and three review-driven fix waves (proposal §3, §6); D255 is deferred and D256 revised. Measured
+(proposal §1.12): hosted 50 connect p50 54.9 → 37.0 s, readiness wait 24.0 → 10.0 s, traffic-ready 82 → 62 s,
+no superseded promotion; hosted 30 connect 28.3 → 20.6 s; the four-arm gate falsifies the adaptive RETRY quota and
+fixed RETRY two is the default (D239 closed); the cluster recipes that failed on the safety tick pass with the
+completion relay. Open after this step: the ticket consume in the connect item (D255, socket registration after
+the connect commit), the handler read phase's counter scope (D259), the route's second session read (D252), the
+ThrottledFlush migrations of the AL checkpoint writer and the artifact recorder, the remaining audit primitives
+(keyed rate limiter, serialized chain, sibling claim, JSON streaming, abort scope), the O(N) presence summary read
+per connect, sign-in PBKDF2 under the cap, the test-only awaiting methods on the client inbox service
+(`processAuthorisedWsClientConnect`, `processAuthorisedWsClientDisconnect`, `processExpiredSessions`), the double completion
+publish for a retry-exhausted entry, and the Postgres medium-scale evidence for D261/D265 beyond CI.
+
+The review wave added D244 (heartbeat renewals sync to the principal's own sessions), D245 (coalesced
+delta slices and the browser's already-reached-revision disposition) and D246 (the bounded concurrency
+admission as a shared resilience primitive). A sweep of every V1c commit for generic mechanisms under
+purpose names found twelve; four small ones land in this step as shared primitives (a failure backoff
+state over the existing exponential delay, a timer and clock seam, a repeating run, a keyed
+single-flight), and the rest stay open items of this plan for a consolidation slice: a keyed rate
+limiter for the ACK relay, a trailing flush with one in-flight write (snapshot persistence, the AL
+checkpoint writer, the artifact recorder), a serialized promise chain, a queuebox-level sibling-row
+claim shared by the presence summary and topology work, sliced JSON streaming, and a linked abort scope.
 
 ## Completion and handoff
 

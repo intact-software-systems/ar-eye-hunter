@@ -77,6 +77,7 @@ describe('durable WS outbox owner misses', () => {
         const nonOwnerSocket = createSocket();
         const nonOwnerEngine = new InboxOutboxEngine();
         const nonOwner = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox,
             outboundStores,
@@ -89,6 +90,7 @@ describe('durable WS outbox owner misses', () => {
         onTestFinished(() => nonOwner.dispose());
         const ownerEngine = new InboxOutboxEngine();
         const owner = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             outbox,
             outboundStores,
             socket: ownerSocket.socket,
@@ -126,6 +128,46 @@ describe('durable WS outbox owner misses', () => {
         expectNativeUnicast(ownerSocket, 'durable-reply-1');
     });
 
+    it('keeps delivering after a burst of owner misses, since a typed retry does not open the dequeue breaker', async () => {
+        const outbox = new InMemoryQueueBox();
+        const socket = createSocket();
+        const engine = new InboxOutboxEngine();
+        const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
+            outbox,
+            outboundStores: createSharedOutboundStores(outbox),
+            socket: socket.socket,
+            name: 'server',
+            readAuthenticatedConnectionScope: () => ({ scope: RECIPIENT_SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }),
+            targetResolver: {
+                resolvePeerRecipients: (peerId) => peerId === 'writer-session' ? [{ peerId, connectionId: peerId }] : []
+            },
+            dequeueResilience: createResilience(),
+            queueEngine: engine
+        });
+        onTestFinished(() => service.dispose());
+        const misses: ResourceEntry[] = [];
+        for (let index = 0; index < 12; index += 1) {
+            misses.push(
+                await enqueueDurableOutboxEntry(service, {
+                    ...createUnicastMessage(`miss-${index}`, `miss-${index}`),
+                    targets: { mode: 'unicast', toPeerId: 'absent-session' }
+                })
+            );
+        }
+
+        await drainEngine(engine);
+        await expect.poll(async () =>
+            (await Promise.all(misses.map(async (miss) => (await readEntry(outbox, miss.key)).status)))
+                .every((status) => status === EntityStatus.RETRY || status === EntityStatus.FAILED)
+        ).toBe(true);
+        const deliverable = await enqueueDurableOutboxEntry(service, createUnicastMessage());
+        await drainEngine(engine);
+
+        await expect.poll(async () => (await readEntry(outbox, deliverable.key)).status).toBe(EntityStatus.COMPLETED);
+        expectNativeUnicast(socket, 'durable-reply-1');
+    });
+
     it('redrives a durable send after a shared admission claim conflict', async () => {
         const outbox = new InMemoryQueueBox();
         const ownerSocket = createSocket();
@@ -154,6 +196,7 @@ describe('durable WS outbox owner misses', () => {
         engine.start();
         onTestFinished(() => engine.stop());
         const owner = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             outbox,
             socket: ownerSocket.socket,
             name: 'server-with-target',
@@ -532,6 +575,7 @@ function expectNativeUnicast(socket: WsOutboxTestSocket, msgId: string, resource
 function createService(input: CreateWsOutboxServiceInput): WsOutboxServiceFixture {
     const engine = new InboxOutboxEngine();
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         outbox: input.outbox,
         outboundStores: input.outboundStores,
         socket: input.socket.socket,
@@ -631,7 +675,6 @@ function createResilience(): ResourceInboxResilience {
         maxRate: 10,
         concurrencyIncreaseStep: 1,
         concurrencyReduceStep: 1,
-        maxFairnessSelectionsInWindow: 10,
         retryPolicy: { maxAttempts: 3, delaysAfterAttemptMs: [1, 1], maxDelayMs: 1, jitterRatio: 0, staleDueThresholdMs: 1 }
     });
 }

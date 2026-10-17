@@ -57,7 +57,7 @@ describe('Committed AppInbox completion publication', () => {
             replace: async (entry: typeof harness.entry) => entry,
             findByKey: async (key: typeof harness.entry.key) => harness.database.state.results.get(toKeyAsString(key))
         };
-        const inboxQueueReader = new InboxQueueReader(queue, { completionNotifications });
+        const inboxQueueReader = new InboxQueueReader(queue, { laneBudgetPolicy: 'adaptive-retry', completionNotifications });
         const options = { waitRetryIntervalMsecs: 1000, waitMaxRetryIntervalMsecs: 1000, waitJitterRatio: 0, waitMaxElapsedMsecs: 5000 };
         const client = createAppInboxClientRuntime({
             inboxQueueReader,
@@ -98,7 +98,7 @@ describe('Committed AppInbox completion publication', () => {
         const queue = new TestResourceInbox();
         const results = new TestResourceInboxResults();
         const completionNotifications = ResourceInboxCompletionNotifications.createDefault();
-        const inboxQueueReader = new InboxQueueReader(queue, { completionNotifications });
+        const inboxQueueReader = new InboxQueueReader(queue, { laneBudgetPolicy: 'adaptive-retry', completionNotifications });
         const options = { waitRetryIntervalMsecs: 1000, waitMaxRetryIntervalMsecs: 1000, waitJitterRatio: 0, waitMaxElapsedMsecs: 5000 };
         const client = createAppInboxClientRuntime({
             inboxQueueReader,
@@ -253,4 +253,76 @@ describe('Committed AppInbox completion publication', () => {
         subscription.close();
         expect(vi.getTimerCount()).toBe(0);
     });
+
+    it.each([
+        { type: AppInboxType.GROUP_CREATE, awaitable: true },
+        { type: AppInboxType.RTC_RTT_SUBMIT, awaitable: false },
+        { type: AppInboxType.GROUP_TOPOLOGY_PUBLICATION, awaitable: false }
+    ])('relays a committed $type completion only when a caller can await it', async ({ type, awaitable }) => {
+        const harness = createAtomicHarness({ entryResource: toTypedEntryResource(type) });
+        const relayed: ResourceInboxCompletionNotifications.Identity[] = [];
+        const completionNotifications = ResourceInboxCompletionNotifications.createDefault((key) => relayed.push(key));
+        const writer = new AppInboxTransactionWriter(
+            { database: harness.database.sql, nowEpochMs: () => 1000, completionNotifications },
+            { serviceId: 'test' }
+        );
+        const context = { ...harness.context, enqueue: { ...harness.context.enqueue, type } };
+        const computed = computeAppInboxCompletion({ entry: harness.entry, completedAtEpochMs: 1000, status: EntityStatus.COMPLETED, durableResult: null });
+
+        await writer.writeComputedMutation(context, computed, async () => {});
+
+        expect(relayed).toEqual(awaitable ? [harness.entry.key] : []);
+    });
+
+    it.each([
+        { type: AppInboxType.GROUP_CREATE, awaitable: true },
+        { type: AppInboxType.CLIENT_AUTHORISED_WS_DISCONNECT, awaitable: false }
+    ])('relays an exhausted $type completion only when a caller can await it', async ({ type, awaitable }) => {
+        const harness = createAtomicHarness({
+            attempts: 20,
+            entryResource: toTypedEntryResource(type),
+            entryTopicId: type.startsWith('CLIENT_') ? 'app-inbox.client-state' : undefined
+        });
+        const relayed: ResourceInboxCompletionNotifications.Identity[] = [];
+        const finalizer = createAppInboxRetryFinalizer({
+            database: harness.database.sql,
+            completionNotifications: ResourceInboxCompletionNotifications.createDefault((key) => relayed.push(key))
+        });
+
+        await finalizer(toExhaustion(harness.entry));
+
+        expect(relayed).toEqual(awaitable ? [harness.entry.key] : []);
+    });
+
+    it('relays a malformed command completion, whose waiter cannot be ruled out', async () => {
+        const harness = createAtomicHarness({ entryResource: 'not json' });
+        const relayed: ResourceInboxCompletionNotifications.Identity[] = [];
+        const writer = new AppInboxTransactionWriter(
+            {
+                database: harness.database.sql,
+                nowEpochMs: () => 1000,
+                completionNotifications: ResourceInboxCompletionNotifications.createDefault((key) => relayed.push(key))
+            },
+            { serviceId: 'test' }
+        );
+        const computed = computeAppInboxCompletion({ entry: harness.entry, completedAtEpochMs: 1000, status: EntityStatus.NON_RETRYABLE, durableResult: null });
+
+        await writer.writeComputedQueueFailure(
+            computeResourceInboxAttempt({
+                entry: harness.entry,
+                selectedLane: Reservator.NEW,
+                selectedAtEpochMs: 1000,
+                selectedDueAtEpochMs: undefined,
+                reservationLeaseMs: 60_000
+            }),
+            computed
+        );
+
+        expect(relayed).toEqual([harness.entry.key]);
+    });
 });
+
+function toTypedEntryResource(type: AppInboxType): string {
+    const enqueue = { type, resourceId: 'request-1', contextId: 'group-1', data: { requestId: 'request-1' } };
+    return JSON.stringify({ payload: { typeId: type, resource: JSON.stringify(enqueue) } });
+}

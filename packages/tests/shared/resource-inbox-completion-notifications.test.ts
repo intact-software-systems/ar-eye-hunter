@@ -32,7 +32,7 @@ describe('Local ResourceInbox completion notification ownership', () => {
                 void subscription.wait(1000).then(() => settled.push(index));
             });
             const key = published;
-            notifications.publish(key);
+            notifications.publish(key, 'awaitable');
             await vi.advanceTimersByTimeAsync(0);
             expect(settled).toEqual([distinctIdentities.indexOf(published)]);
             subscriptions.forEach((subscription) => subscription.close());
@@ -49,7 +49,7 @@ describe('Local ResourceInbox completion notification ownership', () => {
         void subscription.wait(1000).then(() => {
             settled = true;
         });
-        other.publish(identity);
+        other.publish(identity, 'awaitable');
         await vi.advanceTimersByTimeAsync(0);
         expect(settled).toBe(false);
         subscription.close();
@@ -60,13 +60,14 @@ describe('Local ResourceInbox completion notification ownership', () => {
         vi.useFakeTimers();
         let notifyAtRegistration = () => {};
         const notifications = new ResourceInboxCompletionNotifications({
+            nowMs: Date.now,
             schedule: (settle, delay) => {
                 notifyAtRegistration();
-                return setTimeout(settle, delay);
-            },
-            cancel: clearTimeout
+                const timer = setTimeout(settle, delay);
+                return () => clearTimeout(timer);
+            }
         });
-        notifyAtRegistration = () => notifications.publish(identity);
+        notifyAtRegistration = () => notifications.publish(identity, 'awaitable');
         const subscription = notifications.subscribe(identity);
         subscription.beginRead();
         let settled = false;
@@ -84,14 +85,14 @@ describe('Local ResourceInbox completion notification ownership', () => {
         const cancelled: ReturnType<typeof setTimeout>[] = [];
         const scheduled: ReturnType<typeof setTimeout>[] = [];
         const notifications = new ResourceInboxCompletionNotifications({
+            nowMs: Date.now,
             schedule: (settle, delay) => {
                 const timer = setTimeout(settle, delay);
                 scheduled.push(timer);
-                return timer;
-            },
-            cancel: (timer) => {
-                cancelled.push(timer);
-                clearTimeout(timer);
+                return () => {
+                    cancelled.push(timer);
+                    clearTimeout(timer);
+                };
             }
         });
         const subscription = notifications.subscribe(identity);
@@ -100,7 +101,7 @@ describe('Local ResourceInbox completion notification ownership', () => {
             settlements += 1;
         });
         await vi.advanceTimersByTimeAsync(1000);
-        notifications.publish(identity);
+        notifications.publish(identity, 'awaitable');
         subscription.close();
         subscription.close();
         await pending;
@@ -112,10 +113,13 @@ describe('Local ResourceInbox completion notification ownership', () => {
     it('keeps advisory publication nonthrowing when cancellation throws after clearing its timer', async () => {
         vi.useFakeTimers();
         const notifications = new ResourceInboxCompletionNotifications({
-            schedule: setTimeout,
-            cancel: (timer) => {
-                clearTimeout(timer);
-                throw new Error('cancel failed');
+            nowMs: Date.now,
+            schedule: (settle, delay) => {
+                const timer = setTimeout(settle, delay);
+                return () => {
+                    clearTimeout(timer);
+                    throw new Error('cancel failed');
+                };
             }
         });
         const subscription = notifications.subscribe(identity);
@@ -123,10 +127,61 @@ describe('Local ResourceInbox completion notification ownership', () => {
         const pending = subscription.wait(1000).then(() => {
             settled = true;
         });
-        expect(() => notifications.publish(identity)).not.toThrow();
+        expect(() => notifications.publish(identity, 'awaitable')).not.toThrow();
         await vi.advanceTimersByTimeAsync(0);
         expect(settled).toBe(true);
         await pending;
+        subscription.close();
+        expect(vi.getTimerCount()).toBe(0);
+    });
+});
+
+describe('Relayed ResourceInbox completion notifications', () => {
+    it('relays only a completion no local waiter observed and never relays an accepted one again', async () => {
+        vi.useFakeTimers();
+        const relayed: ResourceInboxCompletionNotifications.Identity[] = [];
+        const notifications = ResourceInboxCompletionNotifications.createDefault((key) => relayed.push(key));
+        notifications.publish(identity, 'awaitable');
+        expect(relayed).toEqual([identity]);
+
+        const subscription = notifications.subscribe(identity);
+        let settlements = 0;
+        void subscription.wait(1000).then(() => {
+            settlements += 1;
+        });
+        notifications.publish(identity, 'awaitable');
+        await vi.advanceTimersByTimeAsync(0);
+        expect(relayed).toEqual([identity]);
+        expect(settlements).toBe(1);
+
+        void subscription.wait(1000).then(() => {
+            settlements += 1;
+        });
+        notifications.acceptRelayed(identity);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(settlements).toBe(2);
+        subscription.close();
+        notifications.acceptRelayed(identity);
+        expect(relayed).toEqual([identity]);
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('never relays a fire-and-forget completion, which still wakes a local waiter', async () => {
+        vi.useFakeTimers();
+        const relayed: ResourceInboxCompletionNotifications.Identity[] = [];
+        const notifications = ResourceInboxCompletionNotifications.createDefault((key) => relayed.push(key));
+        notifications.publish(identity, 'fire-and-forget');
+        expect(relayed).toEqual([]);
+
+        const subscription = notifications.subscribe(identity);
+        let woke = false;
+        void subscription.wait(1000).then(() => {
+            woke = true;
+        });
+        notifications.publish(identity, 'fire-and-forget');
+        await vi.advanceTimersByTimeAsync(0);
+        expect(woke).toBe(true);
+        expect(relayed).toEqual([]);
         subscription.close();
         expect(vi.getTimerCount()).toBe(0);
     });

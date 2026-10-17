@@ -146,7 +146,7 @@ describe('AppClientInbox authentication', () => {
 
     it('returns the exact terminal left for a malformed completed client result', async () => {
         const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue);
+        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
         const results = new TestResourceInboxResults();
         const database = createAppInboxTestDatabase(queue, results);
         const service = new AppClientInboxService(
@@ -212,12 +212,79 @@ describe('AppClientInbox authentication', () => {
         });
     });
 
+    it('answers a session heartbeat whose issued session has expired as a typed failure value before enqueue', async () => {
+        const queue = new TestResourceInbox();
+        const live = issuedSession('alice', 'alice-session');
+        const expired = { ...live, expiresAtEpochMs: Date.now() - 1 };
+        const service = new AppClientInboxService(
+            {
+                inboxQueueReader: new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' }),
+                resourceInboxRepository: queue,
+                resourceInboxResultsRepository: new TestResourceInboxResults(),
+                database: createAppInboxTestDatabase(queue, new TestResourceInboxResults()),
+                clientStateService: createClientStateServiceFixture()
+            },
+            { serviceId: 'server-12345678' }
+        );
+
+        const result = await service.processAuthenticatedEntryUntilCompletion(
+            {
+                type: AppInboxType.CLIENT_SESSION_HEARTBEAT,
+                topicId: AppInboxType.CLIENT_SESSION_HEARTBEAT,
+                resourceId: 'teardown-heartbeat',
+                contextId: toAuthenticatedClientMutationContextId({
+                    scope: CLIENT_STATE_TEST_SCOPE,
+                    principalId: 'alice',
+                    callerClientId: expired.clientId,
+                    callerSessionId: expired.sessionId
+                }),
+                senderId: expired.clientId,
+                data: {
+                    scope: CLIENT_STATE_TEST_SCOPE,
+                    principalId: 'alice',
+                    clientInstanceId: 'browser',
+                    sessionId: 'alice-session',
+                    request: {
+                        generationId: 'generation-1',
+                        lastHeartbeatAtEpochMs: 1,
+                        expiresAtEpochMs: 2,
+                        actorPrincipalId: 'alice',
+                        actorSessionId: 'alice-session',
+                        requestId: 'teardown-heartbeat'
+                    }
+                }
+            },
+            expired
+        );
+
+        expect(result.right).toBeUndefined();
+        expect(result.left).toEqual({
+            type: 'app-inbox-failure',
+            code: 'client-mutation-session-expired',
+            status: 401,
+            message: 'Authenticated client mutation session is expired.',
+            issues: [{
+                code: 'client-mutation-session-expired',
+                path: ['authority', 'expiresAtEpochMs'],
+                message: 'Authenticated client mutation session is expired.',
+                details: null
+            }],
+            denial: {
+                code: 'client-mutation-session-expired',
+                message: 'Authenticated client mutation session is expired.',
+                details: null
+            },
+            retry: null
+        });
+        expect(await readEntries(queue)).toEqual([]);
+    });
+
     it('rejects forged operation topics and contexts before enqueue', async () => {
         const queue = new TestResourceInbox();
         const authority = issuedSession('alice', 'alice-session');
         const service = new AppClientInboxService(
             {
-                inboxQueueReader: new InboxQueueReader(queue),
+                inboxQueueReader: new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' }),
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: new TestResourceInboxResults(),
                 database: createAppInboxTestDatabase(queue, new TestResourceInboxResults()),
@@ -291,7 +358,7 @@ describe('AppClientInbox authentication', () => {
 
     it('rejects a durable Mallory authority targeting Alice before any domain write', async () => {
         const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue);
+        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
         const results = new TestResourceInboxResults();
         const runtimeRepository = new FakeRuntimeStateRepository();
         const database = createAppInboxTestDatabase(queue, results, {
@@ -317,28 +384,34 @@ describe('AppClientInbox authentication', () => {
             }
         );
 
-        await expect(
-            processAuthenticatedClientMutation(
-                service,
-                {
-                    type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
-                    resourceId: 'mallory-targets-alice',
-                    contextId: `${CLIENT_STATE_TEST_SCOPE.applicationId}:${CLIENT_STATE_TEST_SCOPE.workspaceId}:alice`,
-                    senderId: 'mallory',
-                    data: {
-                        scope: CLIENT_STATE_TEST_SCOPE,
-                        principalId: 'alice',
-                        request: {
-                            username: 'alice',
-                            displayName: 'Mallory controlled',
-                            actorPrincipalId: 'mallory',
-                            requestId: 'mallory-targets-alice'
-                        }
+        const denied = await processAuthenticatedClientMutation(
+            service,
+            {
+                type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+                resourceId: 'mallory-targets-alice',
+                contextId: `${CLIENT_STATE_TEST_SCOPE.applicationId}:${CLIENT_STATE_TEST_SCOPE.workspaceId}:alice`,
+                senderId: 'mallory',
+                data: {
+                    scope: CLIENT_STATE_TEST_SCOPE,
+                    principalId: 'alice',
+                    request: {
+                        username: 'alice',
+                        displayName: 'Mallory controlled',
+                        actorPrincipalId: 'mallory',
+                        requestId: 'mallory-targets-alice'
                     }
-                },
-                mallory
-            )
-        ).rejects.toThrow(/principal|authority|authenticated/i);
+                }
+            },
+            mallory
+        );
+
+        expect(denied.right).toBeUndefined();
+        expect(denied.left).toMatchObject({
+            type: 'app-inbox-failure',
+            code: 'client-mutation-authority-denied',
+            status: 403,
+            message: expect.stringMatching(/principal|authority|authenticated/i)
+        });
 
         expect(
             await createTestClientStateRepository(runtimeRepository).readSnapshot({
@@ -384,7 +457,7 @@ interface RevokedAuthorityRetryHarness {
 
 async function createRevokedAuthorityRetryHarness(nowEpochMs: () => number): Promise<RevokedAuthorityRetryHarness> {
     const queue = new TestResourceInbox();
-    const reader = new InboxQueueReader(queue);
+    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
     const results = new TestResourceInboxResults();
     const runtimeRepository = new FakeRuntimeStateRepository();
     const authSessions = new AuthSessionRepository(runtimeRepository);

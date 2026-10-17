@@ -331,6 +331,7 @@ class RtcRecoveryOwner {
             name: 'Reload room',
             sourceGroupStateCausalRevision: snapshot.causalRevision,
             nextHopSessionIds,
+            nextHopsBySessionId: undefined,
             degreeLimit: 2,
             overlayVersion: 1,
             createdByClientId: this.sessionId,

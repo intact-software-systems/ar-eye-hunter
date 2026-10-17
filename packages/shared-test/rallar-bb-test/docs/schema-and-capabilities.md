@@ -76,7 +76,7 @@ same hazard `absent: true` carries in the other direction.
 A `{resultCache.<commandId>.<path>}` token in `wait.match.contains` stands for the string or number
 an earlier command of the same runtime returned at that path, for example
 `{resultCache.<send commandId>.value.msgId}`. The wait resolves every token once, when it starts, and
-reports the resolved match in its result. A token naming no string or number value fails the wait
+reports the resolved match in the details of a failure. A token naming no string or number value fails the wait
 with `RALLAR_BLACK_BOX_WAIT_INVALID` and the unresolved reference in its details. This is how a
 recipe pins a wait on an identity it cannot know when it is authored, such as the msgId a send was
 given.
@@ -357,7 +357,10 @@ receiver owns the run's group, so its own page may appoint itself the room's dir
 with `director.appoint`, and it ends an appointment of its own with `director.resign`.
 The RTC origin resolves the leader from the room snapshot its own page holds, so before
 it sends the sender polls `director.status` with `refresh: true` until
-`directorStatus.active` reads what the cell needs.
+`directorStatus.active` reads what the cell needs. The scale recipes' readiness loops ask
+`refresh: 'when-absent'` instead: the page re-reads the room over REST only while it holds
+no snapshot of the room, because the state sync keeps a held snapshot current and a cohort
+polling the API for it is harness load, not evidence.
 
 - `leader-confirms` (`ws`, `rtc`, `rtc-with-ws-fallback`): the receiver appoints itself;
   once the sender reads the director active, its room send asks for the leader. The

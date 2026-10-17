@@ -1,3 +1,4 @@
+import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import {
     RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
     type ControlClientEnvelope
@@ -24,6 +25,7 @@ import { toDistributedRunRollup } from '../../src/distributed/distributed-run-ev
 
 export interface ControlServiceInputOverrides {
     readonly now?: () => number;
+    readonly timingSink?: RallarTimingSink;
     readonly createCommandId?: () => string;
     readonly redaction?: RallarBlackBoxTestRedactionOptions;
     readonly allowedCommandKinds?: readonly string[];
@@ -38,6 +40,12 @@ interface ControlRegisterFixtureInput {
     readonly completedCommandIds?: readonly string[];
     /** Absent when the agent registers before loading a configuration, so it names only its session label. */
     readonly identity?: RallarBlackBoxControlAgentIdentity;
+}
+
+interface ControlHeartbeatFixtureInput {
+    readonly runId: string;
+    readonly agentId: string;
+    readonly atEpochMs: number;
 }
 
 interface ControlResultFixtureInput {
@@ -79,7 +87,8 @@ export function toControlServiceInput(
             now: overrides.now ?? (() => Date.now()),
             createCommandId: overrides.createCommandId ?? (() => crypto.randomUUID()),
             createRunToken: () => crypto.randomUUID(),
-            toDistributedRunRollup
+            toDistributedRunRollup,
+            timingSink: overrides.timingSink
         },
         config: {
             redaction: overrides.redaction,
@@ -128,6 +137,19 @@ export function toRegisterEnvelope(
         resume: {
             completedCommandIds
         }
+    };
+}
+export function toHeartbeatEnvelope(
+    { runId, agentId, atEpochMs }: ControlHeartbeatFixtureInput
+): ControlClientEnvelope {
+    return {
+        kind: 'heartbeat',
+        protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+        runId,
+        agentId,
+        atEpochMs,
+        status: 'running',
+        identity: toUnconfiguredAgentIdentity(agentId, atEpochMs)
     };
 }
 export function toCommandResultEnvelope(

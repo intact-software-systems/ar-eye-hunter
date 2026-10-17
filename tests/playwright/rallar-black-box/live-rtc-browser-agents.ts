@@ -116,7 +116,10 @@ export async function openLiveRtcBrowserAgent(
             eventHistory: input.config.eventHistory ?? { mode: 'full' },
             connection: input.connection,
             refreshRoom: async (options) =>
-                await page.evaluate(refreshLiveRtcBrowserRoom, { timeoutMs: options.timeoutMs })
+                await page.evaluate(refreshLiveRtcBrowserRoom, {
+                    refresh: options.refresh,
+                    timeoutMs: options.timeoutMs
+                })
         };
     }
     catch (error) {

@@ -482,6 +482,7 @@ it('retains marked no-data structured families and protected receipt topics befo
         'rallar.browser.connect.phase_completed',
         'rallar.browser.formation.changed',
         'rallar.browser.formation.layout',
+        'rallar.browser.formation.layout-timing',
         'rallar.browser.formation.ready',
         'rallar.browser.formation.not-ready'
     ];

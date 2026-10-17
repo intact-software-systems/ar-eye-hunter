@@ -1,5 +1,6 @@
 import {
     isSameGroupLayoutIdentity,
+    resolveGroupLayoutRole,
     toGroupLayoutIdentity,
     type GroupLayoutIdentity
 } from '@shared/api/group-lifecycle/group-layout-identity.ts';
@@ -31,11 +32,22 @@ export interface ComputePlannedLayoutPromotionInput {
     readonly planned: GroupPlannedLayoutRow | null;
     readonly acceptedIdentity: GroupLayoutIdentity | null;
     readonly acceptedRow: GroupAcceptedLayoutRow | null;
+    /**
+     * What a fenced plan the slot no longer holds does: `promote-dominating`
+     * promotes the slot's plan when it dominates the fenced identity, `reject`
+     * keeps the fence exact.
+     */
+    readonly supersededFence: 'promote-dominating' | 'reject';
 }
 
 export type PlannedLayoutPromotion =
     | Readonly<{
         outcome: 'apply';
+        /**
+         * `newer` when the fenced plan was replanned before this promotion ran
+         * and the slot's newer plan still satisfies the promotion's intent.
+         */
+        promoted: 'expected' | 'newer';
         acceptedSnapshot: RallarOverlayTopologySnapshot;
         acceptedIdentity: GroupLayoutIdentity;
         /** Null when the accepted slot is empty (first promotion inserts). */
@@ -59,6 +71,12 @@ export type PlannedLayoutPromotion =
  * acceptedLayoutIdentity — or names exactly why not. It never writes and
  * never changes a stage by itself. A tombstoned planned row never promotes:
  * its teardown is a fact about the old layout, not a new acceptance.
+ *
+ * Under `promote-dominating`, a fenced plan the slot no longer holds promotes
+ * the slot's plan instead when that plan is the same group's (the read is by
+ * the command's group), the same formation epoch's (the epoch fence above)
+ * and planned from a causal revision and version that dominate the fenced
+ * identity; an older or incomparable plan stays a superseded rejection.
  */
 export function computePlannedLayoutPromotion(
     input: ComputePlannedLayoutPromotionInput
@@ -76,10 +94,8 @@ export function computePlannedLayoutPromotion(
     if (plannedIdentity.state !== 'active') {
         return { outcome: 'no-planned-layout' };
     }
-    if (
-        input.expectedLayout !== null &&
-        !isSameGroupLayoutIdentity(input.expectedLayout, plannedIdentity)
-    ) {
+    const promoted = resolvePromotedPlan(input, plannedIdentity);
+    if (promoted === null) {
         return { outcome: 'planned-layout-superseded' };
     }
     if (
@@ -90,9 +106,25 @@ export function computePlannedLayoutPromotion(
     }
     return {
         outcome: 'apply',
+        promoted,
         acceptedSnapshot: input.planned.snapshot,
         acceptedIdentity: plannedIdentity,
         acceptedExpectedRevision: input.acceptedRow?.revision ?? null,
         plannedExpectedRevision: input.planned.revision
     };
+}
+
+function resolvePromotedPlan(
+    input: ComputePlannedLayoutPromotionInput,
+    plannedIdentity: GroupLayoutIdentity
+): 'expected' | 'newer' | null {
+    if (input.expectedLayout === null || isSameGroupLayoutIdentity(input.expectedLayout, plannedIdentity)) {
+        return 'expected';
+    }
+    if (input.supersededFence === 'reject') {
+        return null;
+    }
+    return resolveGroupLayoutRole({ publication: plannedIdentity, accepted: input.expectedLayout }) === 'planned'
+        ? 'newer'
+        : null;
 }

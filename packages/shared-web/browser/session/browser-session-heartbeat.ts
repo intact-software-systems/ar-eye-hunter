@@ -6,22 +6,86 @@ import {
     type StateHeartbeatWorkflowValue
 } from '@shared-web/browser/session/refresh-state-heartbeat.ts';
 import { adoptGroupSnapshotsFromHeartbeat } from '@shared-web/browser/state-cache/group-heartbeat-snapshot-adoption.ts';
+import { BROWSER_STATE_CACHE_TTL_MS } from '@shared-web/browser/state-cache/initialise-browser-cache-repositories.ts';
 import { emitBrowserStateReadDiagnostic } from '@shared-web/browser/state-read/diagnostics.ts';
 import type { AuthSession, ClientInfo } from '@shared/api/api-config.ts';
+import type { ClientSession } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID, type StateScope } from '@shared/api/state-types.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
+import { startRepeating } from '@shared/resilience/start-repeating.ts';
+import { createDefaultTimers, type Timers } from '@shared/resilience/timers.ts';
 
-const intervalMsecs = 20000;
-const retryIntervalMsecs = 5000;
+export const SESSION_HEARTBEAT_INTERVAL_MS = 20_000;
+export const SESSION_HEARTBEAT_RETRY_MS = 5_000;
+/** A renewal lands this long before the lease or the cache it keeps alive would lapse: one retry and its request. */
+export const SESSION_HEARTBEAT_RENEWAL_MARGIN_MS = 2 * SESSION_HEARTBEAT_RETRY_MS;
+
+/**
+ * The own client-session lease as the store last saw it: when a client-session connect or renewal last stamped it,
+ * and when it lapses.
+ */
+interface SessionLease {
+    readonly stampedAtEpochMs: number;
+    readonly expiresAtEpochMs: number;
+}
+
+interface FirstHeartbeatRenewalInput {
+    readonly nowEpochMs: number;
+    /** Undefined until a client snapshot names the own client-session lease. */
+    readonly leaseExpiresAtEpochMs: number | undefined;
+    /** The issued access token's expiry: the browser's only bound until the client snapshot names the lease. */
+    readonly accessTokenExpiresAtEpochMs: number | undefined;
+    /** The earliest lapse among the cached snapshots of the groups this session joined, when any is cached. */
+    readonly joinedGroupSnapshotsExpireAtEpochMs: number | undefined;
+    readonly cacheTtlMs: number;
+    readonly marginMs: number;
+}
+
+interface HeartbeatRenewalInput {
+    readonly nowEpochMs: number;
+    readonly intervalMs: number;
+    readonly marginMs: number;
+    readonly lease: SessionLease | undefined;
+}
+
+type HeartbeatRenewalDecision = 'renew' | 'skip';
+
+/**
+ * The renewal keeps the session lease and the browser cache alive, so the first one runs before the lease, a joined
+ * group's cached snapshot or a snapshot written now would lapse.
+ */
+function computeFirstHeartbeatRenewalDelayMs(input: FirstHeartbeatRenewalInput): number {
+    const renewByEpochMs = Math.min(
+        input.leaseExpiresAtEpochMs ?? input.accessTokenExpiresAtEpochMs ?? Number.POSITIVE_INFINITY,
+        input.joinedGroupSnapshotsExpireAtEpochMs ?? Number.POSITIVE_INFINITY,
+        input.nowEpochMs + input.cacheTtlMs
+    );
+    return Math.max(0, renewByEpochMs - input.nowEpochMs - input.marginMs);
+}
+
+/**
+ * A lease a client-session connect stamped inside the interval needs no renewal, unless the next interval would come
+ * too late. The stamp is on the server's clock: one ahead of the browser's proves nothing about the interval.
+ */
+function resolveHeartbeatRenewal(input: HeartbeatRenewalInput): HeartbeatRenewalDecision {
+    if (
+        input.lease === undefined ||
+        input.lease.expiresAtEpochMs - input.nowEpochMs <= input.intervalMs + input.marginMs ||
+        input.lease.stampedAtEpochMs > input.nowEpochMs
+    ) {
+        return 'renew';
+    }
+    return input.lease.stampedAtEpochMs > input.nowEpochMs - input.intervalMs ? 'skip' : 'renew';
+}
 
 export type InitHeartbeatOptions = Readonly<{
     authSession?: AuthSession;
     scope?: StateScope;
     policies?: CommandsOrchestratorPolicies<StateHeartbeatWorkflowValue>;
-    onAuthInvalid?: (error: unknown) => void | Promise<void>;
+    onAuthInvalid?: (error: Error) => void | Promise<void>;
 }>;
 
 let activeHeartbeat: RallarSessionHeartbeat | undefined;
@@ -30,8 +94,10 @@ class BrowserStateHeartbeatRuntime {
     public readonly handle: RallarSessionHeartbeat;
     readonly #clientData: ClientInfo;
     readonly #options: InitHeartbeatOptions;
+    readonly #timers: Timers = createDefaultTimers();
     #stopped = false;
-    #timer: ReturnType<typeof setTimeout> | undefined;
+    #cancelFirstRenewal: (() => void) | undefined;
+    #stopRepeating: (() => void) | undefined;
 
     public constructor(clientData: ClientInfo, options: InitHeartbeatOptions) {
         this.#clientData = clientData;
@@ -44,33 +110,54 @@ class BrowserStateHeartbeatRuntime {
     }
 
     public start(): void {
-        void this.runHeartbeat();
+        const firstRenewalDelayMs = computeFirstHeartbeatRenewalDelayMs({
+            nowEpochMs: this.#timers.nowMs(),
+            leaseExpiresAtEpochMs: this.readOwnSessionLease()?.expiresAtEpochMs,
+            accessTokenExpiresAtEpochMs: this.#options.authSession?.expiresAtEpochMs,
+            joinedGroupSnapshotsExpireAtEpochMs: readEarliestExpiry(
+                this.readJoinedGroups().map((snapshot) =>
+                    groupStateSnapshotsRepository.findGroupStateSnapshotExpiresAtByRef(snapshot.group)
+                )
+            ),
+            cacheTtlMs: BROWSER_STATE_CACHE_TTL_MS,
+            marginMs: SESSION_HEARTBEAT_RENEWAL_MARGIN_MS
+        });
+        this.#cancelFirstRenewal = this.#timers.schedule(() => this.startRepeatingRenewals(), firstRenewalDelayMs);
+    }
+
+    private startRepeatingRenewals(): void {
+        this.#cancelFirstRenewal = undefined;
+        this.#stopRepeating = startRepeating({
+            timers: this.#timers,
+            intervalMs: SESSION_HEARTBEAT_INTERVAL_MS,
+            retryBackoff: { baseMs: SESSION_HEARTBEAT_RETRY_MS, maxMs: SESSION_HEARTBEAT_RETRY_MS },
+            firstRun: 'now',
+            run: () => this.runHeartbeat()
+        });
     }
 
     private stop(): void {
         this.#stopped = true;
-        if (this.#timer !== undefined) {
-            clearTimeout(this.#timer);
-            this.#timer = undefined;
-        }
+        this.#cancelFirstRenewal?.();
+        this.#stopRepeating?.();
         if (activeHeartbeat === this.handle) {
             activeHeartbeat = undefined;
         }
     }
 
-    private schedule(delayMsecs: number): void {
-        if (this.#stopped) {
+    /** A rejection asks the loop for the retry; a stopped or replaced heartbeat and an auth failure end quietly. */
+    private async runHeartbeat(): Promise<void> {
+        const renewal = resolveHeartbeatRenewal({
+            nowEpochMs: this.#timers.nowMs(),
+            intervalMs: SESSION_HEARTBEAT_INTERVAL_MS,
+            marginMs: SESSION_HEARTBEAT_RENEWAL_MARGIN_MS,
+            lease: this.readOwnSessionLease()
+        });
+        if (renewal === 'skip') {
             return;
         }
-        this.#timer = setTimeout(() => void this.runHeartbeat(), delayMsecs);
-    }
-
-    private async runHeartbeat(): Promise<void> {
         try {
             await this.refreshHeartbeat();
-            if (this.isCurrent()) {
-                this.schedule(intervalMsecs);
-            }
         }
         catch (error) {
             if (!this.isCurrent()) {
@@ -81,25 +168,21 @@ class BrowserStateHeartbeatRuntime {
                 await this.#options.onAuthInvalid?.(error);
                 return;
             }
-            if (!this.#stopped) {
-                console.warn(
-                    `State heartbeat failed for client ${this.#clientData.clientId} session ${this.#clientData.sessionId}:`,
-                    error
-                );
-                this.schedule(retryIntervalMsecs);
-            }
+            console.warn(
+                `State heartbeat failed for client ${this.#clientData.clientId} session ${this.#clientData.sessionId}:`,
+                error
+            );
+            throw error;
         }
     }
 
     private async refreshHeartbeat(): Promise<void> {
-        const joinedGroups = groupStateSnapshotsRepository
-            .getAllGroupStateSnapshots()
-            .filter((snapshot) => isGroupSnapshotInScope(snapshot, this.#options.scope))
-            .filter((snapshot) =>
-                snapshot.activeSessions.some((session) => session.sessionId === this.#clientData.sessionId)
-            );
+        const joinedGroups = this.readJoinedGroups();
         const refreshed = await refreshStateHeartbeat(this.#clientData, joinedGroups, {
             generationId: this.handle.generationId,
+            clientSnapshot: clientStateSnapshotsRepository.findClientStateSnapshotByPrincipalId(
+                this.#clientData.clientId
+            ),
             authSession: this.#options.authSession,
             scope: this.#options.scope,
             policies: this.#options.policies
@@ -111,9 +194,32 @@ class BrowserStateHeartbeatRuntime {
         await writeHeartbeatResult(this.#clientData, joinedGroups, refreshed);
     }
 
+    private readJoinedGroups(): GroupSnapshot[] {
+        return groupStateSnapshotsRepository
+            .getAllGroupStateSnapshots()
+            .filter((snapshot) => isGroupSnapshotInScope(snapshot, this.#options.scope))
+            .filter((snapshot) =>
+                snapshot.activeSessions.some((session) => session.sessionId === this.#clientData.sessionId)
+            );
+    }
+
     private isCurrent(): boolean {
         return !this.#stopped && activeHeartbeat === this.handle;
     }
+
+    private readOwnSessionLease(): SessionLease | undefined {
+        const ownSession = clientStateSnapshotsRepository
+            .findClientStateSnapshotByPrincipalId(this.#clientData.clientId)
+            ?.activeSessions.find((session: ClientSession) => session.sessionId === this.#clientData.sessionId);
+        return ownSession === undefined
+            ? undefined
+            : { stampedAtEpochMs: ownSession.lastHeartbeatAtEpochMs, expiresAtEpochMs: ownSession.expiresAtEpochMs };
+    }
+}
+
+function readEarliestExpiry(expiries: readonly (number | undefined)[]): number | undefined {
+    const known = expiries.filter((expiry): expiry is number => expiry !== undefined);
+    return known.length === 0 ? undefined : Math.min(...known);
 }
 
 export async function initHeartbeat(
@@ -180,6 +286,6 @@ function isGroupSnapshotInScope(
         (snapshot.group.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID) === scope.workspaceId;
 }
 
-function isUnauthorizedApiError(error: unknown): boolean {
+function isUnauthorizedApiError(error: unknown): error is ApiHttpError {
     return error instanceof ApiHttpError && error.status === 401;
 }

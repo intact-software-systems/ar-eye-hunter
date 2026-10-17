@@ -315,6 +315,7 @@ async function topologyContext(
     const enqueue = await createAuthenticatedTopologyEnqueue({
         enqueue: {
             type: AppInboxType.TOPOLOGY_CONFIG_PUT,
+            contextId: 'test-context',
             resourceId: command.requestId,
             data: command
         },
@@ -342,6 +343,7 @@ async function reconfigureTopologyContext(
     const enqueue = await createAuthenticatedTopologyEnqueue({
         enqueue: {
             type: AppInboxType.TOPOLOGY_RECONFIGURE,
+            contextId: 'test-context',
             resourceId: command.requestId,
             data: command
         },

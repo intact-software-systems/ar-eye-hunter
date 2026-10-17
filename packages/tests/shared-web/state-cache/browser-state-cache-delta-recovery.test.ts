@@ -167,6 +167,7 @@ describe('browser state cache delta recovery and bootstrap topology', () => {
             createdByClientId: 'server',
             createdAtEpochMs: 1,
             nextHopSessionIds: ['session-c'],
+            nextHopsBySessionId: undefined,
             degreeLimit: 5,
             overlayVersion: 1,
             updatedAtEpochMs: 1

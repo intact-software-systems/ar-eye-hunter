@@ -179,7 +179,8 @@ function createAcceptedOverlay(
         nextHopSessionIds,
         degreeLimit: Math.max(1, nextHopSessionIds.length),
         overlayVersion: 1,
-        updatedAtEpochMs: 1
+        updatedAtEpochMs: 1,
+        nextHopsBySessionId: undefined
     };
 }
 

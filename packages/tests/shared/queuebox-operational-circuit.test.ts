@@ -7,8 +7,7 @@ import {
 } from 'vitest';
 
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { ResourceInboxHandlerEntryError } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
-import { ResourceInboxCommandRejectedError } from '@shared/queuebox/resource-inbox/resource-inbox-command-rejected-error.ts';
+import { ResourceInboxHandlerFinalizedRejection } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus, toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
@@ -35,6 +34,7 @@ describe('QueueBox operational failure circuit', () => {
             await QueueBoxUtilities.defaultDequeue({
                 qbox: queue,
                 typesToDequeue: new Set(['operational-failure']),
+                newLaneClaimOrder: 'queue',
                 resilience,
                 onDequeuedDo: async () => {
                     throw new Error('Storage transport unavailable');
@@ -49,6 +49,7 @@ describe('QueueBox operational failure circuit', () => {
             await QueueBoxUtilities.defaultDequeue({
                 qbox: queue,
                 typesToDequeue: new Set(['later-work']),
+                newLaneClaimOrder: 'queue',
                 resilience,
                 onDequeuedDo: async () => {},
                 options: {}
@@ -77,12 +78,12 @@ describe('QueueBox operational failure circuit', () => {
             await queue.enqueue(operational);
         }
         const cause = new Error('Group already exists');
-        const rejection = new ResourceInboxCommandRejectedError('group-already-exists', cause);
         const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
         try {
             await QueueBoxUtilities.defaultDequeue({
                 qbox: queue,
                 typesToDequeue: new Set(['command-rejection', 'storage-failure']),
+                newLaneClaimOrder: 'queue',
                 resilience,
                 onDequeuedDo: async (entry) => {
                     if (entry.typeId === 'storage-failure') {
@@ -94,12 +95,11 @@ describe('QueueBox operational failure circuit', () => {
                     if (finalized === undefined) {
                         throw new Error('Rejection did not finalize');
                     }
-                    throw new ResourceInboxHandlerEntryError(finalized, rejection);
+                    return new ResourceInboxHandlerFinalizedRejection(finalized, 'group-already-exists', cause);
                 },
                 options: { jitterUnit: () => 0.5 }
             });
             expect((await queue.getItem(rejected.key))?.status).toBe(EntityStatus.FAILED);
-            expect(rejection.cause).toBe(cause);
             expect(resilience.isNotAllowedThroughToDequeue()).toBe(includeOperationalFailure);
             if (includeOperationalFailure) {
                 expect((await queue.getItem(operational.key))?.status).toBe(EntityStatus.RETRY);

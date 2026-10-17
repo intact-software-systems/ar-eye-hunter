@@ -365,6 +365,7 @@ async function createRelayFixture(
     const recipients = () => [...socketServer.connections.keys()].map((peerId) => ({ peerId, connectionId: peerId }));
     const engine = new InboxOutboxEngine();
     const server = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         outbox: new InMemoryQueueBox(new Map()),
         socket: socketServer,
         readAuthenticatedConnectionScope: (connection) =>

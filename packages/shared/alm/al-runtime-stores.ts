@@ -5,6 +5,7 @@ import {
 } from '../persistence/indexed-db-operation-observer.ts';
 import { IndexedDbStringPersistenceProvider } from '../persistence/indexed-db-string-persistence-provider.ts';
 import { InMemoryQueueBox } from '../queuebox/in-memory-queue-box.ts';
+import type { Timers } from '../resilience/timers.ts';
 import {
     createInMemoryALAdmissionState,
     InMemoryAdmissionBackend
@@ -305,7 +306,7 @@ export interface CreateCheckpointALOutboundRuntimeStoresInput<TPrepared>
     extends CreateDefaultALOutboundRuntimeStoresInput<TPrepared>, ALCheckpointWriter.Settings {
     /** The connect's claim: only the runtime that owns the session's durable work saves and restores. */
     readonly ownership: ALDurableWorkOwnership;
-    readonly timers: ALCheckpointWriter.Timers;
+    readonly timers: Pick<Timers, 'schedule'>;
 }
 
 /**

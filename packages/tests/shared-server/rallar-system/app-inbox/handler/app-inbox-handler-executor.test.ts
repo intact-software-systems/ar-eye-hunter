@@ -502,7 +502,7 @@ function createDirectExecutorClaim(nowEpochMs: () => number): DirectExecutorClai
         { serviceId: 'server-1' }
     );
     const executor = new AppInboxHandlerExecutor(
-        { resultRepository: new TestResourceInboxResults(), transactionWriter: writer, nowEpochMs },
+        { resultRepository: new TestResourceInboxResults(), transactionWriter: writer, database: harness.database.sql, nowEpochMs },
         { serviceId: 'server-1', timing: (event) => timing.push(event) }
     );
     const registration: AppInboxHandlerRegistration<JsonWireValue, JsonWireValue> = {

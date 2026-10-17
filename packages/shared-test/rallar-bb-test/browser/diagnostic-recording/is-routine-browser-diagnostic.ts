@@ -29,6 +29,7 @@ export function isRoutineBrowserDiagnostic(topic: string, detail: unknown): deta
         case 'rallar.browser.connect.phase_completed':
         case 'rallar.browser.formation.changed':
         case 'rallar.browser.formation.layout':
+        case 'rallar.browser.formation.layout-timing':
         case 'rallar.browser.formation.ready':
         case 'rallar.browser.formation.not-ready':
             return false;

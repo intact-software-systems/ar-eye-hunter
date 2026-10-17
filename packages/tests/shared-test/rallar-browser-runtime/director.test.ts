@@ -6,6 +6,7 @@ import type {
     RallarDirectorRelayMessage,
     RallarDirectorStatus
 } from '@shared-web/browser/director/rallar-director-facade.ts';
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     afterEach,
@@ -50,9 +51,9 @@ const directorStatus: RallarDirectorStatus = {
 };
 
 interface DirectorRelayScenario {
-    readonly relay: RallarDirectorRelayHandle<unknown, BlackBoxRallarDirectorOutputRecord, unknown>;
-    readonly creationSnapshots: unknown[];
-    config(): RallarDirectorRelayConfig<unknown, BlackBoxRallarDirectorOutputRecord, unknown>;
+    readonly relay: RallarDirectorRelayHandle<RallarMessagePayload, BlackBoxRallarDirectorOutputRecord, RallarMessagePayload>;
+    readonly creationSnapshots: (RallarMessagePayload | Promise<RallarMessagePayload | undefined> | undefined)[];
+    config(): RallarDirectorRelayConfig<RallarMessagePayload, BlackBoxRallarDirectorOutputRecord, RallarMessagePayload>;
 }
 
 beforeEach(() => {
@@ -83,7 +84,10 @@ it('appoints a director and exposes its refreshed room status', async () => {
         roomRef,
         expect.objectContaining({ heartbeatTtlMs: 1_200 })
     ]);
-    expect(facade.records.roomRefreshes.length).toBeGreaterThan(0);
+    expect(facade.records.roomStateRefreshes).toEqual([[roomRef, {
+        scope: { applicationId: 'app-1', workspaceId: 'workspace-a' },
+        timeoutMs: 5_000
+    }]]);
     expect(appoint).toMatchObject({ status: 'appointed', role: 'director' });
     expect(status).toMatchObject({ status: 'status', state: 'fresh' });
     expect(start).toMatchObject({ status: 'relay_started', handle: 'relay-1' });
@@ -96,6 +100,22 @@ it('appoints a director and exposes its refreshed room status', async () => {
         heartbeatIntervalMs: 300,
         snapshotIntervalMs: 500
     });
+});
+
+it('refreshes over REST only while the page holds no snapshot of the room when the status asks when-absent', async () => {
+    configureDirectorRelayScenario();
+    const runtime = await loadConnectedDirectorRuntime();
+    facade.behavior.hasRoomSnapshot.mockReturnValueOnce(false).mockReturnValue(true);
+
+    const absent = await runtime.director.status({ roomRef, refresh: 'when-absent', timeoutMs: 2_000 });
+    const present = await runtime.director.status({ roomRef, refresh: 'when-absent', timeoutMs: 2_000 });
+    const unrefreshed = await runtime.director.status({ roomRef });
+
+    expect(facade.records.roomStateRefreshes).toEqual([[roomRef, {
+        scope: { applicationId: 'app-1', workspaceId: 'workspace-a' },
+        timeoutMs: 2_000
+    }]]);
+    expect([absent, present, unrefreshed].map((status) => status.state)).toEqual(['fresh', 'fresh', 'fresh']);
 });
 
 it('initializes snapshot observations before handing callbacks to the relay owner', async () => {
@@ -173,9 +193,9 @@ it('sends relay intent and sync requests before releasing the handle', async () 
 });
 
 function configureDirectorRelayScenario(): DirectorRelayScenario {
-    const creationSnapshots: unknown[] = [];
-    let config: RallarDirectorRelayConfig<unknown, BlackBoxRallarDirectorOutputRecord, unknown> | undefined;
-    const relay: RallarDirectorRelayHandle<unknown, BlackBoxRallarDirectorOutputRecord, unknown> = {
+    const creationSnapshots: (RallarMessagePayload | Promise<RallarMessagePayload | undefined> | undefined)[] = [];
+    let config: RallarDirectorRelayConfig<RallarMessagePayload, BlackBoxRallarDirectorOutputRecord, RallarMessagePayload> | undefined;
+    const relay: RallarDirectorRelayHandle<RallarMessagePayload, BlackBoxRallarDirectorOutputRecord, RallarMessagePayload> = {
         status: () => directorStatus,
         sendIntent: async () => ({ status: 'sent' }),
         sendOutput: async () => ({ status: 'sent' }),

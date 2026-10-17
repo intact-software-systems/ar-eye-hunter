@@ -33,6 +33,7 @@ import { createControlRunArtifactBundle } from '../../../../apps/rallar-black-bo
 
 import { createHttpCatchUpResponse } from '../../shared-web/crdt/rallar-crdt-test-runtime.ts';
 
+import { createDistributedRunArtifactBundle } from '../../../../apps/rallar-black-box-control-server/test/support/create-distributed-run-artifact-bundle.ts';
 import { takeAgentDispatchableCommands } from '../../../../apps/rallar-black-box-control-server/test/support/take-agent-dispatchable-commands.ts';
 import {
     createCaptureApplicationRuntime,
@@ -276,7 +277,7 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
                 const distributed = service.snapshotDistributedRun('sdk-distributed');
                 expect(distributed?.state).toBe('passed');
                 expect(distributed?.commandLinks.find((link) => link.commandId === start.commandId)?.phase).toBe('start');
-                const bundle = service.createDistributedRunArtifactBundle('sdk-distributed', {});
+                const bundle = createDistributedRunArtifactBundle(service, 'sdk-distributed', {});
                 expect(bundle).toBeDefined();
                 if (bundle === undefined) {
                     throw new Error('Distributed SDK bundle was unavailable.');

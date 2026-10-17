@@ -81,7 +81,7 @@ interface DeferredAdminCommitFixture {
 async function createDeferredAdminCommitFixture(sql: PGliteSql): Promise<DeferredAdminCommitFixture> {
     const repository = createPSqlResourceInboxRepository(sql, () => new Date());
     const queue = new PSqlQueueBox(repository, Temporal.Now.instant);
-    const inbox = new InboxQueueReader(queue);
+    const inbox = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
     const outbox = new OutboxQueueReader(queue);
     const now = await readPGliteDatabaseEpochMs(sql);
     const state = { wakeCount: 0, processingCompleted: false, pendingCompleted: false, commitReleased: false };
@@ -205,7 +205,7 @@ Deno.test('dry-run initial admin work does not wake after its transaction commit
     await withUtcPGliteSql(async (sql) => {
         const repository = createPSqlResourceInboxRepository(sql, () => new Date());
         const queue = new PSqlQueueBox(repository, Temporal.Now.instant);
-        const inbox = new InboxQueueReader(queue);
+        const inbox = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
         const now = await readPGliteDatabaseEpochMs(sql);
         let wakeCount = 0;
         const appAdmin = createApiAdminInboxService({
@@ -259,7 +259,7 @@ Deno.test('rolled-back initial admin page work does not wake the queue', async (
     await withUtcPGliteSql(async (sql) => {
         const repository = createPSqlResourceInboxRepository(sql, () => new Date());
         const queue = new PSqlQueueBox(repository, Temporal.Now.instant);
-        const inbox = new InboxQueueReader(queue);
+        const inbox = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
         const now = await readPGliteDatabaseEpochMs(sql);
         let wakeCount = 0;
         const failingDatabase = new Proxy(sql, {
@@ -334,7 +334,7 @@ Deno.test('rejected initial admin outbox write does not wake or persist page wor
     await withUtcPGliteSql(async (sql) => {
         const repository = createPSqlResourceInboxRepository(sql, () => new Date());
         const queue = new PSqlQueueBox(repository, Temporal.Now.instant);
-        const inbox = new InboxQueueReader(queue);
+        const inbox = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
         const now = await readPGliteDatabaseEpochMs(sql);
         let wakeCount = 0;
         const rejectingDatabase = new Proxy(sql, {

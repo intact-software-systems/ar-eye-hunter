@@ -6,6 +6,9 @@ import { rebindOverlaySlotSubscriptions } from './overlay-slot-subscriptions.ts'
 
 const MINUTE_MS = 60_000;
 
+/** How long a client or group snapshot stays readable without a state-sync write or a heartbeat renewing it. */
+export const BROWSER_STATE_CACHE_TTL_MS = MINUTE_MS;
+
 /** Configures the browser-local repositories used by the state-cache lifecycle. */
 export function initialiseBrowserCacheRepositories(): void {
     configureOverlayRepositories({
@@ -16,7 +19,7 @@ export function initialiseBrowserCacheRepositories(): void {
     configureRttRepository({ ttlMs: 30_000 });
 
     configureSharedStateRepositories({
-        clientSnapshots: { ttlMs: MINUTE_MS },
-        groupSnapshots: { ttlMs: MINUTE_MS }
+        clientSnapshots: { ttlMs: BROWSER_STATE_CACHE_TTL_MS },
+        groupSnapshots: { ttlMs: BROWSER_STATE_CACHE_TTL_MS }
     });
 }

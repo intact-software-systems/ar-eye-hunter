@@ -23,8 +23,16 @@ import { toError } from '@shared/resilience/to-error.ts';
 
 import { toAgentReloadResult } from '@shared-test/rallar-bb-test/alm/browser-control-agent-resume.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createManualTimers } from '../../../packages/tests/shared/resilience/manual-timers.ts';
 import { createAlmConformance2AgentEntry } from '../../rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts';
 import { ControlAgentSockets } from '../src/control-agent-sockets.ts';
+import { computeDispatchableControlCommands, toControlDispatchScan } from '../src/control-command-queue-policy.ts';
+import { startControlDeadlineSweep } from '../src/control-deadline-sweep.ts';
+import {
+    toInitialControlAgentState,
+    toInitialControlRunState,
+    type ControlCommandState
+} from '../src/control-service-state.ts';
 import { createRallarBlackBoxControlService, type RallarBlackBoxControlService } from '../src/control-service.ts';
 import { toDistributedRunRollup } from '../src/distributed/distributed-run-evaluation.ts';
 import {
@@ -88,7 +96,7 @@ Deno.test('diagnostics during a held send leave the combined ALM dispatch plan e
     assertEquals(AGENTS.map((agentId) => takeAgentDispatchableCommands(service, runId, agentId)), [[], []]);
 });
 
-Deno.test('register, result, heartbeat and barrier arrivals recompute dispatch; other events do not', () => {
+Deno.test('register, result and barrier arrivals recompute dispatch; heartbeats and other events do not', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_000 }));
     const register = service.receiveClientEnvelope(toRegisterEnvelope());
     const queued = assertRight(service.enqueueCommand({
@@ -114,7 +122,7 @@ Deno.test('register, result, heartbeat and barrier arrivals recompute dispatch; 
         Object.fromEntries(Object.entries(receipts).map(([name, receipt]) => [name, receipt.affectsDispatch])),
         {
             register: true,
-            heartbeat: true,
+            heartbeat: false,
             result: true,
             barrier: true,
             event: false,
@@ -218,8 +226,8 @@ Deno.test('a registration and a barrier arrival are answered on the socket at on
     }
 });
 
-Deno.test('an expired reload readiness is judged at the next heartbeat, never at a diagnostic', async () => {
-    const server = await startControlServer();
+Deno.test('an expired reload readiness is judged by the deadline sweep without any agent message', async () => {
+    const server = await startControlServer({ RALLAR_BLACK_BOX_DEADLINE_SWEEP_INTERVAL_MS: String(SILENCE_MS / 2) });
     const socket = await registerAgent(server.baseUrl, 'run-1', 'agent-1');
     try {
         const frames = collectFrames(socket, { runId: 'run-1', agentId: 'agent-1' });
@@ -251,17 +259,8 @@ Deno.test('an expired reload readiness is judged at the next heartbeat, never at
         const reload = await frames.nextCommand();
         assertEquals(reload.command.kind, 'agent.reload', 'a result dispatches the next segment at once');
         socket.send(JSON.stringify(await executeSocketCommand(reload)));
-        await new Promise((resolve) => setTimeout(resolve, SILENCE_MS * 2));
 
         // A run read judges pending reloads itself, so this test reads the persisted snapshot, which does not.
-        socket.send(JSON.stringify(toEvent('diagnostic', 'rallar.browser.alm.outbound_diagnostics')));
-        const diagnosed = await waitForPersistedRun(
-            server.storageDir,
-            (run) => run.events.some((event) => event.kind === 'diagnostic')
-        );
-        assertEquals(diagnosed.results.some((result) => result.commandId === 'socket-root'), false);
-
-        socket.send(JSON.stringify(toHeartbeat('run-1', 'agent-1')));
         const judged = await waitForPersistedRun(
             server.storageDir,
             (run) => run.results.some((result) => result.commandId === 'socket-root')
@@ -273,6 +272,78 @@ Deno.test('an expired reload readiness is judged at the next heartbeat, never at
         socket.close();
         await server.stop();
     }
+});
+
+// Before the scan was built once per message, each agent's pass resolved a reload owner by scanning every command for
+// every command: 50 agents and 1,000 commands read about 50 million command entries per message.
+Deno.test('one dispatch scan reads each queued command a bounded number of times, however many agents it serves', () => {
+    const agentCount = 50;
+    const commandsPerAgent = 20;
+    const run = toInitialControlRunState('run-1', 1_000);
+    const reads = new Map<string, number>();
+    const agents = Array.from({ length: agentCount }, (_, index) => {
+        const agent = toInitialControlAgentState('run-1', `agent-${index}`);
+        agent.connected = true;
+        agent.connectionSequence = 1;
+        run.agents.set(agent.agentId, agent);
+        return agent;
+    });
+    for (const agent of agents) {
+        for (let index = 0; index < commandsPerAgent; index += 1) {
+            const command = toQueuedHealthCommand(agent.agentId, `${agent.agentId}-health-${index}`);
+            run.commands.set(command.envelope.commandId, toReadCountingCommand(command, reads));
+        }
+    }
+
+    const scan = toControlDispatchScan(run);
+    const readsAfterScan = toTotalReads(reads);
+    reads.clear();
+    const firstAgent = computeDispatchableControlCommands({ scan, agent: agents[0], nowEpochMs: 1_000 });
+    const firstAgentReads = new Map(reads);
+    for (const agent of agents.slice(1)) {
+        computeDispatchableControlCommands({ scan, agent, nowEpochMs: 1_000 });
+    }
+
+    assertEquals(firstAgent.length, commandsPerAgent);
+    assertEquals([...firstAgentReads.keys()].every((commandId) => commandId.startsWith('agent-0-')), true, 'one agent reads only its own commands');
+    assertEquals(firstAgentReads.size, commandsPerAgent);
+    assert(readsAfterScan <= 2 * agentCount * commandsPerAgent, `${readsAfterScan} reads to build the scan`);
+    assert(toTotalReads(reads) <= 4 * agentCount * commandsPerAgent, `${toTotalReads(reads)} reads to serve every agent`);
+});
+
+Deno.test('a heartbeat neither scans dispatch nor evaluates the rollup; the deadline sweep does both', async () => {
+    let evaluations = 0;
+    const defaults = toControlServiceInput({ now: () => 1_000 });
+    const service = createRallarBlackBoxControlService({
+        ...defaults,
+        dependencies: {
+            ...defaults.dependencies,
+            toDistributedRunRollup: (input) => {
+                evaluations += 1;
+                return toDistributedRunRollup(input);
+            }
+        }
+    });
+    registerFleetAgents(service, 2);
+    const sockets = new ControlAgentSockets(service);
+    for (const agentId of ['agent-01', 'agent-02']) {
+        sockets.register({ readyState: 1, send: () => undefined, close: () => undefined }, { runId: 'run-1', agentId });
+    }
+    assertRight(service.createDistributedRun(toDistributedManifest({
+        targetPolicy: { mode: 'selected-agents', agentIds: ['agent-01', 'agent-02'] }
+    })));
+    const timers = createManualTimers(1_000);
+    let persisted = 0;
+    const stopSweep = startControlDeadlineSweep({ agentSockets: sockets, persistence: { persist: () => persisted += 1 }, timers, intervalMs: 1_000 });
+
+    evaluations = 0;
+    acceptSocketEnvelope(service, sockets, toHeartbeat('run-1', 'agent-01'));
+    const afterHeartbeat = evaluations;
+    await timers.advanceTo(2_000);
+    stopSweep();
+    await timers.advanceTo(10_000);
+
+    assertEquals([afterHeartbeat, evaluations, persisted], [0, 1, 1]);
 });
 
 /** The socket route's order for one accepted client frame: receive, then dispatch to the run's sockets. */
@@ -459,6 +530,38 @@ function collectFrames(socket: WebSocket, identity: ControlClientIdentity): Sock
             assertEquals(frames, [], 'the server sent a frame');
         }
     };
+}
+
+function toQueuedHealthCommand(agentId: string, commandId: string): ControlCommandState {
+    return {
+        envelope: {
+            kind: 'command',
+            protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+            runId: 'run-1',
+            agentId,
+            commandId,
+            command: { kind: 'health' }
+        },
+        fingerprint: commandId,
+        queuedAtEpochMs: 1_000,
+        dispatchCount: 0
+    };
+}
+
+/** Counts each read of a queued command's envelope under its command id: one read is one touched queue entry. */
+function toReadCountingCommand(command: ControlCommandState, reads: Map<string, number>): ControlCommandState {
+    return new Proxy(command, {
+        get(target, property, receiver) {
+            if (property === 'envelope') {
+                reads.set(target.envelope.commandId, (reads.get(target.envelope.commandId) ?? 0) + 1);
+            }
+            return Reflect.get(target, property, receiver);
+        }
+    });
+}
+
+function toTotalReads(reads: ReadonlyMap<string, number>): number {
+    return [...reads.values()].reduce((total, count) => total + count, 0);
 }
 
 async function waitForRun(

@@ -8,7 +8,6 @@ import {
     validateAppInboxCompletion
 } from '../../app-inbox/handler/app-inbox-completion-computation.ts';
 import type { AppInboxMutationTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
-import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
 import {
     validateWsSessionConnectGuard,
     validateWsSessionGenerationClosed,
@@ -20,7 +19,6 @@ import {
 } from '../../websocket/ws-session-generation-computation.ts';
 import type { WsSessionGenerationLifecycleService } from '../../websocket/ws-session-generation-lifecycle.ts';
 import type {
-    GroupMutationIngress,
     GroupStateMutationCommand,
     GroupStateMutationService,
     GroupStateService
@@ -81,20 +79,6 @@ export function toGroupSessionCleanupEnqueue(
         contextId: connection.authSession.sessionId,
         senderId: serviceId,
         data: encodeAppInboxCommand(input, 'Group presence cleanup AppInbox command')
-    };
-}
-
-export function toExpiredPresenceEnqueue(
-    ingress: GroupMutationIngress
-): AppInboxEnqueueInput {
-    return {
-        type: AppInboxType.GROUP_PRESENCE_EXPIRE,
-        resourceId: ingress.queueResourceId,
-        authority: decodeJsonWireValue(
-            ingress,
-            'Expired group presence AppInbox authority'
-        ),
-        data: { commandId: ingress.command.commandId }
     };
 }
 

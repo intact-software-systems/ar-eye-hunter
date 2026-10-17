@@ -113,6 +113,7 @@ function createGroupSetupMutation(sql: PGliteSql): ApiV1MutationRuntime {
         database: sql,
         serviceId: 'pglite-ordinary-setup',
         authCredentialSecret: 'group-setup-test-secret'.repeat(2),
+        maxConcurrentPasswordDerivations: 1,
         nowEpochMs: Date.now,
         timing: () => {},
         appInboxOptions: {
@@ -123,11 +124,13 @@ function createGroupSetupMutation(sql: PGliteSql): ApiV1MutationRuntime {
             waitJitterRatio: completion.jitterRatio,
             nowEpochMs: Date.now
         },
+        appInboxLaneBudgetPolicy: 'fixed-retry-two',
         groupCapacity: { defaultMaxMembers: defaults.group.defaultMaxMembers },
         groupFormationRecomputeDebounceMs: defaults.topology.recompute.formationDebounceMs,
         adminClientIds: [],
         crdtPolicies: [{ documentType: '*', rollout: 'disabled' }],
-        resilience: { inbox: createApiV1TestQueueResilience(), outbox: createApiV1TestQueueResilience(), appOutbox: createApiV1TestQueueResilience() }
+        resilience: { inbox: createApiV1TestQueueResilience(), outbox: createApiV1TestQueueResilience(), appOutbox: createApiV1TestQueueResilience() },
+        appInboxCompletionNotices: undefined
     });
 }
 
@@ -136,6 +139,7 @@ function createGroupSetupQueue(mutation: ApiV1MutationRuntime): GroupSetupQueue 
     const inboxQueueReader = new InboxQueueReader(mutation.queueBox, mutation.appInboxDequeueOptions);
     const outboxQueueReader = new OutboxQueueReader(mutation.queueBox);
     const wsQBoxServerService = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         inboundStores: createDefaultPSqlALInboundRuntimeStores({ repository: mutation.runtimeStateRepository }),
         outboundStores: createDefaultPSqlALOutboundRuntimeStores({
             repository: mutation.runtimeStateRepository,

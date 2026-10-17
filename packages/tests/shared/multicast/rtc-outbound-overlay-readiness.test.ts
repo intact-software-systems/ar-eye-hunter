@@ -901,6 +901,7 @@ function createOverlay(nextHopSessionIds: readonly string[]): OverlayInfo {
         name: 'room',
         sourceGroupStateCausalRevision: { groupRevision: 1, presenceRevision: 3 },
         nextHopSessionIds,
+        nextHopsBySessionId: undefined,
         degreeLimit: 3,
         overlayVersion: 7,
         createdByClientId: 'self',

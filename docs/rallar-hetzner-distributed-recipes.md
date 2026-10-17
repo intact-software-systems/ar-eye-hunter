@@ -156,7 +156,20 @@ controller smoke and other operator phases. The ALM scale recipes (19–21 and
 their diagnostic checkpoints) sign in as their first step, a read of
 `stats/me/realtime` under the 45-second setup allowance, because a cohort's
 registrations serialize on the API and must not consume the group requests'
-5-second allowance.
+allowance (5 seconds plus 250 ms per participant, capped by the setup allowance).
+Only the director writes the group: it creates it under the default replanning,
+which plans once after the stream of joins (a 2-second replanning cap was tried
+and refuted hosted: every acceptance queued behind the joins and was superseded),
+joins it, connects without an RTC readiness wait, and appoints itself before the
+`group-created` barrier releases the players. The first layout with peers is therefore already
+rooted at the director and no rebuild follows the appointment; its stable-layout
+wait gates its traffic instead. Each player joins the open group inside its
+`rtc.connect` room join, under the whole setup allowance; the players' connect
+and the `connected` barrier get the setup allowance plus 650 ms per participant,
+because the hosted lane admits about 1.5 joining players per second at 50 members. A `director.status`
+with `refresh: true` refreshes the one room under one deadline (its cached group
+read and the topology read-through) instead of listing every client and group of
+the workspace.
 
 Headless agents on the controller VM register and log in from one IP. The API
 default of 20 registrations and 30 logins per IP per minute refuses cohorts

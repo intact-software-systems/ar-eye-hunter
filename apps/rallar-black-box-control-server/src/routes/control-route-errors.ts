@@ -28,8 +28,11 @@ export function toForbiddenDestinationRejection(destinationIssues: readonly stri
 export function toControlServiceRejection(failure: ControlServiceFailure): ControlHttpRejection {
     switch (failure.code) {
         case 'distributed-run-not-found':
+        case 'run-not-found':
             return { status: 404, message: failure.message };
         case 'distributed-run-terminal':
+        case 'run-changed':
+        case 'run-completed':
             return { status: 409, message: failure.message };
         case 'command-rate-limited':
             return { status: 429, message: failure.message };

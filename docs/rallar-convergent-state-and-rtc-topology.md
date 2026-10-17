@@ -304,9 +304,19 @@ constructed directly; there is no broad topology-management facade.
 A tree is rooted at the group's appointed director when the director is a member: the weighted and
 the no-RTT tree both use it as their source, and so does the no-RTT seed that completes a sparse
 weighted room graph. The director's session id is part of the topology input fingerprint, so an
-appointment after the first plan produces work. A tree with a leader plans a full rebuild rather
-than an incremental one when the membership did not change or when the leader is one of the joined
-sessions. A group without a leader omits the key, so its fingerprint and plan are as before.
+appointment after the first plan produces work. A tree plans a full rebuild rather than an
+incremental one when the leader is one of the joined sessions. When the membership did not change,
+the tree's undirected next hops are re-rooted in place at the leader, unchanged or newly appointed
+alike since a snapshot carries no root, and the tree is rebuilt only when the leader's eccentricity
+in it exceeds its depth in the no-RTT tree rooted at it. A group without a leader omits the key, so
+its fingerprint and plan are as before. A tree attaches joins incrementally whatever their number;
+any other delta, a mesh's joins included, falls back to a full rebuild when it exceeds
+`max(2, ceil(previous members / 4))` changes, and the invariant validator judges every evolved tree.
+With a leader, joins attach breadth-first from the leader, each to the shallowest session with spare
+degree (depth, then canonical order), so the leader stays within the depth bound as the tree grows.
+An RTT refinement of a leader-rooted tree keeps the accepted tree, evolved to the current members,
+unless the weighted rebuild shortens the leader's slowest measured path by at least 25 % and 10 ms;
+an unmeasured link weighs the slowest measured RTT.
 In a weighted room graph an unmeasured pair weighs the worst measured RTT plus its hashed canonical
 spread, so it never undercuts a measured link; with tree-edge reports a weighted tree keeps the director no deeper than
 the no-RTT tree rooted at it.

@@ -33,7 +33,7 @@ export function routeFleetReportReadRequest(
     const [bundleReportId] = toPathParameters(url.pathname, FLEET_REPORT_ARTIFACTS_PATH) ?? [];
     if (bundleReportId !== undefined) {
         const bundle = controlService.createFleetReportBundle(bundleReportId);
-        return bundle ? responses.json(bundle, 200) : responses.rejection(FLEET_REPORT_NOT_FOUND);
+        return bundle ? responses.artifactBundle(bundle, 200) : responses.rejection(FLEET_REPORT_NOT_FOUND);
     }
     return undefined;
 }

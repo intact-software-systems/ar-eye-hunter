@@ -16,28 +16,42 @@ import {
     toClientChildCandidate
 } from './compute-client-mutation-state.ts';
 
-type HeartbeatCommand = Extract<ClientMutationCommand, { operation: 'heartbeatSession'; }>;
+export type ClientSessionHeartbeatCommand = Extract<ClientMutationCommand, { operation: 'heartbeatSession'; }>;
 
-export function computeClientSessionHeartbeat(
-    input: Readonly<{ command: HeartbeatCommand; read: ClientMutationRead; }>
-): ClientMutationComputed {
-    const { command, read } = input;
-    const principal = requireClientPrincipal(read, command);
-    const existing = requireClientSession(read, command);
+export type ClientSessionHeartbeatDecision = 'renew' | 'no-op' | 'reject';
+
+export function resolveClientSessionHeartbeatDecision(
+    existing: ClientSession,
+    command: ClientSessionHeartbeatCommand
+): ClientSessionHeartbeatDecision {
     if (
         existing.generationId !== command.input.generationId ||
         existing.status !== 'active' ||
         existing.disconnectedAtEpochMs !== null
     ) {
+        return 'no-op';
+    }
+    const heartbeatAt = toClientSessionHeartbeatAt(command);
+    if (!isPresenceTimestampWithinSkew(heartbeatAt, command.facts.nowEpochMs)) {
+        return 'reject';
+    }
+    return heartbeatAt < existing.lastHeartbeatAtEpochMs ? 'no-op' : 'renew';
+}
+
+export function computeClientSessionHeartbeat(
+    input: Readonly<{ command: ClientSessionHeartbeatCommand; read: ClientMutationRead; }>
+): ClientMutationComputed {
+    const { command, read } = input;
+    const principal = requireClientPrincipal(read, command);
+    const existing = requireClientSession(read, command);
+    const decision = resolveClientSessionHeartbeatDecision(existing, command);
+    if (decision === 'no-op') {
         return computeClientMutationNoOp({ command, read, persistIdempotency: false });
     }
-    const heartbeatAt = command.input.lastHeartbeatAtEpochMs ?? command.facts.nowEpochMs;
-    if (!isPresenceTimestampWithinSkew(heartbeatAt, command.facts.nowEpochMs)) {
+    if (decision === 'reject') {
         rejectClientMutation('Client session lastHeartbeatAtEpochMs is too far in the future.');
     }
-    if (heartbeatAt < existing.lastHeartbeatAtEpochMs) {
-        return computeClientMutationNoOp({ command, read, persistIdempotency: false });
-    }
+    const heartbeatAt = toClientSessionHeartbeatAt(command);
     const session: ClientSession = {
         ...existing,
         presenceState: command.input.presenceState ?? existing.presenceState,
@@ -68,4 +82,8 @@ export function computeClientSessionHeartbeat(
         clientInstanceId: command.clientInstanceId,
         sessionId: command.sessionId
     });
+}
+
+function toClientSessionHeartbeatAt(command: ClientSessionHeartbeatCommand): number {
+    return command.input.lastHeartbeatAtEpochMs ?? command.facts.nowEpochMs;
 }

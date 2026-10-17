@@ -48,7 +48,7 @@ describe('RTC RTT AppInbox computation', () => {
                 },
                 endpointAdmissions: [],
                 expiredEndpointAdmissionEntries: [],
-                measurements: []
+                incidentMeasurements: []
             },
             facts: {
                 purgeAfterEpochMs: 10_000,

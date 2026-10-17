@@ -100,7 +100,7 @@ export function computeRtcRttMutation(
     const acceptance = evaluateRtcRttMeasurement({
         ...authority.command,
         requestedAtEpochMs: authority.facts.requestedAtEpochMs,
-        existingMeasurements: authorityRead.measurements.map(({ value }) => value)
+        existingMeasurements: authorityRead.incidentMeasurements.map(({ value }) => value)
     });
     const affectedGroups = canonicalRtcRttAffectedGroups(acceptance.affectedGroups);
     if (!acceptance.accepted) {
@@ -139,7 +139,7 @@ export function computeRtcRttMutation(
                 peerExpiry.set(peer.peerSessionId, peer.expiresAtEpochMs);
             }
         }
-        for (const peer of peersForEndpoint(endpointId, authorityRead.measurements)) {
+        for (const peer of peersForEndpoint(endpointId, authorityRead.incidentMeasurements)) {
             peerExpiry.set(
                 peer.peerSessionId,
                 Math.max(peerExpiry.get(peer.peerSessionId) ?? 0, peer.expiresAtEpochMs)
@@ -283,10 +283,10 @@ function exceedsEndpointAdmissionDegree(input: ExceedsEndpointAdmissionDegreeInp
 
 function peersForEndpoint(
     endpointId: string,
-    measurements: readonly RuntimeStateEntryValue<RttMeasurementInfo>[]
+    incidentMeasurements: readonly RuntimeStateEntryValue<RttMeasurementInfo>[]
 ): readonly Readonly<{ peerSessionId: string; expiresAtEpochMs: number; }>[] {
     const peers = new Map<string, number>();
-    for (const measurement of measurements) {
+    for (const measurement of incidentMeasurements) {
         const peerSessionId = measurement.value.sessionIdFrom === endpointId
             ? measurement.value.sessionIdTo
             : measurement.value.sessionIdTo === endpointId

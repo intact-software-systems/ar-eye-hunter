@@ -156,7 +156,7 @@ export class WebRtcHeartbeatService {
     }
 }
 
-function isHeartbeatMessage(value: unknown): value is PingPayload {
+export function isHeartbeatMessage(value: unknown): value is PingPayload {
     return typeof value === 'object' && value !== null &&
         'type' in value && value.type === 'ping' &&
         'pingType' in value && (value.pingType === 'ping' || value.pingType === 'pong') &&

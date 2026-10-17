@@ -99,6 +99,7 @@ async function createObservedServer(
     }
     const engine = options.queueEngine ?? new InboxOutboxEngine();
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         outbox: new InMemoryQueueBox(),
         socket,
         name: 'server',

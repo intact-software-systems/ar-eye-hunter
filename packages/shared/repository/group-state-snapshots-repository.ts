@@ -121,6 +121,14 @@ export function findGroupStateSnapshotByRef(
     );
 }
 
+/** When the cached snapshot of the group lapses from the cache; undefined when none is held. */
+export function findGroupStateSnapshotExpiresAtByRef(
+    ref: GroupRef,
+    manager?: RepositoryManager
+): number | undefined {
+    return requireGroupStateSnapshotRepository(manager).readExpiresAtEpochMs(toGroupStateSnapshotRepositoryKey(ref));
+}
+
 export function wasGroupStateSnapshotObservedByRef(
     ref: GroupRef,
     manager?: RepositoryManager

@@ -25,7 +25,7 @@ import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
-import { createService, summaryReservationRead } from './group-presence-test-runtime.ts';
+import { createService, readSummaryWork } from './group-presence-test-runtime.ts';
 
 const BASE_EPOCH_MS = Date.now();
 
@@ -46,6 +46,7 @@ describe('group presence summary delta emission', () => {
         expect(decodeEventRowPayload(eventRow)).toEqual(
             computeGroupStateDeltaEnvelope({
                 event: result.command.event,
+                coalescedEvents: result.read.coalescedEvents,
                 summary: result.computed.summary,
                 summaryPredecessorCausalRevision: result.read.presence.current?.value.causalRevision ?? null,
                 snapshot: result.computed.snapshot
@@ -181,11 +182,7 @@ async function computeSummaryWork(scenario: ConnectedScenario): Promise<Computed
         acceptedCausalRevision: event.causalRevision,
         event
     };
-    const read = await work.read(
-        command,
-        summaryReservationRead(command.commandId),
-        BASE_EPOCH_MS + 1_000
-    );
+    const read = await readSummaryWork(work, command, BASE_EPOCH_MS + 1_000);
     const computed = work.compute(command, read);
     expect(work.validate(command, read, computed)).toEqual([]);
     return { work, command, read, computed };
@@ -196,10 +193,12 @@ function topicIds(entries: readonly ResourceEntry[]): readonly string[] {
 }
 
 function decodeEventRowPayload(entry: ResourceEntry): GroupStateDeltaEnvelope {
-    const message = decodePersistedALMessage(entry.resource);
-    const envelope: unknown = JSON.parse(message.payload.resource);
-    validateGroupStateDeltaEnvelope(envelope);
-    return envelope;
+    return decodeGroupStateDeltaEnvelope(JSON.parse(decodePersistedALMessage(entry.resource).payload.resource));
+}
+
+function decodeGroupStateDeltaEnvelope(value: unknown): GroupStateDeltaEnvelope {
+    validateGroupStateDeltaEnvelope(value);
+    return value;
 }
 
 function tamperEventRowEnvelope(

@@ -38,18 +38,20 @@ describe('PostgreSQL resource inbox persistence', () => {
         const capture = createResourceInboxQueryCapture();
         const repo = createPSqlResourceInboxRepository(capture.sql, () => new Date());
 
-        await repo.reservations.findEntriesSkipLocked({
+        await repo.reservations.reserveEntriesSkipLocked({
             typeIds: new Set(['APP_INBOX']),
             statusIds: new Set([EntityStatus.RETRY, EntityStatus.FAILED]),
-            reservationInput: 7
+            reservationInput: 7,
+            contextClaim: undefined
         });
 
         expect(capture.queries).toHaveLength(1);
+        expect(capture.queries[0]?.query).toMatch(/^update resource_inbox set ri_status =/u);
         expect(capture.queries[0]?.query).toContain('ri_status <>');
         expect(capture.queries[0]?.query).toContain('expire_ts > (now() at time zone \'utc\')');
         expect(capture.queries[0]?.query).toContain('next_ts <=');
         expect(capture.queries[0]?.query).toContain('ri_attempts <');
-        expect(capture.queries[0]?.query).toContain('for update skip locked');
+        expect(capture.queries[0]?.query).toContain('for update of candidate skip locked');
         expect(capture.queries[0]?.query).not.toContain('start_ts is null or next_ts');
     });
 
@@ -80,10 +82,11 @@ describe('PostgreSQL resource inbox persistence', () => {
         const capture = createResourceInboxQueryCapture();
         const repo = createPSqlResourceInboxRepository(capture.sql, () => new Date());
 
-        await repo.reservations.findEntriesSkipLocked({
+        await repo.reservations.reserveEntriesSkipLocked({
             typeIds: new Set(['APP_INBOX']),
             statusIds: new Set([EntityStatus.RETRY]),
-            reservationInput: { maxToReserve: 1, maxAttempts: 2 }
+            reservationInput: { maxToReserve: 1, maxAttempts: 2 },
+            contextClaim: undefined
         });
 
         expect(capture.queries).toHaveLength(1);
@@ -91,40 +94,31 @@ describe('PostgreSQL resource inbox persistence', () => {
         expect(capture.queries[0]?.values).not.toContain(20);
     });
 
-    it('uses database time and the configured budget for ordinary work advertisement', async () => {
+    it('advertises every lane from one statement on database time with the configured budgets', async () => {
         const capture = createResourceInboxQueryCapture();
         const repo = createPSqlResourceInboxRepository(capture.sql, () => new Date());
 
-        await repo.reservations.isEntriesToLock(
-            new Set(['APP_INBOX']),
-            new Set([EntityStatus.RETRY]),
-            2
-        );
+        await expect(repo.reservations.readWorkPresence({
+            typeIds: new Set(['APP_INBOX']),
+            maxAttempts: 2,
+            reservationLeaseMs: 30_000,
+            finalizationStaleAfterMs: 300_000,
+            staleDueThresholdMs: 30_000
+        })).rejects.toThrow('Resource inbox work presence statement returned no row');
 
         expect(capture.queries).toHaveLength(1);
-        expect(capture.queries[0]?.query).toContain('expire_ts > (now() at time zone \'utc\')');
-        expect(capture.queries[0]?.query).toContain('next_ts <= (now() at time zone \'utc\')');
-        expect(capture.queries[0]?.values).toContain(2);
-        expect(capture.queries[0]?.values.some((value) => value instanceof Date)).toBe(false);
-    });
-
-    it('uses a safely bound database interval for timeout work advertisement', async () => {
-        const capture = createResourceInboxQueryCapture();
-        const repo = createPSqlResourceInboxRepository(capture.sql, () => new Date());
-
-        await repo.reservations.isTimeoutOnReservedEntries(
-            new Set(['APP_INBOX']),
-            Temporal.Duration.from({ seconds: 30 }),
-            2
-        );
-
-        expect(capture.queries).toHaveLength(1);
-        expect(capture.queries[0]?.query).toContain('expire_ts > (now() at time zone \'utc\')');
-        expect(capture.queries[0]?.query).toContain('start_ts < (now() -');
-        expect(capture.queries[0]?.query).toContain('interval \'1 millisecond\'');
-        expect(capture.queries[0]?.values).toContain(30_000);
-        expect(capture.queries[0]?.values).toContain(2);
-        expect(capture.queries[0]?.values.some((value) => value instanceof Date)).toBe(false);
+        const query = capture.queries[0]!;
+        expect(query.query).toContain('expire_ts > (now() at time zone \'utc\')');
+        expect(query.query).toContain('next_ts <= (now() at time zone \'utc\')');
+        expect(query.query).toContain('start_ts < (now() -');
+        expect(query.query).toContain('start_ts <= (now() -');
+        expect(query.query).toContain('interval \'1 millisecond\'');
+        expect(query.query).toContain('ri_attempts >=');
+        expect(query.values).toContain(2);
+        expect(query.values).toContain(30_000);
+        expect(query.values).toContain(300_000);
+        expect(query.values).toContain('APP_INBOX');
+        expect(query.values.some((value) => value instanceof Date)).toBe(false);
     });
 
     it('uses a safely bound database interval for timeout claiming', async () => {
@@ -207,25 +201,6 @@ describe('PostgreSQL resource inbox persistence', () => {
         expect(query.values).toContain(21);
         expect(query.values).toContain(20);
         expect(query.values).toContain('APP_INBOX');
-        expect(query.values.some((value) => value instanceof Date)).toBe(false);
-    });
-
-    it('advertises stale finalization recovery using only the database clock', async () => {
-        const capture = createResourceInboxQueryCapture();
-        const repo = createPSqlResourceInboxRepository(capture.sql, () => new Date());
-
-        await repo.finalization.isRetryExhaustionFinalizationRequired(
-            new Set(['APP_INBOX']),
-            300_000,
-            20
-        );
-
-        const query = capture.queries[0]!;
-        expect(query.query).toContain('expire_ts > (now() at time zone \'utc\')');
-        expect(query.query).toContain('start_ts <= (now() -');
-        expect(query.query).toContain('ri_attempts >=');
-        expect(query.values).toContain(300_000);
-        expect(query.values).toContain(20);
         expect(query.values.some((value) => value instanceof Date)).toBe(false);
     });
 

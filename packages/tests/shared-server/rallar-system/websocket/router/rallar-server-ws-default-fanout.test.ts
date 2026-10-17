@@ -162,6 +162,7 @@ function createWorldFixture(input: { readonly routerFanout: 'none' | 'live-only'
         sockets[sessionId] = socket;
     }
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         outbox: createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage }).workQueue,
         socket: socketServer,
         name: 'server-1',
@@ -230,6 +231,7 @@ function createLiveRoomService(
     peerIds: readonly string[]
 ): WsQueueBoxServerService {
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         outbox: outboundStores.workQueue,
         outboundStores,
         socket: socketServer,

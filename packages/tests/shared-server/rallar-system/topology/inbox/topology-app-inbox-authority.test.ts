@@ -79,6 +79,7 @@ describe('topology AppInbox authority', () => {
         const prepared = await createAuthenticatedTopologyEnqueue({
             enqueue: {
                 type: AppInboxType.TOPOLOGY_CONFIG_PUT,
+                contextId: 'test-context',
                 resourceId: command.requestId,
                 data: command
             },

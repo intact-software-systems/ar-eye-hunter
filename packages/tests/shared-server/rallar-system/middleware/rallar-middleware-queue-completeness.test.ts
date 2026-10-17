@@ -216,6 +216,7 @@ function createQueueTaskInput(
     const queue = new InMemoryQueueBox();
     const resilience = createResilience();
     const wsQBoxServerService = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         readAuthenticatedConnectionScope: () => undefined,
         outbox: queue,
         socket: new JsonWebSocketServer(),
@@ -233,7 +234,7 @@ function createQueueTaskInput(
     return {
         wsQBoxServerService,
         nowEpochMs: Date.now,
-        inboxQueueReader: new InboxQueueReader(queue),
+        inboxQueueReader: new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' }),
         outboxQueueReader: new OutboxQueueReader(queue),
         appInboxResilience: resilience,
         appOutboxResilience: resilience
@@ -248,7 +249,6 @@ function createResilience(): ResourceInboxResilience {
         maxRate: 10,
         concurrencyIncreaseStep: 1,
         concurrencyReduceStep: 1,
-        maxFairnessSelectionsInWindow: ResourceInboxResilience.MAX_NUM_DEQUEUE_IN_WINDOW,
         retryPolicy: DEFAULT_RESOURCE_INBOX_RETRY_POLICY
     });
 }

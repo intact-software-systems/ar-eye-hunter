@@ -1305,6 +1305,39 @@ const CONTROL_OPENAPI_SPEC: Record<string, unknown> = {
                     heartbeats: {
                         type: 'array',
                         items: { $ref: '#/components/schemas/ControlHeartbeatEnvelope' }
+                    },
+                    completion: { $ref: '#/components/schemas/ControlRunCompletion' }
+                }
+            },
+            ControlRunCompletion: {
+                type: 'object',
+                description:
+                    'Present once the run completed: every distributed run terminal, every agent disconnected. Its rows then live in the referenced file under the storage directory; the listing keeps this entry and the agents, and a read of the run serves the file.',
+                required: ['completedAtEpochMs', 'retentionRevision', 'counts', 'file'],
+                properties: {
+                    completedAtEpochMs: { type: 'integer' },
+                    retentionRevision: { type: 'integer' },
+                    counts: {
+                        type: 'object',
+                        required: ['commands', 'results', 'events', 'stats', 'reports', 'heartbeats'],
+                        properties: {
+                            commands: { type: 'integer' },
+                            results: { type: 'integer' },
+                            events: { type: 'integer' },
+                            stats: { type: 'integer' },
+                            reports: { type: 'integer' },
+                            heartbeats: { type: 'integer' }
+                        }
+                    },
+                    file: {
+                        type: 'object',
+                        required: ['path', 'bytes', 'writtenAtEpochMs', 'state'],
+                        properties: {
+                            path: { type: 'string' },
+                            bytes: { type: 'integer' },
+                            writtenAtEpochMs: { type: 'integer' },
+                            state: { type: 'string', enum: ['present', 'missing'] }
+                        }
                     }
                 }
             },

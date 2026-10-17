@@ -47,6 +47,28 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'onUnhandled',
         maximumMagnitude: 3
     }),
+    // The child captures console.error's untyped argument lists; the verifier narrows the first argument with
+    // typeof and compares the second with the summary the dequeuer must log, so nothing unchecked is trusted.
+    Object.freeze({
+        path: 'apps/api-v1/test/db/websocket-ticket-rejection-binding-child.ts',
+        rule: 'boundary.unknown',
+        symbol: 'verifyTicketRejection',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'apps/api-v1/test/db/websocket-ticket-rejection-binding-child.ts',
+        rule: 'boundary.unknown',
+        symbol: 'verifyRejectedErrors',
+        maximumMagnitude: 1
+    }),
+    // These two process rejection listeners take Node's unknown reason and normalize it directly to Error for
+    // absence assertions on the lifecycle's retries; they supply no production input or policy.
+    Object.freeze({
+        path: 'packages/tests/shared-server/rallar-system/websocket/ws-lifecycle-real-server-retry.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'onUnhandled',
+        maximumMagnitude: 2
+    }),
     // The anonymous stop-result callback immediately normalizes its rejection
     // to Error before the test checks the exact AggregateError membership.
     Object.freeze({
@@ -660,6 +682,15 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'prefix:state',
         maximumMagnitude: 4
     }),
+    // The browser IndexedDB queue box is one backend of the queue box contract: the box, its store, its entry and
+    // codec, its write-conflict error and its pure release, fairness and write computations sit beside the
+    // in-memory backend they mirror. The cluster predates this cap; it approves no eighth file.
+    Object.freeze({
+        path: 'packages/shared/queuebox',
+        rule: 'layout.feature-prefix-cluster',
+        symbol: 'prefix:indexed',
+        maximumMagnitude: 7
+    }),
     // The inbound ALM directory is one feature: admission, ordered and admitted
     // delivery, the durable effect store, the work entries and the resynchronization
     // cursor, each a direct owner the README maps. Its files share the al-inbound
@@ -728,6 +759,17 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'isCommandKind'
     }),
+    // The run-monitor spec mocks the control server and the API inside anonymous
+    // test callbacks: route handlers receive raw request bodies, mock services take
+    // raw configuration, and one window global is cast at the DOM boundary. Every
+    // unknown stays inside its mock and feeds no domain decision; this cap
+    // approves the ten existing occurrences and no growth.
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/tabbed-navigation.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 10
+    }),
     // This caught-value boundary immediately normalizes arbitrary thrown values
     // to Error, exactly as required by the code standard. No unknown value
     // propagates to callers; the textual checker cannot distinguish that case.
@@ -735,6 +777,15 @@ export const reviewedDispositions = Object.freeze([
         path: 'packages/shared/resilience/to-error.ts',
         rule: 'boundary.unknown',
         symbol: 'toError'
+    }),
+    // An error summary carries the thrown error's own enumerable properties as the log line's data: any
+    // throwable may set any property, so their values are untrusted by construction, and no caller reads them
+    // as domain state. One contract field; a second use needs its own review.
+    Object.freeze({
+        path: 'packages/shared/resilience/to-error.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
     }),
     // These exact generic JSON boundaries guard arrays, objects and primitives
     // before recursive projection. Only comparison, serialization or its opaque
@@ -2112,7 +2163,38 @@ export const reviewedDispositions = Object.freeze([
         maximumMagnitude: 1
     }),
     ...reviewedScenarioDispositions,
-    ...reviewedBrowserDispositions
+    ...reviewedBrowserDispositions,
+    // The OpenAPI schema clone walks a JSON schema document whose nodes are objects, arrays and scalars until
+    // the self reference is rewritten; the JSON response serialises an already-validated value. Both are
+    // serialisation owners, not domain inputs; a touched use still needs the whole-owner review.
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/src/routes/swagger-routes.ts',
+        rule: 'boundary.unknown',
+        symbol: 'cloneJsonSchema',
+        maximumMagnitude: 3
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/src/routes/swagger-routes.ts',
+        rule: 'boundary.unknown',
+        symbol: 'jsonResponse',
+        maximumMagnitude: 1
+    }),
+    // The swagger module's JSON record alias names the raw schema document shape the two owners above walk.
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/src/routes/swagger-routes.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
+    }),
+    // Recipe failure details and outputs are recipe-authored JSON the control server carries verbatim into the
+    // artifact bundle; the consumer decodes them against the recipe's own contract. Three contract fields, no
+    // owner function; a fourth use needs its own review.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/control-snapshots.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 3
+    })
 ]);
 
 export function isReviewedDisposition(repoRoot, finding) {

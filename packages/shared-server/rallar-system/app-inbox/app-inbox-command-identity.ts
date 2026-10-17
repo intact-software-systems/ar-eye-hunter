@@ -1,7 +1,8 @@
+import type { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { decodeJsonWireText, type JsonWireObject, type JsonWireValue } from '../protocol/json-wire-identity.ts';
-import { AppInboxTypeUnavailableError, decodeAppInboxEnqueue } from './app-inbox-command-decoding.ts';
-import { AppInboxType, type AppInboxEnqueueInput } from './app-inbox-contracts.ts';
+import { AppInboxTypeUnavailableError, decodePersistedAppInboxCommand } from './app-inbox-command-decoding.ts';
+import { AppInboxType, toAppInboxCompletionAwaitability, type AppInboxEnqueueInput } from './app-inbox-contracts.ts';
 
 interface ValidAppInboxCommandIdentity {
     readonly valid: true;
@@ -87,6 +88,14 @@ export function validateAppInboxCommandIdentity(
     });
 }
 
+/** An entry whose command cannot be read may still have a waiter, so its completion counts as awaitable. */
+export function toAppInboxEntryCompletionAwaitability(
+    entry: ResourceEntry
+): ResourceInboxCompletionNotifications.Awaitability {
+    const identity = validateAppInboxCommandIdentity(entry);
+    return identity.valid ? toAppInboxCompletionAwaitability(identity.command.type) : 'awaitable';
+}
+
 export function validatePersistedAppInboxCommandIdentity(
     input: Readonly<{ topicId: string; resource: string; }>
 ): AppInboxCommandIdentityValidation {
@@ -109,9 +118,7 @@ export function validatePersistedAppInboxCommandIdentity(
 
     let command: AppInboxEnqueueInput;
     try {
-        command = decodeAppInboxEnqueue(
-            decodeJsonWireText(outer.payload.resource, 'Persisted AppInbox command')
-        );
+        command = decodePersistedAppInboxCommand(outer);
     }
     catch (error) {
         return toInvalidIdentity(

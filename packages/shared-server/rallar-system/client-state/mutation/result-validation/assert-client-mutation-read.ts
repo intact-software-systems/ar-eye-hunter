@@ -4,6 +4,7 @@ import {
     validateAuthoritativeGroupSnapshotList
 } from '@shared/api/authoritative-state-validation.ts';
 
+import type { RuntimeStateEntryValue } from '@shared-server/runtime-state/runtime-state-json-store.ts';
 import {
     // Receipt validation remains a direct dependency on its canonical owner.
     validateClientMutationIdempotencyRecordValue
@@ -19,7 +20,9 @@ import { sameClientPrincipalRef } from '../../client-state-semantic-equality.ts'
 import { ClientMutationRejectedError } from '../../validation/client-mutation-rejection.ts';
 import { decodeClientValidationRecord, requireExactKeys } from '../../validation/client-record-validation.ts';
 import { assertClientExpiredSessionAuthority } from '../assert-client-expired-session-authority.ts';
+
 import type { ClientMutationCommand, ClientMutationRead } from '../client-mutation-contracts.ts';
+import { resolveClientMutationAudienceReadScope } from '../resolve-client-mutation-audience-read-scope.ts';
 
 export function assertClientMutationRead(
     command: ClientMutationCommand,
@@ -65,6 +68,19 @@ export function assertClientMutationRead(
     validateAuthoritativeGroupSnapshotList(read.audienceGroupSnapshots, command.aggregateRef);
     validateAuthoritativeClientSnapshotList(read.audienceClientSnapshots, command.aggregateRef);
     assertClientMutationReadScope(command, read);
+    assertClientMutationAudienceReadScope(command, read);
+}
+
+function assertClientMutationAudienceReadScope(
+    command: ClientMutationCommand,
+    read: ClientMutationRead
+): void {
+    if (
+        resolveClientMutationAudienceReadScope(command, read) !== 'principal-audience' &&
+        (read.audienceGroupSnapshots.length > 0 || read.audienceClientSnapshots.length > 0)
+    ) {
+        throw new ClientMutationRejectedError('Client mutation audience read is out of scope');
+    }
 }
 
 function assertClientMutationSnapshotRead(
@@ -148,10 +164,10 @@ function assertClientMutationIdempotencyRead(
     }
 }
 
-function assertNullableEntryValue(
-    value: unknown,
+function assertNullableEntryValue<T>(
+    value: RuntimeStateEntryValue<T> | null,
     label: string,
-    assertValue: (value: unknown, label: string) => void
+    assertValue: (value: T, label: string) => void
 ): void {
     if (value === null) {
         return;
@@ -159,5 +175,5 @@ function assertNullableEntryValue(
     const wrapped = decodeClientValidationRecord(value, label);
     requireExactKeys(wrapped, ['entry', 'value'], label);
     validateClientRuntimeStateEntry(wrapped.entry, `${label}.entry`);
-    assertValue(wrapped.value, `${label}.value`);
+    assertValue(value.value, `${label}.value`);
 }

@@ -204,7 +204,7 @@ export function createValidRttWriteCandidate(): Extract<RtcRttMutationComputed, 
             expiredMeasurementEntry: null,
             endpointAdmissions: [],
             expiredEndpointAdmissionEntries: [],
-            measurements: []
+            incidentMeasurements: []
         },
         facts: {
             commandHash: `sha256:${'a'.repeat(64)}`,

@@ -2,21 +2,21 @@ import type { ResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resou
 import type { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
+import { createPSqlCounterScope } from '../../../postgres/create-p-sql-counter-scope.ts';
 import type { PSqlSql, PSqlTransactionWrite } from '../../../postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction.ts';
 import { writeResourceInboxReservationFinish } from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
 import { writeResourceInboxResultReplacement } from '../../../queuebox/postgres/resource-inbox-result-replacement.ts';
-import {
-    timeRallarAsync,
-    type RallarTimingDetails,
-    type RallarTimingSink
-} from '../../observability/timing.ts';
+import type { RallarTimingDetails, RallarTimingSink } from '../../observability/timing.ts';
+import { toAppInboxEntryCompletionAwaitability } from '../app-inbox-command-identity.ts';
 import {
     AppInboxReservationConflictError,
+    toAppInboxCompletionAwaitability,
     type AppInboxExecutionMetadata
 } from '../app-inbox-contracts.ts';
 import { toAppInboxAttemptTimingDetails } from './app-inbox-attempt-timing.ts';
 import type { AppInboxCompletionComputed, AppInboxCompletionFacts } from './app-inbox-completion-computation.ts';
+import { timeAppInboxPhase } from './app-inbox-phase-timing.ts';
 
 export type AppInboxHandlerFinalization =
     | Readonly<{ state: 'pending'; }>
@@ -100,17 +100,25 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
         attempt: ResourceInboxAttempt,
         computed: AppInboxCompletionComputed<Result>
     ): Promise<void> {
-        await timeRallarAsync(this.config.timing, {
-            component: 'app-inbox-phase',
-            operation: 'transaction',
-            serviceId: this.config.serviceId,
-            requestId: attempt.entry.key.resourceId,
-            details: { ...attempt.telemetry, classification: 'non-retryable' }
+        const transactionScope = this.openTransactionScope();
+        await timeAppInboxPhase({
+            sink: this.config.timing,
+            database: transactionScope,
+            event: {
+                component: 'app-inbox-phase',
+                operation: 'transaction',
+                serviceId: this.config.serviceId,
+                requestId: attempt.entry.key.resourceId,
+                details: { ...attempt.telemetry, classification: 'non-retryable' }
+            }
         }, async () =>
-            await runInPSqlTransaction(this.database, async (transaction) => {
+            await runInPSqlTransaction(transactionScope, async (transaction) => {
                 await writeAppInboxCompletion(transaction, computed);
             }));
-        this.completionNotifications?.publish(computed.finalizedEntry.key);
+        this.completionNotifications?.publish(
+            computed.finalizedEntry.key,
+            toAppInboxEntryCompletionAwaitability(attempt.entry)
+        );
     }
 
     private async writeFinalizedMutation<DurableResult>(
@@ -127,7 +135,10 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
             state: 'transaction-finalized',
             entry: computed.finalizedEntry
         });
-        this.completionNotifications?.publish(computed.finalizedEntry.key);
+        this.completionNotifications?.publish(
+            computed.finalizedEntry.key,
+            toAppInboxCompletionAwaitability(context.enqueue.type)
+        );
     }
 
     private ensurePending(context: AppInboxExecutionMetadata): void {
@@ -145,21 +156,33 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
         details: RallarTimingDetails,
         write: PSqlTransactionWrite<ReturnResult>
     ): Promise<ReturnResult> {
-        return await timeRallarAsync(
-            this.config.timing,
+        const transactionScope = this.openTransactionScope();
+        return await timeAppInboxPhase(
             {
-                component: 'app-inbox-phase',
-                operation: 'transaction',
-                serviceId: this.config.serviceId,
-                requestId: context.enqueue.resourceId,
-                details
+                sink: this.config.timing,
+                database: transactionScope,
+                event: {
+                    component: 'app-inbox-phase',
+                    operation: 'transaction',
+                    serviceId: this.config.serviceId,
+                    requestId: context.enqueue.resourceId,
+                    details
+                }
             },
             async () =>
                 await runInPSqlTransaction(
-                    this.database,
+                    transactionScope,
                     async (transaction) => await write(transaction)
                 )
         );
+    }
+
+    /**
+     * One scope per transaction when the port counts, so its line counts this transaction's statements alone;
+     * the scope opens the transaction through this writer's own handle.
+     */
+    private openTransactionScope(): PSqlSql {
+        return this.database.getExecutorCounters ? createPSqlCounterScope(this.database) : this.database;
     }
 
     private toTimingDetails(context: AppInboxExecutionMetadata): RallarTimingDetails {

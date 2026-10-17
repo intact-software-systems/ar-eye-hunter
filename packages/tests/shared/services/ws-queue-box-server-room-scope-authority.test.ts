@@ -79,6 +79,7 @@ function createFixture(connectionScope: StateScope) {
     socket.addConnection(new ConnectionContext({ id: 'peer', socket: native }));
     const settled: string[] = [];
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         name: 'server',
         socket,
         outbox: new InMemoryQueueBox(),

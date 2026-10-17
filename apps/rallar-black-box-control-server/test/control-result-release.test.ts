@@ -1,18 +1,30 @@
 import { assertEquals } from '@std/assert';
 
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
-import { ControlArtifactRecorder } from '../src/control-artifact-recorder.ts';
+import { createDefaultTimers } from '@shared/resilience/timers.ts';
+import { createManualTimers } from '../../../packages/tests/shared/resilience/manual-timers.ts';
+import { ControlArtifactRecorder, DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG } from '../src/control-artifact-recorder.ts';
 
 Deno.test('durable receipt requires storage and exact complete results on disk', async () => {
     const identity = { runId: 'durable', agentId: 'agent' };
     const runtime = createDefaultRallarBlackBoxTestRuntime();
     const result = await runtime.execute({ kind: 'health', commandId: 'captured' }, identity);
     const envelope = { kind: 'result' as const, protocolVersion: 1 as const, ...identity, commandId: result.commandId, ok: result.ok, result };
-    const missing = new ControlArtifactRecorder({ storageDir: undefined, commandSnapshots: { snapshotCommand: () => undefined } });
+    const missing = new ControlArtifactRecorder({
+        timers: createDefaultTimers(),
+        config: DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG,
+        storageDir: undefined,
+        commandSnapshots: { snapshotCommand: () => undefined }
+    });
     assertEquals((await missing.record(envelope)).left !== undefined, true);
     const storageDir = await Deno.makeTempDir();
     try {
-        const recorder = new ControlArtifactRecorder({ storageDir, commandSnapshots: { snapshotCommand: () => undefined } });
+        const recorder = new ControlArtifactRecorder({
+            timers: createDefaultTimers(),
+            config: DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG,
+            storageDir,
+            commandSnapshots: { snapshotCommand: () => undefined }
+        });
         const written = await recorder.record(envelope);
         assertEquals(written.right?.length, 1);
         const receipts = await recorder.readResultReceipts(identity, ['captured']);
@@ -33,7 +45,12 @@ Deno.test('failed disk writes cannot become receipts after a later successful ap
     const runtime = createDefaultRallarBlackBoxTestRuntime();
     const result = await runtime.execute({ kind: 'health', commandId: 'never-release' }, identity);
     const envelope = { kind: 'result' as const, protocolVersion: 1 as const, ...identity, commandId: result.commandId, ok: result.ok, result };
-    const recorder = new ControlArtifactRecorder({ storageDir, commandSnapshots: { snapshotCommand: () => undefined } });
+    const recorder = new ControlArtifactRecorder({
+        timers: createDefaultTimers(),
+        config: DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG,
+        storageDir,
+        commandSnapshots: { snapshotCommand: () => undefined }
+    });
     try {
         await Deno.writeTextFile(`${storageDir}/runs`, 'block directory creation');
         assertEquals((await recorder.record(envelope)).left !== undefined, true);
@@ -53,7 +70,12 @@ Deno.test('nested root capture binds every retained child and preserves complete
     const storageDir = await Deno.makeTempDir();
     const identity = { runId: 'nested', agentId: 'agent' };
     const runtime = createDefaultRallarBlackBoxTestRuntime();
-    const recorder = new ControlArtifactRecorder({ storageDir, commandSnapshots: { snapshotCommand: () => undefined } });
+    const recorder = new ControlArtifactRecorder({
+        timers: createDefaultTimers(),
+        config: DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG,
+        storageDir,
+        commandSnapshots: { snapshotCommand: () => undefined }
+    });
     try {
         const result = await runtime.execute({ kind: 'loop', commandId: 'loop', count: 3, commands: [{ kind: 'health' }] }, identity);
         const envelope = { kind: 'result' as const, protocolVersion: 1 as const, ...identity, commandId: result.commandId, ok: result.ok, result };
@@ -61,6 +83,8 @@ Deno.test('nested root capture binds every retained child and preserves complete
             await recorder.record({ kind: 'event', protocolVersion: 1, ...identity, atEpochMs: event.atEpochMs, payload: event });
         }
         assertEquals((await recorder.record(envelope)).left, undefined);
+        const projection = runtime.state().events.find((event) => event.kind === 'result' && event.commandId === 'loop')!;
+        await recorder.record({ kind: 'event', protocolVersion: 1, ...identity, atEpochMs: projection.atEpochMs, payload: projection });
         const captured = await recorder.readResultReceipts(identity, ['loop']);
         assertEquals(captured.right?.length, 4);
         const before = await Deno.readTextFile(`${storageDir}/runs/nested/events.jsonl`);
@@ -78,7 +102,12 @@ Deno.test('receipt selection keeps reused root IDs scoped to the latest reset ge
     const storageDir = await Deno.makeTempDir();
     const identity = { runId: 'reset-scope', agentId: 'agent' };
     const runtime = createDefaultRallarBlackBoxTestRuntime();
-    const recorder = new ControlArtifactRecorder({ storageDir, commandSnapshots: { snapshotCommand: () => undefined } });
+    const recorder = new ControlArtifactRecorder({
+        timers: createDefaultTimers(),
+        config: DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG,
+        storageDir,
+        commandSnapshots: { snapshotCommand: () => undefined }
+    });
     try {
         for (let generation = 0; generation < 2; generation += 1) {
             const result = await runtime.execute({ kind: 'health', commandId: 'same' }, identity);
@@ -99,7 +128,12 @@ Deno.test('canonical receipt budget never prevents full admitted result artifact
     const storageDir = await Deno.makeTempDir();
     const identity = { runId: 'large', agentId: 'agent' };
     const runtime = createDefaultRallarBlackBoxTestRuntime({ commandExecutor: () => ({ status: 'ok', value: 'x'.repeat(1_048_577) }) });
-    const recorder = new ControlArtifactRecorder({ storageDir, commandSnapshots: { snapshotCommand: () => undefined } });
+    const recorder = new ControlArtifactRecorder({
+        timers: createDefaultTimers(),
+        config: DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG,
+        storageDir,
+        commandSnapshots: { snapshotCommand: () => undefined }
+    });
     try {
         const result = await runtime.execute({ kind: 'health', commandId: 'large' }, identity);
         assertEquals(
@@ -111,6 +145,94 @@ Deno.test('canonical receipt budget never prevents full admitted result artifact
         assertEquals((await recorder.readResultReceipts(identity, ['large'])).left !== undefined, true);
     }
     finally {
+        await Deno.remove(storageDir, { recursive: true });
+    }
+});
+
+Deno.test('batched capture acknowledges only after flush and rejects release after overflow', async () => {
+    const storageDir = await Deno.makeTempDir();
+    const timers = createManualTimers(0);
+    const identity = { runId: 'batched-release', agentId: 'agent' };
+    const runtime = createDefaultRallarBlackBoxTestRuntime();
+    const result = await runtime.execute({ kind: 'health', commandId: 'captured' }, identity);
+    const envelope = { kind: 'result' as const, protocolVersion: 1 as const, ...identity, commandId: result.commandId, ok: result.ok, result };
+    const recorder = new ControlArtifactRecorder({
+        storageDir,
+        commandSnapshots: { snapshotCommand: () => undefined },
+        timers,
+        config: DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG
+    });
+    try {
+        let acknowledged = false;
+        const recording = recorder.record(envelope).then((outcome) => {
+            acknowledged = true;
+            return outcome;
+        });
+        await Promise.resolve();
+        assertEquals(acknowledged, false);
+        await recorder.stop();
+        assertEquals((await recording).right?.length, 1);
+        assertEquals((await recorder.readResultReceipts(identity, ['captured'])).right?.length, 1);
+        const overflow = new ControlArtifactRecorder({
+            storageDir,
+            commandSnapshots: { snapshotCommand: () => undefined },
+            timers,
+            config: { flushIntervalMs: 250, maxPendingBytes: 1 }
+        });
+        assertEquals((await overflow.record(envelope)).left !== undefined, true);
+        await overflow.stop();
+        assertEquals((await overflow.readResultReceipts(identity, ['captured'])).left !== undefined, true);
+        assertEquals(runtime.state().commandHistory.length, 1);
+    }
+    finally {
+        await recorder.stop();
+        await Deno.remove(storageDir, { recursive: true });
+    }
+});
+
+Deno.test('overflow during receipt persistence prevents a successful capture acknowledgement', async () => {
+    const storageDir = await Deno.makeTempDir();
+    const timers = createManualTimers(0);
+    const identity = { runId: 'receipt-race', agentId: 'agent' };
+    const runtime = createDefaultRallarBlackBoxTestRuntime();
+    const result = await runtime.execute({ kind: 'health', commandId: 'captured' }, identity);
+    const recorder = new ControlArtifactRecorder({
+        storageDir,
+        commandSnapshots: { snapshotCommand: () => undefined },
+        timers,
+        config: { flushIntervalMs: 250, maxPendingBytes: 4_000 }
+    });
+    const writeTextFile = Deno.writeTextFile;
+    let releaseJournal = () => {};
+    let journalStarted = () => {};
+    const journalEntered = new Promise<void>((resolve) => {
+        journalStarted = resolve;
+    });
+    const journalBlocked = new Promise<void>((resolve) => {
+        releaseJournal = resolve;
+    });
+    Deno.writeTextFile = async (...args: Parameters<typeof writeTextFile>) => {
+        if (String(args[0]).endsWith('/result-receipts.jsonl')) {
+            journalStarted();
+            await journalBlocked;
+        }
+        return writeTextFile(...args);
+    };
+    try {
+        const captured = recorder.record({ kind: 'result', protocolVersion: 1, ...identity, commandId: result.commandId, ok: result.ok, result });
+        const flushing = recorder.stop();
+        await journalEntered;
+        const dropped = recorder.record({ kind: 'event', protocolVersion: 1, ...identity, atEpochMs: 1, payload: { large: 'x'.repeat(5_000) } });
+        assertEquals((await dropped).left !== undefined, true);
+        releaseJournal();
+        await flushing;
+        assertEquals((await captured).left !== undefined, true);
+        assertEquals((await recorder.readResultReceipts(identity, ['captured'])).left !== undefined, true);
+    }
+    finally {
+        releaseJournal();
+        Deno.writeTextFile = writeTextFile;
+        await recorder.stop();
         await Deno.remove(storageDir, { recursive: true });
     }
 });

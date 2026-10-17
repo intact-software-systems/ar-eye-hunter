@@ -26,23 +26,21 @@ export function decodeParallelResultValue(value: unknown): RallarBlackBoxTestPar
 
 export function decodeWaitResultValue(value: unknown): RallarBlackBoxTestWaitResultValue | undefined {
     const candidate = decodeRecord(value) as Partial<RallarBlackBoxTestWaitResultValue>;
-    return typeof candidate.matched === 'boolean' && candidate.match !== undefined
+    return typeof candidate.matched === 'boolean'
         ? candidate as RallarBlackBoxTestWaitResultValue
         : undefined;
 }
 
 export function decodeAssertResultValue(value: unknown): RallarBlackBoxTestAssertResultValue | undefined {
     const candidate = decodeRecord(value) as Partial<RallarBlackBoxTestAssertResultValue>;
-    const common = typeof candidate.source === 'string' &&
-        typeof candidate.operator === 'string' &&
+    const common = typeof candidate.operator === 'string' &&
         typeof candidate.exists === 'boolean' &&
         typeof candidate.passed === 'boolean';
     if (!common) {
         return undefined;
     }
     if (candidate.operator === 'sameUniqueStringSet') {
-        return typeof candidate.comparisonSource === 'string' &&
-                typeof candidate.comparisonExists === 'boolean'
+        return typeof candidate.comparisonExists === 'boolean'
             ? candidate as RallarBlackBoxTestAssertResultValue
             : undefined;
     }

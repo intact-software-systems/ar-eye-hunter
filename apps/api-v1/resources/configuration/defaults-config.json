@@ -99,8 +99,7 @@
       "initialRate": 1,
       "maxRate": 10,
       "increaseRate": 1,
-      "decreaseRate": 1,
-      "maxFairnessSelectionsPerWindow": 10
+      "decreaseRate": 1
     },
     "delivery": {
       "publicationRetentionMs": 86400000,
@@ -118,6 +117,7 @@
   },
   "appInbox": {
     "phaseTiming": false,
+    "laneBudgetPolicy": "fixed-retry-two",
     "completionWait": {
       "maxElapsedMs": 30000,
       "retryIntervalMs": 250,
