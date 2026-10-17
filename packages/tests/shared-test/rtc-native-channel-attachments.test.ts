@@ -180,23 +180,27 @@ function createSnapshot(
 }
 
 function createStateEvent(native: RtcSignalingDiagnostics.NativeSnapshot): ApiJsonObject {
-    return projectEvent({
+    return toProjectedEvent({
         kind: 'native-state',
         trigger: 'connection',
         localSessionId: 'session-a',
         peerSessionId: 'session-b',
+        signalType: undefined,
+        offerId: undefined,
         atEpochMs: native.nativeSequence,
         native
     });
 }
 
 function createRetirementEvent(native: RtcSignalingDiagnostics.NativeSnapshot): ApiJsonObject {
-    return projectEvent({
+    return toProjectedEvent({
         kind: 'native-lifetime',
         action: 'retiring',
         retirement: 'reset',
         localSessionId: 'session-a',
         peerSessionId: 'session-b',
+        signalType: undefined,
+        offerId: undefined,
         atEpochMs: native.nativeSequence,
         native
     });
@@ -207,28 +211,31 @@ function createServiceEvent(
     stage: 'setup-established' | 'terminating',
     channels: readonly RtcSignalingDiagnostics.CompactChannel[] = []
 ): ApiJsonObject {
-    return projectEvent({
+    const peer: RtcSignalingDiagnostics.ServicePeerSnapshot = {
+        peerId: 'session-b',
+        setupId: { status: 'observed', value: 'setup-a' },
+        setup: { peerId: 'session-b', phase: 'established', startedAtEpochMs: 1, establishedAtEpochMs: 2 },
+        native,
+        capture: native.capture,
+        channels,
+        channelCount: channels.length + 1,
+        channelsTruncated: true
+    };
+    const service: RtcSignalingDiagnostics.ServicePeerObservation = stage === 'terminating'
+        ? { ...peer, stage, issuer: { status: 'observed', value: 'disconnect-peer' }, timeout: { status: 'unavailable', reason: 'not-applicable' } }
+        : { ...peer, stage, issuer: { status: 'unavailable', reason: 'not-applicable' }, timeout: { status: 'unavailable', reason: 'not-applicable' } };
+    return toProjectedEvent({
         kind: 'service-peer-observation',
         localSessionId: 'session-a',
         peerSessionId: 'session-b',
+        signalType: undefined,
+        offerId: undefined,
         atEpochMs: native.nativeSequence,
-        service: {
-            stage,
-            peerId: 'session-b',
-            setupId: { status: 'observed', value: 'setup-a' },
-            setup: { peerId: 'session-b', phase: 'established', startedAtEpochMs: 1, establishedAtEpochMs: 2 },
-            issuer: stage === 'terminating' ? { status: 'observed', value: 'disconnect-peer' } : { status: 'unavailable', reason: 'not-applicable' },
-            timeout: { status: 'unavailable', reason: 'not-applicable' },
-            native,
-            capture: native.capture,
-            channels,
-            channelCount: channels.length + 1,
-            channelsTruncated: true
-        }
+        service
     });
 }
 
-function projectEvent(value: unknown): ApiJsonObject {
+function toProjectedEvent(value: RtcSignalingDiagnostics.Event): ApiJsonObject {
     const event = toRtcNativeObservationProjection(value).event;
     if (!event) {
         throw new Error('Native channel fixture did not satisfy the canonical projection.');
