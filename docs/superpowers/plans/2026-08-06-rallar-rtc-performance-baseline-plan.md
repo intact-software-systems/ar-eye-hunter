@@ -95,10 +95,17 @@ the memory and IndexedDB backends. Decoding, expiry, queue guards, durable confl
 and volatile-row proof remain with their adapters. The duplicated buffers and inheritance
 are removed without legacy or migration paths. Queue expiry consistently uses its owner clock.
 
-The next outcomes are fresh E1 acquisition on a quiet host and canonical archive admission
-for the existing operator RUN Native evidence. Actual RUN Native application/attachment has
-diagnostic evidence, but oversized root-result rows still prevent canonical archived admission.
-These outcomes remain separate from the unchanged E3 acceptance gate.
+Canonical archive admission now uses the existing strict shared JSONL decoder through clean
+EOF. Both original operator RUN Native witnesses are admitted with matched receipts, current
+sessions/scopes and actual channel attachment; their original archive bytes remain unchanged.
+This finite supplied-source proof does not establish receiver delivery from the smoke manifest
+or E3 acceptance. The superseded app-local admission implementation is removed.
+
+The next outcomes are fresh E1 acquisition on a quiet host and actual Copy/Load/same-session
+Native repeat acceptance through the existing browser witness. That witness already checks
+old-channel retirement, fresh non-replayed invocations and exact received payloads. Its first
+current-source execution failed during receiver room setup before Copy or either repeat;
+preserve that failure and resolve its cause without weakening the oracle.
 
 The remaining heap investigation and unchanged canonical E3 primary and conditional repeat
 remain the **final overall plan point**, after the other required outcomes are ready.
@@ -2805,19 +2812,20 @@ Keep only these next two independently testable slices concrete:
    containers, builds, tests, browser matrices, other benchmarks or artifact analysis.
    Existing unrelated workloads must not be stopped merely to manufacture quiet-host
    evidence. A historical Issue report or synthetic fixture cannot satisfy acceptance.
-2. **Acquire actual operator RUN Native application and attachment evidence.** The
-   bounded non-heap reconciliation found that HOST environment forwarding, finite
-   operator RUN selection and visible controls already exist in current code; older
-   missing-forwarding notes are historical. Do not implement them again. First run
-   the existing PostgreSQL worker-capture correctness witness on an isolated scratch
-   database, preserving Native/Off/malformed HOST outcomes and exact received payloads.
-   Then use the supported GitHub Free workflow and existing two-agent RTC smoke
-   manifest with explicit Native RUN selection on one exact deployed candidate.
-   Verify applied receipt origin/mode, the acknowledged Connect, issued session and
-   current initialized scope, and actual channel attachment in retained native evidence.
-   A receipt alone is not attachment. The smoke manifest has no receiver assertion;
-   do not claim end-to-end reception from send success. Keep HOST and RUN witnesses
-   separate and preserve failures without retrying them into acceptance.
+2. **Acquire actual Copy/Load/same-session Native repeat acceptance.** Local HOST
+   Native/Off/malformed correctness and finite supplied-source Actions RUN Native
+   application/attachment now have retained evidence. Canonical complete-EOF admission
+   accepts the original RUN archive; do not recreate its forwarding, selector or reader.
+   Use the existing browser witness for visible Manual Copy, Local Load and two ordinary
+   runs with the same authenticated sessions and unchanged copied body. Require actual
+   retirement of preceding native receive targets, distinct open targets for new exact
+   payload effects, fresh non-replayed invocations and applied Native/run receipts.
+   The current attempt stopped at receiver room setup, before those effects; diagnose
+   the actual SDK/create/presence boundary from its retained failure before selecting
+   any source correction. Run on isolated PostgreSQL with owned services, one worker
+   and zero retries; preserve partial failures and complete emitted evidence. No new
+   harness, payload discriminator, timeout relaxation or substitute sender-only proof
+   is selected.
 
 E2's bounded reconciliation is complete. Its 37 observations remain in separate
 source/environment/harness populations; 12 repeat cohorts contain CV-noisy metrics.
