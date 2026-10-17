@@ -20,7 +20,86 @@ finalization, repeat selection, and archive verification preserve each run's
 source, environment, exact attempts, raw samples, and checksums. Tooling is
 implemented; capture and ranking acceptance remain separate outcomes.
 
-**Current checkpoint, 2026-10-13:** [PR645](https://github.com/intact-software-systems/ar-eye-hunter/pull/645)
+**Current outcome, 2026-10-18:** E3 remains **conditionally completed for
+sequencing only**, as authorized by the human. The final canonical acquisition
+has now completed its full primary: three warmups and eleven retained attempts
+(five default, three all-scenarios, three retention). All fourteen individual
+attempts pass their correctness and evidence checks. **The retention cohort
+fails the unchanged heap criterion; accepted E3 cohorts remain zero.** All three
+retained attempts exceed both 110% of cycle-zero heap and cycle-zero plus 5 MiB.
+Their increases are 19.65, 22.00 and 21.68 MiB. No settled peer/lane/timer drift
+is recorded. The controller selected no repeat after the failed primary.
+
+Complete original artifacts, failure accounting and source/configuration identity
+are retained. Every retention attempt completed 100 cycles with continuous
+capture, recent/64 event history, routine browser diagnostics disabled and
+verified durable result release. The earlier reader and preflight failures
+remain separate failed attempts. The final result is a heap-acceptance failure,
+not another evidence-production failure. Independent review approves the evidence
+and analysis, with no actionable discrepancy. Performance acceptance remains failed.
+
+The earlier uninterrupted 700-cycle diagnostic lasted 72.74 minutes. It observed
+message-owner turnover, one-hour dedup expiry, two commandHistory entries per page
+and an empty resultCache. Heap did not plateau. Existing-function compilation
+tiers account for most of that diagnostic's early 16.097 MiB code increase; no
+module duplication or safe substantial code reduction was established. The new
+canonical packet measures total post-GC heap and does not establish a fresh
+code/non-code breakdown. Earlier code attribution must not be subtracted from
+its heap totals or pooled across source/environment populations.
+
+Fresh E1 acquisition and its single controller-required repeat are complete:
+all 44 B01–B04 cases, 3,636 primary outcomes and 6,666 repeat outcomes pass
+correctness, accounting and canonical validation. All four workloads remain
+performance-inconclusive under the unchanged noise rule. No second repeat or
+optimization ranking is justified. The original missing E1 corpus and earlier
+failed replacement attempts remain historical limitations; they do not erase
+the independently reviewed fresh evidence.
+
+E2 reconciliation is complete at its bounded scope: all 37 retained archives
+verify, all 448 raw-derived metric summaries reconcile, and the evidence forms
+35 strict source/environment/harness populations. Twelve of nineteen repeat
+cohorts contain unresolved or newly introduced CV noise. These populations must
+not be pooled or relabeled as stable. The provisional cross-tier conclusion
+remains **no optimization justified yet**, with final E3 acceptance unresolved.
+
+Authorized B07 PostgreSQL/GitHub Free acquisition is complete and descriptive.
+Three primary and six controlled-repeat runs each delivered 600/600 frames with
+100% fleet success. Six original noise triggers remain and four new series
+exceed the unchanged 20% CV rule. There is no second repeat, canonical B07
+controller-admission, geographic-diversity or receiver-latency claim. B07 does
+not replace B01–B06 or automatically select E4. No database-backed RTC hotspot
+has been proposed for this candidate, so conditional E4 remains unselected.
+
+The admission commit/notification correction and shared write-set extraction
+are implemented and independently reviewed. Complete queue/index and admission
+state commits before synchronous notifications; observer failures cannot undo
+committed state or interrupt remaining listeners. One shared keyed write-set
+and pure overlay algorithm serve the memory and IndexedDB adapters. Backend
+validation, lifetime and concurrency rules remain with their owners. Affected
+duplicated implementations and obsolete paths are removed without migration
+code. Result release preserves assignment-lifetime replay protection and
+cumulative statistics after verified durable capture.
+
+The selected Console Copy/Load/repeat, native lifecycle, deployed HOST/RUN,
+Actions and generic no-spawn outcomes have independently reviewed evidence at
+their stated scopes. The successful unchanged two-agent no-spawn witness does
+not reclassify the two failed 50-agent diagnostics or establish capacity.
+Finite native coverage, source-origin and counter limitations remain disclosed.
+
+[PR #671](https://github.com/intact-software-systems/ar-eye-hunter/pull/671) is the
+remote delivery record for source changes, reviews and validation evidence.
+Ordinary correctness checks do not supply E3 acceptance. The remaining heap
+investigation is now the final overall plan point. Conditional sequencing
+completion does not waive Section 12, authorize another primary/repeat to seek
+a favorable result, or justify deleting this plan as completed.
+
+Prefer existing `packages/shared/**` libraries, single responsibility and one
+canonical implementation. Retain no affected obsolete code, duplicate policy
+or migration scaffolding. Prefer PostgreSQL where the selected environment
+allows it; E3 retains its required memory environment. Preserve every original
+failed attempt and continuous profiling session.
+
+**Historical checkpoint, 2026-10-13:** [PR645](https://github.com/intact-software-systems/ar-eye-hunter/pull/645)
 is merged into `codex/rtc-baseline-refresh`; this is not evidence of a direct merge to `main`.
 Configurable routine browser diagnostic recording is published in draft
 [PR659](https://github.com/intact-software-systems/ar-eye-hunter/pull/659), stacked on
@@ -300,7 +379,7 @@ navigation is [Shared RTC Bench](../../../packages/shared-rtc-bench/README.md).
 - Prefer functional over stateful: pure data-in/data-out policy, calculation, translation, and validation; stateful shells only for explicit lifecycle/resource ownership with injected effects.
 - Keep the repo consistent. Follow current AGENTS.md, repo-local skills and authoritative standards. Apply full-file closure recursively to remediation support files; independent untouched code stays outside closure.
 - Use subagent driven development and TDD for every implementation or bugfix: independent semantic failure, witnessed RED, minimum GREEN, refactor, focused affected checks and independent task review. Human prose needs no artificial source-text test.
-- Preserve RTC-B01 through RTC-B06 accepted workloads, environment identities, sample counts, timing boundaries, artifact correctness/failure/confinement/accounting, controlled repeat and homogeneous-comparison rules. RTC-B07 remains held. Moving main observations retain exact immutable source provenance; do not wait for quiet main.
+- Preserve RTC-B01 through RTC-B06 accepted workloads, environment identities, sample counts, timing boundaries, artifact correctness/failure/confinement/accounting, controlled repeat and homogeneous-comparison rules. RTC-B07 is authorized under the GitHub Free/PostgreSQL execution amendment below. Moving main observations retain exact immutable source provenance; do not wait for quiet main.
 - Capture does not authorize optimization. Diagnose the first failed attempt; only evidenced correctness corrections, proved test-first and independently reviewed, may change production. No speculative watchdog renewal, retry, timeout expansion, workload/sample reduction, or discarded failure.
 
 - The benchmark package is private, has no product barrel, and is never a
@@ -1904,7 +1983,7 @@ current harness on both revisions. Preserve historical harness/source identity.
 ## 5. Accepted Workloads
 
 The accepted Phase 1 measurement envelope retains `RTC-B01` through `RTC-B06`
-exactly as specified here. `RTC-B07` remains conditional.
+exactly as specified here. `RTC-B07` is now separately authorized under the execution amendment below.
 
 | ID        | Fixed workload                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Required evidence and correctness assertions                                                                                                                                                                                                                                                                                                          | Class                  |
 | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
@@ -1914,7 +1993,7 @@ exactly as specified here. `RTC-B07` remains conditional.
 | `RTC-B04` | Multicast serialization: peers 10, 100, and 1,000 crossed with payloads 4,096 and 65,536 bytes. Group/cache: fallback with 20,000 snapshots, 5,000 matching versions, and 500 lookups; manager state with 5,000 clients, 1,000 desired, and 20 lookups; peer owners with 1,000 groups, 10 peers/group, and 1,000 lookups; heartbeat with 10,000 channels. Retain 5 inner runs in each existing harness.                                                                                                                                                                                | Transport-message, unique-serialization, byte, lookup, ownership, and callback counters satisfy each harness contract; all messages expected to be identical are byte-identical.                                                                                                                                                                      | `synthetic-path`       |
 | `RTC-B05` | Native Chromium data-channel lifecycle: 25 sequential raw connection/data-channel open-send-close iterations per process, 5 independent measured processes after 1 discarded warmup process. Per-iteration open and close durations are implemented and required for capture. This is native lifecycle evidence, not Rallar reconnect-retention evidence.                                                                                                                                                                                                                              | 25/25 opens and closes in every retained process, zero local/remote errors, final channels and peer connections closed, forced-GC heap metrics present when Chromium exposes them.                                                                                                                                                                    | `native-browser`       |
 | `RTC-B06` | Local three-browser matrix in memory mode: instrument the existing matrix artifact with receiver-observed peer-ready, direct-delivery, multicast-delivery, broadcast-delivery, and reconnect-ready wait durations; run 1 untimed default warmup plus 5 independent default executions and 1 untimed all-scenarios warmup plus 3 independent all-scenario close/reconnect executions on one exact clean commit/configuration. Run a gated 100-cycle Rallar close/reconnect mode in the same spec, 1 warmup plus 3 retained executions, with CDP post-GC heap and RTC diagnostic counts. | Every matrix assertion/artifact gate passes; receiver-observed timing distributions retain raw samples; all-scenario delivery survives reconnect; retention evidence is limited to the declared heap criterion and observable peer/lane state plus connection-timer flags returning to settled cycle-0 values.                                        | `local-full-stack`     |
-| `RTC-B07` | Conditional remote sequence: first run supported preflight manifest `05a-rtc-realtime-stability-2-agent-5s.json`; if green and separately authorized, run `05c-rtc-realtime-stability-2-agent-30s-10hz.json` three independent times on the same exact commit/fleet configuration. `05c` assigns 2 agents; each plans 300 frames over 30 seconds at 10 Hz, for 600 aggregate planned frames; each has maximum in-flight 64, minimum sender success ratio 0.95, maximum 15 dropped frames, p95 send-completion at most 200 ms, and p99 send-completion at most 1,000 ms.                | Workflow operation succeeds; required artifacts are available and analyzable; per-agent sender thresholds pass. Receiver counts are correctness context, not a latency threshold. Preserve run IDs/attempts, commit, manifest hash, agent placement, artifact hashes, and do not claim multi-host/geographic placement unless the artifact proves it. | `distributed-observed` |
+| `RTC-B07` | Authorized hosted sequence: first run supported preflight manifest `05a-rtc-realtime-stability-2-agent-5s.json`; if green, run `05c-rtc-realtime-stability-2-agent-30s-10hz.json` three independent times on the same exact commit/fleet configuration. `05c` assigns 2 agents; each plans 300 frames over 30 seconds at 10 Hz, for 600 aggregate planned frames; each has maximum in-flight 64, minimum sender success ratio 0.95, maximum 15 dropped frames, p95 send-completion at most 200 ms, and p99 send-completion at most 1,000 ms.                                           | Workflow operation succeeds; required artifacts are available and analyzable; per-agent sender thresholds pass. Receiver counts are correctness context, not a latency threshold. Preserve run IDs/attempts, commit, manifest hash, agent placement, artifact hashes, and do not claim multi-host/geographic placement unless the artifact proves it. | `distributed-observed` |
 
 Postgres-backed `RTC-B06` is a conditional environment variant, not a
 substitute for the required memory-mode run. It is required before selecting a
@@ -1948,25 +2027,74 @@ outside the interval. Time only
 returned count is `n * (n - 1) / 2`. This is an in-memory production-method
 characterization; a database-backed conclusion requires conditional `E4-pg`.
 
-`RTC-B07` uses manual dispatch of
-`.github/workflows/hetzner-distributed-recipe.yml` (`Run Hetzner Distributed
-Recipe`), not the supported-manifests workflow. For preflight, set
-`manifest_path` to
+### Authorized B07 execution environment amendment
+
+Use `.github/workflows/github-free-distributed-recipe.yml` (**Run GitHub Free
+Distributed Recipe**) with `execution_mode=hetzner-control`. Two GitHub-hosted agent
+jobs use the PostgreSQL-backed Hetzner API/control deployment. This is a distinct
+population from historical Hetzner-only or local results, never a pooled replacement.
+The workflow's `all-local` mode is an ALM-specific memory fixture and is not the B07
+PostgreSQL path.
+
+First rehearse the exact checked-in 05a and 05c manifests locally with PostgreSQL,
+using the existing headless worker, canonical materializer and world-fleet operator.
+Use a new isolated local database; retain original/materialized manifests, actual
+backend proof, full native results/events, failures and process cleanup evidence.
+Do not reset existing local databases or relax stream, readiness or barrier rules.
+
+For hosted preflight set `manifest_path` to
 `apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json`;
-for retained runs use
+for three independent retained runs use
 `apps/rallar-black-box/manifests/hetzner/05c-rtc-realtime-stability-2-agent-30s-10hz.json`.
-Set both the dispatch ref and input `ref` to the exact published instrumentation
-commit SHA; `rollout_before_run=true`, `agent_source=hetzner`,
-`operator_phase=full`, `agent_count=2`, empty `room_id`,
-`agent_prefix=rtc-b07`, `application_id=rallar-server`,
-`workspace_id=default`, `register_before_login=false`,
-`browser_log_level=warning`, `headless_entry=headless`,
-`browser_engine=chromium`, `install_playwright=true`, `npm_ci=false`,
-`wait_for_agents=true`, `ready_timeout_seconds=120`, and
-`stop_after_run=true`; leave control URLs at the workflow's recorded defaults.
-Use unique run IDs `rtc-b07-05a-SHORTSHA-preflight` and
-`rtc-b07-05c-SHORTSHA-1` through `-3`. The runner uses one `HETZNER_HOST`; the
-two agents do not prove multi-host, WAN, or geographic behavior.
+Select one exact published candidate and verify the workflow's `headSha` before
+accepting any artifacts. GitHub dispatch requires a branch/tag ref; resolve it to the
+selected SHA before dispatch and verify the resulting run again. Keep that ref pinned
+through the cohort. No later main movement invalidates the captured source.
+
+Set `target_agent_count=2`, `agents_per_job=1`, `max_parallel_jobs=2`,
+`agent_prefix=rtc-b07`, `application_id=rallar-server`, `workspace_id=default`,
+`register_before_login=true` (required by the GitHub multi-agent workflow),
+`server_timing=false`, `browser_log_level=warning`, `browser_engine=chromium`,
+`install_playwright=true`, `ready_timeout_seconds=120`, and
+`terminal_timeout_seconds=180`. Preserve authored RTC capture selection. Keep the
+recorded public API/control/SPA endpoints fixed throughout the cohort. Use unique
+run IDs, fresh run-scoped agent prefixes and explicit isolated room IDs through the
+canonical materializer; record both source and effective GroupRef and manifest hashes.
+Fresh prefixes isolate registered users without resetting PostgreSQL. Reusing an existing
+username currently returns canonical `auth-mutation-rejected`, which the workflow's
+registration step does not treat as its recognized `auth-user-exists` case. Preserve any
+such pre-recipe failure and diagnose it before a new attempt. Map agent suffixes 01/02
+to stable participant positions across isolated runs. Isolation changes identity, not the
+stream workload.
+
+The approved initial candidate rollout uses `rollout_control_plane=true`; it restarts
+the shared test services and resets their PostgreSQL test database. The human's
+explicit approval covers deployments from this branch regardless of SHA. After successful
+preflight, set
+`rollout_control_plane=false` for retained runs and reuse the same verified deployment.
+Do not reset the database between recipes. Retain each workflow run/attempt, actual
+source, deployment proof, agent placement, operation diagnostics, native artifacts,
+analysis and checksums. Inspect operation diagnostics before recipe artifacts; a
+pre-recipe failure is not a stream result. Do not rerun to conceal a failure.
+
+Apply the existing distributed run-level CV and single controlled-repeat rules.
+The original per-agent frame, success, drop and p95/p99 thresholds remain unchanged.
+For the first B07 descriptive cohort, freeze all numeric scalar fields emitted by
+canonical `analysis.performance` before the first retained run. Match per-agent values
+by stable participant identity rather than slowest-agent array order. Each series has
+three workflow-run samples; the preflight and local rehearsals are separate. A triggered
+repeat has six new complete 05c runs, preserving the per-run workload, in a separate
+output linked to the exact primary summary bytes. Never append to the primary or use
+individual frames as independent workflow-run samples.
+
+The current canonical baseline workload controller supports B01–B06, not B07. Reuse
+its statistics functions for descriptive analysis, but do not claim B07 controller
+admission or a governed finalized baseline from that adapter. Resolving this integration
+gap is separate from observing successful hosted workloads; neither outcome waives
+existing correctness, noise, source identity or overall completion requirements.
+Placement metadata must substantiate any multi-host claim; two GitHub jobs alone do
+not establish geographic diversity. Local rehearsal and hosted sender-completion
+measurements do not establish end-to-end receiver latency or E3 heap acceptance.
 
 ### Frozen configuration descriptor and worker grammar
 
@@ -2113,13 +2241,13 @@ workload, or evidence contracts.
 
 ### Environment tiers
 
-| Environment  | Required for                   | Rules                                                                                                                               |
-| ------------ | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `E1-local`   | `RTC-B01` through `RTC-B04`    | Quiet local machine; repository runtime/config; no parallel builds, test suites, browser matrices, containers, or other benchmarks. |
-| `E2-browser` | `RTC-B05`                      | Repo-provided Playwright Chromium; headless; same browser build and launch flags for all retained samples.                          |
-| `E3-memory`  | `RTC-B06`                      | Local memory API full stack using the root script and fixed three-browser identities; serialize with auth work and other services.  |
-| `E4-pg`      | Conditional Postgres `RTC-B06` | Repository Docker/Postgres recipe, fixed migration state, local ICE unless the approved record says otherwise.                      |
-| `E5-remote`  | Conditional `RTC-B07`          | Exact authorized Hetzner fleet, manifest, workflow input, commit, and retained operation/performance artifacts.                     |
+| Environment  | Required for                   | Rules                                                                                                                                                 |
+| ------------ | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `E1-local`   | `RTC-B01` through `RTC-B04`    | Quiet local machine; repository runtime/config; no parallel builds, test suites, browser matrices, containers, or other benchmarks.                   |
+| `E2-browser` | `RTC-B05`                      | Repo-provided Playwright Chromium; headless; same browser build and launch flags for all retained samples.                                            |
+| `E3-memory`  | `RTC-B06`                      | Local memory API full stack using the root script and fixed three-browser identities; serialize with auth work and other services.                    |
+| `E4-pg`      | Conditional Postgres `RTC-B06` | Repository Docker/Postgres recipe, fixed migration state, local ICE unless the approved record says otherwise.                                        |
+| `E5-remote`  | Conditional `RTC-B07`          | Authorized GitHub-hosted agents with PostgreSQL-backed Hetzner API/control; exact source, configuration and retained operation/performance artifacts. |
 
 ### Required fingerprint
 
@@ -2601,11 +2729,11 @@ justified yet.”
 | 5       | B04 multicast/group/cache/heartbeat instrumentation delivered.                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | 6       | B05 per-iteration native lifecycle instrumentation delivered.                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | 7       | Measurement gates/source-fingerprint tooling delivered. Current captures use their own immutable source snapshot, not a final-main anchor.                                                                                                                                                                                                                                                                                                                                             |
-| 8       | E1 capture unverified: recover and validate retained evidence or perform governed capture after representative E3 succeeds. Tool availability cannot mark this complete.                                                                                                                                                                                                                                                                                                               |
-| 9       | E2 stream active with 31 checked-in passed observations; five recovered Sep 28–Oct 2 archives are proposed in PRs #634–638. Retain noisy/inconclusive classification.                                                                                                                                                                                                                                                                                                                  |
-| 10      | E3 has zero accepted primaries/repeats. Run 37108696378 recovery remains proposed in PR #639 at its last verified OPEN/unmerged status. Tasks 17–28 delivered reviewed bounded observations and exact-source proofs; Task 28 producer FAILURE retains usefulness PASS only. Tasks 30/31 completed source/evidence diagnosis; historical cause/native application/lifetime/issuer and unseen facts remain unknown.                                                                      |
-| 11      | B07 held pending its separate human decision; no remote run in the current horizon.                                                                                                                                                                                                                                                                                                                                                                                                    |
-| 12      | Ranking gated on accepted E3 and required repeat plus reconciled relevant E1/E2 evidence; E4 remains conditional to the exact candidate.                                                                                                                                                                                                                                                                                                                                               |
+| 8       | Bounded E1 recovery completed without original corpus bytes. Acceptance remains unverified; fresh governed acquisition is required on a quiet host with the unchanged 44-case workload and controller-selected repeat.                                                                                                                                                                                                                                                                 |
+| 9       | E2 reconciliation completed: 37 verified archives, 448 matching summaries, 35 strict groups, 12 noisy repeat cohorts. Preserve inconclusive metrics; no optimization justified yet.                                                                                                                                                                                                                                                                                                    |
+| 10      | E3 conditionally completed for sequencing only. Zero accepted cohorts; heap acceptance remains open. The remaining heap investigation and unchanged canonical primary/conditional repeat are the final overall plan point. Earlier failures and diagnostics remain preserved.                                                                                                                                                                                                          |
+| 11      | B07 local PostgreSQL rehearsal, corrected hosted preflight, three primary and six controlled-repeat runs passed workload thresholds on one exact candidate. Preserve the pre-recipe registration failure. Frozen descriptive analysis remains inconclusive: ten repeat series exceed 20% CV. No second repeat or canonical B07 controller admission.                                                                                                                                   |
+| 12      | Provisional coverage reconciled; no optimization justified yet. Final ranking remains gated on accepted E3, required repeats and verified relevant E1/E2 evidence; E4 remains conditional to the exact candidate.                                                                                                                                                                                                                                                                      |
 | 17      | Bounded canonical lifecycle preservation delivered and independently approved with zero findings; one shared sanitized sequence, completed-health-first and failure-only capture.                                                                                                                                                                                                                                                                                                      |
 | 18      | Exact-head non-publishing proof delivered: run 37123318628 attempt 1, source bbf0f6b007a85234f9b9e970ab535ff3b4b391e2, all 82 files verified, 122 useful events; normal-path scope and incomplete coverage retained.                                                                                                                                                                                                                                                                   |
 | 19      | Existing peer/lane notification observations delivered; final independent specification PASS and quality APPROVED after the import-only fix, zero remaining findings. Retained 105 tests / 1,434-file zero-error typecheck are attributed to the pre-fix source.                                                                                                                                                                                                                       |
@@ -2648,48 +2776,63 @@ justified yet.”
 
 ## 11. Current Implementation Horizon
 
-The diagnostics-disabled primary is complete and heap-failed; accepted E3 cohorts remain
-zero. The independently reviewed six-snapshot diagnostic locates the unbounded canonical
-runtime event history and a concurrent React projection, but does not prove savings or
-close the heap gate. Configurable retention for all black-box recipes is approved, with
-recent/64 and diagnostics disabled selected for E3. Preserve the complete durable journal,
-cumulative counters and explicit refusal of queries outside retained coverage.
+The canonical E3 primary is now fully acquired and fails heap acceptance.
+Conditional sequencing completion remains conditional; zero E3 cohorts are
+accepted. Earlier implementation, operator and bounded E1/E2/B07 outcomes keep
+their independently reviewed scopes and limitations. They do not need another
+acquisition merely because final E3 failed.
 
-The human requests main preparation now and E3 completion in a separate session after code
-integration. Keep only these next two useful implementation slices concrete:
+Keep only these next two useful slices concrete:
 
-1. **Complete generic retention source and semantic TDD:** implement the approved bounded
-   recent view in the existing runtime owner, with truthful history coverage and cumulative
-   counters. Prove retained ordering, uncovered-history refusal, absence witnesses,
-   cancellation, barrier identity and current connection facts at their owned boundaries.
-   Preserve verified ordinary full-history wait/assert/reconnect behavior. Do not equate
-   diagnostic-recording selection with history retention or replace row growth with a
-   duplicated unbounded buffer. Close independent review findings, including small-window
-   barrier observation, capture reassignment and supported connection stats. Carry the
-   selection through recipe/run/manifest settings, visible operator controls, reload
-   segmentation and real browser construction roots and expose attributable Health/final
-   evidence. Prove complete connected journal preservation and irreversible
-   incomplete-capture reporting for a publication or offline gap, including reset and
-   assignment ownership. Complete recursive touched-file closure, affected browser/app/package
-   validation and independent specification/quality review.
-2. **Prepare the source stack for main:** publish the coherent reviewed code, update the
-   semantic PR descriptions, complete whole-stack review, exact-source Branch Release Gate
-   and selected distributed-manifest validation, then prepare dependency-ordered native
-   review and integration. Preserve isolated child diffs when a parent actually lands;
-   mergeable BEHIND alone creates no refresh work. Stop each PR when GitHub reports it merged.
+1. **Publish the independently reviewed E3 failure evidence.** Review confirms
+   the original archive, source/configuration identity, all warmup and retained
+   attempts, durable release/journal proof and the exact heap/state verdict.
+   Preserve the failed primary and no-repeat decision in the plan and semantic
+   PR explanation; ordinary CI success must not be presented as E3 acceptance.
+2. **Decide the remaining heap work from the reviewed evidence.** Present the
+   failed canonical result together with the bounded prior code-family and
+   replay-owner findings. Select further implementation only when a concrete
+   ownership/lifetime defect or safe reduction is established. If no such
+   reduction is established, present the unresolved E3 condition and a bounded
+   follow-up for the human decision required by Section 12. Moving an issue or
+   marking conditional sequencing complete cannot make dependent work pass.
 
-The separate E3 session must first bind recent/64 and diagnostics disabled to actual three-page
-policy/instance/generation/capture receipts and verify the complete durable journal with bounded
-streaming acceptance through a known Health boundary. Missing, duplicate, malformed, out-of-order
-or incomplete capture fails; preview suffixes, local socket success and memory fallback do not
-certify durability. Then acquire an exact frozen source/configuration using the unchanged E3
-primary and conditional repeat. Preserve the same three pages, 100 cycles, eleven checkpoints,
-original assertions and deadlines. Do not overlap native measurement with
-agents, tests, builds, downloads or artifact analysis. Neither semantic tests, normal CI
-nor an instrumented diagnostic accepts E3. Later outcomes remain successful E3 and all
-remaining B01–B06, deployed HOST/RUN, actual Actions and Task65 gates; B07 stays held.
-Retention implementation is underway; no post-change memory saving or E3 acceptance is
-claimed. Harness optimization and production optimization remain separate findings.
+No new primary, selective repeat, longer plateau run, timeout relaxation,
+replay-horizon change or speculative production optimization is selected by
+this failure alone. Existing profiles remain bound to their original sources
+and uninterrupted sessions. The current canonical total-heap measurements do
+not identify the exact code/non-code contribution on this candidate.
+
+If evidence later earns a source correction, preserve the required primary:
+three warmups plus eleven retained attempts (5 default, 3 all-scenarios,
+3 retention), 100 retention cycles and zero retries. Only the existing
+controller's passing-primary decision may select its single linked repeat:
+three warmups plus twenty-two retained attempts (10/6/6). Heap failure remains
+at least 2 of 3 retained runs above both 110% of cycle-zero heap and cycle-zero
+plus 5 MiB; the repeat fails at 4 of 6. Settled peer/lane/timer mismatches
+independently fail. No extra warmup, code-heap subtraction, favorable sample
+selection or changed baseline may replace this gate.
+
+Keep default/all-scenarios diagnostic selections and release-disabled behavior;
+retention remains recent/64 with routine/ALM diagnostics disabled and verified
+durable release enabled. Preserve complete original recovery artifacts,
+source/configuration fingerprints and attempt accounting. E3 uses its required
+memory environment. E4 remains conditional on an actual database-backed RTC
+candidate; prior PostgreSQL correctness evidence is not a substitute if that
+condition becomes selected. B07 remains descriptive and outside default
+completion unless separately required.
+
+Prefer existing shared libraries and direct ownership. Do not remove validation,
+replay tombstones or receipt evidence to obtain a heap pass. Optional metadata
+representation opportunities preserve every replay fact and assignment/reset
+lifetime; the prior approximately 0.395 MiB duplicate-string estimate is not a
+measured reclamation result. An inactive-view optimization still requires a
+resource-lifetime design and visible tab-switch regressions, rather than blanket
+conditional unmounting. No interning framework, parallel legacy store or
+protocol migration is selected.
+
+Section 12 remains unchanged. The plan stays open until its required successful
+acceptance and human decision are actually satisfied.
 
 ### Earlier implementation horizon (historical)
 

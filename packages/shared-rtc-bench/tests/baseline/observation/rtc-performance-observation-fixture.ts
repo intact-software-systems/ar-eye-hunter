@@ -5,6 +5,7 @@ import {
     deriveRtcBaselineExternalAttempts
 } from '../../../baseline/catalog/rtc-baseline-workload-manifest.ts';
 import type {
+    RtcBaselineAttemptLocatorDto,
     RtcBaselineCaptureManifestDto,
     RtcBaselineConditionalEnvironmentDecisionDto,
     RtcBaselineEnvironmentDto,
@@ -88,63 +89,11 @@ export async function createRtcB06FinalizedArtifacts(
     repeatLink: RtcBaselineRepeatLinkDto | null = null
 ) {
     const runtimeObservation = toB06RuntimeObservation();
-    const retainedSampleMultiplier: 1 | 2 = baselineId.endsWith('-repeat-01') ? 2 : 1;
-    const request = {
-        schema: 'rallar.rtc-baseline.capture-request.v1' as const,
-        baselineId,
-        workloadIds: ['RTC-B06'] as const,
-        environmentId: 'E3-memory' as const,
-        retainedSampleMultiplier,
-        repeatLink,
-        conditionalEnvironmentDecisions: [e4NotRequired]
-    };
-    const manifest = deriveRtcBaselineCaptureManifest(request);
-    const identities = computeRtcBaselineExpectedSampleIdentities(manifest);
-    const samples: RtcBaselineSampleDto[] = identities.map((identity) => ({
-        schema: 'rallar.rtc-baseline.sample.v1',
-        identity,
-        outcome: 'passed',
-        evidenceClass: 'local-full-stack',
-        metrics: [{ metric: 'durationMs', unit: 'ms', value: identity.outerOrdinal }],
-        rawEvidence: {},
-        rawReferences: [],
-        issues: [],
-        runtimeObservation
-    }));
+    const manifest = createB06Manifest(baselineId, repeatLink);
+    const samples = createB06Samples(manifest, runtimeObservation);
     const sampleById = new Map(samples.map((sample) => [sample.identity.sampleId, sample]));
-    const attempts = deriveRtcBaselineExternalAttempts(manifest, 'RTC-B06').map((locator) => {
-        const sample = samples.find((candidate) =>
-            candidate.identity.caseId === locator.caseId &&
-            candidate.identity.inputKey === locator.inputKey &&
-            candidate.identity.intendedPhase === locator.intendedPhase &&
-            candidate.identity.outerOrdinal === locator.outerOrdinal
-        )!;
-        const allScenarios = locator.caseId === 'all-scenarios';
-        const retention = locator.caseId === 'retention-100';
-        return {
-            schema: 'rallar.rtc-baseline.external-attempt.v1' as const,
-            locator,
-            producerExitStatus: 0,
-            producerFacts: {
-                databaseUrl: 'absent' as const,
-                allScenariosPresent: allScenarios,
-                allScenariosRaw: allScenarios ? '1' : null,
-                retentionSoakPresent: retention,
-                retentionSoakRaw: retention ? '1' : null,
-                retentionCyclesPresent: retention,
-                retentionCyclesRaw: retention ? '100' : null,
-                iceModePresent: false,
-                iceModeRaw: null
-            },
-            sampleOutcomes: [{
-                identity: sample.identity,
-                outcome: sample.outcome,
-                issues: sample.issues
-            }],
-            samples: [sample],
-            issues: []
-        };
-    });
+    const attempts = deriveRtcBaselineExternalAttempts(manifest, 'RTC-B06')
+        .map((locator) => toB06ExternalAttempt(locator, samples));
     const cohorts: RtcBaselineExternalCohortDto[] = manifest.expectedCohorts.map(
         (identity) => ({
             schema: 'rallar.rtc-baseline.external-cohort.v1',
@@ -164,33 +113,7 @@ export async function createRtcB06FinalizedArtifacts(
         conditionalEnvironmentDecisions: [e4NotRequired],
         observation: runtimeObservation
     };
-    const metricObservations = computeRtcBaselineMetricObservations(samples, 'E3-memory');
-    const partitioned = partitionRtcBaselineMetricObservations(metricObservations);
-    if (!partitioned.ok) {
-        throw new Error('B06 observation fixture metrics must have consistent provenance.');
-    }
-    const summary: RtcBaselineSummaryArtifactRecord = {
-        schema: 'rallar.rtc-baseline.summary.v1',
-        baselineId,
-        workloadIds: ['RTC-B06'],
-        environmentId: 'E3-memory',
-        repeatLink,
-        conditionalEnvironmentDecisions: [e4NotRequired],
-        sampleOutcomes: samples
-            .map((sample) => ({
-                identity: sample.identity,
-                outcome: sample.outcome,
-                issues: sample.issues
-            }))
-            .sort((left, right) => left.identity.sampleId.localeCompare(right.identity.sampleId)),
-        cohortOutcomes: cohorts.map((cohort) => ({
-            identity: cohort.identity,
-            outcome: cohort.outcome,
-            issues: cohort.issues
-        })),
-        metricSummaries: summarizeRtcBaselineMetricPartitions(partitioned.value),
-        rawReferences: []
-    };
+    const summary = toB06Summary(manifest, samples, cohorts);
     return withChecksums(
         new Map([
             ['environment.json', toJson(environment)],
@@ -210,6 +133,107 @@ export async function createRtcB06FinalizedArtifacts(
             ['summary.json', toJson(summary)]
         ])
     );
+}
+
+function createB06Manifest(
+    baselineId: string,
+    repeatLink: RtcBaselineRepeatLinkDto | null
+): RtcBaselineCaptureManifestDto {
+    const retainedSampleMultiplier: 1 | 2 = baselineId.endsWith('-repeat-01') ? 2 : 1;
+    return deriveRtcBaselineCaptureManifest({
+        schema: 'rallar.rtc-baseline.capture-request.v1',
+        baselineId,
+        workloadIds: ['RTC-B06'],
+        environmentId: 'E3-memory',
+        retainedSampleMultiplier,
+        repeatLink,
+        conditionalEnvironmentDecisions: [e4NotRequired]
+    });
+}
+
+function createB06Samples(
+    manifest: RtcBaselineCaptureManifestDto,
+    runtimeObservation: RtcBaselineRuntimeObservationDto
+): RtcBaselineSampleDto[] {
+    const identities = computeRtcBaselineExpectedSampleIdentities(manifest);
+    return identities.map((identity) => ({
+        schema: 'rallar.rtc-baseline.sample.v1',
+        identity,
+        outcome: 'passed',
+        evidenceClass: 'local-full-stack',
+        metrics: [{ metric: 'durationMs', unit: 'ms', value: identity.outerOrdinal }],
+        rawEvidence: {},
+        rawReferences: [],
+        issues: [],
+        runtimeObservation
+    }));
+}
+
+function toB06ExternalAttempt(
+    locator: RtcBaselineAttemptLocatorDto,
+    samples: readonly RtcBaselineSampleDto[]
+): RtcBaselineExternalAttemptDto {
+    const sample = samples.find((candidate) =>
+        candidate.identity.caseId === locator.caseId &&
+        candidate.identity.inputKey === locator.inputKey &&
+        candidate.identity.intendedPhase === locator.intendedPhase &&
+        candidate.identity.outerOrdinal === locator.outerOrdinal
+    )!;
+    const allScenarios = locator.caseId === 'all-scenarios';
+    const retention = locator.caseId === 'retention-100';
+    return {
+        schema: 'rallar.rtc-baseline.external-attempt.v1',
+        locator,
+        producerExitStatus: 0,
+        producerFacts: {
+            databaseUrl: 'absent',
+            allScenariosPresent: allScenarios,
+            allScenariosRaw: allScenarios ? '1' : null,
+            retentionSoakPresent: retention,
+            retentionSoakRaw: retention ? '1' : null,
+            retentionCyclesPresent: retention,
+            retentionCyclesRaw: retention ? '100' : null,
+            iceModePresent: false,
+            iceModeRaw: null
+        },
+        sampleOutcomes: [{ identity: sample.identity, outcome: sample.outcome, issues: sample.issues }],
+        samples: [sample],
+        issues: []
+    };
+}
+
+function toB06Summary(
+    manifest: RtcBaselineCaptureManifestDto,
+    samples: readonly RtcBaselineSampleDto[],
+    cohorts: readonly RtcBaselineExternalCohortDto[]
+): RtcBaselineSummaryArtifactRecord {
+    const metricObservations = computeRtcBaselineMetricObservations(samples, 'E3-memory');
+    const partitioned = partitionRtcBaselineMetricObservations(metricObservations);
+    if (!partitioned.ok) {
+        throw new Error('B06 observation fixture metrics must have consistent provenance.');
+    }
+    return {
+        schema: 'rallar.rtc-baseline.summary.v1',
+        baselineId: manifest.request.baselineId,
+        workloadIds: ['RTC-B06'],
+        environmentId: 'E3-memory',
+        repeatLink: manifest.repeatLink,
+        conditionalEnvironmentDecisions: [e4NotRequired],
+        sampleOutcomes: samples
+            .map((sample) => ({
+                identity: sample.identity,
+                outcome: sample.outcome,
+                issues: sample.issues
+            }))
+            .sort((left, right) => left.identity.sampleId.localeCompare(right.identity.sampleId)),
+        cohortOutcomes: cohorts.map((cohort) => ({
+            identity: cohort.identity,
+            outcome: cohort.outcome,
+            issues: cohort.issues
+        })),
+        metricSummaries: summarizeRtcBaselineMetricPartitions(partitioned.value),
+        rawReferences: []
+    };
 }
 
 function toB06RuntimeObservation(): RtcBaselineRuntimeObservationDto {
@@ -245,7 +269,7 @@ function toB06RuntimeObservation(): RtcBaselineRuntimeObservationDto {
     };
 }
 
-function toRuntimeObservation(): RtcBaselineRuntimeObservationDto {
+export function toRuntimeObservation(): RtcBaselineRuntimeObservationDto {
     return {
         git: {
             headCommit: 'eaf526518c70e3b396dad91c008125a622b38b00',

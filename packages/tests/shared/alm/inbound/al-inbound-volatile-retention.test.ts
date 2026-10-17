@@ -4,6 +4,7 @@ import { Temporal } from '@js-temporal/polyfill';
 
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_RECEIPT_DEADLINE_GRACE_MS, newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
+import { planALMessageHandling, type ALMessageHandlingPlan } from '@shared/al-contracts/al-policy.ts';
 import {
     createInMemoryALAdmissionState,
     InMemoryAdmissionBackend,
@@ -12,6 +13,7 @@ import {
 import {
     normalizeALRuntimeStoreRetention
 } from '@shared/alm/ALStoreRetention.ts';
+import { evictTerminalVolatileInboundMessages } from '@shared/alm/inbound/admission/evict-terminal-volatile-inbound-messages.ts';
 import {
     createALInboundAdmissionStore,
     createVolatileALInboundAdmissionStore,
@@ -21,6 +23,7 @@ import {
 import { toALInboundMessageKey } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
 import { toALInboundMessageOwnerKey } from '@shared/alm/inbound/al-inbound-source-validation.ts';
 import { toALInboundControlAcksKey } from '@shared/alm/inbound/control/al-inbound-control-rows.ts';
+import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 
 import {
@@ -48,7 +51,185 @@ interface ObservedInboundPairs {
     readonly volatileStore: ALInboundAdmissionStore;
 }
 
+interface RowExpiries {
+    readonly owner: number | undefined;
+    readonly canonicalMessage: number | undefined;
+}
+
 describe('the owner row a volatile inbound message keeps (D74)', () => {
+    it('keeps provenance when the receiver normalizes an explicit no-ACK envelope to hop ACK', async () => {
+        useFakeDate();
+        const message = createPermanentMessage('receiver-normalized-ack');
+        const normalized = planALMessageHandling(message, {
+            selfPeerId: INBOUND_TEST_SELF_PEER_ID,
+            fromPeerId: INBOUND_TEST_SENDER_PEER_ID,
+            nowMs: Date.now()
+        }, {
+            defaults: { ack: { algo: 'hop', opts: { timeoutMs: 1000 } } },
+            capabilities: { supportedAck: ['hop'] }
+        });
+        expect(normalized.ack).toMatchObject({ enabled: true, algo: 'hop' });
+        const normalizedPlan = (plan: ALMessageHandlingPlan): ALMessageHandlingPlan => ({
+            ...plan,
+            effective: normalized.effective,
+            ack: normalized.ack
+        });
+        const pairs = await createReadyObservedPairs(normalizedPlan);
+
+        expect((await pairs.fixture.runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE)).right)
+            .toEqual({ kind: 'admitted' });
+        await expect.poll(() => pairs.fixture.controlSends.flat().length).toBe(1);
+        await expect.poll(() => pairs.fixture.delivered.length).toBe(1);
+        evictTerminalVolatileInboundMessages(new InMemoryAdmissionBackend(pairs.volatile, Date.now), NAMESPACE);
+
+        expect(readRowExpiries(pairs.volatile, message).owner)
+            .toBe(readDeadlineMs(message) + AL_RECEIPT_DEADLINE_GRACE_MS);
+        const rtc = createInboundTestRuntime({
+            stores: pairs.fixture.stores,
+            volatileStores: {
+                admissionStore: pairs.volatileStore,
+                workQueue: pairs.volatile.workQueue,
+                evictExpired: () => {},
+                budget: undefined
+            },
+            carrier: 'rtc',
+            effectWorkerId: 'al-inbound:retention-rtc',
+            plan: normalizedPlan
+        });
+        await rtc.runtime.ready();
+        expect(
+            (await rtc.runtime.admitIncomingMessage(message, {
+                kind: 'rtc-peer',
+                peerId: INBOUND_TEST_SENDER_PEER_ID
+            })).right
+        ).toEqual({ kind: 'duplicate' });
+        await expect.poll(() => rtc.controlSends.flat().length).toBe(1);
+    });
+
+    it('reclaims a no-ACK owner-only admission while preserving its dedup horizon', async () => {
+        useFakeDate();
+        const pairs = await createReadyObservedPairs();
+        const message: ALMessage = {
+            ...createPermanentMessage('owner-only'),
+            targets: { mode: 'unicast', toPeerId: 'another-peer' }
+        };
+        const admittedAtMs = Date.now();
+        expect((await pairs.fixture.runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE)).right)
+            .toEqual({ kind: 'admitted' });
+        expect(readRowExpiries(pairs.volatile, message))
+            .toEqual({
+                owner: readDeadlineMs(message) + AL_RECEIPT_DEADLINE_GRACE_MS,
+                canonicalMessage: undefined
+            });
+
+        evictTerminalVolatileInboundMessages(new InMemoryAdmissionBackend(pairs.volatile, Date.now), NAMESPACE);
+
+        expect(readRowExpiries(pairs.volatile, message).owner).toBeUndefined();
+        expect(pairs.fixture.delivered).toEqual([]);
+        vi.setSystemTime(admittedAtMs + 60 * 60_000 - 1);
+        expect((await pairs.fixture.runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE)).right)
+            .toEqual({ kind: 'duplicate' });
+    });
+
+    it.each(['replacement', 'checkpoint reload', 'terminal reload', 'replacement reload'] as const)(
+        'preserves provenance without admission-time proof after %s',
+        async (change) => {
+            useFakeDate();
+            const pairs = await createReadyObservedPairs();
+            const message = createPermanentMessage(`unproven-${change}`);
+            expect((await pairs.fixture.runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE)).right)
+                .toEqual({ kind: 'admitted' });
+            await expect.poll(() => pairs.fixture.delivered.length).toBe(1);
+            const key = toALInboundMessageOwnerKey(NAMESPACE, message.id.msgId, message.id.senderId);
+            const original = pairs.volatile.data.get(key)!;
+            const state = change === 'checkpoint reload' ? createInMemoryALAdmissionState() : pairs.volatile;
+            const backend = new InMemoryAdmissionBackend(state, Date.now);
+            if (change === 'replacement' || change === 'replacement reload') {
+                await backend.write((transaction) => transaction.set(key, original.value, original.expireAtTimestamp));
+                if (change === 'replacement reload') {
+                    await backend.write((transaction) => transaction.remove(key));
+                    backend.loadIfAbsent([original], []);
+                }
+            }
+            else {
+                if (change === 'terminal reload') {
+                    evictTerminalVolatileInboundMessages(backend, NAMESPACE);
+                    expect(readRowExpiries(state, message).owner).toBeUndefined();
+                }
+                backend.loadIfAbsent([original], []);
+            }
+
+            evictTerminalVolatileInboundMessages(backend, NAMESPACE);
+
+            expect(readRowExpiries(state, message).owner).toBe(original.expireAtTimestamp);
+        }
+    );
+
+    it('reclaims permanent non-receipted provenance after delivery without shortening dedup', async () => {
+        useFakeDate();
+        const pairs = await createReadyObservedPairs();
+        const admittedAtMs = Date.now();
+        const message = createPermanentMessage('permanent-state');
+        const admit = () => pairs.fixture.runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE);
+
+        expect((await admit()).right).toEqual({ kind: 'admitted' });
+        await expect.poll(() => pairs.fixture.delivered.length).toBe(1);
+        const backend = new InMemoryAdmissionBackend(pairs.volatile, Date.now);
+        const observed: RowExpiries[] = [];
+        backend.onChangeDo(() => observed.push(readRowExpiries(pairs.volatile, message)));
+        evictTerminalVolatileInboundMessages(backend, NAMESPACE);
+        expect(readRowExpiries(pairs.volatile, message).owner).toBeUndefined();
+        expect(observed).toEqual([
+            { owner: undefined, canonicalMessage: undefined },
+            { owner: undefined, canonicalMessage: undefined }
+        ]);
+        vi.setSystemTime(admittedAtMs + 60 * 60_000 - 1);
+        expect((await admit()).right).toMatchObject({ kind: 'duplicate' });
+
+        vi.setSystemTime(admittedAtMs + 60 * 60_000);
+        backend.evictExpired();
+        expect(readRowExpiries(pairs.volatile, message).owner).toBeUndefined();
+        expect([...pairs.volatile.data.keys()].filter((key) => key.includes(':dedup:'))).toEqual([]);
+    });
+
+    it('keeps a receipted message owner through a deadline beyond the repository horizon', async () => {
+        useFakeDate();
+        const pairs = await createReadyObservedPairs();
+        const message: ALMessage = {
+            ...createInboundTestMessage({ msgId: 'long-receipt', acknowledged: true }),
+            constraints: { expiresAtMs: Date.now() + 2 * 60 * 60_000 }
+        };
+
+        expect((await pairs.fixture.runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE)).right)
+            .toEqual({ kind: 'admitted' });
+        await expect.poll(() => pairs.fixture.delivered.length).toBe(1);
+        evictTerminalVolatileInboundMessages(new InMemoryAdmissionBackend(pairs.volatile, Date.now), NAMESPACE);
+        expect(readRowExpiries(pairs.volatile, message).owner)
+            .toBe(readDeadlineMs(message) + AL_RECEIPT_DEADLINE_GRACE_MS);
+    });
+
+    it('plateaus across three retention horizons while fresh dedup identities remain protected', async () => {
+        useFakeDate();
+        const pairs = await createReadyObservedPairs();
+        const backend = new InMemoryAdmissionBackend(pairs.volatile, Date.now);
+        const startedAtMs = Date.now();
+        const counts: number[] = [];
+        for (let minute = 0; minute < 180; minute += 1) {
+            vi.setSystemTime(startedAtMs + minute * 60_000);
+            const message = createPermanentMessage(`state-${minute}`);
+            expect((await pairs.fixture.runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE)).right)
+                .toEqual({ kind: 'admitted' });
+            await expect.poll(() => pairs.fixture.delivered.length, { interval: 1 }).toBe(minute + 1);
+            backend.evictExpired();
+            evictTerminalVolatileInboundMessages(backend, NAMESPACE);
+            expect([...pairs.volatile.data.keys()].filter((key) => key.includes(':msg-owner:'))).toEqual([]);
+            if ((minute + 1) % 60 === 0) {
+                counts.push([...pairs.volatile.data.keys()].filter((key) => key.includes(':dedup:')).length);
+            }
+        }
+        expect(counts).toEqual([60, 60, 60]);
+    });
+
     it('keeps it for the message deadline plus the receipt grace, past the work the message owns', async () => {
         useFakeDate();
         const pairs = await createReadyObservedPairs();
@@ -107,6 +288,20 @@ describe('the owner row a volatile inbound message keeps (D74)', () => {
     });
 });
 
+function createPermanentMessage(resourceId: string): ALMessage {
+    return {
+        ...newALUnicastMessage(
+            INBOUND_TEST_SENDER_PEER_ID,
+            { topicId: 'state', resourceId, contextId: 'room' },
+            INBOUND_TEST_SELF_PEER_ID,
+            'state.snapshot',
+            { revision: 1 }
+        ),
+        constraints: { expiresAtMs: NEVER_EXPIRE_AT_TIMESTAMP },
+        delivery: { ownership: 'shared', reliability: 'at-least-once', ack: 'none' }
+    };
+}
+
 /** Fakes only the clock the rows are stamped with; the rotation keeps its real timers. */
 function useFakeDate(): void {
     vi.useFakeTimers({ toFake: ['Date'] });
@@ -116,13 +311,16 @@ function useFakeDate(): void {
 }
 
 /** A durable and a volatile memory pair whose admission maps the test reads back, behind one ready runtime. */
-async function createReadyObservedPairs(): Promise<ObservedInboundPairs> {
+async function createReadyObservedPairs(
+    plan?: (plan: ALMessageHandlingPlan) => ALMessageHandlingPlan
+): Promise<ObservedInboundPairs> {
     const durable = createObservedBackend();
     const volatile = createObservedBackend();
     const durableStore = createALInboundAdmissionStore(toStoreInput(durable.backend));
     const volatileStore = createVolatileALInboundAdmissionStore(toStoreInput(volatile.backend));
     const fixture = createInboundTestRuntime({
         carrier: 'ws',
+        plan,
         stores: { admissionStore: durableStore, workQueue: durable.backend.workQueue },
         volatileStores: {
             admissionStore: volatileStore,
@@ -172,7 +370,7 @@ function readDeadlineMs(message: ALMessage): number {
 function readRowExpiries(
     state: ALAdmissionMemoryState,
     message: ALMessage
-): Readonly<{ owner: number | undefined; canonicalMessage: number | undefined; }> {
+): RowExpiries {
     const { msgId, senderId } = message.id;
     return {
         owner: state.data.get(toALInboundMessageOwnerKey(NAMESPACE, msgId, senderId))

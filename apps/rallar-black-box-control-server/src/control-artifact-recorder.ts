@@ -1,3 +1,4 @@
+import type { ControlClientIdentity } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlClientEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type {
     ControlQueuedCommandSnapshot,
@@ -7,8 +8,16 @@ import {
     toControlArtifactOverflowRow,
     type ControlArtifactOverflowCounts
 } from '@shared-test/rallar-bb-test/control/control-artifact-overflow.ts';
+import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
+import type { ResultCaptureReceipt } from '@shared-test/rallar-bb-test/result-release/result-release-protocol.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
 
+import {
+    ControlArtifactStorage,
+    type ControlArtifactCaptureEntry,
+    type ControlArtifactRunWrite
+} from './control-artifact-storage.ts';
 import {
     controlEventArtifactJsonl,
     controlRunEventsJsonl,
@@ -55,9 +64,7 @@ export const DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG: ControlArtifactRecorderCo
 };
 
 /** One accepted envelope's rows: a result's two rows are kept or dropped together. */
-interface PendingArtifactEntry {
-    readonly resultLine: string | undefined;
-    readonly eventLine: string;
+interface PendingArtifactEntry extends ControlArtifactCaptureEntry {
     readonly bytes: number;
 }
 
@@ -66,18 +73,12 @@ interface PendingRunArtifacts {
     readonly omitted: { omittedResults: number; omittedEventRows: number; omittedBytes: number; };
 }
 
-interface ArtifactRunWrite {
-    readonly runId: string;
-    readonly resultsText: string;
-    readonly eventsText: string;
-}
-
 const JSONL_CONTENT_TYPE = 'application/x-ndjson; charset=utf-8';
-const RUN_DIRECTORY_NAME_LITERAL_CHARACTER = /^[a-z0-9-]$/;
 
 /** Appends JSONL rows per run in batches; one batch, delete or read barrier runs at a time, in order. */
 export class ControlArtifactRecorder {
     private readonly dependencies: ControlArtifactRecorderDependencies;
+    private readonly storage: ControlArtifactStorage | undefined;
     private pendingByRun = new Map<string, PendingRunArtifacts>();
     private pendingBytes = 0;
     private writing = false;
@@ -86,34 +87,58 @@ export class ControlArtifactRecorder {
 
     constructor(dependencies: ControlArtifactRecorderDependencies) {
         this.dependencies = dependencies;
+        this.storage = dependencies.storageDir ? new ControlArtifactStorage(dependencies.storageDir) : undefined;
     }
 
-    record(envelope: ControlClientEnvelope, commandBeforeAcceptance?: ControlQueuedCommandSnapshot): void {
-        if (!this.dependencies.storageDir || envelope.kind === 'register' || envelope.kind === 'heartbeat') {
-            return;
+    record(
+        envelope: ControlClientEnvelope,
+        commandBeforeAcceptance?: ControlQueuedCommandSnapshot
+    ): Promise<Either<string, readonly ResultCaptureReceipt[]>> {
+        if (envelope.kind === 'register' || envelope.kind === 'heartbeat') {
+            return Promise.resolve(Either.ofRight([]));
+        }
+        if (!this.storage) {
+            return Promise.resolve(Either.ofLeft('Durable artifact storage is not configured.'));
         }
         const commandId = toArtifactCommandId(envelope);
         const command = commandBeforeAcceptance ??
             (commandId ? this.dependencies.commandSnapshots.snapshotCommand(envelope.runId, commandId) : undefined);
-        const pending = this.pendingByRun.get(envelope.runId) ??
-            { entries: [], omitted: { omittedResults: 0, omittedEventRows: 0, omittedBytes: 0 } };
-        const entry = toPendingArtifactEntry(envelope, command);
-        pending.entries.push(entry);
-        this.pendingByRun.set(envelope.runId, pending);
-        this.pendingBytes += entry.bytes;
-        this.dropOldestOverCap(pending);
-        this.armFlush();
+        return new Promise((finish) => {
+            const pending = this.pendingByRun.get(envelope.runId) ??
+                { entries: [], omitted: { omittedResults: 0, omittedEventRows: 0, omittedBytes: 0 } };
+            const entry = toPendingArtifactEntry(envelope, command, finish);
+            pending.entries.push(entry);
+            this.pendingByRun.set(envelope.runId, pending);
+            this.pendingBytes += entry.bytes;
+            this.dropOldestOverCap(pending);
+            this.armFlush();
+        });
+    }
+
+    async readResultReceipts(
+        identity: ControlClientIdentity,
+        commandIds: readonly string[]
+    ): Promise<Either<string, readonly ResultCaptureReceipt[]>> {
+        if (!this.storage) {
+            return Either.ofLeft('Durable artifact storage is not configured.');
+        }
+        await this.stop();
+        return await this.storage.readResultReceipts(identity, commandIds);
     }
 
     deleteRun(runId: string): void {
-        const storageDir = this.dependencies.storageDir;
-        if (!storageDir) {
+        const storage = this.storage;
+        if (!storage) {
             return;
         }
-        this.pendingBytes -= toPendingBytes(this.pendingByRun.get(runId));
+        const pending = this.pendingByRun.get(runId);
+        for (const entry of pending?.entries ?? []) {
+            entry.finish(Either.ofLeft('The run was deleted before durable capture completed.'));
+        }
+        this.pendingBytes -= toPendingBytes(pending);
         this.pendingByRun.delete(runId);
         this.writeQueue = this.writeQueue
-            .then(() => Deno.remove(toArtifactRunDirectory(storageDir, runId), { recursive: true }))
+            .then(() => storage.deleteRun(runId))
             .catch(() => undefined);
     }
 
@@ -127,19 +152,11 @@ export class ControlArtifactRecorder {
 
     async response({ runId, kind, fallbackRun, corsOrigins }: ControlArtifactResponseInput): Promise<Response> {
         const headers = createControlResponseHeaders(undefined, { contentType: JSONL_CONTENT_TYPE, corsOrigins });
-        const storageDir = this.dependencies.storageDir;
-        const storedPath = storageDir ? `${toArtifactRunDirectory(storageDir, runId)}/${kind}.jsonl` : undefined;
-        if (storedPath) {
-            try {
-                await this.stop();
-                const file = await Deno.open(storedPath, { read: true });
-                return new Response(file.readable, { status: 200, headers });
-            }
-            catch (error) {
-                if (!(error instanceof Deno.errors.NotFound)) {
-                    const message = error instanceof Error ? error.message : String(error);
-                    console.warn(`Could not read control artifact ${storedPath}: ${message}`);
-                }
+        if (this.storage) {
+            await this.stop();
+            const readable = await this.storage.openRunFile(runId, `${kind}.jsonl`);
+            if (readable) {
+                return new Response(readable, { status: 200, headers });
             }
         }
 
@@ -153,6 +170,8 @@ export class ControlArtifactRecorder {
         while (this.pendingBytes > this.dependencies.config.maxPendingBytes && dropCount < pending.entries.length) {
             const entry = pending.entries[dropCount];
             this.pendingBytes -= entry.bytes;
+            this.storage?.invalidateCapture(entry.identity.runId);
+            entry.finish(Either.ofLeft('Artifact rows were dropped before durable capture.'));
             pending.omitted.omittedResults += entry.resultLine === undefined ? 0 : 1;
             pending.omitted.omittedEventRows += 1;
             pending.omitted.omittedBytes += entry.bytes;
@@ -179,19 +198,19 @@ export class ControlArtifactRecorder {
     }
 
     private writePending(): Promise<void> {
-        const storageDir = this.dependencies.storageDir;
+        const storage = this.storage;
         const batch = toArtifactWriteBatch(this.pendingByRun, {
             maxPendingBytes: this.dependencies.config.maxPendingBytes,
             atEpochMs: this.dependencies.timers.nowMs()
         });
         this.pendingByRun = new Map();
         this.pendingBytes = 0;
-        if (!storageDir || batch.length === 0) {
+        if (!storage || batch.length === 0) {
             return this.writeQueue;
         }
         this.writing = true;
         this.writeQueue = this.writeQueue
-            .then(() => writeArtifactBatch(storageDir, batch))
+            .then(() => storage.writeBatch(batch))
             .catch((error) => {
                 const message = error instanceof Error ? error.message : String(error);
                 console.warn(`Could not append control artifact JSONL: ${message}`);
@@ -203,28 +222,20 @@ export class ControlArtifactRecorder {
     }
 }
 
-// Injective over every JS string, including lone surrogates: literal characters are drawn only
-// from [a-z0-9-], so the escaped `_` plus its fixed 4-hex-digit code unit can never be produced by
-// a run of literal characters, and no other run ID can therefore encode to the same output.
-export function toRunDirectoryName(runId: string): string {
-    let name = '';
-    for (let index = 0; index < runId.length; index += 1) {
-        const character = runId[index];
-        name += RUN_DIRECTORY_NAME_LITERAL_CHARACTER.test(character)
-            ? character
-            : `_${runId.charCodeAt(index).toString(16).padStart(4, '0')}`;
-    }
-    return name;
-}
-
 function toPendingArtifactEntry(
     envelope: Exclude<ControlClientEnvelope, { kind: 'register' | 'heartbeat'; }>,
-    command: ControlQueuedCommandSnapshot | undefined
+    command: ControlQueuedCommandSnapshot | undefined,
+    finish: PendingArtifactEntry['finish']
 ): PendingArtifactEntry {
     const lines = envelope.kind === 'result'
-        ? toControlResultArtifactLines(envelope, command)
+        ? toFullResultArtifactLines(envelope, command)
         : { resultLine: undefined, eventLine: controlEventArtifactJsonl(envelope, command) };
-    return { ...lines, bytes: (lines.resultLine?.length ?? 0) + lines.eventLine.length };
+    return {
+        identity: { runId: envelope.runId, agentId: envelope.agentId },
+        finish,
+        ...lines,
+        bytes: (lines.resultLine?.length ?? 0) + lines.eventLine.length
+    };
 }
 
 function toPendingBytes(pending: PendingRunArtifacts | undefined): number {
@@ -240,7 +251,7 @@ interface ArtifactOverflowFacts {
 function toArtifactWriteBatch(
     pendingByRun: ReadonlyMap<string, PendingRunArtifacts>,
     facts: ArtifactOverflowFacts
-): readonly ArtifactRunWrite[] {
+): readonly ControlArtifactRunWrite[] {
     return Array.from(pendingByRun, ([runId, pending]) => {
         const overflowLine = toArtifactOverflowLine(runId, {
             ...pending.omitted,
@@ -251,6 +262,7 @@ function toArtifactWriteBatch(
         );
         return {
             runId,
+            entries: pending.entries,
             resultsText: overflowLine + resultLines.join(''),
             eventsText: overflowLine + pending.entries.map((entry) => entry.eventLine).join('')
         };
@@ -271,19 +283,15 @@ function toArtifactCommandId(envelope: ControlClientEnvelope): string | undefine
     return 'commandId' in envelope && typeof envelope.commandId === 'string' ? envelope.commandId : undefined;
 }
 
-/** Every file of a run, the recorder's JSONL and the completed run's rows, lives in this directory. */
-export function toArtifactRunDirectory(storageDir: string, runId: string): string {
-    return `${storageDir.replace(/\/+$/, '')}/runs/${toRunDirectoryName(runId)}`;
-}
-
-async function writeArtifactBatch(storageDir: string, batch: readonly ArtifactRunWrite[]): Promise<void> {
-    for (const write of batch) {
-        const runDirectory = toArtifactRunDirectory(storageDir, write.runId);
-        await Deno.mkdir(runDirectory, { recursive: true });
-        for (const [fileName, text] of [['results.jsonl', write.resultsText], ['events.jsonl', write.eventsText]]) {
-            if (text.length > 0) {
-                await Deno.writeTextFile(`${runDirectory}/${fileName}`, text, { append: true, create: true });
-            }
-        }
-    }
+function toFullResultArtifactLines(
+    envelope: Extract<ControlClientEnvelope, { kind: 'result'; }>,
+    command: ControlQueuedCommandSnapshot | undefined
+): ReturnType<typeof toControlResultArtifactLines> {
+    const fullResultJson = JSON.stringify(redactRallarBlackBoxValue(envelope.result));
+    const result = fullResultJson === undefined ? undefined : JSON.parse(fullResultJson);
+    const lines = toControlResultArtifactLines({ ...envelope, result }, command);
+    return fullResultJson === undefined ? lines : {
+        ...lines,
+        resultLine: `${lines.resultLine.trimEnd().slice(0, -1)},"fullResult":${fullResultJson}}\n`
+    };
 }

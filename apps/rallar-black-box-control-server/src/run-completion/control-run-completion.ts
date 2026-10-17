@@ -13,7 +13,7 @@ import { SingleFlight } from '@shared/resilience/single-flight.ts';
 import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
 
-import { toArtifactRunDirectory, toRunDirectoryName } from '../control-artifact-recorder.ts';
+import { toArtifactRunDirectory, toRunDirectoryName } from '../control-artifact-storage.ts';
 import { toBoundedTail } from '../control-runtime-retention.ts';
 import { toControlServiceFailure, type ControlServiceFailure } from '../control-service-failure.ts';
 import type { ControlDistributedRunState, ControlRunState } from '../control-service-state.ts';

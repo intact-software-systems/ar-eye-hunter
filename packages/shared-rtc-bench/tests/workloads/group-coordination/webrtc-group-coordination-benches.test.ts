@@ -6,10 +6,12 @@ import { describe, expect, it, onTestFinished } from 'vitest';
 
 import type { RtcBaselineAcceptedWorker } from '../../../baseline/acceptance/rtc-baseline-worker-protocol.ts';
 import type { RtcBaselineResult, RtcBaselineSampleDto } from '../../../baseline/contracts/rtc-baseline-contracts.ts';
+import { decodeRtcBaselineWorkerSamples } from '../../../baseline/runtime/create-rtc-baseline-deno-acceptance.ts';
 import * as CacheFallback from '../../../workloads/group-coordination/webrtc-group-cache-fallback-bench.ts';
 import * as PeerOwners from '../../../workloads/group-coordination/webrtc-group-manager-peer-owners-bench.ts';
 import * as ManagerState from '../../../workloads/group-coordination/webrtc-group-manager-state-bench.ts';
 import * as Heartbeat from '../../../workloads/group-coordination/webrtc-heartbeat-callback-churn-bench.ts';
+import { toRuntimeObservation } from '../../baseline/observation/rtc-performance-observation-fixture.ts';
 
 const baselineId = '20260807-0123456789ab-e1-local';
 
@@ -46,13 +48,29 @@ function createWorkerFixture(
     };
 }
 
-function readAcceptedWorker<Accepted>(
-    parsed: RtcBaselineResult<{ readonly mode: string; }>
-): Accepted {
+function readAcceptedWorker<Input>(
+    parsed: RtcBaselineResult<{ readonly mode: 'diagnostic'; } | RtcBaselineAcceptedWorker<Input>>
+): RtcBaselineAcceptedWorker<Input> {
     if (!parsed.ok || parsed.value.mode !== 'accepted') {
         throw new Error('Expected exact RTC-B04 accepted worker arguments.');
     }
-    return parsed.value as Accepted;
+    return parsed.value;
+}
+
+function readAcceptedSubprocessSamples(entry: string, fixture: WorkerFixture): RtcBaselineSampleDto[] {
+    const runtimeObservation = toRuntimeObservation();
+    const output = spawnSync('deno', [
+        'run',
+        '--config=packages/shared-rtc-bench/deno.json',
+        '--allow-read',
+        `packages/shared-rtc-bench/workloads/group-coordination/${entry}`,
+        ...fixture.arguments
+    ], { encoding: 'utf8' });
+    expect(output.error).toBeUndefined();
+    expect(output.status, output.stderr).toBe(0);
+    const samples = decodeRtcBaselineWorkerSamples(output.stdout, runtimeObservation);
+    expect(samples.map((sample) => sample.runtimeObservation)).toEqual(Array(5).fill(runtimeObservation));
+    return samples;
 }
 
 function expectPassedSamples(
@@ -75,8 +93,7 @@ function expectPassedSamples(
     expect(samples[0]).toMatchObject({
         schema: 'rallar.rtc-baseline.sample.v1',
         evidenceClass: 'synthetic-path',
-        rawReferences: [],
-        runtimeObservation: null
+        rawReferences: []
     });
     expect(samples[0]?.metrics.map((metric) => metric.metric)).toEqual(metricNames);
 }
@@ -151,7 +168,11 @@ async function expectNonFiniteNumbersRejected<Result extends object>(
         expect(samples.slice(1).map((sample) => sample.issues[0]?.message)).toEqual(
             Array(4).fill(fixture.sampleIds[0])
         );
-        expect((samples[0]?.rawEvidence as Record<string, unknown>)[String(mutation.key)]).toBe(null);
+        const rawEvidence = samples[0]?.rawEvidence;
+        if (rawEvidence === null || typeof rawEvidence !== 'object' || Array.isArray(rawEvidence)) {
+            throw new Error('Expected object evidence for a non-finite result.');
+        }
+        expect(rawEvidence[String(mutation.key)]).toBe(null);
         expect(() => JSON.parse(JSON.stringify(samples))).not.toThrow();
     }
 }
@@ -189,7 +210,7 @@ describe('RTC-B04 group cache fallback worker', () => {
     const { fixture, result } = cacheFallback;
 
     it('emits exact samples from deterministic accepted results', async () => {
-        const worker = readAcceptedWorker<RtcBaselineAcceptedWorker<CacheFallback.WebRtcGroupCacheFallbackInput>>(
+        const worker = readAcceptedWorker(
             CacheFallback.parseWebRtcGroupCacheFallbackArguments(fixture.arguments)
         );
         const samples = await CacheFallback.runWebRtcGroupCacheFallbackAcceptedSamples({
@@ -197,6 +218,7 @@ describe('RTC-B04 group cache fallback worker', () => {
             run: () => result
         });
         expectPassedSamples(samples, fixture, ['durationMs']);
+        expect(samples[0]?.runtimeObservation).toBeNull();
         expect(samples[0]?.rawEvidence).toEqual(result);
     });
 
@@ -260,16 +282,23 @@ const managerState = {
 describe('RTC-B04 group manager state worker', () => {
     const { fixture, result } = managerState;
 
-    it('emits exact samples from deterministic accepted results', async () => {
-        const worker = readAcceptedWorker<RtcBaselineAcceptedWorker<ManagerState.WebRtcGroupManagerStateInput>>(
-            ManagerState.parseWebRtcGroupManagerStateArguments(fixture.arguments)
+    it('emits canonical subprocess samples for real state lookups at the fixed workload size', () => {
+        const samples = readAcceptedSubprocessSamples(
+            'webrtc-group-manager-state-bench.ts',
+            fixture
         );
-        const samples = await ManagerState.runWebRtcGroupManagerStateAcceptedSamples({
-            worker,
-            run: () => result
-        });
         expectPassedSamples(samples, fixture, ['durationMs']);
-        expect(samples[0]?.rawEvidence).toEqual(result);
+        for (const sample of samples) {
+            expect(sample.rawEvidence).toMatchObject({
+                clientCount: 5000,
+                desiredPeerCount: 1000,
+                lookups: 20,
+                keysCalls: 20,
+                readCalls: 100000,
+                onlineDesiredPeerCount: 1000,
+                onlinePeerCount: 5000
+            });
+        }
     });
 
     it('rejects malformed workers and stops after invalid state evidence', async () => {
@@ -331,16 +360,15 @@ const peerOwners = {
 describe('RTC-B04 group peer ownership worker', () => {
     const { fixture, result } = peerOwners;
 
-    it('emits exact samples from deterministic accepted results', async () => {
-        const worker = readAcceptedWorker<RtcBaselineAcceptedWorker<PeerOwners.WebRtcGroupManagerPeerOwnersInput>>(
-            PeerOwners.parseWebRtcGroupManagerPeerOwnersArguments(fixture.arguments)
+    it('emits canonical subprocess samples for real peer ownership at the fixed workload size', () => {
+        const samples = readAcceptedSubprocessSamples(
+            'webrtc-group-manager-peer-owners-bench.ts',
+            fixture
         );
-        const samples = await PeerOwners.runWebRtcGroupManagerPeerOwnersAcceptedSamples({
-            worker,
-            run: () => result
-        });
         expectPassedSamples(samples, fixture, ['durationMs']);
-        expect(samples[0]?.rawEvidence).toEqual(result);
+        for (const sample of samples) {
+            expect(sample.rawEvidence).toEqual({ ...result, durationMs: expect.any(Number) });
+        }
     });
 
     it('rejects malformed workers and stops after invalid ownership evidence', async () => {
@@ -391,16 +419,15 @@ describe('RTC-B04 heartbeat callback churn worker', () => {
         maxCallbacksPerChannel: 0
     };
 
-    it('emits exact samples from deterministic accepted results', async () => {
-        const worker = readAcceptedWorker<RtcBaselineAcceptedWorker<Heartbeat.WebRtcHeartbeatCallbackChurnInput>>(
-            Heartbeat.parseWebRtcHeartbeatCallbackChurnArguments(fixture.arguments)
+    it('emits canonical subprocess samples for real heartbeat cleanup at the fixed workload size', () => {
+        const samples = readAcceptedSubprocessSamples(
+            'webrtc-heartbeat-callback-churn-bench.ts',
+            fixture
         );
-        const samples = await Heartbeat.runWebRtcHeartbeatCallbackChurnAcceptedSamples({
-            worker,
-            run: () => result
-        });
         expectPassedSamples(samples, fixture, ['durationMs']);
-        expect(samples[0]?.rawEvidence).toEqual(result);
+        for (const sample of samples) {
+            expect(sample.rawEvidence).toEqual({ ...result, durationMs: expect.any(Number) });
+        }
     });
 
     it('rejects malformed workers and stops after retained callback evidence', async () => {

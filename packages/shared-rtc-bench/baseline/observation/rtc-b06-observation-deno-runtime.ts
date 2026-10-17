@@ -31,6 +31,7 @@ export interface RtcB06LiveProducerCommandInput {
     readonly eventHistory?: RallarBlackBoxEventHistoryPolicy;
     readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
     readonly almDiagnostics?: boolean;
+    readonly releaseResultsAfterCapture?: boolean;
     readonly routineBrowserDiagnostics?: RallarBlackBoxRoutineBrowserDiagnostics;
     readonly attempt: RtcBaselineAttemptLocatorDto;
 }
@@ -74,6 +75,7 @@ const inheritedConfiguration = [
     'RALLAR_BLACK_BOX_RTC_CAPTURE_MODE',
     'RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS',
     'RALLAR_BLACK_BOX_ALM_DIAGNOSTICS',
+    'RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE',
     'DATABASE_URL',
     'RALLAR_ICE_MODE',
     'RALLAR_ICE_RATE_LIMIT_REQUESTS',
@@ -236,6 +238,9 @@ export function createRtcB06LiveProducerCommand(
                 ? [`VITE_RALLAR_EVENT_HISTORY_MAX_EVENTS=${eventHistory.maxEvents}`]
                 : []),
             `RALLAR_BLACK_BOX_ALM_DIAGNOSTICS=${input.almDiagnostics ?? true}`,
+            ...(input.attempt.caseId === 'retention-100' && input.releaseResultsAfterCapture === true
+                ? ['RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE=true']
+                : []),
             `RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS=${input.routineBrowserDiagnostics ?? 'enabled'}`,
             `RALLAR_BLACK_BOX_RTC_BASELINE_ID=${input.baselineId}`,
             `RALLAR_BLACK_BOX_RTC_CASE_ID=${input.attempt.caseId}`,

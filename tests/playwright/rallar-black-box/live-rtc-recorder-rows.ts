@@ -1,6 +1,3 @@
-import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
-import { jsonRecord, normalizeJson, type LiveRtcJsonRecord } from './live-rtc-evidence-json.ts';
-
 export const LIVE_RTC_LIFECYCLE_LIMITS = Object.freeze({
     inputBytes: 8_388_608,
     transportBytes: 67_108_864,
@@ -77,18 +74,4 @@ export function computeLiveRtcRecorderScanWindow(input: LiveRtcRecorderScanInput
         firstStreamRow,
         rowLimitReached: rows > LIVE_RTC_LIFECYCLE_LIMITS.scannedRows
     };
-}
-
-export function toLiveRtcRecorderRow(line: string): LiveRtcJsonRecord | null {
-    try {
-        const decoded = JSON.parse(
-            line,
-            (_key: string, value: RtcBaselineJson) =>
-                typeof value === 'number' && !Number.isFinite(value) ? null : value
-        );
-        return jsonRecord(normalizeJson(decoded));
-    }
-    catch {
-        return null;
-    }
 }

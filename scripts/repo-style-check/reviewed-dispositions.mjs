@@ -5,6 +5,50 @@ import { reviewedBrowserDispositions } from './reviewed-browser-dispositions.mjs
 import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // Independent whole-owner review: parsed recorder JSON stays unknown until
+    // number normalization and the object guard admit ApiJsonObject. The exact
+    // parse boundary has one occurrence; no raw value reaches admission policy.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/artifacts/read-recorder-jsonl-rows.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toRecorderJsonlRow',
+        maximumMagnitude: 1
+    }),
+    // Independent whole-owner review keeps EOF, exact Connect/recipe matching,
+    // current Native scope and disposal refusal in one direct admission policy.
+    // This exact warning-tier cap authorizes neither growth nor an exception.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 63
+    }),
+    // Independently reviewed exception boundary: report immediately normalizes
+    // the caught rejection through toError; no raw value reaches domain policy.
+    // Class methods have the checker's exact module-owned undefined symbol.
+    Object.freeze({
+        path: 'packages/shared/cache/synchronous-notifications.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
+    }),
+    // Independent whole-owner review keeps queue state, indexes, conditional
+    // batches and commit publication in one visible lifecycle. This exact
+    // review-tier cap permits no growth and is below the hard tier of 330.
+    Object.freeze({
+        path: 'packages/shared/queuebox/in-memory-queue-box.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 110
+    }),
+    // Existing cache/subscription owners remain directly navigable here; the
+    // reusable notification owner fits this boundary without a forwarding folder.
+    Object.freeze({
+        path: 'packages/shared/cache',
+        rule: 'layout.directory-density',
+        symbol: 'cache',
+        maximumMagnitude: 27
+    }),
     // Independent whole-owner integration review keeps inert-data admission and
     // exact projection comparison together with their shared atomic rules.
     // This module-only cap records that cohesive algorithm, not future growth.

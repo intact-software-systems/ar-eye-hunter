@@ -7,6 +7,7 @@ import type {
 } from '../rallar-black-box-test-contracts.ts';
 import { redactRallarBlackBoxValue } from '../redaction.ts';
 import type { RallarBlackBoxEventHistory } from '../runtime/event-history.ts';
+import type { RuntimeResultHistory } from '../runtime/runtime-result-history.ts';
 import { toRuntimeStats } from '../runtime/to-runtime-stats.ts';
 
 export interface ToControlAgentReportInput {
@@ -21,6 +22,8 @@ export interface ToControlAgentReportInput {
 export interface ControlAgentReportSummary {
     readonly status: RallarBlackBoxTestRuntimeStatus;
     readonly commands: number;
+    readonly retainedResults: number;
+    readonly releasedResults: number;
     readonly events: number;
     readonly failures: number;
     /** Absent before the agent completes a command. */
@@ -35,10 +38,12 @@ export function toControlAgentReport(input: ToControlAgentReportInput): RallarBl
     const { state } = input;
     const summary: ControlAgentReportSummary = {
         status: state.status,
-        commands: state.commandHistory.length,
+        commands: state.resultHistory.totalCommands,
+        retainedResults: state.commandHistory.length,
+        releasedResults: state.resultHistory.releasedResults,
         events: state.eventHistory.totalEvents,
-        failures: state.failures.length,
-        latestCommandId: state.commandHistory.at(-1)?.commandId,
+        failures: state.resultHistory.totalFailures,
+        latestCommandId: state.resultHistory.lastCommandId,
         latestEventAtEpochMs: state.events.at(-1)?.atEpochMs,
         reason: input.reason
     };
@@ -59,6 +64,7 @@ export interface ControlOwnedReportFacts {
     readonly state: RallarBlackBoxTestState;
     readonly admittedCommandIds: ReadonlySet<string>;
     readonly completedResults: WeakSet<RallarBlackBoxTestResult>;
+    readonly resultHistory: RuntimeResultHistory;
     /** A completed result whose frame was too large, mapped to the bounded failed result sent in its place. */
     readonly frameLimitedResults: WeakMap<RallarBlackBoxTestResult, RallarBlackBoxTestResult>;
     readonly publishedEvents: WeakSet<RallarBlackBoxTestEvent>;
@@ -74,11 +80,12 @@ export function toControlOwnedReportState(facts: ControlOwnedReportFacts): Ralla
     const activeCommand = facts.admittedCommandIds.has(state.activeCommand?.commandId ?? '')
         ? state.activeCommand
         : undefined;
-    const latest = commandHistory.at(-1);
+    const latest = facts.resultHistory.lastResultOk;
     const events = state.events.filter((event) => facts.publishedEvents.has(event));
     return {
         ...state,
-        status: activeCommand ? 'running' : latest ? (latest.ok ? 'completed' : 'failed') : 'idle',
+        status: activeCommand ? 'running' : latest === undefined ? 'idle' : latest ? 'completed' : 'failed',
+        resultHistory: facts.resultHistory,
         activeCommand,
         activeCommandStartedAtEpochMs: activeCommand ? state.activeCommandStartedAtEpochMs : undefined,
         commandHistory,

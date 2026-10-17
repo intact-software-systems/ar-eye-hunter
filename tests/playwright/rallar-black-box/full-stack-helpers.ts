@@ -775,6 +775,10 @@ export async function expectNoSecrets(
 }
 
 export async function cleanupRallarPage(page: Page): Promise<void> {
+    if (page.isClosed() || new URL(page.url()).origin === 'null') {
+        return;
+    }
+
     for (
         const label of [
             'Close connections',

@@ -57,8 +57,8 @@ import {
 import {
     captureResourceEntryObservations,
     hasSameResourceEntryValue,
-    validateResourceEntryObservation,
-    validateResourceInboxWorkPageRequest
+    resolveResourceEntryObservation,
+    resolveResourceInboxWorkPageRequest
 } from './resource-entry-observations.ts';
 import { ResourceInboxResilience } from './resource-inbox/resource-inbox-resilience.ts';
 import {
@@ -875,7 +875,7 @@ function computeIndexedDbReservation(input: ComputeIndexedDbReservationInput): I
         }
         if (
             input.observations !== undefined &&
-            validateResourceEntryObservation(decodeStoredResourceEntry(stored), input.observations).left
+            resolveResourceEntryObservation(decodeStoredResourceEntry(stored), input.observations).left
         ) {
             continue;
         }
@@ -936,7 +936,7 @@ function computeIndexedDbWorkAdvertisement(
 
 function toValidatedWorkPageRequest(input: ResourceInboxWorkPage.Request): ResourceInboxWorkPage.Request {
     const request = { ...input, cursor: input.cursor === null ? null : { ...input.cursor } };
-    const validated = validateResourceInboxWorkPageRequest(request);
+    const validated = resolveResourceInboxWorkPageRequest(request);
     if (validated.left) {
         throw validated.left;
     }
@@ -974,7 +974,7 @@ function computeIndexedDbFinalizationReservation(
         if (reserved.size >= input.options.maxToReserve) {
             break;
         }
-        const selectedDueTs = selectRetryExhaustionDueTimestamp({
+        const selectedDueTs = resolveRetryExhaustionDueTimestamp({
             typeIds: input.typeIds,
             stored,
             processingAttempts: input.options.processingAttempts,
@@ -1006,7 +1006,7 @@ interface RetryExhaustionSelectionInput {
     readonly now: Temporal.Instant;
     readonly staleBefore: Temporal.Instant;
 }
-function selectRetryExhaustionDueTimestamp(
+function resolveRetryExhaustionDueTimestamp(
     input: RetryExhaustionSelectionInput
 ): Temporal.Instant | undefined {
     const startTs = input.stored.dequeueAudit.startTs
@@ -1038,7 +1038,7 @@ function hasIndexedDbFinalizationWork(input: IndexedDbFinalizationWorkInput): bo
     }
     const staleBefore = input.now.subtract({ milliseconds: input.finalizationStaleAfterMs });
     return input.entries.some((stored) =>
-        selectRetryExhaustionDueTimestamp({
+        resolveRetryExhaustionDueTimestamp({
             typeIds: new Set([EnqueuedType.APP_INBOX]),
             stored,
             processingAttempts: input.maxAttempts,

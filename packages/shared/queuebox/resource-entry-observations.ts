@@ -4,10 +4,20 @@ import { Either } from '../resilience/Either.ts';
 import type { ResourceInboxWorkPage } from './queue-box-types.ts';
 import {
     EntityStatus,
+    isExpiredResourceEntry,
     isKeysEqual,
+    toKeyAsString,
     type Key,
-    type ResourceEntry
+    type ResourceEntry,
+    type ResourceEntryKeyString
 } from './ResourceEntry.ts';
+
+export interface ResourceEntryObservedWrite {
+    readonly key: ResourceEntryKeyString;
+    readonly expected: ResourceEntry | undefined;
+    readonly entry: ResourceEntry | undefined;
+    readonly existing: ResourceEntry | undefined;
+}
 
 export function captureResourceEntryObservations(
     entries: readonly ResourceEntry[] | undefined
@@ -18,7 +28,7 @@ export function captureResourceEntryObservations(
     ]));
 }
 
-export function validateResourceEntryObservation(
+export function resolveResourceEntryObservation(
     current: ResourceEntry,
     observations: ReadonlyMap<string, ResourceEntry> | undefined
 ): Either<'stale', ResourceEntry> {
@@ -46,7 +56,7 @@ export function toResourceEntrySnapshot(entry: ResourceEntry): ResourceEntry {
     };
 }
 
-export function validateResourceInboxWorkPageRequest(
+export function resolveResourceInboxWorkPageRequest(
     request: ResourceInboxWorkPage.Request
 ): Either<TypeError, ResourceInboxWorkPage.Request> {
     const issues: string[] = [];
@@ -96,4 +106,32 @@ function haveSameInstant(
     return left === undefined || right === undefined
         ? left === right
         : left.equals(right);
+}
+
+export function resolveResourceEntryObservedWrites(
+    writes: readonly ResourceEntryObservedWrite[],
+    observedAt: Temporal.Instant
+): Either<Error | 'conflict', readonly ResourceEntryObservedWrite[]> {
+    const keys = new Set<string>();
+    const issues: string[] = [];
+    for (const write of writes) {
+        if (keys.has(write.key)) {
+            issues.push('Queue writes contain a duplicate key');
+        }
+        if (write.expected !== undefined && toKeyAsString(write.expected.key) !== write.key) {
+            issues.push('Queue replacement key differs from its observation');
+        }
+        keys.add(write.key);
+    }
+    if (issues.length > 0) {
+        return Either.ofLeft(new TypeError(issues.join('; ')));
+    }
+    return writes.some(({ expected, existing }) =>
+            expected === undefined
+                ? existing !== undefined && !isExpiredResourceEntry(existing, observedAt)
+                : existing === undefined || isExpiredResourceEntry(existing, observedAt) ||
+                    !hasSameResourceEntryValue(existing, expected)
+        )
+        ? Either.ofLeft('conflict')
+        : Either.ofRight(writes);
 }

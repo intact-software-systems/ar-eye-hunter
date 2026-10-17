@@ -446,7 +446,9 @@ describe('RTC baseline Deno runtime observation binding', () => {
                 ...initialized.value,
                 resolvedConfiguration: [
                     ...initialized.value.resolvedConfiguration.filter((entry) =>
-                        ['almDiagnostics', 'routineBrowserDiagnostics', 'eventHistoryMode', 'eventHistoryMaxEvents'].includes(entry.field)
+                        ['almDiagnostics', 'routineBrowserDiagnostics', 'eventHistoryMode', 'eventHistoryMaxEvents', 'releaseResultsAfterCapture'].includes(
+                            entry.field
+                        )
                     ),
                     ...['default', 'all-scenarios', 'retention-100'].map((caseId) => ({
                         caseKey: { workloadId: 'RTC-B06' as const, caseId, inputKey: `e3-memory-${caseId}` },
@@ -494,7 +496,11 @@ describe('RTC baseline Deno runtime observation binding', () => {
                 'tests/playwright/rallar-black-box/create-group-formation-lifecycle-driver.ts',
                 'tests/playwright/rallar-black-box/live-rtc-delivery-operations.ts',
                 'tests/playwright/rallar-black-box/live-rtc-agent-environment.ts',
-                'tests/playwright/rallar-black-box/to-live-rtc-native-acquisition.ts',
+                'packages/shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts',
+                'packages/shared-test/black-box-runner/artifacts/read-recorder-jsonl-rows.ts',
+                'tests/playwright/rallar-black-box/live-rtc-recorder-reader.ts',
+                'tests/playwright/rallar-black-box/live-rtc-recorder-rows.ts',
+                'tests/playwright/rallar-black-box/live-rtc-control-diagnostic-projections.ts',
                 'packages/shared/webrtc/rtc-capture-configuration.ts',
                 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-crdt-controller.ts',
                 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts',

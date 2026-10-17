@@ -1,5 +1,5 @@
 {
-  "description": "No-browser API-v1 activation clock decay: the evidence-expiry heartbeat is asserted nowhere. The observed edge is reported with an already-stale createdAtEpochMs -- client-supplied and never compared to now at write time, so it is the one evidence deadline a recipe can set -- which still activates the group, then decays it when the heartbeat re-reads past the 60s freshness window. A count wait pins exactly two status writes, so a clock that never fires and one that republishes on every observation both fail. With a single edge, expiry takes coverage to zero and the band is failed rather than degraded; coverageRate zero proves the evidence was dropped and evidenceWatermark null is the expiry branch's signature. Reaching degraded specifically needs partial coverage -- three members with one stale edge -- which this recipe does not cover.",
+  "description": "No-browser API-v1 activation clock decay: the evidence-expiry heartbeat is asserted nowhere. The observed edge is reported with an already-stale createdAtEpochMs -- client-supplied and never compared to now at write time, so it is the one evidence deadline a recipe can set -- which still activates the group, then decays it when the heartbeat re-reads past the 60s freshness window. After the lifecycle becomes active, capture the authoritative formation epoch and accepted layout identity; require the active status to join that exact series. A retained-history count pins exactly two status writes in that settled series, so a clock that never fires and one that republishes on every observation both fail. With a single edge, expiry takes coverage to zero and the band is failed rather than degraded; coverageRate zero proves the evidence was dropped and evidenceWatermark null is the expiry branch's signature. Reaching degraded specifically needs partial coverage -- three members with one stale edge -- which this recipe does not cover.",
   "variables": {
     "rallarApiBaseUrl": {
       "env": "RALLAR_API_BASE_URL",
@@ -596,6 +596,37 @@
       }
     },
     {
+      "name": "theActiveLifecycleNamesTheClockSeries",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 25000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.2
+        },
+        "outputs": {
+          "activationFormationEpoch": "body.group.formationEpoch",
+          "activationAcceptedLayoutIdentity": "body.group.acceptedLayoutIdentity"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "active"
+          }
+        }
+      }
+    },
+    {
       "name": "theStaleEvidenceStillActivates",
       "type": "http",
       "connection": "api",
@@ -619,7 +650,9 @@
           "group": {
             "activationStatus": {
               "condition": "active",
-              "coverageRate": 1
+              "coverageRate": 1,
+              "formationEpoch": "{activationFormationEpoch}",
+              "coverageBasisLayoutIdentity": "{activationAcceptedLayoutIdentity}"
             }
           }
         }
@@ -644,6 +677,12 @@
             "resource": {
               "event": {
                 "eventType": "group-activation-status-changed"
+              },
+              "group": {
+                "activationStatus": {
+                  "formationEpoch": "{activationFormationEpoch}",
+                  "coverageBasisLayoutIdentity": "{activationAcceptedLayoutIdentity}"
+                }
               }
             }
           }
@@ -675,7 +714,9 @@
             "activationStatus": {
               "condition": "failed",
               "coverageRate": 0,
-              "evidenceWatermark": null
+              "evidenceWatermark": null,
+              "formationEpoch": "{activationFormationEpoch}",
+              "coverageBasisLayoutIdentity": "{activationAcceptedLayoutIdentity}"
             }
           }
         }

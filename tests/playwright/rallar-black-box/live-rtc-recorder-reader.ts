@@ -1,12 +1,27 @@
-import { get as readHttp, type ClientRequest, type IncomingMessage } from 'node:http';
+import {
+    get as readHttp,
+    type ClientRequest,
+    type IncomingMessage
+} from 'node:http';
 import { get as readHttps } from 'node:https';
 import { StringDecoder } from 'node:string_decoder';
 
+import {
+    readRecorderJsonlRows,
+    toRecorderJsonlRow,
+    type RecorderJsonlFailure,
+    type RecorderJsonlRead
+} from '@shared-test/black-box-runner/artifacts/read-recorder-jsonl-rows.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
-import { jsonRecord, stringValue, type LiveRtcJsonRecord } from './live-rtc-evidence-json.ts';
-import { LIVE_RTC_LIFECYCLE_LIMITS, toLiveRtcRecorderRow } from './live-rtc-recorder-rows.ts';
+import {
+    jsonRecord,
+    normalizeJson,
+    stringValue,
+    type LiveRtcJsonRecord
+} from './live-rtc-evidence-json.ts';
+import { LIVE_RTC_LIFECYCLE_LIMITS } from './live-rtc-recorder-rows.ts';
 
 export interface LiveRtcRecorderRead {
     readonly jsonl: string;
@@ -53,6 +68,27 @@ export async function readLiveRtcRecorderJsonl(
     }
 }
 
+export async function* readLiveRtcRecorderRows(
+    url: string
+): AsyncGenerator<Either<RecorderJsonlFailure, RecorderJsonlRead>> {
+    const opened = await readLiveRtcRecorderResponse(url);
+    if (!opened.right) {
+        yield Either.ofLeft({
+            code: 'runtime-read-failed',
+            cause: opened.left?.cause ?? new Error('Recorder response missing.'),
+            bytesRead: 0,
+            decodedRecords: 0
+        });
+        return;
+    }
+    try {
+        yield* readRecorderJsonlRows(opened.right.response, LIVE_RTC_LIFECYCLE_LIMITS.inputBytes);
+    }
+    finally {
+        stopLiveRtcRecorderResponse(opened.right);
+    }
+}
+
 export async function readLiveRtcBrowserEvent(url: string): Promise<Either<LiveRtcRecorderFailure, true>> {
     const opened = await readLiveRtcRecorderResponse(url);
     if (!opened.right) {
@@ -82,7 +118,7 @@ function toLiveRtcBrowserEventProof(line: string): Either<LiveRtcRecorderFailure
     if (!line.trim()) {
         return Either.ofRight(false);
     }
-    const row = toLiveRtcRecorderRow(line);
+    const row = jsonRecord(normalizeJson(toRecorderJsonlRow(line)));
     return row
         ? Either.ofRight(isLiveRtcBrowserEvent(row))
         : Either.ofLeft({ code: 'malformed-jsonl', cause: null });

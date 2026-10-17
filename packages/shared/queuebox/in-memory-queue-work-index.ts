@@ -1,5 +1,5 @@
 import type { ResourceInboxWorkPage } from './queue-box-types.ts';
-import { validateResourceInboxWorkPageRequest } from './resource-entry-observations.ts';
+import { resolveResourceInboxWorkPageRequest } from './resource-entry-observations.ts';
 import type { ResourceEntry } from './ResourceEntry.ts';
 
 export namespace InMemoryQueueWorkIndex {
@@ -20,8 +20,16 @@ export namespace InMemoryQueueWorkIndex {
 export class InMemoryQueueWorkIndex {
     private readonly rootsByTypeAndStatus = new Map<string, InMemoryQueueWorkIndex.Node>();
 
+    clone(): InMemoryQueueWorkIndex {
+        const copy = new InMemoryQueueWorkIndex();
+        for (const [scope, root] of this.rootsByTypeAndStatus) {
+            copy.rootsByTypeAndStatus.set(scope, root);
+        }
+        return copy;
+    }
+
     read(request: ResourceInboxWorkPage.Request): InMemoryQueueWorkIndex.Page {
-        const validated = validateResourceInboxWorkPageRequest(request);
+        const validated = resolveResourceInboxWorkPageRequest(request);
         if (validated.left) {
             throw validated.left;
         }

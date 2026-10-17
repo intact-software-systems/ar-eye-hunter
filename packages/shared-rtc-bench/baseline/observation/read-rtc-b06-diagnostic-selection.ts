@@ -11,6 +11,7 @@ import {
     type RallarBlackBoxRoutineBrowserDiagnostics
 } from '../../../shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts';
 
+import { RTC_BASELINE_WORKLOAD_CATALOG } from '../catalog/rtc-baseline-workload-catalog.ts';
 import { decodeRtcBaselineEnvironment } from '../contracts/rtc-baseline-artifact-decoding.ts';
 import type {
     RtcBaselineAttemptLocatorDto,
@@ -18,13 +19,34 @@ import type {
     RtcBaselineResolvedConfigurationValueDto,
     RtcBaselineResult
 } from '../contracts/rtc-baseline-contracts.ts';
+import { resolveRtcBaselineConfiguration } from '../contracts/rtc-baseline-validation.ts';
 import type { RtcBaselineFileStore } from '../evidence/rtc-baseline-evidence-store.ts';
 
 export interface RtcB06DiagnosticSelection {
     readonly rtcCaptureMode: RtcSignalingDiagnostics.CaptureMode;
     readonly eventHistory: RallarBlackBoxEventHistoryPolicy;
     readonly almDiagnostics: boolean;
+    readonly releaseResultsAfterCapture: boolean;
     readonly routineBrowserDiagnostics: RallarBlackBoxRoutineBrowserDiagnostics;
+}
+
+export function resolveRtcB06ReleaseEnvironment(
+    caseKey: RtcBaselineCaseKeyDto,
+    raw: string | undefined
+): RtcBaselineResult<RtcBaselineResolvedConfigurationValueDto> {
+    const descriptor = RTC_BASELINE_WORKLOAD_CATALOG.find((entry) => entry.workloadId === caseKey.workloadId)?.cases
+        .find((entry) => entry.caseId === caseKey.caseId && entry.inputKey === caseKey.inputKey)?.configuration
+        .find((entry) => entry.field === 'releaseResultsAfterCapture');
+    return descriptor === undefined
+        ? {
+            ok: false,
+            issues: [{
+                path: '$.resultRelease',
+                code: 'invalid-result-release-selection',
+                message: 'Release requires an exact B06 case descriptor.'
+            }]
+        }
+        : resolveRtcBaselineConfiguration(descriptor, { cliValue: undefined, environmentValue: raw });
 }
 
 export function resolveRtcB06DiagnosticSelection(
@@ -36,7 +58,6 @@ export function resolveRtcB06DiagnosticSelection(
         entry.caseKey.caseId === caseKey.caseId && entry.caseKey.inputKey === caseKey.inputKey
     );
     const alm = selected.filter((entry) => entry.field === 'almDiagnostics');
-    const recording = selected.filter((entry) => entry.field === 'routineBrowserDiagnostics');
     if (alm.length !== 1 || typeof alm[0]?.value !== 'boolean') {
         return {
             ok: false,
@@ -47,22 +68,9 @@ export function resolveRtcB06DiagnosticSelection(
             }]
         };
     }
-    const routineBrowserDiagnostics = typeof recording[0]?.value === 'string'
-        ? toRallarBlackBoxRoutineBrowserDiagnostics(recording[0].value)
-        : undefined;
-    if (
-        recording.length !== 1 || routineBrowserDiagnostics === undefined ||
-        (caseKey.caseId !== 'retention-100' && routineBrowserDiagnostics !== 'enabled')
-    ) {
-        return {
-            ok: false,
-            issues: [{
-                path: '$.resolvedConfiguration',
-                code: 'invalid-routine-recording-selection',
-                message:
-                    'RTC-B06 requires one initialized enabled/disabled recording selection; non-retention cases require enabled.'
-            }]
-        };
+    const recording = resolveRtcB06RecordingSelection(selected, caseKey);
+    if (!recording.ok) {
+        return recording;
     }
     const history = resolveRtcB06EventHistorySelection(selected);
     if (!history.ok) {
@@ -73,13 +81,28 @@ export function resolveRtcB06DiagnosticSelection(
     if (!capture.ok) {
         return capture;
     }
+    const release = selected.filter((entry) => entry.field === 'releaseResultsAfterCapture');
+    if (
+        release.length !== 1 || typeof release[0]?.value !== 'boolean' ||
+        (caseKey.caseId !== 'retention-100' && release[0].value)
+    ) {
+        return {
+            ok: false,
+            issues: [{
+                path: '$.resolvedConfiguration',
+                code: 'invalid-result-release-selection',
+                message: 'RTC-B06 requires one initialized release boolean; only retention may select release.'
+            }]
+        };
+    }
     return {
         ok: true,
         value: {
             rtcCaptureMode: capture.value,
             eventHistory: history.value,
             almDiagnostics: alm[0].value,
-            routineBrowserDiagnostics
+            releaseResultsAfterCapture: release[0].value,
+            routineBrowserDiagnostics: recording.value
         }
     };
 }
@@ -160,4 +183,29 @@ function resolveRtcB06CaptureMode(
         };
     }
     return { ok: true, value: mode };
+}
+
+function resolveRtcB06RecordingSelection(
+    selected: readonly RtcBaselineResolvedConfigurationValueDto[],
+    caseKey: RtcBaselineCaseKeyDto
+): RtcBaselineResult<RallarBlackBoxRoutineBrowserDiagnostics> {
+    const recording = selected.filter((entry) => entry.field === 'routineBrowserDiagnostics');
+    const routineBrowserDiagnostics = typeof recording[0]?.value === 'string'
+        ? toRallarBlackBoxRoutineBrowserDiagnostics(recording[0].value)
+        : undefined;
+    if (
+        recording.length !== 1 || routineBrowserDiagnostics === undefined ||
+        (caseKey.caseId !== 'retention-100' && routineBrowserDiagnostics !== 'enabled')
+    ) {
+        return {
+            ok: false,
+            issues: [{
+                path: '$.resolvedConfiguration',
+                code: 'invalid-routine-recording-selection',
+                message:
+                    'RTC-B06 requires one initialized enabled/disabled recording selection; non-retention cases require enabled.'
+            }]
+        };
+    }
+    return { ok: true, value: routineBrowserDiagnostics };
 }

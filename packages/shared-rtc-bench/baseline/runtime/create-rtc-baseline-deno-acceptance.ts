@@ -61,7 +61,7 @@ async function writeRtcBaselineAcceptedArtifact(
     return path.ok ? evidence.store.writeJsonCreateNew(baselineId, path.value, artifact) : path;
 }
 
-function decodeRtcBaselineWorkerSamples(
+export function decodeRtcBaselineWorkerSamples(
     stdout: string,
     runtimeObservation: RtcBaselineRuntimeObservationDto
 ): RtcBaselineSampleDto[] {

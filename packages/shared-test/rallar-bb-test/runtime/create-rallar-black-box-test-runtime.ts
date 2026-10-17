@@ -40,6 +40,11 @@ import {
     type RecipeEventHistorySelection
 } from '../recipe/validate-recipe-event-history.ts';
 import { redactRallarBlackBoxValue } from '../redaction.ts';
+import type {
+    ResultCaptureReceipt,
+    ResultReleaseOutcome,
+    ResultReleaseRequest
+} from '../result-release/result-release-protocol.ts';
 import { waitForEvent, type WaitForEventInput } from '../wait/wait-for-event.ts';
 import {
     computeAppendedEventHistory,
@@ -48,6 +53,14 @@ import {
     isSameEventHistoryPolicy,
     type RallarBlackBoxEventHistoryPolicy
 } from './event-history.ts';
+import {
+    computeReleasedRuntimeResults,
+    readVerifiedRuntimeRelease,
+    resolveRuntimeResultReleaseRefusal,
+    toReleasedRuntimeReplay,
+    toResultReleaseOutcome
+} from './release-runtime-results.ts';
+import { resolveReleasedResultReference } from './resolve-released-result-reference.ts';
 import {
     decodeRuntimeTestError,
     decodeThrownCommandOutcome,
@@ -59,6 +72,7 @@ import {
     toTerminalCleanupReason,
     type ResultCachePolicy
 } from './runtime-command-outcomes.ts';
+import { computeAppendedResultHistory, createRuntimeResultHistory } from './runtime-result-history.ts';
 import { sleepWithAbort } from './sleep-with-abort.ts';
 import { toCommandResultEventPayload } from './to-command-result-event-payload.ts';
 import { toMergedRuntimeConfig } from './to-merged-runtime-config.ts';
@@ -88,6 +102,38 @@ type CommandWithId = RallarBlackBoxTestCommand & Readonly<{ commandId: string; }
 
 type CommandOfKind<Kind extends RallarBlackBoxTestCommand['kind']> = Extract<CommandWithId, Readonly<{ kind: Kind; }>>;
 
+export function createRallarBlackBoxTestRuntime(
+    input: CreateRallarBlackBoxTestRuntimeInput
+): RallarBlackBoxTestRuntime {
+    return new InMemoryRallarBlackBoxTestRuntime({
+        eventHistory: input.eventHistory,
+        now: input.now,
+        sleep: input.sleep,
+        idFactory: input.idFactory,
+        commandExecutor: input.commandExecutor,
+        cleanup: input.cleanup,
+        readAlmUsage: input.readAlmUsage,
+        readCongestionCounters: input.readCongestionCounters
+    });
+}
+
+export function createDefaultRallarBlackBoxTestRuntime(
+    options: CreateRallarBlackBoxTestRuntimeOptions = {}
+): RallarBlackBoxTestRuntime {
+    let sequence = 1;
+    return createRallarBlackBoxTestRuntime({
+        eventHistory: options.eventHistory ?? { mode: 'full' },
+        now: options.now ?? (() => Date.now()),
+        sleep: options.sleep ?? sleepWithAbort,
+        idFactory: options.idFactory ??
+            ((prefix) => prefix === 'runtime-instance' ? crypto.randomUUID() : `${prefix}-${sequence++}`),
+        commandExecutor: options.commandExecutor,
+        cleanup: options.cleanup,
+        readAlmUsage: options.readAlmUsage,
+        readCongestionCounters: options.readCongestionCounters
+    });
+}
+
 namespace InMemoryRallarBlackBoxTestRuntime {
     export interface LoadedRecipe {
         readonly recipe: RallarBlackBoxTestRecipe;
@@ -108,6 +154,7 @@ namespace InMemoryRallarBlackBoxTestRuntime {
 
     export interface EventOwnership {
         readonly cacheOwner: object;
+        readonly resultRootCommandId: string;
         readonly control: RallarBlackBoxTestEvent.ControlExecution | undefined;
     }
 
@@ -163,6 +210,11 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
     private currentState: RallarBlackBoxTestState;
     private controlIdentity: ControlClientIdentity | undefined;
     private cacheOwner: object = {};
+    private resultAssignment = 0;
+    private resultOrdinal = 0;
+    private readonly ownedResultEvents = new WeakSet<RallarBlackBoxTestEvent>();
+    private readonly releasedCommands = new Map<string, ResultCaptureReceipt>();
+    private readonly releasedReceipts = new Map<number, ResultCaptureReceipt>();
     private readonly captureDefaults = new RecipeCaptureSequence({
         run: undefined,
         recipe: undefined,
@@ -188,6 +240,97 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 generation: 0
             }, { status: 'unattached' })
         );
+    }
+
+    async releaseResults(request: ResultReleaseRequest): Promise<ResultReleaseOutcome> {
+        const refusal = resolveRuntimeResultReleaseRefusal(request, {
+            controlIdentity: this.controlIdentity,
+            runtimeId: this.currentState.eventHistory.runtimeId,
+            generation: this.currentState.eventHistory.generation,
+            assignment: this.resultAssignment,
+            activeExecutionCount: this.activeExecutionCount,
+            recipeLeaseCount: this.ownedRecipeExecutions.size
+        });
+        if (refusal) {
+            return refusal;
+        }
+        const state = this.currentState;
+        let verified: readonly ResultCaptureReceipt[] | undefined;
+        try {
+            verified = await readVerifiedRuntimeRelease(state, request);
+        }
+        catch {
+            return toResultReleaseOutcome(
+                request.requestId,
+                'rejected',
+                'The exact full result cannot be certified within the capture digest bounds.'
+            );
+        }
+        if (
+            state.resultHistory !== this.currentState.resultHistory || this.activeExecutionCount > 0 ||
+            this.ownedRecipeExecutions.size > 0
+        ) {
+            return toResultReleaseOutcome(
+                request.requestId,
+                'deferred',
+                'Runtime changed while verifying durable capture.'
+            );
+        }
+        if (
+            !verified ||
+            request.receipts.some((receipt) =>
+                !verified.some((current) => current.capture.ordinal === receipt.capture.ordinal) &&
+                JSON.stringify(this.releasedReceipts.get(receipt.capture.ordinal)) !== JSON.stringify(receipt)
+            )
+        ) {
+            return toResultReleaseOutcome(
+                request.requestId,
+                'rejected',
+                'Exact full capture is missing, mismatched, or still owned by another result.'
+            );
+        }
+        return this.commitResultRelease(request, verified);
+    }
+
+    private commitResultRelease(
+        request: ResultReleaseRequest,
+        verified: readonly ResultCaptureReceipt[]
+    ): ResultReleaseOutcome {
+        let released: ReturnType<typeof computeReleasedRuntimeResults>;
+        try {
+            released = computeReleasedRuntimeResults(this.currentState, verified, this.ownedResultEvents);
+        }
+        catch {
+            return toResultReleaseOutcome(
+                request.requestId,
+                'rejected',
+                'Retained result ownership cannot be verified within the capture digest bounds.'
+            );
+        }
+        if (!released) {
+            return toResultReleaseOutcome(
+                request.requestId,
+                'rejected',
+                'Another retained result still owns a selected full payload.'
+            );
+        }
+        for (const receipt of released.receipts) {
+            this.releasedCommands.set(receipt.commandId, receipt);
+            this.releasedReceipts.set(receipt.capture.ordinal, receipt);
+        }
+        this.currentState = released.state;
+        for (const event of released.ownedResultEvents) {
+            this.ownedResultEvents.add(event);
+        }
+        this.notify();
+        return {
+            ...toResultReleaseOutcome(
+                request.requestId,
+                'released',
+                'Full payloads released; identities remain unavailable until reset.'
+            ),
+            releasedResults: released.receipts.length
+        };
     }
 
     releaseRecipeExecution(rootCommandId: string, controlIdentity?: ControlClientIdentity): void {
@@ -280,6 +423,9 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         ) {
             this.controlIdentity = controlIdentity;
             this.cacheOwner = {};
+            this.resultAssignment += 1;
+            this.releasedCommands.clear();
+            this.releasedReceipts.clear();
             this.ownedRecipeExecutions.clear();
             this.usedBarrierIds.clear();
             this.currentState = { ...this.currentState, resultCache: {} };
@@ -301,6 +447,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             cachePolicy: 'replay',
             captureSequence,
             cacheOwner,
+            resultRootCommandId: accepted.commandId,
             control: identity && Object.freeze({ ...identity, rootCommandId: accepted.commandId }),
             loadedRecipe,
             executionRecipes: owned?.executionRecipes ?? { loadedRecipe },
@@ -311,21 +458,13 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
     private async runCommand(
         input: InMemoryRallarBlackBoxTestRuntime.RunCommandInput
     ): Promise<RallarBlackBoxTestResult> {
-        const { command, cachePolicy, captureSequence, cacheOwner, control } = input;
-        const admission: InMemoryRallarBlackBoxTestRuntime.CommandAdmission = {
-            captureSequence,
-            eventHistory: input.eventHistory,
-            eventHistoryRunOverride: input.eventHistoryRunOverride,
-            cacheOwner,
-            control,
-            loadedRecipe: command.kind === 'recipe.run' && command.recipe === undefined
-                ? input.loadedRecipe
-                : undefined,
-            executionRecipes: input.executionRecipes,
-            recipeExecution: input.recipeExecution
-        };
+        const { command, cachePolicy, cacheOwner, control, resultRootCommandId } = input;
+        const admission = this.toCommandAdmission(input);
         const commandWithId = this.toCommandWithId(command);
         const cached = this.currentState.resultCache[commandWithId.commandId];
+        if (!cached && this.releasedCommands.has(commandWithId.commandId)) {
+            return toReleasedRuntimeReplay(commandWithId, this.dependencies.now());
+        }
         const bindingFailure = resolveRecipeBodyBindingFailure(
             commandWithId,
             admission.loadedRecipe?.recipeBodyId,
@@ -337,6 +476,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 startedAtEpochMs: this.dependencies.now(),
                 outcome: bindingFailure,
                 cacheOwner,
+                resultRootCommandId,
                 control
             });
         }
@@ -349,6 +489,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 startedAtEpochMs: this.dependencies.now(),
                 outcome: toInvalidRecipeOutcome(['Control assignment changed before this child could execute.']),
                 cacheOwner,
+                resultRootCommandId,
                 control
             });
         }
@@ -364,9 +505,29 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 startedAtEpochMs: this.dependencies.now(),
                 outcome: refusal,
                 cacheOwner,
+                resultRootCommandId,
                 control
             })
             : await this.runRegisteredCommand(commandWithId, cachePolicy, historyAdmission.admission);
+    }
+
+    private toCommandAdmission(
+        input: InMemoryRallarBlackBoxTestRuntime.RunCommandInput
+    ): InMemoryRallarBlackBoxTestRuntime.CommandAdmission {
+        const { command, captureSequence, cacheOwner, control, resultRootCommandId } = input;
+        return {
+            captureSequence,
+            resultRootCommandId,
+            eventHistory: input.eventHistory,
+            eventHistoryRunOverride: input.eventHistoryRunOverride,
+            cacheOwner,
+            control,
+            loadedRecipe: command.kind === 'recipe.run' && command.recipe === undefined
+                ? input.loadedRecipe
+                : undefined,
+            executionRecipes: input.executionRecipes,
+            recipeExecution: input.recipeExecution
+        };
     }
 
     private admitEventHistory(
@@ -528,6 +689,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             startedAtEpochMs,
             outcome,
             cacheOwner: admission.cacheOwner,
+            resultRootCommandId: admission.resultRootCommandId,
             control: admission.control
         });
     }
@@ -542,6 +704,14 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         const captureIssues = validateExecutableCommand(command);
         if (captureIssues.length > 0) {
             return toInvalidRecipeOutcome(captureIssues);
+        }
+        const unavailable = resolveReleasedResultReference(command, {
+            releasedCommands: this.releasedCommands,
+            ownedResultEvents: this.ownedResultEvents,
+            state: this.currentState
+        });
+        if (unavailable) {
+            return unavailable;
         }
         switch (command.kind) {
             case 'configure':
@@ -753,6 +923,8 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             },
             this.currentState.eventHistory.capture
         ));
+        this.releasedCommands.clear();
+        this.releasedReceipts.clear();
         this.currentConfig = undefined;
         this.usedBarrierIds.clear();
         this.captureDefaults.configure({});
@@ -955,6 +1127,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                     eventHistoryRunOverride: admission.eventHistoryRunOverride,
                     captureSequence,
                     cacheOwner,
+                    resultRootCommandId: admission.resultRootCommandId,
                     control,
                     loadedRecipe: admission.executionRecipes.loadedRecipe,
                     executionRecipes: admission.executionRecipes,
@@ -970,6 +1143,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                         eventHistoryRunOverride: admission.eventHistoryRunOverride,
                         captureSequence: groupCapture,
                         cacheOwner,
+                        resultRootCommandId: admission.resultRootCommandId,
                         control,
                         loadedRecipe: admission.executionRecipes.loadedRecipe,
                         executionRecipes: admission.executionRecipes,
@@ -991,6 +1165,13 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         const { command, startedAtEpochMs, outcome, cacheOwner } = input;
         const endedAtEpochMs = this.dependencies.now();
         const result: RallarBlackBoxTestResult = {
+            capture: {
+                runtimeId: this.currentState.eventHistory.runtimeId,
+                generation: this.currentState.eventHistory.generation,
+                assignment: this.resultAssignment,
+                ordinal: ++this.resultOrdinal,
+                rootCommandId: input.resultRootCommandId
+            },
             commandId: command.commandId,
             kind: command.kind,
             status: outcome.status,
@@ -1009,17 +1190,22 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             status: outcome.nextStatus ?? (result.ok ? 'completed' : 'failed'),
             activeCommand: undefined,
             activeCommandStartedAtEpochMs: undefined,
+            resultHistory: computeAppendedResultHistory(this.currentState.resultHistory, result),
             commandHistory: [...this.currentState.commandHistory, result],
             failures: result.ok ? this.currentState.failures : [...this.currentState.failures, result],
             resultCache: { ...this.currentState.resultCache, [result.commandId]: result }
         };
-        this.appendEvent({
-            kind: 'result',
-            topic: 'rallar.bb.command.result',
-            commandId: result.commandId,
-            severity: result.ok ? 'info' : 'error',
-            payload: toCommandResultEventPayload(result)
-        }, input);
+        this.appendEvent(
+            {
+                kind: 'result',
+                topic: 'rallar.bb.command.result',
+                commandId: result.commandId,
+                severity: result.ok ? 'info' : 'error',
+                payload: toCommandResultEventPayload(result)
+            },
+            input,
+            true
+        );
         this.notify();
         return result;
     }
@@ -1055,7 +1241,8 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
 
     private appendEvent(
         event: RallarBlackBoxTestRuntimeEventInput,
-        ownership?: InMemoryRallarBlackBoxTestRuntime.EventOwnership
+        ownership?: InMemoryRallarBlackBoxTestRuntime.EventOwnership,
+        ownsResult = false
     ): void {
         if (ownership && ownership.cacheOwner !== this.cacheOwner) {
             return;
@@ -1076,6 +1263,9 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         };
         if (ownership && ownership.cacheOwner !== this.cacheOwner) {
             return;
+        }
+        if (ownsResult) {
+            this.ownedResultEvents.add(created);
         }
         this.currentState = { ...this.currentState, ...computeAppendedEventHistory(this.currentState, created) };
         this.notify();
@@ -1115,41 +1305,10 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
     }
 }
 
-export function createRallarBlackBoxTestRuntime(
-    input: CreateRallarBlackBoxTestRuntimeInput
-): RallarBlackBoxTestRuntime {
-    return new InMemoryRallarBlackBoxTestRuntime({
-        eventHistory: input.eventHistory,
-        now: input.now,
-        sleep: input.sleep,
-        idFactory: input.idFactory,
-        commandExecutor: input.commandExecutor,
-        cleanup: input.cleanup,
-        readAlmUsage: input.readAlmUsage,
-        readCongestionCounters: input.readCongestionCounters
-    });
-}
-
-export function createDefaultRallarBlackBoxTestRuntime(
-    options: CreateRallarBlackBoxTestRuntimeOptions = {}
-): RallarBlackBoxTestRuntime {
-    let sequence = 1;
-    return createRallarBlackBoxTestRuntime({
-        eventHistory: options.eventHistory ?? { mode: 'full' },
-        now: options.now ?? (() => Date.now()),
-        sleep: options.sleep ?? sleepWithAbort,
-        idFactory: options.idFactory ??
-            ((prefix) => prefix === 'runtime-instance' ? crypto.randomUUID() : `${prefix}-${sequence++}`),
-        commandExecutor: options.commandExecutor,
-        cleanup: options.cleanup,
-        readAlmUsage: options.readAlmUsage,
-        readCongestionCounters: options.readCongestionCounters
-    });
-}
-
 function createInitialRuntimeState(eventHistory: RallarBlackBoxTestState['eventHistory']): RallarBlackBoxTestState {
     return {
         eventHistory,
+        resultHistory: createRuntimeResultHistory(),
         connection: { connected: false, peerCount: undefined, laneHealth: undefined },
         status: 'idle',
         commandHistory: [],

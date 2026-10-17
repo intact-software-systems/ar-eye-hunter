@@ -25,6 +25,11 @@ on:
         options:
           - enabled
           - disabled
+      release_results_after_capture:
+        description: Release retention results only after durable capture and browser acknowledgement
+        required: true
+        default: false
+        type: boolean
       rtc_capture_mode:
         description: RTC diagnostics capture mode
         required: true
@@ -129,10 +134,12 @@ jobs:
           RTC_CAPTURE_MODE: ${{ needs.source.outputs.rtc_capture_mode }}
           ALM_DIAGNOSTICS: ${{ inputs.alm_diagnostics }}
           ROUTINE_BROWSER_DIAGNOSTICS: ${{ inputs.routine_browser_diagnostics }}
+          RELEASE_RESULTS_AFTER_CAPTURE: ${{ inputs.release_results_after_capture }}
         run: |
           env -u DATABASE_URL -u RALLAR_ICE_MODE -u RALLAR_BLACK_BOX_RTC_CAPTURE_MODE \
             RALLAR_BLACK_BOX_ALM_DIAGNOSTICS="$ALM_DIAGNOSTICS" \
             RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS="$ROUTINE_BROWSER_DIAGNOSTICS" \
+            RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE="$RELEASE_RESULTS_AFTER_CAPTURE" \
             RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS=1 \
             RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK=1 \
             RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES=100 \
@@ -150,12 +157,14 @@ jobs:
           RTC_CAPTURE_MODE: ${{ needs.source.outputs.rtc_capture_mode }}
           ALM_DIAGNOSTICS: ${{ inputs.alm_diagnostics }}
           ROUTINE_BROWSER_DIAGNOSTICS: ${{ inputs.routine_browser_diagnostics }}
+          RELEASE_RESULTS_AFTER_CAPTURE: ${{ inputs.release_results_after_capture }}
           RTC_SOURCE_REF: ${{ github.ref_name }}
         run: |
           set -o pipefail
           env -u DATABASE_URL -u RALLAR_ICE_MODE -u RALLAR_BLACK_BOX_RTC_CAPTURE_MODE \
             RALLAR_BLACK_BOX_ALM_DIAGNOSTICS="$ALM_DIAGNOSTICS" \
             RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS="$ROUTINE_BROWSER_DIAGNOSTICS" \
+            RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE="$RELEASE_RESULTS_AFTER_CAPTURE" \
             RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS=1 \
             RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK=1 \
             RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES=100 \
@@ -177,6 +186,7 @@ jobs:
             ${{ runner.temp }}/rtc-b06-observation
             tmp/perf/rtc-baseline
             tmp/perf/rtc-b06-producer
+            tmp/perf/rtc-b06-recorder
           if-no-files-found: error
           retention-days: 30
 
@@ -186,6 +196,15 @@ jobs:
         with:
           name: rtc-b06-observation-gh${{ github.run_id }}-a${{ github.run_attempt }}
           path: ${{ runner.temp }}/rtc-b06-observation
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Retain RTC-B06 raw recorder output
+        if: ${{ always() && inputs.mode == 'publish' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: rtc-b06-recorder-gh${{ github.run_id }}-a${{ github.run_attempt }}
+          path: tmp/perf/rtc-b06-recorder
           if-no-files-found: error
           retention-days: 30
 
@@ -241,13 +260,14 @@ jobs:
           RTC_CAPTURE_MODE: ${{ needs.source.outputs.rtc_capture_mode }}
           ALM_DIAGNOSTICS: ${{ inputs.alm_diagnostics }}
           ROUTINE_BROWSER_DIAGNOSTICS: ${{ inputs.routine_browser_diagnostics }}
+          RELEASE_RESULTS_AFTER_CAPTURE: ${{ inputs.release_results_after_capture }}
         run: |
           set -o pipefail
           diagnostic_status=0
 
           mkdir -p "$RTC_DIAGNOSTIC_OUTPUT/default"
-          recorder_storage=$(mktemp -d "$RUNNER_TEMP/rtc-b06-recorder-default-XXXXXX")
-          if env -u DATABASE_URL \
+          recorder_storage=$(mktemp -d "$RTC_DIAGNOSTIC_OUTPUT/rtc-b06-recorder-default-XXXXXX")
+          if env -u DATABASE_URL -u RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE \
             -u RALLAR_ICE_MODE \
             -u RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS \
             -u RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK \
@@ -267,8 +287,8 @@ jobs:
           fi
 
           mkdir -p "$RTC_DIAGNOSTIC_OUTPUT/all-scenarios"
-          recorder_storage=$(mktemp -d "$RUNNER_TEMP/rtc-b06-recorder-all-scenarios-XXXXXX")
-          if env -u DATABASE_URL \
+          recorder_storage=$(mktemp -d "$RTC_DIAGNOSTIC_OUTPUT/rtc-b06-recorder-all-scenarios-XXXXXX")
+          if env -u DATABASE_URL -u RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE \
             -u RALLAR_ICE_MODE \
             -u RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK \
             -u RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES \
@@ -291,14 +311,15 @@ jobs:
           fi
 
           mkdir -p "$RTC_DIAGNOSTIC_OUTPUT/retention-100"
-          recorder_storage=$(mktemp -d "$RUNNER_TEMP/rtc-b06-recorder-retention-100-XXXXXX")
-          if env -u DATABASE_URL \
+          recorder_storage=$(mktemp -d "$RTC_DIAGNOSTIC_OUTPUT/rtc-b06-recorder-retention-100-XXXXXX")
+          if env -u DATABASE_URL -u RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE \
             -u RALLAR_ICE_MODE \
             -u RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS \
             RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK=1 \
             RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES=100 \
             RALLAR_BLACK_BOX_ALM_DIAGNOSTICS="$ALM_DIAGNOSTICS" \
             RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS="$ROUTINE_BROWSER_DIAGNOSTICS" \
+            RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE="$RELEASE_RESULTS_AFTER_CAPTURE" \
             RALLAR_BLACK_BOX_RTC_CAPTURE_MODE="$RTC_CAPTURE_MODE" \
             RALLAR_BLACK_BOX_STORAGE_DIR="$recorder_storage" \
             RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="$RTC_DIAGNOSTIC_OUTPUT/retention-100/failure-diagnostics" \

@@ -1,5 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createServer, type ServerResponse } from 'node:http';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
 
+import { expectLiveRtcArtifactEvidence } from '../../../tests/playwright/rallar-black-box/expect-live-rtc-artifact-evidence.ts';
 import type { LiveRtcJsonRecord } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 import { createDefaultLiveRtcControlHttpFixture, LiveRtcControlHttpFixture } from './live-rtc-control-http-fixture.ts';
 
@@ -91,6 +99,56 @@ describe('live RTC durable artifact evidence', () => {
     it('accepts initial and final executed receipts beyond the bounded 200-result preview', async () => {
         await expect(fixture.control.expectArtifactBundle({ runId: RUN_ID, commandIds: COMMAND_IDS })).resolves.toBeUndefined();
     });
+
+    it.each(['complete', 'malformed-tail', 'missing-command', 'interrupted', 'invalid-utf8', 'oversized-row', 'malformed-open-stream'])(
+        'scans streamed durable results to completion: %s',
+        async (variant) => {
+            await fixture.control.expectArtifactBundle({ runId: RUN_ID, commandIds: COMMAND_IDS });
+            let closed = false;
+            const server = createServer(async (_incoming, response) => {
+                response.once('close', () => {
+                    closed = true;
+                });
+                response.writeHead(200, { 'content-type': 'application/x-ndjson' });
+                if (_incoming.url?.endsWith('/events.jsonl')) {
+                    response.end(toJsonl([createBrowserEvent()]));
+                    return;
+                }
+                await writeStreamedResultEvidence(response, variant);
+            });
+            await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+            const address = server.address();
+            if (!address || typeof address === 'string') {
+                throw new Error('Expected a local artifact HTTP port.');
+            }
+            try {
+                const evidence = expectLiveRtcArtifactEvidence(
+                    fixture.state.artifactBundle!,
+                    { runId: RUN_ID, commandIds: COMMAND_IDS },
+                    `http://127.0.0.1:${address.port}`
+                );
+                if (variant === 'complete') {
+                    await expect(evidence).resolves.toBeUndefined();
+                }
+                else {
+                    await expect(evidence).rejects.toThrow(
+                        variant === 'missing-command'
+                            ? /missing.*command/i
+                            : variant === 'oversized-row'
+                            ? /limit/i
+                            : variant === 'interrupted'
+                            ? /runtime-read-failed/i
+                            : /malformed/i
+                    );
+                }
+                await expect.poll(() => closed).toBe(true);
+            }
+            finally {
+                server.closeAllConnections();
+                await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+            }
+        }
+    );
 
     it.each(COMMAND_IDS)('fails when durable evidence omits the executed %s receipt', async (missing) => {
         fixture.state.resultsJsonl = toJsonl(COMMAND_IDS.filter((id) => id !== missing).map(createResultReceipt));
@@ -222,7 +280,7 @@ describe('live RTC durable artifact evidence', () => {
         }
     );
 
-    it.each(['results', 'events'])('fails truncated %s before proof within the existing 8 MiB retained-input budget', async (stream) => {
+    it.each(['results', 'events'])('rejects an oversized %s record before proof within the 8 MiB input budget', async (stream) => {
         const prefix = ' '.repeat(8_388_609);
         if (stream === 'results') {
             fixture.state.resultsJsonl = prefix + '\n' + fixture.state.resultsJsonl;
@@ -252,3 +310,60 @@ describe('live RTC durable artifact evidence', () => {
         await expect(fixture.control.expectArtifactBundle({ runId: RUN_ID, commandIds: COMMAND_IDS })).resolves.toBeUndefined();
     });
 });
+
+async function writeStreamedResultEvidence(response: ServerResponse, variant: string): Promise<void> {
+    if (variant === 'malformed-open-stream') {
+        response.write('{malformed}\n');
+        return;
+    }
+    const first = createResultReceipt('initial-group-create');
+    first.actual = { name: 'blåbær' };
+    const bytes = Buffer.from(toJsonl([first, createResultReceipt('required-connect')]));
+    const split = bytes.indexOf(Buffer.from('å')) + 1;
+    response.write(bytes.subarray(0, split));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    response.write(bytes.subarray(split));
+    if (variant === 'oversized-row') {
+        response.end(' '.repeat(8_388_609));
+        return;
+    }
+    const filler = createResultReceipt('unrelated');
+    filler.actual = { padding: 'x'.repeat(3_200) };
+    const line = JSON.stringify(filler) + '\n';
+    // Exceeds both the former 64 MiB transport ceiling and 20,000-row scan ceiling.
+    for (let index = 0; index < 21_000; index += 1) {
+        if (!response.write(line) && !response.destroyed) {
+            await readStreamedResultDrain(response);
+        }
+        if (response.destroyed) {
+            return;
+        }
+    }
+    if (variant !== 'missing-command') {
+        response.write('\n  \n' + JSON.stringify(createResultReceipt('final-reset')));
+    }
+    if (variant === 'interrupted') {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        response.destroy();
+        return;
+    }
+    response.end(
+        variant === 'malformed-tail'
+            ? '\n{malformed}'
+            : variant === 'invalid-utf8'
+            ? Buffer.from([10, 0xc3])
+            : ''
+    );
+}
+
+async function readStreamedResultDrain(response: ServerResponse): Promise<void> {
+    await new Promise<void>((resolve) => {
+        const resume = () => {
+            response.off('drain', resume);
+            response.off('close', resume);
+            resolve();
+        };
+        response.once('drain', resume);
+        response.once('close', resume);
+    });
+}

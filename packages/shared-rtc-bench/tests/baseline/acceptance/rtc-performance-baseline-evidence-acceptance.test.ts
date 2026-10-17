@@ -531,6 +531,7 @@ describe('RTC baseline evidence acceptance', () => {
             ...staged.samples[0]!,
             rawEvidence: {
                 ...recordingEvidence(),
+                resultRelease: { raw: null, enabled: false, status: 'verified', releasedRoots: 0, sources: [] },
                 rtcConnectCaptures: ['agent-a', 'agent-b', 'agent-c'].map((agentId) => ({
                     ...completedNativeConnectCapture,
                     agentId,
@@ -566,6 +567,11 @@ describe('RTC baseline evidence acceptance', () => {
                     caseKey: { workloadId: 'RTC-B06', caseId: 'case', inputKey: 'input' },
                     field: 'almDiagnostics',
                     value: true,
+                    source: 'default'
+                }, {
+                    caseKey: { workloadId: 'RTC-B06', caseId: 'case', inputKey: 'input' },
+                    field: 'releaseResultsAfterCapture',
+                    value: false,
                     source: 'default'
                 }, {
                     caseKey: { workloadId: 'RTC-B06', caseId: 'case', inputKey: 'input' },
@@ -681,6 +687,7 @@ describe('RTC baseline evidence acceptance', () => {
         externalAttempt.samples[0]!.rawEvidence = {
             durationMs: 1,
             ...recordingEvidence(),
+            resultRelease: { raw: null, enabled: false, status: 'verified', releasedRoots: 0, sources: [] },
             rtcConnectCaptures: ['agent-a', 'agent-b', 'agent-c'].map((agentId) => ({ ...completedNativeConnectCapture, agentId }))
         };
         const external = createRtcBaselineEvidenceAcceptance(
@@ -708,6 +715,11 @@ describe('RTC baseline evidence acceptance', () => {
                         caseKey: { workloadId: 'RTC-B06', caseId: 'case', inputKey: 'input' },
                         field: 'almDiagnostics',
                         value: true,
+                        source: 'default'
+                    }, {
+                        caseKey: { workloadId: 'RTC-B06', caseId: 'case', inputKey: 'input' },
+                        field: 'releaseResultsAfterCapture',
+                        value: false,
                         source: 'default'
                     }, {
                         caseKey: { workloadId: 'RTC-B06', caseId: 'case', inputKey: 'input' },

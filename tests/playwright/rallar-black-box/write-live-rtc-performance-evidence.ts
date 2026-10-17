@@ -10,6 +10,7 @@ import type {
 import { isRtcBaselineId } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-id.ts';
 import { normalizeJson } from './live-rtc-evidence-json.ts';
 import { writeLiveRtcJournalEvidence } from './write-live-rtc-journal-evidence.ts';
+import { writeLiveRtcReleaseEvidence } from './write-live-rtc-release-evidence.ts';
 
 export interface WriteLiveRtcPerformanceEvidenceInput {
     repoRoot: string;
@@ -56,7 +57,11 @@ export async function writeLiveRtcPerformanceEvidence(
     }
     await createConfinedDirectories(realRepoRoot, dirname(outputPath));
     await createConfinedDirectories(realRepoRoot, resolve(baselineRoot, 'artifacts/journals'));
-    const evidence = await writeLiveRtcJournalEvidence({ ...input, repoRoot: realRepoRoot });
+    const journalEvidence = await writeLiveRtcJournalEvidence({ ...input, repoRoot: realRepoRoot });
+    const evidence = await writeLiveRtcReleaseEvidence(
+        { ...input, repoRoot: realRepoRoot, evidence: journalEvidence },
+        process.env.RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE
+    );
     const file = await open(outputPath, 'wx');
     try {
         await file.writeFile(`${JSON.stringify(evidence)}\n`, 'utf8');

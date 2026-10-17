@@ -7,6 +7,7 @@ const caseKey = { workloadId: 'RTC-B06', caseId: 'retention-100', inputKey: 'e3-
 const configuration: readonly RtcBaselineResolvedConfigurationValueDto[] = [
     { caseKey, field: 'eventHistoryMode', value: 'recent', source: 'default' },
     { caseKey, field: 'eventHistoryMaxEvents', value: 64, source: 'default' },
+    { caseKey, field: 'releaseResultsAfterCapture', value: false, source: 'default' },
     { caseKey, field: 'rtcCaptureMode', value: 'off', source: 'cli' },
     { caseKey, field: 'almDiagnostics', value: false, source: 'environment' },
     { caseKey, field: 'routineBrowserDiagnostics', value: 'disabled', source: 'environment' }
@@ -66,6 +67,7 @@ function candidate() {
         issues: [],
         runtimeObservation: null,
         rawEvidence: {
+            resultRelease: { raw: null, enabled: false, status: 'verified', releasedRoots: 0, sources: [] },
             journal: journalProof(),
             diagnostics: checkpoints,
             retention: { checkpoints },

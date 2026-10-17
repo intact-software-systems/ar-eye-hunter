@@ -1,3 +1,4 @@
+import { toRecorderJsonlRow } from '@shared-test/black-box-runner/artifacts/read-recorder-jsonl-rows.ts';
 import { toBrowserDiagnosticsReceipt } from '@shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts';
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 import { toFormationReadinessCapturedFacts } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/formation/formation-readiness-rejection.ts';
@@ -17,6 +18,7 @@ import {
     RTC_SERVICE_SIGNAL_DISPOSITIONS,
     RTC_SIGNAL_CALLER_RELEASES
 } from '../../../packages/shared/webrtc/rtc-signaling-diagnostics.ts';
+
 import {
     exactStringArray,
     isFiniteNonnegativeNumber,
@@ -35,8 +37,7 @@ import {
 import {
     computeLiveRtcRecorderScanWindow,
     LIVE_RTC_LIFECYCLE_LIMITS,
-    toLiveRtcRecorderLines,
-    toLiveRtcRecorderRow
+    toLiveRtcRecorderLines
 } from './live-rtc-recorder-rows.ts';
 
 export interface LiveRtcAgentDiagnostics {
@@ -548,7 +549,7 @@ function computeLiveRtcDiagnosticScan(
             scan.oversizedRows += 1;
             continue;
         }
-        const decoded = toLiveRtcRecorderRow(line);
+        const decoded = jsonRecord(normalizeJson(toRecorderJsonlRow(line)));
         if (!decoded) {
             scan.malformedRows += 1;
             continue;
@@ -913,7 +914,7 @@ function computeLiveRtcSignalingIdentities(
         if (Buffer.byteLength(line) > LIVE_RTC_LIFECYCLE_LIMITS.rowBytes) {
             continue;
         }
-        const row = toLiveRtcRecorderRow(line);
+        const row = jsonRecord(normalizeJson(toRecorderJsonlRow(line)));
         const scoped = row ? toLiveRtcScopedRecorderEvent(row, input, streamRow) : null;
         if (scoped?.topic === RTC_AL_INBOUND_TOPIC) {
             const key = toLiveRtcInboundIdentityKey(scoped.event, scoped.agentId);

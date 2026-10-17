@@ -6,9 +6,9 @@ import { assert, assertEquals } from '@std/assert';
 import { ControlAgentSockets } from '../src/control-agent-sockets.ts';
 import {
     ControlArtifactRecorder,
-    DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG,
-    toRunDirectoryName
+    DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG
 } from '../src/control-artifact-recorder.ts';
+import { toRunDirectoryName } from '../src/control-artifact-storage.ts';
 import { createRallarBlackBoxControlService } from '../src/control-service.ts';
 import { createControlHttpResponses } from '../src/http/control-http-responses.ts';
 import { ControlHttpSecurity } from '../src/http/control-http-security.ts';

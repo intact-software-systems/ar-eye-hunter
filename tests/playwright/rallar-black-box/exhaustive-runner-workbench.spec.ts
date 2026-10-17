@@ -1,4 +1,8 @@
-import { expect, test, type JSHandle } from '@playwright/test';
+import {
+    expect,
+    test,
+    type JSHandle
+} from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,7 +14,6 @@ import type {
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { decodeNonBlankText, decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 import type { RallarRealtimeMessage } from '@shared-web/browser/rallar-realtime-facade.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
 
 import { validateSchemaAuthoringText } from '../../../apps/rallar-black-box/src/schema-authoring.ts';
 import {
@@ -24,29 +27,12 @@ import {
     runWithRallarReceiverPage,
     uniqueGroupId
 } from './full-stack-helpers.ts';
-
-interface CopyRepeatPayload {
-    readonly topic: string;
-    readonly marker: string;
-    readonly value: number;
-    readonly roomRef: GroupRef;
-}
-
-interface NativeReceiveRecord {
-    readonly peerId: string;
-    readonly laneId: string;
-    readonly data: CopyRepeatPayload;
-    readonly nativeMessageEvent: boolean;
-    readonly nativeTarget: boolean;
-    readonly targetIndex: number;
-    readonly readyStateAtCallback: string;
-}
-
-interface NativeReceiveObserver {
-    readonly records: NativeReceiveRecord[];
-    readonly targets: RTCDataChannel[];
-    unsubscribe(): void;
-}
+import {
+    writeCopyRepeatFinalState,
+    type CopyRepeatPayload,
+    type NativeReceiveObserver,
+    type NativeReceiveRecord
+} from './write-copy-repeat-final-state.ts';
 
 const config = readExhaustivePostgresConfig();
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -865,26 +851,41 @@ test.describe('exhaustive runner workbench tabs', () => {
                     tab: 'manual-rallar',
                     workspace: 'black-box-runner'
                 });
-                const created = await receiver.evaluate(async ({ moduleUrl, apiBaseUrl, roomRef }) => {
-                    const { rallar } = await import(moduleUrl);
-                    rallar.configure({ apiBaseUrl });
-                    rallar.setDefaults({ applicationId: roomRef.applicationId, workspaceId: roomRef.workspaceId });
-                    await rallar.connect({ timeoutMs: 5_000 });
-                    const snapshot = await rallar.rooms.create({
-                        groupId: roomRef.groupId,
-                        displayName: roomRef.groupId,
-                        joinMode: 'open',
-                        timeoutMs: 5_000
-                    });
-                    return {
-                        roomRef: rallar.rooms.state().currentRoomRef,
-                        sessionId: rallar.session()?.sessionId,
-                        activeSessionIds: snapshot.activeSessions.map((entry: { sessionId: string; }) =>
-                            entry.sessionId
-                        )
-                    };
-                }, { moduleUrl, apiBaseUrl: config.apiBaseUrl, roomRef });
+                const created = await receiver.evaluate(
+                    async ({ moduleUrl, apiBaseUrl, roomRef, receiverSessionId }) => {
+                        const { rallar } = await import(moduleUrl);
+                        rallar.configure({ apiBaseUrl });
+                        rallar.setDefaults({ applicationId: roomRef.applicationId, workspaceId: roomRef.workspaceId });
+                        await rallar.connect({ timeoutMs: 5_000 });
+                        await rallar.rooms.create({
+                            groupId: roomRef.groupId,
+                            displayName: roomRef.groupId,
+                            joinMode: 'open',
+                            timeoutMs: 5_000
+                        });
+                        const presence = await rallar.rooms.waitForPresence(roomRef, {
+                            expect: { sessionIds: [receiverSessionId], allowExtras: false },
+                            timeoutMs: 5_000
+                        });
+                        const snapshot = rallar.rooms.current();
+                        return {
+                            presence,
+                            roomRef: rallar.rooms.state().currentRoomRef,
+                            sessionId: rallar.session()?.sessionId,
+                            activeSessionIds: snapshot?.activeSessions.map((entry: { sessionId: string; }) =>
+                                entry.sessionId
+                            )
+                        };
+                    },
+                    { moduleUrl, apiBaseUrl: config.apiBaseUrl, roomRef, receiverSessionId: receiverSession.sessionId }
+                );
                 expect(created).toMatchObject({
+                    presence: {
+                        status: 'ready',
+                        roomRef,
+                        activeSessionIds: [receiverSession.sessionId],
+                        timedOut: false
+                    },
                     roomRef,
                     sessionId: receiverSession.sessionId,
                     activeSessionIds: [receiverSession.sessionId]
@@ -1266,37 +1267,13 @@ test.describe('exhaustive runner workbench tabs', () => {
                 const observer = retainedObserver;
                 const failures: PromiseRejectedResult[] = [];
                 const finalizationSteps = [
-                    async () => {
-                        const senderState = await page.evaluate(async () => {
-                            const modulePath = '/src/runtime-store.ts';
-                            const { rallarBlackBoxRuntimeStore } = await import(modulePath);
-                            const state = rallarBlackBoxRuntimeStore.getSnapshot().state;
-                            return {
-                                loadedRecipe: state.loadedRecipe,
-                                commandHistory: state.commandHistory,
-                                events: state.events
-                            };
-                        });
-                        const received = observer === undefined ? undefined : await observer.evaluate(
-                            ({ records, targets }) => ({
-                                records,
-                                targetStates: targets.map((target) => target.readyState)
-                            })
-                        );
-                        const evidencePath = testInfo.outputPath('actual-copy-repeat-final-state.json');
-                        await writeFile(
-                            evidencePath,
-                            JSON.stringify({ groupId, expectedPayload, senderState, received }, null, 2)
-                        );
-                        await testInfo.attach('actual-copy-repeat-final-state', {
-                            path: evidencePath,
-                            contentType: 'application/json'
-                        });
-                    },
+                    () => writeCopyRepeatFinalState({ sender: page, observer, groupId, expectedPayload, testInfo }),
                     () => observer?.evaluate(({ unsubscribe }) => unsubscribe()),
                     () => observer?.dispose(),
                     async () => {
-                        if (receiver !== undefined) {
+                        if (
+                            receiver !== undefined && !receiver.isClosed() && new URL(receiver.url()).origin !== 'null'
+                        ) {
                             await receiver.evaluate(async (moduleUrl) => {
                                 const { rallar } = await import(moduleUrl);
                                 await rallar.disconnect();

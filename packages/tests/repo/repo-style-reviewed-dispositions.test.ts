@@ -51,6 +51,29 @@ const reviewedSchemaJsonBoundaries = [
     { file: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts', symbol: 'jsonCodeBlocks', cap: 1 }
 ] as const;
 
+const transformResolutionFile = 'packages/shared-test/black-box-runner/scenario-transform/safe-output-transform-resolution.ts';
+const reviewedTransformResolutionBoundaries = [
+    { file: transformResolutionFile, symbol: undefined, cap: 5 },
+    { file: transformResolutionFile, symbol: 'resolveSafeOutputTransformPath', cap: 2 },
+    { file: transformResolutionFile, symbol: 'resolveSafeOutputTransformTemplate', cap: 1 },
+    { file: transformResolutionFile, symbol: 'stringifySafeOutputTransformValue', cap: 1 },
+    { file: transformResolutionFile, symbol: 'isSafeOutputTransformRecord', cap: 1 },
+    { file: transformResolutionFile, symbol: 'toTransformResolverRoot', cap: 1 },
+    { file: transformResolutionFile, symbol: 'resolvePath', cap: 2 },
+    { file: transformResolutionFile, symbol: 'tryResolvePath', cap: 1 },
+    { file: transformResolutionFile, symbol: 'readPathSegments', cap: 2 },
+    { file: transformResolutionFile, symbol: 'readProperty', cap: 2 }
+] as const;
+const reviewedCappedUnknownBoundaries = [
+    ...reviewedSchemaJsonBoundaries,
+    ...reviewedTransformResolutionBoundaries,
+    {
+        file: 'packages/shared-test/black-box-runner/artifacts/read-recorder-jsonl-rows.ts',
+        symbol: 'toRecorderJsonlRow',
+        cap: 1
+    }
+];
+
 afterEach(() => {
     for (const fixtureRoot of fixtureRoots.splice(0)) {
         rmSync(fixtureRoot, { recursive: true, force: true });
@@ -81,7 +104,7 @@ describe('reviewed repository style dispositions', () => {
         expect(grown.stdout).toContain('boundary.unknown');
     });
 
-    it.each(reviewedSchemaJsonBoundaries)('bounds actual scanner unknowns for $file / $symbol at $cap', ({ file: relativeFile, symbol, cap }) => {
+    it.each(reviewedCappedUnknownBoundaries)('bounds actual scanner unknowns for $file / $symbol at $cap', ({ file: relativeFile, symbol, cap }) => {
         const fixture = createReviewedFixture();
         const raw = symbol === undefined
             ? `interface OpaqueJson {\n${Array.from({ length: cap }, (_, index) => `readonly value${index}: unknown;`).join('\n')}\n}\n`
@@ -98,7 +121,7 @@ describe('reviewed repository style dispositions', () => {
         expect(rejected.stdout).toContain('boundary.unknown');
     });
 
-    it.each(reviewedSchemaJsonBoundaries)('keeps wrong schema JSON keys and cap growth blocking for $file / $symbol', ({ file: relativeFile, symbol, cap }) => {
+    it.each(reviewedCappedUnknownBoundaries)('keeps wrong boundary keys and cap growth blocking for $file / $symbol', ({ file: relativeFile, symbol, cap }) => {
         const file = path.join(repoRoot, relativeFile);
         const raw = symbol === undefined
             ? 'export interface OpaqueJson { readonly value: unknown; }\n'
@@ -585,6 +608,14 @@ describe('reviewed repository style dispositions', () => {
     });
 
     it.each([
+        {
+            file: 'packages/shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts',
+            ruleId: 'file.cognitive-load',
+            symbol: undefined,
+            cap: 63,
+            prefix: 'File cognitive load ',
+            suffix: ''
+        },
         {
             file: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
             ruleId: 'file.cognitive-load',

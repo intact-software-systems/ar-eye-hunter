@@ -66,9 +66,32 @@ export function readALInboundEffectFacts(
 export function prepareALInboundCommitBundle(
     input: PrepareALInboundCommitBundleInput
 ): ALInboundCommitBundle {
-    const { read, facts } = input;
+    const { read } = input;
     const msg = read.kind === 'incoming' ? read.msg : read.snapshot.msg;
-    const durableEffects = input.effects.map((effect, index) => {
+    const durableEffects = computeDurableEffects(input);
+    const deliveryMutations = computeDeliveryOwnerMutations(input, durableEffects);
+    const mutations = [...deliveryMutations, ...computeDeliveryProgressRetention(input, deliveryMutations)];
+    const ownedWorkExpiries = [
+        ...durableEffects.map((effect) => effect.expireAtTimestamp),
+        ...mutations.flatMap((mutation) => isOwnedWorkMutation(mutation) ? [mutation.expireAtTimestamp] : [])
+    ];
+    return {
+        admissionExpiresAtMs: read.kind === 'incoming'
+            ? resolveALMessageExpireAtMs(msg) ?? read.nowMs + read.retention.durableEffectTtlMs
+            : null,
+        senderId: msg.id.senderId,
+        observations: read.observations,
+        mutations: [
+            ...toCanonicalMessageMutations(mutations, msg, ownedWorkExpiries),
+            ...toProvenanceMutations(input, mutations, ownedWorkExpiries)
+        ],
+        durableEffects
+    };
+}
+
+function computeDurableEffects(input: PrepareALInboundCommitBundleInput): readonly ALInboundDurableEffectWrite[] {
+    const { read, facts } = input;
+    return input.effects.map((effect, index) => {
         const expireAtTimestamp = effect.expireAtTimestamp ?? read.nowMs + read.retention.durableEffectTtlMs;
         const payload = prepareALInboundDurableEffect({
             payload: effect.payload,
@@ -89,32 +112,32 @@ export function prepareALInboundCommitBundle(
             carrier: effect.carrier
         });
     });
-    const deliveryMutations = computeDeliveryOwnerMutations(input, durableEffects);
-    const mutations = [...deliveryMutations, ...computeDeliveryProgressRetention(input, deliveryMutations)];
-    const ownedWorkExpiries = [
-        ...durableEffects.map((effect) => effect.expireAtTimestamp),
-        ...mutations.flatMap((mutation) => isOwnedWorkMutation(mutation) ? [mutation.expireAtTimestamp] : [])
-    ];
-    return {
-        admissionExpiresAtMs: read.kind === 'incoming'
-            ? resolveALMessageExpireAtMs(msg) ?? read.nowMs + read.retention.durableEffectTtlMs
-            : null,
-        senderId: msg.id.senderId,
-        observations: read.observations,
-        mutations: [
-            ...toCanonicalMessageMutations(mutations, msg, ownedWorkExpiries),
-            // Provenance keeps its own dedup lifetime, extended only to outlive the work it owns.
-            ...mutations.map((mutation) =>
-                mutation.kind === 'set-msg-owner'
-                    ? {
-                        ...mutation,
-                        expireAtTimestamp: Math.max(mutation.expireAtTimestamp, ...ownedWorkExpiries)
-                    }
-                    : mutation
-            )
-        ],
-        durableEffects
-    };
+}
+
+/** Provenance covers its work; volatile terminal eligibility records the policy actually admitted. */
+function toProvenanceMutations(
+    input: PrepareALInboundCommitBundleInput,
+    mutations: readonly ALInboundAdmissionMutation[],
+    ownedWorkExpiries: readonly number[]
+): readonly ALInboundAdmissionMutation[] {
+    const { read } = input;
+    const effective = read.kind === 'incoming' ? read.plan.effective : read.snapshot.plan.effective;
+    return mutations.flatMap((mutation): readonly ALInboundAdmissionMutation[] => {
+        if (mutation.kind !== 'set-msg-owner') {
+            return [mutation];
+        }
+        const owner = {
+            ...mutation,
+            expireAtTimestamp: Math.max(mutation.expireAtTimestamp, ...ownedWorkExpiries)
+        };
+        return read.durability === 'volatile' && effective.ack.algo === 'none'
+            ? [owner, {
+                kind: 'mark-terminal-volatile-msg-owner',
+                msgId: owner.value.msgId,
+                senderId: owner.value.senderId
+            }]
+            : [owner];
+    });
 }
 
 /** The rows whose lifetime the canonical message must cover, exactly as the bundle validator reads them. */

@@ -4,6 +4,7 @@ import type {
     RallarBlackBoxTestLoopPacingSummary,
     RallarBlackBoxTestLoopResultValue,
     RallarBlackBoxTestLoopSendSummary,
+    RallarBlackBoxTestResult,
     RallarBlackBoxTestRtcStreamResultValue,
     RallarBlackBoxTestState,
     RallarBlackBoxTestStatsSnapshot
@@ -27,17 +28,17 @@ export function toRuntimeHealth(state: RallarBlackBoxTestState): RallarBlackBoxT
         configured: state.currentConfig !== undefined,
         loadedRecipeId: state.loadedRecipe?.recipeId,
         activeCommandId: state.activeCommand?.commandId,
-        commandCount: state.commandHistory.length,
+        commandCount: state.resultHistory.totalCommands,
         eventCount: state.eventHistory.totalEvents,
         eventHistory: state.eventHistory,
-        failureCount: state.failures.length
+        failureCount: state.resultHistory.totalFailures
     };
 }
 
 export function toRuntimeStats(state: RallarBlackBoxTestState, atEpochMs: number): RallarBlackBoxTestStatsSnapshot {
     const events = state.events;
     const config = state.currentConfig;
-    const durations = state.commandHistory.map((result) => result.durationMs);
+    const history = state.resultHistory;
     return {
         atEpochMs,
         eventHistory: state.eventHistory,
@@ -45,26 +46,27 @@ export function toRuntimeStats(state: RallarBlackBoxTestState, atEpochMs: number
         agentId: config?.agentId,
         status: state.status,
         counters: {
-            commands: state.commandHistory.length,
+            commands: state.resultHistory.totalCommands,
             events: state.eventHistory.totalEvents,
-            failures: state.failures.length,
+            failures: state.resultHistory.totalFailures,
             messages: state.eventHistory.countsByKind.message,
             diagnostics: state.eventHistory.countsByKind.diagnostic,
             reconnects: state.eventHistory.reconnects
         },
-        lastCommandId: state.commandHistory.at(-1)?.commandId,
+        resultRetention: { retainedResults: state.commandHistory.length, releasedResults: history.releasedResults },
+        lastCommandId: history.lastCommandId,
         lastEventAtEpochMs: events.at(-1)?.atEpochMs,
         commandLatency: {
-            count: durations.length,
-            minMs: durations.length > 0 ? Math.min(...durations) : undefined,
-            maxMs: durations.length > 0 ? Math.max(...durations) : undefined,
-            averageMs: durations.length > 0
-                ? Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length)
+            count: history.totalCommands,
+            minMs: history.minDurationMs,
+            maxMs: history.maxDurationMs,
+            averageMs: history.totalCommands > 0
+                ? Math.round(history.durationSumMs / history.totalCommands)
                 : undefined,
-            lastMs: durations.at(-1)
+            lastMs: history.lastDurationMs
         },
         rallar: toRuntimeConnectionStats(state),
-        load: toRuntimeLoadStats(state)
+        load: history.load
     };
 }
 
@@ -166,25 +168,31 @@ function toStatsStreamSummary(
     };
 }
 
-function toRuntimeLoadStats(state: RallarBlackBoxTestState): RallarBlackBoxTestStatsSnapshot['load'] {
-    const loopResults = state.commandHistory.filter((result) => result.kind === 'loop');
-    const latestLoopResult = loopResults.at(-1);
-    const latestLoopValue = decodeLoopResultValue(latestLoopResult?.value);
-    const streamResults = state.commandHistory.filter((result) => result.kind === 'rtc.stream');
-    const latestStreamResult = streamResults.at(-1);
-    const latestStreamValue = decodeStreamResultValue(latestStreamResult?.value);
-    return loopResults.length > 0 || streamResults.length > 0
-        ? {
-            loopCount: loopResults.length,
-            latestLoopCommandId: latestLoopResult?.commandId,
-            latestPacing: toStatsPacingSummary(latestLoopValue?.pacing),
-            latestSends: toStatsSendSummary(latestLoopValue?.sends),
-            thresholdFailures: latestLoopValue?.thresholdFailures,
-            streamCount: streamResults.length,
-            latestStreamCommandId: latestStreamResult?.commandId,
-            latestStream: toStatsStreamSummary(latestStreamValue)
-        }
-        : undefined;
+export function toRuntimeLoadResultSummary(
+    previous: RallarBlackBoxTestStatsSnapshot['load'],
+    result: RallarBlackBoxTestResult
+): RallarBlackBoxTestStatsSnapshot['load'] {
+    if (result.kind !== 'loop' && result.kind !== 'rtc.stream') {
+        return previous;
+    }
+    const summary = previous ?? { loopCount: 0, streamCount: 0 };
+    if (result.kind === 'loop') {
+        const value = decodeLoopResultValue(result.value);
+        return {
+            ...summary,
+            loopCount: summary.loopCount + 1,
+            latestLoopCommandId: result.commandId,
+            latestPacing: toStatsPacingSummary(value?.pacing),
+            latestSends: toStatsSendSummary(value?.sends),
+            thresholdFailures: value?.thresholdFailures
+        };
+    }
+    return {
+        ...summary,
+        streamCount: (summary.streamCount ?? 0) + 1,
+        latestStreamCommandId: result.commandId,
+        latestStream: toStatsStreamSummary(decodeStreamResultValue(result.value))
+    };
 }
 
 function toRuntimeConnectionStats(state: RallarBlackBoxTestState): RallarBlackBoxTestStatsSnapshot['rallar'] {

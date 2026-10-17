@@ -5,6 +5,7 @@ import {
     vi
 } from 'vitest';
 
+import type { RtcNativeAcquisitionProof, RtcNativeCapturedConnection } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
@@ -12,10 +13,7 @@ import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagn
 
 import type { LiveRtcControlPort } from '../../../tests/playwright/rallar-black-box/create-group-formation-lifecycle-driver.ts';
 import type { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
-import {
-    createLiveRtcDeliveryOperations,
-    LiveRtcNackProbeFailure
-} from '../../../tests/playwright/rallar-black-box/live-rtc-delivery-operations.ts';
+import { createLiveRtcDeliveryOperations, LiveRtcNackProbeFailure } from '../../../tests/playwright/rallar-black-box/live-rtc-delivery-operations.ts';
 import { normalizeJson } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 import { createLiveRtcFormationOperations } from '../../../tests/playwright/rallar-black-box/live-rtc-formation-operations.ts';
 
@@ -88,7 +86,7 @@ const initialNativeConnectCaptures = [
         }
     }
 ];
-const initialNativePreflightCapture: LiveRtcControlClient.CapturedConnection = {
+const initialNativePreflightCapture: RtcNativeCapturedConnection = {
     ...initialNativeConnectCaptures[0],
     receipt: {
         ...initialNativeConnectCaptures[0].receipt,
@@ -103,7 +101,7 @@ const initialNativeAcquisitionFailure = {
     connection: initialNativePreflightCapture,
     cause: new Error('No initialized row for the initial A scope was received.')
 };
-const initialNativeProof: LiveRtcControlClient.NativeAcquisitionProof = {
+const initialNativeProof: RtcNativeAcquisitionProof = {
     connection: initialNativePreflightCapture,
     initialized: {
         kind: 'native-observation-status',
@@ -123,12 +121,10 @@ const initialNativeProof: LiveRtcControlClient.NativeAcquisitionProof = {
         endpoint: '/runs/retained-capture-run/events.jsonl',
         durableOrigin: 'unknown',
         bytesRead: 987,
-        retainedBytes: 987,
-        retainedPrefixDropped: false,
-        transportTruncated: false,
+        decodedRecords: 2,
         malformedRows: 0,
         oversizedRows: 0,
-        scanLimited: false
+        completeness: 'complete'
     }
 };
 

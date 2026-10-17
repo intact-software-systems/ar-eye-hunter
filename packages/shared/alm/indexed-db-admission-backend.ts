@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 
 import type { IndexedDbOperationObserver } from '../persistence/indexed-db-operation-observer.ts';
+import { KeyedWriteSet } from '../persistence/keyed-write-set.ts';
 import { IndexedDbConnection } from '../persistence/open-indexed-db.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '../persistence/PersistenceProvider.ts';
 import type { StoredResourceEntry } from '../queuebox/indexed-db-queue-box-entry-codec.ts';
@@ -164,7 +165,7 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
         const operation = this.#connection.beginOperation();
         try {
             const decision = this.#observer.observe({ owner: 'al-admission', kind: 'read' });
-            if (decision instanceof Promise) {
+            if (decision !== undefined) {
                 await decision;
             }
             const db = await operation.open();
@@ -196,7 +197,7 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
         const operation = this.#connection.beginOperation();
         try {
             const decision = this.#observer.observe({ owner: 'al-admission', kind: 'list' });
-            if (decision instanceof Promise) {
+            if (decision !== undefined) {
                 await decision;
             }
             const db = await operation.open();
@@ -241,7 +242,7 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
         const operation = this.#connection.beginOperation();
         try {
             const decision = this.#observer.observe({ owner: 'al-admission', kind: 'write' });
-            if (decision instanceof Promise) {
+            if (decision !== undefined) {
                 await decision;
             }
             const db = await operation.open();
@@ -281,7 +282,7 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
         const operation = this.#connection.beginOperation();
         try {
             const decision = this.#observer.observe({ owner: 'al-admission', kind: 'list' });
-            if (decision instanceof Promise) {
+            if (decision !== undefined) {
                 await decision;
             }
             const db = await operation.open();
@@ -302,7 +303,7 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
         const operation = this.#connection.beginOperation();
         try {
             const decision = this.#observer.observe({ owner: 'al-admission', kind: 'write' });
-            if (decision instanceof Promise) {
+            if (decision !== undefined) {
                 await decision;
             }
             const db = await operation.open();
@@ -396,7 +397,7 @@ namespace IndexedDbAdmissionWriteBuffer {
 }
 class IndexedDbAdmissionWriteBuffer implements ALAdmissionWorkWriteContext {
     #usedMetadata = false;
-    readonly #pending = new Map<string, IndexedDbAdmissionStoredRow | undefined>();
+    readonly #pending = new KeyedWriteSet<string, IndexedDbAdmissionStoredRow>();
     readonly #observedRows = new Map<string, IndexedDbAdmissionObservedRow>();
     readonly #observedPrefixes = new Map<string, readonly string[]>();
     readonly #workObservations = new Map<string, StoredResourceEntry | undefined>();
@@ -417,8 +418,9 @@ class IndexedDbAdmissionWriteBuffer implements ALAdmissionWorkWriteContext {
 
     async read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined> {
         this.#usedMetadata = true;
-        let stored = this.#pending.get(key);
-        if (!this.#pending.has(key)) {
+        const pending = this.#pending.lookup(key);
+        let stored = pending.kind === 'value' ? pending.value : undefined;
+        if (pending.kind === 'untouched') {
             stored = await this.#session.readRow(key);
             this.#recordObservedRow(key, stored);
         }
@@ -431,39 +433,31 @@ class IndexedDbAdmissionWriteBuffer implements ALAdmissionWorkWriteContext {
 
     async list<V>(prefix: string, decode: ALAdmissionDecoder<V>): Promise<readonly ALAdmissionBackendEntry<V>[]> {
         this.#usedMetadata = true;
-        const values = new Map<string, V>();
+        const values: ALAdmissionBackendEntry<V>[] = [];
         const storedEntries = await this.#session.readRows(prefix);
         if (!this.#observedPrefixes.has(prefix)) {
             this.#observedPrefixes.set(prefix, storedEntries.map((row) => row.key));
         }
-        const nowMs = this.#nowMs();
         for (const row of storedEntries) {
             this.#recordObservedRow(row.key, row);
-            if (this.#pending.has(row.key)) {
+        }
+        const nowMs = this.#nowMs();
+        const stored = storedEntries.map((row) => ({ key: row.key, value: row }));
+        for (const entry of this.#pending.overlay(stored)) {
+            if (!entry.key.startsWith(prefix)) {
                 continue;
             }
-            const [value, expired] = decodeIndexedDbAdmissionValue({ stored: row, key: row.key, decode, nowMs });
+            const [value, expired] = decodeIndexedDbAdmissionValue({
+                stored: entry.value,
+                key: entry.key,
+                decode,
+                nowMs
+            });
             if (!expired) {
-                values.set(row.key, value);
+                values.push({ key: entry.key, value });
             }
         }
-        for (const [key, stored] of this.#pending) {
-            if (!key.startsWith(prefix)) {
-                continue;
-            }
-            if (stored === undefined) {
-                values.delete(key);
-                continue;
-            }
-            const [value, expired] = decodeIndexedDbAdmissionValue({ stored, key, decode, nowMs });
-            if (expired) {
-                values.delete(key);
-            }
-            else {
-                values.set(key, value);
-            }
-        }
-        return [...values].map(([key, value]) => ({ key, value }));
+        return values;
     }
 
     async set<V>(key: string, value: V, expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP): Promise<void> {
@@ -481,7 +475,7 @@ class IndexedDbAdmissionWriteBuffer implements ALAdmissionWorkWriteContext {
     async remove(key: string): Promise<void> {
         this.#usedMetadata = true;
         await this.#observeRevision(key);
-        this.#pending.set(key, undefined);
+        this.#pending.remove(key);
     }
 
     /** What this write phase read, wrote and listed, for the conditional write that fences on it. */
@@ -541,8 +535,8 @@ class IndexedDbAdmissionWriteBuffer implements ALAdmissionWorkWriteContext {
     }
 
     mutations(): readonly IndexedDbAdmissionMutation[] {
-        return [...this.#pending].map(([key, stored]) =>
-            stored === undefined ? { kind: 'remove', key } : { kind: 'set', stored }
+        return this.#pending.mutations().map(([key, mutation]) =>
+            mutation.kind === 'removed' ? { kind: 'remove', key } : { kind: 'set', stored: mutation.value }
         );
     }
 }

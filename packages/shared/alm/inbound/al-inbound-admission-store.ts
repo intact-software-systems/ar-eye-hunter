@@ -11,7 +11,7 @@ import {
     requireLivePersistenceWrite
 } from '../../persistence/persistence-write-deadline.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
-import { type ALAdmissionBackend, type ALAdmissionWriteContext } from '../al-admission-backend.ts';
+import type { ALAdmissionBackend, ALAdmissionWriteContext } from '../al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import {
     decodeALAdmissionNumber,
@@ -28,6 +28,7 @@ import {
     type ALReplacementSupersedenceValue,
     type ALSupersedenceAcceptance
 } from '../compute-al-supersedence-observation.ts';
+import { markTerminalVolatileAdmissionRow } from '../storage/in-memory-admission-work-write-buffer.ts';
 import {
     evictALInboundOrderingTracksPastCap,
     type ALInboundOrderingTracksReport
@@ -217,6 +218,11 @@ export type ALInboundDeliveryPredecessor =
     | { readonly kind: 'resync-required'; };
 
 export type ALInboundAdmissionMutation =
+    | Readonly<{
+        kind: 'mark-terminal-volatile-msg-owner';
+        msgId: string;
+        senderId: string;
+    }>
     | Readonly<{
         kind: 'set-msg-owner';
         value: ALInboundMessageOwner;
@@ -776,19 +782,13 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         tx: ALAdmissionWriteContext,
         mutation: ALInboundAdmissionMutation
     ): Promise<void> {
+        if (
+            mutation.kind === 'set-msg-owner' || mutation.kind === 'set-inbound-message' ||
+            mutation.kind === 'mark-terminal-volatile-msg-owner'
+        ) {
+            return await this.writeMessageProvenance(tx, mutation);
+        }
         switch (mutation.kind) {
-            case 'set-msg-owner':
-                return await tx.set(
-                    toALInboundMessageOwnerKey(this.namespace, mutation.value.msgId, mutation.value.senderId),
-                    mutation.value,
-                    mutation.expireAtTimestamp
-                );
-            case 'set-inbound-message':
-                return await tx.set(
-                    toALInboundMessageKey(this.namespace, mutation.value),
-                    mutation.value,
-                    mutation.expireAtTimestamp
-                );
             case 'set-dedup': {
                 const dedupKey = this.toDedupKey(mutation.dedupKey);
                 return await tx.set(dedupKey, mutation.expireAtTimestamp, mutation.expireAtTimestamp);
@@ -833,6 +833,33 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             }
             case 'delete-buffered':
                 return await tx.remove(this.toBufferedKey(mutation.trackKey, mutation.seq));
+        }
+    }
+
+    private async writeMessageProvenance(
+        tx: ALAdmissionWriteContext,
+        mutation: Extract<ALInboundAdmissionMutation, {
+            kind: 'set-msg-owner' | 'set-inbound-message' | 'mark-terminal-volatile-msg-owner';
+        }>
+    ): Promise<void> {
+        switch (mutation.kind) {
+            case 'mark-terminal-volatile-msg-owner':
+                return markTerminalVolatileAdmissionRow(
+                    tx,
+                    toALInboundMessageOwnerKey(this.namespace, mutation.msgId, mutation.senderId)
+                );
+            case 'set-msg-owner':
+                return await tx.set(
+                    toALInboundMessageOwnerKey(this.namespace, mutation.value.msgId, mutation.value.senderId),
+                    mutation.value,
+                    mutation.expireAtTimestamp
+                );
+            case 'set-inbound-message':
+                return await tx.set(
+                    toALInboundMessageKey(this.namespace, mutation.value),
+                    mutation.value,
+                    mutation.expireAtTimestamp
+                );
         }
     }
 
