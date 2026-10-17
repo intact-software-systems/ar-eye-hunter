@@ -45,8 +45,8 @@ export class SynchronousNotifications<T> {
     private notify(listener: (event: T) => void | Promise<void>, event: T): void {
         try {
             const result = listener(event);
-            if (result instanceof Promise) {
-                void result.catch((error) => this.report(error));
+            if (result !== undefined) {
+                void Promise.resolve(result).catch((error) => this.report(error));
             }
         }
         catch (error) {
@@ -57,8 +57,8 @@ export class SynchronousNotifications<T> {
     private report(error: unknown): void {
         try {
             const result = this.reportError(toError(error));
-            if (result instanceof Promise) {
-                void result.catch(() => {});
+            if (result !== undefined) {
+                void Promise.resolve(result).catch(() => {});
             }
         }
         catch {

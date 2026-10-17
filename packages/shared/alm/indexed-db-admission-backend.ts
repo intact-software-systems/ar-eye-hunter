@@ -165,7 +165,7 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
         const operation = this.#connection.beginOperation();
         try {
             const decision = this.#observer.observe({ owner: 'al-admission', kind: 'read' });
-            if (decision instanceof Promise) {
+            if (decision !== undefined) {
                 await decision;
             }
             const db = await operation.open();
@@ -197,7 +197,7 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
         const operation = this.#connection.beginOperation();
         try {
             const decision = this.#observer.observe({ owner: 'al-admission', kind: 'list' });
-            if (decision instanceof Promise) {
+            if (decision !== undefined) {
                 await decision;
             }
             const db = await operation.open();
@@ -242,7 +242,7 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
         const operation = this.#connection.beginOperation();
         try {
             const decision = this.#observer.observe({ owner: 'al-admission', kind: 'write' });
-            if (decision instanceof Promise) {
+            if (decision !== undefined) {
                 await decision;
             }
             const db = await operation.open();
@@ -282,7 +282,7 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
         const operation = this.#connection.beginOperation();
         try {
             const decision = this.#observer.observe({ owner: 'al-admission', kind: 'list' });
-            if (decision instanceof Promise) {
+            if (decision !== undefined) {
                 await decision;
             }
             const db = await operation.open();
@@ -303,7 +303,7 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
         const operation = this.#connection.beginOperation();
         try {
             const decision = this.#observer.observe({ owner: 'al-admission', kind: 'write' });
-            if (decision instanceof Promise) {
+            if (decision !== undefined) {
                 await decision;
             }
             const db = await operation.open();
