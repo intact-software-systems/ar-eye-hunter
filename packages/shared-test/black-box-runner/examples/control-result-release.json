@@ -1,0 +1,60 @@
+{
+  "variables": {
+    "controlBaseUrl": {
+      "env": "RALLAR_BLACK_BOX_CONTROL_URL"
+    },
+    "runId": {
+      "env": "RALLAR_BLACK_BOX_RUN_ID"
+    },
+    "agentId": {
+      "env": "RALLAR_BLACK_BOX_AGENT_ID"
+    },
+    "runToken": {
+      "env": "RALLAR_BLACK_BOX_RUN_TOKEN",
+      "secret": true
+    },
+    "commandId": {
+      "env": "RALLAR_BLACK_BOX_RELEASE_COMMAND_ID"
+    },
+    "requestId": {
+      "env": "RALLAR_BLACK_BOX_RELEASE_REQUEST_ID",
+      "default": "explicit-result-release"
+    }
+  },
+  "connections": {
+    "control": {
+      "type": "http",
+      "baseUrl": "{controlBaseUrl}",
+      "headers": {
+        "authorization": "Bearer {runToken}",
+        "content-type": "application/json"
+      },
+      "timeoutMs": 20000
+    }
+  },
+  "steps": [
+    {
+      "name": "releaseDurablyCapturedResult",
+      "type": "http.request",
+      "connection": "control",
+      "request": {
+        "path": "/runs/{runId}/agents/{agentId}/results/release",
+        "method": "POST",
+        "body": {
+          "requestId": "{requestId}",
+          "commandIds": [
+            "{commandId}"
+          ]
+        }
+      },
+      "expect": {
+        "statusCode": 200,
+        "comparison": "compatible",
+        "body": {
+          "requestId": "{requestId}",
+          "status": "released"
+        }
+      }
+    }
+  ]
+}

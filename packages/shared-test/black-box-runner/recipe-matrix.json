@@ -3,6 +3,33 @@
   "description": "Runnable variants for black-box runner examples. Profiles let local smoke, live service, remote-browser, and intentional failure diagnostics use the same catalog.",
   "entries": [
     {
+      "id": "control-result-release",
+      "recipe": "examples/control-result-release.json",
+      "category": "control-server",
+      "mode": "run",
+      "profiles": [
+        "control-result-release"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "control-result-release",
+      "requires": {
+        "env": [
+          "RALLAR_BLACK_BOX_CONTROL_URL",
+          "RALLAR_BLACK_BOX_RUN_ID",
+          "RALLAR_BLACK_BOX_AGENT_ID",
+          "RALLAR_BLACK_BOX_RUN_TOKEN",
+          "RALLAR_BLACK_BOX_RELEASE_COMMAND_ID"
+        ],
+        "httpServices": [
+          {
+            "name": "Rallar black-box control server",
+            "env": "RALLAR_BLACK_BOX_CONTROL_URL"
+          }
+        ]
+      },
+      "description": "Explicitly releases a caller-selected completed root from an existing durable control run and verifies the browser acknowledgement. Opt-in profile only; never part of API-v1 or general live workloads."
+    },
+    {
       "id": "memory-delivery",
       "recipe": "examples/rtc-rallar-memory-delivery-semantics.json",
       "category": "generic-runner-semantics",

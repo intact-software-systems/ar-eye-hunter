@@ -52,6 +52,7 @@ import {
     type LiveRtcPerformanceTiming,
     type LiveRtcRetentionCheckpoint
 } from './live-rtc-performance-evidence.ts';
+import { RetentionLiveRtcControlClient } from './retention-live-rtc-control-client.ts';
 
 const messagesRtcTypeId = firstEnvValue('VITE_RALLAR_MESSAGES_RTC_TYPE_ID', 'VITE_RALLAR_TYPE_ID') ??
     'manual.type';
@@ -1049,13 +1050,13 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                 evidenceContext.locator.caseId !== 'retention-100',
             'The predeclared B06 attempt selects a different matrix case.'
         );
-        const control = new LiveRtcControlClient({
+        const control = new RetentionLiveRtcControlClient({
             request,
             baseUrl: CONTROL_BASE_URL,
             monotonicNow: () => performance.now(),
             epochNow: () => Date.now(),
             diagnosticsOutDir: envValue('RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR')
-        });
+        }, booleanEnv('RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE'));
         const suffix = `live3-retention-${Date.now()}-${crypto.randomUUID()}`;
         const runId = `rallar-live-three-browser-retention-${suffix}`;
         const groupId = `${roomSeed}-${suffix}`;

@@ -34,7 +34,7 @@ export function resolveResultReferencesInText(
     resultCache: RallarBlackBoxTestState['resultCache']
 ): Either<UnresolvedWaitMatchReference, string> {
     const texts = new Map<string, string>();
-    for (const [, reference] of text.matchAll(RESULT_REFERENCE_PATTERN)) {
+    for (const reference of readResultReferencesInText(text)) {
         const referenced = toReferencedResultText(reference, resultCache);
         if (referenced === undefined) {
             return Either.ofLeft({ reference });
@@ -55,4 +55,9 @@ function toReferencedResultText(
         return undefined;
     }
     return typeof lookup.value === 'string' || typeof lookup.value === 'number' ? String(lookup.value) : undefined;
+}
+
+/** Shared token grammar for resolution and released-result admission. */
+export function readResultReferencesInText(text: string): readonly string[] {
+    return [...text.matchAll(RESULT_REFERENCE_PATTERN)].map((match) => match[1]);
 }

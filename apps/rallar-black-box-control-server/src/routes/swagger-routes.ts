@@ -4,12 +4,11 @@ import {
 } from '@shared-test/rallar-bb-test/schema.ts';
 import { createControlResponseHeaders } from '../cors.ts';
 
-type JsonRecord = Record<string, unknown>;
-type SwaggerRouteOptions = Readonly<{
-    corsOrigins?: readonly string[];
-}>;
+interface SwaggerRouteOptions {
+    readonly corsOrigins?: readonly string[];
+}
 
-const CONTROL_OPENAPI_SPEC: JsonRecord = {
+const CONTROL_OPENAPI_SPEC: Record<string, unknown> = {
     openapi: '3.1.0',
     info: {
         title: 'Rallar Black Box Control Server',
@@ -772,6 +771,65 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                 }
             }
         },
+        '/runs/{runId}/agents/{agentId}/results/release': {
+            post: {
+                tags: ['Retention'],
+                summary: 'Release selected browser result payloads after durable capture',
+                description:
+                    'The caller ends future runtime references to selected root commands. The server verifies durable capture of their full results and requests release from the current browser assignment. Full artifacts and cumulative statistics remain available; released runtime results become unavailable. Command-ID tombstones prevent re-execution until reset. Missing capture, active execution, recipe leases or protected event owners prevent release. Repeating an acknowledged release is safe.',
+                security: [{ bearerAuth: [] }, { runTokenHeader: [] }, { queryToken: [] }],
+                parameters: [
+                    { $ref: '#/components/parameters/RunId' },
+                    { $ref: '#/components/parameters/AgentId' }
+                ],
+                requestBody: {
+                    required: true,
+                    content: {
+                        'application/json': {
+                            schema: {
+                                type: 'object',
+                                required: ['requestId', 'commandIds'],
+                                properties: {
+                                    requestId: { type: 'string', minLength: 1 },
+                                    commandIds: {
+                                        type: 'array',
+                                        minItems: 1,
+                                        maxItems: 1000,
+                                        items: { type: 'string', minLength: 1 },
+                                        description:
+                                            'Completed root command IDs whose runtime references the caller has finished using.'
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                responses: {
+                    '200': {
+                        description: 'Release completed with browser acknowledgement, including an idempotent repeat.',
+                        content: {
+                            'application/json': { schema: { $ref: '#/components/schemas/ResultReleaseOutcome' } }
+                        }
+                    },
+                    '400': { $ref: '#/components/responses/BadRequest' },
+                    '401': { $ref: '#/components/responses/Unauthorized' },
+                    '409': {
+                        description:
+                            'Capture cannot be certified, the browser is unavailable, acknowledgement timed out, or the runtime deferred/rejected release. Payloads are never released without verified durable capture.',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    oneOf: [
+                                        { $ref: '#/components/schemas/ErrorResponse' },
+                                        { $ref: '#/components/schemas/ResultReleaseOutcome' }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         '/runs/{runId}/agents/{agentId}/report': {
             post: {
                 tags: ['Reports'],
@@ -841,7 +899,7 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                 tags: ['Control WebSocket'],
                 summary: 'Upgrade to browser-agent control WebSocket',
                 description:
-                    'Browser agents connect here, send a register envelope, receive queued commands and recipe barrier resolutions, and stream results, events, stats, reports, and heartbeats back to the control server.',
+                    'Browser agents connect here, send a register envelope, receive queued commands, recipe barrier resolutions and explicit result-release requests, and stream results, events, stats, reports, heartbeats and release acknowledgements back to the control server.',
                 security: [{ bearerAuth: [] }, { runTokenHeader: [] }, { queryToken: [] }],
                 responses: {
                     '101': { description: 'WebSocket upgrade accepted.' },
@@ -1032,6 +1090,16 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
             }
         },
         schemas: {
+            ResultReleaseOutcome: {
+                type: 'object',
+                required: ['requestId', 'status', 'releasedResults', 'reason'],
+                properties: {
+                    requestId: { type: 'string' },
+                    status: { type: 'string', enum: ['released', 'deferred', 'rejected'] },
+                    releasedResults: { type: 'integer', minimum: 0 },
+                    reason: { type: 'string' }
+                }
+            },
             HealthResponse: {
                 type: 'object',
                 required: ['ok', 'app', 'protocolVersion'],
@@ -2025,8 +2093,8 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
     }
 };
 
-function openApiJsonSchema(schema: JsonRecord, selfRef: string): JsonRecord {
-    return cloneJsonSchema(schema, selfRef, []) as JsonRecord;
+function openApiJsonSchema(schema: Record<string, unknown>, selfRef: string): Record<string, unknown> {
+    return cloneJsonSchema(schema, selfRef, []) as Record<string, unknown>;
 }
 
 function cloneJsonSchema(
@@ -2059,7 +2127,7 @@ function cloneJsonSchema(
         return value.map((item) => cloneJsonSchema(item, selfRef, nextAncestors));
     }
 
-    const record = value as JsonRecord;
+    const record = value as Record<string, unknown>;
     return Object.fromEntries(
         Object.entries(record).map(([key, child]) => [
             key,
@@ -2068,7 +2136,7 @@ function cloneJsonSchema(
     );
 }
 
-export function controlOpenApiSpec(_request: Request): JsonRecord {
+export function controlOpenApiSpec(_request: Request): Record<string, unknown> {
     return {
         ...CONTROL_OPENAPI_SPEC,
         servers: [
@@ -2128,7 +2196,7 @@ export function handleSwaggerRoute(
         url.pathname === '/api/openapi.json' ||
         url.pathname === '/openapi.json'
     ) {
-        return jsonResponse(controlOpenApiSpec(request), 200, request, options);
+        return jsonResponse(controlOpenApiSpec(request), request, options);
     }
 
     if (
@@ -2136,7 +2204,7 @@ export function handleSwaggerRoute(
         url.pathname === '/swagger-ui' ||
         url.pathname === '/docs'
     ) {
-        return htmlResponse(swaggerHtml(), 200, request, options);
+        return htmlResponse(swaggerHtml(), request, options);
     }
 
     return undefined;
@@ -2148,7 +2216,7 @@ export function swaggerFallbackResponse(
 ): Response {
     return new Response(null, {
         status: 302,
-        headers: responseHeaders(request, {
+        headers: createControlResponseHeaders(request, {
             extra: {
                 Location: '/swagger-ui'
             },
@@ -2158,14 +2226,13 @@ export function swaggerFallbackResponse(
 }
 
 function jsonResponse(
-    value: unknown,
-    status = 200,
+    value: Record<string, unknown>,
     request?: Request,
     options: SwaggerRouteOptions = {}
 ): Response {
     return new Response(JSON.stringify(value, null, 2), {
-        status,
-        headers: responseHeaders(request, {
+        status: 200,
+        headers: createControlResponseHeaders(request, {
             contentType: 'application/json',
             corsOrigins: options.corsOrigins
         })
@@ -2174,26 +2241,14 @@ function jsonResponse(
 
 function htmlResponse(
     value: string,
-    status = 200,
     request?: Request,
     options: SwaggerRouteOptions = {}
 ): Response {
     return new Response(value, {
-        status,
-        headers: responseHeaders(request, {
+        status: 200,
+        headers: createControlResponseHeaders(request, {
             contentType: 'text/html; charset=utf-8',
             corsOrigins: options.corsOrigins
         })
     });
-}
-
-function responseHeaders(
-    request: Request | undefined,
-    options: Readonly<{
-        contentType?: string;
-        extra?: Readonly<Record<string, string>>;
-        corsOrigins?: readonly string[];
-    }> = {}
-): Headers {
-    return createControlResponseHeaders(request, options);
 }

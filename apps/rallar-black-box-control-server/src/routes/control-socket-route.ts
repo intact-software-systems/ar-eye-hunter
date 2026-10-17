@@ -99,6 +99,7 @@ function acceptControlClientEnvelope(
     const command = 'commandId' in envelope && typeof envelope.commandId === 'string'
         ? controlService.snapshotCommand(envelope.runId, envelope.commandId)
         : undefined;
+    agentSockets.acceptResultReleaseOutcome(socket, envelope);
     const received = controlService.receiveClientEnvelope(envelope);
     if (received.accepted) {
         artifactRecorder.record(envelope, command);

@@ -1,5 +1,3 @@
-import { Either } from '@shared/resilience/Either.ts';
-
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import {
     jsonRecord,
@@ -10,12 +8,8 @@ import {
     stringValue,
     type LiveRtcJsonRecord
 } from './live-rtc-evidence-json.ts';
-import { readLiveRtcBrowserEvent, readLiveRtcRecorderJsonl } from './live-rtc-recorder-reader.ts';
-import {
-    computeLiveRtcRecorderScanWindow,
-    toLiveRtcRecorderLines,
-    toLiveRtcRecorderRow
-} from './live-rtc-recorder-rows.ts';
+import { readLiveRtcBrowserEvent, readLiveRtcRecorderRows } from './live-rtc-recorder-reader.ts';
+import { toLiveRtcRecorderRow } from './live-rtc-recorder-rows.ts';
 
 export async function expectLiveRtcArtifactEvidence(
     bundle: LiveRtcJsonRecord,
@@ -30,16 +24,18 @@ export async function expectLiveRtcArtifactEvidence(
         throw new Error('Artifact evidence requires nonempty executed command IDs.');
     }
     const endpoint = `${baseUrl}/runs/${encodeURIComponent(input.runId)}`;
-    const read = await readLiveRtcRecorderJsonl(`${endpoint}/results.jsonl`);
-    if (!read.right) {
-        throw new Error(`Durable results unavailable: ${read.left?.code}.`);
+    const missing = new Set(input.commandIds);
+    for await (const read of readLiveRtcRecorderRows(`${endpoint}/results.jsonl`)) {
+        if (!read.right) {
+            throw new Error(`Durable results unavailable: ${read.left?.code}.`);
+        }
+        if (!isLiveRtcResultReceipt(read.right)) {
+            throw new Error('Durable results contain malformed result evidence.');
+        }
+        missing.delete(String(read.right.commandId));
     }
-    if (read.right.retainedPrefixDropped || read.right.transportTruncated) {
-        throw new Error('Durable results incomplete within the recorder input/transport limit.');
-    }
-    const receipts = toLiveRtcExecutedCommandEvidence(read.right.jsonl, input.commandIds);
-    if (receipts.left) {
-        throw new Error(receipts.left);
+    if (missing.size) {
+        throw new Error(`Durable evidence missing executed commands: ${[...missing].join(', ')}.`);
     }
     const browserEvent = await readLiveRtcBrowserEvent(`${endpoint}/events.jsonl`);
     if (browserEvent.left) {
@@ -85,24 +81,6 @@ function validateLiveRtcArtifactPreview(bundle: LiveRtcJsonRecord, runId: string
     catch {
         return ['Artifact preview is unavailable or malformed.'];
     }
-}
-
-function toLiveRtcExecutedCommandEvidence(jsonl: string, commandIds: readonly string[]): Either<string, true> {
-    const scan = { jsonl, retainedPrefixDropped: false, transportTruncated: false };
-    if (computeLiveRtcRecorderScanWindow(scan).rowLimitReached) {
-        return Either.ofLeft('Durable result evidence exceeds the recorder scan limit.');
-    }
-    const missing = new Set(commandIds);
-    for (const { line } of toLiveRtcRecorderLines(scan)) {
-        const row = toLiveRtcRecorderRow(line);
-        if (!isLiveRtcResultReceipt(row)) {
-            return Either.ofLeft('Durable results contain malformed result evidence.');
-        }
-        missing.delete(String(row?.commandId));
-    }
-    return missing.size
-        ? Either.ofLeft(`Durable evidence missing executed commands: ${[...missing].join(', ')}.`)
-        : Either.ofRight(true);
 }
 
 function isLiveRtcResultReceipt(row: LiveRtcJsonRecord | null): boolean {

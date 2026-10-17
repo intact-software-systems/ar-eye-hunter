@@ -1,11 +1,19 @@
-import { get as readHttp, type ClientRequest, type IncomingMessage } from 'node:http';
+import {
+    get as readHttp,
+    type ClientRequest,
+    type IncomingMessage
+} from 'node:http';
 import { get as readHttps } from 'node:https';
 import { StringDecoder } from 'node:string_decoder';
 
 import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
-import { jsonRecord, stringValue, type LiveRtcJsonRecord } from './live-rtc-evidence-json.ts';
+import {
+    jsonRecord,
+    stringValue,
+    type LiveRtcJsonRecord
+} from './live-rtc-evidence-json.ts';
 import { LIVE_RTC_LIFECYCLE_LIMITS, toLiveRtcRecorderRow } from './live-rtc-recorder-rows.ts';
 
 export interface LiveRtcRecorderRead {
@@ -53,6 +61,27 @@ export async function readLiveRtcRecorderJsonl(
     }
 }
 
+export async function* readLiveRtcRecorderRows(
+    url: string
+): AsyncGenerator<Either<LiveRtcRecorderFailure, LiveRtcJsonRecord>> {
+    const opened = await readLiveRtcRecorderResponse(url);
+    if (!opened.right) {
+        yield Either.ofLeft(
+            opened.left ?? { code: 'runtime-read-failed', cause: new Error('Recorder response missing.') }
+        );
+        return;
+    }
+    try {
+        yield* readLiveRtcRecorderRowStream(opened.right.response);
+    }
+    catch (cause) {
+        yield Either.ofLeft({ code: 'runtime-read-failed', cause: toError(cause) });
+    }
+    finally {
+        stopLiveRtcRecorderResponse(opened.right);
+    }
+}
+
 export async function readLiveRtcBrowserEvent(url: string): Promise<Either<LiveRtcRecorderFailure, true>> {
     const opened = await readLiveRtcRecorderResponse(url);
     if (!opened.right) {
@@ -69,6 +98,55 @@ export async function readLiveRtcBrowserEvent(url: string): Promise<Either<LiveR
     finally {
         stopLiveRtcRecorderResponse(opened.right);
     }
+}
+
+async function* readLiveRtcRecorderRowStream(
+    response: IncomingMessage
+): AsyncGenerator<Either<LiveRtcRecorderFailure, LiveRtcJsonRecord>> {
+    const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+    let pending = '';
+    let rowBytes = 0;
+    for await (const chunk of response) {
+        const bytes = Buffer.from(chunk);
+        for (let cursor = 0; cursor < bytes.length;) {
+            const delimiter = bytes.indexOf(10, cursor);
+            const endedAt = delimiter < 0 ? bytes.length : delimiter;
+            rowBytes += endedAt - cursor;
+            if (rowBytes > LIVE_RTC_LIFECYCLE_LIMITS.inputBytes) {
+                yield Either.ofLeft({ code: 'input-limit', cause: null });
+                return;
+            }
+            try {
+                pending += decoder.decode(bytes.subarray(cursor, endedAt), { stream: delimiter < 0 });
+            }
+            catch (cause) {
+                yield Either.ofLeft({ code: 'malformed-jsonl', cause: toError(cause) });
+                return;
+            }
+            cursor = endedAt + 1;
+            if (delimiter >= 0) {
+                yield* toLiveRtcCompleteRecorderRow(pending);
+                pending = '';
+                rowBytes = 0;
+            }
+        }
+    }
+    try {
+        pending += decoder.decode();
+    }
+    catch (cause) {
+        yield Either.ofLeft({ code: 'malformed-jsonl', cause: toError(cause) });
+        return;
+    }
+    yield* toLiveRtcCompleteRecorderRow(pending);
+}
+
+function* toLiveRtcCompleteRecorderRow(line: string): Generator<Either<LiveRtcRecorderFailure, LiveRtcJsonRecord>> {
+    if (!line.trim()) {
+        return;
+    }
+    const row = toLiveRtcRecorderRow(line);
+    yield row ? Either.ofRight(row) : Either.ofLeft({ code: 'malformed-jsonl', cause: null });
 }
 
 function isLiveRtcBrowserEvent(row: LiveRtcJsonRecord): boolean {

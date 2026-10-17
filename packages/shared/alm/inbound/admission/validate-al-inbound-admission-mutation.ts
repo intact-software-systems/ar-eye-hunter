@@ -71,6 +71,7 @@ function matchesOriginalObservation(
             return mutation.value.msgId === observed.msgId && mutation.value.senderId === observed.senderId;
         case 'set-control-acks':
         case 'set-control-pending':
+        case 'mark-terminal-volatile-msg-owner':
             return mutation.msgId === observed.msgId && mutation.senderId === observed.senderId;
         case 'set-control-owners':
             return mutation.msgId === observed.msgId;

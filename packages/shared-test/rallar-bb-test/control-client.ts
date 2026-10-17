@@ -1,4 +1,6 @@
 import { toError } from '@shared/resilience/to-error.ts';
+import { decodeResultReleaseEnvelope, type ResultReleaseRequest } from './result-release/result-release-protocol.ts';
+import { computeAppendedResultHistory, createRuntimeResultHistory } from './runtime/runtime-result-history.ts';
 
 import { toAgentReloadResult, writeAgentResumeRecord } from './alm/browser-control-agent-resume.ts';
 import { decodeControlBarrierEnvelope, toBarrierResolvedEvent } from './barrier/control-barrier-protocol.ts';
@@ -194,6 +196,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
     private assignmentGeneration = 0;
     private readonly recipeEventHistory = new ControlRecipeEventHistory();
     private observedRuntimeGeneration = 0;
+    private completedResultHistory = createRuntimeResultHistory();
     private statsEventSequence = 1;
     private reportSequence = 1;
     private lastTerminalReportKey: string | undefined;
@@ -222,6 +225,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
             if (state.eventHistory.generation !== this.observedRuntimeGeneration) {
                 this.recipeEventHistory.clear();
                 this.observedRuntimeGeneration = state.eventHistory.generation;
+                this.completedResultHistory = createRuntimeResultHistory();
             }
             this.sendNewEvents(state);
         });
@@ -246,6 +250,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
             this.assignmentGeneration += 1;
             this.recipeEventHistory.restore(connection.recipeExecutions ?? {});
             this.completedControlCommandIds.clear();
+            this.completedResultHistory = createRuntimeResultHistory();
             this.completedControlResults = new WeakSet<RallarBlackBoxTestResult>();
             this.frameLimitedResults = new WeakMap<RallarBlackBoxTestResult, RallarBlackBoxTestResult>();
             this.admittedControlCommandIds.clear();
@@ -359,6 +364,13 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
         });
 
         const identity = { runId: connection.runId, agentId: connection.agentId };
+        const release = decodeResultReleaseEnvelope(event.data);
+        if (release) {
+            if (release.runId === identity.runId && release.agentId === identity.agentId) {
+                void this.releaseCapturedResults(release);
+            }
+            return;
+        }
         const barrier = decodeControlBarrierEnvelope(event.data, identity);
         if (barrier.right !== undefined) {
             this.options.runtime.recordEvent(toBarrierResolvedEvent(barrier.right));
@@ -376,6 +388,30 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
 
         void this.runCommand(parsed.envelope);
     };
+
+    private async releaseCapturedResults(request: ResultReleaseRequest): Promise<void> {
+        const generation = this.assignmentGeneration;
+        const before = this.toControlOwnedState().commandHistory.length;
+        const released = await this.options.runtime.releaseResults(request);
+        if (generation !== this.assignmentGeneration || this.disposed) {
+            return;
+        }
+        if (released.status === 'released') {
+            const after = this.toControlOwnedState().commandHistory.length;
+            this.completedResultHistory = {
+                ...this.completedResultHistory,
+                releasedResults: this.completedResultHistory.releasedResults + before - after
+            };
+        }
+        this.sendEnvelope({
+            kind: 'diagnostic',
+            protocolVersion: 1,
+            runId: request.runId,
+            agentId: request.agentId,
+            atEpochMs: this.options.now(),
+            payload: { topic: 'rallar.bb.results.release', ...released }
+        });
+    }
 
     private readonly onSocketClose = (): void => {
         this.stopHeartbeat();
@@ -459,6 +495,12 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
             this.completedControlResults.add(result);
         }
         this.sendResult(result, result.replayed === true);
+        if (result.replayed !== true) {
+            this.completedResultHistory = computeAppendedResultHistory(
+                this.completedResultHistory,
+                this.frameLimitedResults.get(result) ?? result
+            );
+        }
         this.sendTerminalReport(this.options.runtime.state());
     }
 
@@ -534,9 +576,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
             atEpochMs,
             status: state.status,
             identity: identity.identity,
-            lastCommandId: Object.values(state.resultCache).findLast((result) =>
-                this.completedControlResults.has(result)
-            )?.commandId,
+            lastCommandId: this.completedResultHistory.lastCommandId,
             lastEventAtEpochMs: state.events.at(-1)?.atEpochMs
         });
         this.publishSnapshotUpdate({ lastHeartbeatAtEpochMs: atEpochMs, identity: identity.identity });
@@ -803,6 +843,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
             state,
             admittedCommandIds: this.admittedControlCommandIds,
             completedResults: this.completedControlResults,
+            resultHistory: this.completedResultHistory,
             frameLimitedResults: this.frameLimitedResults,
             publishedEvents: this.publishedEvents,
             publishedHistory: this.publishedHistory
