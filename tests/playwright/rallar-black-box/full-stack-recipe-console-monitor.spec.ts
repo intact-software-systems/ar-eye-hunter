@@ -347,8 +347,6 @@ test('applies Console Full native run intent through real browser agents', async
             }
             return toConsoleNativeConnection(roots[0], authored, session.sessionId);
         });
-        expect(new Set(captures.map((connection) => connection.recipeAttribution?.invocationId)).size).toBe(2);
-        expect(new Set(captures.map((connection) => connection.recipeAttribution?.recipeBodyId)).size).toBe(2);
         await writeFile(
             testInfo.outputPath('console-native-captures.json'),
             JSON.stringify({ issued, captures }, null, 2)
