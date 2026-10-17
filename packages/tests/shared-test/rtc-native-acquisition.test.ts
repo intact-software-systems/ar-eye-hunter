@@ -39,54 +39,95 @@ describe('complete recorder native admission', () => {
         return readRtcNativeAcquisition(connection, 'fixture:recorder', readRecorderJsonlRows(toFixtureBytes(recorderJsonl), 8_388_608));
     }
 
-    it.each(['clean', 'source-error', 'late-disposal'])('requires actual byte-source EOF before proof: %s', async (variant) => {
-        const rows = createNativeRecorderRowsFixture();
-        const reached = Promise.withResolvers<void>();
-        const finish = Promise.withResolvers<void>();
-        let closed = false;
-        async function* source(): AsyncGenerator<Uint8Array> {
-            try {
-                yield Buffer.from(rows.map((row) => JSON.stringify(row)).join('\n') + '\n');
-                reached.resolve();
-                await finish.promise;
-                if (variant === 'source-error') {
-                    throw new Error('private-source-sentinel');
+    it.each(['clean', 'source-error', 'late-disposal', 'late-limit-disposal', 'late-nested-disposal'])(
+        'requires actual byte-source EOF before proof: %s',
+        async (variant) => {
+            const rows = createNativeRecorderRowsFixture();
+            const activeCapture: RtcSignalingDiagnostics.CaptureStatus = {
+                scopeId: { status: 'observed', value: 'scope-a' },
+                scope: 'active',
+                ordinaryRowsSuppressed: false,
+                admissionLimited: false,
+                payloadLimited: false
+            };
+            const native = createNativeAcquisitionSnapshotFixture(activeCapture);
+            const open = {
+                kind: 'rtc-diagnostic',
+                agentId: 'agent-a',
+                value: {
+                    topic: 'rallar.browser.rtc.signaling_diagnostics',
+                    payload: {
+                        data: toFixtureJson({
+                            kind: 'native-state',
+                            trigger: 'channel-open',
+                            localSessionId: 'session-a',
+                            peerSessionId: 'session-b',
+                            atEpochMs: 121,
+                            native: { ...native, state: { ...native.state, channelState: { status: 'observed', value: 'open' } } }
+                        })
+                    }
                 }
-                if (variant === 'late-disposal') {
-                    const disposed = structuredClone(rows[1]);
-                    const event = ((disposed.value as Record<string, ApiJsonValue>).payload as Record<string, ApiJsonValue>).data as Record<
-                        string,
-                        ApiJsonValue
-                    >;
-                    event.stage = 'disposed';
-                    (event.capture as Record<string, ApiJsonValue>).scope = 'disposed';
-                    yield Buffer.from(JSON.stringify(disposed));
+            };
+            rows.push(open);
+            const disposedCapture: RtcSignalingDiagnostics.CaptureStatus = { ...activeCapture, scope: 'disposed' };
+            const disposalBodies = {
+                'late-disposal': {
+                    kind: 'native-observation-status',
+                    stage: 'disposed',
+                    availability: { status: 'observed', value: 'enabled' },
+                    capture: disposedCapture
+                },
+                'late-limit-disposal': { kind: 'native-observation-limit', limit: 'ordinary-rows', identity: native.identity, capture: disposedCapture },
+                'late-nested-disposal': { kind: 'native-state', trigger: 'connection', native: { ...native, capture: disposedCapture } }
+            };
+            const disposal = Object.hasOwn(disposalBodies, variant)
+                ? disposalBodies[variant as keyof typeof disposalBodies]
+                : undefined;
+            const appended = disposal === undefined ? [] : [{
+                ...open,
+                value: {
+                    ...open.value,
+                    payload: { data: toFixtureJson({ localSessionId: 'session-a', peerSessionId: 'session-b', atEpochMs: 122, ...disposal }) }
+                }
+            }, open];
+            const reached = Promise.withResolvers<void>();
+            const finish = Promise.withResolvers<void>();
+            let closed = false;
+            async function* source(): AsyncGenerator<Uint8Array> {
+                try {
+                    yield Buffer.from(rows.map((row) => JSON.stringify(row)).join('\n') + '\n');
+                    reached.resolve();
+                    await finish.promise;
+                    if (variant === 'source-error') {
+                        throw new Error('private-source-sentinel');
+                    }
+                    yield Buffer.from(appended.map((row) => JSON.stringify(row)).join('\n'));
+                }
+                finally {
+                    closed = true;
                 }
             }
-            finally {
-                closed = true;
+            let settled = false;
+            const pending = readRtcNativeAcquisition(createCapturedNativeConnectionFixture(), 'fixture:bytes', readRecorderJsonlRows(source(), 8_388_608));
+            void pending.then(() => {
+                settled = true;
+            });
+            await reached.promise;
+            expect(settled).toBe(false);
+            finish.resolve();
+            const acquired = await pending;
+            expect(closed).toBe(true);
+            if (variant === 'clean') {
+                expect(acquired.left).toBeUndefined();
+                expect(acquired.right?.source.completeness).toBe('complete');
+            }
+            else {
+                expect(acquired.right).toBeUndefined();
+                expect(acquired.left?.reason).toBe(variant === 'source-error' ? 'acquisition-failed' : 'native-scope-disposed');
+                expect(JSON.stringify(acquired.left)).not.toContain('private-source-sentinel');
             }
         }
-        let settled = false;
-        const pending = readRtcNativeAcquisition(createCapturedNativeConnectionFixture(), 'fixture:bytes', readRecorderJsonlRows(source(), 8_388_608));
-        void pending.then(() => {
-            settled = true;
-        });
-        await reached.promise;
-        expect(settled).toBe(false);
-        finish.resolve();
-        const acquired = await pending;
-        expect(closed).toBe(true);
-        if (variant === 'clean') {
-            expect(acquired.left).toBeUndefined();
-            expect(acquired.right?.source.completeness).toBe('complete');
-        }
-        else {
-            expect(acquired.right).toBeUndefined();
-            expect(acquired.left?.reason).toBe(variant === 'source-error' ? 'acquisition-failed' : 'native-scope-disposed');
-            expect(JSON.stringify(acquired.left)).not.toContain('private-source-sentinel');
-        }
-    });
+    );
 
     it('refuses an iterator failure after a completion event and refuses missing completion', async () => {
         const jsonl = createNativeRecorderRowsFixture().map((row) => JSON.stringify(row)).join('\n');

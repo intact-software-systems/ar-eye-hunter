@@ -7,7 +7,15 @@ import {
 } from '@playwright/test';
 import { readFile, writeFile } from 'node:fs/promises';
 
-import type { RtcNativeCapturedConnection } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
+import type {
+    RecorderJsonlFailure,
+    RecorderJsonlRead
+} from '@shared-test/black-box-runner/artifacts/read-recorder-jsonl-rows.ts';
+import {
+    readRtcNativeAcquisition,
+    type RtcNativeAcquisitionProof,
+    type RtcNativeCapturedConnection
+} from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
 import { toRtcNativeObservationProjection } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts';
 import { decodeRallarBlackBoxTestResult } from '@shared-test/rallar-bb-test/composite-results.ts';
 import type { ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
@@ -33,6 +41,7 @@ import { decodeControlDistributedRunArtifactBundle } from '@shared-test/rallar-b
 import { toRtcCaptureReadout } from '@shared-web/browser/connection/to-rtc-capture-readout.ts';
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
+import type { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
@@ -52,7 +61,6 @@ import {
     uniqueRunId,
     waitForControlRunAgent
 } from './full-stack-helpers.ts';
-import { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import { readLiveRtcRecorderRows } from './live-rtc-recorder-reader.ts';
 
 interface OperatorUrlInput {
@@ -89,9 +97,7 @@ interface ExecuteRecipeExpectation {
 }
 
 interface ConsoleNativeAttachment {
-    readonly endpoint: string;
-    readonly completeness: 'complete';
-    readonly durableOrigin: 'unknown';
+    readonly proof: RtcNativeAcquisitionProof;
     readonly event: ApiJsonObject;
 }
 
@@ -244,12 +250,6 @@ test('applies Console Full native run intent through real browser agents', async
     const controlRunId = uniqueRunId(testInfo);
     const operatorSessionId = `${controlRunId}-operator-session`;
     const agentPages: Page[] = [];
-    const control = new LiveRtcControlClient({
-        request,
-        baseUrl: CONFIGURED_POSTGRES.controlBaseUrl,
-        monotonicNow: () => performance.now(),
-        epochNow: () => Date.now()
-    });
     let failure: Error | undefined;
     try {
         await loginUser({
@@ -355,18 +355,11 @@ test('applies Console Full native run intent through real browser agents', async
         );
         const native = [];
         for (const connection of captures) {
-            const proof = (await control.readRtcNativeAcquisition(connection)).fold(
-                (refused) => {
-                    throw new Error(`Console Native acquisition refused: ${refused.reason}`);
-                },
-                (accepted) => accepted
-            );
-            expect(proof.source).toMatchObject({ completeness: 'complete', durableOrigin: 'unknown' });
             const peer = captures.find((candidate) => candidate.agentId !== connection.agentId);
             if (!peer) {
                 throw new Error('Console Native attachment requires the other issued peer.');
             }
-            native.push({ proof, attachment: await readConsoleNativeAttachment(connection, peer.sessionId) });
+            native.push(await readConsoleNativeAttachment(connection, peer.sessionId));
         }
         await navigateToMonitor(page, distributedRunId, 'passed');
         const artifact = await exportMonitorArtifact(
@@ -613,49 +606,38 @@ async function readConsoleNativeAttachment(
     peerSessionId: string
 ): Promise<ConsoleNativeAttachment> {
     const endpoint = `${CONFIGURED_POSTGRES.controlBaseUrl}/runs/${encodeURIComponent(connection.runId)}/events.jsonl`;
-    let complete = false;
     let latest: ApiJsonObject | undefined;
-    for await (const read of readLiveRtcRecorderRows(endpoint)) {
-        const record = read.fold(
-            (failure) => {
-                throw new Error(`Console attachment recorder refused: ${failure.code}`);
-            },
-            (accepted) => accepted
-        );
-        expect(complete).toBe(false);
-        if (record.kind === 'complete') {
-            complete = true;
-            continue;
-        }
-        const runtime = decodeRecord(record.row.value);
-        if (
-            record.row.kind !== 'rtc-diagnostic' || record.row.agentId !== connection.agentId ||
-            runtime.topic !== 'rallar.browser.rtc.signaling_diagnostics'
-        ) {
-            continue;
-        }
-        const projected = toRtcNativeObservationProjection(decodeRecord(runtime.payload).data);
-        if (projected.recognized) {
-            expect(projected.event).toBeDefined();
-        }
-        const event = projected.event;
-        if (
-            event?.localSessionId === connection.sessionId &&
-            jsonEquals(decodeRecord(event.capture).scopeId, connection.receipt.nativeScopeId)
-        ) {
-            expect(event.stage).not.toBe('disposed');
-        }
-        const native = decodeRecord(event?.native ?? decodeRecord(event?.service).native);
-        if (
-            event?.localSessionId === connection.sessionId && event.peerSessionId === peerSessionId &&
-            jsonEquals(decodeRecord(native.capture).scopeId, connection.receipt.nativeScopeId)
-        ) {
-            latest = event;
+    async function* observedRows(): AsyncGenerator<Either<RecorderJsonlFailure, RecorderJsonlRead>> {
+        for await (const read of readLiveRtcRecorderRows(endpoint)) {
+            const record = read.right;
+            if (record?.kind === 'row') {
+                const runtime = decodeRecord(record.row.value);
+                if (
+                    record.row.kind === 'rtc-diagnostic' && record.row.agentId === connection.agentId &&
+                    runtime.topic === 'rallar.browser.rtc.signaling_diagnostics'
+                ) {
+                    const event = toRtcNativeObservationProjection(decodeRecord(runtime.payload).data).event;
+                    const native = decodeRecord(event?.native ?? decodeRecord(event?.service).native);
+                    if (
+                        event?.localSessionId === connection.sessionId && event.peerSessionId === peerSessionId &&
+                        jsonEquals(decodeRecord(native.capture).scopeId, connection.receipt.nativeScopeId)
+                    ) {
+                        latest = event;
+                    }
+                }
+            }
+            yield read;
         }
     }
-    expect(complete).toBe(true);
+    const proof = (await readRtcNativeAcquisition(connection, endpoint, observedRows())).fold(
+        (refused) => {
+            throw new Error(`Console Native acquisition refused: ${refused.reason}`);
+        },
+        (accepted) => accepted
+    );
+    expect(proof.source).toMatchObject({ completeness: 'complete', durableOrigin: 'unknown' });
     assertConsoleNativeChannel(latest, connection);
-    return { endpoint, completeness: 'complete', durableOrigin: 'unknown', event: latest };
+    return { proof, event: latest };
 }
 
 function assertConsoleNativeChannel(
