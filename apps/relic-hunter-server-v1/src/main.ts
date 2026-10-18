@@ -11,6 +11,7 @@ import type { ApiConfigResponse } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
+import { initRelicDocsLandingRoute } from './relic-docs-landing-route.ts';
 import { createRelicExpeditionInitialStateFactory } from './relic-expedition-ai.ts';
 import { installRelicHunterGame } from './relic-game-service.ts';
 import { readRelicHunterServerConfiguration } from './relic-hunter-server-configuration.ts';
@@ -101,6 +102,7 @@ app.get(
         )
 );
 
+initRelicDocsLandingRoute(app);
 initRelicSwaggerRoutes(app);
 
 app.use('/api/relic/*', async (c, next) => {
