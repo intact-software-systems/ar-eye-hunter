@@ -6,7 +6,9 @@ import {
     evaluateRtcBaselineRepeatOutcome,
     evaluateRtcBaselineWorkloadRepeatOutcome,
     partitionRtcBaselineMetricObservations,
-    requiresRtcBaselineRepeat
+    requiresRtcBaselineRepeat,
+    rtcBaselineAutomaticRepeatWorkloads,
+    rtcBaselineTriggeredWorkloads
 } from '../../../baseline/evidence/rtc-baseline-statistics.ts';
 
 const grouping = {
@@ -25,6 +27,37 @@ const grouping = {
 };
 
 describe('RTC baseline statistics', () => {
+    it.each(['E3-memory', 'E4-pg'] as const)('keeps noisy B06 %s descriptive without automatic acquisition', (environmentId) => {
+        const value = {
+            environment: { environmentId, observation: { host: { executionContext: 'local' as const } } },
+            manifest: { workloadIds: ['RTC-B06'] as const },
+            summary: {
+                metricSummaries: [{
+                    ...grouping,
+                    count: 3,
+                    minimum: 1,
+                    median: 2,
+                    maximum: 3,
+                    mad: 1,
+                    coefficientOfVariation: 0.3,
+                    workloadId: 'RTC-B06' as const
+                }]
+            }
+        };
+        expect(rtcBaselineTriggeredWorkloads(value)).toEqual(['RTC-B06']);
+        expect(rtcBaselineAutomaticRepeatWorkloads(value)).toEqual([]);
+        expect(rtcBaselineAutomaticRepeatWorkloads({ ...value, environment: { ...value.environment, environmentId: 'E2-browser' as const } })).toEqual([
+            'RTC-B06'
+        ]);
+        expect(
+            rtcBaselineAutomaticRepeatWorkloads({
+                ...value,
+                manifest: { workloadIds: ['RTC-B01'] },
+                summary: { metricSummaries: value.summary.metricSummaries.map((metric) => ({ ...metric, workloadId: 'RTC-B01' as const })) }
+            })
+        ).toEqual(['RTC-B01']);
+    });
+
     it('rejects development versus production across distinct Git heads without comparing bundle or output identities', () => {
         const result = compareRtcBaselinePairedCohorts(
             { grouping: { ...grouping, configurationIdentity: 'appServingMode=development/default' }, values: [10, 11, 12] },

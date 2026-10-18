@@ -9,6 +9,7 @@ import type {
     RtcNativeCapturedConnection
 } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
 import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { computeRtcB06RetentionHeapPolicy } from '../../../packages/shared-rtc-bench/baseline/acceptance/rtc-b06-retention-heap-policy.ts';
 import { deriveRtcBaselineExternalAttempts } from '../../../packages/shared-rtc-bench/baseline/catalog/rtc-baseline-workload-manifest.ts';
 import {
     decodeRtcBaselineEnvironment,
@@ -523,7 +524,6 @@ export function buildLiveRtcRetentionCohort(
         throw new Error('Live RTC retention cohort workload must be RTC-B06.');
     }
     const samples = retainedSamplesInIdentityOrder(input);
-    const requiredHeapBreachCount = heapBreachThreshold(samples.length);
     const heapBreachingSampleIds = samples
         .filter(retentionHeapBreached)
         .map((sample) => sample.identity.sampleId);
@@ -533,15 +533,12 @@ export function buildLiveRtcRetentionCohort(
     const failedMemberSampleIds = samples
         .filter((sample) => sample.outcome !== 'passed' || sample.issues.length > 0)
         .map((sample) => sample.identity.sampleId);
-    const issues: RtcBaselineIssueDto[] = [];
-    if (heapBreachingSampleIds.length >= requiredHeapBreachCount) {
-        issues.push({
-            path: '$.rawEvidence.heapBreachingSampleIds',
-            code: 'retention-heap-threshold-breached',
-            message:
-                `${heapBreachingSampleIds.length} retained attempts breached the ${requiredHeapBreachCount}-attempt heap threshold.`
-        });
+    const heapPolicy = computeRtcB06RetentionHeapPolicy(samples.length, heapBreachingSampleIds);
+    if (!heapPolicy.ok) {
+        throw new Error(heapPolicy.issues.map((issue) => issue.message).join(' '));
     }
+    const { requiredHeapBreachCount, warnings } = heapPolicy.value;
+    const issues: RtcBaselineIssueDto[] = [];
     if (stateDriftSampleIds.length > 0) {
         issues.push({
             path: '$.rawEvidence.stateDriftSampleIds',
@@ -564,6 +561,7 @@ export function buildLiveRtcRetentionCohort(
             retainedAttemptCount: samples.length,
             requiredHeapBreachCount,
             heapBreachingSampleIds,
+            warnings,
             stateDriftSampleIds,
             failedMemberSampleIds
         },
@@ -1008,16 +1006,6 @@ function retainedSamplesInIdentityOrder(
         ordered.push(sample);
     }
     return ordered;
-}
-
-function heapBreachThreshold(sampleCount: number): number {
-    if (sampleCount === 3) {
-        return 2;
-    }
-    if (sampleCount === 6) {
-        return 4;
-    }
-    throw new Error('Live RTC retention cohort requires exactly 3 primary or 6 repeat samples.');
 }
 
 function retentionHeapBreached(sample: RtcBaselineSampleDto): boolean {

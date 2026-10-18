@@ -1,6 +1,6 @@
 import type {
     RtcBaselineCaptureManifestDto,
-    RtcBaselineEnvironmentDto,
+    RtcBaselineEnvironmentId,
     RtcBaselineResult,
     RtcBaselineRuntimeObservationDto,
     RtcBaselineWorkloadId
@@ -28,6 +28,14 @@ type RtcBaselineStringGroupingField = Exclude<(typeof groupingFields)[number], '
 export type RtcBaselineMetricGrouping = Record<RtcBaselineStringGroupingField, string> & {
     workloadId: RtcBaselineWorkloadId;
 };
+export interface RtcBaselineNoiseEvidence {
+    environment: {
+        environmentId: RtcBaselineEnvironmentId;
+        observation: { host: { executionContext: 'local' | 'distributed'; }; } | null;
+    };
+    manifest: Pick<RtcBaselineCaptureManifestDto, 'workloadIds'>;
+    summary: { metricSummaries: readonly PersistedMetric[]; };
+}
 export interface RtcBaselineMetricObservation {
     grouping: RtcBaselineMetricGrouping;
     sampleId: string;
@@ -155,11 +163,7 @@ export function rtcBaselineRepeatWorkloadIds(
     return workloadOrder.filter((workloadId) => noisy.has(workloadId));
 }
 
-export function rtcBaselineTriggeredWorkloads(value: {
-    environment: RtcBaselineEnvironmentDto;
-    manifest: Pick<RtcBaselineCaptureManifestDto, 'workloadIds'>;
-    summary: { metricSummaries: readonly PersistedMetric[]; };
-}) {
+export function rtcBaselineTriggeredWorkloads(value: RtcBaselineNoiseEvidence) {
     const context = value.environment.observation?.host.executionContext;
     if (context === undefined) {
         return [];
@@ -168,6 +172,12 @@ export function rtcBaselineTriggeredWorkloads(value: {
         value.summary.metricSummaries,
         context,
         value.manifest.workloadIds
+    );
+}
+
+export function rtcBaselineAutomaticRepeatWorkloads(value: RtcBaselineNoiseEvidence) {
+    return rtcBaselineTriggeredWorkloads(value).filter((workloadId) =>
+        workloadId !== 'RTC-B06' || !['E3-memory', 'E4-pg'].includes(value.environment.environmentId)
     );
 }
 

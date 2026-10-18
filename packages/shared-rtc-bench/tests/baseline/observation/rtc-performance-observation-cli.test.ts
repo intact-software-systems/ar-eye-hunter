@@ -60,6 +60,7 @@ describe('governed branch RTC capture CLI', () => {
                 source: { ref: '', commit: '', tree: '' },
                 primaryOutcome: 'passed' as const,
                 acceptedMetrics: true,
+                evidenceReport: { metricOutcome: 'inconclusive' as const, warnings: [] },
                 repeatDecision: 'not-required' as const,
                 repeatOutcome: 'not-run' as const
             }
@@ -100,6 +101,7 @@ describe('governed branch RTC capture CLI', () => {
                 source: { ref: 'codex/rtc-baseline-refresh', commit: 'a'.repeat(40), tree: 'b'.repeat(40) },
                 primaryOutcome,
                 acceptedMetrics: primaryOutcome === 'passed',
+                evidenceReport: { metricOutcome: 'inconclusive' as const, warnings: [] },
                 repeatDecision: 'not-required' as const,
                 repeatOutcome: 'not-run' as const
             };
@@ -202,6 +204,39 @@ describe('RTC performance observation CLI', () => {
             ok: false,
             issues: expect.arrayContaining([expect.objectContaining({ code: 'invalid-rtc-capture-mode' })])
         });
+    });
+
+    it('prints retained heap warnings and inconclusive timing with observation publication paths', async () => {
+        const output: string[] = [];
+        const evidenceReport = {
+            metricOutcome: 'inconclusive' as const,
+            warnings: [{
+                path: '$.rawEvidence.heapBreachingSampleIds',
+                code: 'retention-heap-threshold-breached',
+                message: '2 retained attempts breached the 2-attempt heap threshold.'
+            }]
+        };
+        const code = await runRtcPerformanceObservationCli({
+            args: liveRtcObserveArguments,
+            browserRunner: { run: vi.fn() },
+            liveRtcRunner: {
+                captureBaseline: vi.fn(),
+                run: async () => ({
+                    ok: true,
+                    value: {
+                        observation: { observationId: 'observed' },
+                        output: { archivePath: 'observation.zip', indexEntryPath: 'index.jsonl' },
+                        evidenceReport
+                    }
+                })
+            },
+            readFile: vi.fn(),
+            verifyArchive: vi.fn(),
+            writeStdout: (value) => output.push(value),
+            writeStderr: vi.fn()
+        });
+        expect(code).toBe(0);
+        expect(JSON.parse(output[0]!)).toEqual({ observationId: 'observed', archivePath: 'observation.zip', indexEntryPath: 'index.jsonl', evidenceReport });
     });
 
     it('delivers an admitted Native selector to the live observation operation', async () => {

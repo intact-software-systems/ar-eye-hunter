@@ -7,9 +7,7 @@ them. It does not copy them.
 Historical implementation plans are not product documentation.
 [plans/README.md](../plans/README.md) says where a written plan belongs. The ALM
 design that is still underway lives in `playground/alm/`, starting at
-`playground/alm/alm-improvement-plan.md`. The RTC performance baseline plan,
-`docs/superpowers/plans/2026-08-06-rallar-rtc-performance-baseline-plan.md`,
-stays until RTC-B06 is accepted; its status section says what remains.
+`playground/alm/alm-improvement-plan.md`.
 
 ## Product
 
@@ -76,6 +74,7 @@ Agent orientation is `AGENTS.md`. Skills live under `.agents/skills/**`.
 - Relic Hunters: `apps/relic-hunters-v1/docs/README.md`
 - Black Box: `apps/rallar-black-box/docs/README.md`
 - Black-box runner: `packages/shared-test/black-box-runner/README.md`
+- RTC measurements and acceptance policy: `packages/shared-rtc-bench/README.md`
 
 ## Run environment notes
 

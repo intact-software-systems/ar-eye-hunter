@@ -5,9 +5,10 @@ import type {
     RtcBaselineConditionalEnvironmentDecisionDto,
     RtcBaselineResult
 } from '../contracts/rtc-baseline-contracts.ts';
-import { createRtcBaselineObservationId, createRtcBaselineRepeatId } from '../contracts/rtc-baseline-id.ts';
+import { createRtcBaselineObservationId } from '../contracts/rtc-baseline-id.ts';
 import type { RtcBaselineFinalizedSummary } from '../evidence/rtc-baseline-finalized-evidence.ts';
 import type { RtcBaselineEnvelope } from '../runtime/rtc-baseline-envelope.ts';
+import { readRtcB06EvidenceReport, type RtcB06EvidenceReport } from './read-rtc-b06-evidence-report.ts';
 import type { RtcB06PerformanceObservation } from './rtc-b06-performance-observation.ts';
 import type { RtcPerformanceObservationArchiveWritten } from './rtc-performance-observation-archive.ts';
 import type { RtcPerformanceObservationOutcome } from './rtc-performance-observation.ts';
@@ -32,9 +33,9 @@ export interface RtcB06BaselineCapture {
     readonly source: { readonly commit: string; readonly tree: string; readonly ref: string; };
     readonly primaryOutcome: RtcPerformanceObservationOutcome;
     readonly acceptedMetrics: boolean;
+    readonly evidenceReport: RtcB06EvidenceReport;
     readonly repeatDecision: RtcB06PerformanceObservation['repeat']['decision'];
     readonly repeatOutcome: RtcB06PerformanceObservation['repeat']['outcome'];
-    readonly repeatArtifacts?: ReadonlyMap<string, Uint8Array>;
 }
 
 export interface RtcB06ObservationOutput {
@@ -56,19 +57,12 @@ export interface RtcB06ObservationRunnerDependencies {
     createArchive(input: {
         observation: RtcB06PerformanceObservation;
         primaryArtifacts: ReadonlyMap<string, Uint8Array>;
-        repeatArtifacts?: ReadonlyMap<string, Uint8Array>;
     }): Promise<RtcBaselineResult<RtcPerformanceObservationArchiveWritten>>;
     writeOutput(input: {
         outputDirectory: string;
         archive: RtcPerformanceObservationArchiveWritten;
     }): Promise<RtcBaselineResult<RtcB06ObservationOutput>>;
     nowUtc(): string;
-}
-
-interface RtcB06RepeatCaptureInput {
-    readonly baselineId: string;
-    readonly environmentId: RtcB06BaselineCaptureInput['environmentId'];
-    readonly primaryOutcome: RtcPerformanceObservationOutcome;
 }
 
 type RtcB06ObservationEnvelope = Pick<
@@ -79,7 +73,6 @@ type RtcB06ObservationEnvelope = Pick<
     | 'recordExternalCohortAssertion'
     | 'finalize'
     | 'readBaselineValidation'
-    | 'readRepeatRequirement'
 >;
 
 export function createRtcB06ObservationRunner(
@@ -131,13 +124,15 @@ async function captureRtcB06Baseline(
         return primary;
     }
     const primaryOutcome = outcomeOf(primary.value);
-    const repeat = await captureRequiredRepeat(dependencies, {
-        baselineId: identity.value,
-        primaryOutcome,
-        environmentId: capture.environmentId
-    });
-    if (!repeat.ok) {
-        return repeat;
+    const evidenceReport = await readEvidenceReport(dependencies, primary.value);
+    if (!evidenceReport.ok) {
+        return evidenceReport;
+    }
+    if (primaryOutcome === 'passed') {
+        const accepted = await dependencies.envelope.readBaselineValidation({ baselineId: identity.value });
+        if (!accepted.ok) {
+            return accepted;
+        }
     }
     return {
         ok: true,
@@ -147,43 +142,21 @@ async function captureRtcB06Baseline(
             source: { ...source.value, ref: capture.sourceRef },
             primaryOutcome,
             acceptedMetrics: primaryOutcome === 'passed',
-            ...repeat.value
+            evidenceReport: evidenceReport.value,
+            repeatDecision: 'not-required',
+            repeatOutcome: 'not-run'
         }
     };
 }
 
-async function captureRequiredRepeat(
+async function readEvidenceReport(
     dependencies: RtcB06ObservationRunnerDependencies,
-    input: RtcB06RepeatCaptureInput
+    summary: RtcBaselineFinalizedSummary
 ) {
-    const { baselineId, primaryOutcome, environmentId } = input;
-    let repeatDecision: RtcB06PerformanceObservation['repeat']['decision'] = 'not-required';
-    let repeatOutcome: RtcB06PerformanceObservation['repeat']['outcome'] = 'not-run';
-    let repeatArtifacts: ReadonlyMap<string, Uint8Array> | undefined;
-    if (primaryOutcome === 'passed') {
-        const accepted = await dependencies.envelope.readBaselineValidation({
-            baselineId: baselineId
-        });
-        if (!accepted.ok) {
-            return accepted;
-        }
-        const repeat = await dependencies.envelope.readRepeatRequirement({
-            baselineId: baselineId
-        });
-        if (!repeat.ok) {
-            return repeat;
-        }
-        if (repeat.value.workloadIds.includes('RTC-B06')) {
-            repeatDecision = 'required';
-            const repeated = await captureRepeat(dependencies, baselineId, environmentId);
-            if (!repeated.ok) {
-                return repeated;
-            }
-            repeatOutcome = outcomeOf(repeated.value.summary);
-            repeatArtifacts = repeated.value.artifacts;
-        }
-    }
-    return { ok: true as const, value: { repeatDecision, repeatOutcome, repeatArtifacts } };
+    const artifacts = await dependencies.readFinalizedArtifacts(summary.baselineId);
+    return artifacts.ok
+        ? readRtcB06EvidenceReport({ artifacts: artifacts.value, metricSummaries: summary.metricSummaries })
+        : artifacts;
 }
 
 async function writeObservationArchive(
@@ -191,7 +164,7 @@ async function writeObservationArchive(
     run: RtcB06ObservationRunInput,
     input: RtcB06BaselineCapture
 ) {
-    const { baselineId, startedAt, source, primaryOutcome, repeatDecision, repeatOutcome, repeatArtifacts } = input;
+    const { baselineId, startedAt, source, primaryOutcome, repeatDecision, repeatOutcome } = input;
     const primaryArtifacts = await dependencies.readFinalizedArtifacts(baselineId);
     if (!primaryArtifacts.ok) {
         return primaryArtifacts;
@@ -215,8 +188,7 @@ async function writeObservationArchive(
     };
     const archived = await dependencies.createArchive({
         observation,
-        primaryArtifacts: primaryArtifacts.value,
-        ...(repeatArtifacts === undefined ? {} : { repeatArtifacts })
+        primaryArtifacts: primaryArtifacts.value
     });
     if (!archived.ok) {
         return archived;
@@ -228,41 +200,9 @@ async function writeObservationArchive(
     return output.ok
         ? {
             ok: true as const,
-            value: { observation, archive: archived.value, output: output.value }
+            value: { observation, archive: archived.value, output: output.value, evidenceReport: input.evidenceReport }
         }
         : output;
-}
-
-async function captureRepeat(
-    dependencies: RtcB06ObservationRunnerDependencies,
-    primaryBaselineId: string,
-    environmentId: RtcB06BaselineCaptureInput['environmentId']
-) {
-    const repeatId = createRtcBaselineRepeatId(primaryBaselineId);
-    if (!repeatId.ok) {
-        return repeatId;
-    }
-    const initialized = await dependencies.envelope.initializeBaseline({
-        schema: 'rallar.rtc-baseline.capture-request.v1',
-        baselineId: repeatId.value,
-        workloadIds: ['RTC-B06'],
-        environmentId,
-        retainedSampleMultiplier: 2,
-        repeatLink: null,
-        conditionalEnvironmentDecisions: [toRtcB06ConditionalEnvironmentDecision(environmentId)],
-        repeatOf: primaryBaselineId
-    });
-    if (!initialized.ok) {
-        return initialized;
-    }
-    const summary = await captureAndFinalize(dependencies, repeatId.value, environmentId);
-    if (!summary.ok) {
-        return summary;
-    }
-    const artifacts = await dependencies.readFinalizedArtifacts(repeatId.value);
-    return artifacts.ok
-        ? { ok: true as const, value: { summary: summary.value, artifacts: artifacts.value } }
-        : artifacts;
 }
 
 function initializePrimary(
