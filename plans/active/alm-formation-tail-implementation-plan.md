@@ -101,7 +101,25 @@ Instrumented timings are attribution evidence, not performance acceptance.
 
 ## Unresolved comparative acceptance
 
-Both the local comparison and the prescribed hosted A-B-B-A comparison failed
+The fresh corrected-harness comparison is valid but still fails hot throughput:
+24.675951 → 23.416662 mutations/s (-5.103%). Both roles use the same corrected
+harness; every A-B-B-A position and all eighteen samples per role are retained.
+Uncontended p99 is 0.170083 → 0.169386 s; shared throughput is 89.9957 →
+89.9159 mutations/s. Neither fails its gate. Hot p99 is 3.917735 → 3.922594 s;
+median per-run transaction wall-duration sum is 168.573 → 168.266 s. The earlier
+and corrected-harness results below are separate datasets and must not be pooled.
+
+Most of the new hot loss is in candidate position three: 22.139 mutations/s,
+compared with 24.851 in candidate position two and 25.014/24.347 in the two main
+positions. Two commands in that third position reach ten attempts, with 15.881
+and 15.442 s of recorded retry delay inside 16.551 and 16.330 s command latency.
+Total conflict counts, process SQL and CPU do not establish why retries were
+deeper there. The unchanged exercised production path constrains causal theories;
+it does not explain the observation or waive the failed gate. Inspect current
+command/kind completion and pump cleanup on a common timeline before selecting
+additional instrumentation or a retry-policy change. Keep all samples.
+
+The earlier local comparison and prescribed hosted A-B-B-A comparison failed
 unchanged thresholds. Hosted uncontended p99 was 0.20621 → 0.23773 s (+15.29%),
 hot throughput 39.94 → 37.87 mutations/s (-5.20%), and median per-run transaction
 wall-duration sum 100.015 → 106.105 s (+6.09%). Overlapping transaction sums are
@@ -126,10 +144,10 @@ rounded durations must not be treated as exact additive CPU accounting.
 1. **Remaining formation-tail delivery.** The existing promotion marker and all
    local browser endpoints are now measured. Establish the current hosted
    promotion-to-send interval using existing same-server journals where possible.
-   Check diagnostic setup and restoration before dispatch: the existing timing
-   toggle can invoke a database-resetting rollout, which is not an acceptable
-   measurement step. Use a non-destructive path and keep cross-host browser clock
-   bounds explicit. The local policy probe does not justify an optimization. Add
+   The store-preserving rollout prerequisite is implemented and reviewed, with
+   actual lifecycle and PostgreSQL retention tests. Establish read-only remote
+   preflight and exact settings restoration before dispatch; keep cross-host
+   browser clock bounds explicit. The local policy probe does not justify an optimization. Add
    intermediate delta/claim/publish spans only if the observed delivery interval
    warrants them, then repair a positively located defect with TDD. Preserve
    every immutable event/audience, causal fence and fault outcome. Diagnostic
@@ -138,8 +156,10 @@ rounded durations must not be treated as exact additive CPU accounting.
 2. **State-write command completion.** The demonstrated harness wait is repaired
    and independently reviewed; the fresh governed comparison uses that corrected
    harness on both roles. Retain every owned drain, failure and phase cost, and
-   investigate its result before claiming comparative acceptance. Retry-depth attribution and raw timing
-   array allocation remain unresolved outcomes, not speculative policy changes.
+   keep its failed hot-throughput result visible. Investigate the third position’s
+   deeper retries, actual command/kind endpoints and joined pump tail before
+   claiming comparative acceptance. Retry-depth causation and raw timing-array
+   allocation remain unresolved outcomes, not speculative policy changes.
 
 ### Task 4: Separate command completion from owned pump cleanup
 
@@ -242,9 +262,9 @@ instrumentation or changing publication semantics.
 ### Task 6: Preserve the store during hosted diagnostic preparation
 
 The requested outcome remains a measured current hosted formation-delivery
-interval. Existing workflow timing changes invoke the normal controller rollout,
-which drops and recreates PostgreSQL. Repair that prerequisite at the existing
-owner; do not run a destructive diagnostic or add another workflow, timing lease,
+interval. Before this repair, workflow timing changes invoked a normal controller
+rollout that dropped and recreated PostgreSQL. The preserving repair and its
+review fixes are implemented and tested at the existing owner; do not run a destructive diagnostic or add another workflow, timing lease,
 topology bypass or duplicate deployment path.
 
 - Replace ordinary rollout's reset with validated existing-store migration using
@@ -286,6 +306,48 @@ The parent plan retains large-result certification, the post-terminal headless
 shutdown race, test-harness scheduling sensitivity, the shared-mechanism audit
 and all original V1c benefit gates. Native acceptance and complete diagnostics
 close none of those independent outcomes.
+
+### Task 7: Use the existing operator workflow for read-only preflight and restoration
+
+The preserving rollout alone does not make the diagnostic executable from the
+available GitHub operator channel. Existing status actions change remote files,
+and deploy inputs cannot restore topology. Unless an existing supported SSH
+channel supplies these operations, complete the narrow workflow prerequisite.
+
+- Extend the existing deploy workflow with an explicit read-only inspect action;
+  retain rollout as its default. Stream a reviewed, sanitized probe through its
+  existing SSH connection. Inspect must not copy remote scripts, sync secrets,
+  write environment files, mutate services or run rollout. Reuse the effective
+  configuration reader and existing status owner. A dependency-free shared reader
+  may be sourced by normal scripts and streamed before the inspect entry, so the
+  probe does not trust an older remote helper. No duplicate parser, deployment
+  lifecycle, timing lease or snapshot subsystem.
+- Retain only allowlisted nonsecret evidence: actual source/schema/migration
+  identity, presence and values of both timing and four topology keys, failure
+  fence, service/job/activity state, health and database/table/role continuity
+  markers with aggregate auth/group counts. Never print credentials, environment
+  contents, raw identities, user data, command arguments or unrelated logs.
+  Query failures or missing required evidence must remain failures.
+- Add explicit timing and optional topology inputs to the existing rollout path.
+  Ordinary callers preserve topology by default. Explicit restoration distinguishes
+  an absent key from a positive integer. Pass values to the established writer;
+  no second configuration owner. Use the same reviewed full source revision for
+  diagnostic and restoration, and retain other nondefault operational settings.
+- First require the observed prior timing pair to be exactly present 0/false,
+  which the existing boolean writer can restore. A mixed or absent pair blocks
+  dispatch until its actual restoration requirement is addressed; do not silently
+  normalize it. Compare actual deployed migration history to proposed source
+  before any rollout and resolve pending/destructive migrations separately.
+- Use TDD with executed shell/workflow boundaries for inspect non-mutation,
+  secret exclusion, effective precedence/error handling, default topology
+  preservation and explicit absent/set round trips. Inspect all changed files in
+  full, include recursively modified support files, and leave independent untouched
+  code outside closure. Validate shell/workflow syntax, focused operator tests and
+  affected test typing; independently review before publication or remote use.
+- Run inspect before and after the one unchanged hosted diagnostic and restoration.
+  Preserve its output, journal limits and source identity. Check for other operator
+  activity immediately before dispatch; a past workflow list is not a service
+  lock. Restoration is required even if recipe or artifact acquisition fails.
 
 ## Validation and delivery
 

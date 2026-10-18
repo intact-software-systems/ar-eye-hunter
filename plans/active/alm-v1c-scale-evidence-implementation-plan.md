@@ -203,8 +203,10 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    at 15 / 30 / 50 agents with all expected browser pairs and native predicates covered.
    These single memory-backend diagnostics do not reproduce the historical hosted PostgreSQL
    delay or establish a clock-bounded commit interval. Recover current hosted delivery evidence
-   before selecting another repair. The current server-timing toggle can trigger a database reset;
-   use a non-destructive diagnostic setup/restoration path instead. Use TDD for a positively
+   before selecting another repair. The preserving controller migration path now passes local
+   lifecycle and real PostgreSQL retention tests plus independent review. The existing GitHub operator
+   channel also needs a genuinely read-only inspect action and explicit topology restoration
+   inputs at its existing owner; preserve absent/set keys and effective secrets. Use TDD for a positively
    located defect and reuse existing queuebox and ALM
    mechanisms; preserve every event, frozen audiences, causal fences and failure recovery.
    Compare the same queued burst with a late promotion before and after the repair, including
@@ -219,6 +221,12 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    callers; no detached work or additional concurrency. Preserve every command, attempt, release,
    canonical effect and comparison threshold. A fresh comparison must use the same corrected
    harness overlay on both roles; the correction is not a production speedup or regression waiver.
+   The fresh corrected-harness comparison remains failed: hot throughput is
+   24.675951 → 23.416662 mutations/s (-5.103%), concentrated in the third position.
+   Two commands there spend 15.881/15.442 s in retry delays within 16.551/16.330 s
+   latency. Other numeric gates pass; keep every position and all eighteen samples
+   per role. Diagnose current kind/command endpoints and the joined pump tail;
+   identical exercised code does not explain the result or waive acceptance.
    Trace process SQL to its dequeue owner before attributing it to a command; temporal overlap
    alone is insufficient. Retry-depth distribution and prescribed backoff remain attribution
    outcomes before any queue-policy change.
