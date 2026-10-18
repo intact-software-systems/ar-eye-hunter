@@ -34,7 +34,9 @@ and V1d:
   black-box shared-test harness; both must be resolved, neither excuses the other.
   This is a standing requirement for the current and following slices: identify, measure,
   propose and validate repairs wherever the measured path crosses production or harness code.
-  Record unresolved findings and their next measurement; a passing workload does not erase a
+  Label metrics with units; report durations in seconds (`s`), throughput in mutations/s,
+  and sizes/counts explicitly. Preserve canonical artifact units and convert at the reporting
+  boundary. Record unresolved findings and their next measurement; a passing workload does not erase a
   demonstrated performance problem.
 - The queuebox engine (`packages/shared/queuebox`, the server AppInbox built on it and the browser
   IndexedDB engine) is the event-handling core. It must be quick, responsive, smooth and fault
@@ -77,7 +79,7 @@ and V1d:
 - Setup allowances grow with the cohort (maintainer ruling D280, from D218, D221 and D229): group requests and
   the ready-status read 8.75 / 12.5 / 17.5 s, the players' `rtc.connect` and connected barrier 54.75 / 64.5 /
   77.5 s and their RTC readiness 49.75 / 59.5 / 72.5 s at 15 / 30 / 50, with the 15-second coordinator start
-  barrier, the 45-second recipe setup barriers and the 5,000 ms allowance of every other HTTP request unchanged.
+  barrier, the 45-second recipe setup barriers and the 5 s allowance of every other HTTP request unchanged.
   The existing 65-second shots-complete declaration is
   clipped by its enclosing 30-second absolute workload/ACK window. The declared 330-second outer terminal
   allowance and existing 120-second hosted registration allowance are lifecycle bounds, not extensions of those
@@ -102,7 +104,7 @@ and V1d:
   coordinator predicate set evaluated and passed. Strengthened predicates must retain every original
   requirement; historical 73-predicate results remain bound to their original source. Larger cohorts retain all their declared assertions.
 - At every sample, own admissions are at most 1,000; own bytes 4,194,304; counted oldest age
-  300,000 ms; own tracks 64; ordering snapshots 512; overloaded is false; congestion dropped is
+  300 s; own tracks 64; ordering snapshots 512; overloaded is false; congestion dropped is
   zero. Preserve the runtime-limit checks as well as those literal limits, role-scoped sources and
   exact controller attribution through nested command evidence. Absent metrics or duplicate sources
   cannot form a healthy result.
@@ -130,7 +132,7 @@ adaptive hypothesis fails its benefit gate.
 
 Pressure remains a conservative advisory lower bound: one RETRY page of size two, rotating opaque
 cursor, existing type/due/attempt/expiry checks, no aggregation of old pages and no inference of
-absence from incomplete zero or missing nextTs. Keep the existing 1,000 ms/one-admission RateLimiter
+absence from incomplete zero or missing nextTs. Keep the existing 1 s/one-admission RateLimiter
 window, injected clock, at most one in-flight refresh and one-window cache age. Cold, stale, failed
 or stalled reads return fallback promptly; dequeue cannot block on pressure or reset the limiter
 per call. Preserve transaction/result authority, AppInbox outer redelivery and WS/AL ordering.
@@ -165,11 +167,11 @@ final evidence reconciliation must preserve workload provenance and the unwaived
   and all 231 native predicates. Its positive chains use RTC and do not exercise the failed
   hosted WS receipt family. These supplemental results do not replace capture-off acceptance.
 - The hosted WS diagnostic fails. Four failed shots have complete server ACK counts and new
-  complete receipts whose send-work reservations begin at least 1,041–1,055 ms after conservative
+  complete receipts whose send-work reservations begin at least 1.041–1.055 s after conservative
   inherited deadline bounds. Admission, dequeue and send have distinct identities; neutral holds
   can change eligibility. Continuous queue wait and incorrect selection are not established.
-- The narrow hosted phase diagnostic fails. Three complete sixteen-claim pages take 510, 421
-  and 186 ms; serial callbacks occupy 72–89% of those intervals. Canonical lookup accounts for
+- The narrow hosted phase diagnostic fails. Three complete sixteen-claim pages take 0.510, 0.421
+  and 0.186 s; serial callbacks occupy 72–89% of those intervals. Canonical lookup accounts for
   4–7% of monotonic callback cost. Admission/dequeue callback remainder is unpartitioned.
   API capture is partial without a phase summary. Native recorder/export bytes match, but the
   export contains 577 runtime events absent from the control snapshot; complete producer parity
@@ -180,8 +182,8 @@ final evidence reconciliation must preserve workload provenance and the unwaived
   PostgreSQL latency, native benefit or a universally optimal lane policy.
 - An isolated native setup observation locates a completion-polling contribution. Two terminal
   transactions commit before the original client request rejects, but terminal status is first
-  observed 1,098 and 851 ms later. Adding the requested delay to the recorded retry epoch places
-  nominal poll horizons 1,095 and 847 ms after those commits; actual timer start and expiry are
+  observed 1.098 and 0.851 s later. Adding the requested delay to the recorded retry epoch places
+  nominal poll horizons 1.095 and 0.847 s after those commits; actual timer start and expiry are
   uncaptured. These positive chains justify testing a local committed-result wake;
   they do not identify the earlier queue delay, actual timer expiry, database cost or server
   response path. Rejected and malformed observations prohibit absence conclusions. The diagnostic
@@ -243,7 +245,7 @@ the end-of-match all-recipient ACK starts with 0.39 s of the 30 s window left (2
 ≈2.7 s ACK tail at depth 3–4, ≈1.15 s barrier resolution at 50, ≈1.5 s for 49 confirmations). The
 hosted plane got one user per agent (the shared operator principal fanned out 1+N snapshot pages per
 connect) and an explicit sign-in step under the 45 s setup allowance (registrations serialize at
-≈350 ms each behind the password derivation). The window, the cadence, the allowances and every
+≈0.350 s each behind the password derivation). The window, the cadence, the allowances and every
 assertion are unchanged. Hosted 15 from the branch passes through `Run GitHub Free Distributed Recipe` in
 `hetzner-control` mode (15/15, 231/231, run 38662616218); the all-on-one-VM Hetzner run still fails at RTC
 readiness because the co-located host stalls once the browsers start (recorded in the proposal §1.7).
@@ -251,12 +253,12 @@ readiness because the co-located host stalls once the browsers start (recorded i
 ### Step 2c: the acknowledgement tail at scale, the control plane at 50, then 15 → 30 → 50 hosted (merged, #666)
 
 Step 2b is merged (#664 as `9f71ea2`). On branch `claude/alm-v1c-step-2c-ack-tail`, from the measured 50-agent evidence (proposal
-§1.8): the shot-ACK tail grows with depth (p50 49 ms at depth 1, 1.5 s at depth 3, 1.8 s at depth 4)
+§1.8): the shot-ACK tail grows with depth (p50 0.049 s at depth 1, 1.5 s at depth 3, 1.8 s at depth 4)
 and completes in steps (≈1.25 s, then every 0.5 s), which is a retry or acknowledgement timer, not
 queue draining; attempts per acknowledged shot equal the sender's degree, so every shot still floods
 the tree; the per-session 20/s limiter refuses 4,793 hand-offs at 50 (1,228 at 30, 72 at 15) on every
 agent, the director included, and its imposed wait is unmeasured. The survey located both: the stepped completion is the per-session 20/s hand-off
-limiter whose 250 ms buckets forecast refusals of up to 1,251 ms (exactly 20 ACKs leave, then a gap),
+limiter whose 0.250 s buckets forecast refusals of up to 1.251 s (exactly 20 ACKs leave, then a gap),
 and a leader-addressed send floods every overlay neighbour because the audience freeze narrows the
 receipt but not the route. Decisions D209 and D210 (proposal §3) take control hand-offs off the limiter
 (the breaker stays) and route frozen-audience sends along the accepted tree with a pure
@@ -281,9 +283,9 @@ that keeps its verdict; the rejection-log contract kept after the Deno gate pinn
 director prunes its own legs, a stale layout falls back to the flood for its subtree, and relays
 arm no doomed repair hints; heartbeats out of the AL admission; a cohort-proportional group-request
 allowance. Measured (proposal §1.9): the local 50-agent manifest passes for the first time
-(50/50, 231/231, shot-ACK p50 33 ms against 1,290 ms on the step 2b head, the end event
+(50/50, 231/231, shot-ACK p50 0.033 s against 1.290 s on the step 2b head, the end event
 acknowledged with ≈3 s of the window left), 15 and 30 pass locally, hosted 15 passes through
-GitHub Free `hetzner-control` (231/231, shot-ACK p99 190 ms against 1,326 ms). Hosted 30 fails
+GitHub Free `hetzner-control` (231/231, shot-ACK p99 0.190 s against 1.326 s). Hosted 30 fails
 after setup: the single-lane hosted API relays one offer→answer in 7.1 s p50 (4.3 s at 15; 0.17 to
 0.93 s locally), RTC formation takes 52–59 s per agent, and the director-rooted rebuild after the
 appointment re-forms the overlay behind the same queue while 5 s status reads time out. That bound
@@ -344,7 +346,7 @@ follow in the same step, each RED first and judged by statements per lane item a
 **As applied (PR #668).** D233–D238, D242–D249 and the shared primitives landed with four review-driven
 fix waves (proposal §3, §6). Measured (proposal §1.11): local 50 join wait 6.5 → 3.9 s and a lane item at 3
 statements in one transaction; hosted 30 connect p50 35.0 → 28.3 s; hosted 50 passes with sign-in 12.5 → 9.6 s,
-connect 64.9 → 54.9 s, director-status 4.3 s and 15 timeouts → 2 ms and none, setup-complete 8.9 s → 0.27 s,
+connect 64.9 → 54.9 s, director-status 4.3 s and 15 timeouts → 0.002 s and none, setup-complete 8.9 s → 0.27 s,
 traffic-ready 82 s against 113 s. Open after this step: the six medium consolidation candidates of the audit
 (keyed rate limiter, trailing flush, serialized chain, queuebox sibling claim, JSON streaming, abort scope), the
 four-arm lane-policy gate (D239, now with executor counters), the join still waiting ≈9 s behind the hosted lane
@@ -401,7 +403,7 @@ group read; the connect and traffic-ready targets are judged after those, on the
 **As applied (PR #670).** D266–D305 landed with three review waves and two implementer follow-ups; D286, D279–D281,
 D284 and D285 are maintainer rulings, D293 needed no change and D300 was reverted (proposal §3, §6). Measured
 (proposal §1.13): on the hosted lane, now on Postgres, the players' connect p50 is 17.1 s (37.0 s on step 2f),
-sign-in 4.1 s, traffic-ready 35.4 s from run creation (62.9 s) and one signalling hop 74 ms; the uninstrumented
+sign-in 4.1 s, traffic-ready 35.4 s from run creation (62.9 s) and one signalling hop 0.074 s; the uninstrumented
 hosted 15, 30 and 50 pass in order on the final head. Open after this step: the end of formation (the promotion's
 row waits behind the outbox backlog; a merged delta that carries every event replaces D300), the group-created gate
 behind the slowest sign-in, the disconnect audience projection (D291), the unread rate adjuster (D298), the handler
@@ -419,7 +421,7 @@ four-arm comparison or the adaptive arm's removal, the rewritten evidence sectio
 #### Performance follow-ups from the step 2h investigation
 
 1. **Formation-tail delivery — high priority, measured historical delay.** Reanalysis of the
-   step 2g journal confirms a 73 ms promotion followed by 8.95 s before its group-state notification
+   step 2g journal confirms a 0.073 s promotion followed by 8.95 s before its group-state notification
    was sent; 176 other outbox sends occurred in that interval, including 99 group-state events.
    This locates the dominant post-promotion delay in delivery, but does not isolate the cause of
    the step 2f-to-2g change across different database/runtime settings. Recover the current
@@ -480,9 +482,9 @@ four-arm comparison or the adaptive arm's removal, the rewritten evidence sectio
    the actual slow path: handler/completion waiting, SQL transaction wall time, event-loop/GC
    pressure and PostgreSQL contention on one timeline. Four-position variation is heterogeneous;
    do not dismiss it as noise or change retry/workload/comparator settings to obtain a pass.
-   Retained slow config and topology commands spent 6,832 and 7,572 ms in recorded retry delays
-   within 7,283 and 8,179 ms total latency, after eight optimistic conflicts each; final
-   transactions took about 3 ms. This locates retry-backoff amplification, not the cause of
+   Retained slow config and topology commands spent 6.832 and 7.572 s in recorded retry delays
+   within 7.283 and 8.179 s total latency, after eight optimistic conflicts each; final
+   transactions took about 0.003 s. This locates retry-backoff amplification, not the cause of
    differing conflict incidence or the total transaction-time regression. Use the existing
    bounded diagnostic mode to distinguish failed attempts from process-wide SQL activity.
    That diagnostic currently fails closed: every phase rejects 800 supported enqueue timings
@@ -491,7 +493,9 @@ four-arm comparison or the adaptive arm's removal, the rewritten evidence sectio
    this before repair; retain rejection of genuinely mismatched identity and privacy guarantees.
    All four hot phases additionally exceed the 33,554,432-byte timing budget, dropping roughly
    11,000–17,000 timing rows per phase. Boundaries and release records are complete, but timing
-   absence is not evidence. Preserve originals and the incomplete receipt. Existing capture
+   absence is not evidence. Full requested timing-plus-release counts also exceed the
+   100,000-event ceiling in two hot phases (101,185 and 100,663 events), so reducing serialized
+   bytes alone cannot restore completeness. Preserve originals and the incomplete receipt. Existing capture
    already prioritizes boundaries/releases; choose an explicit bounded representation before
    another diagnostic. Database postflight and cleanup succeeded: the secondary lifecycle label
    reflects the failed capture and is not evidence of another cleanup defect.
