@@ -43,10 +43,10 @@ The full ≤2 s promotion-to-browser formation-tail target remains open.
 
 A subsequent real-runtime/PGlite/pubsub-bridge probe preserves production page
 size, exact events and captured audiences. With no injected wait, median drain
-for 1/10/50/200 rows is 0.014200/0.055567/0.227145/0.834552 s (three measured
-repeats after warmup). Captured-policy reads account for roughly 4–9% of that
+for 1/10/50/200 rows is 0.013538/0.055546/0.224093/0.828825 s (three measured
+repeats after warmup). Captured-policy reads account for roughly 4–10% of that
 wall time; they do not dominate this local drain. A separately labelled 0.005 s
-policy-port delay adds 0.059523 s to the ten-row drain, confirming serial
+policy-port delay adds 0.058793 s to the ten-row drain, confirming serial
 sensitivity only. Transport and final socket ports were capture adapters, so
 the result cannot establish hosted network cost or browser acceptance. Recover
 the actual full-stack timeline before selecting another publication optimization.
@@ -102,14 +102,14 @@ rounded durations must not be treated as exact additive CPU accounting.
 
 ## Next two useful slices
 
-1. **Remaining formation-tail delivery.** Recover the current promotion commit →
-   delta write → outbox claim/send → browser acceptance timeline. Attribute serial
-   after-admission publication, captured-policy reads and direct-send time using
-   actual backend counters. Select a positively located defect, reproduce it with
-   a queued burst and late promotion, and repair it with existing mechanisms.
-   Preserve every immutable event/audience, causal fence and fault outcome. Run
-   affected correctness checks and local 15 → 30 → 50 before hosted timing-off
-   acceptance, with unchanged predicates and deadlines.
+1. **Remaining formation-tail delivery.** First retain the existing server
+   promotion marker and correlate it with every expected browser's accepted
+   layout. The local policy probe does not justify a policy optimization. Add
+   intermediate delta/claim/publish spans only if the observed delivery interval
+   warrants them, then repair a positively located defect with TDD. Preserve
+   every immutable event/audience, causal fence and fault outcome. Diagnostic
+   local 15 → 30 → 50 uses the unchanged memory/headless workload; hosted
+   timing-off acceptance remains separate.
 2. **State-write command completion.** Repair the demonstrated harness wait after
    service completion while retaining every owned drain, failure and phase cost.
    The concrete TDD scope follows below. Retry-depth attribution and raw timing
@@ -159,6 +159,59 @@ gaps; it does not prove their share of the failed comparison.
   apply the same candidate perf-directory overlay to both roles and native-check
   both; never mix historical and corrected-harness samples. This is a harness
   repair, not a production speedup or waiver of the existing failed comparison.
+
+### Task 5: Observe promotion-to-browser delivery without changing runtime behavior
+
+The existing post-commit `group-topology-publication/promote` marker is filtered
+out of optional local API timing capture. Existing native browser layout events
+already expose adoption. Retain the missing safe anchor before adding new runtime
+instrumentation or changing publication semantics.
+
+- Extend the existing optional timing projection with a closed promotion shape.
+  Require exact component/operation, nonnegative finite timing fields, complete
+  valid group scope, a known outcome and valid expected/planned layout identities.
+  Reuse canonical layout identity validation/types; decode the producer's exact
+  label grammar at this log translation boundary. Treat `none` explicitly and
+  require an actual planned identity for successful promotion.
+- Match `promoted-newer` to the actual planned identity. Do not broaden the generic
+  identity grammar for canonical JSON request IDs. This fixed unique-group run can
+  omit requestId and require uniqueness of scoped planned identity in analysis.
+  Strip arbitrary payloads, headers, errors and unknown detail fields. Preserve
+  current record/file limits, rejection accounting and truthful partial summaries.
+- Write RED/GREEN tests using actual production-shaped promotion records, including
+  promoted-newer and a long JSON requestId. Exercise the spawned capture process;
+  verify exact safe fields, retained counts, malformed/missing identity and unknown
+  outcome rejection, sensitive-field exclusion and no weakening of existing capture
+  failure/cleanup tests. Keep existing commit-before-event owner tests as evidence.
+- Expected changed owners are `to-safe-api-timing-record.ts` and the focused
+  full-stack timing capture tests. A colocated decoder is appropriate only if it
+  improves direct ownership; no new telemetry subsystem or generic parser.
+  Review and remediate every changed human-authored file in full, include every
+  support file changed by remediation recursively, and leave independent untouched
+  code outside closure. Direct validation is the spawned-capture semantic suite;
+  application validation is the affected black-box script/app typecheck and style
+  checks. An independent review precedes measurement/publication.
+- The controller runs diagnostic local 15/30/50 with WS observations enabled in
+  fresh directories, unchanged manifests, memory backend, native retention,
+  predicates and deadlines. For the final cohort identity require exactly one
+  successful scoped marker and first acceptance plus matching causal state for
+  every independently enumerated assigned agent. Missing or ambiguous joins fail
+  analysis; early promotions need not have the final cohort audience.
+- Report marker-to-adoption and estimated attempt-start-to-adoption intervals in
+  seconds with clock/rounding uncertainty. Call the latter a conservative upper
+  bound only with justified total uncertainty, including the synchronous gap
+  between duration and epoch sampling; near-threshold unresolved bounds require
+  a better anchor, not an invented allowance. The marker follows transaction return
+  and queue wake; it is not the physical commit instant. Same-host placement and
+  millisecond timestamps do not establish remote clock synchronization. Preserve
+  partial API-stream status, and distinguish complete selected endpoint coverage
+  from complete server telemetry. Browser adoption may follow a delta or refresh;
+  do not claim exact wire receipt or every intermediate span.
+- Later RTC link establishment and recipe readiness are separate intervals. In
+  the retained 50-agent cohort acceptance-to-ready is 6.936–7.082 s, while the
+  readiness command itself is only 0.021–0.094 s. Investigate actual link/native
+  scheduling before blaming its polling interval. The original ≤2 s delivery
+  target and hosted acceptance are not waived by this diagnostic repair.
 
 The parent plan retains large-result certification, the post-terminal headless
 shutdown race, test-harness scheduling sensitivity, the shared-mechanism audit
