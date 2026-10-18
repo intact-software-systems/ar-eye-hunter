@@ -1,8 +1,9 @@
-import { spawn } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
+import { access, chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import type { TestContext } from 'vitest';
+import { runOwnedTestProcess } from './owned-test-process.ts';
 
 const repoRoot = path.resolve(__dirname, '../../..');
 const scriptPath = path.join(
@@ -11,8 +12,9 @@ const scriptPath = path.join(
 );
 
 describe('configure Metered TURN Hetzner script', () => {
-    it('writes Metered secrets to a root-only env file and keeps them out of output and systemd drop-ins', async () => {
+    it('writes Metered secrets to a root-only env file and keeps them out of output and systemd drop-ins', async (context) => {
         const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-metered-turn-'));
+        context.onTestFinished(() => rm(tmp, { recursive: true, force: true }));
         const etcDir = path.join(tmp, 'etc/rallar');
         const systemdDir = path.join(tmp, 'etc/systemd/system');
         const binDir = path.join(tmp, 'bin');
@@ -26,7 +28,7 @@ describe('configure Metered TURN Hetzner script', () => {
         );
         await chmod(fakeSystemctl, 0o755);
 
-        const result = await runScript({
+        const result = await runScript(context, {
             RALLAR_REQUIRE_ROOT: '0',
             RALLAR_ETC_DIR: etcDir,
             RALLAR_SYSTEMD_DIR: systemdDir,
@@ -36,7 +38,6 @@ describe('configure Metered TURN Hetzner script', () => {
             METERED_API_KEY: 'super-secret-metered-key'
         });
 
-        expect(result.code).toBe(0);
         expect(result.stdout).not.toContain('super-secret-metered-key');
         expect(result.stderr).not.toContain('super-secret-metered-key');
 
@@ -66,6 +67,70 @@ describe('configure Metered TURN Hetzner script', () => {
         expect(systemctlCalls).toContain('restart rallar-api-v1.service\n');
     });
 
+    it('rejects unsupported existing secret assignments without replacing the file', async (context) => {
+        const fixture = await mkdtemp(path.join(tmpdir(), 'rallar-metered-preserve-'));
+        context.onTestFinished(() => rm(fixture, { recursive: true, force: true }));
+        const etcDir = path.join(fixture, 'etc/rallar');
+        const secretFile = path.join(etcDir, 'api-v1.secrets.env');
+        await mkdir(etcDir, { recursive: true });
+        const original = 'RALLAR_AUTH_CREDENTIAL_SECRET="unsupported-quoted-secret"\nRALLAR_RTC_TOPOLOGY_DEGREE_LIMIT=4\n';
+        await writeFile(secretFile, original);
+
+        await expect(runScript(context, {
+            RALLAR_REQUIRE_ROOT: '0',
+            RALLAR_RESTART_SERVICE: '0',
+            RALLAR_ETC_DIR: etcDir,
+            RALLAR_SYSTEMD_DIR: path.join(fixture, 'etc/systemd/system'),
+            METERED_APP_NAME: 'replacement-app',
+            METERED_API_KEY: 'replacement-key'
+        })).rejects.toMatchObject({ stderr: expect.stringContaining('Unsupported assignment') });
+
+        expect(await readFile(secretFile, 'utf8')).toBe(original);
+    });
+
+    it('refuses an unreadable secret path before writing the systemd drop-in', async (context) => {
+        const fixture = await mkdtemp(path.join(tmpdir(), 'rallar-metered-unreadable-'));
+        context.onTestFinished(() => rm(fixture, { recursive: true, force: true }));
+        const etcDir = path.join(fixture, 'etc/rallar');
+        const secretFile = path.join(etcDir, 'api-v1.secrets.env');
+        const systemdDir = path.join(fixture, 'etc/systemd/system');
+        await mkdir(secretFile, { recursive: true });
+
+        await expect(runScript(context, {
+            RALLAR_REQUIRE_ROOT: '0',
+            RALLAR_RESTART_SERVICE: '0',
+            RALLAR_ETC_DIR: etcDir,
+            RALLAR_SYSTEMD_DIR: systemdDir,
+            METERED_APP_NAME: 'replacement-app',
+            METERED_API_KEY: 'replacement-key'
+        })).rejects.toThrow();
+
+        expect((await stat(secretFile)).isDirectory()).toBe(true);
+        expect(await readdir(etcDir)).toEqual(['api-v1.secrets.env']);
+        await expect(access(path.join(systemdDir, 'rallar-api-v1.service.d/10-metered-turn.conf'))).rejects.toThrow();
+    });
+
+    it('does not replace a valid secret file with an unsupported new Metered assignment', async (context) => {
+        const fixture = await mkdtemp(path.join(tmpdir(), 'rallar-metered-input-'));
+        context.onTestFinished(() => rm(fixture, { recursive: true, force: true }));
+        const etcDir = path.join(fixture, 'etc/rallar');
+        const secretFile = path.join(etcDir, 'api-v1.secrets.env');
+        await mkdir(etcDir, { recursive: true });
+        const original = 'RALLAR_AUTH_CREDENTIAL_SECRET=prior-secret\n';
+        await writeFile(secretFile, original);
+
+        await expect(runScript(context, {
+            RALLAR_REQUIRE_ROOT: '0',
+            RALLAR_RESTART_SERVICE: '0',
+            RALLAR_ETC_DIR: etcDir,
+            RALLAR_SYSTEMD_DIR: path.join(fixture, 'etc/systemd/system'),
+            METERED_APP_NAME: 'unsupported app name',
+            METERED_API_KEY: 'replacement-key'
+        })).rejects.toThrow();
+
+        expect(await readFile(secretFile, 'utf8')).toBe(original);
+    });
+
     it('keeps the optional Metered secret env file wired into future controller deployments', async () => {
         const deployScript = await readFile(
             path.join(repoRoot, 'scripts/hosted-rallar/controller/02-deploy-controller.sh'),
@@ -93,33 +158,16 @@ describe('configure Metered TURN Hetzner script', () => {
     });
 });
 
-function runScript(env: Record<string, string>): Promise<{
-    code: number | null;
-    stdout: string;
-    stderr: string;
-}> {
-    return new Promise((resolve) => {
-        const child = spawn('bash', [scriptPath], {
+async function runScript(context: TestContext, env: Record<string, string>) {
+    return await runOwnedTestProcess(context, {
+        executable: 'bash',
+        args: [scriptPath],
+        options: {
             cwd: repoRoot,
             env: {
                 ...process.env,
                 ...env
-            },
-            stdio: ['ignore', 'pipe', 'pipe']
-        });
-
-        let stdout = '';
-        let stderr = '';
-        child.stdout.setEncoding('utf8');
-        child.stderr.setEncoding('utf8');
-        child.stdout.on('data', (chunk) => {
-            stdout += chunk;
-        });
-        child.stderr.on('data', (chunk) => {
-            stderr += chunk;
-        });
-        child.on('close', (code) => {
-            resolve({ code, stdout, stderr });
-        });
+            }
+        }
     });
 }

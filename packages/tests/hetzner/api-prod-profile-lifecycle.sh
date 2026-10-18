@@ -3,9 +3,26 @@ set -Eeuo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
+if [[ "${1:-}" == --inspect-query ]]; then
+	shift
+	[[ "${1:-}" == -u && "${2:-}" == postgres && "${3:-}" == -- && "${4:-}" == psql ]]
+	shift 4
+	initdb -D /tmp/inspect-pg -A trust >/dev/null
+	pg_ctl -D /tmp/inspect-pg -o '-c listen_addresses=' -w start >/dev/null
+	createdb rallar_api_v1
+	psql -d postgres -qc 'CREATE ROLE rallar'
+	psql -d rallar_api_v1 -qc 'CREATE TABLE runtime_state_store (store_namespace text NOT NULL)'
+	psql -d rallar_api_v1 -qc "INSERT INTO runtime_state_store VALUES ('auth-users:by-username'), ('auth-users:by-username'), ('group-state:groups'), ('other'), ('other')"
+	psql -d rallar_api_v1 -qc 'CREATE TABLE _prisma_migrations (migration_name text NOT NULL, checksum text NOT NULL, finished_at timestamptz, rolled_back_at timestamptz)'
+	psql -d rallar_api_v1 -qc "INSERT INTO _prisma_migrations VALUES ('20261018000000_fixture', repeat('0', 64), now(), NULL)"
+	psql "$@"
+	pg_ctl -D /tmp/inspect-pg -m immediate -w stop >/dev/null
+	exit 0
+fi
+
 if [[ "${1:-}" != --inside ]]; then
 	for scenario in deploy-success deploy-initial deploy-stop-api-fail deploy-stop-control-fail deploy-still-active deploy-migration-fail deploy-secret-directory \
-		rollout-success rollout-migration-fail rollout-secret-directory rollout-secret-syntax; do
+		rollout-success rollout-metered-preserve rollout-migration-fail rollout-secret-directory rollout-secret-syntax; do
 		docker run --rm --network none --user root \
 			--mount "type=bind,src=${repo_root},dst=/repo,readonly" \
 			-e "TEST_SCENARIO=${scenario}" postgres:16 \
@@ -29,6 +46,18 @@ RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS=operations-admin
 EOF
 if [[ "${TEST_SCENARIO}" == rollout-success ]]; then
 	printf 'RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS=3600000\n' >>/etc/rallar/api-v1.env
+fi
+if [[ "${TEST_SCENARIO}" == rollout-metered-preserve ]]; then
+	printf 'RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS=86400000\n' >>/etc/rallar/api-v1.env
+	cat >/etc/rallar/api-v1.secrets.env <<EOF
+DATABASE_URL=postgres://rallar:$(printf 'b%.0s' {1..64})@127.0.0.1:5432/rallar_api_v1
+RALLAR_AUTH_CREDENTIAL_SECRET=$(printf 'y%.0s' {1..32})
+RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS=3600000
+RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT=4
+RALLAR_ICE_MODE=local
+METERED_APP_NAME=prior-app
+METERED_API_KEY=prior-key
+EOF
 fi
 printf 'RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=stable-operator-token\nRALLAR_BLACK_BOX_ADMIN_TOKEN=stable-admin-token\n' >/etc/rallar/control-server.env
 original_api_environment="$(cat /etc/rallar/api-v1.env)"
@@ -120,6 +149,26 @@ case "${TEST_SCENARIO}" in
 esac
 
 case "${TEST_SCENARIO}" in
+	rollout-metered-preserve)
+		RALLAR_API_PROD_PROFILE_SELF_TEST=validate-existing bash /repo/scripts/hosted-rallar/controller/rallar-api-prod-profile.sh >/fixture/preflight-before.log 2>&1
+		METERED_APP_NAME=replacement-app METERED_API_KEY=replacement-key bash /repo/scripts/hosted-rallar/controller/13-configure-metered-turn.sh --no-restart >/fixture/metered-output.log 2>&1
+		RALLAR_API_PROD_PROFILE_SELF_TEST=validate-existing bash /repo/scripts/hosted-rallar/controller/rallar-api-prod-profile.sh >/fixture/preflight-after.log 2>&1
+		if RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT=3 RALLAR_ROLLOUT_SCRIPT_SELF_TEST=preflight-api-overrides bash "${script}" >/fixture/topology-preflight.log 2>&1; then
+			echo 'Expected preserved secret topology to reject an ineffective rollout override.' >&2
+			exit 1
+		fi
+		bash "${script}" >/fixture/output.log 2>&1
+		grep -Fqx "RALLAR_AUTH_CREDENTIAL_SECRET=$(printf 'y%.0s' {1..32})" /etc/rallar/api-v1.env
+		grep -Fqx 'RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS=3600000' /etc/rallar/api-v1.env
+		grep -Fqx "DATABASE_URL=postgres://rallar:$(printf 'b%.0s' {1..64})@127.0.0.1:5432/rallar_api_v1" /etc/rallar/api-v1.secrets.env
+		grep -Fqx "RALLAR_AUTH_CREDENTIAL_SECRET=$(printf 'y%.0s' {1..32})" /etc/rallar/api-v1.secrets.env
+		grep -Fqx 'RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS=3600000' /etc/rallar/api-v1.secrets.env
+		grep -Fqx 'RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT=4' /etc/rallar/api-v1.secrets.env
+		grep -Fqx 'METERED_APP_NAME=replacement-app' /etc/rallar/api-v1.secrets.env
+		grep -Fqx 'METERED_API_KEY=replacement-key' /etc/rallar/api-v1.secrets.env
+		[[ "$(grep -c '^METERED_APP_NAME=' /etc/rallar/api-v1.secrets.env)" == 1 ]]
+		[[ "$(grep -c '^METERED_API_KEY=' /etc/rallar/api-v1.secrets.env)" == 1 ]]
+		;;
 	rollout-success)
 		RALLAR_API_SERVER_TIMING=1 bash "${script}" >/fixture/output.log 2>&1
 		grep -Fqx 'RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS=3600000' /etc/rallar/api-v1.env
@@ -151,7 +200,7 @@ assert_before() {
 }
 
 case "${TEST_SCENARIO}" in
-	deploy-success | deploy-initial | rollout-success)
+	deploy-success | deploy-initial | rollout-success | rollout-metered-preserve)
 		if [[ "${TEST_SCENARIO}" == deploy-initial ]]; then
 			[[ "${commands}" != *'systemctl stop rallar-api-v1.service'* ]]
 			assert_before 'systemctl show -p ActiveState --value rallar-api-v1.service' 'postgres-sql create-role'

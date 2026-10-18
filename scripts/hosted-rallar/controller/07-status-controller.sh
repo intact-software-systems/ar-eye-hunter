@@ -194,9 +194,9 @@ inspect_database() {
 	database="$(runuser -u postgres -- psql --no-psqlrc --quiet -At -v ON_ERROR_STOP=1 -d rallar_api_v1 -c "
 BEGIN TRANSACTION READ ONLY;
 SELECT json_build_object(
-  'databaseOid', (SELECT oid FROM pg_database WHERE datname = 'rallar_api_v1'),
-  'roleOid', (SELECT oid FROM pg_roles WHERE rolname = 'rallar'),
-  'runtimeStateTableOid', 'runtime_state_store'::regclass::oid,
+  'databaseOid', (SELECT oid::bigint FROM pg_database WHERE datname = 'rallar_api_v1'),
+  'roleOid', (SELECT oid::bigint FROM pg_roles WHERE rolname = 'rallar'),
+  'runtimeStateTableOid', 'runtime_state_store'::regclass::oid::bigint,
   'totalRows', (SELECT count(*) FROM runtime_state_store),
   'authUserRows', (SELECT count(*) FROM runtime_state_store WHERE store_namespace = 'auth-users:by-username'),
   'groupRows', (SELECT count(*) FROM runtime_state_store WHERE store_namespace = 'group-state:groups'),

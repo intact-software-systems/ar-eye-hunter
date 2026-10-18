@@ -10,12 +10,14 @@ DROPIN_FILE="${DROPIN_DIR}/10-metered-turn.conf"
 SYSTEMCTL_BIN="${RALLAR_SYSTEMCTL_BIN:-systemctl}"
 REQUIRE_ROOT="${RALLAR_REQUIRE_ROOT:-1}"
 RESTART_SERVICE="${RALLAR_RESTART_SERVICE:-1}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/rallar-api-effective-env.sh"
 
 usage() {
 	cat <<EOF
 Usage: sudo ./13-configure-metered-turn.sh [--no-restart]
 
-Creates a root-only Metered TURN secret env file and wires it into
+Creates or updates a root-only Metered TURN secret env file and wires it into
 ${SERVICE_NAME} through a systemd drop-in.
 
 The script prompts for METERED_APP_NAME and METERED_API_KEY when they are not
@@ -76,12 +78,37 @@ read_required_value() {
 		exit 1
 	fi
 
-	if [[ "${value}" == *$'\n'* || "${value}" == *$'\r'* ]]; then
-		echo "${name} cannot contain newlines." >&2
+	if [[ "${value}" == *[\'\"\\]* || "${value}" =~ [[:space:]] ]]; then
+		echo "${name} must be a simple unquoted environment value." >&2
 		exit 1
 	fi
 
 	printf '%s' "${value}"
+}
+
+write_preserved_secret_assignments() {
+	local line key
+	[[ -e "${SECRET_FILE}" || -L "${SECRET_FILE}" ]] || return 0
+	[[ -f "${SECRET_FILE}" && -r "${SECRET_FILE}" && ! -L "${SECRET_FILE}" ]] || {
+		echo "Cannot read the existing API secret file for Metered synchronization." >&2
+		return 1
+	}
+	while IFS= read -r line || [[ -n "${line}" ]]; do
+		if [[ -z "${line}" || "${line}" =~ ^[[:space:]]*# ]]; then
+			printf '%s\n' "${line}"
+			continue
+		fi
+		[[ "${line}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || {
+			echo "Unsupported existing API secret assignment for Metered synchronization." >&2
+			return 1
+		}
+		key="${line%%=*}"
+		read_rallar_api_file_value "${SECRET_FILE}" "${key}" >/dev/null || return 1
+		case "${key}" in
+		RALLAR_ICE_MODE | METERED_APP_NAME | METERED_API_KEY) ;;
+		*) printf '%s\n' "${line}" ;;
+		esac
+	done <"${SECRET_FILE}"
 }
 
 metered_app_name="$(read_required_value METERED_APP_NAME METERED_APP_NAME 0)"
@@ -93,11 +120,15 @@ chmod 0700 "${ETC_DIR}"
 
 tmp_file="$(mktemp "${SECRET_FILE}.tmp.XXXXXX")"
 chmod 0600 "${tmp_file}"
+trap 'rm -f -- "${tmp_file}"' EXIT
+if ! write_preserved_secret_assignments >"${tmp_file}"; then
+	exit 1
+fi
 {
 	printf 'RALLAR_ICE_MODE=metered\n'
 	printf 'METERED_APP_NAME=%s\n' "${metered_app_name}"
 	printf 'METERED_API_KEY=%s\n' "${metered_api_key}"
-} >"${tmp_file}"
+} >>"${tmp_file}"
 mv "${tmp_file}" "${SECRET_FILE}"
 chmod 0600 "${SECRET_FILE}"
 

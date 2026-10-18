@@ -100,6 +100,7 @@ async function inspect(context: TestContext, overrides: Record<string, string> =
         LANG: 'C',
         LC_ALL: 'C',
         INSPECT_COMMANDS: commands,
+        INSPECT_REPO_ROOT: repoRoot,
         RALLAR_API_ENV_FILE: envFile,
         RALLAR_API_SECRET_FILE: secretFile,
         RALLAR_CONTROL_ENV_FILE: controlFile,
@@ -232,6 +233,42 @@ describe('hosted operator inspect', () => {
             stdout: ''
         });
     });
+
+    it('fails without partial output for missing or invalid database projection data', async (context) => {
+        const fixture = await inspect(context);
+        const runuser = path.join(fixture.bin, 'runuser');
+        await writeFile(runuser, '#!/usr/bin/env bash\n');
+        await expect(fixture.run()).rejects.toMatchObject({
+            stderr: expect.stringContaining('database projection'),
+            stdout: ''
+        });
+        await writeFile(runuser, '#!/usr/bin/env bash\nprintf \'%s\\n\' \'{"databaseOid":1}\'\n');
+        await expect(fixture.run()).rejects.toMatchObject({
+            stderr: expect.stringContaining('database projection'),
+            stdout: ''
+        });
+    });
+
+    it('projects OIDs and counts from real PostgreSQL 16 without exposing rows', async (context) => {
+        const fixture = await inspect(context);
+        await writeFile(
+            path.join(fixture.bin, 'runuser'),
+            '#!/usr/bin/env bash\nexec docker run --rm --network none --user postgres --mount "type=bind,src=$INSPECT_REPO_ROOT,dst=/repo,readonly" postgres:16 bash /repo/packages/tests/hetzner/api-prod-profile-lifecycle.sh --inspect-query "$@"\n'
+        );
+        const { stdout, stderr } = await fixture.run();
+        expect(stderr).toBe('');
+        const evidence = JSON.parse(stdout);
+        expect(evidence.database).toEqual({
+            databaseOid: expect.any(Number),
+            roleOid: expect.any(Number),
+            runtimeStateTableOid: expect.any(Number),
+            totalRows: 5,
+            authUserRows: 2,
+            groupRows: 1,
+            migrations: [{ name: '20261018000000_fixture', checksum: '0'.repeat(64), applied: true, failed: false }]
+        });
+        expect(stdout).not.toMatch(/auth-users:by-username|group-state:groups|other/);
+    }, 30_000);
 
     it('fails without output when persisted public settings disagree with live API or control configuration', async (context) => {
         const fixture = await inspect(context);

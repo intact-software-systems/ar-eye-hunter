@@ -48,6 +48,10 @@ shell history:
 The script prompts for `METERED_APP_NAME` and a silent `METERED_API_KEY`, writes
 `/etc/rallar/api-v1.secrets.env` as a root-only `0600` file, installs a systemd
 drop-in for `rallar-api-v1.service`, reloads systemd, and restarts API-v1.
+When the secret file already exists, it updates only Metered-owned assignments
+and preserves other supported assignments; an unreadable or unsupported file
+blocks synchronization without replacing it. New Metered values must use the
+same simple unquoted assignment format.
 `02-deploy-controller.sh` also references this optional secret file so future
 redeploys keep Metered enabled when the file exists.
 
