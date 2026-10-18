@@ -7,19 +7,22 @@ import {
 } from 'vitest';
 
 import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { createAppInboxResourceEntry } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
+import { toPhysicalAppInboxQueueKey } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
 import { AppInboxCommandClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-command-client.ts';
+import { AppInboxQueueEntryWriter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-queue-entry-writer.ts';
 import type { AppInboxResultWaiter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-result-waiter.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { decodeJsonWireText, type JsonWireObject } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import { EntityStatus, type Key } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import {
     computeStateWriteDiagnosticPhase,
     type StateWriteDiagnosticPhase
 } from '../../../../../apps/api-v1/scripts/perf/state-write/state-write-diagnostic-projection.ts';
+import { TestResourceInbox } from '../../rallar-system/app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxQueueMessageFixture } from '../../rallar-system/app-inbox/test-support/create-app-inbox-queue-message-fixture.ts';
 
 const profile = {
@@ -103,23 +106,72 @@ function readRecords(serialized: string): readonly JsonWireObject[] {
 }
 
 describe('state-write diagnostic projection', () => {
-    it('retains real originating profile and instance AppInbox completions with phase timing disabled', async () => {
+    it('retains real logical profile, instance and group completions beyond queue key bounds', async () => {
+        const phase = createPhase();
+        const applicationId = `PRIVATE-${'application'.repeat(20)}`;
+        const workspaceId = `PRIVATE-${'workspace'.repeat(20)}`;
+        const profileCommandId = `PRIVATE-${'profile'.repeat(25)}:profile-instance:0`;
+        const groupCommandId = `PRIVATE-${'group'.repeat(30)}:config:1`;
+        const sessionId = `${applicationId}:${workspaceId}:client-0:client-session-0`;
+        const clientContextId = `application=${applicationId}:workspace=${workspaceId}:principal=client-0:caller=client-0:session=${
+            encodeURIComponent(sessionId)
+        }`;
+        const enqueues: readonly AppInboxEnqueueInput[] = [
+            {
+                type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+                topicId: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+                resourceId: `${profileCommandId}-profile`,
+                contextId: clientContextId
+            },
+            {
+                type: AppInboxType.CLIENT_INSTANCE_UPSERT,
+                topicId: AppInboxType.CLIENT_INSTANCE_UPSERT,
+                resourceId: `${profileCommandId}-instance`,
+                contextId: clientContextId
+            },
+            {
+                type: AppInboxType.GROUP_UPDATE,
+                topicId: AppInboxType.GROUP_UPDATE,
+                resourceId: groupCommandId,
+                contextId: `${applicationId}:${workspaceId}:group-1`,
+                authority: {
+                    descriptor: {
+                        operation: 'updateGroup',
+                        scope: { applicationId, workspaceId },
+                        groupId: 'group-1',
+                        targetPrincipalId: null,
+                        sessionId: null,
+                        request: {
+                            requestId: groupCommandId,
+                            actorPrincipalId: 'PRIVATE-principal',
+                            actorSessionId: 'PRIVATE-session',
+                            metadata: { secret: 'PRIVATE-payload' }
+                        }
+                    }
+                }
+            }
+        ].map((enqueue) => ({ ...enqueue, senderId: 'PRIVATE-principal', data: { secret: 'PRIVATE-payload' } }));
         const events: RallarTimingEvent[] = [];
+        const persistedKeys: Key[] = [];
         const client = new AppInboxCommandClient(
             {
-                queueEntryWriter: {
-                    enqueue: async (enqueue) =>
-                        createAppInboxResourceEntry(enqueue, 'PRIVATE-worker-a', {
-                            creationNow: Temporal.Now.instant,
-                            createMessage: createAppInboxQueueMessageFixture
-                        })
-                },
+                queueEntryWriter: new AppInboxQueueEntryWriter({
+                    inboxQueueReader: new InboxQueueReader(new TestResourceInbox(new Map()), {
+                        laneBudgetPolicy: 'fixed-retry-two',
+                        newLaneConcurrency: 1
+                    }, Temporal.Now.instant),
+                    newResourceId: () => 'PRIVATE-generated',
+                    createMessage: createAppInboxQueueMessageFixture
+                }, { serviceId: 'PRIVATE-worker-a', defaultTopicId: 'app-inbox.client-state' }),
                 resultWaiter: {
                     waitForResult: async <Result>(
                         _enqueue: AppInboxEnqueueInput,
-                        _key: Key,
+                        key: Key,
                         decodeResult: AppInboxResultWaiter.ResultDecoder<Result>
-                    ) => Either.ofRight(decodeResult({ status: 'stored', detail: 'PRIVATE-payload' }))
+                    ) => {
+                        persistedKeys.push(key);
+                        return Either.ofRight(decodeResult({ status: 'stored', detail: 'PRIVATE-payload' }));
+                    }
                 }
             },
             {
@@ -136,81 +188,126 @@ describe('state-write diagnostic projection', () => {
         );
         const clock = vi.spyOn(performance, 'now')
             .mockReturnValueOnce(20).mockReturnValueOnce(32.34)
-            .mockReturnValueOnce(40).mockReturnValueOnce(46.78);
+            .mockReturnValueOnce(40).mockReturnValueOnce(46.78)
+            .mockReturnValueOnce(50).mockReturnValueOnce(55);
         const epoch = vi.spyOn(Date, 'now').mockReturnValue(99_999);
         try {
-            const profileResult = await client.enqueueAndWaitForResult({
-                type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
-                ...profile.physicalKey,
-                senderId: 'PRIVATE-principal',
-                data: { secret: 'PRIVATE-profile-payload' }
-            }, (value) => value);
-            const instanceResult = await client.enqueueAndWaitForResult({
-                type: AppInboxType.CLIENT_INSTANCE_UPSERT,
-                ...instance.physicalKey,
-                senderId: 'PRIVATE-principal',
-                data: { secret: 'PRIVATE-instance-payload' }
-            }, (value) => value);
-            expect(profileResult).toEqual(Either.ofRight({ status: 'stored', detail: 'PRIVATE-payload' }));
-            expect(instanceResult).toEqual(Either.ofRight({ status: 'stored', detail: 'PRIVATE-payload' }));
+            for (const enqueue of enqueues) {
+                const result = await client.enqueueAndWaitForResult(enqueue, (value) => value);
+                expect(result).toEqual(Either.ofRight({ status: 'stored', detail: 'PRIVATE-payload' }));
+            }
         }
         finally {
             clock.mockRestore();
             epoch.mockRestore();
         }
-
+        for (const [ordinal, enqueue] of enqueues.entries()) {
+            expect(persistedKeys[ordinal]!.resourceId).not.toBe(enqueue.resourceId);
+            expect(persistedKeys[ordinal]!.contextId).not.toBe(enqueue.contextId);
+        }
         const originalEvents = JSON.stringify(events);
-        const result = computeStateWriteDiagnosticPhase({ ...createPhase(), timingEvents: events }, budget, 65_536);
+        const logicalPhase: StateWriteDiagnosticPhase = {
+            ...phase,
+            scope: { applicationId, workspaceId },
+            commands: [
+                { ...phase.commands[0]!, commandId: profileCommandId },
+                { ...phase.commands[1]!, commandId: groupCommandId, stackIndex: 0 }
+            ],
+            boundaries: [
+                { ...phase.boundaries[1]!, commandId: profileCommandId },
+                { ...phase.boundaries[0]!, commandId: groupCommandId }
+            ],
+            timingEvents: events
+        };
+        const result = computeStateWriteDiagnosticPhase(logicalPhase, budget, 65_536);
         const records = readRecords(result.serialized);
         expect.soft(result.complete).toBe(true);
         expect.soft(records.at(-1)).toMatchObject({
-            timing: { total: 2, retained: 2, rejected: 0, truncated: 0, unassociated: 0 }
+            timing: { total: 3, retained: 3, rejected: 0, truncated: 0, unassociated: 0 }
         });
-        expect(records.filter((record) => record.record === 'timing')).toEqual([
+        expect.soft(records.filter((record) => record.record === 'timing')).toMatchObject([
             {
-                record: 'timing',
                 component: 'app-inbox',
                 operation: 'enqueueAndWaitForResult',
                 status: 'ok',
-                completedAtEpochMs: 99_999,
                 roundedDurationMs: 12.34,
-                approximateStartedAtEpochMs: 99_986.66,
-                association: {
-                    kind: 'command-operation',
-                    commandOrdinal: 0,
-                    operation: 'profile',
-                    originatingStack: 0,
-                    observingStack: 0,
-                    attempt: 'unavailable'
-                },
-                queueAgeMs: 'unavailable',
-                dueAgeMs: 'unavailable',
-                statusMeaning: 'timed-operation-status'
+                association: { commandOrdinal: 0, operation: 'profile', originatingStack: 0, observingStack: 0 }
             },
             {
-                record: 'timing',
                 component: 'app-inbox',
                 operation: 'enqueueAndWaitForResult',
                 status: 'ok',
-                completedAtEpochMs: 99_999,
                 roundedDurationMs: 6.78,
-                approximateStartedAtEpochMs: 99_992.22,
-                association: {
-                    kind: 'command-operation',
-                    commandOrdinal: 0,
-                    operation: 'instance',
-                    originatingStack: 0,
-                    observingStack: 0,
-                    attempt: 'unavailable'
-                },
-                queueAgeMs: 'unavailable',
-                dueAgeMs: 'unavailable',
-                statusMeaning: 'timed-operation-status'
+                association: { commandOrdinal: 0, operation: 'instance', originatingStack: 0, observingStack: 0 }
+            },
+            {
+                component: 'app-inbox',
+                operation: 'enqueueAndWaitForResult',
+                status: 'ok',
+                roundedDurationMs: 5,
+                association: { commandOrdinal: 1, operation: 'command', originatingStack: 0, observingStack: 0 }
             }
         ]);
         expect(result.bytes).toBeLessThanOrEqual(32_768);
         expect(JSON.stringify(events)).toBe(originalEvents);
         expect(result.serialized).not.toContain('PRIVATE');
+
+        for (const [ordinal, event] of events.entries()) {
+            const enqueue = enqueues[ordinal]!;
+            const physicalKey = toPhysicalAppInboxQueueKey({ ...enqueue, resourceId: enqueue.resourceId! });
+            const contradictions: readonly RallarTimingEvent[] = [
+                { ...event, details: { ...event.details, resourceId: 'PRIVATE-wrong' } },
+                { ...event, details: { ...event.details, contextId: 'PRIVATE-wrong' } },
+                { ...event, details: { ...event.details, topicId: 'PRIVATE-wrong' } },
+                { ...event, details: { ...event.details, type: 'PRIVATE-wrong' } },
+                { ...event, serviceId: 'PRIVATE-worker-b' },
+                { ...event, details: { ...event.details, resourceId: undefined } },
+                { ...event, details: { ...event.details, contextId: undefined } },
+                { ...event, details: { ...event.details, topicId: undefined } },
+                { ...event, details: { ...event.details, type: undefined } },
+                { ...event, serviceId: undefined },
+                { ...event, component: 'app-inbox-phase', operation: 'transaction' },
+                {
+                    ...event,
+                    component: 'app-inbox-phase',
+                    operation: 'transaction',
+                    details: { ...event.details, ...physicalKey, resourceId: enqueue.resourceId }
+                },
+                { ...event, details: { ...event.details, contextId: physicalKey.contextId } },
+                { ...event, details: { ...event.details, resourceId: physicalKey.resourceId } },
+                { ...event, details: { ...event.details, ...physicalKey } },
+                { ...event, requestId: physicalKey.resourceId, details: { ...event.details, ...physicalKey } }
+            ];
+            const rejected = computeStateWriteDiagnosticPhase({ ...logicalPhase, timingEvents: contradictions }, budget, 65_536);
+            expect.soft(readRecords(rejected.serialized).at(-1)).toMatchObject({
+                complete: false,
+                timing: { total: 16, retained: 0, rejected: 16, truncated: 0 }
+            });
+            expect(rejected.serialized).not.toContain('PRIVATE');
+        }
+        for (
+            const ambiguous of [
+                { ...logicalPhase, commands: [...logicalPhase.commands, logicalPhase.commands[0]!] },
+                { ...logicalPhase, serviceIds: ['PRIVATE-worker-a', 'PRIVATE-worker-a'] }
+            ]
+        ) {
+            const rejected = computeStateWriteDiagnosticPhase({ ...ambiguous, timingEvents: [events[0]!] }, budget, 65_536);
+            expect(readRecords(rejected.serialized).at(-1)).toMatchObject({
+                complete: false,
+                timing: { total: 1, retained: 0, rejected: 1, truncated: 0 }
+            });
+        }
+        const physicalEvents = events.map((event, ordinal) => ({
+            ...event,
+            component: 'app-inbox-phase',
+            operation: 'transaction',
+            details: { ...event.details, ...persistedKeys[ordinal]! }
+        }));
+        const physical = computeStateWriteDiagnosticPhase({ ...logicalPhase, timingEvents: physicalEvents }, budget, 65_536);
+        expect(physical.complete).toBe(true);
+        expect(readRecords(physical.serialized).at(-1)).toMatchObject({
+            timing: { total: 3, retained: 3, rejected: 0, truncated: 0 }
+        });
     });
 
     it('joins interleaved physical and logical operations while separating origin, observer and clocks', () => {
