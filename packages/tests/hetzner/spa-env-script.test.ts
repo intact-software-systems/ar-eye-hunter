@@ -1,13 +1,20 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
+import type { TestContext } from 'vitest';
 
 const repoRoot = path.resolve(__dirname, '../../..');
 const controlServerConfigPath = path.join(repoRoot, 'apps/rallar-black-box-control-server/deno.json');
 const execFileAsync = promisify(execFile);
+
+async function createEnvironmentFixture(context: TestContext): Promise<string> {
+    const directory = await mkdtemp(path.join(tmpdir(), 'rallar-api-env-'));
+    context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+    return directory;
+}
 
 describe('Hetzner SPA public env wiring', () => {
     it('provides a shared helper that maps public Rallar env to Vite SPA env', async () => {
@@ -45,28 +52,6 @@ describe('Hetzner SPA public env wiring', () => {
             expect(script).toContain('/var/www/rallar-black-box/headless/');
             expect(script).toContain('write_rallar_black_box_spa_env_file');
         }
-    });
-
-    it('preserves a stable API auth credential secret across deploys and rollouts', async () => {
-        const deployScript = await readFile(
-            path.join(repoRoot, 'scripts/hosted-rallar/controller/02-deploy-controller.sh'),
-            'utf8'
-        );
-        const rolloutScript = await readFile(
-            path.join(repoRoot, 'scripts/hosted-rallar/controller/08-rollout-controller.sh'),
-            'utf8'
-        );
-
-        expect(deployScript).toContain(
-            'grep -E "^RALLAR_AUTH_CREDENTIAL_SECRET=" /etc/rallar/api-v1.env'
-        );
-        expect(deployScript).toContain(
-            'RALLAR_AUTH_CREDENTIAL_SECRET=${RALLAR_AUTH_CREDENTIAL_SECRET}'
-        );
-        expect(rolloutScript).toContain('ensure_api_auth_credential_secret');
-        expect(rolloutScript).toContain(
-            'update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_AUTH_CREDENTIAL_SECRET"'
-        );
     });
 
     it('writes and preserves only the canonical API-v1 controller profile and allowlist', async () => {
@@ -114,8 +99,8 @@ describe('Hetzner SPA public env wiring', () => {
         }
     });
 
-    it('normalizes an existing API env file without logging secrets and keeps mode 0600', async () => {
-        const temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'rallar-api-env-'));
+    it('normalizes an existing API env file without logging secrets and keeps mode 0600', async (context) => {
+        const temporaryDirectory = await createEnvironmentFixture(context);
         const apiEnvironmentFile = path.join(temporaryDirectory, 'api-v1.env');
         const authSecret = 'auth-secret-that-must-not-be-logged';
         const databaseUrl = `postgres://rallar:${'d'.repeat(64)}@127.0.0.1:5432/rallar_api_v1`;
@@ -164,7 +149,7 @@ describe('Hetzner SPA public env wiring', () => {
         }
     });
 
-    it('admits the largest co-located agent cohort through the controller per-IP auth limits', async () => {
+    it('admits the largest co-located agent cohort through the controller per-IP auth limits', async (context) => {
         const deployScript = await readFile(
             path.join(repoRoot, 'scripts/hosted-rallar/controller/02-deploy-controller.sh'),
             'utf8'
@@ -174,7 +159,7 @@ describe('Hetzner SPA public env wiring', () => {
         expect(deployScript).toMatch(/^RALLAR_REGISTRATION_IP_RATE_LIMIT=\$\{CO_LOCATED_AUTH_IP_RATE_LIMIT\}$/mu);
         expect(deployScript).toMatch(/^RALLAR_LOGIN_IP_RATE_LIMIT=\$\{CO_LOCATED_AUTH_IP_RATE_LIMIT\}$/mu);
 
-        const temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'rallar-api-env-'));
+        const temporaryDirectory = await createEnvironmentFixture(context);
         const apiEnvironmentFile = path.join(temporaryDirectory, 'api-v1.env');
         await writeFile(
             apiEnvironmentFile,
@@ -203,8 +188,8 @@ describe('Hetzner SPA public env wiring', () => {
         ].join('\n'));
     });
 
-    it('writes non-empty optional API overrides and removes them when rollout inputs are blank', async () => {
-        const temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'rallar-api-env-'));
+    it('writes non-empty optional API overrides and removes them when rollout inputs are blank', async (context) => {
+        const temporaryDirectory = await createEnvironmentFixture(context);
         const apiEnvironmentFile = path.join(temporaryDirectory, 'api-v1.env');
         const rolloutScript = path.join(
             repoRoot,

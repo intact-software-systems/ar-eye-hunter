@@ -25,7 +25,7 @@ const recordingStub = '#!/usr/bin/env bash\nprintf "%s %s\\n" "$(basename "$0")"
 const runuserStub = [
     '#!/usr/bin/env bash',
     'printf "runuser %s database_url_env=%s\\n" "$*" "${DATABASE_URL:-}" >> "$STUB_LOG"',
-    'if [[ "$4" == psql ]]; then cat >> "$STUB_LOG"; fi',
+    'if [[ "$2" == postgres ]]; then cat >> "$STUB_LOG"; fi',
     'if [[ -n "${STUB_FAIL_ON:-}" && "$*" == *"${STUB_FAIL_ON}"* ]]; then exit 1; fi',
     ''
 ].join('\n');
@@ -99,7 +99,7 @@ describe('Hetzner controller API prod profile on the VM Postgres', () => {
         }
     );
 
-    it('wipes the hosted API database and applies the Prisma migrations as the service user', async (context) => {
+    it('migrates the existing hosted API database without replacing its role, credentials or durable rows', async (context) => {
         const stubDirectory = await createStubDirectory(context, { runuser: runuserStub });
         const password = 'a'.repeat(64);
         const databaseUrl = `postgres://rallar:${password}@127.0.0.1:5432/rallar_api_v1`;
@@ -111,37 +111,33 @@ describe('Hetzner controller API prod profile on the VM Postgres', () => {
             scriptPath: helperScriptPath,
             stubDirectory,
             environment: {
-                RALLAR_API_PROD_PROFILE_SELF_TEST: 'reset-store',
+                RALLAR_API_PROD_PROFILE_SELF_TEST: 'migrate-store',
                 RALLAR_API_ENV_FILE: envFile,
                 RALLAR_API_STORE_FAILURE_FILE: path.join(stubDirectory, 'api-v1.store-failure'),
                 RALLAR_CHECKOUT_DIR: checkoutDir
             }
         });
 
-        expect(stdout).toContain('resetApiPostgresStore=true');
+        expect(stdout).toContain('migratedApiPostgresStore=true');
         expect(`${stdout}${stderr}`).not.toContain(password);
         const log = await readStubLog(stubDirectory);
-        const roleAt = log.indexOf(`ALTER ROLE rallar WITH LOGIN PASSWORD '${password}';`);
-        const dropAt = log.indexOf('DROP DATABASE IF EXISTS rallar_api_v1 WITH (FORCE);');
-        const createAt = log.indexOf('CREATE DATABASE rallar_api_v1 OWNER rallar;');
         const migrateLine = [
             'runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno deno task',
             `--config ${checkoutDir}/apps/api-v1/deno.json prisma migrate deploy`,
             `database_url_env=${databaseUrl}`
         ].join(' ');
-        const migrateAt = log.indexOf(migrateLine);
-        expect(log).toContain('runuser -u postgres -- psql --no-psqlrc --quiet -v ON_ERROR_STOP=1 -d postgres');
-        expect(roleAt).toBeGreaterThan(-1);
-        expect(dropAt).toBeGreaterThan(roleAt);
-        expect(createAt).toBeGreaterThan(dropAt);
-        expect(migrateAt).toBeGreaterThan(createAt);
-        // The password reaches psql on stdin and Prisma through the environment, never through an argv.
+        expect(log).toContain('runuser -u rallar -- psql --no-psqlrc');
+        expect(log).toContain(migrateLine);
+        expect(log).not.toContain('DROP DATABASE');
+        expect(log).not.toContain('ALTER ROLE');
+        expect(log).not.toContain('CREATE DATABASE');
+        // The password reaches the connection probe and Prisma through the environment, never through an argv.
         for (const line of log.split('\n').filter((entry) => entry.startsWith('runuser '))) {
             expect(line.replace(/ database_url_env=.*$/u, '')).not.toContain(password);
         }
     });
 
-    it('refuses to wipe a store without the controller-owned loopback DATABASE_URL', async (context) => {
+    it('refuses to migrate without the controller-owned loopback DATABASE_URL', async (context) => {
         const stubDirectory = await createStubDirectory(context, { runuser: runuserStub });
         const envFile = path.join(stubDirectory, 'api-v1.env');
         await writeFile(envFile, 'DATABASE_URL=postgres://someone:else@db.example.test:5432/other?schema=public\n');
@@ -150,29 +146,129 @@ describe('Hetzner controller API prod profile on the VM Postgres', () => {
             scriptPath: helperScriptPath,
             stubDirectory,
             environment: {
-                RALLAR_API_PROD_PROFILE_SELF_TEST: 'reset-store',
+                RALLAR_API_PROD_PROFILE_SELF_TEST: 'migrate-store',
                 RALLAR_API_ENV_FILE: envFile,
                 RALLAR_CHECKOUT_DIR: path.join(stubDirectory, 'checkout')
             }
-        })).rejects.toMatchObject({ stderr: expect.stringContaining('Missing the controller DATABASE_URL') });
+        })).rejects.toMatchObject({ stderr: expect.stringContaining('Invalid controller DATABASE_URL') });
         expect(await readStubLog(stubDirectory)).toBe('');
     });
 
-    it('writes one generated loopback DATABASE_URL without a schema parameter and keeps it across rollouts', async (context) => {
+    it('rejects a missing or malformed existing DATABASE_URL before rewriting the rollout environment', async (context) => {
         const stubDirectory = await createStubDirectory(context, {});
         const envFile = path.join(stubDirectory, 'api-v1.env');
-        await writeFile(envFile, 'PORT=8080\nRALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS=operations-admin\n');
+        const original = 'PORT=8080\nDATABASE_URL=postgres://wrong:password@other:5432/db\n';
+        await writeFile(envFile, original);
         const environment = { RALLAR_ROLLOUT_SCRIPT_SELF_TEST: 'write-api-prod-environment', RALLAR_API_ENV_FILE: envFile };
 
-        const first = await runScript(context, { scriptPath: rolloutScriptPath, stubDirectory, environment });
-        const databaseUrl = await readEnvValue(envFile, 'DATABASE_URL');
-        await runScript(context, { scriptPath: rolloutScriptPath, stubDirectory, environment });
+        await expect(runScript(context, { scriptPath: rolloutScriptPath, stubDirectory, environment }))
+            .rejects.toMatchObject({ stderr: expect.stringContaining('Invalid controller DATABASE_URL') });
 
-        expect(first.stdout).toContain('wroteApiProdEnvironment=true');
-        expect(databaseUrl).toMatch(controllerDatabaseUrlPattern);
-        expect(`${first.stdout}${first.stderr}`).not.toContain(databaseUrl);
-        expect(await readEnvValue(envFile, 'DATABASE_URL')).toBe(databaseUrl);
-        expect((await stat(envFile)).mode & 0o777).toBe(0o600);
+        expect(await readFile(envFile, 'utf8')).toBe(original);
+    });
+
+    it('rejects an invalid secret-file DATABASE_URL that would override a valid ordinary env', async (context) => {
+        const stubDirectory = await createStubDirectory(context, {});
+        const envFile = path.join(stubDirectory, 'api-v1.env');
+        const secretFile = path.join(stubDirectory, 'api-v1.secrets.env');
+        await writeFile(envFile, `DATABASE_URL=postgres://rallar:${'a'.repeat(64)}@127.0.0.1:5432/rallar_api_v1\n`);
+        await writeFile(secretFile, 'DATABASE_URL=postgres://wrong:password@other:5432/db\n');
+        const original = await readFile(envFile, 'utf8');
+
+        await expect(runScript(context, {
+            scriptPath: rolloutScriptPath,
+            stubDirectory,
+            environment: {
+                RALLAR_ROLLOUT_SCRIPT_SELF_TEST: 'write-api-prod-environment',
+                RALLAR_API_ENV_FILE: envFile,
+                RALLAR_API_SECRET_FILE: secretFile
+            }
+        })).rejects.toMatchObject({ stderr: expect.stringContaining('Invalid controller DATABASE_URL') });
+        expect(await readFile(envFile, 'utf8')).toBe(original);
+    });
+
+    it('allows initial URL provisioning when the API secret file contains only Metered credentials', async (context) => {
+        const stubDirectory = await createStubDirectory(context, {});
+        const envFile = path.join(stubDirectory, 'api-v1.env');
+        const secretFile = path.join(stubDirectory, 'api-v1.secrets.env');
+        await writeFile(secretFile, 'METERED_APP_NAME=fixture\nMETERED_API_KEY=fixture-key\n');
+
+        const result = await runScript(context, {
+            scriptPath: helperScriptPath,
+            stubDirectory,
+            environment: {
+                RALLAR_API_PROD_PROFILE_SELF_TEST: 'resolve-initial-database-url',
+                RALLAR_API_ENV_FILE: envFile,
+                RALLAR_API_SECRET_FILE: secretFile
+            }
+        });
+
+        expect(result.stdout.trim()).toMatch(controllerDatabaseUrlPattern);
+        expect(result.stderr).toBe('');
+    });
+
+    it('checks the effective secret file and rejects credential replacement before a rollout', async (context) => {
+        const stubDirectory = await createStubDirectory(context, {});
+        const envFile = path.join(stubDirectory, 'api-v1.env');
+        const secretFile = path.join(stubDirectory, 'api-v1.secrets.env');
+        const controlFile = path.join(stubDirectory, 'control-server.env');
+        const databaseUrl = `postgres://rallar:${'a'.repeat(64)}@127.0.0.1:5432/rallar_api_v1`;
+        await writeFile(
+            envFile,
+            `DATABASE_URL=${databaseUrl}\nRALLAR_AUTH_CREDENTIAL_SECRET=${
+                'x'.repeat(32)
+            }\nRALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=ordinary-token\nRALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS=operations-admin\n`
+        );
+        await writeFile(secretFile, `RALLAR_AUTH_CREDENTIAL_SECRET=${'y'.repeat(32)}\nRALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=effective-token\n`);
+        await writeFile(controlFile, 'RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=effective-token\n');
+        const environment = {
+            RALLAR_API_PROD_PROFILE_SELF_TEST: 'validate-existing',
+            RALLAR_API_ENV_FILE: envFile,
+            RALLAR_API_SECRET_FILE: secretFile,
+            RALLAR_CONTROL_ENV_FILE: controlFile
+        };
+
+        const accepted = await runScript(context, { scriptPath: helperScriptPath, stubDirectory, environment });
+        expect(accepted.stdout).toContain('validatedExistingApiStore=true');
+        await writeFile(controlFile, 'RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=other-token\n');
+        await expect(runScript(context, { scriptPath: helperScriptPath, stubDirectory, environment }))
+            .rejects.toMatchObject({ stderr: expect.stringContaining('control-server operator secret') });
+        await writeFile(controlFile, 'RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=effective-token\n');
+        await expect(runScript(context, {
+            scriptPath: helperScriptPath,
+            stubDirectory,
+            environment: { ...environment, RALLAR_AUTH_CREDENTIAL_SECRET: 'z'.repeat(32) }
+        })).rejects.toMatchObject({ stderr: expect.stringContaining('refusing credential rotation') });
+        await writeFile(secretFile, 'RALLAR_AUTH_CREDENTIAL_SECRET=\nRALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=effective-token\n');
+        await expect(runScript(context, { scriptPath: helperScriptPath, stubDirectory, environment }))
+            .rejects.toMatchObject({ stderr: expect.stringContaining('Missing existing API auth') });
+        await writeFile(secretFile, `RALLAR_AUTH_CREDENTIAL_SECRET=${'y'.repeat(32)}\nRALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=effective-token\n`);
+        await writeFile(envFile, `DATABASE_URL=${databaseUrl}\nRALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS=\n`);
+        await expect(runScript(context, { scriptPath: helperScriptPath, stubDirectory, environment }))
+            .rejects.toMatchObject({ stderr: expect.stringContaining('Missing existing operator allowlist') });
+    });
+
+    it('provisions an absent database once and refuses to overwrite an existing role or database', async (context) => {
+        const stubDirectory = await createStubDirectory(context, {
+            runuser: `${runuserStub}\nif [[ "$2" == postgres ]]; then printf '0|0\\n'; fi\n`
+        });
+        const databaseUrl = `postgres://rallar:${'a'.repeat(64)}@127.0.0.1:5432/rallar_api_v1`;
+        const envFile = path.join(stubDirectory, 'api-v1.env');
+        await writeFile(envFile, `DATABASE_URL=${databaseUrl}\n`);
+        const environment = {
+            RALLAR_API_PROD_PROFILE_SELF_TEST: 'provision-store',
+            RALLAR_API_ENV_FILE: envFile,
+            RALLAR_API_STORE_FAILURE_FILE: path.join(stubDirectory, 'api-v1.store-failure'),
+            RALLAR_CHECKOUT_DIR: path.join(stubDirectory, 'checkout')
+        };
+
+        const provisioned = await runScript(context, { scriptPath: helperScriptPath, stubDirectory, environment });
+        expect(provisioned.stdout).toContain('provisionedApiPostgresStore=true');
+        expect(await readStubLog(stubDirectory)).toContain('CREATE DATABASE rallar_api_v1 OWNER rallar;');
+
+        await writeFile(path.join(stubDirectory, 'bin/runuser'), `${runuserStub}\nif [[ "$2" == postgres ]]; then printf '1|1\\n'; fi\n`);
+        await expect(runScript(context, { scriptPath: helperScriptPath, stubDirectory, environment }))
+            .rejects.toMatchObject({ stderr: expect.stringContaining('already exists') });
     });
 
     it.for([
@@ -182,7 +278,13 @@ describe('Hetzner controller API prod profile on the VM Postgres', () => {
     ])('keeps the operator allowlist the prod profile requires from $label', async ({ requested, current, expected }, context) => {
         const stubDirectory = await createStubDirectory(context, {});
         const envFile = path.join(stubDirectory, 'api-v1.env');
-        await writeFile(envFile, current === undefined ? 'PORT=8080\n' : `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS=${current}\n`);
+        const databaseUrl = `postgres://rallar:${'a'.repeat(64)}@127.0.0.1:5432/rallar_api_v1`;
+        await writeFile(
+            envFile,
+            current === undefined
+                ? `PORT=8080\nDATABASE_URL=${databaseUrl}\n`
+                : `DATABASE_URL=${databaseUrl}\nRALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS=${current}\n`
+        );
 
         await runScript(context, {
             scriptPath: rolloutScriptPath,
@@ -204,15 +306,15 @@ describe('Hetzner controller API prod profile on the VM Postgres', () => {
         expect(await readEnvValue(envFile, 'RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS')).toBe(operatorClientIds);
     });
 
-    it('rolls out and deploys by wiping the store after the API stops and before it starts again', async () => {
+    it('keeps migration between stopping and starting API services in rollout and deploy', async () => {
         const rolloutScript = await readFile(rolloutScriptPath, 'utf8');
         const deployScript = await readFile(deployScriptPath, 'utf8');
 
         expect(rolloutScript).toMatch(
-            /install_rallar_api_postgres_server\n[\s\S]*systemctl stop "\$\{service\}"[\s\S]*write_api_prod_profile_environment\n[\s\S]*reset_rallar_api_postgres_store "\$\{RALLAR_CHECKOUT_DIR\}"[\s\S]*systemctl start rallar-api-v1\.service/u
+            /install_rallar_api_postgres_server\n[\s\S]*systemctl stop "\$\{service\}"[\s\S]*write_api_prod_profile_environment\n[\s\S]*migrate_rallar_api_postgres_store "\$\{RALLAR_CHECKOUT_DIR\}"[\s\S]*systemctl start rallar-api-v1\.service/u
         );
         expect(deployScript).toMatch(
-            /install_rallar_api_postgres_server\n[\s\S]*cat >\/etc\/rallar\/api-v1\.env[\s\S]*systemctl stop rallar-api-v1\.service[\s\S]*reset_rallar_api_postgres_store "\$\{RALLAR_CHECKOUT_DIR\}" "\$\{RALLAR_API_DATABASE_URL\}"\n[\s\S]*systemctl enable --now rallar-api-v1\.service/u
+            /install_rallar_api_postgres_server\n[\s\S]*cat >\/etc\/rallar\/api-v1\.env[\s\S]*systemctl stop rallar-api-v1\.service[\s\S]*(?:provision|migrate)_rallar_api_postgres_store[\s\S]*systemctl enable --now rallar-api-v1\.service/u
         );
         expect(deployScript).toContain('After=network-online.target postgresql.service');
         expect(deployScript).toContain('Wants=network-online.target postgresql.service');
@@ -242,7 +344,7 @@ describe('Hetzner controller API prod profile on the VM Postgres', () => {
     });
 
     it.for([
-        { stage: 'wipe', failOn: 'psql' },
+        { stage: 'connection', failOn: 'psql' },
         { stage: 'migrations', failOn: 'prisma migrate deploy' }
     ])('marks the store unusable with an ::error:: when the $stage fails', async ({ stage, failOn }, context) => {
         const stubDirectory = await createStubDirectory(context, { runuser: runuserStub });
@@ -254,7 +356,7 @@ describe('Hetzner controller API prod profile on the VM Postgres', () => {
             scriptPath: helperScriptPath,
             stubDirectory,
             environment: {
-                RALLAR_API_PROD_PROFILE_SELF_TEST: 'reset-store',
+                RALLAR_API_PROD_PROFILE_SELF_TEST: 'migrate-store',
                 RALLAR_API_ENV_FILE: envFile,
                 RALLAR_API_STORE_FAILURE_FILE: failureFile,
                 RALLAR_CHECKOUT_DIR: path.join(stubDirectory, 'checkout'),
@@ -264,7 +366,7 @@ describe('Hetzner controller API prod profile on the VM Postgres', () => {
         expect(await readFile(failureFile, 'utf8')).toContain(stage);
     });
 
-    it('clears the unusable-store mark once the wipe and migrations succeed', async (context) => {
+    it('clears the unusable-store mark once migrations succeed', async (context) => {
         const stubDirectory = await createStubDirectory(context, { runuser: runuserStub });
         const envFile = path.join(stubDirectory, 'api-v1.env');
         await writeFile(envFile, `DATABASE_URL=postgres://rallar:${'a'.repeat(64)}@127.0.0.1:5432/rallar_api_v1\n`);
@@ -275,7 +377,7 @@ describe('Hetzner controller API prod profile on the VM Postgres', () => {
             scriptPath: helperScriptPath,
             stubDirectory,
             environment: {
-                RALLAR_API_PROD_PROFILE_SELF_TEST: 'reset-store',
+                RALLAR_API_PROD_PROFILE_SELF_TEST: 'migrate-store',
                 RALLAR_API_ENV_FILE: envFile,
                 RALLAR_API_STORE_FAILURE_FILE: failureFile,
                 RALLAR_CHECKOUT_DIR: path.join(stubDirectory, 'checkout')

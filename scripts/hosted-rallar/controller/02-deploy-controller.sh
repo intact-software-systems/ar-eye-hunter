@@ -72,6 +72,14 @@ fi
 echo "==> Ensuring the API-v1 PostgreSQL server"
 install_rallar_api_postgres_server
 
+if [[ -e /etc/rallar/api-v1.env ]]; then
+	validate_rallar_api_existing_store_configuration /etc/rallar/api-v1.env
+	RALLAR_API_EXISTING_STORE=1
+else
+	require_rallar_api_absent_store
+	RALLAR_API_EXISTING_STORE=0
+fi
+
 echo "==> Building rallar-black-box SPA"
 build_rallar_black_box_spa "${RALLAR_CHECKOUT_DIR}"
 
@@ -92,33 +100,12 @@ install -d -m 0755 -o rallar -g rallar /var/lib/rallar-black-box-control
 install -d -m 0755 -o rallar -g rallar /var/lib/rallar-deno
 write_rallar_black_box_spa_env_file
 
-if [[ -z "${RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET:-}" && -r /etc/rallar/api-v1.env ]]; then
-	RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET="$(
-		grep -E "^RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=" /etc/rallar/api-v1.env |
-			tail -n 1 |
-			cut -d= -f2- || true
-	)"
-fi
-if [[ -z "${RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET:-}" && -r /etc/rallar/control-server.env ]]; then
-	RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET="$(
-		grep -E "^RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=" /etc/rallar/control-server.env |
-			tail -n 1 |
-			cut -d= -f2- || true
-	)"
-fi
-if [[ -z "${RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET:-}" ]]; then
-	RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET="$(openssl rand -hex 32)"
-fi
-
-if [[ -z "${RALLAR_AUTH_CREDENTIAL_SECRET:-}" && -r /etc/rallar/api-v1.env ]]; then
-	RALLAR_AUTH_CREDENTIAL_SECRET="$(
-		grep -E "^RALLAR_AUTH_CREDENTIAL_SECRET=" /etc/rallar/api-v1.env |
-			tail -n 1 |
-			cut -d= -f2- || true
-	)"
-fi
-if [[ -z "${RALLAR_AUTH_CREDENTIAL_SECRET:-}" ]]; then
-	RALLAR_AUTH_CREDENTIAL_SECRET="$(openssl rand -hex 32)"
+if [[ "${RALLAR_API_EXISTING_STORE}" == "1" ]]; then
+	RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET="$(read_rallar_api_effective_env_value /etc/rallar/api-v1.env RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET)"
+	RALLAR_AUTH_CREDENTIAL_SECRET="$(read_rallar_api_effective_env_value /etc/rallar/api-v1.env RALLAR_AUTH_CREDENTIAL_SECRET)"
+else
+	RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET="${RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET:-$(openssl rand -hex 32)}"
+	RALLAR_AUTH_CREDENTIAL_SECRET="${RALLAR_AUTH_CREDENTIAL_SECRET:-$(openssl rand -hex 32)}"
 fi
 if ((${#RALLAR_AUTH_CREDENTIAL_SECRET} < 32)); then
 	echo "RALLAR_AUTH_CREDENTIAL_SECRET must contain at least 32 characters." >&2
@@ -159,7 +146,7 @@ RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS=${RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS}
 RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS=${RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS}
 EOF
 chmod 0600 /etc/rallar/api-v1.env
-echo "API-v1 uses the prod profile on this VM's Postgres store ${RALLAR_API_DATABASE_NAME}; every deploy and rollout wipes it."
+echo "API-v1 uses the prod profile on this VM's Postgres store ${RALLAR_API_DATABASE_NAME}; deploy and rollout preserve existing data."
 
 if [[ -z "${RALLAR_CONTROL_ADMIN_TOKEN:-}" && -r /etc/rallar/control-server.env ]]; then
 	RALLAR_CONTROL_ADMIN_TOKEN="$(
@@ -245,10 +232,15 @@ EOF
 echo "==> Writing Caddyfile"
 write_rallar_controller_caddyfile
 
-echo "==> Resetting the API-v1 Postgres store"
+echo "==> Preparing the API-v1 Postgres store"
 systemctl daemon-reload
 systemctl stop rallar-api-v1.service || true
-reset_rallar_api_postgres_store "${RALLAR_CHECKOUT_DIR}" "${RALLAR_API_DATABASE_URL}"
+systemctl stop rallar-black-box-control.service || true
+if [[ "${RALLAR_API_EXISTING_STORE}" == "1" ]]; then
+	migrate_rallar_api_postgres_store "${RALLAR_CHECKOUT_DIR}" "${RALLAR_API_DATABASE_URL}"
+else
+	provision_rallar_api_postgres_store "${RALLAR_CHECKOUT_DIR}" "${RALLAR_API_DATABASE_URL}"
+fi
 
 echo "==> Starting services"
 systemctl enable --now rallar-api-v1.service

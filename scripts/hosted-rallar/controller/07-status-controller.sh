@@ -19,7 +19,7 @@ fi
 if [[ -z "${api_profile}" ]]; then
 	echo "RALLAR_API_CONFIGURATION_PROFILE not found in ${RALLAR_API_ENV_FILE}"
 elif [[ "${api_profile}" == "prod" ]]; then
-	echo "RALLAR_API_CONFIGURATION_PROFILE=prod on this VM's Postgres; every rollout wipes the store."
+	echo "RALLAR_API_CONFIGURATION_PROFILE=prod on this VM's Postgres; rollouts preserve the store."
 else
 	echo "WARNING: RALLAR_API_CONFIGURATION_PROFILE=${api_profile}; the controller runs the prod profile on this VM's Postgres. Run 08-rollout-controller.sh to apply it."
 fi

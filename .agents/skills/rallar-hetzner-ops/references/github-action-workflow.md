@@ -40,8 +40,9 @@ setup. For repeated runs after the selected ref is already deployed, use the
 fast path:
 
 The dispatch helper and the workflow input both default `register_before_login=true`
-because every full rollout wipes the controller API's Postgres store and with it
-the disposable auth users; with registration on, each headless agent gets its own
+so first-run disposable auth users are created; an existing user signs in with
+the same credentials. A full rollout preserves the controller API's Postgres store.
+With registration on, each headless agent gets its own
 `<prefix>-NN` user. Override it with `--register-before-login false` only for
 persistent pre-provisioned users signing in as the shared account.
 
@@ -103,8 +104,7 @@ TLS requirement.
 - `wait_for_agents`: wait until requested agents are connected.
 - `ready_timeout_seconds`: agent and distributed readiness timeout.
 - `terminal_timeout_seconds`: distributed recipe terminal-state timeout.
-- `register_before_login`: use after controller rollouts, which wipe the API's
-  disposable users; the helper and the workflow both default this to `true`, and each agent
+- `register_before_login`: the helper and workflow default this to `true`, and each agent
   then registers its own `<prefix>-NN` user.
 - `stop_after_run`: stop the headless worker service after artifacts are
   collected. Default: `true`.
