@@ -72,7 +72,10 @@ fi
 echo "==> Ensuring the API-v1 PostgreSQL server"
 install_rallar_api_postgres_server
 
-if [[ -e /etc/rallar/api-v1.env ]]; then
+rallar_api_service_load_state="$(systemctl show -p LoadState --value rallar-api-v1.service)"
+rallar_control_service_load_state="$(systemctl show -p LoadState --value rallar-black-box-control.service)"
+
+if [[ -e /etc/rallar/api-v1.env || -L /etc/rallar/api-v1.env ]]; then
 	validate_rallar_api_existing_store_configuration /etc/rallar/api-v1.env
 	RALLAR_API_EXISTING_STORE=1
 else
@@ -234,8 +237,28 @@ write_rallar_controller_caddyfile
 
 echo "==> Preparing the API-v1 Postgres store"
 systemctl daemon-reload
-systemctl stop rallar-api-v1.service || true
-systemctl stop rallar-black-box-control.service || true
+stop_controller_service_for_store_change() {
+	local service="$1"
+	local original_load_state="$2"
+	local active_state
+	if [[ -z "${original_load_state}" ]]; then
+		echo "Cannot determine whether ${service} was installed; refusing a store change." >&2
+		return 1
+	fi
+	if [[ "${original_load_state}" != not-found ]]; then
+		systemctl stop "${service}" || {
+			echo "Could not stop ${service}; refusing a store change." >&2
+			return 1
+		}
+	fi
+	active_state="$(systemctl show -p ActiveState --value "${service}")" || return 1
+	if [[ "${active_state}" != inactive && "${active_state}" != failed ]]; then
+		echo "${service} is ${active_state:-unknown}; refusing a store change." >&2
+		return 1
+	fi
+}
+stop_controller_service_for_store_change rallar-api-v1.service "${rallar_api_service_load_state}"
+stop_controller_service_for_store_change rallar-black-box-control.service "${rallar_control_service_load_state}"
 if [[ "${RALLAR_API_EXISTING_STORE}" == "1" ]]; then
 	migrate_rallar_api_postgres_store "${RALLAR_CHECKOUT_DIR}" "${RALLAR_API_DATABASE_URL}"
 else

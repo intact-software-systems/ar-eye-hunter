@@ -15,7 +15,6 @@ interface ScriptRunInput {
 const repoRoot = path.resolve(__dirname, '../../..');
 const controllerDirectory = path.join(repoRoot, 'scripts/hosted-rallar/controller');
 const helperScriptPath = path.join(controllerDirectory, 'rallar-api-prod-profile.sh');
-const deployScriptPath = path.join(controllerDirectory, '02-deploy-controller.sh');
 const statusScriptPath = path.join(controllerDirectory, '07-status-controller.sh');
 const rolloutScriptPath = path.join(controllerDirectory, '08-rollout-controller.sh');
 const controllerDatabaseUrlPattern = /^postgres:\/\/rallar:[0-9a-f]{64}@127\.0\.0\.1:5432\/rallar_api_v1$/u;
@@ -248,6 +247,39 @@ describe('Hetzner controller API prod profile on the VM Postgres', () => {
             .rejects.toMatchObject({ stderr: expect.stringContaining('Missing existing operator allowlist') });
     });
 
+    it.for([
+        { label: 'a directory', content: undefined },
+        { label: 'an unsupported exported assignment', content: `export DATABASE_URL=postgres://rallar:${'b'.repeat(64)}@127.0.0.1:5432/rallar_api_v1\n` },
+        { label: 'an unsupported quoted assignment', content: `DATABASE_URL="postgres://rallar:${'b'.repeat(64)}@127.0.0.1:5432/rallar_api_v1"\n` }
+    ])('rejects $label in the effective secret file', async ({ content }, context) => {
+        const stubDirectory = await createStubDirectory(context, {});
+        const envFile = path.join(stubDirectory, 'api-v1.env');
+        const secretFile = path.join(stubDirectory, 'api-v1.secrets.env');
+        const databaseUrl = `postgres://rallar:${'a'.repeat(64)}@127.0.0.1:5432/rallar_api_v1`;
+        const original = `DATABASE_URL=${databaseUrl}\nRALLAR_AUTH_CREDENTIAL_SECRET=${
+            'x'.repeat(32)
+        }\nRALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=stable-token\nRALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS=operations-admin\n`;
+        await writeFile(envFile, original);
+        if (content === undefined) {
+            await mkdir(secretFile);
+        }
+        else {
+            await writeFile(secretFile, content);
+        }
+
+        await expect(runScript(context, {
+            scriptPath: helperScriptPath,
+            stubDirectory,
+            environment: {
+                RALLAR_API_PROD_PROFILE_SELF_TEST: 'validate-existing',
+                RALLAR_API_ENV_FILE: envFile,
+                RALLAR_API_SECRET_FILE: secretFile
+            }
+        })).rejects.toMatchObject({ stderr: expect.stringContaining('API secret file') });
+        expect(await readFile(envFile, 'utf8')).toBe(original);
+        expect(await readStubLog(stubDirectory)).toBe('');
+    });
+
     it('provisions an absent database once and refuses to overwrite an existing role or database', async (context) => {
         const stubDirectory = await createStubDirectory(context, {
             runuser: `${runuserStub}\nif [[ "$2" == postgres ]]; then printf '0|0\\n'; fi\n`
@@ -306,18 +338,39 @@ describe('Hetzner controller API prod profile on the VM Postgres', () => {
         expect(await readEnvValue(envFile, 'RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS')).toBe(operatorClientIds);
     });
 
-    it('keeps migration between stopping and starting API services in rollout and deploy', async () => {
-        const rolloutScript = await readFile(rolloutScriptPath, 'utf8');
-        const deployScript = await readFile(deployScriptPath, 'utf8');
+    it('keeps the effective secret-file operator allowlist when rewriting the ordinary environment', async (context) => {
+        const stubDirectory = await createStubDirectory(context, {});
+        const envFile = path.join(stubDirectory, 'api-v1.env');
+        const secretFile = path.join(stubDirectory, 'api-v1.secrets.env');
+        await writeFile(
+            envFile,
+            `DATABASE_URL=postgres://rallar:${'a'.repeat(64)}@127.0.0.1:5432/rallar_api_v1\nRALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS=ordinary-operator\n`
+        );
+        await writeFile(secretFile, 'RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS=effective-operator\n');
 
-        expect(rolloutScript).toMatch(
-            /install_rallar_api_postgres_server\n[\s\S]*systemctl stop "\$\{service\}"[\s\S]*write_api_prod_profile_environment\n[\s\S]*migrate_rallar_api_postgres_store "\$\{RALLAR_CHECKOUT_DIR\}"[\s\S]*systemctl start rallar-api-v1\.service/u
-        );
-        expect(deployScript).toMatch(
-            /install_rallar_api_postgres_server\n[\s\S]*cat >\/etc\/rallar\/api-v1\.env[\s\S]*systemctl stop rallar-api-v1\.service[\s\S]*(?:provision|migrate)_rallar_api_postgres_store[\s\S]*systemctl enable --now rallar-api-v1\.service/u
-        );
-        expect(deployScript).toContain('After=network-online.target postgresql.service');
-        expect(deployScript).toContain('Wants=network-online.target postgresql.service');
+        await runScript(context, {
+            scriptPath: rolloutScriptPath,
+            stubDirectory,
+            environment: {
+                RALLAR_ROLLOUT_SCRIPT_SELF_TEST: 'write-api-prod-environment',
+                RALLAR_API_ENV_FILE: envFile,
+                RALLAR_API_SECRET_FILE: secretFile
+            }
+        });
+
+        expect(await readEnvValue(envFile, 'RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS')).toBe('effective-operator');
+    });
+
+    it('executes deploy and rollout lifecycle gates through owned command ports', async (context) => {
+        const { stdout } = await runOwnedTestProcess(context, {
+            executable: 'bash',
+            args: [path.join(repoRoot, 'packages/tests/hetzner/api-prod-profile-lifecycle.sh')],
+            options: { cwd: repoRoot }
+        });
+        expect(stdout).toContain('deployAndRolloutLifecycle=passed');
+        expect(stdout).toContain('stopFailureFence=passed');
+        expect(stdout).toContain('configPreflight=passed');
+        expect(stdout).toContain('migrationFailureFence=passed');
     });
 
     it.for([
@@ -410,17 +463,6 @@ describe('Hetzner controller API prod profile on the VM Postgres', () => {
         expect(calls.includes('systemctl start rallar-api-v1.service')).toBe(startsApi);
         expect(calls).toContain('systemctl start rallar-black-box-control.service');
         expect(stderr.includes('::error::')).toBe(storeFailed);
-    });
-
-    it('installs an API unit that refuses to start, also at boot, while the store is marked unusable', async () => {
-        const deployScript = await readFile(deployScriptPath, 'utf8');
-        const helperScript = await readFile(helperScriptPath, 'utf8');
-        const apiUnit = /cat >\/etc\/systemd\/system\/rallar-api-v1\.service <<EOF\n([\s\S]*?)\nEOF\n/u.exec(deployScript)?.[1] ?? '';
-
-        expect(apiUnit.split('[Service]')[0]).toContain('\nConditionPathExists=!${RALLAR_API_STORE_FAILURE_FILE}\n');
-        expect(helperScript).toContain(
-            'RALLAR_API_STORE_FAILURE_FILE="${RALLAR_API_STORE_FAILURE_FILE:-/etc/rallar/api-v1.store-failure}"'
-        );
     });
 
     it('reports an unusable store in the status', async (context) => {

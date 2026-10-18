@@ -184,7 +184,8 @@ and the checkout.
 It performs:
 
 ```text
-1. Verify root, required commands, and a clean git checkout.
+1. Verify root, required commands, the effective existing-store configuration,
+   and a clean git checkout before changing the selected ref.
 2. Fetch origin and check out RALLAR_REPO_REF, default main; a full commit SHA is
    checked out detached, while a branch follows its current remote head.
 3. Run npm ci.
@@ -195,8 +196,8 @@ It performs:
 8. Publish static SPA files to /var/www/rallar-black-box.
 9. Write `/etc/rallar/black-box-spa.env` as a non-secret audit file.
 10. Refresh API-v1 and control-server browser origin policy.
-11. Validate the effective API configuration, retain the existing database,
-    credentials, and operator allowlist, and run `deno task prisma migrate deploy` in
+11. Retain the validated database, credentials, and operator allowlist, and run
+    `deno task prisma migrate deploy` in
     `apps/api-v1` as the `rallar` user.
 12. Refresh Caddy reverse-proxy config, start API/control services, reload Caddy,
     and run local/public health checks.
@@ -226,6 +227,15 @@ bash packages/tests/hetzner/api-prod-profile-postgres.sh
 
 It requires Docker and a free loopback port 5432. The test removes only its own
 container and temporary files.
+
+The lifecycle check runs the deploy and rollout scripts inside disposable,
+network-isolated containers with recorded service, database, and health command
+ports. It covers stopped-service ordering, absent-unit provisioning, failed
+stops, migration failure, and configuration rejection:
+
+```sh
+bash packages/tests/hetzner/api-prod-profile-lifecycle.sh
+```
 
 Override the branch/ref:
 
@@ -507,8 +517,9 @@ parameter) for initial provisioning and kept across deploys and rollouts; the
 scripts never print it. An existing configuration with a missing or malformed
 effective URL or missing auth/operator secret fails before replacement. The
 API secret file has systemd precedence over the ordinary environment file.
-`08-rollout-controller.sh` removes entries outside that subset before updating
-the selected ref. Both keep `/etc/rallar/api-v1.env` root-owned and mode `0600`.
+`08-rollout-controller.sh` validates the effective configuration before updating
+the selected ref, then removes entries outside that subset after the update.
+Both keep `/etc/rallar/api-v1.env` root-owned and mode `0600`.
 There is no environment-name selector or repeated database/auth baseline.
 
 The `prod` profile requires a non-empty operator-token allowlist without

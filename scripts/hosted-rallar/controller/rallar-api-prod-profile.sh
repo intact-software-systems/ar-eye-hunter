@@ -23,22 +23,52 @@ install_rallar_api_postgres_server() {
 	systemctl enable --now postgresql.service
 }
 
+# Status 3 means a valid file omitted the key; read and syntax failures use other statuses.
+read_rallar_api_file_value() {
+	local env_file="$1"
+	local key="$2"
+	local contents line value="" found=0
+	if [[ ! -f "${env_file}" || ! -r "${env_file}" ]]; then
+		echo "Cannot read the API secret file or controller environment." >&2
+		return 1
+	fi
+	contents="$(cat -- "${env_file}")" || {
+		echo "Cannot read the API secret file or controller environment." >&2
+		return 1
+	}
+	while IFS= read -r line; do
+		if [[ "${line}" =~ ^[[:space:]]*(export[[:space:]]+)?${key}[[:space:]]*= ]]; then
+			if [[ "${line}" != "${key}="* || "${line}" == *[\'\"\\]* || "${line}" =~ [[:space:]] ]]; then
+				echo "Unsupported assignment in the API secret file or controller environment for ${key}." >&2
+				return 1
+			fi
+			value="${line#*=}"
+			found=1
+		fi
+	done <<<"${contents}"
+	[[ "${found}" == "1" ]] || return 3
+	printf '%s' "${value}"
+}
+
 read_rallar_api_effective_env_value() {
 	local env_file="$1"
 	local key="$2"
-	local selected_file="${env_file}"
-
-	if [[ -e "${RALLAR_API_SECRET_FILE}" ]]; then
-		if [[ ! -r "${RALLAR_API_SECRET_FILE}" ]]; then
-			echo "Cannot read the API secret file." >&2
-			return 1
-		fi
-		if grep -q "^${key}=" "${RALLAR_API_SECRET_FILE}"; then
-			selected_file="${RALLAR_API_SECRET_FILE}"
+	local secret_value status
+	if [[ -e "${RALLAR_API_SECRET_FILE}" || -L "${RALLAR_API_SECRET_FILE}" ]]; then
+		if secret_value="$(read_rallar_api_file_value "${RALLAR_API_SECRET_FILE}" "${key}")"; then
+			printf '%s' "${secret_value}"
+			return 0
+		else
+			status=$?
+			[[ "${status}" == "3" ]] || return "${status}"
 		fi
 	fi
-	if [[ -r "${selected_file}" ]]; then
-		grep -E "^${key}=" "${selected_file}" | tail -n 1 | cut -d= -f2- || true
+	if secret_value="$(read_rallar_api_file_value "${env_file}" "${key}")"; then
+		printf '%s' "${secret_value}"
+		return 0
+	else
+		status=$?
+		[[ "${status}" == "3" ]] || return "${status}"
 	fi
 }
 
@@ -53,16 +83,20 @@ read_rallar_api_database_url() {
 }
 
 resolve_rallar_api_database_url() {
-	if [[ -e "$1" ]]; then
+	if [[ -e "$1" || -L "$1" ]]; then
 		read_rallar_api_database_url "$1"
 		return
 	fi
-	if [[ -e "${RALLAR_API_SECRET_FILE}" ]]; then
-		if [[ ! -r "${RALLAR_API_SECRET_FILE}" ]] ||
-			grep -Eq '^(DATABASE_URL|RALLAR_AUTH_CREDENTIAL_SECRET|RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET)=' "${RALLAR_API_SECRET_FILE}"; then
-			echo "Existing API store credentials have no controller environment; refusing to provision a new store." >&2
-			return 1
-		fi
+	if [[ -e "${RALLAR_API_SECRET_FILE}" || -L "${RALLAR_API_SECRET_FILE}" ]]; then
+		local key value
+		for key in DATABASE_URL RALLAR_AUTH_CREDENTIAL_SECRET RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET; do
+			if value="$(read_rallar_api_file_value "${RALLAR_API_SECRET_FILE}" "${key}")"; then
+				echo "Existing API store credentials have no controller environment; refusing to provision a new store." >&2
+				return 1
+			else
+				[[ "$?" == "3" ]] || return 1
+			fi
+		done
 	fi
 	printf 'postgres://%s:%s@127.0.0.1:5432/%s' \
 		"${RALLAR_API_DATABASE_ROLE}" "$(openssl rand -hex 32)" "${RALLAR_API_DATABASE_NAME}"
@@ -71,7 +105,7 @@ resolve_rallar_api_database_url() {
 validate_rallar_api_existing_store_configuration() {
 	local env_file="$1"
 	local auth_secret operator_secret operator_client_ids control_operator_secret
-	[[ -r "${env_file}" ]] || { echo "Missing readable controller API environment." >&2; return 1; }
+	[[ -f "${env_file}" && -r "${env_file}" ]] || { echo "Missing readable controller API environment." >&2; return 1; }
 	read_rallar_api_database_url "${env_file}" >/dev/null || return 1
 	auth_secret="$(read_rallar_api_effective_env_value "${env_file}" RALLAR_AUTH_CREDENTIAL_SECRET)" || return 1
 	operator_secret="$(read_rallar_api_effective_env_value "${env_file}" RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET)" || return 1
@@ -84,12 +118,16 @@ validate_rallar_api_existing_store_configuration() {
 		echo "Missing existing operator allowlist; refusing to replace configuration." >&2
 		return 1
 	fi
-	if [[ -e "${RALLAR_CONTROL_ENV_FILE}" ]]; then
-		if [[ ! -r "${RALLAR_CONTROL_ENV_FILE}" ]]; then
+	if [[ -e "${RALLAR_CONTROL_ENV_FILE}" || -L "${RALLAR_CONTROL_ENV_FILE}" ]]; then
+		if [[ ! -f "${RALLAR_CONTROL_ENV_FILE}" || ! -r "${RALLAR_CONTROL_ENV_FILE}" ]]; then
 			echo "Cannot read the control-server environment." >&2
 			return 1
 		fi
-		control_operator_secret="$(grep -E '^RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=' "${RALLAR_CONTROL_ENV_FILE}" | tail -n 1 | cut -d= -f2- || true)"
+		if control_operator_secret="$(read_rallar_api_file_value "${RALLAR_CONTROL_ENV_FILE}" RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET)"; then
+			:
+		else
+			[[ "$?" == "3" ]] || return 1
+		fi
 		if [[ "${control_operator_secret}" != "${operator_secret}" ]]; then
 			echo "The control-server operator secret differs from the effective API secret; refusing replacement." >&2
 			return 1
@@ -112,8 +150,8 @@ resolve_rallar_api_operator_client_ids() {
 		printf '%s' "${requested}"
 		return 0
 	fi
-	if [[ -r "${env_file}" ]]; then
-		current="$(grep -E '^RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS=' "${env_file}" | tail -n 1 | cut -d= -f2- || true)"
+	if [[ -e "${env_file}" ]]; then
+		current="$(read_rallar_api_effective_env_value "${env_file}" RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS)" || return 1
 	fi
 	if [[ -n "${current}" ]]; then
 		printf '%s' "${current}"

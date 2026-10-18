@@ -268,11 +268,11 @@ write_api_timing_environment() {
 }
 
 write_api_prod_profile_environment() {
-	local database_url
+	local database_url operator_client_ids
 	database_url="$(read_rallar_api_database_url "${RALLAR_API_ENV_FILE}")" || return 1
+	operator_client_ids="$(resolve_rallar_api_operator_client_ids "${RALLAR_API_ENV_FILE}" "${RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS}")" || return 1
 	update_env_value "${RALLAR_API_ENV_FILE}" "DATABASE_URL" "${database_url}"
-	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS" \
-		"$(resolve_rallar_api_operator_client_ids "${RALLAR_API_ENV_FILE}" "${RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS}")"
+	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS" "${operator_client_ids}"
 }
 
 stopped_services=0
