@@ -16,9 +16,8 @@ this plan is neither a substitute for source navigation nor a delivery ledger. N
 runner, evaluator, generic diagnostic framework or duplicate policy engine are required.
 
 Step 1 and step 2a through step 2g are merged. Step 2h continues the shared-mechanism consolidation
-and V1c acceptance closure. The first increment replaces the artifact recorder's repeated timer
-loop with the existing shared flush owner; its implementation plan is
-`plans/active/alm-v1c-artifact-flush-implementation-plan.md` while that increment is underway.
+and V1c acceptance closure. The remaining shared-mechanism audit and next measured repair form the
+next increment; the full V1c acceptance and comparative evidence remain the following outcome.
 Delivery of one consolidation does not make the full V1c outcome complete or waive its remaining gates.
 
 The live pull request owns delivery state. Git history, immutable ignored evidence and the
