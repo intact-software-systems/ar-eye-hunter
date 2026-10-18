@@ -197,22 +197,25 @@ final evidence reconciliation must preserve workload provenance and the unwaived
 
 ## Next two useful slices
 
-1. **Formation-tail delivery:** measure the current promotion-to-browser path, then use TDD
+1. **Remaining formation-tail delivery:** the bounded group-admission read repair preserves
+   ordered commit/fallback and passes native scale acceptance, but does not establish the
+   complete target. Measure the remaining current promotion-to-browser path, then use TDD
    to repair the positively located queue-service bottleneck. Reuse existing queuebox and ALM
    mechanisms; preserve every event, frozen audiences, causal fences and failure recovery.
    Compare the same queued burst with a late promotion before and after the repair, including
    stale claims and transient failures at the affected boundary. Validate affected packages
    and the unchanged local 15 → 30 → 50 workload before hosted timing-off acceptance. Keep the
    ≤2 s formation-tail target explicit; report any remaining delay without weakening acceptance.
-2. **Restore complete state-write attribution:** the failed comparative gate needs a usable
-   diagnostic before selecting a production repair. At `state-write-diagnostic-association.ts`
-   and `state-write-diagnostic-projection.ts` under `apps/api-v1/scripts/perf/state-write/`,
-   reproduce rejection of real logical AppInbox identities with TDD, then
-   preserve correct association and privacy checks. Design bounded timing representation from
-   the observed hot-phase volume; do not silently discard required evidence or simply inflate a
-   shared cap. Prove completeness, fail-closed overflow and producer cleanup before recapturing
-   the unchanged workload. Then attribute conflict incidence and transaction work before changing
-   queue policy. The remaining D278/D298 shared-mechanism audit, large-result certification,
+2. **Attribute state-write completion waiting and retry work:** logical enqueue association
+   and bounded capture are repaired; the unchanged diagnostic now retains all twelve phases.
+   At the existing `runAppInboxMutation` workload owner, correlate enqueue completion, pending
+   dequeue work and caller return. Use a deterministic held-dequeue test to establish the
+   ownership/lifecycle contract before choosing a repair. Trace process SQL to its dequeue
+   owner before attributing it to a command; temporal overlap alone is insufficient. Separately
+   explain optimistic-conflict incidence and prescribed backoff before changing queue policy.
+   Preserve every command, attempt, release, canonical effect, cleanup obligation and original
+   comparison threshold. Run a new comparison only after a measured cause or repair justifies it.
+   The remaining D278/D298 shared-mechanism audit, large-result certification,
    headless shutdown and serial publication findings remain explicit outcomes below; passing
    native acceptance closes none of them.
 
@@ -487,23 +490,44 @@ four-arm comparison or the adaptive arm's removal, the rewritten evidence sectio
    transactions took about 0.003 s. This locates retry-backoff amplification, not the cause of
    differing conflict incidence or the total transaction-time regression. Use the existing
    bounded diagnostic mode to distinguish failed attempts from process-wide SQL activity.
-   That diagnostic currently fails closed: every phase rejects 800 supported enqueue timings
-   because association expects physical hashed keys where the command client emits logical
-   resource/context identities. A real-client test using long logical identities must reproduce
-   this before repair; retain rejection of genuinely mismatched identity and privacy guarantees.
-   All four hot phases additionally exceed the 33,554,432-byte timing budget, dropping roughly
+   The original diagnostic failed closed: every phase rejected 800 supported enqueue timings
+   because association expected physical hashed keys where the command client emits logical
+   resource/context identities. Real-client TDD with long logical identities reproduced this;
+   the repair retains rejection of genuinely mismatched identity and privacy guarantees.
+   All four hot phases additionally exceeded the 33,554,432-byte timing budget, dropping roughly
    11,000–17,000 timing rows per phase. Boundaries and release records are complete, but timing
-   absence is not evidence. Full requested timing-plus-release counts also exceed the
+   absence is not evidence. Full requested timing-plus-release counts also exceeded the
    100,000-event ceiling in two hot phases (101,185 and 100,663 events), so reducing serialized
-   bytes alone cannot restore completeness. Preserve originals and the incomplete receipt. Existing capture
-   already prioritizes boundaries/releases; choose an explicit bounded representation before
-   another diagnostic. Database postflight and cleanup succeeded: the secondary lifecycle label
+   bytes alone could not restore completeness. Preserve originals and the incomplete receipt.
+   Producer-owned identity validation and current diagnostic v2 now restore complete capture:
+   v2 omits only two derived fields and explicitly permits 110,000 timing-plus-release events,
+   retaining 33,554,432 bytes per phase and 536,870,912 bytes per run. No historical reader is
+   needed by the private same-candidate validator; historical artifacts remain unchanged.
+   The unchanged real workload retained all twelve phases, 8,400 accepted commands and 9,600
+   unique enqueue completions, with zero rejected or truncated events. Database postflight and
+   cleanup succeeded in both captures: the original secondary lifecycle label
    reflects the failed capture and is not evidence of another cleanup defect.
    Retained config windows also show hundreds of process-level SQL transactions while the last
    command waits for retry. The harness's per-command dequeue pump is therefore a concrete
    attribution target, distinct from production queue behavior. These unassociated records do
-   not prove ownership or explain the full transaction-total regression; obtain complete scoped
-   evidence before changing that pump.
+   not prove ownership or explain the full transaction-total regression. Complete capture now
+   separates an uncontended 0.330461 s command into a 0.012 s final-transaction-to-enqueue gap
+   and a further 0.190538 s enqueue-to-return gap. A hot 8.270573 s command has eight optimistic
+   conflicts, nine attempts and 7.127 s of prescribed retry delays; its final transaction takes
+   0.00407 s. These are selected diagnostic examples, not acceptance percentiles or additive
+   CPU costs. Attribute the pump's pending dequeue and SQL ownership before repairing it.
+   The diagnostic ceilings bound persisted projection, not the pre-existing raw timing arrays
+   collected during a phase. Measure their allocation and retention on the same workload before
+   claiming bounded capture memory or selecting a streaming/aggregation repair. Canonical totals
+   and every required attribution fact must remain complete.
+6. **Test-harness scheduling — observed validation sensitivity.** A local aggregate run had
+   nine test timeouts, one polling deadline and one missing drain observation while another
+   checkout's large suite shared the machine. All 243 tests in the eleven affected files passed
+   with one worker after that competing run ended. Preserve both results; this does not prove
+   contention caused every failure. The inbound diagnostics test waits for delivery and then
+   immediately asserts the later drain record. Cover that observation-order boundary with a
+   deterministic held release before changing test synchronization. Investigate resource
+   isolation without increasing deadlines or weakening assertions.
 
 ## Completion and handoff
 
