@@ -1,8 +1,23 @@
 import { load } from 'js-yaml';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+    chmodSync,
+    copyFileSync,
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    rmSync,
+    symlinkSync,
+    writeFileSync
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it, type TestContext } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    type TestContext
+} from 'vitest';
 
 import { runOwnedTestProcess } from '../hetzner/owned-test-process.ts';
 import { createDefaultStateWritePerformanceArtifact } from '../shared-server/performance/state-write/test-support/state-write-performance-artifact-fixture.ts';
@@ -171,6 +186,13 @@ describe('selected hosted measurement lifecycle', { timeout: 20000 }, () => {
         });
     });
 
+    it.for(['observed-capacity', 'exact-capacity'])('accepts complete current-schema %s output above the former event ceiling', async (capacity, context) => {
+        const fixture = createFixture(context, 'diagnostic', capacity);
+        await runShell(context, fixture, lifecycleShell());
+        expect(readJson(path.join(fixture.output, 'terminal.json'))).toMatchObject({ status: 'complete', primary: null });
+        expect(readJson(path.join(fixture.output, 'diagnostic-validity.json'))).toMatchObject({ status: 'complete', phases: 12, totalCommands: 8400 });
+    });
+
     it.for(['cpu', 'cpu-invalid', 'overlap', 'preflight', 'source-change'])('refuses %s before any benchmark', async (failure, context) => {
         const fixture = createFixture(context, 'diagnostic', failure);
         await expect(runShell(context, fixture, lifecycleShell())).rejects.toThrow();
@@ -268,11 +290,24 @@ describe('selected hosted measurement lifecycle', { timeout: 20000 }, () => {
         expect(readCalls(fixture).some((call) => call.command === 'docker' && call.args.includes('down'))).toBe(false);
     });
 
-    it.for(['incomplete', 'capacity', 'canonical'])('keeps %s evidence failed even with a complete-looking receipt', async (failure, context) => {
-        const fixture = createFixture(context, 'diagnostic', failure);
-        await expect(runShell(context, fixture, lifecycleShell())).rejects.toThrow();
-        expect(readJson(path.join(fixture.output, 'terminal.json'))).toMatchObject({ primary: { stage: 'diagnostic-validity' } });
-    });
+    it.for([
+        'incomplete',
+        'capacity',
+        'canonical',
+        'old-schema',
+        'unknown-schema',
+        'total-mismatch',
+        'record-mismatch',
+        'unassociated-mismatch',
+        'unknown-record'
+    ])(
+        'keeps %s evidence failed even with a complete-looking receipt',
+        async (failure, context) => {
+            const fixture = createFixture(context, 'diagnostic', failure);
+            await expect(runShell(context, fixture, lifecycleShell())).rejects.toThrow();
+            expect(readJson(path.join(fixture.output, 'terminal.json'))).toMatchObject({ primary: { stage: 'diagnostic-validity' } });
+        }
+    );
 
     it('preserves comparison A-B-B-A nine-run captures through the same terminal and cleanup protocol', async (context) => {
         const fixture = createFixture(context, 'comparison', '');

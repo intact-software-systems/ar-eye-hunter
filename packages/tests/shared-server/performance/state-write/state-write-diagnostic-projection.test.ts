@@ -14,12 +14,14 @@ import type { AppInboxResultWaiter } from '@shared-server/rallar-system/app-inbo
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { decodeJsonWireText, type JsonWireObject } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
+import type { ResourceInboxAttemptReleaseTelemetry } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import { EntityStatus, type Key } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import {
     computeStateWriteDiagnosticPhase,
+    STATE_WRITE_DIAGNOSTIC_BUDGET,
     type StateWriteDiagnosticPhase
 } from '../../../../../apps/api-v1/scripts/perf/state-write/state-write-diagnostic-projection.ts';
 import { TestResourceInbox } from '../../rallar-system/app-inbox/test-support/app-inbox-resource-fixtures.ts';
@@ -105,7 +107,142 @@ function readRecords(serialized: string): readonly JsonWireObject[] {
     });
 }
 
+function createSqlEvent(): RallarTimingEvent {
+    return {
+        type: 'rallar.timing',
+        component: 'state-write-benchmark-sql',
+        operation: 'read',
+        status: 'ok',
+        durationMs: 12.34,
+        atEpochMs: 1_700_000_000_000,
+        details: { sql: 'PRIVATE-æøå-🧪', parameters: 'PRIVATE-payload' }
+    };
+}
+
+function createRelease(): ResourceInboxAttemptReleaseTelemetry {
+    return {
+        key: profile.physicalKey,
+        type: 'APP_INBOX',
+        resource: 'PRIVATE-æøå-🧪',
+        attempt: 1,
+        selectedLane: Reservator.NEW,
+        queueAgeMs: 40,
+        dueAgeMs: 3,
+        classification: 'accepted' as const,
+        status: EntityStatus.COMPLETED,
+        retryDelayMs: 0,
+        failure: { kind: 'none' as const }
+    };
+}
+
 describe('state-write diagnostic projection', () => {
+    it('retains the complete SQL-heavy stream and late command facts where redundant timing rows overflow', () => {
+        const sql = createSqlEvent();
+        const events: RallarTimingEvent[] = [
+            ...Array.from({ length: 1_000 }, () => sql),
+            { ...sql, component: 'state-write-benchmark-phase', operation: 'transaction', status: 'error' },
+            createEvent(profile.logicalResourceId, { ...profile.physicalKey, attempt: 2, queueAgeMs: 42.5, dueAgeMs: 3.25 })
+        ];
+        const input = { ...createPhase(), timingEvents: events, releases: [createRelease()] };
+        const original = JSON.stringify(input);
+        const result = computeStateWriteDiagnosticPhase(input, { ...budget, eventsPerPhase: 1_003, bytesPerPhase: 320_000 }, 320_000);
+        const records = readRecords(result.serialized);
+        const timings = records.filter((record) => record.record === 'timing');
+        expect(result.complete).toBe(true);
+        expect(records[0]).toMatchObject({ schema: 'rallar.state-write.diagnostic.v2', eventStart: 'approximate-completion-minus-rounded-duration' });
+        expect(timings).toHaveLength(1_002);
+        expect(timings.slice(0, 1_000)).toEqual(Array.from({ length: 1_000 }, () => ({
+            record: 'timing',
+            component: 'state-write-benchmark-sql',
+            operation: 'read',
+            status: 'ok',
+            completedAtEpochMs: 1_700_000_000_000,
+            roundedDurationMs: 12.34,
+            association: { kind: 'process-unassociated', reason: 'sql-process-scope', observingStack: 'unavailable' },
+            queueAgeMs: 'unavailable',
+            dueAgeMs: 'unavailable'
+        })));
+        expect(timings.at(-2)).toMatchObject({ component: 'state-write-benchmark-phase', operation: 'transaction', status: 'error' });
+        expect(timings.at(-1)).toEqual({
+            record: 'timing',
+            component: 'app-inbox-phase',
+            operation: 'transaction',
+            status: 'ok',
+            completedAtEpochMs: 99_999,
+            roundedDurationMs: 12.34,
+            association: { kind: 'command-operation', commandOrdinal: 0, operation: 'profile', originatingStack: 0, observingStack: 1, attempt: 2 },
+            queueAgeMs: 42.5,
+            dueAgeMs: 3.25
+        });
+        expect(Number(timings[0]!.completedAtEpochMs) - Number(timings[0]!.roundedDurationMs)).toBe(1_699_999_999_987.66);
+        expect(Number(timings.at(-1)!.completedAtEpochMs) - Number(timings.at(-1)!.roundedDurationMs)).toBe(99_986.66);
+        const redundant = records.map((record) =>
+            record.record === 'timing'
+                ? {
+                    ...record,
+                    approximateStartedAtEpochMs: Number(record.completedAtEpochMs) - Number(record.roundedDurationMs),
+                    statusMeaning: record.component === 'state-write-benchmark-phase' ? 'wrapper-finally-not-commit' : 'timed-operation-status'
+                }
+                : record
+        ).map((record) => JSON.stringify(record) + '\n').join('');
+        expect(new TextEncoder().encode(redundant).length).toBeGreaterThan(320_000);
+        expect(result.bytes).toBe(new TextEncoder().encode(result.serialized).length);
+        expect(result.bytes).toBeLessThanOrEqual(320_000);
+        expect(records.at(-1)).toEqual({
+            record: 'completeness',
+            complete: true,
+            timing: { total: 1_002, retained: 1_002, rejected: 0, truncated: 0, unassociated: 1_001 },
+            releases: { total: 1, retained: 1, rejected: 0, truncated: 0, unassociated: 0 },
+            boundaries: { total: 5, retained: 5, rejected: 0, truncated: 0, unassociated: 0 }
+        });
+        expect(JSON.stringify(input)).toBe(original);
+        expect(result.serialized).not.toContain('PRIVATE');
+    });
+
+    it.each([
+        { timings: 99_803, ceiling: 100_000, retained: 98_618, truncated: 1_185 },
+        { timings: 99_803, ceiling: undefined, retained: 99_803, truncated: 0 },
+        { timings: 108_618, ceiling: undefined, retained: 108_618, truncated: 0 },
+        { timings: 108_619, ceiling: undefined, retained: 108_618, truncated: 1 }
+    ])('accounts for $timings timing events and 1,382 releases at ceiling $ceiling', ({ timings, ceiling, retained, truncated }) => {
+        const result = computeStateWriteDiagnosticPhase(
+            {
+                ...createPhase(),
+                timingEvents: Array.from({ length: timings }, () => ({ ...createSqlEvent(), atEpochMs: 100, durationMs: 1 })),
+                releases: Array.from({ length: 1_382 }, createRelease)
+            },
+            { ...STATE_WRITE_DIAGNOSTIC_BUDGET, eventsPerPhase: ceiling ?? STATE_WRITE_DIAGNOSTIC_BUDGET.eventsPerPhase },
+            536_869_888
+        );
+        expect(result.complete).toBe(truncated === 0);
+        expect(readRecords(result.serialized).at(-1)).toEqual({
+            record: 'completeness',
+            complete: truncated === 0,
+            timing: { total: timings, retained, truncated, rejected: 0, unassociated: retained },
+            releases: { total: 1_382, retained: 1_382, rejected: 0, truncated: 0, unassociated: 0 },
+            boundaries: { total: 5, retained: 5, rejected: 0, truncated: 0, unassociated: 0 }
+        });
+        expect(result.bytes).toBe(new TextEncoder().encode(result.serialized).length);
+        expect(result.bytes).toBeLessThanOrEqual(33_554_432);
+    });
+
+    it('keeps rejected associations distinct from truncation in mixed incomplete output', () => {
+        const result = computeStateWriteDiagnosticPhase(
+            {
+                ...createPhase(),
+                releases: [{ ...createRelease(), key: { ...profile.physicalKey, resourceId: 'PRIVATE-invalid' } }, createRelease()],
+                timingEvents: [createEvent('PRIVATE-unknown', {}), createSqlEvent(), createSqlEvent()]
+            },
+            { ...budget, eventsPerPhase: 2 },
+            65_536
+        );
+        expect(result.complete).toBe(false);
+        expect(readRecords(result.serialized).at(-1)).toMatchObject({
+            timing: { total: 3, retained: 1, rejected: 1, truncated: 1, unassociated: 2 },
+            releases: { total: 2, retained: 1, rejected: 1, truncated: 0, unassociated: 1 }
+        });
+    });
+
     it('retains real logical profile, instance and group completions beyond queue key bounds', async () => {
         const phase = createPhase();
         const applicationId = `PRIVATE-${'application'.repeat(20)}`;
@@ -346,8 +483,7 @@ describe('state-write diagnostic projection', () => {
         ]);
         expect(records.find((record) => record.record === 'timing')).toMatchObject({
             completedAtEpochMs: 99_999,
-            roundedDurationMs: 12.34,
-            approximateStartedAtEpochMs: 99_986.66
+            roundedDurationMs: 12.34
         });
         expect(records.find((record) => record.record === 'phase')).toMatchObject({
             startedAtMonotonicMs: 10,
@@ -495,8 +631,9 @@ describe('state-write diagnostic projection', () => {
         };
         const result = computeStateWriteDiagnosticPhase({ ...phase, timingEvents: [event] }, budget, 65_536);
         expect(readRecords(result.serialized).find((record) => record.record === 'timing')).toMatchObject({
-            association: { kind: 'process-unassociated', reason: 'sql-process-scope' },
-            statusMeaning: 'wrapper-finally-not-commit'
+            component: 'state-write-benchmark-phase',
+            status: 'ok',
+            association: { kind: 'process-unassociated', reason: 'sql-process-scope' }
         });
         expect(result.complete).toBe(true);
     });

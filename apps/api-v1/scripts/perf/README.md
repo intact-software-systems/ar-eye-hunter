@@ -234,14 +234,27 @@ These checks cover existing path identities; they do not lock parent directories
 against concurrent external filesystem changes.
 
 Each warmup or measured phase writes `phase-<ordinal>.ndjson` after its duration,
-CPU and PostgreSQL counters have been captured. Fixed ceilings are 100,000 retained
+CPU and PostgreSQL counters have been captured. Fixed ceilings are 110,000 retained
 timing plus release records per phase, 33,554,432 serialized bytes per phase and
 536,870,912 serialized bytes per run. Boundary records are counted separately;
 command/kind boundaries and release facts have priority over timing events.
+The logical event ceiling is an explicit 10% resource-budget increase from
+100,000, leaving 8,815 events above the observed 101,185-event maximum. The byte
+ceilings are unchanged. This does not change correctness or performance acceptance,
+guarantee future captures fit, or bound the pre-existing raw timing array collection.
 These limits are safeguards, not measured event maxima. No canonical arrays are
 truncated. The phase footer reports total, retained, unassociated, rejected and
 truncated counts. Expected process-level SQL or unavailable attempt/worker facts
 are disclosed; invalid joins and capacity loss make the projection incomplete.
+
+Current captures use `rallar.state-write.diagnostic.v2`: readable named JSON records
+retain every independent timing field, event order and multiplicity. Only the two
+exactly derived timing-row properties are omitted: `approximateStartedAtEpochMs`
+is `completedAtEpochMs - roundedDurationMs`; `statusMeaning` is
+`wrapper-finally-not-commit` for component `state-write-benchmark-phase` and
+`timed-operation-status` otherwise. Wrapper-finally status never proves commit.
+Machine fields retain millisecond units; human reports use seconds. The schema
+version identifies this derivation contract without repeating it in every timing row.
 
 The sidecar exports fixed labels and phase-local command ordinals. Private exact
 logical/physical AppInbox expectations associate profile and instance separately.
@@ -424,8 +437,12 @@ The workflow substitutes the actual GitHub run ID and attempt. Fresh `commands/`
 `diagnostics/` and capture-owned `.acquisition` destinations keep producer originals separate.
 All three workloads, twelve phases, 8,400 total commands and 6,300 measured commands are required.
 The unchanged exported `validateStateWriteArtifact` validates canonical v6 correctness. The hosted
-owner also checks every diagnostic phase, the complete receipt, byte accounting and the fixed
-100,000 timing/release records per phase, 33,554,432 bytes per phase and 536,870,912 bytes per run.
+owner validates only the fresh v2 capture from that same pinned candidate checkout;
+unsupported schemas and incomplete or inconsistent row/count evidence fail closed.
+It has no historical-input API. Original v1 artifacts remain unchanged; no historical
+adapter is added. The owner also checks every diagnostic phase, the complete receipt,
+byte accounting and the fixed
+110,000 timing/release records per phase, 33,554,432 bytes per phase and 536,870,912 bytes per run.
 A successful workflow is diagnostic evidence; it does not repair a failed comparison or satisfy
 frozen scale acceptance.
 

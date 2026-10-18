@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'node:child_process';
-import { appendFileSync, copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+    appendFileSync,
+    copyFileSync,
+    mkdirSync,
+    readFileSync,
+    writeFileSync
+} from 'node:fs';
 import path from 'node:path';
 
 const command = process.argv[2];
@@ -207,44 +213,85 @@ function writeDiagnosticFiles(directory) {
 function writeDiagnosticPhase(directory, ordinal) {
     const header = {
         record: 'phase',
-        schema: 'rallar.state-write.diagnostic.v1',
+        schema: failure === 'old-schema'
+            ? 'rallar.state-write.diagnostic.v1'
+            : failure === 'unknown-schema'
+            ? 'rallar.state-write.diagnostic.v3'
+            : 'rallar.state-write.diagnostic.v2',
         workload: ['uncontended', 'shared', 'hot'][Math.floor(ordinal / 4)],
         phase: ordinal % 4 === 0 ? 'warmup' : 'measured',
         runIndex: ordinal % 4 === 0 ? 0 : ordinal % 4 - 1,
         outcome: 'completed'
     };
     const commands = Array.from({ length: 700 }, (_, commandOrdinal) => ({ record: 'command', commandOrdinal, status: 'accepted' }));
+    const eventCounts = { 'observed-capacity': 101185, 'exact-capacity': 110000, capacity: 110001, 'unassociated-mismatch': 1384 };
+    const { timings, releases } = createDiagnosticEvents(ordinal === 0 ? eventCounts[failure] ?? 0 : 0);
     const counts = { total: 0, retained: 0, unassociated: 0, rejected: 0, truncated: 0 };
-    if (failure === 'capacity') {
-        counts.total = 60000;
-        counts.retained = 60000;
-    }
     const footer = {
         record: 'completeness',
         complete: failure !== 'incomplete',
-        timing: counts,
-        releases: counts,
+        timing: { ...counts, total: timings.length, retained: timings.length, unassociated: timings.length },
+        releases: { ...counts, total: releases.length, retained: releases.length },
         boundaries: { ...counts, total: 701, retained: 701 }
     };
-    const text = [header, ...commands, footer].map((value) => JSON.stringify(value)).join('\n') + '\n';
+    if (failure === 'total-mismatch') {
+        footer.timing.total += 1;
+    }
+    if (failure === 'record-mismatch') {
+        footer.timing.total += 1;
+        footer.timing.retained += 1;
+    }
+    if (failure === 'unassociated-mismatch' && ordinal === 0) {
+        footer.timing.unassociated -= 1;
+    }
+    const extra = failure === 'unknown-record' ? [{ record: 'unexpected' }] : [];
+    const text = [header, ...commands, ...releases, ...timings, ...extra, footer].map((value) => JSON.stringify(value)).join('\n') + '\n';
     writeFileSync(path.join(directory, 'phase-' + ordinal + '.ndjson'), text);
     return Buffer.byteLength(text);
 }
 
+function createDiagnosticEvents(total) {
+    const releaseCount = total === 0 ? 0 : 1382;
+    const timings = Array.from({ length: total - releaseCount }, () => ({
+        record: 'timing',
+        component: 'state-write-benchmark-sql',
+        operation: 'read',
+        status: 'ok',
+        completedAtEpochMs: 100,
+        roundedDurationMs: 1,
+        association: { kind: 'process-unassociated', reason: 'sql-process-scope', observingStack: 'unavailable' },
+        queueAgeMs: 'unavailable',
+        dueAgeMs: 'unavailable'
+    }));
+    const releases = Array.from({ length: releaseCount }, () => ({
+        record: 'release',
+        commandOrdinal: 0,
+        operation: 'profile',
+        originatingStack: 0,
+        observingStack: 'unavailable',
+        endpoint: 'unavailable',
+        attempt: 1,
+        classification: 'accepted',
+        status: 'COMPLETED',
+        selectedLane: 'NEW',
+        queueAgeMs: 1,
+        dueAgeMs: 0,
+        retryDelayMs: 0,
+        failure: 'none'
+    }));
+    return { timings, releases };
+}
+
 function docker() {
     if (args[0] === 'ps') {
-        console.log(
-            args.includes('-aq') && (() => {
-                    try {
-                        return readFileSync(path.join(root, 'provisioned'), 'utf8') === 'true';
-                    }
-                    catch {
-                        return false;
-                    }
-                })()
-                ? failure === 'replacement' && args.includes('--no-trunc') ? 'replacement-fixture' : 'container-fixture'
-                : ''
-        );
+        let provisioned = false;
+        if (args.includes('-aq')) {
+            try {
+                provisioned = readFileSync(path.join(root, 'provisioned'), 'utf8') === 'true';
+            }
+            catch {}
+        }
+        console.log(provisioned ? failure === 'replacement' && args.includes('--no-trunc') ? 'replacement-fixture' : 'container-fixture' : '');
     }
     else if (args[0] === 'inspect') {
         const container = JSON.parse(readFileSync(path.join(root, 'container.json'), 'utf8'));

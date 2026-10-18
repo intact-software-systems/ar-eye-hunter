@@ -36,7 +36,7 @@ export interface StateWriteDiagnosticBudget {
 }
 
 export const STATE_WRITE_DIAGNOSTIC_BUDGET: StateWriteDiagnosticBudget = {
-    eventsPerPhase: 100_000,
+    eventsPerPhase: 110_000,
     bytesPerPhase: 33_554_432,
     bytesPerRun: 536_870_912
 };
@@ -139,7 +139,7 @@ function toPhaseRecord(phase: StateWriteDiagnosticPhase): DiagnosticRecord | und
     }
     return {
         record: 'phase',
-        schema: 'rallar.state-write.diagnostic.v1',
+        schema: 'rallar.state-write.diagnostic.v2',
         workload: phase.workload,
         phase: phase.phase,
         runIndex: phase.runIndex,
@@ -226,13 +226,9 @@ function toTimingRecord(
         status: event.status,
         completedAtEpochMs: event.atEpochMs,
         roundedDurationMs: event.durationMs,
-        approximateStartedAtEpochMs: event.atEpochMs - event.durationMs,
         association,
         queueAgeMs: typeof queueAgeMs === 'number' ? queueAgeMs : 'unavailable',
-        dueAgeMs: typeof dueAgeMs === 'number' ? dueAgeMs : 'unavailable',
-        statusMeaning: event.component === 'state-write-benchmark-phase'
-            ? 'wrapper-finally-not-commit'
-            : 'timed-operation-status'
+        dueAgeMs: typeof dueAgeMs === 'number' ? dueAgeMs : 'unavailable'
     };
 }
 

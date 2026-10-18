@@ -709,7 +709,7 @@ async function readDiagnosticPhase(path, ordinal) {
     const commands = records.filter((record) => record.record === 'command');
     if (
         Buffer.byteLength(text) > 33554432 || phase.record !== 'phase' ||
-        phase.schema !== 'rallar.state-write.diagnostic.v1' ||
+        phase.schema !== 'rallar.state-write.diagnostic.v2' ||
         phase.workload !== WORKLOADS[Math.floor(ordinal / 4)] ||
         phase.phase !== (ordinal % 4 === 0 ? 'warmup' : 'measured') ||
         phase.runIndex !== (ordinal % 4 === 0 ? 0 : ordinal % 4 - 1) || phase.outcome !== 'completed' ||
@@ -722,7 +722,10 @@ async function readDiagnosticPhase(path, ordinal) {
         const counts = toObject(footer[name]);
         if (
             counts.rejected !== 0 || counts.truncated !== 0 || !Number.isSafeInteger(counts.retained) ||
-            counts.retained < 0 || name !== 'boundaries' && counts.retained > 100000
+            counts.retained < 0 || counts.total !== counts.retained ||
+            !Number.isSafeInteger(counts.unassociated) || counts.unassociated < 0 ||
+            counts.unassociated > counts.retained ||
+            name !== 'boundaries' && counts.retained > 110000
         ) {
             throw new Error('diagnostic-capacity');
         }
@@ -730,7 +733,13 @@ async function readDiagnosticPhase(path, ordinal) {
     const timing = toObject(footer.timing);
     const releases = toObject(footer.releases);
     if (
-        timing.retained + releases.retained > 100000 ||
+        timing.retained + releases.retained > 110000 ||
+        timing.unassociated !==
+            records.filter((record) =>
+                record.record === 'timing' && toObject(record.association).kind === 'process-unassociated'
+            ).length ||
+        releases.unassociated !== 0 || toObject(footer.boundaries).unassociated !== 0 ||
+        records.length !== timing.retained + releases.retained + toObject(footer.boundaries).retained + 1 ||
         timing.retained !== records.filter((record) => record.record === 'timing').length ||
         releases.retained !== records.filter((record) => record.record === 'release').length ||
         toObject(footer.boundaries).retained !==
