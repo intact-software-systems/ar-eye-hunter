@@ -175,6 +175,71 @@ describe('QueueBoxPubSubBridge', () => {
         expect(deliveredMessages).toEqual([message]);
     });
 
+    it('marks the exact key before a held cluster publish and after its return', async () => {
+        const outboxPublishers: ClusterPublisher[] = [];
+        const release = Promise.withResolvers<void>();
+        const timingEvents: RallarTimingEvent[] = [];
+        const bridge: QueueBoxPubSubBridge = {
+            publish: async () => await release.promise,
+            subscribe: async () => undefined
+        };
+        const wsQBoxServerService = createTestQueueBoxPubSubWsService({
+            registerOutboxPublisher: (publisher) => outboxPublishers.push(publisher)
+        });
+        installQueueBoxPubSubBridge({
+            wsQBoxServerService,
+            bridge,
+            channel: 'queuebox-events',
+            publisherId: 'publisher-1',
+            timing: (event) => timingEvents.push(event)
+        });
+        const entry = createWsOutboxEntry();
+        const publishing = outboxPublishers[0](decodePersistedALMessage(entry.resource), entry);
+
+        expect(timingEvents.filter((event) => event.operation === 'outbox-cluster-publish-start'))
+            .toEqual([expect.objectContaining({
+                status: 'ok',
+                details: expect.objectContaining(entry.key)
+            })]);
+        expect(timingEvents.some((event) => event.operation === 'outbox-cluster-publish')).toBe(false);
+
+        release.resolve();
+        await publishing;
+        expect(timingEvents.map((event) => event.operation)).toContain('outbox-cluster-publish');
+    });
+
+    it('marks a rejected cluster publish without claiming a returned publication', async () => {
+        const outboxPublishers: ClusterPublisher[] = [];
+        const timingEvents: RallarTimingEvent[] = [];
+        const failure = new Error('publication unavailable');
+        installQueueBoxPubSubBridge({
+            wsQBoxServerService: createTestQueueBoxPubSubWsService({
+                registerOutboxPublisher: (publisher) => outboxPublishers.push(publisher)
+            }),
+            bridge: {
+                publish: async () => {
+                    throw failure;
+                },
+                subscribe: async () => undefined
+            },
+            channel: 'queuebox-events',
+            publisherId: 'publisher-1',
+            timing: (event) => timingEvents.push(event)
+        });
+        const entry = createWsOutboxEntry();
+
+        await expect(outboxPublishers[0](decodePersistedALMessage(entry.resource), entry)).rejects.toBe(failure);
+        expect(
+            timingEvents.filter((event) => event.operation.startsWith('outbox-cluster-publish'))
+                .map((event) => event.operation)
+        ).toEqual([
+            'outbox-cluster-publish-start',
+            'outbox-cluster-publish-error'
+        ]);
+        expect(timingEvents.find((event) => event.operation === 'outbox-cluster-publish-error'))
+            .toMatchObject({ status: 'error', details: expect.objectContaining(entry.key) });
+    });
+
     it('holds rows for a session whose upgrade committed here, keeping the newest when the hold is full', async () => {
         const outboxPublishers: ClusterPublisher[] = [];
         const timingEvents: RallarTimingEvent[] = [];

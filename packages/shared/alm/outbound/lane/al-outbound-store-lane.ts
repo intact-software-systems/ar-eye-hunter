@@ -63,6 +63,7 @@ import type {
 } from '../control/al-outbound-control-admission.ts';
 import { ALOutboundReceiptAdmission } from '../control/al-outbound-receipt-admission.ts';
 import type { ALOutboundCanonicalHandoff } from './al-outbound-canonical-handoff.ts';
+import { recordALOutboundDequeueReservationReturns } from './al-outbound-dequeue-timing.ts';
 import { ALOutboundDequeuedAdmission } from './al-outbound-dequeued-admission.ts';
 import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observation.ts';
 import type { ALOutboundSendControls } from './al-outbound-send-controls.ts';
@@ -158,7 +159,8 @@ export class ALOutboundStoreLane<TPrepared> {
             admissionStore: stores.admissionStore,
             commitDispatchPlans: (dispatches) => this.commitAllSettled(dispatches),
             sendSignal: input.sendControls.signal,
-            settlements
+            settlements,
+            timing: runtime.dequeueTiming
         });
         const { canonicalHandoff } = input;
         this.removeStorageResetListener = canonicalHandoff === undefined
@@ -333,6 +335,13 @@ export class ALOutboundStoreLane<TPrepared> {
         this.evictWhenDue();
         const startedAtMs = this.readNowMs();
         const claims = await port.claim({ maxCount: pageSize, observedEntries: undefined });
+        if (this.input.runtime.dequeueTiming !== undefined) {
+            recordALOutboundDequeueReservationReturns({
+                claims,
+                dequeueTypes: this.input.dequeueTypes,
+                timing: this.input.runtime.dequeueTiming
+            });
+        }
         return {
             claims,
             nextReadyAtMs: undefined,

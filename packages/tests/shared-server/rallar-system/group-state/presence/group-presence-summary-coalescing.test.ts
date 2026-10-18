@@ -11,6 +11,7 @@ import { toDomain, type ResourceInboxRow } from '@shared-server/queuebox/postgre
 import { GroupStateRepositoryReads } from '@shared-server/rallar-system/group-state/persistence/group-state-repository-reads.ts';
 import * as GroupNamespaces from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type {
     RuntimeStateReadBatchSelection,
@@ -31,6 +32,34 @@ import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 import { createService } from './group-presence-test-runtime.ts';
 
 describe('group presence summary coalescing', () => {
+    it('observes every committed delta with its own command and persisted outbox key', async () => {
+        const timingEvents: RallarTimingEvent[] = [];
+        let observedAtWake = 0;
+        const fixture = await createCoalescingFixture(timingEvents, () => {
+            observedAtWake = timingEvents.filter((event) => event.operation === 'committed-output-observed').length;
+        });
+        const seeded = await fixture.seedConnectedGroup('timed-coalesced-room', 3);
+        const pending = await fixture.enqueue(seeded.entries);
+
+        await fixture.process(pending[0]!);
+
+        const committed = await fixture.readCommittedOutbox(seeded.ref);
+        const observed = timingEvents.filter((event) => event.operation === 'committed-output-observed');
+        expect(observed).toHaveLength(3);
+        expect(observedAtWake).toBe(3);
+        expect(observed.map((event) => event.requestId)).toEqual(
+            seeded.principalIds.map((principalId) => `connect-timed-coalesced-room-${principalId}`)
+        );
+        expect(observed.map((event) => event.details)).toEqual(committed.map((entry) =>
+            expect.objectContaining({
+                topicId: entry.key.topicId,
+                resourceId: entry.key.resourceId,
+                contextId: entry.key.contextId,
+                outcome: 'written'
+            })
+        ));
+    });
+
     it('expands ten pending connects of one group with one read and one delta per event in causal order', async () => {
         const fixture = await createCoalescingFixture();
         const reference = await fixture.seedConnectedGroup('reference-room', 10);
@@ -117,9 +146,13 @@ interface CoalescingFixture {
     processAlone(entry: ResourceEntry): Promise<readonly string[]>;
     readSummary(ref: GroupRef): Promise<GroupPresenceSummary>;
     readCommittedDeltas(ref: GroupRef): Promise<readonly GroupStateDeltaEnvelope[]>;
+    readCommittedOutbox(ref: GroupRef): Promise<readonly ResourceEntry[]>;
 }
 
-async function createCoalescingFixture(): Promise<CoalescingFixture> {
+async function createCoalescingFixture(
+    timingEvents?: RallarTimingEvent[],
+    wakeQueue?: () => void
+): Promise<CoalescingFixture> {
     const { sql } = await createPSqlAdmissionTestStorage();
     const now = Date.now();
     const repository = new RecordingRuntimeStateRepository(sql);
@@ -133,7 +166,9 @@ async function createCoalescingFixture(): Promise<CoalescingFixture> {
         recomputeDebounceMs: 0,
         recomputeMaxWaitMs: 0,
         serviceId: 'coalescing-api',
-        now: () => now
+        now: () => now,
+        timing: timingEvents === undefined ? undefined : (event) => timingEvents.push(event),
+        wakeQueue
     });
     const process = async (entry: ResourceEntry): Promise<void> => {
         const reserved = [...(await queue.reserveEntries({
@@ -173,7 +208,8 @@ async function createCoalescingFixture(): Promise<CoalescingFixture> {
             }
             return summary.value;
         },
-        readCommittedDeltas: async (ref) => await readCommittedDeltas(sql, ref)
+        readCommittedDeltas: async (ref) => await readCommittedDeltas(sql, ref),
+        readCommittedOutbox: async (ref) => await readCommittedOutbox(sql, ref)
     };
 }
 
@@ -278,10 +314,15 @@ class RecordingRuntimeStateRepository extends PSqlRuntimeStateRepository {
 }
 
 async function readCommittedDeltas(sql: PSqlSql, ref: GroupRef): Promise<readonly GroupStateDeltaEnvelope[]> {
+    const rows = await readCommittedOutbox(sql, ref);
+    return rows.map((entry) => decodeGroupStateDeltaEnvelope(JSON.parse(decodePersistedALMessage(entry.resource).payload.resource)));
+}
+
+async function readCommittedOutbox(sql: PSqlSql, ref: GroupRef): Promise<readonly ResourceEntry[]> {
     const rows = await sql<ResourceInboxRow[]>`select * from resource_inbox
         where ri_type_id = ${EnqueuedType.WS_OUTBOX} and ri_resource::jsonb->'targets'->'groupRef'->>'groupId' = ${ref.groupId}
         order by ri_row_id`;
-    return rows.map((row) => decodeGroupStateDeltaEnvelope(JSON.parse(decodePersistedALMessage(toDomain(row).resource).payload.resource)));
+    return rows.map(toDomain);
 }
 
 function decodeGroupStateDeltaEnvelope(value: unknown): GroupStateDeltaEnvelope {

@@ -12,12 +12,14 @@ import {
     AL_OUTBOUND_WORK_PAGE_SIZE,
     computeALOutboundWorkEntry
 } from '@shared/alm/outbound/al-outbound-work-entry.ts';
+import type { ALOutboundDequeuedAdmission } from '@shared/alm/outbound/lane/al-outbound-dequeued-admission.ts';
 import {
     EntityStatus,
     InMemoryQueueBox,
     newALUnicastMessage,
     QueueBoxUtilities,
-    type ALMessage
+    type ALMessage,
+    type ResourceEntry
 } from '@shared/mod.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
@@ -64,6 +66,73 @@ function createDequeuedMessage(resourceId: string): ALMessage {
 }
 
 describe('AL outbound dequeue work', () => {
+    it('attributes a held authority read and later ordered dispatch to the claimed queue key', async () => {
+        const outbox = createOutboxQueue();
+        const message = createDequeuedMessage('timed-dequeue');
+        const queued = QueueBoxUtilities.toResourceEntryFromMsg(message, DEQUEUE_TYPE, Temporal.Now.instant());
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const timings: ALOutboundDequeuedAdmission.TimingEvent[] = [];
+        let publicationEntry: ResourceEntry | undefined;
+        const runtime = createDefaultOutboundTestRuntime({
+            outbox,
+            dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
+            dequeueTiming: (event) => timings.push(event),
+            readDequeueAuthority: async () => {
+                entered.resolve();
+                await release.promise;
+                return undefined;
+            },
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
+            afterDequeueAdmission: async (_msg, entry) => {
+                publicationEntry = entry;
+            },
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+        });
+
+        try {
+            await runtime.ready();
+            await outbox.enqueueIfAbsent(queued);
+            const work = runOutboundWorkTask(runtime);
+            await entered.promise;
+            expect(timings.map((event) => event.stage)).toEqual([
+                'reservation-return',
+                'admission-start',
+                'pending-authority-read-start',
+                'pending-authority-read-end',
+                'authority-read-start'
+            ]);
+            release.resolve();
+            await work;
+            await expect.poll(() => timings.some((event) => event.stage === 'ordered-dispatch-start')).toBe(true);
+            expect(timings.map((event) => event.stage)).toEqual([
+                'reservation-return',
+                'admission-start',
+                'pending-authority-read-start',
+                'pending-authority-read-end',
+                'authority-read-start',
+                'authority-read-end',
+                'admission-read-end',
+                'admission-commit-start',
+                'admission-commit-end',
+                'ordered-dispatch-start',
+                'admission-end'
+            ]);
+            expect(timings.every((event) =>
+                event.key.topicId === queued.key.topicId &&
+                event.key.resourceId === queued.key.resourceId &&
+                event.key.contextId === queued.key.contextId &&
+                event.attempts === 1
+            )).toBe(true);
+            expect(timings.find((event) => event.stage === 'ordered-dispatch-start')?.publicationKey)
+                .toEqual(publicationEntry?.key);
+        }
+        finally {
+            release.resolve();
+            await runtime.dispose();
+        }
+    });
+
     it('claims a foreign outbox row as dequeue-message work and admits it through the planner', async () => {
         const outbox = new InMemoryQueueBox(
             undefined,
@@ -95,6 +164,72 @@ describe('AL outbound dequeue work', () => {
 
         expect(sent.map((prepared) => prepared.msgId)).toEqual([message.id.msgId]);
         expect((await outbox.getItem(queued.key))?.status).toBe(EntityStatus.COMPLETED);
+    });
+
+    it('finishes a claimed row when the optional timing sink throws', async () => {
+        const outbox = createOutboxQueue();
+        const message = createDequeuedMessage('timing-sink-throws');
+        const queued = QueueBoxUtilities.toResourceEntryFromMsg(message, DEQUEUE_TYPE, Temporal.Now.instant());
+        const sent: string[] = [];
+        const runtime = createDefaultOutboundTestRuntime({
+            outbox,
+            dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
+            dequeueTiming: () => {
+                throw new Error('timing sink failed');
+            },
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'durable',
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
+            }),
+            sendPreparedMessage: async (prepared) => {
+                sent.push(prepared.msgId);
+                return { status: 'sent', submissionAttempted: true };
+            }
+        });
+
+        try {
+            await runtime.ready();
+            await outbox.enqueueIfAbsent(queued);
+            await runOutboundWorkTask(runtime);
+            expect(sent).toEqual([message.id.msgId]);
+            expect((await outbox.getItem(queued.key))?.status).toBe(EntityStatus.COMPLETED);
+        }
+        finally {
+            await runtime.dispose();
+        }
+    });
+
+    it('ends a rejected authority read without reporting a commit or ordered dispatch', async () => {
+        const outbox = createOutboxQueue();
+        const message = createDequeuedMessage('authority-read-fails');
+        const queued = QueueBoxUtilities.toResourceEntryFromMsg(message, DEQUEUE_TYPE, Temporal.Now.instant());
+        const timings: ALOutboundDequeuedAdmission.TimingEvent[] = [];
+        const runtime = createDefaultOutboundTestRuntime({
+            outbox,
+            dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
+            dequeueTiming: (event) => timings.push(event),
+            readDequeueAuthority: async () => {
+                throw new Error('authority unavailable');
+            },
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+        });
+
+        try {
+            await runtime.ready();
+            await outbox.enqueueIfAbsent(queued);
+            await runOutboundWorkTask(runtime);
+            expect(timings.filter((event) => event.stage === 'authority-read-end'))
+                .toEqual([expect.objectContaining({ outcome: 'error' })]);
+            expect(timings.filter((event) => event.stage === 'admission-end'))
+                .toEqual([expect.objectContaining({ outcome: 'error' })]);
+            expect(timings.some((event) => event.stage === 'admission-commit-start' || event.stage === 'ordered-dispatch-start')).toBe(false);
+        }
+        finally {
+            await runtime.dispose();
+        }
     });
 
     it.each(['not-yet-in-sync', 'unauthorized', 'planner-drop'] as const satisfies readonly ALOutboundDropReasonCode[])(
@@ -170,9 +305,11 @@ describe('AL outbound dequeue work', () => {
             vi.useRealTimers();
         });
         const outbox = createOutboxQueue();
+        const timings: ALOutboundDequeuedAdmission.TimingEvent[] = [];
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
             dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
+            dequeueTiming: (event) => timings.push(event),
             // The RTC origin that owns no child re-plans a queued send to no-route (R-S2c-ii-9a).
             planOutgoingMessage: (msg) => ({
                 msg,
@@ -204,6 +341,15 @@ describe('AL outbound dequeue work', () => {
         const ended = await outbox.getItem(queued.key);
         expect(ended?.dequeueAudit.attempts).toBe(DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts);
         expect([EntityStatus.NEW, EntityStatus.RETRY, EntityStatus.RESERVED]).not.toContain(ended?.status);
+        const reservations = timings.filter((event) => event.stage === 'reservation-return');
+        expect(reservations.map((event) => event.attempts)).toEqual(
+            Array.from({ length: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts }, (_, index) => index + 1)
+        );
+        expect(reservations.every((event) =>
+            event.key.topicId === queued.key.topicId &&
+            event.key.resourceId === queued.key.resourceId &&
+            event.key.contextId === queued.key.contextId
+        )).toBe(true);
     });
 
     it('charges the dequeue breaker for the rejections the work handler swallows', async () => {

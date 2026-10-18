@@ -226,7 +226,27 @@ async function writeQueueBoxOutboxPublication(
     try {
         const envelope = toPubSubMessage({ channel: options.channel, publisherId: options.publisherId, entry });
         publishCall = 'invoked';
-        await options.bridge.publish(options.channel, envelope);
+        if (options.timing) {
+            recordPubSubTiming({
+                timing: options.timing,
+                operation: 'outbox-cluster-publish-start',
+                message: envelope
+            });
+        }
+        try {
+            await options.bridge.publish(options.channel, envelope);
+        }
+        catch (error) {
+            if (options.timing) {
+                recordPubSubTiming({
+                    timing: options.timing,
+                    operation: 'outbox-cluster-publish-error',
+                    message: envelope,
+                    status: 'error'
+                });
+            }
+            throw error;
+        }
         publishCall = 'returned';
         recordPubSubTiming({ timing: options.timing, operation: 'outbox-cluster-publish', message: envelope });
         const policy = await readCapturedPublicationPolicy(options.wsQBoxServerService, message, entry);
@@ -587,10 +607,11 @@ interface RecordPubSubTimingInput {
     readonly operation: string;
     readonly message: Partial<QueueBoxPubSubMessage> | undefined;
     readonly details?: RallarTimingDetails;
+    readonly status?: 'ok' | 'error';
 }
 
 function recordPubSubTiming(input: RecordPubSubTimingInput): void {
-    const { timing, operation, message, details = {} } = input;
+    const { timing, operation, message, details = {}, status = 'ok' } = input;
     recordRallarTiming({
         sink: timing,
         event: {
@@ -599,7 +620,7 @@ function recordPubSubTiming(input: RecordPubSubTimingInput): void {
             serviceId: message?.publisherId,
             details: { ...toPubSubTimingDetails(message), ...details }
         },
-        status: 'ok',
+        status,
         durationMs: 0
     });
 }

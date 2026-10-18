@@ -1,5 +1,6 @@
 import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { isNotReadyException } from '../../../queuebox/resource-inbox/not-ready-exception.ts';
+import type { Key } from '../../../queuebox/ResourceEntry.ts';
 import { BoundedConcurrencyAdmission } from '../../../resilience/bounded-concurrency-admission.ts';
 import type { ALWorkAttemptResult } from '../../work/al-work-handler.ts';
 import type { ALWorkOutcome } from '../../work/al-work-queue-port.ts';
@@ -8,8 +9,13 @@ import type {
     ALOutboundEffectSnapshot
 } from '../admission/al-outbound-admission-store.ts';
 import type { ALOutboundDispatchAdmission } from '../al-outbound-dispatch-admission.ts';
-import type { ALOutboundMessageRuntime, ALOutboundSettlementEmitter } from '../al-outbound-message-runtime.ts';
+import type {
+    ALOutboundDequeueAuthority,
+    ALOutboundMessageRuntime,
+    ALOutboundSettlementEmitter
+} from '../al-outbound-message-runtime.ts';
 import type { ALOutboundComputedDto } from '../compute-al-outbound-dispatch.ts';
+import { recordALOutboundDequeueTiming } from './al-outbound-dequeue-timing.ts';
 import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observation.ts';
 import { readALOutboundDequeueWait } from './read-al-outbound-dequeue-wait.ts';
 
@@ -17,6 +23,31 @@ import { readALOutboundDequeueWait } from './read-al-outbound-dequeue-wait.ts';
 export const AL_OUTBOUND_DEQUEUED_READ_CONCURRENCY = 2;
 
 export namespace ALOutboundDequeuedAdmission {
+    export type TimingStage =
+        | 'reservation-return'
+        | 'admission-start'
+        | 'pending-authority-read-start'
+        | 'pending-authority-read-end'
+        | 'authority-read-start'
+        | 'authority-read-end'
+        | 'admission-read-end'
+        | 'admission-commit-start'
+        | 'admission-commit-end'
+        | 'ordered-dispatch-start'
+        | 'admission-end';
+
+    export interface TimingEvent {
+        readonly stage: TimingStage;
+        readonly key: Key;
+        readonly attempts: number;
+        readonly claimStartedAtEpochMs: number | undefined;
+        readonly batchIndex: number;
+        readonly publicationKey?: Key;
+        readonly outcome?: string;
+    }
+
+    export type TimingSink = (event: TimingEvent) => void;
+
     export interface Dependencies<TPrepared> {
         readonly runtime: ALOutboundMessageRuntime.Dependencies<TPrepared>;
         /** The store of the lane these rows admit through. */
@@ -28,12 +59,14 @@ export namespace ALOutboundDequeuedAdmission {
         /** Aborts with the runtime, so an aborted signal is exactly a disposed runtime. */
         readonly sendSignal: AbortSignal;
         readonly settlements: ALOutboundSettlementEmitter;
+        readonly timing: TimingSink | undefined;
     }
 
     /** One dequeued row of a batch, with the evidence its attempt records. */
     export interface Member<TPrepared> {
         readonly effect: ALOutboundEffectSnapshot<TPrepared>;
         readonly evidence: ALOutboundReceiptWorkEvidence | undefined;
+        readonly batchIndex: number;
     }
 }
 
@@ -50,7 +83,7 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
         effect: ALOutboundEffectSnapshot<TPrepared>,
         evidence?: ALOutboundReceiptWorkEvidence
     ): Promise<ALWorkAttemptResult> {
-        const [attempt] = this.admitDequeuedMessages([{ effect, evidence }]);
+        const [attempt] = this.admitDequeuedMessages([{ effect, evidence, batchIndex: 0 }]);
         return await attempt!;
     }
 
@@ -69,21 +102,28 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
         const reads = members.map((member, index) =>
             fronts[index]!.then((settled) =>
                 settled === undefined
-                    ? reading.admit(() => this.readDequeuedDispatch(member.effect, member.evidence))
+                    ? reading.admit(() => this.readDequeuedDispatch(member))
                     : undefined
             )
         );
-        const commits = this.commitDequeuedDispatches(reads);
+        const commits = this.commitDequeuedDispatches(reads, members);
         let previous: Promise<void> = Promise.resolve();
         return members.map((member, index) => {
             const attempt = previous.then(async () => {
-                const front = await fronts[index]!;
-                if (front !== undefined) {
-                    return front;
+                try {
+                    const front = await fronts[index]!;
+                    const outcome = front !== undefined
+                        ? front
+                        : await this.chargeDequeued(() =>
+                            this.finishDequeuedAdmission({ member, read: reads[index]!, commits, index })
+                        );
+                    this.recordTiming(member, 'admission-end', outcome.status);
+                    return outcome;
                 }
-                return await this.chargeDequeued(() =>
-                    this.finishDequeuedAdmission({ member, read: reads[index]!, commits, index })
-                );
+                catch (error) {
+                    this.recordTiming(member, 'admission-end', 'error');
+                    throw error;
+                }
             });
             previous = attempt.then(() => undefined, () => undefined);
             return attempt;
@@ -94,35 +134,58 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
     private async readDequeuedFront(
         member: ALOutboundDequeuedAdmission.Member<TPrepared>
     ): Promise<ALWorkAttemptResult | undefined> {
+        this.recordTiming(member, 'admission-start');
         member.evidence?.recordStage('dequeue-gate');
         const { resilience } = this.dependencies.runtime.dequeue;
         if (resilience.isNotAllowedThroughToDequeue()) {
             return { status: 'not-ready', readyAtMs: this.readNowMs() + resilience.toCircuitOpenBackoffMs() };
         }
-        return await readALOutboundDequeueWait({
-            effect: member.effect,
-            readAuthority: this.dependencies.runtime.readPendingAdmissionAuthority,
-            settlements: this.dependencies.settlements,
-            clock: this.dependencies.runtime.clock,
-            signal: this.dependencies.sendSignal
-        });
+        this.recordTiming(member, 'pending-authority-read-start');
+        try {
+            const result = await readALOutboundDequeueWait({
+                effect: member.effect,
+                readAuthority: this.dependencies.runtime.readPendingAdmissionAuthority,
+                settlements: this.dependencies.settlements,
+                clock: this.dependencies.runtime.clock,
+                signal: this.dependencies.sendSignal
+            });
+            this.recordTiming(member, 'pending-authority-read-end', result?.status ?? 'ready');
+            return result;
+        }
+        catch (error) {
+            this.recordTiming(member, 'pending-authority-read-end', 'error');
+            throw error;
+        }
     }
 
     private async readDequeuedDispatch(
-        effect: ALOutboundEffectSnapshot<TPrepared>,
-        evidence: ALOutboundReceiptWorkEvidence | undefined
+        member: ALOutboundDequeuedAdmission.Member<TPrepared>
     ): Promise<ALOutboundDequeuedRead<TPrepared>> {
+        const { effect, evidence } = member;
         const runtime = this.dependencies.runtime;
         const msg = effect.canonicalMessage;
         if (!msg) {
             throw new NonRetryableException('Dequeued work has no message');
         }
         evidence?.recordStage('dequeue-authority');
-        const dequeueAuthority = await runtime.readDequeueAuthority?.(msg, effect.entry);
+        let dequeueAuthority: ALOutboundDequeueAuthority | undefined;
+        if (runtime.readDequeueAuthority !== undefined) {
+            this.recordTiming(member, 'authority-read-start');
+            try {
+                dequeueAuthority = await runtime.readDequeueAuthority(msg, effect.entry);
+                this.recordTiming(member, 'authority-read-end', 'ok');
+            }
+            catch (error) {
+                this.recordTiming(member, 'authority-read-end', 'error');
+                throw error;
+            }
+        }
         evidence?.recordStage('dequeue-supersedence');
         if (await this.dependencies.admissionStore.isMessageSuperseded(msg)) {
+            this.recordTiming(member, 'admission-read-end', 'superseded');
             return { kind: 'superseded' };
         }
+        this.recordTiming(member, 'admission-read-end', 'dispatch');
         evidence?.recordStage('dequeue-commit');
         return {
             kind: 'dispatch',
@@ -148,7 +211,8 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
 
     /** Every row's read settles first; then each sender's dispatches commit together, in row order. */
     private async commitDequeuedDispatches(
-        reads: readonly Promise<ALOutboundDequeuedRead<TPrepared> | undefined>[]
+        reads: readonly Promise<ALOutboundDequeuedRead<TPrepared> | undefined>[],
+        members: readonly ALOutboundDequeuedAdmission.Member<TPrepared>[]
     ): Promise<readonly (PromiseSettledResult<ALOutboundComputedDto<TPrepared>> | undefined)[]> {
         const dispatches = (await Promise.allSettled(reads)).map((read) =>
             read.status === 'fulfilled' && read.value?.kind === 'dispatch' ? read.value.dispatch : undefined
@@ -164,10 +228,27 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
             () => undefined
         );
         await Promise.all([...indexesBySender.values()].map(async (indexes) => {
-            const settled = await this.dependencies.commitDispatchPlans(indexes.map((index) => dispatches[index]!));
-            indexes.forEach((index, position) => {
-                commits[index] = settled[position];
-            });
+            for (const index of indexes) {
+                this.recordTiming(members[index]!, 'admission-commit-start');
+            }
+            try {
+                const settled = await this.dependencies.commitDispatchPlans(indexes.map((index) => dispatches[index]!));
+                indexes.forEach((index, position) => {
+                    commits[index] = settled[position];
+                    const result = settled[position];
+                    this.recordTiming(
+                        members[index]!,
+                        'admission-commit-end',
+                        result?.status ?? 'missing'
+                    );
+                });
+            }
+            catch (error) {
+                for (const index of indexes) {
+                    this.recordTiming(members[index]!, 'admission-commit-end', 'error');
+                }
+                throw error;
+            }
         }));
         return commits;
     }
@@ -193,9 +274,54 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
         const [entry] = computed.entries;
         if (computed.msg && entry) {
             member.evidence?.recordStage('dequeue-after-admission');
+            this.recordOrderedDispatchStart(member, entry.key, computed.verdict.kind);
             await this.dependencies.runtime.afterDequeueAdmission?.(computed.msg, entry);
         }
         return { status: 'completed' };
+    }
+
+    private recordTiming(
+        member: ALOutboundDequeuedAdmission.Member<TPrepared>,
+        stage: ALOutboundDequeuedAdmission.TimingStage,
+        outcome?: string
+    ): void {
+        const sink = this.dependencies.timing;
+        if (sink === undefined) {
+            return;
+        }
+        recordALOutboundDequeueTiming(sink, this.toTimingEvent(member, stage, outcome));
+    }
+
+    private recordOrderedDispatchStart(
+        member: ALOutboundDequeuedAdmission.Member<TPrepared>,
+        publicationKey: Key,
+        outcome: string
+    ): void {
+        const sink = this.dependencies.timing;
+        if (sink === undefined) {
+            return;
+        }
+        recordALOutboundDequeueTiming(sink, {
+            ...this.toTimingEvent(member, 'ordered-dispatch-start', outcome),
+            publicationKey
+        });
+    }
+
+    private toTimingEvent(
+        member: ALOutboundDequeuedAdmission.Member<TPrepared>,
+        stage: ALOutboundDequeuedAdmission.TimingStage,
+        outcome?: string
+    ): ALOutboundDequeuedAdmission.TimingEvent {
+        return {
+            stage,
+            key: member.effect.entry.key,
+            attempts: member.effect.attempts,
+            claimStartedAtEpochMs: member.effect.entry.dequeueAudit.startTs === undefined
+                ? undefined
+                : Number(member.effect.entry.dequeueAudit.startTs.epochMilliseconds),
+            batchIndex: member.batchIndex,
+            outcome
+        };
     }
 
     /**

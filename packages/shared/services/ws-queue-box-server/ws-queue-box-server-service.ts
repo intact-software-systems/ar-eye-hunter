@@ -40,6 +40,7 @@ import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
 } from '../../alm/outbound/create-default-al-outbound-message-runtime.ts';
+import type { ALOutboundDequeuedAdmission } from '../../alm/outbound/lane/al-outbound-dequeued-admission.ts';
 import {
     createALOutboundReceiptWorkEvidence,
     toALOutboundReceiptFacts
@@ -137,6 +138,7 @@ export namespace WsQueueBoxServerService {
         readonly outboundSettlements?: ALDeliverySettlementSink;
         readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
         readonly receiptObserver?: WsQueueBoxServerReceiptObserver;
+        readonly dequeueTiming?: ALOutboundDequeuedAdmission.TimingSink;
         readonly dequeueResilience?: ResourceInboxResilience;
         readonly outboundDeliveryOutcome?: (outcome: WsOutboxDeliveryOutcome) => void;
         readonly deliveryDiagnostics?: WsDeliveryDiagnosticsSink;
@@ -191,6 +193,7 @@ export namespace WsQueueBoxServerService {
         readonly outboundSettlements: ALDeliverySettlementSink | undefined;
         readonly inboundDiagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
         readonly receiptObserver?: WsQueueBoxServerReceiptObserver;
+        readonly dequeueTiming?: ALOutboundDequeuedAdmission.TimingSink;
         readonly outboundDeliveryOutcome: ((outcome: WsOutboxDeliveryOutcome) => void) | undefined;
         readonly deliveryDiagnostics: WsDeliveryDiagnosticsSink | undefined;
         readonly authorizeInboundMessage: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
@@ -386,6 +389,7 @@ export class WsQueueBoxServerService {
                         serverPeerId: this.name
                     })
             },
+            dequeueTiming: dependencies.dequeueTiming,
             settlements: dependencies.outboundSettlements,
             toOutboxEntry: (message: ALMessage) =>
                 QueueBoxUtilities.toResourceEntryFromMsg(
@@ -909,6 +913,7 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
         outboundSettlements: input.outboundSettlements,
         inboundDiagnostics: input.inboundDiagnostics,
         receiptObserver: input.receiptObserver,
+        dequeueTiming: input.dequeueTiming,
         outboundDeliveryOutcome: input.outboundDeliveryOutcome,
         deliveryDiagnostics: input.deliveryDiagnostics,
         authorizeInboundMessage: input.authorizeInboundMessage ?? Either.ofRight,

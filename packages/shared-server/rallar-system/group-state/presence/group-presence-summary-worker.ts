@@ -28,7 +28,6 @@ import {
     recordRallarTiming,
     timeRallarAsync,
     type RallarTimingDetails,
-    type RallarTimingEventInput,
     type RallarTimingSink
 } from '../../observability/timing.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../../topology/mutation/rtc-topology-outbox-entry.ts';
@@ -68,6 +67,11 @@ import {
     type GroupPresenceSummaryReservationRead,
     type GroupPresenceSummaryWorkRead
 } from './group-presence-summary-effects.ts';
+import {
+    recordGroupPresenceSummaryCommittedOutputs,
+    toGroupPresenceSummaryTimingEvent,
+    type GroupPresenceSummaryTiming
+} from './group-presence-summary-timing.ts';
 
 export interface GroupPresenceSummaryWorkOptions {
     readonly runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
@@ -93,8 +97,6 @@ interface GroupPresenceSummaryExpansion {
     readonly read: GroupPresenceSummaryWorkRead;
     readonly computed: GroupPresenceSummaryComputedWork;
 }
-
-type GroupPresenceSummaryPhase = 'claim' | 'read' | 'compute' | 'write';
 
 type GroupPresenceSummaryWriteOutcome = 'written' | 'summary-changed';
 
@@ -304,7 +306,12 @@ export class GroupPresenceSummaryWork {
         const workCount = { coalescedWorkCount: items.length };
         const read = await timeRallarAsync(
             this.options.timing,
-            this.toPhaseTimingEvent(primary, 'read', workCount),
+            toGroupPresenceSummaryTimingEvent({
+                work: primary,
+                operation: 'read',
+                serviceId: this.options.serviceId,
+                details: workCount
+            }),
             async () => await this.read(items, this.now())
         );
         const reads = read.fold(
@@ -326,10 +333,22 @@ export class GroupPresenceSummaryWork {
         const proofs = expansions.flatMap((expansion) => computeGroupDeltaProvenance(expansion.computed));
         const outcome = await timeRallarAsync(
             this.options.timing,
-            this.toPhaseTimingEvent(primary, 'write', effectDetails),
+            toGroupPresenceSummaryTimingEvent({
+                work: primary,
+                operation: 'write',
+                serviceId: this.options.serviceId,
+                details: effectDetails
+            }),
             async () => await this.writeExpansion(database, coalesced, proofs)
         );
         if (outcome === 'written') {
+            if (this.options.timing !== undefined) {
+                recordGroupPresenceSummaryCommittedOutputs({
+                    timing: this.options.timing,
+                    serviceId: this.options.serviceId,
+                    expansions
+                });
+            }
             this.options.wakeQueue?.();
             this.recordFormationMetrics(coalesced);
         }
@@ -439,33 +458,16 @@ export class GroupPresenceSummaryWork {
 
     private recordPhase(
         work: GroupPresenceSummaryWorkData,
-        operation: GroupPresenceSummaryPhase,
+        operation: GroupPresenceSummaryTiming.Phase,
         details: RallarTimingDetails,
         startedAtMs: number
     ): void {
         recordRallarTiming({
             sink: this.options.timing,
-            event: this.toPhaseTimingEvent(work, operation, details),
+            event: toGroupPresenceSummaryTimingEvent({ work, operation, serviceId: this.options.serviceId, details }),
             status: 'ok',
             durationMs: nowMs() - startedAtMs
         });
-    }
-
-    private toPhaseTimingEvent(
-        work: GroupPresenceSummaryWorkData,
-        operation: GroupPresenceSummaryPhase,
-        details: RallarTimingDetails
-    ): RallarTimingEventInput {
-        return {
-            component: 'group-presence-summary',
-            operation,
-            serviceId: this.options.serviceId,
-            requestId: work.commandId,
-            applicationId: work.aggregateRef.applicationId,
-            workspaceId: work.aggregateRef.workspaceId,
-            groupId: work.aggregateRef.groupId,
-            details
-        };
     }
 
     private recordFormationMetrics(coalesced: GroupPresenceSummaryCoalescedWrite): void {

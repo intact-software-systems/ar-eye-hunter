@@ -20,7 +20,7 @@ import {
     RALLAR_ALM_RECEIPT_DIAGNOSTICS_CAPACITY,
     type RallarAlmReceiptDiagnosticsRecorder
 } from '@shared-server/rallar-system/observability/alm-receipt-diagnostics.ts';
-import { type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
+import { recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import type { AppInboxCompletionNoticeChannel } from '@shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.ts';
 import { RtcRttInboxService } from '@shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-inbox-service.ts';
 import {
@@ -369,6 +369,31 @@ function createSharedMiddleware(
         wsOutboundDiagnostics: mutation.groupFormationMetrics.outboundWork,
         wsOutboundSettlements: input.almReceiptDiagnostics.settlements,
         wsReceiptObserver: input.wsReceiptObserver,
+        wsDequeueTiming: input.wsReceiptObserver === undefined ? undefined : (stage) => {
+            recordRallarTiming({
+                sink: input.timing,
+                event: {
+                    component: 'alm-outbound-dequeue',
+                    operation: stage.stage,
+                    serviceId: mutation.serviceId,
+                    details: {
+                        publisherId: input.queuePubSubPublisherId,
+                        topicId: stage.key.topicId,
+                        resourceId: stage.key.resourceId,
+                        contextId: stage.key.contextId,
+                        attempts: stage.attempts,
+                        claimStartedAtEpochMs: stage.claimStartedAtEpochMs,
+                        batchIndex: stage.batchIndex,
+                        publicationTopicId: stage.publicationKey?.topicId,
+                        publicationResourceId: stage.publicationKey?.resourceId,
+                        publicationContextId: stage.publicationKey?.contextId,
+                        outcome: stage.outcome
+                    }
+                },
+                status: stage.outcome === 'error' || stage.outcome === 'rejected' ? 'error' : 'ok',
+                durationMs: 0
+            });
+        },
         createGroupStateInboxService: mutation.createGroupStateInboxService,
         createTopologyInboxService: ({ inboxQueueReader, wakeQueueEngine }) =>
             createTopologyInboxService(input, inboxQueueReader, wakeQueueEngine),

@@ -40,7 +40,7 @@ export function runALOutboundDequeueClaimGroup<TPrepared>(
     if (input.claims.length < 2) {
         return attempts;
     }
-    const starts = input.claims.map((claim) => startDequeueClaim(input, claim));
+    const starts = input.claims.map((claim, index) => startDequeueClaim(input, claim, index));
     const admitted = input.admit(starts.flatMap((start) => start.kind === 'admit' ? [start.member] : []));
     let admittedIndex = 0;
     input.claims.forEach((claim, index) => {
@@ -63,7 +63,8 @@ type ALOutboundDequeueStart<TPrepared> =
 /** A row whose work cannot be read is dropped once its deadline passed, and rejected before. */
 function startDequeueClaim<TPrepared>(
     input: ALOutboundDequeueClaimGroup.Input<TPrepared>,
-    claim: ALWorkClaim
+    claim: ALWorkClaim,
+    batchIndex: number
 ): ALOutboundDequeueStart<TPrepared> {
     let work: ALOutboundEffectSnapshot<TPrepared>;
     try {
@@ -75,7 +76,11 @@ function startDequeueClaim<TPrepared>(
             : Promise.reject(error);
         return { kind: 'settled', member: undefined, attempt };
     }
-    const member = { effect: work, evidence: input.createEvidence(work) };
+    const member = {
+        effect: work,
+        evidence: input.createEvidence(work),
+        batchIndex
+    };
     const settled = input.readSettledBeforeEffect(work, member.evidence);
     return settled === undefined
         ? { kind: 'admit', member }
