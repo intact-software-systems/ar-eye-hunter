@@ -4,6 +4,9 @@ import { cors } from 'hono/cors';
 
 import { createDefaultRallarServer } from '@api-v1/src/composition/create-default-rallar-server.ts';
 import { createDefaultApiV1DatabaseLifecycle } from '@api-v1/src/db/api-v1-database-lifecycle.ts';
+import {
+    STATE_SNAPSHOT_READ_EXPOSED_HEADERS
+} from '@api-v1/src/routes/state-snapshot-read/state-snapshot-read-exposed-headers.ts';
 import { requireApiAuthSession, toAuthErrorResponse } from '@api-v1/src/services/request-auth-service.ts';
 import { isRelicCommand, toRelicRoomGroupRef } from '@relic-hunters/mod.ts';
 import { isGroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
@@ -77,7 +80,13 @@ const apiCors = cors({
     origin: (origin) => resolveCorsOrigin(origin, configuration.http.corsOrigins),
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization', 'x-client-id'],
-    exposeHeaders: ['Content-Length'],
+    exposeHeaders: [
+        'Content-Length',
+        'Server-Timing',
+        'x-request-id',
+        'Retry-After',
+        ...STATE_SNAPSHOT_READ_EXPOSED_HEADERS
+    ],
     maxAge: configuration.http.preflightMaxAgeSeconds,
     credentials: true
 });
