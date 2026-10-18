@@ -15,10 +15,11 @@ Use the current repository owners, nearby tests and examples to recover each act
 this plan is neither a substitute for source navigation nor a delivery ledger. No new dependencies,
 runner, evaluator, generic diagnostic framework or duplicate policy engine are required.
 
-The current pull request delivers V1c step 1: bounded lane execution, independently evidenced
-runtime repairs and the consumer-proof workload. V1c step 2 completes original scale acceptance
-and comparative benefit after the user manually merges step 1. Preparing step 1 for main does not
-make the full V1c outcome complete or waive either failed gate.
+Step 1 and step 2a through step 2g are merged. Step 2h continues the shared-mechanism consolidation
+and V1c acceptance closure. The first increment replaces the artifact recorder's repeated timer
+loop with the existing shared flush owner; its implementation plan is
+`plans/active/alm-v1c-artifact-flush-implementation-plan.md` while that increment is underway.
+Delivery of one consolidation does not make the full V1c outcome complete or waive its remaining gates.
 
 The live pull request owns delivery state. Git history, immutable ignored evidence and the
 pull request retain prior outcomes and review chronology; do not copy that history into this plan.
@@ -143,7 +144,11 @@ unchanged 5% allowance. No sample removal, threshold waiver or blind comparative
 Preserve the current source-owned canonical bundle budgets, compression settings, dependency
 boundaries and strict comparisons. Accepted bundle growth is not a runtime benefit.
 
-## Current evidence and open facts
+## Step 1 baseline evidence and original open facts
+
+These observations motivated the subsequent step 2 work. Later measured outcomes appear in the
+delivered increments below; do not treat an earlier failed cohort as the current result. The
+final evidence reconciliation must preserve workload provenance and the unwaived benefit gate.
 
 - Original capture-off fifteen-agent acceptance fails after setup, RTC readiness and START.
   It sends 83 of 84 shots: 66 ACK observations pass, fifteen time out and two remain unfinished.
@@ -184,6 +189,22 @@ boundaries and strict comparisons. Accepted bundle growth is not a runtime benef
 
 ## Next two useful slices
 
+1. **Artifact flush consolidation:** add explicit first-mark delay and reusable drain to the
+   existing shared `ThrottledFlush`, then replace the recorder's timer loop. Preserve its durable
+   capture receipts, per-run overflow, pending cap and file/delete ordering. Prove stalled-write
+   scheduling and read/shutdown draining through semantic tests and real artifact files. The
+   base includes the merged retention/evidence changes from #671; preserve their capture contract.
+2. **Remaining shared-mechanism audit and next measured repair:** recover current consumers of
+   the D278 candidates and D298's unread rate adjustment, then select the next owned change from
+   evidence. The AL checkpoint writer, serialized chains, keyed limiter, abort scope, UTF-8
+   length and repeating-run copies remain outcomes until that audit selects a concrete task.
+
+Full V1c closure still requires the original scale acceptance, D281's comparison against main
+before step 1, the PostgreSQL four-arm comparison or removal of the falsified adaptive arm,
+and reconciliation of this plan's evidence. Incremental delivery must not replace those outcomes.
+
+## Delivered increments and design context
+
 Step 1 is merged (#652). The opening navigation probe of step 2 was performed on 2026-10-14 from the
 concrete group-state AppInbox registration with Go to Definition and Find Usages and reached all
 five landmarks (entry `processGroupStateMutation`; authority decode and `validate`; the guarded
@@ -192,7 +213,7 @@ wake, the completion notification and `observeSnapshot`), with one resolvable ty
 `GroupStateMutationService.write` and no search escape. The static audit, the GitHub Free review and
 decisions D194 to D204 live in
 [alm-v1c-step2-design-proposal.md](../../playground/alm/alm-v1c-step2-design-proposal.md); this plan
-binds the two slices that follow from them; step 2a is merged (#662) and step 2b is this PR.
+records their original design context; step 2a and step 2b are merged.
 
 Step 2a (the leader-ACK path and the harness amplification, D199, D200, D202) is merged as #662.
 
@@ -347,7 +368,7 @@ limiter for the ACK relay, a trailing flush with one in-flight write (snapshot p
 checkpoint writer, the artifact recorder), a serialized promise chain, a queuebox-level sibling-row
 claim shared by the presence summary and topology work, sliced JSON streaming, and a linked abort scope.
 
-### Step 2g: the API thread's per-player cost and the lane's fault tolerance (this PR)
+### Step 2g: the API thread's per-player cost and the lane's fault tolerance (merged, #670)
 
 Step 2f is merged (#669 as `80749db`). Its hosted 50 journals (proposal §4 step 2g) show the lane 11 % busy in the
 connect window and the per-player cost in request time the server does not record (17.2 s of untimed gaps per

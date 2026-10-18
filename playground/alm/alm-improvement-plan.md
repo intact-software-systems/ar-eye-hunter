@@ -342,6 +342,8 @@ question.
 - Normal room operation is optimistic and permissive: use sufficient existing authority, make
   progress with available routes, recover from delayed observations. Missing evidence is a bounded
   waiting or recovery condition; proved lack of authority is a rejection.
+- No legacy, no duplication, no migration code. Keep the repository consistent and prefer existing
+  patterns. Reusable mechanisms belong in the shared owner and are composed by their consumers.
 - Reuse QueueBox for queued work, reservations, redelivery, and scheduling. ALM owns message
   handling, policy, validation, receipts, and recovery decisions; it does not implement another queue.
 - Durable messages are self-contained: immutable facts, independently retryable derived state,
@@ -1611,10 +1613,12 @@ the consumer-proof workload); its workload, complete-workload deadline and nativ
 in [alm-v1c-design-proposal.md](alm-v1c-design-proposal.md). V1c step 2a is delivered (#662 as `2c167a7`, decisions D199, D200 and D202 in
 [alm-v1c-step2-design-proposal.md](alm-v1c-step2-design-proposal.md)); step 2b is delivered (#664 as `9f71ea2`: the engine, its fault tolerance, the handler cost, the
 director-rooted tree and the diagnostic volume, D194–D198, D201, D205, D207, D208; hosted 15 passes through the GitHub
-Free `hetzner-control` mode); step 2c (the acknowledgement tail at scale and the control plane at 50, D209–D218: the first local
-50-agent pass and the hosted 15 pass) is on PR #666; step 2d (hosted formation throughput: the single-lane hosted API relays
-one offer→answer in 4.3 s at 15 and 7.1 s at 30 agents, then 30 → 50 hosted and the lane-policy benefit gate) is the next
-slice; the plan `plans/active/alm-v1c-scale-evidence-implementation-plan.md` binds them. V1d follows as a
+Free `hetzner-control` mode). Steps 2c through 2g are delivered through #666–#670. Step 2h begins with
+the artifact recorder's shared flush consolidation under D278, followed by the current-consumer
+audit of the remaining shared mechanisms and unused rate adjustment. The plan
+`plans/active/alm-v1c-scale-evidence-implementation-plan.md` binds that horizon and the original
+scale and comparative acceptance. The merged #671 retention/evidence changes are part of the
+current implementation baseline. V1d follows only after full V1c acceptance and the user's merge, as a
 60-minute retention and memory-growth proof, including delivered-marker history; its workload and budgets
 remain outcome-shaped until V1c evidence earns the design. Recover the current owner, entry, dataflow, failure
 boundary, and tests from the repository
