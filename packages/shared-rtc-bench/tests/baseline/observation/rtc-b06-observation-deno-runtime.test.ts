@@ -20,6 +20,7 @@ import {
     onTestFinished
 } from 'vitest';
 
+import { RTC_BASELINE_WORKLOAD_CATALOG } from '../../../baseline/catalog/rtc-baseline-workload-catalog.ts';
 import {
     createRtcB06LiveProducerCommand,
     createRtcB06ObservationDenoRuntime,
@@ -322,6 +323,124 @@ describe('governed RTC-B06 producer evidence', () => {
 });
 
 describe('RTC-B06 observation Deno runtime', () => {
+    it.each(
+        [
+            ['E3-memory', 'default', 'test:rallar:full-stack:memory:live-rtc-3'],
+            ['E3-memory', 'all-scenarios', 'test:rallar:full-stack:memory:live-rtc-3'],
+            ['E3-memory', 'retention-100', 'test:rallar:full-stack:memory:live-rtc-3'],
+            ['E4-pg', 'default', 'test:rallar:full-stack:postgres:live-rtc-3'],
+            ['E4-pg', 'all-scenarios', 'test:rallar:full-stack:postgres:live-rtc-3:all'],
+            ['E4-pg', 'retention-100', 'test:rallar:full-stack:postgres:live-rtc-3']
+        ] as const
+    )('launches the admitted %s/%s catalog command through the producer port', async (environmentId, caseId, script) => {
+        const locator = { ...attempt(caseId), environmentId, inputKey: environmentId.toLowerCase() + '-' + caseId };
+        const catalog = RTC_BASELINE_WORKLOAD_CATALOG.find((entry) => entry.workloadId === 'RTC-B06')?.cases
+            .find((entry) => entry.caseId === caseId && entry.inputKey === locator.inputKey);
+        expect(catalog?.runtime).toEqual({ executable: 'npm', prefixArguments: ['run', script] });
+        const launched: string[][] = [];
+        const result = await runRtcB06LiveProducer(
+            {
+                ...producerRuntime(),
+                envGet: (name) => name === 'DATABASE_URL' ? 'postgres://fixture.invalid/database' : 'local',
+                command: async (_executable, arguments_) => {
+                    launched.push([...arguments_]);
+                    return { code: 0, stdout: new Uint8Array(), stderr: new Uint8Array() };
+                }
+            },
+            { writeStdout: async () => {}, writeStderr: async () => {} },
+            {
+                repositoryRoot: '/repository',
+                baselineId: baselineId.replace('e3-memory', environmentId.toLowerCase()),
+                attempt: locator,
+                eventHistory: { mode: 'full' }
+            }
+        );
+        expect(result).toEqual({ exitStatus: 0 });
+        expect(launched).toHaveLength(1);
+        const command = launched[0]!;
+        expect(command.slice(command.indexOf('npm'), command.indexOf('npm') + 3)).toEqual(['npm', 'run', script]);
+        if (environmentId === 'E4-pg') {
+            expect(command).toContain('VITE_RALLAR_EVENT_HISTORY=full');
+            expect(command.some((entry) => entry.startsWith('RALLAR_ICE_RATE_LIMIT_REQUESTS='))).toBe(false);
+        }
+    });
+
+    it('launches E4 through the existing PostgreSQL command with inherited private connection and sealed local ICE', () => {
+        const command = createRtcB06LiveProducerCommand({
+            repositoryRoot: '/repository',
+            baselineId: baselineId.replace('e3-memory', 'e4-pg'),
+            attempt: { ...attempt('retention-100'), environmentId: 'E4-pg', inputKey: 'e4-pg-retention-100' },
+            eventHistory: { mode: 'full' }
+        });
+        expect(command.arguments).toContain('test:rallar:full-stack:postgres:live-rtc-3');
+        const child = execFileSync(command.executable, [
+            ...command.arguments.slice(0, command.arguments.indexOf('npm')),
+            process.execPath,
+            '--eval',
+            'process.stdout.write(JSON.stringify({ connection: process.env.DATABASE_URL, ice: process.env.RALLAR_ICE_MODE, history: process.env.VITE_RALLAR_EVENT_HISTORY, apiMode: process.env.RALLAR_BLACK_BOX_API_MODE, requests: process.env.RALLAR_ICE_RATE_LIMIT_REQUESTS ?? null }))'
+        ], {
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                DATABASE_URL: 'postgres://private.invalid/test',
+                RALLAR_ICE_MODE: 'conflicting',
+                RALLAR_BLACK_BOX_API_MODE: 'memory',
+                RALLAR_ICE_RATE_LIMIT_REQUESTS: '101'
+            }
+        });
+        expect(JSON.parse(child)).toEqual({
+            connection: 'postgres://private.invalid/test',
+            ice: 'local',
+            history: 'full',
+            apiMode: 'postgres',
+            requests: null
+        });
+        expect(command.arguments.join(' ')).not.toContain('postgres://');
+    });
+
+    it.each([undefined, '', '   '])('refuses an absent E4 connection before allocation or launch (%s)', async (databaseUrl) => {
+        const effects: string[] = [];
+        const result = await runRtcB06LiveProducer(
+            {
+                ...producerRuntime(),
+                envGet: (name) => name === 'DATABASE_URL' ? databaseUrl : 'local',
+                mkdir: async () => {
+                    effects.push('mkdir');
+                },
+                command: async () => {
+                    effects.push('command');
+                    return { code: 0, stdout: new Uint8Array(), stderr: new Uint8Array() };
+                }
+            },
+            { writeStdout: async () => {}, writeStderr: async () => {} },
+            {
+                repositoryRoot: '/repository',
+                baselineId: baselineId.replace('e3-memory', 'e4-pg'),
+                attempt: { ...attempt('default'), inputKey: 'e4-pg-default', environmentId: 'E4-pg' }
+            }
+        );
+        expect(result.exitStatus).toBe(1);
+        expect(effects).toEqual([]);
+    });
+
+    it('refuses E4 initialization with nonlocal ICE before source effects', async () => {
+        const port = producerRuntime();
+        const adapters = createDenoRtcBaselineAdapters(port);
+        const runtime = createRtcB06ObservationDenoRuntime({
+            repositoryRoot: '/repository',
+            adapters,
+            envelope: createRtcBaselineDenoRuntime(adapters),
+            producerOutput: { writeStdout: async () => {}, writeStderr: async () => {} },
+            runtime: {
+                ...port,
+                envGet: (name) => name === 'DATABASE_URL' ? 'postgres://private.invalid/test' : 'public',
+                lstat: async () => {
+                    throw new Error('must refuse before filesystem');
+                }
+            }
+        });
+        expect(await runtime.preflight('E4-pg')).toMatchObject({ ok: false, issues: [{ code: 'invalid-e4-producer-configuration' }] });
+    });
     it.each([undefined, 'off', 'signaling'])('executes initialized Native after ambient capture changes to %s', async (ambient) => {
         const initialized = createRtcBaselineRuntimeObservationInput({
             schema: 'rallar.rtc-baseline.capture-request.v1',
@@ -389,6 +508,81 @@ describe('RTC-B06 observation Deno runtime', () => {
         expect(failures).toEqual([]);
         expect(modes).toEqual(['native']);
     });
+
+    it.each(['valid', 'provider', 'ice', 'environment'] as const)(
+        'uses exact initialized E4 full-history diagnostics and rejects %s mismatch before launch',
+        async (condition) => {
+            const e4BaselineId = baselineId.replace('e3-memory', 'e4-pg');
+            const locator = { ...attempt('retention-100'), environmentId: 'E4-pg' as const, inputKey: 'e4-pg-retention-100' };
+            const environment = initializedProducerEnvironment();
+            environment.baselineId = e4BaselineId;
+            environment.environmentId = condition === 'environment' ? 'E3-memory' : 'E4-pg';
+            environment.observation.resolvedConfiguration = environment.observation.resolvedConfiguration.map((entry) => ({
+                ...entry,
+                caseKey: { ...entry.caseKey, inputKey: entry.caseKey.inputKey.replace('e3-memory', 'e4-pg') },
+                value: entry.field === 'eventHistoryMode' ? 'full' : entry.field === 'eventHistoryMaxEvents' ? 0 : entry.value
+            }));
+            for (const caseId of ['default', 'all-scenarios', 'retention-100']) {
+                environment.observation.resolvedConfiguration.push({
+                    caseKey: { workloadId: 'RTC-B06', caseId, inputKey: 'e4-pg-' + caseId },
+                    field: 'databaseProvider',
+                    value: condition === 'provider' ? 'memory' : 'postgres',
+                    source: 'default'
+                });
+                environment.observation.resolvedConfiguration.push({
+                    caseKey: { workloadId: 'RTC-B06', caseId, inputKey: 'e4-pg-' + caseId },
+                    field: 'iceMode',
+                    value: condition === 'ice' ? 'public' : 'local',
+                    source: 'default'
+                });
+            }
+            const files = new Map<string, Uint8Array>();
+            const commands: string[][] = [];
+            const diagnostics: string[] = [];
+            const databaseUrl = 'postgres://test-user:test-private@localhost/test';
+            const port = {
+                ...producerRuntime(),
+                envGet: (name: string) => name === 'DATABASE_URL' ? databaseUrl : 'local',
+                writeFile: async (path: string, bytes: Uint8Array) => {
+                    files.set(path, bytes);
+                },
+                command: async (_executable: string, arguments_: readonly string[]) => {
+                    commands.push([...arguments_]);
+                    return { code: 9, stdout: new TextEncoder().encode(databaseUrl), stderr: new Uint8Array() };
+                }
+            };
+            const adapters = createDenoRtcBaselineAdapters(port);
+            adapters.filePort.inspectPath = async (path) => ({ kind: path.endsWith('.json') ? 'file' : 'directory' });
+            adapters.filePort.readFile = async () => new TextEncoder().encode(JSON.stringify(environment));
+            const runtime = createRtcB06ObservationDenoRuntime({
+                repositoryRoot: '/repository',
+                runtime: port,
+                adapters,
+                envelope: createRtcBaselineDenoRuntime(adapters),
+                producerOutput: {
+                    writeStdout: async (bytes) => {
+                        diagnostics.push(new TextDecoder().decode(bytes));
+                    },
+                    writeStderr: async (bytes) => {
+                        diagnostics.push(new TextDecoder().decode(bytes));
+                    }
+                }
+            });
+            expect((await runtime.runLiveRtcProducer({ baselineId: e4BaselineId, attempt: locator })).exitStatus).toBe(condition === 'valid' ? 9 : 1);
+            expect(commands).toHaveLength(condition === 'valid' ? 1 : 0);
+            if (condition === 'valid') {
+                expect(commands[0]).toContain('VITE_RALLAR_EVENT_HISTORY=full');
+                expect(commands[0]).not.toContain('VITE_RALLAR_EVENT_HISTORY_MAX_EVENTS=64');
+                expect(commands[0]).toContain('RALLAR_BLACK_BOX_ALM_DIAGNOSTICS=false');
+                expect(commands[0]).toContain('RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS=disabled');
+                expect(commands[0]).toContain('RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE=true');
+                expect(commands[0]?.join(' ')).not.toContain(databaseUrl);
+                expect([...files.values()].map((bytes) => new TextDecoder().decode(bytes)).join('')).not.toContain(databaseUrl);
+                expect(diagnostics.join('')).not.toContain(databaseUrl);
+                expect(diagnostics.join('')).toContain('[REDACTED_DATABASE_URL]');
+            }
+        }
+    );
 
     it.each([true, false])('overrides conflicting inherited ALM recording with %s', (almDiagnostics) => {
         const command = createRtcB06LiveProducerCommand({ repositoryRoot: '/repository', baselineId, attempt: attempt('retention-100'), almDiagnostics });
@@ -497,12 +691,13 @@ describe('RTC-B06 observation Deno runtime', () => {
             ...command.arguments.slice(0, command.arguments.indexOf('npm')),
             process.execPath,
             '--eval',
-            `process.stdout.write(JSON.stringify(Object.fromEntries(['RALLAR_BLACK_BOX_RTC_CAPTURE_MODE','DATABASE_URL','RALLAR_ICE_MODE','RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS','RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK','RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES'].map(name => [name, process.env[name] ?? null]))))`
+            `process.stdout.write(JSON.stringify(Object.fromEntries(['RALLAR_BLACK_BOX_API_MODE','RALLAR_BLACK_BOX_RTC_CAPTURE_MODE','DATABASE_URL','RALLAR_ICE_MODE','RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS','RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK','RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES'].map(name => [name, process.env[name] ?? null]))))`
         ], {
             encoding: 'utf8',
             env: {
                 ...process.env,
                 RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: 'native',
+                RALLAR_BLACK_BOX_API_MODE: 'postgres',
                 DATABASE_URL: 'inherited',
                 RALLAR_ICE_MODE: 'inherited',
                 RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: 'inherited',
@@ -512,6 +707,7 @@ describe('RTC-B06 observation Deno runtime', () => {
         });
 
         expect(JSON.parse(observedMode)).toEqual({
+            RALLAR_BLACK_BOX_API_MODE: 'memory',
             RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: expectedMode,
             DATABASE_URL: null,
             RALLAR_ICE_MODE: null,

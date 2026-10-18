@@ -12,6 +12,14 @@ on:
           - publish
           - baseline
           - diagnostic
+      environment:
+        description: Governed baseline environment (publish and diagnostic require E3-memory)
+        required: true
+        default: E3-memory
+        type: choice
+        options:
+          - E3-memory
+          - E4-pg
       alm_diagnostics:
         description: Enable ALM recording (retention selection; diagnostic cases remain enabled)
         required: true
@@ -59,9 +67,20 @@ jobs:
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           RUN_MODE: ${{ inputs.mode }}
+          RTC_ENVIRONMENT: ${{ inputs.environment }}
           SOURCE_REF: ${{ github.ref }}
           SOURCE_SHA: ${{ github.sha }}
         run: |
+          case "$RTC_ENVIRONMENT" in
+            E3-memory) ;;
+            E4-pg)
+              if [[ "$RUN_MODE" != "baseline" ]]; then
+                echo "::error::E4-pg requires governed baseline mode"
+                exit 1
+              fi
+              ;;
+            *) echo "::error::RTC environment must be E3-memory or E4-pg"; exit 1 ;;
+          esac
           if [[ "$RUN_MODE" == "publish" && ("$DEFAULT_BRANCH" != "main" || "$SOURCE_REF" != "refs/heads/main") ]]; then
             echo "::error::Published RTC observations must start from the repository main branch"
             exit 1
@@ -87,7 +106,7 @@ jobs:
           echo "rtc_capture_mode=$rtc_capture_mode" >> "$GITHUB_OUTPUT"
 
   capture:
-    name: Run RTC-B06 E3-memory
+    name: Run RTC-B06 ${{ inputs.environment }}
     if: ${{ inputs.mode == 'publish' || inputs.mode == 'baseline' }}
     needs: source
     runs-on: ubuntu-latest
@@ -128,6 +147,47 @@ jobs:
       - name: Check RTC observation tooling
         run: npm run check --workspace=packages/shared-rtc-bench
 
+      - name: Prepare isolated E4 PostgreSQL
+        if: ${{ inputs.mode == 'baseline' && inputs.environment == 'E4-pg' }}
+        env:
+          RTC_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          if [[ "$RTC_ENVIRONMENT" != "E4-pg" ]]; then exit 0; fi
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test -z "$(docker ps -aq)"
+          export COMPOSE_PROJECT_NAME="rtc-b06-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          database_url="$(docker compose -f docker-compose.yml config --format json | node --input-type=module -e '
+            let text = "";
+            for await (const chunk of process.stdin) { text += chunk; }
+            const service = JSON.parse(text).services.postgres;
+            const connection = new URL("postgresql://localhost");
+            connection.username = service.environment.POSTGRES_USER;
+            connection.password = service.environment.POSTGRES_PASSWORD;
+            connection.pathname = "/" + service.environment.POSTGRES_DB;
+            connection.port = String(service.ports.find((port) => port.target === 5432).published);
+            process.stdout.write(connection.href);
+          ')"
+          printf '::add-mask::%s\n' "$database_url"
+          export DATABASE_URL="$database_url"
+          printf 'COMPOSE_PROJECT_NAME=%s\nRTC_POSTGRES_OWNED=true\n' "$COMPOSE_PROJECT_NAME" >> "$GITHUB_ENV"
+          printf 'DATABASE_URL=%s\nRALLAR_ICE_MODE=local\n' "$DATABASE_URL" >> "$GITHUB_ENV"
+          docker compose -f docker-compose.yml up -d --wait postgres
+          docker image inspect postgres:16 --format '{{.Id}}' > "$RTC_OBSERVATION_OUTPUT/postgres-image-id.txt"
+          docker compose -f docker-compose.yml exec -T postgres postgres --version > "$RTC_OBSERVATION_OUTPUT/postgres-version.txt"
+          set -o pipefail
+          npm run db:migrate 2>&1 | node --import tsx --input-type=module -e '
+            import { createInterface } from "node:readline";
+            import { redactRallarBlackBoxValue } from "./packages/shared-test/rallar-bb-test/redaction.ts";
+            const connection = process.env.DATABASE_URL;
+            const parsed = new URL(connection);
+            const secretValues = [connection, parsed.username, parsed.password,
+              decodeURIComponent(parsed.username), decodeURIComponent(parsed.password)];
+            for await (const line of createInterface({ input: process.stdin })) {
+              console.log(redactRallarBlackBoxValue(line, { secretValues, replacement: "[REDACTED_DATABASE_URL]" }));
+            }
+          ' > "$RTC_OBSERVATION_OUTPUT/database-migration.log"
+          git ls-files -z -- apps/api-v1/prisma | xargs -0 shasum -a 256 > "$RTC_OBSERVATION_OUTPUT/database-schema-inputs.sha256"
+
       - name: Capture RTC-B06 E3-memory observation
         if: ${{ inputs.mode == 'publish' }}
         env:
@@ -159,9 +219,16 @@ jobs:
           ROUTINE_BROWSER_DIAGNOSTICS: ${{ inputs.routine_browser_diagnostics }}
           RELEASE_RESULTS_AFTER_CAPTURE: ${{ inputs.release_results_after_capture }}
           RTC_SOURCE_REF: ${{ github.ref_name }}
+          RTC_ENVIRONMENT: ${{ inputs.environment }}
         run: |
           set -o pipefail
-          env -u DATABASE_URL -u RALLAR_ICE_MODE -u RALLAR_BLACK_BOX_RTC_CAPTURE_MODE \
+          capture_environment=(-u RALLAR_BLACK_BOX_RTC_CAPTURE_MODE -u DATABASE_URL -u RALLAR_ICE_MODE)
+          if [[ "$RTC_ENVIRONMENT" == "E4-pg" ]]; then
+            test -n "${DATABASE_URL:-}"
+            test "${RALLAR_ICE_MODE:-}" = local
+            capture_environment=(-u RALLAR_BLACK_BOX_RTC_CAPTURE_MODE)
+          fi
+          env "${capture_environment[@]}" \
             RALLAR_BLACK_BOX_ALM_DIAGNOSTICS="$ALM_DIAGNOSTICS" \
             RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS="$ROUTINE_BROWSER_DIAGNOSTICS" \
             RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE="$RELEASE_RESULTS_AFTER_CAPTURE" \
@@ -170,12 +237,22 @@ jobs:
             RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES=100 \
             npm run --silent perf:rtc-baseline -- capture-live-rtc \
             --source-ref="$RTC_SOURCE_REF" \
+            --environment="$RTC_ENVIRONMENT" \
             --rtc-capture-mode="$RTC_CAPTURE_MODE" \
             --github-run-id="$GITHUB_RUN_ID" \
             --github-run-attempt="$GITHUB_RUN_ATTEMPT" \
             --github-run-url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             --output="$RTC_OBSERVATION_OUTPUT" \
             2> "$RTC_OBSERVATION_OUTPUT/capture-stderr.log" | tee "$RTC_OBSERVATION_OUTPUT/capture.log"
+
+      - name: Clean isolated E4 PostgreSQL
+        if: ${{ always() && inputs.mode == 'baseline' && inputs.environment == 'E4-pg' }}
+        env:
+          RTC_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          if [[ "$RTC_ENVIRONMENT" != "E4-pg" || "${RTC_POSTGRES_OWNED:-}" != "true" ]]; then exit 0; fi
+          test -n "$COMPOSE_PROJECT_NAME"
+          docker compose -f docker-compose.yml down --volumes
 
       - name: Retain governed RTC-B06 branch baseline
         if: ${{ always() && inputs.mode == 'baseline' }}

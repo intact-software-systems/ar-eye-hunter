@@ -77,6 +77,10 @@ if (process.env.RTC_B06_CAPTURE_RECORD !== undefined) {
     }) + '\\n');
 }
 process.stdout.write('fake RTC-B06 execution ' + process.argv.slice(2).join(' ') + '\\n');
+if (process.env.RTC_B06_ECHO_DATABASE === '1') {
+    process.stdout.write('connection ' + process.env.DATABASE_URL + '\\n');
+    process.stderr.write('credential ' + new URL(process.env.DATABASE_URL).password + '\\n');
+}
 process.exit(Number(process.env.RTC_B06_FAKE_EXIT_STATUS ?? '0'));
 `;
 
@@ -87,6 +91,136 @@ afterEach(() => {
 });
 
 describe('RTC-B06 observation workflow environment', () => {
+    it.each([['baseline', 'E4-pg', 0], ['publish', 'E4-pg', 1], ['diagnostic', 'E4-pg', 1], ['baseline', 'E3-memory', 0], ['baseline', 'invalid', 1]])(
+        'admits %s/%s only through the selected source boundary',
+        (mode, environment, status) => {
+            const step = readWorkflowStep('Validate the requested source');
+            const result = spawnSync('bash', ['-euo', 'pipefail', '-c', step.run], {
+                encoding: 'utf8',
+                env: {
+                    ...process.env,
+                    RUN_MODE: mode,
+                    RTC_ENVIRONMENT: environment,
+                    DEFAULT_BRANCH: 'main',
+                    SOURCE_REF: 'refs/heads/main',
+                    SOURCE_SHA: 'a'.repeat(40)
+                }
+            });
+            expect(result.status).toBe(status);
+        }
+    );
+
+    it.each([['E3-memory', 0], ['E4-pg', 0], ['E4-pg', 9]] as const)(
+        'provisions only %s and retains safe migration output on exit %s',
+        (environmentId, migrationExitStatus) => {
+            const fixtureRoot = createEnvironmentCaptureFixture();
+            const docker = path.join(fixtureRoot, 'bin/docker');
+            writeFileSync(
+                docker,
+                '#!/usr/bin/env node\n' +
+                    'const { appendFileSync } = require("node:fs");\n' +
+                    'appendFileSync(process.env.RTC_DOCKER_RECORD, process.argv.slice(2).join(" ") + "\\n");\n' +
+                    'if (process.argv.includes("config")) process.stdout.write(JSON.stringify({ services: { postgres: { environment: { POSTGRES_USER: "fixture-user", POSTGRES_PASSWORD: "fixture-password", POSTGRES_DB: "fixture-db" }, ports: [{ target: 5432, published: "5432" }] } } }));\n'
+            );
+            chmodSync(docker, 0o755);
+            const setup = readWorkflowStep('Prepare isolated E4 PostgreSQL');
+            const result = spawnSync('bash', ['-euo', 'pipefail', '-c', setup.run], {
+                encoding: 'utf8',
+                env: {
+                    ...process.env,
+                    PATH: fixtureRoot + '/bin:' + process.env.PATH,
+                    RTC_ENVIRONMENT: environmentId,
+                    GITHUB_ENV: fixtureRoot + '/github-env',
+                    GITHUB_RUN_ID: '123',
+                    GITHUB_RUN_ATTEMPT: '1',
+                    RTC_OBSERVATION_OUTPUT: fixtureRoot,
+                    RTC_DOCKER_RECORD: fixtureRoot + '/docker.json',
+                    RTC_B06_ENVIRONMENT_RECORD: fixtureRoot + '/environment.json',
+                    RUNNER_ENVIRONMENT: 'github-hosted',
+                    RTC_B06_ECHO_DATABASE: '1',
+                    RTC_B06_FAKE_EXIT_STATUS: String(migrationExitStatus)
+                }
+            });
+            expect(result).toMatchObject({ status: migrationExitStatus, stderr: '' });
+            if (environmentId === 'E3-memory') {
+                expect(existsSync(fixtureRoot + '/docker.json')).toBe(false);
+                expect(existsSync(fixtureRoot + '/environment.json')).toBe(false);
+            }
+            else {
+                expect(readFileSync(fixtureRoot + '/docker.json', 'utf8')).toContain('up -d --wait postgres');
+                expect(readEnvironmentRecords(fixtureRoot)).toHaveLength(1);
+                const connection = 'postgresql://fixture-user:fixture-password@localhost:5432/fixture-db';
+                const mask = '::add-mask::' + connection;
+                expect(setup.run).not.toMatch(/postgres(?:ql)?:\/\/[^\s"']+:[^\s"']+@/);
+                expect(result.stdout.trim().split('\n')[0]).toBe(mask);
+                const exported = readFileSync(fixtureRoot + '/github-env', 'utf8');
+                expect(exported).toContain('DATABASE_URL=' + connection);
+                const renderedActionsEnvironment = exported.split(connection).join('***');
+                expect(renderedActionsEnvironment).not.toContain('fixture-password');
+                expect(setup.run.indexOf('::add-mask::')).toBeLessThan(setup.run.indexOf('printf \'DATABASE_URL='));
+                const migrationLog = readFileSync(fixtureRoot + '/database-migration.log', 'utf8');
+                expect(migrationLog).toContain('db:migrate');
+                expect(migrationLog).not.toContain(connection);
+                expect(migrationLog).not.toContain('fixture-password');
+                expect(migrationLog).toContain('[REDACTED_DATABASE_URL]');
+                expect(readFileSync(fixtureRoot + '/docker.json', 'utf8')).not.toContain(connection);
+                const cleanup = readWorkflowStep('Clean isolated E4 PostgreSQL');
+                expect(
+                    spawnSync('bash', ['-euo', 'pipefail', '-c', cleanup.run], {
+                        encoding: 'utf8',
+                        env: {
+                            ...process.env,
+                            PATH: fixtureRoot + '/bin:' + process.env.PATH,
+                            RTC_ENVIRONMENT: environmentId,
+                            RTC_DOCKER_RECORD: fixtureRoot + '/docker.json',
+                            RTC_POSTGRES_OWNED: 'true',
+                            COMPOSE_PROJECT_NAME: 'rtc-b06-123-1'
+                        }
+                    }).status
+                ).toBe(0);
+                expect(readFileSync(fixtureRoot + '/docker.json', 'utf8')).toContain('down --volumes');
+            }
+        }
+    );
+    it('forwards admitted E4 identity and its private connection to the existing capture command', () => {
+        const fixtureRoot = createEnvironmentCaptureFixture();
+        mkdirSync(fixtureRoot + '/output');
+        const step = readWorkflowStep('Capture RTC-B06 governed branch baseline');
+        const result = spawnSync('bash', ['-euo', 'pipefail', '-c', step.run], {
+            cwd: repoRoot,
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                PATH: fixtureRoot + '/bin:' + process.env.PATH,
+                RTC_B06_ENVIRONMENT_RECORD: fixtureRoot + '/environment.json',
+                RTC_B06_CAPTURE_RECORD: fixtureRoot + '/capture.jsonl',
+                RTC_OBSERVATION_OUTPUT: fixtureRoot + '/output',
+                RTC_SOURCE_REF: 'codex/e4',
+                RTC_ENVIRONMENT: 'E4-pg',
+                RTC_CAPTURE_MODE: 'signaling',
+                ALM_DIAGNOSTICS: 'false',
+                ROUTINE_BROWSER_DIAGNOSTICS: 'disabled',
+                RELEASE_RESULTS_AFTER_CAPTURE: 'true',
+                DATABASE_URL: 'postgres://private.invalid/test',
+                RALLAR_ICE_MODE: 'local',
+                GITHUB_RUN_ID: '123',
+                GITHUB_RUN_ATTEMPT: '1',
+                GITHUB_SERVER_URL: 'https://github.com',
+                GITHUB_REPOSITORY: 'example/repository'
+            }
+        });
+        expect(result).toMatchObject({ status: 0, stderr: '' });
+        expect(readCaptureRecords(fixtureRoot)[0]?.arguments).toContain('--environment=E4-pg');
+        expect(readCaptureRecords(fixtureRoot)[0]?.arguments.join(' ')).not.toContain('postgres://');
+        expect(readEnvironmentRecords(fixtureRoot)[0]).toMatchObject({
+            DATABASE_URL: 'postgres://private.invalid/test',
+            RALLAR_ICE_MODE: 'local',
+            RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: 'false',
+            RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS: 'disabled',
+            RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE: 'true'
+        });
+    });
+
     it.each(['true', 'false'])('forwards ALM %s into baseline initialization and the retention worker', (selection) => {
         const fixtureRoot = createEnvironmentCaptureFixture();
         const baseline = readWorkflowStep('Capture RTC-B06 governed branch baseline');
@@ -274,6 +408,7 @@ describe('RTC-B06 observation workflow environment', () => {
             env: {
                 ...process.env,
                 DEFAULT_BRANCH: 'main',
+                RTC_ENVIRONMENT: 'E3-memory',
                 RUN_MODE: 'diagnostic',
                 SOURCE_REF: 'refs/heads/codex/rtc-b06-intermittent-readiness-fix',
                 SOURCE_SHA: sourceSha
@@ -288,6 +423,7 @@ describe('RTC-B06 observation workflow environment', () => {
                 env: {
                     ...process.env,
                     DEFAULT_BRANCH: 'main',
+                    RTC_ENVIRONMENT: 'E3-memory',
                     RUN_MODE: 'publish',
                     SOURCE_REF: 'refs/heads/codex/rtc-b06-intermittent-readiness-fix',
                     SOURCE_SHA: sourceSha
@@ -303,6 +439,7 @@ describe('RTC-B06 observation workflow environment', () => {
                 env: {
                     ...process.env,
                     DEFAULT_BRANCH: 'main',
+                    RTC_ENVIRONMENT: 'E3-memory',
                     RUN_MODE: 'publish',
                     SOURCE_REF: 'refs/heads/main',
                     SOURCE_SHA: sourceSha
@@ -570,6 +707,7 @@ function admitWorkflowSource(fixtureRoot: string, selection: string): RtcB06Sour
                 ...toWorkflowEnvironment(step.env, {
                     '${{ inputs.rtc_capture_mode }}': selection,
                     '${{ inputs.mode }}': 'publish',
+                    '${{ inputs.environment }}': 'E3-memory',
                     '${{ github.event.repository.default_branch }}': 'main',
                     '${{ github.ref }}': 'refs/heads/main',
                     '${{ github.sha }}': 'a'.repeat(40)
@@ -609,6 +747,7 @@ function readSelectedCaptureEnvironment(
     return toWorkflowEnvironment(environment, {
         ...consumerOutputs,
         '${{ inputs.rtc_capture_mode }}': selection.captureMode ?? defaultMode,
+        '${{ inputs.environment }}': 'E3-memory',
         '${{ inputs.alm_diagnostics }}': selection.almDiagnostics,
         '${{ inputs.routine_browser_diagnostics }}': selection.routineBrowserDiagnostics,
         '${{ inputs.release_results_after_capture }}': selection.releaseResultsAfterCapture,

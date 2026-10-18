@@ -357,7 +357,7 @@ const b05Cases: RtcBaselineWorkloadCase[] = [
     }
 ];
 
-function toRtcBaselineFullStackRuntimeScript(
+export function toRtcBaselineFullStackRuntimeScript(
     database: 'memory' | 'postgres',
     allScenarios: boolean
 ): string {
@@ -449,9 +449,13 @@ const fullStackSourcePaths = [
     'packages/shared-rtc-bench/baseline/contracts/rtc-baseline-artifact-decoding.ts',
     'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-deno-runtime.ts',
     'packages/shared-rtc-bench/baseline/observation/rtc-b06-observation-runner.ts',
+    'packages/shared-rtc-bench/baseline/observation/rtc-performance-observation-cli-grammar.ts',
+    'packages/shared-rtc-bench/baseline/observation/rtc-performance-observation-cli.ts',
+    'packages/shared-rtc-bench/baseline/command/run-rtc-baseline-cli.ts',
     'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-runtime-observation.ts',
     'packages/shared-rtc-bench/baseline/runtime/create-rtc-baseline-runtime-observation-input.ts',
     'packages/shared-rtc-bench/baseline/observation/rtc-b06-observation-deno-runtime.ts',
+    'packages/shared-rtc-bench/baseline/observation/rtc-b06-private-build.ts',
     'packages/shared-rtc-bench/baseline/observation/read-rtc-b06-diagnostic-selection.ts',
     'packages/shared-rtc-bench/baseline/acceptance/validate-rtc-b06-browser-recording.ts',
     'packages/shared-rtc-bench/baseline/acceptance/to-rtc-b06-event-history.ts',
@@ -464,7 +468,7 @@ const fullStackSourcePaths = [
     'packages/shared-rtc-bench/baseline/acceptance/validate-rtc-b06-capture-evidence.ts'
 ];
 
-const fullStackMemorySourcePaths = [
+const fullStackProductionSourcePaths = [
     ...fullStackSourcePaths,
     'apps/api-v1/src/main.ts',
     'apps/api-v1/src/configuration/read-api-v1-configuration.ts',
@@ -490,7 +494,7 @@ const fullStackMemorySourcePaths = [
     'packages/shared-test/black-box-runner/fixtures/read-full-stack-rtc-ice-fixture-requests.ts'
 ];
 
-const fullStackMemoryConfigPaths = [
+const fullStackProductionConfigPaths = [
     '.github/workflows/rtc-b06-performance-observation.yml',
     'package.json',
     'package-lock.json',
@@ -525,8 +529,8 @@ function toRtcBaselineFullStackCase(input: RtcBaselineFullStackCaseInput): RtcBa
                 toRtcBaselineFullStackRuntimeScript(database, allScenarios)
             ]
         },
-        sourcePaths: postgres ? fullStackSourcePaths : fullStackMemorySourcePaths,
-        configPaths: postgres ? ['apps/rallar-black-box/playwright.full-stack.config.ts'] : fullStackMemoryConfigPaths,
+        sourcePaths: fullStackProductionSourcePaths,
+        configPaths: [...fullStackProductionConfigPaths, ...(postgres ? ['docker-compose.yml'] : [])],
         warmupOuterAttempts: 1,
         retainedOuterAttempts: caseId === 'default' ? 5 : 3,
         configuration: toRtcBaselineFullStackConfiguration(input),
@@ -542,17 +546,15 @@ function toRtcBaselineFullStackConfiguration(
     const postgres = database === 'postgres';
     return [
         ...toRtcBaselineFullStackWorkloadConfiguration(input),
-        ...(postgres
-            ? []
-            : Object.entries(FULL_STACK_RTC_PRODUCTION_POLICY).map(([field, value]) =>
-                toRtcBaselineConfigurationDescriptor({
-                    caseKey,
-                    field,
-                    flag: `--rtc-${field.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`,
-                    scalarKind: 'string',
-                    defaultValue: value
-                })
-            )),
+        ...Object.entries(FULL_STACK_RTC_PRODUCTION_POLICY).map(([field, value]) =>
+            toRtcBaselineConfigurationDescriptor({
+                caseKey,
+                field,
+                flag: `--rtc-${field.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`,
+                scalarKind: 'string',
+                defaultValue: value
+            })
+        ),
         toRtcBaselineConfigurationDescriptor({
             caseKey,
             field: 'databaseProvider',

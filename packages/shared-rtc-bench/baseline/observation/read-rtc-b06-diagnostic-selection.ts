@@ -130,7 +130,28 @@ export async function readRtcB06DiagnosticSelection(
             }]
         };
     }
-    return resolveRtcB06DiagnosticSelection(environment.value.observation?.resolvedConfiguration ?? [], attempt);
+    const configuration = environment.value.observation?.resolvedConfiguration ?? [];
+    if (attempt.environmentId === 'E4-pg') {
+        const fields = configuration.filter((entry) =>
+            entry.caseKey.workloadId === attempt.workloadId &&
+            entry.caseKey.caseId === attempt.caseId && entry.caseKey.inputKey === attempt.inputKey
+        );
+        if (
+            fields.filter((entry) => entry.field === 'databaseProvider' && entry.value === 'postgres').length !== 1 ||
+            fields.filter((entry) => entry.field === 'iceMode' && entry.value === 'local').length !== 1
+        ) {
+            return {
+                ok: false,
+                issues: [{
+                    path: '$.resolvedConfiguration',
+                    code: 'invalid-e4-producer-configuration',
+                    message:
+                        'E4-pg requires initialized PostgreSQL provider and local ICE for its exact case and input.'
+                }]
+            };
+        }
+    }
+    return resolveRtcB06DiagnosticSelection(configuration, attempt);
 }
 
 function resolveRtcB06EventHistorySelection(

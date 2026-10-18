@@ -637,17 +637,9 @@ export async function writeLiveRtcRetentionCohortIfComplete(
 export async function writeLiveRtcPerformanceAttempt(
     input: WriteLiveRtcPerformanceAttemptInput
 ): Promise<string> {
-    let servingFailure: Error | null = null;
-    const productionServing = input.context.locator.environmentId === 'E3-memory'
-        ? (await readFullStackRtcAttemptServingProof(input.context)).fold(
-            (failure) => {
-                servingFailure = new Error(failure.message);
-                return null;
-            },
-            (proof) => proof
-        )
-        : null;
-    const rawEvidence = { ...input.rawEvidence, productionServing };
+    const servingProof = await readFullStackRtcAttemptServingProof(input.context);
+    const servingFailure = servingProof.left ? new Error(servingProof.left.message) : null;
+    const rawEvidence = { ...input.rawEvidence, productionServing: servingProof.right ?? null };
     const attempt = buildLiveRtcExternalAttempt({
         locator: input.context.locator,
         sampleIdentity: input.context.sampleIdentity,

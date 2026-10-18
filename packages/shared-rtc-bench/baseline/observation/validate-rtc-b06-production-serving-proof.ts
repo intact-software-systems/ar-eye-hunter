@@ -24,7 +24,7 @@ export function validateRtcB06ProductionServingProof(sample: RtcBaselineSampleDt
             inputKey: sample.identity.inputKey,
             intendedPhase: sample.identity.intendedPhase,
             outerOrdinal: sample.identity.outerOrdinal,
-            environmentId: 'E3-memory',
+            environmentId: sample.identity.inputKey.startsWith('e4-pg-') ? 'E4-pg' : 'E3-memory',
             rawResultRelativePath:
                 `artifacts/staging/rtc-b06-${sample.identity.caseId}-${sample.identity.inputKey}-${sample.identity.intendedPhase}-${
                     String(sample.identity.outerOrdinal).padStart(3, '0')

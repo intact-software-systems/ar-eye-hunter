@@ -495,80 +495,100 @@ describe('live RTC external-attempt evidence', () => {
         ).toThrow(/production-serving-proof/);
     });
 
-    it('accepts exact production proof through the original external-attempt builder and original staging identity', () => {
-        const observation = {
-            ...runtimeObservation,
-            controllerInputs: [{ name: 'baselineId', value: baselineId, secret: false }],
-            resolvedConfiguration: [{
-                caseKey: { workloadId: 'RTC-B06' as const, caseId: 'default', inputKey: 'e3-memory-default' },
-                field: 'appServingMode',
-                value: 'production',
-                source: 'default' as const
-            }]
-        };
-        const buildRoot = `/repository/tmp/perf/rtc-b06-private-build/${baselineId}/default/retained-1`;
-        const files = [{ path: '.vite/manifest.json', sizeBytes: 90, sha256: 'd'.repeat(64) }, {
-            path: 'assets/entry.js',
-            sizeBytes: 20,
-            sha256: 'e'.repeat(64)
-        }, { path: 'index.html', sizeBytes: 100, sha256: 'f'.repeat(64) }];
-        const proof = {
-            build: {
-                seal: {
-                    version: 1,
-                    appServingMode: 'production',
-                    viteMode: 'production',
-                    nodeEnvironment: 'production',
-                    buildTarget: 'es2023',
-                    baselineId,
-                    attempt: { ...e3DefaultLocator, rawResultRelativePath: String(e3DefaultLocator.rawResultRelativePath) },
-                    buildRoot,
-                    apiOrigin: 'http://localhost:18080',
-                    spaOrigin: 'http://localhost:5177',
-                    git: observation.git,
-                    inputFiles: observation.sourceHashes,
-                    files,
-                    entryFiles: ['assets/entry.js'],
-                    buildArguments: [
-                        '--workspace',
-                        'rallar-black-box',
-                        'run',
-                        'build',
-                        '--',
-                        '--outDir',
-                        `${buildRoot}/output`,
-                        '--emptyOutDir',
-                        '--mode',
-                        'production',
-                        '--target',
-                        'es2023'
-                    ]
+    it.each(['E3-memory', 'E4-pg'] as const)(
+        'accepts exact %s production proof through the original external-attempt builder and staging identity',
+        (environmentId) => {
+            const postgres = environmentId === 'E4-pg';
+            const baselineId = postgres ? '20260829T081500417Z-0123456789ab-e4-pg-local' : '20260829T081500417Z-0123456789ab-e3-memory-local';
+            const locator = postgres
+                ? {
+                    ...e3DefaultLocator,
+                    environmentId,
+                    inputKey: 'e4-pg-default' as const,
+                    rawResultRelativePath: 'artifacts/staging/rtc-b06-default-e4-pg-default-retained-001.json'
+                }
+                : e3DefaultLocator;
+            const identity = postgres
+                ? { ...e3DefaultIdentity, inputKey: 'e4-pg-default' as const, sampleId: 'rtc-b06-default-e4-pg-default-retained-001-001' }
+                : e3DefaultIdentity;
+            const raw = defaultRawEvidence();
+            const producer = postgres
+                ? { ...raw.producer, databaseProvider: 'postgres' as const, databaseUrl: 'present' as const, iceMode: 'local' as const, iceModeRaw: 'local' }
+                : raw.producer;
+            const observation = {
+                ...runtimeObservation,
+                controllerInputs: [{ name: 'baselineId', value: baselineId, secret: false }],
+                resolvedConfiguration: [{
+                    caseKey: { workloadId: 'RTC-B06' as const, caseId: 'default', inputKey: locator.inputKey },
+                    field: 'appServingMode',
+                    value: 'production',
+                    source: 'default' as const
+                }]
+            };
+            const buildRoot = `/repository/tmp/perf/rtc-b06-private-build/${baselineId}/default/retained-1`;
+            const files = [{ path: '.vite/manifest.json', sizeBytes: 90, sha256: 'd'.repeat(64) }, {
+                path: 'assets/entry.js',
+                sizeBytes: 20,
+                sha256: 'e'.repeat(64)
+            }, { path: 'index.html', sizeBytes: 100, sha256: 'f'.repeat(64) }];
+            const proof = {
+                build: {
+                    seal: {
+                        version: 1,
+                        appServingMode: 'production',
+                        viteMode: 'production',
+                        nodeEnvironment: 'production',
+                        buildTarget: 'es2023',
+                        baselineId,
+                        attempt: { ...locator, rawResultRelativePath: String(locator.rawResultRelativePath) },
+                        buildRoot,
+                        apiOrigin: 'http://localhost:18080',
+                        spaOrigin: 'http://localhost:5177',
+                        git: observation.git,
+                        inputFiles: observation.sourceHashes,
+                        files,
+                        entryFiles: ['assets/entry.js'],
+                        buildArguments: [
+                            '--workspace',
+                            'rallar-black-box',
+                            'run',
+                            'build',
+                            '--',
+                            '--outDir',
+                            `${buildRoot}/output`,
+                            '--emptyOutDir',
+                            '--mode',
+                            'production',
+                            '--target',
+                            'es2023'
+                        ]
+                    },
+                    servedFiles: files.slice(1)
                 },
-                servedFiles: files.slice(1)
-            },
-            entries: ['A', 'B', 'C'].flatMap((prefix) => files.slice(1).map((file) => ({ prefix, ...file })))
-        };
-        const rawEvidence = { ...defaultRawEvidence(), productionServing: proof };
-        const accepted = buildLiveRtcExternalAttempt({
-            locator: e3DefaultLocator,
-            sampleIdentity: e3DefaultIdentity,
-            producerExitStatus: 0,
-            runtimeObservation: observation,
-            rawEvidence
-        });
-        expect(accepted.locator).toEqual(e3DefaultLocator);
-        expect(accepted.samples[0]?.outcome).toBe('passed');
-        proof.build.seal.attempt = { ...e3DefaultLocator, rawResultRelativePath: 'artifacts/staging/unrelated.json' };
-        expect(() =>
-            buildLiveRtcExternalAttempt({
-                locator: e3DefaultLocator,
-                sampleIdentity: e3DefaultIdentity,
+                entries: ['A', 'B', 'C'].flatMap((prefix) => files.slice(1).map((file) => ({ prefix, ...file })))
+            };
+            const rawEvidence = { ...raw, identity: { ...raw.identity, inputKey: locator.inputKey, environmentId }, producer, productionServing: proof };
+            const accepted = buildLiveRtcExternalAttempt({
+                locator,
+                sampleIdentity: identity,
                 producerExitStatus: 0,
                 runtimeObservation: observation,
                 rawEvidence
-            })
-        ).toThrow(/production-serving-proof/);
-    });
+            });
+            expect(accepted.locator).toEqual(locator);
+            expect(accepted.samples[0]?.outcome).toBe('passed');
+            proof.build.seal.attempt = { ...locator, rawResultRelativePath: 'artifacts/staging/unrelated.json' };
+            expect(() =>
+                buildLiveRtcExternalAttempt({
+                    locator,
+                    sampleIdentity: identity,
+                    producerExitStatus: 0,
+                    runtimeObservation: observation,
+                    rawEvidence
+                })
+            ).toThrow(/production-serving-proof/);
+        }
+    );
 
     it('loads one exact predeclared attempt from the controller environment', async () => {
         const repoRoot = await mkdtemp(join(tmpdir(), 'rallar-rtc-b06-context-'));

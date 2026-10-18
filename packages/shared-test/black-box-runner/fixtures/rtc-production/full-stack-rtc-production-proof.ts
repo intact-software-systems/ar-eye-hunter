@@ -198,7 +198,7 @@ function validateProductionProofAttempt(
     const fields = Object.keys(binding.attempt) as (keyof FullStackRtcProductionAttemptIdentity)[];
     return !attempt || Object.keys(attempt).length !== fields.length ||
             fields.some((field) => attempt[field] !== binding.attempt[field]) ||
-            attempt.environmentId !== 'E3-memory'
+            !['E3-memory', 'E4-pg'].includes(String(attempt.environmentId))
         ? ['attempt']
         : [];
 }

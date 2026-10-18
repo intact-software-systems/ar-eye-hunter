@@ -21,7 +21,9 @@ source, environment, exact attempts, raw samples, and checksums. Tooling is
 implemented; capture and ranking acceptance remain separate outcomes.
 
 **Current outcome, 2026-10-18:** The human has explicitly **deferred further
-heap investigation** and directed continuation of independent plan work.
+E3 heap investigation** and now selected the PostgreSQL E4 environment for
+the next acquisition. E4 uses its existing B06 workload and acceptance rules;
+its normal 100-cycle retention case does not reopen the deferred E3 investigation.
 [E3 follow-up #672](https://github.com/intact-software-systems/ar-eye-hunter/issues/672)
 preserves the unresolved investigation. E3 remains conditionally completed for
 sequencing only; its acceptance criteria are unchanged. The final canonical acquisition
@@ -70,8 +72,8 @@ Three primary and six controlled-repeat runs each delivered 600/600 frames with
 100% fleet success. Six original noise triggers remain and four new series
 exceed the unchanged 20% CV rule. There is no second repeat, canonical B07
 controller-admission, geographic-diversity or receiver-latency claim. B07 does
-not replace B01–B06 or automatically select E4. No database-backed RTC hotspot
-has been proposed for this candidate, so conditional E4 remains unselected.
+not replace B01–B06 or automatically select E4. E4 is now explicitly selected
+by the human; B07 PostgreSQL correctness does not substitute for that acquisition.
 
 The admission commit/notification correction and shared write-set extraction
 are implemented and independently reviewed. Complete queue/index and admission
@@ -2732,7 +2734,7 @@ outcomes completed by subsequent reviewed evidence.
 | Admission and retention source changes | Commit-before-notification, shared write-set, durable result release, complete artifact reading and reviewed ownership corrections are delivered. |
 | Console and worker capture | Reviewed Copy/Load/two same-session Native runs, Console Native application, lifecycle/export, checkpoint preservation, local/deployed HOST, Actions RUN and selected external/spawned/mixed/no-spawn outcomes retain their documented scopes. Partial Native coverage, unknown durable origin and cancellation-checkpoint limits remain explicit. |
 | B07 | Authorized PostgreSQL/GitHub Free acquisition is complete and descriptive; its controlled repeat remains noisy. The failed 50-agent diagnostics are preserved separately from the accepted generic two-agent no-spawn witness. |
-| E4 | Conditional and unselected: no database-backed RTC optimization candidate is proposed. PostgreSQL correctness is not an E4 substitute. |
+| E4 | Explicitly selected by the human. Extend the existing B06 capture owner for PostgreSQL, then acquire and independently review its primary and only controller-required repeat. No E4 result or database-backed optimization conclusion yet. |
 | E3 | Canonical primary fails heap acceptance; no repeat was selected. Further heap investigation is deferred to #672. Zero accepted cohorts. |
 | Delivery and final conclusion | Reviewed source is published in PR #671. Native review/integration and the unresolved E3 gate remain distinct from completed non-heap work. No optimization ranking or overall baseline completion is claimed. |
 
@@ -2796,30 +2798,39 @@ outcomes completed by subsequent reviewed evidence.
 
 ## 11. Current Implementation Horizon
 
-The human has deferred further heap investigation. Keep the failed canonical E3
+The human has deferred further E3 heap investigation. Keep the failed canonical E3
 primary and its unchanged acceptance criteria visible in
 [follow-up #672](https://github.com/intact-software-systems/ar-eye-hunter/issues/672).
-Do not launch another heap diagnostic, primary or repeat as part of the current
+Do not launch another E3 heap diagnostic, primary or repeat as part of the current
 independent work. E3 has zero accepted cohorts; deferral is not acceptance.
 
-The remaining-scope audit finds no uncompleted independent non-heap
-implementation or acquisition slice. Later reviewed evidence closes the
+The preceding remaining-scope audit found no uncompleted independent non-heap
+slice before the human explicitly selected E4. Later reviewed evidence closes the
 original Console, worker and observation outcomes at their stated scopes.
 E1/E2/B07 retain their terminal inconclusive performance conclusions; no second
 repeat or stable cross-tier ranking is justified. Historical pending statements
 do not require another acquisition.
 
-The remaining active outcome is **delivery of the reviewed non-heap changes
-through the existing PR**. Keep its acceptance explanation and deferred-heap
-follow-up together, verify required checks, and follow ordinary native
-review/integration. No default-branch commit, push or administrator merge is
-authorized by this deferral.
+The next two useful slices are:
+
+1. Extend the existing B06 runner, CLI, production evidence and workflow owners
+   to admit explicit `E4-pg` capture with isolated PostgreSQL and the repository
+   migration command. Keep E3 the default and the permanent observation stream
+   E3-only. Review and validate the complete affected support surface.
+2. Acquire E4 on the exact reviewed candidate: three warmups and eleven retained
+   attempts, including its normal 100-cycle retention case. Run only the repeat
+   selected by the existing controller. Preserve failed attempts, full event
+   history as declared by the E4 catalog, source/environment identity and original
+   artifacts; independently review correctness, noise and acceptance.
+
+Publish both outcomes through the existing PR with the E3 follow-up visible.
+No default-branch commit, push or administrator merge is authorized.
 
 No additional optimization is justified by noisy measurements or incomplete
 attribution. Prefer existing shared libraries and direct ownership. Retain no
 duplicated policy, obsolete implementation or migration scaffolding. Preserve
-replay tombstones, durable receipts and assignment/reset lifetimes. E4 remains
-conditional on an actual database-backed RTC candidate.
+replay tombstones, durable receipts and assignment/reset lifetimes. E4 evidence
+does not replace E3 or justify pooling different source/environment populations.
 
 Section 12 remains unchanged. The plan stays open while E3 is deferred and its
 required acceptance remains unmet; creating a follow-up issue does not make the

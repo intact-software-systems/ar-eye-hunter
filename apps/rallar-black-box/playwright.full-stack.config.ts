@@ -70,7 +70,7 @@ const admittedRtcAttempt = fullStackEnabled
     })
     : null;
 
-const controlWebServer = admittedRtcAttempt?.locator.environmentId === 'E3-memory'
+const controlWebServer = admittedRtcAttempt !== null
     ? await readGovernedLiveRtcControlServer({
         attempt: admittedRtcAttempt,
         baseUrl: fullStackControlBaseUrl,
@@ -84,7 +84,7 @@ const productionConfiguration = {
     spaBaseUrl: fullStackSpaBaseUrl,
     environment: process.env
 };
-const preparedProduction = admittedRtcAttempt?.locator.environmentId === 'E3-memory'
+const preparedProduction = admittedRtcAttempt !== null
     ? process.env.RALLAR_BLACK_BOX_RTC_BUILD_SEALED === '1'
         ? await readFullStackRtcProductionSeal(admittedRtcAttempt, productionConfiguration)
         : await prepareFullStackRtcProduction(
@@ -119,7 +119,7 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
                 apiBaseUrl: fullStackApiBaseUrl,
                 spaBaseUrl: fullStackSpaBaseUrl,
                 reuseExistingServer,
-                requireFreshPostgres: requireFreshPostgresApi,
+                requireFreshPostgres: requireFreshPostgresApi || admittedRtcAttempt?.locator.environmentId === 'E4-pg',
                 timingCaptureDirectory,
                 appInboxPhaseTiming: captureSetupTiming,
                 admittedRtcCaseId: admittedRtcAttempt?.locator.caseId ?? null,

@@ -30,6 +30,65 @@ const liveRtcObserveArguments = [
 ];
 
 describe('governed branch RTC capture CLI', () => {
+    it.each([['capture-live-rtc', 'invalid', 'unsupported-capture-environment'], ['observe-live-rtc', 'E4-pg', 'unsupported-option']])(
+        'refuses unsupported %s environment before denied runtime access',
+        (command, environment, code) => {
+            const result = spawnSync('deno', [
+                'run',
+                '--cached-only',
+                '--no-check',
+                '--config=packages/shared-rtc-bench/deno.json',
+                '--allow-read',
+                '--deny-env',
+                '--deny-run',
+                'packages/shared-rtc-bench/baseline/command/run-rtc-baseline-cli.ts',
+                command!,
+                ...liveRtcObserveArguments.slice(1),
+                '--environment=' + environment
+            ], { encoding: 'utf8', env: { ...process.env, DENO_NO_UPDATE_CHECK: '1' } });
+            expect(result.status).toBe(64);
+            expect(result.stdout).toBe('');
+            expect(JSON.parse(result.stderr.trim())).toEqual([expect.objectContaining({ code })]);
+        }
+    );
+    it.each(['E3-memory', 'E4-pg'])('normalizes and forwards the exact governed environment %s', async (environmentId) => {
+        const captureBaseline = vi.fn(async (capture) => ({
+            ok: true as const,
+            value: {
+                baselineId: capture.environmentId,
+                startedAt: '',
+                source: { ref: '', commit: '', tree: '' },
+                primaryOutcome: 'passed' as const,
+                acceptedMetrics: true,
+                repeatDecision: 'not-required' as const,
+                repeatOutcome: 'not-run' as const
+            }
+        }));
+        const output: string[] = [];
+        const code = await runRtcPerformanceObservationCli({
+            args: ['capture-live-rtc', ...liveRtcObserveArguments.slice(1), '--environment=' + environmentId],
+            browserRunner: { run: vi.fn() },
+            liveRtcRunner: { run: vi.fn(), captureBaseline },
+            readFile: vi.fn(),
+            verifyArchive: vi.fn(),
+            writeStdout: (value) => output.push(value),
+            writeStderr: vi.fn()
+        });
+        expect(code).toBe(0);
+        expect(captureBaseline).toHaveBeenCalledWith(expect.objectContaining({ environmentId }));
+        expect(JSON.parse(output[0]!).baselineId).toBe(environmentId);
+    });
+
+    it('defaults only governed capture to E3 and rejects unsupported observation environment input', () => {
+        expect(parseRtcPerformanceObservationCommand(['capture-live-rtc', ...liveRtcObserveArguments.slice(1)]))
+            .toMatchObject({ ok: true, value: { environmentId: 'E3-memory' } });
+        for (const value of ['', 'E2-browser', 'e4-pg']) {
+            expect(parseRtcPerformanceObservationCommand(['capture-live-rtc', ...liveRtcObserveArguments.slice(1), '--environment=' + value]))
+                .toMatchObject({ ok: false, issues: [expect.objectContaining({ code: 'unsupported-capture-environment' })] });
+        }
+        expect(parseRtcPerformanceObservationCommand([...liveRtcObserveArguments, '--environment=E4-pg']))
+            .toMatchObject({ ok: false, issues: [expect.objectContaining({ code: 'unsupported-option' })] });
+    });
     it.each(['passed', 'failed', 'incomplete'] as const)(
         'returns truthful branch capture metadata and status for %s primary evidence',
         async (primaryOutcome) => {

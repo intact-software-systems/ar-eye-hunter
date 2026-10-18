@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "93c12835cbefe0f5c9b2fbed1ce78a4db57de6af",
+      "source": {
+        "path": "packages/shared-rtc-bench/baseline/observation/rtc-b06-observation-deno-runtime.ts",
+        "blob": "8e7f6bec1588f38ac038977bb04298202732a811"
+      },
+      "targets": [
+        "packages/shared-rtc-bench/baseline/observation/rtc-b06-private-build.ts"
+      ]
+    }
+  ]
+}
