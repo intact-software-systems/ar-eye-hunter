@@ -50,24 +50,29 @@ export function recordGroupPresenceSummaryCommittedOutputs(
 ): void {
     for (const expansion of input.expansions) {
         for (const output of expansion.computed.downstreamOutboxWrites) {
-            recordRallarTiming({
-                sink: input.timing,
-                event: toGroupPresenceSummaryTimingEvent({
-                    work: expansion.work,
-                    operation: 'committed-output-observed',
-                    serviceId: input.serviceId,
-                    details: {
-                        outcome: 'written',
-                        acceptedGroupRevision: expansion.work.acceptedCausalRevision.groupRevision,
-                        acceptedPresenceRevision: expansion.work.acceptedCausalRevision.presenceRevision,
-                        topicId: output.entry.key.topicId,
-                        resourceId: output.entry.key.resourceId,
-                        contextId: output.entry.key.contextId
-                    }
-                }),
-                status: 'ok',
-                durationMs: 0
-            });
+            try {
+                recordRallarTiming({
+                    sink: input.timing,
+                    event: toGroupPresenceSummaryTimingEvent({
+                        work: expansion.work,
+                        operation: 'committed-output-observed',
+                        serviceId: input.serviceId,
+                        details: {
+                            outcome: 'written',
+                            acceptedGroupRevision: expansion.work.acceptedCausalRevision.groupRevision,
+                            acceptedPresenceRevision: expansion.work.acceptedCausalRevision.presenceRevision,
+                            topicId: output.entry.key.topicId,
+                            resourceId: output.entry.key.resourceId,
+                            contextId: output.entry.key.contextId
+                        }
+                    }),
+                    status: 'ok',
+                    durationMs: 0
+                });
+            }
+            catch {
+                // Timing detail failure after commit must not change the committed queue work.
+            }
         }
     }
 }
