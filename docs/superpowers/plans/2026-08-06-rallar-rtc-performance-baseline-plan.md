@@ -20,8 +20,11 @@ finalization, repeat selection, and archive verification preserve each run's
 source, environment, exact attempts, raw samples, and checksums. Tooling is
 implemented; capture and ranking acceptance remain separate outcomes.
 
-**Current outcome, 2026-10-18:** E3 remains **conditionally completed for
-sequencing only**, as authorized by the human. The final canonical acquisition
+**Current outcome, 2026-10-18:** The human has explicitly **deferred further
+heap investigation** and directed continuation of independent plan work.
+[E3 follow-up #672](https://github.com/intact-software-systems/ar-eye-hunter/issues/672)
+preserves the unresolved investigation. E3 remains conditionally completed for
+sequencing only; its acceptance criteria are unchanged. The final canonical acquisition
 has now completed its full primary: three warmups and eleven retained attempts
 (five default, three all-scenarios, three retention). All fourteen individual
 attempts pass their correctness and evidence checks. **The retention cohort
@@ -89,9 +92,9 @@ Finite native coverage, source-origin and counter limitations remain disclosed.
 [PR #671](https://github.com/intact-software-systems/ar-eye-hunter/pull/671) is the
 remote delivery record for source changes, reviews and validation evidence.
 Ordinary correctness checks do not supply E3 acceptance. The remaining heap
-investigation is now the final overall plan point. Conditional sequencing
-completion does not waive Section 12, authorize another primary/repeat to seek
-a favorable result, or justify deleting this plan as completed.
+investigation is deferred by the human. Conditional sequencing completion does
+not waive Section 12, authorize another primary/repeat to seek a favorable
+result, or justify deleting this plan as completed.
 
 Prefer existing `packages/shared/**` libraries, single responsibility and one
 canonical implementation. Retain no affected obsolete code, duplicate policy
@@ -2718,6 +2721,23 @@ justified yet.”
 
 ## 10. Delivered Outcomes And Remaining Acceptance
 
+Current acceptance is summarized below. The later numbered task snapshots are
+historical implementation records; their pending statements do not reopen
+outcomes completed by subsequent reviewed evidence.
+
+| Outcome | Current disposition |
+| --- | --- |
+| E1 / B01–B04 | Fresh complete primary and single controlled repeat pass correctness, accounting and canonical validation; performance remains inconclusive under the unchanged noise rule. No second repeat. |
+| E2 / browser observations | Bounded reconciliation is complete: 37 verified archives, 448 matching summaries, 35 separate populations. No pooling or stable cross-tier ranking is justified. |
+| Admission and retention source changes | Commit-before-notification, shared write-set, durable result release, complete artifact reading and reviewed ownership corrections are delivered. |
+| Console and worker capture | Reviewed Copy/Load/two same-session Native runs, Console Native application, lifecycle/export, checkpoint preservation, local/deployed HOST, Actions RUN and selected external/spawned/mixed/no-spawn outcomes retain their documented scopes. Partial Native coverage, unknown durable origin and cancellation-checkpoint limits remain explicit. |
+| B07 | Authorized PostgreSQL/GitHub Free acquisition is complete and descriptive; its controlled repeat remains noisy. The failed 50-agent diagnostics are preserved separately from the accepted generic two-agent no-spawn witness. |
+| E4 | Conditional and unselected: no database-backed RTC optimization candidate is proposed. PostgreSQL correctness is not an E4 substitute. |
+| E3 | Canonical primary fails heap acceptance; no repeat was selected. Further heap investigation is deferred to #672. Zero accepted cohorts. |
+| Delivery and final conclusion | Reviewed source is published in PR #671. Native review/integration and the unresolved E3 gate remain distinct from completed non-heap work. No optimization ranking or overall baseline completion is claimed. |
+
+### Historical task snapshots
+
 | Task    | Delivered outcome / remaining state                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 0       | Execution authorization and initial foundations delivered; no renewed exact-blob activation ceremony.                                                                                                                                                                                                                                                                                                                                                                                  |
@@ -2776,63 +2796,34 @@ justified yet.”
 
 ## 11. Current Implementation Horizon
 
-The canonical E3 primary is now fully acquired and fails heap acceptance.
-Conditional sequencing completion remains conditional; zero E3 cohorts are
-accepted. Earlier implementation, operator and bounded E1/E2/B07 outcomes keep
-their independently reviewed scopes and limitations. They do not need another
-acquisition merely because final E3 failed.
+The human has deferred further heap investigation. Keep the failed canonical E3
+primary and its unchanged acceptance criteria visible in
+[follow-up #672](https://github.com/intact-software-systems/ar-eye-hunter/issues/672).
+Do not launch another heap diagnostic, primary or repeat as part of the current
+independent work. E3 has zero accepted cohorts; deferral is not acceptance.
 
-Keep only these next two useful slices concrete:
+The remaining-scope audit finds no uncompleted independent non-heap
+implementation or acquisition slice. Later reviewed evidence closes the
+original Console, worker and observation outcomes at their stated scopes.
+E1/E2/B07 retain their terminal inconclusive performance conclusions; no second
+repeat or stable cross-tier ranking is justified. Historical pending statements
+do not require another acquisition.
 
-1. **Publish the independently reviewed E3 failure evidence.** Review confirms
-   the original archive, source/configuration identity, all warmup and retained
-   attempts, durable release/journal proof and the exact heap/state verdict.
-   Preserve the failed primary and no-repeat decision in the plan and semantic
-   PR explanation; ordinary CI success must not be presented as E3 acceptance.
-2. **Decide the remaining heap work from the reviewed evidence.** Present the
-   failed canonical result together with the bounded prior code-family and
-   replay-owner findings. Select further implementation only when a concrete
-   ownership/lifetime defect or safe reduction is established. If no such
-   reduction is established, present the unresolved E3 condition and a bounded
-   follow-up for the human decision required by Section 12. Moving an issue or
-   marking conditional sequencing complete cannot make dependent work pass.
+The remaining active outcome is **delivery of the reviewed non-heap changes
+through the existing PR**. Keep its acceptance explanation and deferred-heap
+follow-up together, verify required checks, and follow ordinary native
+review/integration. No default-branch commit, push or administrator merge is
+authorized by this deferral.
 
-No new primary, selective repeat, longer plateau run, timeout relaxation,
-replay-horizon change or speculative production optimization is selected by
-this failure alone. Existing profiles remain bound to their original sources
-and uninterrupted sessions. The current canonical total-heap measurements do
-not identify the exact code/non-code contribution on this candidate.
+No additional optimization is justified by noisy measurements or incomplete
+attribution. Prefer existing shared libraries and direct ownership. Retain no
+duplicated policy, obsolete implementation or migration scaffolding. Preserve
+replay tombstones, durable receipts and assignment/reset lifetimes. E4 remains
+conditional on an actual database-backed RTC candidate.
 
-If evidence later earns a source correction, preserve the required primary:
-three warmups plus eleven retained attempts (5 default, 3 all-scenarios,
-3 retention), 100 retention cycles and zero retries. Only the existing
-controller's passing-primary decision may select its single linked repeat:
-three warmups plus twenty-two retained attempts (10/6/6). Heap failure remains
-at least 2 of 3 retained runs above both 110% of cycle-zero heap and cycle-zero
-plus 5 MiB; the repeat fails at 4 of 6. Settled peer/lane/timer mismatches
-independently fail. No extra warmup, code-heap subtraction, favorable sample
-selection or changed baseline may replace this gate.
-
-Keep default/all-scenarios diagnostic selections and release-disabled behavior;
-retention remains recent/64 with routine/ALM diagnostics disabled and verified
-durable release enabled. Preserve complete original recovery artifacts,
-source/configuration fingerprints and attempt accounting. E3 uses its required
-memory environment. E4 remains conditional on an actual database-backed RTC
-candidate; prior PostgreSQL correctness evidence is not a substitute if that
-condition becomes selected. B07 remains descriptive and outside default
-completion unless separately required.
-
-Prefer existing shared libraries and direct ownership. Do not remove validation,
-replay tombstones or receipt evidence to obtain a heap pass. Optional metadata
-representation opportunities preserve every replay fact and assignment/reset
-lifetime; the prior approximately 0.395 MiB duplicate-string estimate is not a
-measured reclamation result. An inactive-view optimization still requires a
-resource-lifetime design and visible tab-switch regressions, rather than blanket
-conditional unmounting. No interning framework, parallel legacy store or
-protocol migration is selected.
-
-Section 12 remains unchanged. The plan stays open until its required successful
-acceptance and human decision are actually satisfied.
+Section 12 remains unchanged. The plan stays open while E3 is deferred and its
+required acceptance remains unmet; creating a follow-up issue does not make the
+overall baseline complete.
 
 ### Earlier implementation horizon (historical)
 
