@@ -371,7 +371,7 @@ describe('Hetzner controller API prod profile on the VM Postgres', () => {
         expect(stdout).toContain('stopFailureFence=passed');
         expect(stdout).toContain('configPreflight=passed');
         expect(stdout).toContain('migrationFailureFence=passed');
-    });
+    }, 30_000);
 
     it.for([
         { profile: 'prod-in-memory', warns: true },

@@ -1226,14 +1226,6 @@ moved or changed test.
       }
     },
     {
-      "id": "hetzner-control-deno-runtime",
-      "domain": "Hetzner control-server Deno runtime",
-      "owner": "Rallar operations maintainers",
-      "summary": "Deployment cache warming and systemd startup use the control server owned Deno configuration. Executable assertion: “uses the control-server Deno config for Hetzner cache warming and systemd start”.",
-      "semanticCoverage": "packages/tests/hetzner/spa-env-script.test.ts#uses the control-server Deno config for Hetzner cache warming and systemd start",
-      "coverageRelation": "The named deployment test executes the SPA environment script and verifies that cache warming and service startup resolve the control server configuration actually shipped to Hetzner."
-    },
-    {
       "id": "hetzner-distributed-workflow--keeps-playwright-packages-aligned-past-the-node-24-browser-insta",
       "domain": "Published Playwright dependency contract",
       "owner": "Rallar operations maintainers",
@@ -5443,17 +5435,6 @@ moved or changed test.
       "owner": "Rallar operations maintainers",
       "rationale": "Loads the fully validated composite JSON fixture consumed by the real materializer child; independent output assertions distinguish the parallel label from executable scope.",
       "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#preserves a parallel label that happens to equal the source room"
-    },
-    {
-      "id": "test-structure-coupling-2fe7626b3fa35573",
-      "path": "packages/tests/hetzner/spa-env-script.test.ts",
-      "kind": "production-source-read",
-      "contract": "hetzner-control-deno-runtime",
-      "disposition": "durable-boundary",
-      "boundary": "public",
-      "owner": "Rallar operations maintainers",
-      "rationale": "Reads the deployed control-server Deno config that both cache warming and systemd execute, preventing the host script from validating a different runtime graph.",
-      "semanticCoverage": "packages/tests/hetzner/spa-env-script.test.ts#uses the control-server Deno config for Hetzner cache warming and systemd start"
     },
     {
       "id": "test-structure-coupling-04d3f7b4b3e8b92c",

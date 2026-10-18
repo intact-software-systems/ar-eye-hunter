@@ -105,6 +105,66 @@ Show service status, memory, and recent logs:
 ./07-status-controller.sh
 ```
 
+For a read-only hosted preflight, dispatch the existing **Deploy Hetzner
+Controller** workflow with `action=inspect` and `ref` set to the reviewed full
+40-character commit. This path streams the reviewed effective-env reader and
+`07-status-controller.sh --inspect` over SSH stdin. It prints one JSON object
+with only source, migration, timing/topology, reviewed public operator settings,
+readiness, service/activity, health, and aggregate store-continuity evidence.
+The `operatorSettings` object projects ten named public values from the SPA
+environment, checks their expected shapes, and compares duplicate API/control
+CORS and SPA build values. Public health probes use those configured URLs. It does not copy scripts,
+sync secrets, write remote files, or run rollout. A missing required field or
+failed read makes the workflow fail. The normal status command above remains
+verbose and can include journals, so do not use it for this preflight.
+
+Before a timing diagnostic, compare the deployed migration ledger with the
+source migration list in the inspect JSON and review any pending, failed, or
+different migration separately. Require both prior timing keys to be present
+and exactly `RALLAR_TIMING_LOGS=0` and
+`RALLAR_APP_INBOX_PHASE_TIMING=false`. A missing or mixed pair cannot be
+restored by the existing boolean writer, so it blocks the diagnostic. Record
+all four topology keys as present/value pairs and keep the full inspected
+source commit for restoration. Each reported key also names its effective
+environment or secret-file source. A secret-file timing/topology override
+blocks an explicit diagnostic or topology rollout because the ordinary env
+writer cannot change its effective value. Check for other operator activity
+immediately before dispatch; inspect is a point-in-time observation, not a lock.
+
+The same workflow defaults to `action=rollout`, `server_timing=false`, and
+`apply_topology=false`; ordinary rollouts preserve existing topology values.
+For explicit restoration, use the same reviewed full commit with
+`apply_topology=true` and supply every `rtc_topology_*` input. An empty input
+removes that key; a positive integer sets it. The workflow passes the values
+to the existing rollout writer. Record the ten `operatorSettings` values before
+the diagnostic and map them to the rollout's URL, CORS, room, agent,
+application, and workspace inputs. Supply them again during restoration: the
+rollout rewrites the public SPA and CORS settings from its inputs, and defaults
+are not evidence of the prior deployment. If inspect cannot read or reconcile
+these persisted values, it fails and the diagnostic is blocked. Caddy and
+Playwright choices are transient execution inputs, not persisted settings;
+restoration may leave them false and should verify prior service health/state.
+Run `action=inspect` again after the diagnostic and after restoration. Compare
+source identity, migrations, timing/topology, database/role/table OIDs, aggregate
+auth/group counts, service state, health, and failure fence before declaring
+restoration complete.
+Restore even if the diagnostic or artifact acquisition fails.
+
+The inspect keys map to workflow inputs as follows:
+
+| `operatorSettings` key             | Rollout input          |
+| ---------------------------------- | ---------------------- |
+| `RALLAR_BLACK_BOX_SPA_URL`         | `spa_url`              |
+| `RALLAR_BLACK_BOX_CONTROL_URL`     | `control_url`          |
+| `RALLAR_API_BASE_URL`              | `api_base_url`         |
+| `RALLAR_API_CORS_ORIGINS`          | `api_cors_origins`     |
+| `RALLAR_BLACK_BOX_ALLOWED_ORIGINS` | `control_cors_origins` |
+| `RALLAR_BLACK_BOX_ROOM_ID`         | `room_id`              |
+| `RALLAR_BLACK_BOX_AGENT_PREFIX`    | `runner_agent_prefix`  |
+| `RALLAR_BLACK_BOX_AGENT_COUNT`     | `runner_agent_count`   |
+| `VITE_RALLAR_APPLICATION_ID`       | `application_id`       |
+| `VITE_RALLAR_WORKSPACE_ID`         | `workspace_id`         |
+
 Tail app and headless browser logs from anywhere on the VM:
 
 ```sh
@@ -600,8 +660,22 @@ METERED_API_KEY
 Workflow inputs:
 
 ```text
+action
+  Inspect without changing the VM, or roll out. Default: rollout.
+
 ref
-  Git ref to roll out. Default: main.
+  Git ref to roll out, or reviewed full commit to inspect. Default: main.
+
+server_timing
+  Enable API and AppInbox timing during rollout. Default: false.
+
+apply_topology
+  Apply all four topology input values during rollout. Default: false.
+
+rtc_topology_degree_limit, rtc_topology_tree_min_size,
+rtc_topology_mesh_min_size, rtc_topology_mesh_param_k
+  Positive integers to set, or empty to remove, when apply_topology is true.
+  Ignored by an ordinary rollout. Default: empty.
 
 include_caddy
   Also stop/start Caddy during rollout. Default: false.
@@ -1077,9 +1151,11 @@ slices. The journal shows each write and each barrier resolution as a
 and `writeMs`; `barrier.resolution` with the milliseconds from the last arrival
 to the resolution):
 
-````sh
+```sh
 journalctl -u rallar-black-box-control --no-pager | grep '"rallar.timing"' | tail -40
-``` The unit runs without
+```
+
+The unit runs without
 `--v8-flags` or a systemd `MemoryMax`, so V8 sizes its heap from the VM's RAM.
 When the control service stops answering (502 to the operator and to the agents'
 control sockets), confirm whether it ran out of memory before changing code:
@@ -1091,7 +1167,7 @@ systemctl show -p NRestarts rallar-black-box-control
 free -m
 nproc
 ls -l /var/lib/rallar-black-box-control/control-snapshot.json
-````
+```
 
 - `Reached heap limit` or `JavaScript heap out of memory` in the journal: V8's
   own limit stopped the process.

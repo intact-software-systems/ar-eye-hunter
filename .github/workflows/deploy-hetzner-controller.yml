@@ -3,10 +3,39 @@ name: Deploy Hetzner Controller
 on:
   workflow_dispatch:
     inputs:
+      action:
+        description: Read-only inspect or controlled rollout
+        type: choice
+        options: [rollout, inspect]
+        default: rollout
       ref:
         description: Git ref to roll out on the controller VM
         default: main
         required: true
+      server_timing:
+        description: Enable API and AppInbox timing during rollout
+        type: boolean
+        default: false
+      apply_topology:
+        description: Explicitly set or remove all four API topology keys during rollout
+        type: boolean
+        default: false
+      rtc_topology_degree_limit:
+        description: Positive integer, or empty to remove when apply_topology is true
+        required: false
+        default: ''
+      rtc_topology_tree_min_size:
+        description: Positive integer, or empty to remove when apply_topology is true
+        required: false
+        default: ''
+      rtc_topology_mesh_min_size:
+        description: Positive integer, or empty to remove when apply_topology is true
+        required: false
+        default: ''
+      rtc_topology_mesh_param_k:
+        description: Positive integer, or empty to remove when apply_topology is true
+        required: false
+        default: ''
       include_caddy:
         description: Include Caddy in service stop/start handling
         type: boolean
@@ -65,13 +94,15 @@ concurrency:
 
 jobs:
   deploy:
-    name: Roll out Hetzner controller
+    name: Inspect or roll out Hetzner controller
     runs-on: ubuntu-latest
     environment: production
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Configure SSH
         shell: bash
@@ -86,7 +117,33 @@ jobs:
           chmod 600 ~/.ssh/hetzner
           printf '%s\n' "${HETZNER_KNOWN_HOSTS}" > ~/.ssh/known_hosts
 
+      - name: Inspect reviewed source on controller
+        if: inputs.action == 'inspect'
+        shell: bash
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          RALLAR_REPO_REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          [[ "${RALLAR_REPO_REF}" =~ ^[0-9a-f]{40}$ ]] || {
+            echo '::error::Inspect requires a reviewed full source commit.' >&2
+            exit 1
+          }
+          source_commit="$(git rev-parse HEAD)"
+          [[ "${source_commit}" == "${RALLAR_REPO_REF}" ]] || {
+            echo '::error::Inspected source differs from the requested commit.' >&2
+            exit 1
+          }
+          printf 'Reviewed inspect source: `%s`\n' "${source_commit}" >> "${GITHUB_STEP_SUMMARY}"
+          {
+            cat scripts/hosted-rallar/controller/rallar-api-effective-env.sh
+            printf '\n'
+            cat scripts/hosted-rallar/controller/07-status-controller.sh
+          } | ssh -i ~/.ssh/hetzner "${HETZNER_USER}@${HETZNER_HOST}" 'bash -s -- --inspect'
+
       - name: Copy controller scripts
+        if: inputs.action == 'rollout'
         shell: bash
         env:
           HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
@@ -111,6 +168,7 @@ jobs:
           REMOTE
 
       - name: Sync optional Metered TURN secrets
+        if: inputs.action == 'rollout'
         shell: bash
         env:
           HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
@@ -155,6 +213,7 @@ jobs:
           REMOTE
 
       - name: Run controlled rollout
+        if: inputs.action == 'rollout'
         shell: bash
         env:
           HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
@@ -162,6 +221,12 @@ jobs:
           RALLAR_REPO_REF: ${{ inputs.ref }}
           RALLAR_INCLUDE_CADDY: ${{ inputs.include_caddy }}
           RALLAR_INSTALL_PLAYWRIGHT: ${{ inputs.install_playwright }}
+          RALLAR_SERVER_TIMING: ${{ inputs.server_timing }}
+          RALLAR_APPLY_TOPOLOGY: ${{ inputs.apply_topology }}
+          RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT_INPUT: ${{ inputs.rtc_topology_degree_limit }}
+          RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE_INPUT: ${{ inputs.rtc_topology_tree_min_size }}
+          RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE_INPUT: ${{ inputs.rtc_topology_mesh_min_size }}
+          RALLAR_RTC_TOPOLOGY_MESH_PARAM_K_INPUT: ${{ inputs.rtc_topology_mesh_param_k }}
           RALLAR_BLACK_BOX_SPA_URL: ${{ inputs.spa_url }}
           RALLAR_BLACK_BOX_CONTROL_URL: ${{ inputs.control_url }}
           RALLAR_API_BASE_URL: ${{ inputs.api_base_url }}
@@ -184,12 +249,43 @@ jobs:
           if [[ "${RALLAR_INSTALL_PLAYWRIGHT}" == "true" ]]; then
             install_playwright=1
           fi
+          server_timing=0
+          if [[ "${RALLAR_SERVER_TIMING}" == "true" ]]; then
+            server_timing=1
+          fi
+
+          if [[ "${server_timing}" == 1 || "${RALLAR_APPLY_TOPOLOGY}" == "true" ]]; then
+            [[ "${RALLAR_REPO_REF}" =~ ^[0-9a-f]{40}$ ]] &&
+              [[ "$(git rev-parse HEAD)" == "${RALLAR_REPO_REF}" ]] || {
+                echo '::error::Timing or topology changes require the reviewed full source commit.' >&2
+                exit 1
+              }
+          fi
+
+          if [[ "${RALLAR_APPLY_TOPOLOGY}" == "true" ]]; then
+            for value in "${RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT_INPUT}" \
+              "${RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE_INPUT}" \
+              "${RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE_INPUT}" \
+              "${RALLAR_RTC_TOPOLOGY_MESH_PARAM_K_INPUT}"; do
+              [[ -z "${value}" || "${value}" =~ ^[1-9][0-9]*$ ]] || {
+                echo '::error::Topology restore values must be empty or positive integers.' >&2
+                exit 1
+              }
+            done
+          fi
 
           rollout_env="${RUNNER_TEMP}/rallar-controller-rollout.env"
           {
             printf 'RALLAR_REPO_REF=%s\n' "$(quote "${RALLAR_REPO_REF}")"
             printf 'RALLAR_INCLUDE_CADDY=%s\n' "$(quote "${include_caddy}")"
             printf 'RALLAR_INSTALL_PLAYWRIGHT=%s\n' "$(quote "${install_playwright}")"
+            printf 'RALLAR_API_SERVER_TIMING=%s\n' "$(quote "${server_timing}")"
+            if [[ "${RALLAR_APPLY_TOPOLOGY}" == "true" ]]; then
+              printf 'RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT=%s\n' "$(quote "${RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT_INPUT}")"
+              printf 'RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE=%s\n' "$(quote "${RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE_INPUT}")"
+              printf 'RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE=%s\n' "$(quote "${RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE_INPUT}")"
+              printf 'RALLAR_RTC_TOPOLOGY_MESH_PARAM_K=%s\n' "$(quote "${RALLAR_RTC_TOPOLOGY_MESH_PARAM_K_INPUT}")"
+            fi
             printf 'RALLAR_BLACK_BOX_SPA_URL=%s\n' "$(quote "${RALLAR_BLACK_BOX_SPA_URL}")"
             printf 'RALLAR_BLACK_BOX_CONTROL_URL=%s\n' "$(quote "${RALLAR_BLACK_BOX_CONTROL_URL}")"
             printf 'RALLAR_API_BASE_URL=%s\n' "$(quote "${RALLAR_API_BASE_URL}")"

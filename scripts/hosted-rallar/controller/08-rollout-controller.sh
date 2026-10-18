@@ -297,6 +297,45 @@ restart_stopped_services_on_error() {
 	exit "${exit_code}"
 }
 
+update_api_rtc_topology_env() {
+	local key
+	local keys=(
+		RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT
+		RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE
+		RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE
+		RALLAR_RTC_TOPOLOGY_MESH_PARAM_K
+	)
+
+	for key in "${keys[@]}"; do
+		if [[ "${!key+x}" == "x" ]]; then
+			update_env_value "${RALLAR_API_ENV_FILE}" "${key}" "${!key}"
+		fi
+	done
+}
+
+require_writable_api_diagnostic_configuration() {
+	local key status server_timing requested=0
+	server_timing="$(printf '%s' "${RALLAR_API_SERVER_TIMING}" | tr '[:upper:]' '[:lower:]')"
+	case "${server_timing}" in 1|true|yes|on) requested=1 ;; esac
+	for key in RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE \
+		RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE RALLAR_RTC_TOPOLOGY_MESH_PARAM_K; do
+		if [[ "${!key+x}" == x ]]; then requested=1; fi
+	done
+	[[ "${requested}" == 1 ]] || return 0
+	[[ -e "${RALLAR_API_SECRET_FILE}" || -L "${RALLAR_API_SECRET_FILE}" ]] || return 0
+	for key in RALLAR_TIMING_LOGS RALLAR_APP_INBOX_PHASE_TIMING \
+		RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE \
+		RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE RALLAR_RTC_TOPOLOGY_MESH_PARAM_K; do
+		if read_rallar_api_file_value "${RALLAR_API_SECRET_FILE}" "${key}" >/dev/null; then
+			echo "Secret-file override for ${key} cannot be changed by rollout." >&2
+			return 1
+		else
+			status=$?
+			[[ "${status}" == 3 ]] || return "${status}"
+		fi
+	done
+}
+
 run_rollout_self_test() {
 	case "${RALLAR_ROLLOUT_SCRIPT_SELF_TEST:-}" in
 	checkout-ref)
@@ -333,17 +372,12 @@ run_rollout_self_test() {
 		echo "wroteApiProdEnvironment=true"
 		;;
 	write-api-optional-environment)
-		local name
-		local names=(
-			RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT
-			RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE
-			RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE
-			RALLAR_RTC_TOPOLOGY_MESH_PARAM_K
-		)
-		for name in "${names[@]}"; do
-			update_env_value "${RALLAR_API_ENV_FILE}" "${name}" "${!name:-}"
-		done
+		update_api_rtc_topology_env
 		echo "wroteApiOptionalEnvironment=true"
+		;;
+	preflight-api-overrides)
+		require_writable_api_diagnostic_configuration
+		echo "writableApiDiagnosticConfiguration=true"
 		;;
 	*)
 		echo "Unknown RALLAR_ROLLOUT_SCRIPT_SELF_TEST: ${RALLAR_ROLLOUT_SCRIPT_SELF_TEST}" >&2
@@ -464,22 +498,6 @@ update_api_cors_origins() {
 	update_env_value "${RALLAR_API_ENV_FILE}" "CORS_ORIGINS" "${RALLAR_API_CORS_ORIGINS}"
 }
 
-update_api_rtc_topology_env() {
-	local key
-	local keys=(
-		RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT
-		RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE
-		RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE
-		RALLAR_RTC_TOPOLOGY_MESH_PARAM_K
-	)
-
-	for key in "${keys[@]}"; do
-		if [[ "${!key+x}" == "x" ]]; then
-			update_env_value "/etc/rallar/api-v1.env" "${key}" "${!key}"
-		fi
-	done
-}
-
 update_control_allowed_origins() {
 	apply_rallar_public_cors_defaults
 	update_env_value "${RALLAR_CONTROL_ENV_FILE}" "RALLAR_BLACK_BOX_ALLOWED_ORIGINS" "${RALLAR_BLACK_BOX_ALLOWED_ORIGINS}"
@@ -500,6 +518,7 @@ if [[ ! -d "${RALLAR_CHECKOUT_DIR}/.git" ]]; then
 fi
 
 validate_rallar_api_existing_store_configuration "${RALLAR_API_ENV_FILE}"
+require_writable_api_diagnostic_configuration
 
 repair_known_rollout_generated_checkout_changes "${RALLAR_CHECKOUT_DIR}"
 
