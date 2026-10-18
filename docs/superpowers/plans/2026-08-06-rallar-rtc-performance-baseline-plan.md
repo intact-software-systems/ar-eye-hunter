@@ -2734,7 +2734,7 @@ outcomes completed by subsequent reviewed evidence.
 | Admission and retention source changes | Commit-before-notification, shared write-set, durable result release, complete artifact reading and reviewed ownership corrections are delivered. |
 | Console and worker capture | Reviewed Copy/Load/two same-session Native runs, Console Native application, lifecycle/export, checkpoint preservation, local/deployed HOST, Actions RUN and selected external/spawned/mixed/no-spawn outcomes retain their documented scopes. Partial Native coverage, unknown durable origin and cancellation-checkpoint limits remain explicit. |
 | B07 | Authorized PostgreSQL/GitHub Free acquisition is complete and descriptive; its controlled repeat remains noisy. The failed 50-agent diagnostics are preserved separately from the accepted generic two-agent no-spawn witness. |
-| E4 | Capture support is published. The first acquisition on `4a1ff4d448d5` failed at the default warmup because browser startup omitted E4 production proof; thirteen attempts were causally not run, with no repeat or accepted metrics. Correct that startup boundary, then acquire and independently review the corrected candidate under unchanged criteria. |
+| E4 | Capture support and the production-startup correction are published. Corrected candidate `dc96a9a48194` passes all ten default/all-scenarios attempts, then fails retention warmup at cycle 4 with an exact-peer readiness mismatch. Three retained attempts are not run; no repeat or accepted primary. Original failures remain preserved. Diagnose and correct only the demonstrated readiness observation defect before fresh acquisition under unchanged criteria. |
 | E3 | Canonical primary fails heap acceptance; no repeat was selected. Further heap investigation is deferred to #672. Zero accepted cohorts. |
 | Delivery and final conclusion | Reviewed source is published in PR #671. Native review/integration and the unresolved E3 gate remain distinct from completed non-heap work. No optimization ranking or overall baseline completion is claimed. |
 
@@ -2818,13 +2818,23 @@ production-serving evidence was absent. Its one failure, thirteen causal not-run
 outcomes and no-repeat decision remain preserved. It supplies no accepted E4
 metrics or retention conclusion.
 
+The production-startup correction at `dc96a9a48194` passed independent source
+review and all 21 successful ordinary CI checks. Its [E4 acquisition](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/39102639213)
+records valid production-serving proof for all eleven executed attempts. All ten
+default/all-scenarios attempts pass, but retention warmup fails at reconnect
+cycle 4 because A reports only one expected peer. Three retention attempts are
+causally not run, and the controller selects no repeat or accepted metrics.
+The partial summaries do not establish an accepted E4 primary or heap outcome.
+The release evidence also fails whole-proof verification; preserve that symptom
+without interpreting its zero verified-root aggregate as zero actual releases.
+
 The next two useful slices are:
 
-1. Correct the actual browser startup boundary that still restricted production
-   proof to E3, despite the published E4 runner support. Reproduce the omission
-   through actual admission and browser-entry composition, preserve original
-   proof rejection, and independently review the correction. Keep the first E4
-   acquisition failure on `4a1ff4d448d5` and its original artifacts separate.
+1. Diagnose and correct the demonstrated E4 readiness observation boundary: the
+   cycle-4 wait returned a ready prior two-member layout before asserting the
+   expected three-member group. Preserve the exact peer set and existing deadline,
+   reproduce the sequencing failure, and independently review the correction.
+   Keep both failed acquisitions and incomplete release evidence separate.
 2. Acquire E4 on the exact reviewed candidate: three warmups and eleven retained
    attempts, including its normal 100-cycle retention case. Run only the repeat
    selected by the existing controller. Preserve failed attempts, full event

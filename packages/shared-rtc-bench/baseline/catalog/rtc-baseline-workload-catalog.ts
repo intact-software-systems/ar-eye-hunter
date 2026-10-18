@@ -370,6 +370,11 @@ export function toRtcBaselineFullStackRuntimeScript(
 }
 
 const fullStackSourcePaths = [
+    'packages/shared/resilience/try-with-policy.ts',
+    'packages/shared/resilience/timers.ts',
+    'packages/shared/resilience/settle-all.ts',
+    'packages/shared/resilience/to-error.ts',
+    'packages/shared/repository/state-utils.ts',
     'tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts',
     'tests/playwright/rallar-black-box/create-group-formation-lifecycle-driver.ts',
     'tests/playwright/rallar-black-box/live-rtc-formation-operations.ts',

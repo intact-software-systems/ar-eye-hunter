@@ -19,6 +19,7 @@ import { toRtcCaptureReadout } from '@shared-web/browser/connection/to-rtc-captu
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { settleAll } from '@shared/resilience/settle-all.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
@@ -337,7 +338,7 @@ async function reconnectFormationAgent(
         suffix: input.suffix
     });
     try {
-        const [firstReceiverDurationMs, secondReceiverDurationMs] = await Promise.all(
+        const [firstReceiverDurationMs, secondReceiverDurationMs] = await settleAll(
             [
                 waitForCanonicalFormationReadiness(config, {
                     control: input.control,
@@ -579,7 +580,7 @@ async function connectInitialPair(
         ...lifecycle,
         transport: input.transport
     });
-    await Promise.all(
+    await settleAll(
         agents.map(
             async (agent, index) =>
                 await waitForCanonicalFormationReadiness(config, {
@@ -603,7 +604,7 @@ async function connectInitialPair(
 }
 
 async function waitForInitialPairPeerReadiness(input: InitialPairPeerReadinessInput): Promise<void> {
-    await Promise.all(
+    await settleAll(
         input.run.agents.slice(0, 2).map(async (agent, index) =>
             await input.run.control.waitForPeerReadiness({
                 runId: input.run.runId,
@@ -1005,7 +1006,7 @@ async function waitForFormationReadiness(
     config: CreateGroupFormationLifecycleDriverConfig,
     input: WaitForFormationReadinessInput
 ): Promise<Readonly<Partial<Record<AgentPrefix, number>>>> {
-    const durations = await Promise.all(
+    const durations = await settleAll(
         input.run.agents.map(async (agent) => ({
             prefix: agent.prefix,
             durationMs: await waitForCanonicalFormationReadiness(config, {
@@ -1036,7 +1037,8 @@ async function waitForCanonicalFormationReadiness(
         runId: input.runId,
         agent: input.agent,
         roomRef: input.roomRef,
-        suffix: input.suffix
+        suffix: input.suffix,
+        expectedPeerIds: input.expectedPeerIds
     });
     const room = readiness.formation.room;
     const expectedPeerIds = [...new Set(input.expectedPeerIds)].sort();
