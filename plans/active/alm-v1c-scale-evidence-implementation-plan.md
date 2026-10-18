@@ -194,9 +194,10 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    scheduling and read/shutdown draining through semantic tests and real artifact files. The
    base includes the merged retention/evidence changes from #671; preserve their capture contract.
 2. **Remaining shared-mechanism audit and next measured repair:** recover current consumers of
-   the D278 candidates and D298's unread rate adjustment, then select the next owned change from
-   evidence. The AL checkpoint writer, serialized chains, keyed limiter, abort scope, UTF-8
-   length and repeating-run copies remain outcomes until that audit selects a concrete task.
+   the D278 candidates and D298's unread rate adjustment, prioritizing the measured formation-tail
+   delivery delay below when selecting the next owned repair. The AL checkpoint writer,
+   serialized chains, keyed limiter, abort scope, UTF-8 length and repeating-run copies remain
+   outcomes until that audit selects a concrete task.
 
 Full V1c closure still requires the original scale acceptance, D281's comparison against main
 before step 1, the PostgreSQL four-arm comparison or removal of the falsified adaptive arm,
@@ -399,6 +400,34 @@ The maintainer's rulings bind the closure: the hosted acceptance runs without se
 cohort-proportional setup allowances are binding (D280, written into the acceptance above), and one V1c-wide
 state-write comparison judges step 2 against main before step 1 at the unchanged 5 % (D281). Then the Postgres
 four-arm comparison or the adaptive arm's removal, the rewritten evidence section, and the plan's deletion.
+
+#### Performance follow-ups from the step 2h investigation
+
+1. **Formation-tail delivery — high priority, measured historical delay.** Reanalysis of the
+   step 2g journal confirms a 73 ms promotion followed by 8.95 s before its group-state notification
+   was sent; 176 other outbox sends occurred in that interval, including 99 group-state events.
+   This locates the dominant post-promotion delay in delivery, but does not isolate the cause of
+   the step 2f-to-2g change across different database/runtime settings. Recover the current
+   `GroupPresenceSummaryWorker` → state-sync entries → WS outbox → browser delta/event path,
+   then measure promotion commit, delta write, outbox claim/send and browser acceptance separately
+   on the same candidate and environment. Compare backlog age, drain throughput, statements and
+   event-loop pressure; do not interpret coalesced work creation age as time waiting for its
+   latest update. The replacement for D300 must preserve every event in causal order, each
+   event's immutable audience, revision fences, duplicate handling and replay. A latest-only
+   replacement is invalid: the current delta carries one event even when its state slice is
+   coalesced. First prove those contracts with a queued burst and late promotion; only then
+   choose event-preserving batching or a measured queue-service repair. Retain the ≤2 s
+   formation-tail target and the unchanged scale/ACK acceptance; run local 15 → 30 → 50 before
+   hosted acceptance with server timing off. Diagnostic timings do not replace that acceptance.
+2. **Recorder burst latency — low priority, regression not established.** The first twenty-pair
+   local probe showed total medians +0.2% for 1,000 small results and +2.1% for fifty larger
+   results. An independent twenty-pair process measured effectively 0% and +0.9%; paired
+   bootstrap intervals include zero in both populations. Append counts and output bytes match.
+   Keep both populations and the confirmed stalled-write improvement in the PR evidence.
+   Revisit when a representative receipt-bearing or sustained workload shows a repeatable cost:
+   separate record/serialization, batch construction, append/sync and receipt work, then profile
+   CPU/allocation before selecting a change. No speculative optimization or claimed burst
+   speedup follows from the present results; peak memory and hosted impact remain unmeasured.
 
 ## Completion and handoff
 
