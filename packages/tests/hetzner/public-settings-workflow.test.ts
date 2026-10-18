@@ -30,7 +30,11 @@ interface WorkflowStep {
 
 interface Workflow {
     readonly on: Readonly<
-        Record<string, { readonly inputs: Readonly<Record<string, { readonly type?: string; readonly default?: string | number | boolean; }>>; }>
+        Record<string, {
+            readonly inputs: Readonly<
+                Record<string, { readonly type?: string; readonly default?: string | number | boolean; readonly options?: readonly string[]; }>
+            >;
+        }>
     >;
     readonly jobs: Readonly<Record<string, { readonly steps?: readonly WorkflowStep[]; readonly with?: Readonly<Record<string, string | number | boolean>>; }>>;
 }
@@ -40,6 +44,12 @@ interface RunnerWorkflowOutcome {
     readonly stderr: string;
     readonly outputs: Readonly<Record<string, string>>;
     readonly effects: string;
+}
+
+interface GitHubFreePlanOutcome {
+    readonly stdout: string;
+    readonly stderr: string;
+    readonly outputs: string;
 }
 
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -63,7 +73,8 @@ async function readWorkflow(name: string): Promise<Workflow> {
                                 type: 'object',
                                 properties: {
                                     type: { type: 'string' },
-                                    default: { type: ['string', 'number', 'boolean'] }
+                                    default: { type: ['string', 'number', 'boolean'] },
+                                    options: { type: 'array', items: { type: 'string' } }
                                 }
                             }
                         }
@@ -234,19 +245,121 @@ async function runRunnerWorkflow(context: TestContext, directory: string, overri
     return { ...result, outputs, effects: await readFile(path.join(directory, 'effects'), 'utf8') };
 }
 
+function resolveRolloutBinding(binding: string | number | boolean | undefined, selection: string): string | boolean {
+    if (typeof binding === 'boolean') {
+        return binding;
+    }
+    const expression = typeof binding === 'string' ? /^\$\{\{([\s\S]+)\}\}$/.exec(binding)?.[1] : undefined;
+    if (expression === undefined) {
+        throw new Error('Expected an explicit rollout boolean binding.');
+    }
+    const selected: unknown = runInNewContext(expression, { inputs: { rollout_control_plane: selection } }, { timeout: 1000 });
+    if (typeof selected !== 'boolean' && typeof selected !== 'string') {
+        throw new Error('Rollout binding must evaluate to a boolean or environment string.');
+    }
+    return selected;
+}
+
+async function runGitHubFreePlanner(context: TestContext, selection: string): Promise<GitHubFreePlanOutcome> {
+    const workflow = await readWorkflow('github-free-distributed-recipe.yml');
+    const step = workflow.jobs.plan.steps?.find((candidate) => candidate.name === 'Build matrix');
+    if (step?.run === undefined || step.env === undefined) {
+        throw new Error('GitHub Free must own its matrix planning entry.');
+    }
+    const directory = await mkdtemp(path.join(tmpdir(), 'rallar-public-planner-'));
+    context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+    const outcome = await runOwnedTestProcess(context, {
+        executable: 'bash',
+        args: ['-c', step.run],
+        options: {
+            cwd: repoRoot,
+            env: {
+                PATH: process.env.PATH,
+                INPUT_RUN_ID: 'preserving-public-plan',
+                TARGET_AGENT_COUNT: '15',
+                AGENTS_PER_JOB: '3',
+                MAX_PARALLEL_JOBS: '5',
+                AGENT_PREFIX: 'controller',
+                REGISTER_BEFORE_LOGIN: 'true',
+                MANIFEST_PATH: 'apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json',
+                ROLLOUT_CONTROL_PLANE: String(resolveRolloutBinding(step.env.ROLLOUT_CONTROL_PLANE, selection)),
+                GITHUB_RUN_ID: '123456',
+                GITHUB_RUN_ATTEMPT: '1',
+                GITHUB_OUTPUT: path.join(directory, 'outputs'),
+                GITHUB_STEP_SUMMARY: path.join(directory, 'summary')
+            }
+        }
+    });
+    return { ...outcome, outputs: await readFile(path.join(directory, 'outputs'), 'utf8') };
+}
+
 describe('public settings preservation at workflow boundaries', () => {
-    it('exposes optional boolean preservation and forwards it through both GitHub-free phases', async () => {
-        const deploy = await readWorkflow('deploy-hetzner-controller.yml');
+    it('stays within the dispatch input limit while retaining all existing operational inputs', async () => {
         const githubFree = await readWorkflow('github-free-distributed-recipe.yml');
+        const inputs = githubFree.on.workflow_dispatch.inputs;
+        expect(Object.keys(inputs).toSorted()).toEqual([
+            'execution_mode',
+            'capture_setup_timing',
+            'capture_ws_observations',
+            'rollout_control_plane',
+            'rtc_capture_mode',
+            'manifest_path',
+            'target_agent_count',
+            'agents_per_job',
+            'max_parallel_jobs',
+            'run_id',
+            'room_id',
+            'agent_prefix',
+            'application_id',
+            'workspace_id',
+            'ready_timeout_seconds',
+            'terminal_timeout_seconds',
+            'register_before_login',
+            'server_timing',
+            'browser_log_level',
+            'browser_engine',
+            'install_playwright',
+            'spa_url',
+            'control_url',
+            'control_http_url',
+            'api_base_url'
+        ].toSorted());
+        expect(Object.keys(inputs).length).toBeLessThanOrEqual(25);
+        expect(inputs).not.toHaveProperty('preserve_public_settings');
+        expect(inputs.rollout_control_plane).toMatchObject({ type: 'choice', default: 'true', options: ['true', 'false', 'preserve-public-settings'] });
+    });
+
+    it.for([
+        { selection: 'true', rollout: true, preserve: false },
+        { selection: 'false', rollout: false, preserve: false },
+        { selection: 'preserve-public-settings', rollout: true, preserve: true }
+    ])('derives explicit reusable booleans and planner behavior for $selection', async ({ selection, rollout, preserve }) => {
+        const githubFree = await readWorkflow('github-free-distributed-recipe.yml');
+        const prepare = githubFree.jobs['prepare-hetzner'];
+        const operator = githubFree.jobs.operator;
+        expect(resolveRolloutBinding(prepare.with?.rollout_before_run, selection)).toBe(rollout);
+        expect(resolveRolloutBinding(operator.with?.rollout_before_run, selection)).toBe(false);
+        expect(resolveRolloutBinding(prepare.with?.preserve_public_settings, selection)).toBe(preserve);
+        expect(resolveRolloutBinding(operator.with?.preserve_public_settings, selection)).toBe(preserve);
+    });
+
+    it.for(['true', 'false', 'preserve-public-settings'])('runs the actual topology planner with rollout choice %s', async (selection, context) => {
+        if (selection === 'false') {
+            await expect(runGitHubFreePlanner(context, selection)).rejects.toMatchObject({ stderr: expect.stringContaining('set rollout_control_plane=true') });
+        }
+        else {
+            const outcome = await runGitHubFreePlanner(context, selection);
+            expect(outcome.outputs).toContain('requires_topology_prepare=true\n');
+            expect(outcome.outputs).toContain('run_id=preserving-public-plan\n');
+            expect(outcome.outputs).toContain('max_parallel_jobs=5\n');
+        }
+    });
+
+    it('retains the deploy and reusable preservation booleans independently of GitHub Free dispatch choices', async () => {
+        const deploy = await readWorkflow('deploy-hetzner-controller.yml');
         const runner = await readWorkflow('hetzner-distributed-recipe-runner.yml');
-        for (const [workflow, trigger] of [[deploy, 'workflow_dispatch'], [githubFree, 'workflow_dispatch'], [runner, 'workflow_call']] as const) {
-            expect(workflow.on[trigger].inputs.preserve_public_settings).toMatchObject({ type: 'boolean', default: false });
-        }
-        const calls = Object.values(githubFree.jobs).filter((job) => job.with?.server_timing !== undefined);
-        expect(calls).toHaveLength(2);
-        for (const call of calls) {
-            expect(call.with?.preserve_public_settings).toBe('${{ inputs.preserve_public_settings }}');
-        }
+        expect(deploy.on.workflow_dispatch.inputs.preserve_public_settings).toMatchObject({ type: 'boolean', default: false });
+        expect(runner.on.workflow_call.inputs.preserve_public_settings).toMatchObject({ type: 'boolean', default: false });
         expect(runner.jobs.run.steps?.find((step) => step.name === 'Render remote run env')?.env?.RALLAR_PRESERVE_PUBLIC_SETTINGS)
             .toBe('${{ inputs.preserve_public_settings }}');
     });

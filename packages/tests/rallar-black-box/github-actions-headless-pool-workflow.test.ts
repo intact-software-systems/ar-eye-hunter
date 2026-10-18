@@ -689,16 +689,13 @@ node -e 'console.log(JSON.stringify({capture: process.env.INPUT_RTC_CAPTURE_MODE
 
         expect(dispatchInputs).not.toHaveProperty('ref');
         expect(dispatchInputs.register_before_login?.default).toBe(true);
-        expect(dispatchInputs.rollout_control_plane?.default).toBe(true);
+        expect(dispatchInputs.rollout_control_plane?.default).toBe('true');
         expect(githubAgents.environment).toBe('production');
         expect(githubAgents.needs).toEqual(['plan', 'prepare-hetzner']);
         expect(operator.needs).toEqual(['plan', 'prepare-hetzner']);
         expect(planCheckout.uses).toBe('actions/checkout@v7');
         expect(planCheckout.with?.ref).toBe('${{ github.sha }}');
         expect(prepare.with?.ref).toBe('${{ github.sha }}');
-        expect(prepare.with?.rollout_before_run).toBe(
-            '${{ inputs.rollout_control_plane }}'
-        );
         expect(agentCheckout.uses).toBe('actions/checkout@v7');
         expect(agentCheckout.with?.ref).toBe('${{ github.sha }}');
         expect(operator.with?.ref).toBe('${{ github.sha }}');

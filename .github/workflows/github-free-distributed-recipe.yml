@@ -19,9 +19,13 @@ on:
         type: boolean
         default: false
       rollout_control_plane:
-        description: Deploy and restart the Hetzner API/control services before the run
-        type: boolean
-        default: true
+        description: Roll out API/control, reuse them, or roll out while preserving validated public settings
+        type: choice
+        default: 'true'
+        options:
+          - 'true'
+          - 'false'
+          - preserve-public-settings
       rtc_capture_mode:
         description: Optional RUN RTC capture mode (off, signaling or native); blank preserves the authored manifest
         required: false
@@ -75,10 +79,6 @@ on:
         description: Register disposable test users before login
         type: boolean
         default: true
-      preserve_public_settings:
-        description: Preserve validated live controller public settings during preparation
-        type: boolean
-        default: false
       server_timing:
         description: Roll the API out with its timing and AppInbox phase timing logs (diagnostic runs); off leaves it uninstrumented
         type: boolean
@@ -158,7 +158,7 @@ jobs:
           AGENT_PREFIX: ${{ inputs.agent_prefix }}
           MANIFEST_PATH: ${{ inputs.manifest_path }}
           REGISTER_BEFORE_LOGIN: '${{ inputs.register_before_login }}'
-          ROLLOUT_CONTROL_PLANE: '${{ inputs.rollout_control_plane }}'
+          ROLLOUT_CONTROL_PLANE: ${{ inputs.rollout_control_plane == 'true' || inputs.rollout_control_plane == 'preserve-public-settings' }}
         run: |
           set -euo pipefail
           sanitize() {
@@ -247,7 +247,7 @@ jobs:
           fi
           printf 'requires_topology_prepare=%s\n' "${requires_topology_prepare}" >> "${GITHUB_OUTPUT}"
           if [[ "${requires_topology_prepare}" == "true" && "${ROLLOUT_CONTROL_PLANE}" != "true" ]]; then
-            echo "::error::Manifest ${MANIFEST_PATH} sets metadata.rtcTopologyEnv; set rollout_control_plane=true because those values are applied during the API/control rollout." >&2
+            echo "::error::Manifest ${MANIFEST_PATH} sets metadata.rtcTopologyEnv; set rollout_control_plane=true or preserve-public-settings because those values are applied during the API/control rollout." >&2
             exit 1
           fi
 
@@ -292,9 +292,9 @@ jobs:
     with:
       ref: ${{ github.sha }}
       operator_phase: prepare
-      rollout_before_run: ${{ inputs.rollout_control_plane }}
+      rollout_before_run: ${{ inputs.rollout_control_plane == 'true' || inputs.rollout_control_plane == 'preserve-public-settings' }}
       server_timing: ${{ inputs.server_timing }}
-      preserve_public_settings: ${{ inputs.preserve_public_settings }}
+      preserve_public_settings: ${{ inputs.rollout_control_plane == 'preserve-public-settings' }}
       agent_source: external
       agent_count: ${{ inputs.target_agent_count }}
       run_id: ${{ needs.plan.outputs.run_id }}
@@ -475,7 +475,7 @@ jobs:
       operator_phase: run
       rollout_before_run: false
       server_timing: ${{ inputs.server_timing }}
-      preserve_public_settings: ${{ inputs.preserve_public_settings }}
+      preserve_public_settings: ${{ inputs.rollout_control_plane == 'preserve-public-settings' }}
       agent_source: external
       agent_count: ${{ inputs.target_agent_count }}
       run_id: ${{ needs.plan.outputs.run_id }}

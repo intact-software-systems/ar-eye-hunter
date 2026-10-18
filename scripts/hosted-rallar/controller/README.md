@@ -971,9 +971,21 @@ forwards them to the remote `RALLAR_BLACK_BOX_CONTROL_URL` and
 `RALLAR_CONTROL_HTTP_URL` values used by the headless workers and
 distributed-run admin calls.
 
-The GitHub Free workflow and reusable recipe runner also accept
-`preserve_public_settings`, default `false`. GitHub Free forwards it through
-both prepare and run calls. Preservation requires a reviewed full source commit;
+The reusable recipe runner also accepts `preserve_public_settings`, default
+`false`. GitHub Free uses its existing `rollout_control_plane` choice to stay
+within the platform's 25 dispatch-input limit: `true` (default) rolls out with
+ordinary inputs, `false` reuses the control plane, and
+`preserve-public-settings` rolls out while preserving validated public settings.
+For the preserving GitHub Free path, dispatch with:
+
+```text
+rollout_control_plane=preserve-public-settings
+```
+
+GitHub Free derives explicit rollout/preservation booleans and forwards
+preservation through both prepare and run calls; the run phase still skips
+rollout. Existing `true` and `false` invocation values remain supported.
+Preservation requires a reviewed full source commit;
 the runner validates the same persisted projection before its existing worker
 stop. Only the `08` child assigns the preserved public values. Per-run worker
 room, prefix, count, application, and workspace remain those selected for the

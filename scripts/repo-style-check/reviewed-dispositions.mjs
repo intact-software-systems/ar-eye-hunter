@@ -314,6 +314,14 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'applyWorkflowCleanup',
         maximumMagnitude: 1
     }),
+    // The exact rollout-binding expression result is admitted only as a
+    // boolean or environment string; tests assert actual reusable booleans.
+    Object.freeze({
+        path: 'packages/tests/hetzner/public-settings-workflow.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'resolveRolloutBinding',
+        maximumMagnitude: 1
+    }),
     // Owned process recorder JSON validates every consumed argument/env field
     // before typed assertion evidence leaves the read boundary.
     Object.freeze({
