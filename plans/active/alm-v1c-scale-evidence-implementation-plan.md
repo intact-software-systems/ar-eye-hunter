@@ -204,7 +204,9 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    ≤2 s formation-tail target explicit; report any remaining delay without weakening acceptance.
 2. **Remaining shared-mechanism audit and next measured repair:** recover current consumers of
    the D278 candidates and D298's unread rate adjustment, prioritizing the measured formation-tail
-   delivery delay below when selecting the next owned repair. The AL checkpoint writer,
+   delivery delay below when selecting the next owned repair. Include the demonstrated large-result
+   certification limit and headless shutdown race below; passing native acceptance does not close
+   either finding. The AL checkpoint writer,
    serialized chains, keyed limiter, abort scope, UTF-8 length and repeating-run copies remain
    outcomes until that audit selects a concrete task.
 
@@ -446,6 +448,34 @@ four-arm comparison or the adaptive arm's removal, the rewritten evidence sectio
    separate record/serialization, batch construction, append/sync and receipt work, then profile
    CPU/allocation before selecting a change. No speculative optimization or claimed burst
    speedup follows from the present results; peak memory and hosted impact remain unmeasured.
+3. **Large-result certification — demonstrated harness scale limit.** The supported 50-agent
+   director result exceeds the retention canonicalizer's 100,000-node budget when computing its
+   full-result capture receipt. Artifact JSONL is appended and synced first, so the native
+   predicates and byte/count completeness remain valid; durable release certification then fails
+   closed for the run. This prevents safe browser result reclamation and is not a lost-result or
+   transport-ACK failure. Preserve that safety boundary. Separate retention-plan limits from
+   result-capture limits at the existing canonical encoder, grounding the latter in supported
+   admitted-result bounds and preserving canonical bytes. Cover the complete capture → receipt →
+   browser release path with an above-100,000-node result, including rejection beyond its own
+   budget. A hashing-only change cannot fix the runtime's canonical equality checks. Do not
+   inflate a shared limit, omit nested evidence or suppress the capture failure.
+4. **Headless shutdown — observed queuebox lifecycle race.** After a passing 30-agent workload,
+   two inbound readiness reads raced a closing IndexedDB connection. Trace the headless worker's
+   context close and page disposal against the existing orderly browser disconnect, which joins
+   queue-engine stop before closing storage. Add a deterministic held-read teardown test before
+   changing ownership; prove no new work starts and owned work is joined before storage closes.
+   Preserve the post-terminal timing and absence of observed workload loss; do not call this an
+   admission-read regression or hide it by suppressing `InvalidStateError`.
+5. **State-write comparison — unresolved acceptance failure.** Both the local comparison and
+   hosted A-B-B-A comparison failed unchanged thresholds. Hosted deterioration was uncontended
+   p99 (+15.29%), hot throughput (-5.20%) and hot transaction-duration totals (+6.09%). The last
+   metric sums potentially overlapping transaction wall times per run; it is not one transaction
+   or database CPU. Executable dependency traversal and a full-workload preload diagnostic
+   exclude execution of the changed outbound admission methods. This harness drains AppInbox
+   and writes outbox intents without dispatching them. Keep the failures visible and investigate
+   the actual slow path: handler/completion waiting, SQL transaction wall time, event-loop/GC
+   pressure and PostgreSQL contention on one timeline. Four-position variation is heterogeneous;
+   do not dismiss it as noise or change retry/workload/comparator settings to obtain a pass.
 
 ## Completion and handoff
 

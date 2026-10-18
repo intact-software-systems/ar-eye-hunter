@@ -74,6 +74,27 @@ change. Run local 15 → 30 → 50 in order, then the hosted timing-off acceptan
 this classified distributed path. Preserve original deadlines and all 231 native
 predicates. Diagnose a failure before any retry.
 
+The first local comparison and the prescribed hosted A-B-B-A comparison both
+failed the unchanged performance gate. Hosted pooling reports higher uncontended
+p99, lower hot throughput and higher hot transaction duration. Before accepting
+the repair, retain both failed comparisons and do not add a regression waiver.
+Executable dependency traversal excludes the changed admission class; its graph
+presence comes through type-only imports. A preload call-counter diagnostic using
+the unchanged benchmark entry and full three-run workload observed zero calls to
+all five admission methods. The benchmark drains AppInbox and persists outbox
+intents without dispatching them. Its deterioration therefore needs attribution
+on the actual AppInbox/SQL path, rather than a speculative admission repair.
+The four hosted positions show heterogeneous changes, not a simple chronological
+slowdown. Separate handler/completion waiting, transaction wall time, event-loop
+and GC activity, and PostgreSQL contention on a common timeline before another
+performance comparison. Instrumented diagnostic timings are not acceptance evidence.
+
+Local 15, 30 and 50 passed all native predicates, but hosted acceptance remains
+open. The first started hosted 15-agent attempt expired in agent readiness with
+only six browsers connected while worker jobs were queued; the recipe never ran.
+Remaining workers were stopped. Retry only after checking runner capacity, without
+changing cohort size or deadlines, and advance to hosted 30 and 50 only in order.
+
 Publish and update one semantic PR. The next useful slice remains the parent's
 remaining measured bottleneck/shared-mechanism audit; full V1c closure remains an
 outcome. Report remaining formation delay honestly. Delete this narrow plan only
