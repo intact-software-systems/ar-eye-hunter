@@ -84,14 +84,7 @@ function constructDefaultRallarServer(
     const configuration = input.configuration;
     const database = input.databaseLifecycle.database;
     const nowEpochMs = Date.now;
-    const timing = createApiTimingSink(configuration.observability);
-    if (configuration.observability.timingLogs) {
-        backgroundTasks.register(startEventLoopLagTiming({
-            timers: createDefaultTimers(),
-            timing,
-            serviceId: myServerId
-        }));
-    }
+    const timing = startConfiguredApiTiming(configuration.observability, backgroundTasks);
     const runtime = createConfiguredApiV1Runtime({ input, backgroundTasks, nowEpochMs, timing });
 
     const crdtLogRepository = new PSqlCrdtLogRepository(database, {
@@ -139,6 +132,22 @@ function constructDefaultRallarServer(
         systemInstallers,
         routeInstallers
     });
+}
+
+/** The process timing sink and its optional event-loop sampler share one lifecycle owner. */
+function startConfiguredApiTiming(
+    observability: ApiV1Configuration['observability'],
+    backgroundTasks: ApiV1BackgroundTaskLifecycle
+): RallarTimingSink {
+    const timing = createApiTimingSink(observability);
+    if (observability.timingLogs) {
+        backgroundTasks.register(startEventLoopLagTiming({
+            timers: createDefaultTimers(),
+            timing,
+            serviceId: myServerId
+        }));
+    }
+    return timing;
 }
 
 function createDefaultRallarServerWsOptions(

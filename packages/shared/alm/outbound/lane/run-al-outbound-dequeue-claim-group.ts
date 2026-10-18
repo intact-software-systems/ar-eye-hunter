@@ -3,7 +3,10 @@ import type { ALWorkClaim } from '../../work/al-work-queue-port.ts';
 import type { ALOutboundEffectSnapshot } from '../admission/al-outbound-admission-store.ts';
 import type { ALOutboundDequeuedAdmission } from './al-outbound-dequeued-admission.ts';
 import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observation.ts';
-import type { ALOutboundClaimObservation } from './settle-al-outbound-claim.ts';
+import type {
+    ALOutboundClaimAttemptSettlement,
+    ALOutboundClaimObservation
+} from './settle-al-outbound-claim.ts';
 
 export namespace ALOutboundDequeueClaimGroup {
     export interface Input<TPrepared> {
@@ -23,12 +26,7 @@ export namespace ALOutboundDequeueClaimGroup {
         readonly admit: (
             members: readonly ALOutboundDequeuedAdmission.Member<TPrepared>[]
         ) => readonly Promise<ALWorkAttemptResult>[];
-        readonly settle: (
-            attempt: Promise<ALWorkAttemptResult>,
-            observed: ALOutboundClaimObservation,
-            claim: ALWorkClaim,
-            batchIndex: number
-        ) => Promise<ALWorkAttemptResult>;
+        readonly settle: (settlement: ALOutboundClaimAttemptSettlement) => Promise<ALWorkAttemptResult>;
     }
 }
 
@@ -49,7 +47,7 @@ export function runALOutboundDequeueClaimGroup<TPrepared>(
     input.claims.forEach((claim, index) => {
         const start = starts[index]!;
         const attempt = start.kind === 'admit' ? admitted[admittedIndex++]! : start.attempt;
-        attempts.set(claim, input.settle(attempt, start.observation, claim, index));
+        attempts.set(claim, input.settle({ attempt, observed: start.observation, claim, batchIndex: index }));
     });
     return attempts;
 }

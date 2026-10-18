@@ -138,6 +138,11 @@ interface SendToCapturedLocalTargetsInput {
     readonly policy: ALOutboundCapturedPolicy | undefined;
 }
 
+interface ObserveCapturedLocalSendInput extends SendToCapturedLocalTargetsInput {
+    readonly result: WsServerLiveSendResult;
+    readonly envelope: QueueBoxPubSubMessage;
+}
+
 interface ResolveResourceEntryFromPubSubMessageDependencies {
     readonly clock: ALOutboundMessageRuntime.Clock;
     readonly loadByKey: (
@@ -232,21 +237,7 @@ async function writeQueueBoxOutboxPublication(
         directCall = 'invoked';
         result = sendToCapturedLocalTargets({ message, entry, policy }, options);
         directCall = 'returned';
-        const awaited = deferAwaitedCapturedRecipients({ message, entry, policy }, result, options);
-        recordPubSubTiming({
-            timing: options.timing,
-            operation: 'outbox-direct-send',
-            message: envelope,
-            details: {
-                localPublisherId: options.publisherId,
-                deliveryStatus: result.status,
-                recipientCount: result.recipientCount,
-                sentCount: result.sentCount,
-                failedCount: result.failedCount,
-                deferredCount: awaited.heldCount,
-                deferEvictedCount: awaited.evictedCount
-            }
-        });
+        observeCapturedLocalSend({ message, entry, policy, result, envelope }, options);
         if (result.failedCount > 0) {
             throw new Error(`Failed ${result.failedCount} local WS outbox sends`);
         }
@@ -269,6 +260,29 @@ async function writeQueueBoxOutboxPublication(
             }, deferObservation);
         }
     }
+}
+
+/** Holds awaited local recipients and records the completed direct-send boundary. */
+function observeCapturedLocalSend(
+    input: ObserveCapturedLocalSendInput,
+    options: RegisterQueueBoxOutboxPublisherInput
+): void {
+    const { message, entry, policy, result, envelope } = input;
+    const awaited = deferAwaitedCapturedRecipients({ message, entry, policy }, result, options);
+    recordPubSubTiming({
+        timing: options.timing,
+        operation: 'outbox-direct-send',
+        message: envelope,
+        details: {
+            localPublisherId: options.publisherId,
+            deliveryStatus: result.status,
+            recipientCount: result.recipientCount,
+            sentCount: result.sentCount,
+            failedCount: result.failedCount,
+            deferredCount: awaited.heldCount,
+            deferEvictedCount: awaited.evictedCount
+        }
+    });
 }
 
 /** The actual cluster publish call and its existing return endpoint share one side-effect boundary. */

@@ -74,6 +74,7 @@ import {
     createALOutboundClaimObservation,
     recordALOutboundClaimTerminalReason,
     settleALOutboundClaim,
+    type ALOutboundClaimAttemptSettlement,
     type ALOutboundClaimObservation
 } from './settle-al-outbound-claim.ts';
 
@@ -408,7 +409,7 @@ export class ALOutboundStoreLane<TPrepared> {
             }
             return await this.runDurableEffect(work, observed, deferObservation);
         })();
-        return await this.settleOutboundClaim(attempt, observed, claim, 0);
+        return await this.settleOutboundClaim({ attempt, observed, claim, batchIndex: 0 });
     }
 
     /** A selection's dequeued rows admit as one group; every other claim runs alone through `runOutboundClaim`. */
@@ -425,8 +426,7 @@ export class ALOutboundStoreLane<TPrepared> {
             createEvidence: (work) => this.createClaimEvidence(work, batchStartedAtMs, deferObservation),
             readSettledBeforeEffect: (work, observed) => this.readSettledBeforeEffect(work, observed),
             admit: (members) => this.dequeuedAdmission.admitDequeuedMessages(members),
-            settle: (attempt, observed, claim, batchIndex) =>
-                this.settleOutboundClaim(attempt, observed, claim, batchIndex)
+            settle: (settlement) => this.settleOutboundClaim(settlement)
         });
     }
 
@@ -443,17 +443,9 @@ export class ALOutboundStoreLane<TPrepared> {
         });
     }
 
-    private async settleOutboundClaim(
-        attempt: Promise<ALWorkAttemptResult>,
-        observed: ALOutboundClaimObservation,
-        claim: ALWorkClaim,
-        batchIndex: number
-    ): Promise<ALWorkAttemptResult> {
+    private async settleOutboundClaim(settlement: ALOutboundClaimAttemptSettlement): Promise<ALWorkAttemptResult> {
         return await settleALOutboundClaim({
-            attempt,
-            observed,
-            claim,
-            batchIndex,
+            ...settlement,
             capture: this.input.runtime.receiptWorkCapture,
             readNowMs: () => this.readNowMs()
         });

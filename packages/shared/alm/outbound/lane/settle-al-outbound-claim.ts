@@ -14,11 +14,15 @@ export interface ALOutboundClaimObservation {
     verdict?: ALDeliveryAdmissionVerdict['kind'];
 }
 
-export interface ALOutboundClaimSettlement<TPrepared> {
+/** The work attempt and physical claim identity handed from the lane or group to settlement. */
+export interface ALOutboundClaimAttemptSettlement {
     readonly attempt: Promise<ALWorkAttemptResult>;
     readonly observed: ALOutboundClaimObservation;
     readonly claim: ALWorkClaim;
     readonly batchIndex: number;
+}
+
+export interface ALOutboundClaimSettlement<TPrepared> extends ALOutboundClaimAttemptSettlement {
     readonly capture: ALOutboundReceiptWorkEvidence.Capture<TPrepared> | undefined;
     readonly readNowMs: () => number;
 }

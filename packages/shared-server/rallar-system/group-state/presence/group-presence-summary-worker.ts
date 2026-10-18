@@ -364,17 +364,25 @@ export class GroupPresenceSummaryWork {
             async () => await this.writeExpansion(database, coalesced, proofs)
         );
         if (outcome === 'written') {
-            if (this.options.timing !== undefined) {
-                recordGroupPresenceSummaryCommittedOutputs({
-                    timing: this.options.timing,
-                    serviceId: this.options.serviceId,
-                    expansions
-                });
-            }
-            this.options.wakeQueue?.();
-            this.recordFormationMetrics(coalesced);
+            this.finishWrittenExpansion(expansions, coalesced);
         }
         return outcome;
+    }
+
+    /** After the transaction returns written, observe each output before waking its queue. */
+    private finishWrittenExpansion(
+        expansions: readonly GroupPresenceSummaryExpansion[],
+        coalesced: GroupPresenceSummaryCoalescedWrite
+    ): void {
+        if (this.options.timing !== undefined) {
+            recordGroupPresenceSummaryCommittedOutputs({
+                timing: this.options.timing,
+                serviceId: this.options.serviceId,
+                expansions
+            });
+        }
+        this.options.wakeQueue?.();
+        this.recordFormationMetrics(coalesced);
     }
 
     /** One transaction for the summary, its deltas, their proofs and every reservation finish; a lost summary write rolls all back. */
