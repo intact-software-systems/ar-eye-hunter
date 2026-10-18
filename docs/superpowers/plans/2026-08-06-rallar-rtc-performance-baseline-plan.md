@@ -2840,11 +2840,14 @@ metric summaries remain descriptive. All three failed acquisitions stay separate
 
 The next two useful slices are:
 
-1. Resolve the ICE configuration lifetime decision from the original cycle-20
-   failure and current request/cache ownership. Establish whether still-valid
-   configuration can safely survive transport rebuilds using existing shared
-   mechanisms, with explicit expiry, authentication and cancellation boundaries.
-   Do not increase E4's request budget or add pacing to make the test pass.
+1. Implement the approved browser-side ICE configuration reuse: one current value
+   owned by the browser runtime through the existing shared cache, with no keyed
+   map or client/session/credential keys. Ordinary reconnect and token refresh
+   preserve server-valid configuration; API-target changes and retired pending
+   acquisitions cannot carry values into a later runtime generation. Keep normal
+   authentication and fresh transport construction. Test expiry, cancellation and
+   reconnect behavior, then independently review the correction. Server caching,
+   E4's request budget and workload timing remain unchanged.
 2. After an approved, tested and independently reviewed correction, acquire E4
    on the exact candidate: three warmups and eleven retained attempts, including
    its normal 100-cycle retention case. Run only the repeat selected by the

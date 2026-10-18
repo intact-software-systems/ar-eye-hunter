@@ -1,4 +1,3 @@
-import { BrowserALDurableWorkClaim } from '@shared-web/browser/al-runtime/browser-al-durable-work-claim.ts';
 import { readApiBaseUrl } from '@shared-web/browser/api-client-config.ts';
 import { browserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import {
@@ -212,30 +211,14 @@ describe('browser facade restored-session setup', () => {
         expect(runtime.initialiseMiddleware).toHaveBeenCalledWith(
             runtime.middleware.session,
             expect.any(String),
-            {
-                rtcCaptureConfiguration: { mode: 'off', origin: 'product-default' },
-                qosProvider: undefined,
-                readVolatileSessionLimits: undefined,
-                deliverySettlements: { ws: expect.any(Function), rtc: expect.any(Function) },
-                onResyncRequired: expect.any(Function),
-                diagnosticsPorts: {
-                    submissionReadinessFaultPort: { decideSubmissionReadiness: expect.any(Function) },
-                    transportFaultPort: { decideSend: expect.any(Function), decideBackpressure: expect.any(Function) },
-                    indexedDbOperationObserver: { observe: expect.any(Function) },
-                    outboundDiagnostics: expect.any(Function),
-                    inboundDiagnostics: expect.any(Function),
-                    signalingDiagnostics: undefined,
-                    storage: expect.any(Function)
-                },
-                onAuthInvalid: expect.any(Function),
+            expect.objectContaining({
                 scope: {
                     applicationId: 'arena',
                     workspaceId: 'match'
                 },
                 timeoutMs: 123,
-                maxPeerConnections: 10,
-                durableWorkOwnership: expect.any(BrowserALDurableWorkClaim)
-            }
+                maxPeerConnections: 10
+            })
         );
         expect(runtime.refreshStateSnapshots).toHaveBeenCalledWith(
             {

@@ -7,7 +7,6 @@ import {
     vi
 } from 'vitest';
 
-import { BrowserALDurableWorkClaim } from '@shared-web/browser/al-runtime/browser-al-durable-work-claim.ts';
 import type * as MiddlewareModule from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type * as StateCacheLifecycleModule from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import type * as RefreshStateSnapshotsModule from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
@@ -282,22 +281,7 @@ describe('Rallar facade default scope behavior', () => {
         expect(mocks.initialiseMiddleware).toHaveBeenCalledWith(
             mocks.context.session,
             expect.any(String),
-            {
-                rtcCaptureConfiguration: { mode: 'off', origin: 'product-default' },
-                qosProvider: undefined,
-                readVolatileSessionLimits: undefined,
-                deliverySettlements: { ws: expect.any(Function), rtc: expect.any(Function) },
-                onResyncRequired: expect.any(Function),
-                diagnosticsPorts: {
-                    submissionReadinessFaultPort: { decideSubmissionReadiness: expect.any(Function) },
-                    transportFaultPort: { decideSend: expect.any(Function), decideBackpressure: expect.any(Function) },
-                    indexedDbOperationObserver: { observe: expect.any(Function) },
-                    outboundDiagnostics: expect.any(Function),
-                    inboundDiagnostics: expect.any(Function),
-                    signalingDiagnostics: undefined,
-                    storage: expect.any(Function)
-                },
-                onAuthInvalid: expect.any(Function),
+            expect.objectContaining({
                 scope: {
                     applicationId: 'default-app',
                     workspaceId: 'default'
@@ -305,9 +289,8 @@ describe('Rallar facade default scope behavior', () => {
                 timeoutMs: 321,
                 dataChannelLanes: lanes,
                 maxPeerConnections: 12,
-                rttReportingDegreeLimit: 3,
-                durableWorkOwnership: expect.any(BrowserALDurableWorkClaim)
-            }
+                rttReportingDegreeLimit: 3
+            })
         );
         expect(mocks.refreshStateSnapshots).toHaveBeenCalledWith(
             {

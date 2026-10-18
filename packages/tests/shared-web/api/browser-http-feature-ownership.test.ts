@@ -13,7 +13,14 @@ import { listStateGroups } from '@shared-web/browser/state-read/state-snapshot-h
 import { readStateGroupStats } from '@shared-web/browser/stats/rallar-stats-http-api.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 import { createClientSnapshotFixture, createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
 interface FetchObservation {
@@ -55,6 +62,7 @@ describe('browser HTTP feature ownership characterization', () => {
     });
 
     it('preserves connection config, ICE, and CRDT catch-up requests', async () => {
+        vi.spyOn(Date, 'now').mockReturnValue(10_000);
         const controller = new AbortController();
         controller.abort();
         stubFetch((call) => connectionAndCrdtResponse(call.url));

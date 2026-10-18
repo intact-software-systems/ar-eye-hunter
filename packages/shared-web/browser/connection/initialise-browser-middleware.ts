@@ -13,7 +13,7 @@ import type { BrowserALStorageAvailability } from '@shared-web/browser/al-runtim
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { createWebSocketTicket } from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
 import { BrowserOwnWsConnectionGeneration } from '@shared-web/browser/connection/browser-own-ws-connection-generation.ts';
-import { readApiConfig, readIceCandidates } from '@shared-web/browser/connection/connection-http-api.ts';
+import { readApiConfig } from '@shared-web/browser/connection/connection-http-api.ts';
 import {
     createBrowserSessionVolatileBound,
     type BrowserSessionVolatileBound
@@ -115,6 +115,7 @@ export interface MiddlewareInitOptions {
 /** One connect's options: the caller's, and the connect's claim on its session's durable work. */
 export interface BrowserConnectOptions extends MiddlewareInitOptions {
     readonly durableWorkOwnership: ALDurableWorkOwnership;
+    readIceCandidates(signal?: AbortSignal): Promise<IceConfig>;
 }
 
 /** One connect's middleware, and the checkpoints of its two carriers, which the connect's page lifecycle flushes. */
@@ -278,14 +279,7 @@ export async function initialiseMiddleware(
             options.scope ?? defaultStateScope(),
             webSocketTransport.webSocketQueueBox
         );
-        const heartbeatHandle = await heartbeat.initHeartbeat(transportInput.clientData, {
-            authSession: session,
-            scope: options.scope,
-            ownWsConnectionGeneration,
-            onAuthInvalid: options.onAuthInvalid
-                ? (caught) => options.onAuthInvalid?.(toError(caught))
-                : undefined
-        });
+        const heartbeatHandle = await initialiseBrowserHeartbeat(transportInput, ownWsConnectionGeneration);
 
         const { checkpointStores } = transportInput;
         return {
@@ -366,6 +360,20 @@ function createBrowserOwnWsConnectionGeneration(
         sessionId: session.sessionId,
         readOwnClientSnapshot: async (signal) =>
             (await readStateClientSnapshot(session.clientId, socketScope, { signal, authSession: session })).snapshot
+    });
+}
+
+function initialiseBrowserHeartbeat(
+    input: InitialiseBrowserTransportInput,
+    ownWsConnectionGeneration: BrowserOwnWsConnectionGeneration
+): ReturnType<typeof heartbeat.initHeartbeat> {
+    return heartbeat.initHeartbeat(input.clientData, {
+        authSession: input.session,
+        scope: input.options.scope,
+        ownWsConnectionGeneration,
+        onAuthInvalid: input.options.onAuthInvalid
+            ? (caught) => input.options.onAuthInvalid?.(toError(caught))
+            : undefined
     });
 }
 
@@ -542,7 +550,7 @@ async function initialiseBrowserRtcTransport(
     input: InitialiseBrowserRtcTransportInput
 ): Promise<BrowserRtcTransport> {
     const iceCandidates: IceConfig = await runMiddlewareCommand(
-        (signal) => readIceCandidates({ signal }),
+        (signal) => input.options.readIceCandidates(signal),
         input.options
     );
     const { webRtcConnectionService, rtcCaptureReceipt } = await initialiseBrowserRtcConnection(
