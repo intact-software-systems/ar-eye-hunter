@@ -75,6 +75,10 @@ on:
         description: Register disposable test users before login
         type: boolean
         default: true
+      preserve_public_settings:
+        description: Preserve validated live controller public settings during rollout
+        type: boolean
+        default: false
       server_timing:
         description: Roll the API out with its timing and AppInbox phase timing logs; off leaves it uninstrumented
         type: boolean
@@ -412,6 +416,7 @@ jobs:
           RALLAR_REPO_REF: ${{ inputs.ref }}
           RALLAR_ROLLOUT_BEFORE_RUN: ${{ inputs.rollout_before_run }}
           RALLAR_API_SERVER_TIMING: ${{ inputs.server_timing }}
+          RALLAR_PRESERVE_PUBLIC_SETTINGS: ${{ inputs.preserve_public_settings }}
           RALLAR_BLACK_BOX_AGENT_SOURCE: ${{ inputs.agent_source }}
           RALLAR_HETZNER_OPERATOR_PHASE: ${{ inputs.operator_phase }}
           RALLAR_BLACK_BOX_RUN_ID: ${{ steps.ids.outputs.run_id }}
@@ -449,6 +454,16 @@ jobs:
           set -euo pipefail
           quote() { printf '%q' "$1"; }
 
+          preserve_public_settings=0
+          if [[ "${RALLAR_PRESERVE_PUBLIC_SETTINGS:-false}" == "true" ]]; then
+            [[ "${RALLAR_REPO_REF}" =~ ^[0-9a-f]{40}$ ]] &&
+              [[ "$(git rev-parse HEAD)" == "${RALLAR_REPO_REF}" ]] || {
+                echo '::error::Public settings preservation requires the reviewed full source commit.' >&2
+                exit 1
+              }
+            preserve_public_settings=1
+          fi
+
           credentials_file="${RUNNER_TEMP}/rallar-headless-credentials.env"
           set -a
           # shellcheck disable=SC1090
@@ -462,6 +477,7 @@ jobs:
             fi
             printf 'RALLAR_REPO_REF=%s\n' "$(quote "${RALLAR_REPO_REF}")"
             printf 'RALLAR_ROLLOUT_BEFORE_RUN=%s\n' "$(quote "${RALLAR_ROLLOUT_BEFORE_RUN}")"
+            printf 'RALLAR_PRESERVE_PUBLIC_SETTINGS=%s\n' "${preserve_public_settings}"
             printf 'RALLAR_API_SERVER_TIMING=%s\n' "$(quote "${RALLAR_API_SERVER_TIMING}")"
             printf 'RALLAR_BLACK_BOX_AGENT_SOURCE=%s\n' "$(quote "${RALLAR_BLACK_BOX_AGENT_SOURCE}")"
             printf 'RALLAR_HETZNER_OPERATOR_PHASE=%s\n' "$(quote "${RALLAR_HETZNER_OPERATOR_PHASE}")"
@@ -586,6 +602,11 @@ jobs:
 
           rollout_controller() {
             echo "RALLAR_OPERATION_STAGE=rollout-controller"
+            if bool_enabled "${RALLAR_PRESERVE_PUBLIC_SETTINGS:-0}"; then
+              source ./rallar-api-effective-env.sh
+              source ./rallar-public-spa-env.sh
+              read_rallar_public_spa_settings >/dev/null
+            fi
             ./10-stop-headless-workers.sh || true
             ./08-rollout-controller.sh
             echo "Rollout completed; skipping duplicate Playwright install during headless worker start."

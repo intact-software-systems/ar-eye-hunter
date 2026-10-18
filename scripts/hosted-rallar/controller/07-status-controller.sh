@@ -30,9 +30,15 @@ inspect_configuration() {
 				fi
 			fi
 			case "${key}:${value}" in
-				RALLAR_TIMING_LOGS:0|RALLAR_TIMING_LOGS:1|RALLAR_APP_INBOX_PHASE_TIMING:true|RALLAR_APP_INBOX_PHASE_TIMING:false) ;;
-				RALLAR_RTC_TOPOLOGY_*:*) [[ "${value}" =~ ^[1-9][0-9]*$ ]] || { inspect_fail "invalid ${key}"; return 1; } ;;
-				*) inspect_fail "invalid ${key}"; return 1 ;;
+			RALLAR_TIMING_LOGS:0 | RALLAR_TIMING_LOGS:1 | RALLAR_APP_INBOX_PHASE_TIMING:true | RALLAR_APP_INBOX_PHASE_TIMING:false) ;;
+			RALLAR_RTC_TOPOLOGY_*:*) [[ "${value}" =~ ^[1-9][0-9]*$ ]] || {
+				inspect_fail "invalid ${key}"
+				return 1
+			} ;;
+			*)
+				inspect_fail "invalid ${key}"
+				return 1
+				;;
 			esac
 			configuration="$(jq -cn --argjson prior "${configuration}" --arg key "${key}" --arg value "${value}" \
 				--arg source "${source_file}" '$prior + {($key): {present: true, value: $value, source: $source}}')" || return 1
@@ -46,101 +52,37 @@ inspect_configuration() {
 	printf '%s' "${configuration}"
 }
 
-inspect_public_setting_shape() {
-	local key="$1" value="$2"
-	case "${key}" in
-	RALLAR_BLACK_BOX_SPA_URL|RALLAR_API_BASE_URL)
-		[[ "${value}" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$ ]]
-		;;
-	RALLAR_BLACK_BOX_CONTROL_URL)
-		[[ "${value}" =~ ^wss?://[A-Za-z0-9.-]+(:[0-9]{1,5})?/[A-Za-z0-9/_-]+$ ]]
-		;;
-	RALLAR_API_CORS_ORIGINS|RALLAR_BLACK_BOX_ALLOWED_ORIGINS)
-		[[ "${value}" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(,https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?)*$ ]]
-		;;
-	RALLAR_BLACK_BOX_AGENT_COUNT)
-		[[ "${value}" =~ ^[1-9][0-9]*$ ]]
-		;;
-	*)
-		[[ "${value}" =~ ^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$ ]]
-		;;
-	esac
-}
-
 inspect_operator_settings() {
-	local key value mirror index settings='{}'
-	local keys=(
-		RALLAR_BLACK_BOX_SPA_URL RALLAR_BLACK_BOX_CONTROL_URL RALLAR_API_BASE_URL
-		RALLAR_API_CORS_ORIGINS RALLAR_BLACK_BOX_ALLOWED_ORIGINS
-		RALLAR_BLACK_BOX_ROOM_ID RALLAR_BLACK_BOX_AGENT_PREFIX RALLAR_BLACK_BOX_AGENT_COUNT
-		VITE_RALLAR_APPLICATION_ID VITE_RALLAR_WORKSPACE_ID
-	)
-	local originals=(RALLAR_API_BASE_URL RALLAR_BLACK_BOX_CONTROL_URL RALLAR_BLACK_BOX_ROOM_ID \
-		RALLAR_BLACK_BOX_AGENT_PREFIX RALLAR_BLACK_BOX_AGENT_COUNT)
-	local mirrors=(VITE_RALLAR_API_BASE_URL VITE_RALLAR_CONTROL_URL VITE_RALLAR_ROOM_ID \
-		VITE_RALLAR_RUNNER_AGENT_PREFIX VITE_RALLAR_RUNNER_AGENT_COUNT)
-	for key in "${keys[@]}"; do
-		value="$(read_rallar_api_file_value "${RALLAR_BLACK_BOX_SPA_ENV_FILE}" "${key}")" || {
-			inspect_fail "public settings ${key}"
-			return 1
-		}
-		inspect_public_setting_shape "${key}" "${value}" || { inspect_fail "public settings shape ${key}"; return 1; }
+	local projection key value settings='{}'
+	projection="$(read_rallar_public_spa_settings)" || return 1
+	while IFS='=' read -r key value; do
 		settings="$(jq -cn --argjson prior "${settings}" --arg key "${key}" --arg value "${value}" \
 			'$prior + {($key): {present: true, value: $value, source: "spa-environment"}}')" || return 1
-	done
-	for index in "${!originals[@]}"; do
-		key="${originals[index]}"
-		mirror="$(read_rallar_api_file_value "${RALLAR_BLACK_BOX_SPA_ENV_FILE}" "${mirrors[index]}")" || {
-			inspect_fail "public settings mirror ${mirrors[index]}"
-			return 1
-		}
-		[[ "${mirror}" == "$(printf '%s' "${settings}" | jq -r --arg key "${key}" '.[$key].value')" ]] || {
-			inspect_fail "public settings mirror ${mirrors[index]}"
-			return 1
-		}
-	done
-	inspect_public_cors_consistency "${settings}" || return 1
+	done <<<"${projection}"
 	printf '%s' "${settings}"
-}
-
-inspect_public_cors_consistency() {
-	local settings="$1" api_cors control_cors spa_origin
-	api_cors="$(read_rallar_api_effective_env_value "${RALLAR_API_ENV_FILE}" CORS_ORIGINS)" || {
-		inspect_fail "public settings API CORS"
-		return 1
-	}
-	control_cors="$(read_rallar_api_file_value "${RALLAR_CONTROL_ENV_FILE}" RALLAR_BLACK_BOX_ALLOWED_ORIGINS)" || {
-		inspect_fail "public settings control CORS"
-		return 1
-	}
-	[[ "${api_cors}" == "$(printf '%s' "${settings}" | jq -r '.RALLAR_API_CORS_ORIGINS.value')" ]] || {
-		inspect_fail "public settings API CORS mismatch"
-		return 1
-	}
-	[[ "${control_cors}" == "$(printf '%s' "${settings}" | jq -r '.RALLAR_BLACK_BOX_ALLOWED_ORIGINS.value')" ]] || {
-		inspect_fail "public settings control CORS mismatch"
-		return 1
-	}
-	spa_origin="$(printf '%s' "${settings}" | jq -r '.RALLAR_BLACK_BOX_SPA_URL.value')"
-	spa_origin="${spa_origin%/}"
-	[[ ",${api_cors}," == *",${spa_origin},"* && ",${control_cors}," == *",${spa_origin},"* ]] || {
-		inspect_fail "public settings SPA origin missing from CORS"
-		return 1
-	}
 }
 
 inspect_service_state() {
 	local unit="$1" state
 	state="$(systemctl is-active "${unit}" 2>/dev/null)" || [[ -n "${state}" ]] || return 1
-	case "${state}" in active|inactive|failed|activating|deactivating|reloading|unknown) printf '%s' "${state}" ;;
-		*) inspect_fail "service state"; return 1 ;;
+	case "${state}" in active | inactive | failed | activating | deactivating | reloading | unknown) printf '%s' "${state}" ;;
+	*)
+		inspect_fail "service state"
+		return 1
+		;;
 	esac
 }
 
 inspect_service_process() {
 	local unit="$1" pid
-	pid="$(systemctl show --property MainPID --value "${unit}" 2>/dev/null)" || { inspect_fail "service process"; return 1; }
-	[[ "${pid}" =~ ^[0-9]+$ ]] || { inspect_fail "service process"; return 1; }
+	pid="$(systemctl show --property MainPID --value "${unit}" 2>/dev/null)" || {
+		inspect_fail "service process"
+		return 1
+	}
+	[[ "${pid}" =~ ^[0-9]+$ ]] || {
+		inspect_fail "service process"
+		return 1
+	}
 	if [[ "${pid}" == 0 ]]; then printf false; else printf true; fi
 }
 
@@ -154,31 +96,70 @@ inspect_health_code() {
 		inspect_fail "health probe"
 		return 1
 	}
-	[[ "${code}" =~ ^[1-5][0-9][0-9]$ ]] || { inspect_fail "health status"; return 1; }
+	[[ "${code}" =~ ^[1-5][0-9][0-9]$ ]] || {
+		inspect_fail "health status"
+		return 1
+	}
 	printf '%s' "${code}"
 }
 
 inspect_source_state() {
 	local deployed_commit dirty package_hash schema_hash migrations='[]'
 	local migration_file migration_name migration_hash migration_files checkout_status
-	[[ -d "${RALLAR_CHECKOUT_DIR}/.git" ]] || { inspect_fail "checkout"; return 1; }
-	deployed_commit="$(git -C "${RALLAR_CHECKOUT_DIR}" rev-parse --verify HEAD 2>/dev/null)" || { inspect_fail "commit"; return 1; }
-	[[ "${deployed_commit}" =~ ^[0-9a-f]{40}$ ]] || { inspect_fail "commit"; return 1; }
-	checkout_status="$(git --no-optional-locks -C "${RALLAR_CHECKOUT_DIR}" status --porcelain 2>/dev/null)" || { inspect_fail "checkout status"; return 1; }
+	[[ -d "${RALLAR_CHECKOUT_DIR}/.git" ]] || {
+		inspect_fail "checkout"
+		return 1
+	}
+	deployed_commit="$(git -C "${RALLAR_CHECKOUT_DIR}" rev-parse --verify HEAD 2>/dev/null)" || {
+		inspect_fail "commit"
+		return 1
+	}
+	[[ "${deployed_commit}" =~ ^[0-9a-f]{40}$ ]] || {
+		inspect_fail "commit"
+		return 1
+	}
+	checkout_status="$(git --no-optional-locks -C "${RALLAR_CHECKOUT_DIR}" status --porcelain 2>/dev/null)" || {
+		inspect_fail "checkout status"
+		return 1
+	}
 	if [[ -n "${checkout_status}" ]]; then dirty=true; else dirty=false; fi
-	package_hash="$(sha256sum "${RALLAR_CHECKOUT_DIR}/package-lock.json" 2>/dev/null)" || { inspect_fail "package lock"; return 1; }
-	schema_hash="$(sha256sum "${RALLAR_CHECKOUT_DIR}/apps/api-v1/prisma/schema.prisma" 2>/dev/null)" || { inspect_fail "schema"; return 1; }
+	package_hash="$(sha256sum "${RALLAR_CHECKOUT_DIR}/package-lock.json" 2>/dev/null)" || {
+		inspect_fail "package lock"
+		return 1
+	}
+	schema_hash="$(sha256sum "${RALLAR_CHECKOUT_DIR}/apps/api-v1/prisma/schema.prisma" 2>/dev/null)" || {
+		inspect_fail "schema"
+		return 1
+	}
 	package_hash="${package_hash%% *}"
 	schema_hash="${schema_hash%% *}"
-	[[ "${package_hash}" =~ ^[0-9a-f]{64}$ && "${schema_hash}" =~ ^[0-9a-f]{64}$ ]] || { inspect_fail "source hash"; return 1; }
-	migration_files="$(find "${RALLAR_CHECKOUT_DIR}/apps/api-v1/prisma/migrations" -name migration.sql -type f 2>/dev/null | LC_ALL=C sort)" || { inspect_fail "migration files"; return 1; }
-	[[ -n "${migration_files}" ]] || { inspect_fail "migration files"; return 1; }
+	[[ "${package_hash}" =~ ^[0-9a-f]{64}$ && "${schema_hash}" =~ ^[0-9a-f]{64}$ ]] || {
+		inspect_fail "source hash"
+		return 1
+	}
+	migration_files="$(find "${RALLAR_CHECKOUT_DIR}/apps/api-v1/prisma/migrations" -name migration.sql -type f 2>/dev/null | LC_ALL=C sort)" || {
+		inspect_fail "migration files"
+		return 1
+	}
+	[[ -n "${migration_files}" ]] || {
+		inspect_fail "migration files"
+		return 1
+	}
 	while IFS= read -r migration_file; do
 		migration_name="$(basename "$(dirname "${migration_file}")")"
-		[[ "${migration_name}" =~ ^[0-9]{14}_[a-z0-9_]+$ ]] || { inspect_fail "migration name"; return 1; }
-		migration_hash="$(sha256sum "${migration_file}" 2>/dev/null)" || { inspect_fail "migration hash"; return 1; }
+		[[ "${migration_name}" =~ ^[0-9]{14}_[a-z0-9_]+$ ]] || {
+			inspect_fail "migration name"
+			return 1
+		}
+		migration_hash="$(sha256sum "${migration_file}" 2>/dev/null)" || {
+			inspect_fail "migration hash"
+			return 1
+		}
 		migration_hash="${migration_hash%% *}"
-		[[ "${migration_hash}" =~ ^[0-9a-f]{64}$ ]] || { inspect_fail "migration hash"; return 1; }
+		[[ "${migration_hash}" =~ ^[0-9a-f]{64}$ ]] || {
+			inspect_fail "migration hash"
+			return 1
+		}
 		migrations="$(jq -cn --argjson prior "${migrations}" --arg name "${migration_name}" --arg checksum "${migration_hash}" \
 			'$prior + [{name: $name, checksum: $checksum}]')" || return 1
 	done <<<"${migration_files}"
@@ -204,13 +185,19 @@ SELECT json_build_object(
     'applied', finished_at IS NOT NULL AND rolled_back_at IS NULL,
     'failed', finished_at IS NULL AND rolled_back_at IS NULL) ORDER BY migration_name), '[]'::json) FROM _prisma_migrations)
 );
-COMMIT;" 2>/dev/null)" || { inspect_fail "database"; return 1; }
+COMMIT;" 2>/dev/null)" || {
+		inspect_fail "database"
+		return 1
+	}
 	database="$(printf '%s\n' "${database}" | jq -ce 'select(type == "object") |
 		select(all(.databaseOid, .roleOid, .runtimeStateTableOid, .totalRows, .authUserRows, .groupRows; type == "number" and . >= 0)) |
 		select(.migrations | type == "array") |
 		select(all(.migrations[]; (.name | test("^[0-9]{14}_[a-z0-9_]+$")) and (.checksum | test("^[0-9a-f]{64}$")) and (.applied | type == "boolean") and (.failed | type == "boolean"))) |
 		{databaseOid, roleOid, runtimeStateTableOid, totalRows, authUserRows, groupRows,
-		migrations: [.migrations[] | {name, checksum, applied, failed}]}' 2>/dev/null)" || { inspect_fail "database projection"; return 1; }
+		migrations: [.migrations[] | {name, checksum, applied, failed}]}' 2>/dev/null)" || {
+		inspect_fail "database projection"
+		return 1
+	}
 	printf '%s' "${database}"
 }
 
@@ -237,15 +224,24 @@ inspect_services() {
 
 inspect_activity() {
 	local jobs rollout_activity recipe_activity
-	jobs="$(systemctl list-jobs --no-legend --no-pager 2>/dev/null)" || { inspect_fail "system jobs"; return 1; }
+	jobs="$(systemctl list-jobs --no-legend --no-pager 2>/dev/null)" || {
+		inspect_fail "system jobs"
+		return 1
+	}
 	jobs="$(printf '%s\n' "${jobs}" | awk '$1 ~ /^[0-9]+$/ { n++ } END { print n+0 }')"
 	rollout_activity=false
 	recipe_activity=false
 	if pgrep -f '[0]8-rollout-controller.sh|[0]2-deploy-controller.sh' >/dev/null 2>&1; then rollout_activity=true; else
-		[[ "$?" == 1 ]] || { inspect_fail "rollout activity"; return 1; }
+		[[ "$?" == 1 ]] || {
+			inspect_fail "rollout activity"
+			return 1
+		}
 	fi
 	if pgrep -f '[1]4-run-distributed-recipe.sh' >/dev/null 2>&1; then recipe_activity=true; else
-		[[ "$?" == 1 ]] || { inspect_fail "recipe activity"; return 1; }
+		[[ "$?" == 1 ]] || {
+			inspect_fail "recipe activity"
+			return 1
+		}
 	fi
 	jq -cn --argjson jobCount "${jobs}" --argjson rolloutProcessPresent "${rollout_activity}" \
 		--argjson recipeProcessPresent "${recipe_activity}" \
@@ -279,7 +275,10 @@ inspect_hosted_controller() {
 	readiness="$(jq -ce '{deployedCommit, apiHealthStatus, controlHealthStatus, publicHealthStatus} |
 		select(.deployedCommit | test("^[0-9a-f]{40}$")) |
 		select(all(.apiHealthStatus, .controlHealthStatus, .publicHealthStatus; . == "passed" or . == "failed"))' \
-		"${RALLAR_DEPLOYMENT_READINESS_PATH}" 2>/dev/null)" || { inspect_fail "readiness"; return 1; }
+		"${RALLAR_DEPLOYMENT_READINESS_PATH}" 2>/dev/null)" || {
+		inspect_fail "readiness"
+		return 1
+	}
 	database="$(inspect_database)" || return 1
 	services="$(inspect_services)" || return 1
 	activity="$(inspect_activity)" || return 1
@@ -298,6 +297,10 @@ if [[ "${1:-}" == "--inspect" ]]; then
 		# Normal local invocation; the workflow streams this same reader before this script.
 		SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 		source "${SCRIPT_DIR}/rallar-api-effective-env.sh"
+	fi
+	if ! declare -F read_rallar_public_spa_settings >/dev/null; then
+		SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+		source "${SCRIPT_DIR}/rallar-public-spa-env.sh"
 	fi
 	inspect_hosted_controller
 	exit

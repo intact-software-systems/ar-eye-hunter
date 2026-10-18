@@ -111,8 +111,8 @@ Show service status, memory, and recent logs:
 
 For a read-only hosted preflight, dispatch the existing **Deploy Hetzner
 Controller** workflow with `action=inspect` and `ref` set to the reviewed full
-40-character commit. This path streams the reviewed effective-env reader and
-`07-status-controller.sh --inspect` over SSH stdin. It prints one JSON object
+40-character commit. This path streams the reviewed effective-env reader, shared public-settings
+validator, and `07-status-controller.sh --inspect` over SSH stdin. It prints one JSON object
 with only source, migration, timing/topology, reviewed public operator settings,
 readiness, service/activity, health, and aggregate store-continuity evidence.
 The `operatorSettings` object projects ten named public values from the SPA
@@ -140,12 +140,17 @@ The same workflow defaults to `action=rollout`, `server_timing=false`, and
 For explicit restoration, use the same reviewed full commit with
 `apply_topology=true` and supply every `rtc_topology_*` input. An empty input
 removes that key; a positive integer sets it. The workflow passes the values
-to the existing rollout writer. Record the ten `operatorSettings` values before
-the diagnostic and map them to the rollout's URL, CORS, room, agent,
-application, and workspace inputs. Supply them again during restoration: the
-rollout rewrites the public SPA and CORS settings from its inputs, and defaults
-are not evidence of the prior deployment. If inspect cannot read or reconcile
-these persisted values, it fails and the diagnostic is blocked. Caddy and
+to the existing rollout writer. Set `preserve_public_settings=true` for both
+preparation and restoration, with `ref` set to the reviewed full commit. The
+deploy workflow omits its public input assignments in this mode. On-controller,
+`08-rollout-controller.sh` reads and validates all ten persisted public values,
+their Vite mirrors, effective API/control CORS, and SPA-origin membership before
+applying defaults or changing checkout, builds, configuration, or services.
+Persisted values override conflicting incoming public settings; timing and
+topology still use their explicit writers. Missing, malformed, or inconsistent
+public state blocks the operation. Keep masked log values masked: preservation
+reads the actual values at their existing controller owner without reconstructing
+or transmitting them through workflow inputs. Caddy and
 Playwright choices are transient execution inputs, not persisted settings;
 restoration may leave them false and should verify prior service health/state.
 Run `action=inspect` again after the diagnostic and after restoration. Compare
@@ -154,7 +159,7 @@ auth/group counts, service state, health, and failure fence before declaring
 restoration complete.
 Restore even if the diagnostic or artifact acquisition fails.
 
-The inspect keys map to workflow inputs as follows:
+For an intentional public-setting change with preservation disabled, inspect keys map to workflow inputs as follows:
 
 | `operatorSettings` key             | Rollout input          |
 | ---------------------------------- | ---------------------- |
@@ -248,7 +253,8 @@ and the checkout.
 It performs:
 
 ```text
-1. Verify root, required commands, the effective existing-store configuration,
+1. Verify root, validate persisted public settings when preservation is enabled,
+   then check required commands, effective existing-store configuration,
    and a clean git checkout before changing the selected ref.
 2. Fetch origin and check out RALLAR_REPO_REF, default main; a full commit SHA is
    checked out detached, while a branch follows its current remote head.
@@ -295,11 +301,21 @@ container and temporary files.
 The lifecycle check runs the deploy and rollout scripts inside disposable,
 network-isolated containers with recorded service, database, and health command
 ports. It covers stopped-service ordering, absent-unit provisioning, failed
-stops, migration failure, and configuration rejection:
+stops, migration failure, configuration rejection, nondefault public-setting
+preservation despite conflicting inputs, invalid-state rejection, and return to ordinary explicit mode:
 
 ```sh
 bash packages/tests/hetzner/api-prod-profile-lifecycle.sh
 ```
+
+Preserve the existing public settings during a local controlled rollout:
+
+```sh
+RALLAR_PRESERVE_PUBLIC_SETTINGS=1 RALLAR_REPO_REF=<reviewed-full-commit> ./08-rollout-controller.sh
+```
+
+This opt-in defaults off. The preservation preflight emits errors containing key
+names only; it does not log the preserved projection.
 
 Override the branch/ref:
 
@@ -670,6 +686,10 @@ action
 ref
   Git ref to roll out, or reviewed full commit to inspect. Default: main.
 
+preserve_public_settings
+  Read validated persisted public settings on-controller and omit public inputs.
+  Requires a reviewed full commit. Default: false.
+
 server_timing
   Enable API and AppInbox timing during rollout. Default: false.
 
@@ -729,7 +749,7 @@ workspace_id
   Default: default
 ```
 
-The deploy action forwards these public inputs to the remote rollout as:
+With preservation disabled, the deploy action forwards public inputs as:
 
 ```text
 RALLAR_BLACK_BOX_SPA_URL
@@ -946,6 +966,14 @@ control server or another public Hetzner control plane. The reusable runner
 forwards them to the remote `RALLAR_BLACK_BOX_CONTROL_URL` and
 `RALLAR_CONTROL_HTTP_URL` values used by the headless workers and
 distributed-run admin calls.
+
+The GitHub Free workflow and reusable recipe runner also accept
+`preserve_public_settings`, default `false`. GitHub Free forwards it through
+both prepare and run calls. Preservation requires a reviewed full source commit;
+the runner validates the same persisted projection before its existing worker
+stop. Only the `08` child assigns the preserved public values. Per-run worker
+room, prefix, count, application, and workspace remain those selected for the
+recipe. Other callers retain their existing defaults.
 
 Every remote operation writes a **Hetzner operation diagnostics** table to the
 GitHub job summary and uploads

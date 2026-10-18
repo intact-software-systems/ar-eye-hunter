@@ -75,6 +75,10 @@ on:
         description: Register disposable test users before login
         type: boolean
         default: true
+      preserve_public_settings:
+        description: Preserve validated live controller public settings during preparation
+        type: boolean
+        default: false
       server_timing:
         description: Roll the API out with its timing and AppInbox phase timing logs (diagnostic runs); off leaves it uninstrumented
         type: boolean
@@ -290,6 +294,7 @@ jobs:
       operator_phase: prepare
       rollout_before_run: ${{ inputs.rollout_control_plane }}
       server_timing: ${{ inputs.server_timing }}
+      preserve_public_settings: ${{ inputs.preserve_public_settings }}
       agent_source: external
       agent_count: ${{ inputs.target_agent_count }}
       run_id: ${{ needs.plan.outputs.run_id }}
@@ -470,6 +475,7 @@ jobs:
       operator_phase: run
       rollout_before_run: false
       server_timing: ${{ inputs.server_timing }}
+      preserve_public_settings: ${{ inputs.preserve_public_settings }}
       agent_source: external
       agent_count: ${{ inputs.target_agent_count }}
       run_id: ${{ needs.plan.outputs.run_id }}

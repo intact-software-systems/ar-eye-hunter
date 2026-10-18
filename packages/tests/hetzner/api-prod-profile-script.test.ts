@@ -1,7 +1,19 @@
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import {
+    chmod,
+    mkdir,
+    mkdtemp,
+    readFile,
+    rm,
+    stat,
+    writeFile
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 import type { TestContext } from 'vitest';
 
 import { runOwnedTestProcess, type OwnedTestProcessOutcome } from './owned-test-process.ts';
@@ -371,6 +383,7 @@ describe('Hetzner controller API prod profile on the VM Postgres', () => {
         expect(stdout).toContain('stopFailureFence=passed');
         expect(stdout).toContain('configPreflight=passed');
         expect(stdout).toContain('migrationFailureFence=passed');
+        expect(stdout).toContain('publicPreservation=passed');
     }, 30_000);
 
     it.for([

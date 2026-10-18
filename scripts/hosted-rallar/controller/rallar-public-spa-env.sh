@@ -2,6 +2,84 @@
 
 RALLAR_BLACK_BOX_SPA_ENV_FILE="${RALLAR_BLACK_BOX_SPA_ENV_FILE:-/etc/rallar/black-box-spa.env}"
 
+read_rallar_public_spa_settings() {
+	local key value mirror index
+	local RALLAR_API_SECRET_FILE="${RALLAR_API_SECRET_FILE:-/etc/rallar/api-v1.secrets.env}"
+	local keys=(
+		RALLAR_BLACK_BOX_SPA_URL RALLAR_BLACK_BOX_CONTROL_URL RALLAR_API_BASE_URL
+		RALLAR_API_CORS_ORIGINS RALLAR_BLACK_BOX_ALLOWED_ORIGINS
+		RALLAR_BLACK_BOX_ROOM_ID RALLAR_BLACK_BOX_AGENT_PREFIX RALLAR_BLACK_BOX_AGENT_COUNT
+		VITE_RALLAR_APPLICATION_ID VITE_RALLAR_WORKSPACE_ID
+	)
+	local originals=(RALLAR_API_BASE_URL RALLAR_BLACK_BOX_CONTROL_URL RALLAR_BLACK_BOX_ROOM_ID
+		RALLAR_BLACK_BOX_AGENT_PREFIX RALLAR_BLACK_BOX_AGENT_COUNT)
+	local mirrors=(VITE_RALLAR_API_BASE_URL VITE_RALLAR_CONTROL_URL VITE_RALLAR_ROOM_ID
+		VITE_RALLAR_RUNNER_AGENT_PREFIX VITE_RALLAR_RUNNER_AGENT_COUNT)
+	local "${keys[@]}"
+	for key in "${keys[@]}"; do
+		value="$(read_rallar_api_file_value "${RALLAR_BLACK_BOX_SPA_ENV_FILE}" "${key}")" || {
+			echo "Cannot read public settings ${key}." >&2
+			return 1
+		}
+		validate_rallar_public_setting_shape "${key}" "${value}" || {
+			echo "Invalid public settings shape ${key}." >&2
+			return 1
+		}
+		printf -v "${key}" '%s' "${value}"
+	done
+	for index in "${!originals[@]}"; do
+		key="${originals[index]}"
+		mirror="$(read_rallar_api_file_value "${RALLAR_BLACK_BOX_SPA_ENV_FILE}" "${mirrors[index]}")" || return 1
+		[[ "${mirror}" == "${!key}" ]] || {
+			echo "Invalid public settings mirror ${mirrors[index]}." >&2
+			return 1
+		}
+	done
+	validate_rallar_public_cors_consistency "${RALLAR_API_CORS_ORIGINS}" "${RALLAR_BLACK_BOX_ALLOWED_ORIGINS}" "${RALLAR_BLACK_BOX_SPA_URL%/}" || return 1
+	for key in "${keys[@]}"; do printf '%s=%s\n' "${key}" "${!key}"; done
+}
+
+validate_rallar_public_cors_consistency() {
+	local expected_api_cors="$1" expected_control_cors="$2" spa_origin="$3" api_cors control_cors
+	api_cors="$(read_rallar_api_effective_env_value "${RALLAR_API_ENV_FILE:-/etc/rallar/api-v1.env}" CORS_ORIGINS)" || {
+		echo 'Cannot read public settings API CORS.' >&2
+		return 1
+	}
+	control_cors="$(read_rallar_api_file_value "${RALLAR_CONTROL_ENV_FILE:-/etc/rallar/control-server.env}" RALLAR_BLACK_BOX_ALLOWED_ORIGINS)" || {
+		echo 'Cannot read public settings control CORS.' >&2
+		return 1
+	}
+	[[ "${api_cors}" == "${expected_api_cors}" && "${control_cors}" == "${expected_control_cors}" ]] || {
+		echo 'Invalid public settings API or control CORS mismatch.' >&2
+		return 1
+	}
+	[[ ",${api_cors}," == *",${spa_origin},"* && ",${control_cors}," == *",${spa_origin},"* ]] || {
+		echo 'Invalid public settings SPA origin missing from CORS.' >&2
+		return 1
+	}
+}
+
+validate_rallar_public_setting_shape() {
+	local key="$1" value="$2"
+	case "${key}" in
+	RALLAR_BLACK_BOX_SPA_URL | RALLAR_API_BASE_URL)
+		[[ "${value}" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$ ]]
+		;;
+	RALLAR_BLACK_BOX_CONTROL_URL)
+		[[ "${value}" =~ ^wss?://[A-Za-z0-9.-]+(:[0-9]{1,5})?/[A-Za-z0-9/_-]+$ ]]
+		;;
+	RALLAR_API_CORS_ORIGINS | RALLAR_BLACK_BOX_ALLOWED_ORIGINS)
+		[[ "${value}" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(,https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?)*$ ]]
+		;;
+	RALLAR_BLACK_BOX_AGENT_COUNT)
+		[[ "${value}" =~ ^[1-9][0-9]*$ ]]
+		;;
+	*)
+		[[ "${value}" =~ ^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$ ]]
+		;;
+	esac
+}
+
 rallar_public_url_origin() {
 	local url="${1:-}"
 	local scheme rest host
@@ -162,12 +240,11 @@ write_rallar_controller_caddyfile() {
 	spa_origin="$(rallar_public_url_origin "${RALLAR_BLACK_BOX_SPA_URL}" || printf 'https://%s' "${RALLAR_BLACKBOX_HOST}")"
 	tmp_file="$(mktemp)"
 
-	if [[ -n "${RALLAR_ACME_EMAIL:-}" ]]; then
-		cat >"${tmp_file}" <<EOF
-{
-	email ${RALLAR_ACME_EMAIL}
-}
-
+	{
+		if [[ -n "${RALLAR_ACME_EMAIL:-}" ]]; then
+			printf '{\n\temail %s\n}\n\n' "${RALLAR_ACME_EMAIL}"
+		fi
+		cat <<EOF
 ${RALLAR_API_HOST} {
 	reverse_proxy 127.0.0.1:8080
 }
@@ -189,30 +266,7 @@ ${RALLAR_BLACKBOX_HOST} {
 	file_server
 }
 EOF
-	else
-		cat >"${tmp_file}" <<EOF
-${RALLAR_API_HOST} {
-	reverse_proxy 127.0.0.1:8080
-}
-
-${RALLAR_CONTROL_HOST} {
-	reverse_proxy 127.0.0.1:5180
-	handle_errors {
-		header Access-Control-Allow-Origin "${spa_origin}"
-		header Access-Control-Allow-Methods "GET,POST,DELETE,OPTIONS"
-		header Access-Control-Allow-Headers "Content-Type,Authorization,X-Rallar-Run-Token"
-		header Vary "Origin"
-		respond "Rallar Black Box control upstream unavailable" 502
-	}
-}
-
-${RALLAR_BLACKBOX_HOST} {
-	root * /var/www/rallar-black-box
-	try_files {path} {path}/index.html /index.html
-	file_server
-}
-EOF
-	fi
+	} >"${tmp_file}"
 
 	if ! caddy fmt --overwrite "${tmp_file}"; then
 		rm -f "${tmp_file}"

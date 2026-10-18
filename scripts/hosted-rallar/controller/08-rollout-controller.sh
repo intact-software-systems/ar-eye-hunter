@@ -315,7 +315,7 @@ update_api_rtc_topology_env() {
 require_writable_api_diagnostic_configuration() {
 	local key status server_timing requested=0
 	server_timing="$(printf '%s' "${RALLAR_API_SERVER_TIMING}" | tr '[:upper:]' '[:lower:]')"
-	case "${server_timing}" in 1|true|yes|on) requested=1 ;; esac
+	case "${server_timing}" in 1 | true | yes | on) requested=1 ;; esac
 	for key in RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE \
 		RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE RALLAR_RTC_TOPOLOGY_MESH_PARAM_K; do
 		if [[ "${!key+x}" == x ]]; then requested=1; fi
@@ -417,6 +417,17 @@ source "${SCRIPT_DIR}/rallar-deno-runtime.sh"
 source "${SCRIPT_DIR}/rallar-public-spa-env.sh"
 source "${SCRIPT_DIR}/rallar-playwright-install.sh"
 source "${SCRIPT_DIR}/rallar-deployment-readiness.sh"
+if [[ "${RALLAR_PRESERVE_PUBLIC_SETTINGS:-0}" == 1 ]]; then
+	public_settings="$(read_rallar_public_spa_settings)"
+	while IFS='=' read -r key value; do
+		case "${key}" in
+		VITE_RALLAR_APPLICATION_ID) key=RALLAR_BLACK_BOX_APPLICATION_ID ;;
+		VITE_RALLAR_WORKSPACE_ID) key=RALLAR_BLACK_BOX_WORKSPACE_ID ;;
+		esac
+		printf -v "${key}" '%s' "${value}"
+	done <<<"${public_settings}"
+	unset public_settings key value
+fi
 apply_rallar_public_spa_defaults
 apply_rallar_public_cors_defaults
 
@@ -665,7 +676,14 @@ rallar_playwright_operation_stage "rollout-service-health"
 wait_for_url "API-v1 config" "http://127.0.0.1:8080/api/config"
 wait_for_url "API-v1 docs" "http://127.0.0.1:8080/api/docs"
 wait_for_url "control health" "http://127.0.0.1:5180/health" -H "x-forwarded-proto: https"
-verify_rallar_control_public_cors
+if [[ "${RALLAR_PRESERVE_PUBLIC_SETTINGS:-0}" == 1 ]]; then
+	verify_rallar_control_public_cors >/dev/null 2>&1 || {
+		echo 'Public control CORS verification failed for preserved settings.' >&2
+		exit 1
+	}
+else
+	verify_rallar_control_public_cors
+fi
 
 deployment_browser_status="not-verified"
 if verify_rallar_playwright_browser \

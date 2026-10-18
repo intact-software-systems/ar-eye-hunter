@@ -12,6 +12,10 @@ on:
         description: Git ref to roll out on the controller VM
         default: main
         required: true
+      preserve_public_settings:
+        description: Preserve validated live public settings on the controller instead of public inputs
+        type: boolean
+        default: false
       server_timing:
         description: Enable API and AppInbox timing during rollout
         type: boolean
@@ -139,6 +143,8 @@ jobs:
           {
             cat scripts/hosted-rallar/controller/rallar-api-effective-env.sh
             printf '\n'
+            cat scripts/hosted-rallar/controller/rallar-public-spa-env.sh
+            printf '\n'
             cat scripts/hosted-rallar/controller/07-status-controller.sh
           } | ssh -i ~/.ssh/hetzner "${HETZNER_USER}@${HETZNER_HOST}" 'bash -s -- --inspect'
 
@@ -222,6 +228,7 @@ jobs:
           RALLAR_INCLUDE_CADDY: ${{ inputs.include_caddy }}
           RALLAR_INSTALL_PLAYWRIGHT: ${{ inputs.install_playwright }}
           RALLAR_SERVER_TIMING: ${{ inputs.server_timing }}
+          RALLAR_PRESERVE_PUBLIC_SETTINGS: ${{ inputs.preserve_public_settings }}
           RALLAR_APPLY_TOPOLOGY: ${{ inputs.apply_topology }}
           RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT_INPUT: ${{ inputs.rtc_topology_degree_limit }}
           RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE_INPUT: ${{ inputs.rtc_topology_tree_min_size }}
@@ -254,10 +261,10 @@ jobs:
             server_timing=1
           fi
 
-          if [[ "${server_timing}" == 1 || "${RALLAR_APPLY_TOPOLOGY}" == "true" ]]; then
+          if [[ "${server_timing}" == 1 || "${RALLAR_APPLY_TOPOLOGY}" == "true" || "${RALLAR_PRESERVE_PUBLIC_SETTINGS:-false}" == "true" ]]; then
             [[ "${RALLAR_REPO_REF}" =~ ^[0-9a-f]{40}$ ]] &&
               [[ "$(git rev-parse HEAD)" == "${RALLAR_REPO_REF}" ]] || {
-                echo '::error::Timing or topology changes require the reviewed full source commit.' >&2
+                echo '::error::Timing, topology, or public settings preservation require the reviewed full source commit.' >&2
                 exit 1
               }
           fi
@@ -286,16 +293,20 @@ jobs:
               printf 'RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE=%s\n' "$(quote "${RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE_INPUT}")"
               printf 'RALLAR_RTC_TOPOLOGY_MESH_PARAM_K=%s\n' "$(quote "${RALLAR_RTC_TOPOLOGY_MESH_PARAM_K_INPUT}")"
             fi
-            printf 'RALLAR_BLACK_BOX_SPA_URL=%s\n' "$(quote "${RALLAR_BLACK_BOX_SPA_URL}")"
-            printf 'RALLAR_BLACK_BOX_CONTROL_URL=%s\n' "$(quote "${RALLAR_BLACK_BOX_CONTROL_URL}")"
-            printf 'RALLAR_API_BASE_URL=%s\n' "$(quote "${RALLAR_API_BASE_URL}")"
-            printf 'RALLAR_API_CORS_ORIGINS=%s\n' "$(quote "${RALLAR_API_CORS_ORIGINS}")"
-            printf 'RALLAR_BLACK_BOX_ALLOWED_ORIGINS=%s\n' "$(quote "${RALLAR_BLACK_BOX_ALLOWED_ORIGINS}")"
-            printf 'RALLAR_BLACK_BOX_ROOM_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_ROOM_ID}")"
-            printf 'RALLAR_BLACK_BOX_AGENT_PREFIX=%s\n' "$(quote "${RALLAR_BLACK_BOX_AGENT_PREFIX}")"
-            printf 'RALLAR_BLACK_BOX_AGENT_COUNT=%s\n' "$(quote "${RALLAR_BLACK_BOX_AGENT_COUNT}")"
-            printf 'RALLAR_BLACK_BOX_APPLICATION_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_APPLICATION_ID}")"
-            printf 'RALLAR_BLACK_BOX_WORKSPACE_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_WORKSPACE_ID}")"
+            if [[ "${RALLAR_PRESERVE_PUBLIC_SETTINGS:-false}" == "true" ]]; then
+              printf 'RALLAR_PRESERVE_PUBLIC_SETTINGS=1\n'
+            else
+              printf 'RALLAR_BLACK_BOX_SPA_URL=%s\n' "$(quote "${RALLAR_BLACK_BOX_SPA_URL}")"
+              printf 'RALLAR_BLACK_BOX_CONTROL_URL=%s\n' "$(quote "${RALLAR_BLACK_BOX_CONTROL_URL}")"
+              printf 'RALLAR_API_BASE_URL=%s\n' "$(quote "${RALLAR_API_BASE_URL}")"
+              printf 'RALLAR_API_CORS_ORIGINS=%s\n' "$(quote "${RALLAR_API_CORS_ORIGINS}")"
+              printf 'RALLAR_BLACK_BOX_ALLOWED_ORIGINS=%s\n' "$(quote "${RALLAR_BLACK_BOX_ALLOWED_ORIGINS}")"
+              printf 'RALLAR_BLACK_BOX_ROOM_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_ROOM_ID}")"
+              printf 'RALLAR_BLACK_BOX_AGENT_PREFIX=%s\n' "$(quote "${RALLAR_BLACK_BOX_AGENT_PREFIX}")"
+              printf 'RALLAR_BLACK_BOX_AGENT_COUNT=%s\n' "$(quote "${RALLAR_BLACK_BOX_AGENT_COUNT}")"
+              printf 'RALLAR_BLACK_BOX_APPLICATION_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_APPLICATION_ID}")"
+              printf 'RALLAR_BLACK_BOX_WORKSPACE_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_WORKSPACE_ID}")"
+            fi
           } > "${rollout_env}"
           chmod 600 "${rollout_env}"
 

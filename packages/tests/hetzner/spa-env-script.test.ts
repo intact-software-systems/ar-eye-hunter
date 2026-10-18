@@ -1,9 +1,20 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import {
+    chmod,
+    mkdtemp,
+    readFile,
+    rm,
+    stat,
+    writeFile
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 import type { TestContext } from 'vitest';
 
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -74,6 +85,51 @@ describe('Hetzner SPA public env wiring', () => {
         }
         expect(builds[0]).toContain('--workspace rallar-black-box run build');
         expect(builds[1]).toContain('--workspace rallar-black-box-headless run build');
+    });
+
+    it.for([
+        { email: '', prefix: '' },
+        { email: 'operator@example.test', prefix: '{\n\temail operator@example.test\n}\n\n' }
+    ])('writes the validated Caddy public routes with the optional ACME email $email', async ({ email, prefix }, context) => {
+        const fixture = await createEnvironmentFixture(context);
+        const caddy = path.join(fixture, 'caddy');
+        await writeFile(caddy, '#!/usr/bin/env bash\nexit 0\n');
+        await chmod(caddy, 0o755);
+        const destination = path.join(fixture, 'Caddyfile');
+        await execFileAsync('bash', ['-c', `source '${spaHelper}'\nwrite_rallar_controller_caddyfile`], {
+            env: {
+                PATH: `${fixture}:${process.env.PATH}`,
+                RALLAR_CADDYFILE: destination,
+                RALLAR_ACME_EMAIL: email,
+                RALLAR_API_HOST: 'api.example.test',
+                RALLAR_CONTROL_HOST: 'control.example.test',
+                RALLAR_BLACKBOX_HOST: 'spa.example.test',
+                RALLAR_BLACK_BOX_SPA_URL: 'https://spa.example.test'
+            }
+        });
+        expect(await readFile(destination, 'utf8')).toBe(
+            prefix + `api.example.test {
+\treverse_proxy 127.0.0.1:8080
+}
+
+control.example.test {
+\treverse_proxy 127.0.0.1:5180
+\thandle_errors {
+\t\theader Access-Control-Allow-Origin "https://spa.example.test"
+\t\theader Access-Control-Allow-Methods "GET,POST,DELETE,OPTIONS"
+\t\theader Access-Control-Allow-Headers "Content-Type,Authorization,X-Rallar-Run-Token"
+\t\theader Vary "Origin"
+\t\trespond "Rallar Black Box control upstream unavailable" 502
+\t}
+}
+
+spa.example.test {
+\troot * /var/www/rallar-black-box
+\ttry_files {path} {path}/index.html /index.html
+\tfile_server
+}
+`
+        );
     });
 
     it('normalizes an existing API env file without logging secrets and keeps mode 0600', async (context) => {

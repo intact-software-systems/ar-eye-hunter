@@ -1,13 +1,69 @@
 import { load } from 'js-yaml';
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+    chmod,
+    mkdir,
+    mkdtemp,
+    readFile,
+    rm,
+    writeFile
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 import type { TestContext } from 'vitest';
+
+import { formatJsonSchemaValidationErrors, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+
 import { runOwnedTestProcess } from './owned-test-process.ts';
+
+interface ControllerWorkflow {
+    readonly jobs: { readonly deploy: { readonly steps: readonly { readonly name: string; readonly if?: string; readonly run?: string; }[]; }; };
+}
 
 const repoRoot = path.resolve(__dirname, '../../..');
 const controllerDir = path.join(repoRoot, 'scripts/hosted-rallar/controller');
+
+async function readControllerWorkflow(): Promise<ControllerWorkflow> {
+    const workflow: unknown = load(await readFile(path.join(repoRoot, '.github/workflows/deploy-hetzner-controller.yml'), 'utf8'));
+    const validation = validateJsonSchema({
+        type: 'object',
+        required: ['jobs'],
+        properties: {
+            jobs: {
+                type: 'object',
+                required: ['deploy'],
+                properties: {
+                    deploy: {
+                        type: 'object',
+                        required: ['steps'],
+                        properties: {
+                            steps: {
+                                type: 'array',
+                                items: {
+                                    type: 'object',
+                                    required: ['name'],
+                                    properties: {
+                                        name: { type: 'string' },
+                                        if: { type: 'string' },
+                                        run: { type: 'string' }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }, workflow);
+    if (!validation.ok) {
+        throw new Error(formatJsonSchemaValidationErrors(validation.errors));
+    }
+    return workflow as ControllerWorkflow;
+}
 
 async function createInspectCommandPorts(fixture: string) {
     const bin = path.join(fixture, 'bin');
@@ -90,9 +146,9 @@ async function inspect(context: TestContext, overrides: Record<string, string> =
     const { envFile, secretFile, controlFile, spaFile } = await createInspectConfiguration(fixture);
     await createInspectSourceFixture(fixture);
     const stream = `${await readFile(path.join(controllerDir, 'rallar-api-effective-env.sh'), 'utf8')}\n${await readFile(
-        path.join(controllerDir, '07-status-controller.sh'),
+        path.join(controllerDir, 'rallar-public-spa-env.sh'),
         'utf8'
-    )}`;
+    )}\n${await readFile(path.join(controllerDir, '07-status-controller.sh'), 'utf8')}`;
     const script = path.join(fixture, 'stream.sh');
     await writeFile(script, stream);
     const environment = {
@@ -353,9 +409,7 @@ describe('hosted controller workflow restoration', () => {
         })).rejects.toMatchObject({ stderr: expect.stringContaining('Secret-file override for RALLAR_TIMING_LOGS') });
     });
     it('isolates inspect from every remote write step and executes its streamed probe', async (context) => {
-        const workflow = load(await readFile(path.join(repoRoot, '.github/workflows/deploy-hetzner-controller.yml'), 'utf8')) as {
-            jobs: { deploy: { steps: { name: string; if?: string; run?: string; }[]; }; };
-        };
+        const workflow = await readControllerWorkflow();
         const steps = workflow.jobs.deploy.steps;
         const inspectStep = steps.find((step) => step.name === 'Inspect reviewed source on controller');
         expect(inspectStep?.if).toBe('inputs.action == \'inspect\'');
@@ -394,9 +448,7 @@ describe('hosted controller workflow restoration', () => {
     });
 
     it('transmits omitted topology by default and exact absent/set values for restoration', async (context) => {
-        const workflow = load(await readFile(path.join(repoRoot, '.github/workflows/deploy-hetzner-controller.yml'), 'utf8')) as {
-            jobs: { deploy: { steps: { name: string; run?: string; }[]; }; };
-        };
+        const workflow = await readControllerWorkflow();
         const run = workflow.jobs.deploy.steps.find((step) => step.name === 'Run controlled rollout')?.run;
         expect(run).toBeDefined();
         const fixture = await mkdtemp(path.join(tmpdir(), 'rallar-workflow-rollout-'));
@@ -454,6 +506,13 @@ describe('hosted controller workflow restoration', () => {
         const normal = await execute('false', { RALLAR_REPO_REF: 'main' });
         expect(normal).toContain('RALLAR_API_SERVER_TIMING=0');
         expect(normal).not.toContain('RALLAR_RTC_TOPOLOGY_');
+        const preserved = await execute('false', { RALLAR_PRESERVE_PUBLIC_SETTINGS: 'true' });
+        expect(preserved).toContain('RALLAR_PRESERVE_PUBLIC_SETTINGS=1\n');
+        expect(preserved).not.toMatch(
+            /^(RALLAR_BLACK_BOX_(?:SPA_URL|CONTROL_URL|ALLOWED_ORIGINS|ROOM_ID|AGENT_PREFIX|AGENT_COUNT|APPLICATION_ID|WORKSPACE_ID)|RALLAR_API_(?:BASE_URL|CORS_ORIGINS))=/mu
+        );
+        await expect(execute('false', { RALLAR_PRESERVE_PUBLIC_SETTINGS: 'true', RALLAR_REPO_REF: 'main' }))
+            .rejects.toMatchObject({ stderr: expect.stringContaining('reviewed full source commit') });
         const timed = await execute('false', { RALLAR_SERVER_TIMING: 'true' });
         expect(timed).toContain('RALLAR_API_SERVER_TIMING=1');
         expect(timed).not.toContain('RALLAR_RTC_TOPOLOGY_');
