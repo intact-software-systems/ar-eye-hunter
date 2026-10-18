@@ -2734,7 +2734,7 @@ outcomes completed by subsequent reviewed evidence.
 | Admission and retention source changes | Commit-before-notification, shared write-set, durable result release, complete artifact reading and reviewed ownership corrections are delivered. |
 | Console and worker capture | Reviewed Copy/Load/two same-session Native runs, Console Native application, lifecycle/export, checkpoint preservation, local/deployed HOST, Actions RUN and selected external/spawned/mixed/no-spawn outcomes retain their documented scopes. Partial Native coverage, unknown durable origin and cancellation-checkpoint limits remain explicit. |
 | B07 | Authorized PostgreSQL/GitHub Free acquisition is complete and descriptive; its controlled repeat remains noisy. The failed 50-agent diagnostics are preserved separately from the accepted generic two-agent no-spawn witness. |
-| E4 | Capture support and the production-startup correction are published. Corrected candidate `dc96a9a48194` passes all ten default/all-scenarios attempts, then fails retention warmup at cycle 4 with an exact-peer readiness mismatch. Three retained attempts are not run; no repeat or accepted primary. Original failures remain preserved. Diagnose and correct only the demonstrated readiness observation defect before fresh acquisition under unchanged criteria. |
+| E4 | Reviewed readiness correction `09b6e7579149` passes all ten default/all-scenarios attempts and progresses through nineteen retention reconnects. Cycle 20 fails on ICE configuration HTTP 429; three retained attempts are not run, with no repeat or accepted primary. All 184 captured result roots have verified release. Preserve all three failed acquisitions and resolve the ICE configuration lifetime decision without changing criteria. |
 | E3 | Canonical primary fails heap acceptance; no repeat was selected. Further heap investigation is deferred to #672. Zero accepted cohorts. |
 | Delivery and final conclusion | Reviewed source is published in PR #671. Native review/integration and the unresolved E3 gate remain distinct from completed non-heap work. No optimization ranking or overall baseline completion is claimed. |
 
@@ -2828,17 +2828,27 @@ The partial summaries do not establish an accepted E4 primary or heap outcome.
 The release evidence also fails whole-proof verification; preserve that symptom
 without interpreting its zero verified-root aggregate as zero actual releases.
 
+The reviewed readiness correction at `09b6e7579149` passed all 21 ordinary CI
+checks. Its [E4 acquisition](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/39105729932)
+passes the ten default/all-scenarios attempts and nineteen retention reconnects.
+At cycle 20, C's connect fails with HTTP 429 from the ICE configuration endpoint.
+All 184 captured result roots have matching release acknowledgements; there are
+no deferred releases. Only checkpoints 0 and 10 exist, so neither heap acceptance
+nor completed settled-state acceptance can be evaluated. Three retained attempts
+are causally not run; no repeat or accepted primary follows. The seventeen partial
+metric summaries remain descriptive. All three failed acquisitions stay separate.
+
 The next two useful slices are:
 
-1. Diagnose and correct the demonstrated E4 readiness observation boundary: the
-   cycle-4 wait returned a ready prior two-member layout before asserting the
-   expected three-member group. Preserve the exact peer set and existing deadline,
-   reproduce the sequencing failure, and independently review the correction.
-   Keep both failed acquisitions and incomplete release evidence separate.
-2. Acquire E4 on the exact reviewed candidate: three warmups and eleven retained
-   attempts, including its normal 100-cycle retention case. Run only the repeat
-   selected by the existing controller. Preserve failed attempts, full event
-   history as declared by the E4 catalog, source/environment identity and original
+1. Resolve the ICE configuration lifetime decision from the original cycle-20
+   failure and current request/cache ownership. Establish whether still-valid
+   configuration can safely survive transport rebuilds using existing shared
+   mechanisms, with explicit expiry, authentication and cancellation boundaries.
+   Do not increase E4's request budget or add pacing to make the test pass.
+2. After an approved, tested and independently reviewed correction, acquire E4
+   on the exact candidate: three warmups and eleven retained attempts, including
+   its normal 100-cycle retention case. Run only the repeat selected by the
+   existing controller. Preserve full event history, failed attempts and original
    artifacts; independently review correctness, noise and acceptance.
 
 Publish both outcomes through the existing PR with the E3 follow-up visible.
