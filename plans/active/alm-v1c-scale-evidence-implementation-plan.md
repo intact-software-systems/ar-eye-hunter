@@ -210,7 +210,10 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    Because GitHub masks two public setting values, the opt-in mode validates and
    preserves the actual ten public settings on-controller through the existing writer,
    with a fingerprint for pre/post equality. Local preservation tests pass; a subsequent
-   workflow-cleanup correction is independently approved. Repeat live preflight;
+   workflow-cleanup correction is independently approved. GitHub exposed its 25-input
+   dispatch limit before any job ran; the preserving mode now uses the existing
+   rollout choice without removing true/false invocation behavior. The correction
+   passes 49 workflow tests and independent review. Repeat live preflight;
    keep diagnostic worker scope independent and preserve absent/set topology and effective
    secrets. Use TDD for a positively
    located defect and reuse existing queuebox and ALM

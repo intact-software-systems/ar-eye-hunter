@@ -443,7 +443,11 @@ Add an opt-in mode at the existing rollout owner that reads and validates the te
 persisted public settings before defaults or mutation, then uses those values
 through the existing writers. Share the current inspect validator rather than
 duplicating it. Existing deploy and diagnostic prepare callers explicitly forward
-the mode; ordinary callers retain their current behavior. Timing and topology
+the mode; ordinary callers retain their current behavior. GitHub Free already
+uses all 25 manual inputs, so its existing rollout choice gains an explicit
+preserve-public-settings option while retaining true/false values and the true
+default. Deploy and reusable callers retain their preservation boolean. Tests
+must check the platform input limit and evaluate the actual boolean bindings. Timing and topology
 remain explicit. Test actual preservation under conflicting defaults and rejection
 of missing or inconsistent settings before checkout or service changes. This keeps
 restoration independent of GitHub log masking, without reconstructing masked values
@@ -464,3 +468,11 @@ evidence and still runs after later start/recipe failures. Eleven focused cases,
 205 affected workflow/disposition checks, canonical test typing and changed-range
 style pass. Independent scoped review approves the correction. Live fingerprint roundtrip
 and current hosted formation measurement remain pending.
+
+The initial GitHub Free publication exceeded the platform’s 25-input limit and
+was rejected before jobs started. The existing rollout choice now carries the
+preserving mode, with every original input retained. Executed expression/planner
+tests cover all three choices, actual boolean forwarding and unchanged false
+topology refusal. Forty-nine affected workflow tests, 127 registry tests, typing,
+changed-range style and syntax pass; scoped review approves the correction. The
+failed publication remains recorded; local checks do not claim GitHub acceptance.
