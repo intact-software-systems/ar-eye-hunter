@@ -199,17 +199,21 @@ final evidence reconciliation must preserve workload provenance and the unwaived
 
 1. **Remaining formation-tail delivery:** the bounded group-admission read repair preserves
    ordered commit/fallback and passes native scale acceptance, but does not establish the
-   complete target. Measure the remaining current promotion-to-browser path, then use TDD
-   to repair the positively located queue-service bottleneck. Reuse existing queuebox and ALM
+   complete target. Current local marker-to-adoption maxima are 0.039 / 0.359 / 0.386 s
+   at 15 / 30 / 50 agents with all expected browser pairs and native predicates covered.
+   These single memory-backend diagnostics do not reproduce the historical hosted PostgreSQL
+   delay or establish a clock-bounded commit interval. Recover current hosted delivery evidence
+   before selecting another repair. The current server-timing toggle can trigger a database reset;
+   use a non-destructive diagnostic setup/restoration path instead. Use TDD for a positively
+   located defect and reuse existing queuebox and ALM
    mechanisms; preserve every event, frozen audiences, causal fences and failure recovery.
    Compare the same queued burst with a late promotion before and after the repair, including
    stale claims and transient failures at the affected boundary. Validate affected packages
    and the unchanged local 15 → 30 → 50 workload before hosted timing-off acceptance. Keep the
    ≤2 s formation-tail target explicit; report any remaining delay without weakening acceptance.
-2. **Repair state-write command completion:** logical enqueue association and bounded capture
-   are repaired; complete evidence and source tracing locate a harness wait for dequeue/timer
-   cleanup after service completion, also inserted between profile and instance. Use held-dequeue
-   TDD to record the actual service-sequence endpoint while one command-owned pump remains joined
+2. **Validate corrected state-write command completion:** logical enqueue association, bounded
+   capture and the demonstrated harness wait for dequeue/timer cleanup are repaired with TDD.
+   The actual service-sequence endpoint is recorded while one command-owned pump remains joined
    before releasing its slot. Keep phase duration, SQL/CPU counters and cleanup open through all
    owned work. Reuse the existing failure-preserving join and canonical pump for measured and seed
    callers; no detached work or additional concurrency. Preserve every command, attempt, release,

@@ -51,6 +51,27 @@ sensitivity only. Transport and final socket ports were capture adapters, so
 the result cannot establish hosted network cost or browser acceptance. Recover
 the actual full-stack timeline before selecting another publication optimization.
 
+Optional capture now retains the existing safe promotion marker. Fresh diagnostic
+local cohorts passed all 231 native predicates each, with verified recorder bytes
+and counts and one scoped successful anchor joined to every expected browser:
+
+| Agents | Marker to adoption p50 / p95 / maximum (s) | Estimated attempt start to adoption maximum (s) |
+| ------ | ------------------------------------------ | ----------------------------------------------- |
+| 15     | 0.036 / 0.039 / 0.039                      | 0.05182                                         |
+| 30     | 0.350 / 0.358 / 0.359                      | 0.41101                                         |
+| 50     | 0.358 / 0.386 / 0.386                      | 0.49316                                         |
+
+These are single local memory-backend observations, not a main comparison or a
+reproduction of the historical hosted PostgreSQL delay. All API streams remain
+globally partial; complete selected pairs do not certify all server telemetry.
+The marker follows transaction return and queue wake, and the estimated start
+uses rounded duration without a measured timestamp-sampling bound. Preserve that
+uncertainty rather than claiming a strict commit-to-adoption bound. The 50-agent
+run also logged a post-terminal control-artifact canonical-node limit despite
+complete selected pairs and matching native export bytes; retain that independent
+artifact-durability follow-up. Current evidence does not select another local
+publication optimization. Recover current hosted server delivery evidence next.
+
 The failed state-write investigation exposed two diagnostic defects, now repaired
 with TDD at their existing owners:
 
@@ -102,17 +123,22 @@ rounded durations must not be treated as exact additive CPU accounting.
 
 ## Next two useful slices
 
-1. **Remaining formation-tail delivery.** First retain the existing server
-   promotion marker and correlate it with every expected browser's accepted
-   layout. The local policy probe does not justify a policy optimization. Add
+1. **Remaining formation-tail delivery.** The existing promotion marker and all
+   local browser endpoints are now measured. Establish the current hosted
+   promotion-to-send interval using existing same-server journals where possible.
+   Check diagnostic setup and restoration before dispatch: the existing timing
+   toggle can invoke a database-resetting rollout, which is not an acceptable
+   measurement step. Use a non-destructive path and keep cross-host browser clock
+   bounds explicit. The local policy probe does not justify an optimization. Add
    intermediate delta/claim/publish spans only if the observed delivery interval
    warrants them, then repair a positively located defect with TDD. Preserve
    every immutable event/audience, causal fence and fault outcome. Diagnostic
    local 15 → 30 → 50 uses the unchanged memory/headless workload; hosted
    timing-off acceptance remains separate.
-2. **State-write command completion.** Repair the demonstrated harness wait after
-   service completion while retaining every owned drain, failure and phase cost.
-   The concrete TDD scope follows below. Retry-depth attribution and raw timing
+2. **State-write command completion.** The demonstrated harness wait is repaired
+   and independently reviewed; the fresh governed comparison uses that corrected
+   harness on both roles. Retain every owned drain, failure and phase cost, and
+   investigate its result before claiming comparative acceptance. Retry-depth attribution and raw timing
    array allocation remain unresolved outcomes, not speculative policy changes.
 
 ### Task 4: Separate command completion from owned pump cleanup
