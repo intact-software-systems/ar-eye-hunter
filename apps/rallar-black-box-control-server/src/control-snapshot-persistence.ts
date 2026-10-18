@@ -68,7 +68,7 @@ export class ControlSnapshotPersistence {
         this.input = input;
         this.flush = new ThrottledFlush(
             { timers: input.timers, write: () => this.writeChangedSnapshot() },
-            { minIntervalMs: input.flushIntervalMs }
+            { minIntervalMs: input.flushIntervalMs, firstMarkDelayMs: 0 }
         );
     }
 

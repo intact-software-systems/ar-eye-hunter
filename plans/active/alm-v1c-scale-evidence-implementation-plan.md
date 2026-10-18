@@ -15,10 +15,10 @@ Use the current repository owners, nearby tests and examples to recover each act
 this plan is neither a substitute for source navigation nor a delivery ledger. No new dependencies,
 runner, evaluator, generic diagnostic framework or duplicate policy engine are required.
 
-The current pull request delivers V1c step 1: bounded lane execution, independently evidenced
-runtime repairs and the consumer-proof workload. V1c step 2 completes original scale acceptance
-and comparative benefit after the user manually merges step 1. Preparing step 1 for main does not
-make the full V1c outcome complete or waive either failed gate.
+Step 1 and step 2a through step 2g are merged. Step 2h continues the shared-mechanism consolidation
+and V1c acceptance closure. The remaining shared-mechanism audit and next measured repair form the
+next increment; the full V1c acceptance and comparative evidence remain the following outcome.
+Delivery of one consolidation does not make the full V1c outcome complete or waive its remaining gates.
 
 The live pull request owns delivery state. Git history, immutable ignored evidence and the
 pull request retain prior outcomes and review chronology; do not copy that history into this plan.
@@ -143,7 +143,11 @@ unchanged 5% allowance. No sample removal, threshold waiver or blind comparative
 Preserve the current source-owned canonical bundle budgets, compression settings, dependency
 boundaries and strict comparisons. Accepted bundle growth is not a runtime benefit.
 
-## Current evidence and open facts
+## Step 1 baseline evidence and original open facts
+
+These observations motivated the subsequent step 2 work. Later measured outcomes appear in the
+delivered increments below; do not treat an earlier failed cohort as the current result. The
+final evidence reconciliation must preserve workload provenance and the unwaived benefit gate.
 
 - Original capture-off fifteen-agent acceptance fails after setup, RTC readiness and START.
   It sends 83 of 84 shots: 66 ACK observations pass, fifteen time out and two remain unfinished.
@@ -184,6 +188,23 @@ boundaries and strict comparisons. Accepted bundle growth is not a runtime benef
 
 ## Next two useful slices
 
+1. **Artifact flush consolidation:** add explicit first-mark delay and reusable drain to the
+   existing shared `ThrottledFlush`, then replace the recorder's timer loop. Preserve its durable
+   capture receipts, per-run overflow, pending cap and file/delete ordering. Prove stalled-write
+   scheduling and read/shutdown draining through semantic tests and real artifact files. The
+   base includes the merged retention/evidence changes from #671; preserve their capture contract.
+2. **Remaining shared-mechanism audit and next measured repair:** recover current consumers of
+   the D278 candidates and D298's unread rate adjustment, prioritizing the measured formation-tail
+   delivery delay below when selecting the next owned repair. The AL checkpoint writer,
+   serialized chains, keyed limiter, abort scope, UTF-8 length and repeating-run copies remain
+   outcomes until that audit selects a concrete task.
+
+Full V1c closure still requires the original scale acceptance, D281's comparison against main
+before step 1, the PostgreSQL four-arm comparison or removal of the falsified adaptive arm,
+and reconciliation of this plan's evidence. Incremental delivery must not replace those outcomes.
+
+## Delivered increments and design context
+
 Step 1 is merged (#652). The opening navigation probe of step 2 was performed on 2026-10-14 from the
 concrete group-state AppInbox registration with Go to Definition and Find Usages and reached all
 five landmarks (entry `processGroupStateMutation`; authority decode and `validate`; the guarded
@@ -192,7 +213,7 @@ wake, the completion notification and `observeSnapshot`), with one resolvable ty
 `GroupStateMutationService.write` and no search escape. The static audit, the GitHub Free review and
 decisions D194 to D204 live in
 [alm-v1c-step2-design-proposal.md](../../playground/alm/alm-v1c-step2-design-proposal.md); this plan
-binds the two slices that follow from them; step 2a is merged (#662) and step 2b is this PR.
+records their original design context; step 2a and step 2b are merged.
 
 Step 2a (the leader-ACK path and the harness amplification, D199, D200, D202) is merged as #662.
 
@@ -347,7 +368,7 @@ limiter for the ACK relay, a trailing flush with one in-flight write (snapshot p
 checkpoint writer, the artifact recorder), a serialized promise chain, a queuebox-level sibling-row
 claim shared by the presence summary and topology work, sliced JSON streaming, and a linked abort scope.
 
-### Step 2g: the API thread's per-player cost and the lane's fault tolerance (this PR)
+### Step 2g: the API thread's per-player cost and the lane's fault tolerance (merged, #670)
 
 Step 2f is merged (#669 as `80749db`). Its hosted 50 journals (proposal §4 step 2g) show the lane 11 % busy in the
 connect window and the per-player cost in request time the server does not record (17.2 s of untimed gaps per
@@ -379,6 +400,34 @@ The maintainer's rulings bind the closure: the hosted acceptance runs without se
 cohort-proportional setup allowances are binding (D280, written into the acceptance above), and one V1c-wide
 state-write comparison judges step 2 against main before step 1 at the unchanged 5 % (D281). Then the Postgres
 four-arm comparison or the adaptive arm's removal, the rewritten evidence section, and the plan's deletion.
+
+#### Performance follow-ups from the step 2h investigation
+
+1. **Formation-tail delivery — high priority, measured historical delay.** Reanalysis of the
+   step 2g journal confirms a 73 ms promotion followed by 8.95 s before its group-state notification
+   was sent; 176 other outbox sends occurred in that interval, including 99 group-state events.
+   This locates the dominant post-promotion delay in delivery, but does not isolate the cause of
+   the step 2f-to-2g change across different database/runtime settings. Recover the current
+   `GroupPresenceSummaryWorker` → state-sync entries → WS outbox → browser delta/event path,
+   then measure promotion commit, delta write, outbox claim/send and browser acceptance separately
+   on the same candidate and environment. Compare backlog age, drain throughput, statements and
+   event-loop pressure; do not interpret coalesced work creation age as time waiting for its
+   latest update. The replacement for D300 must preserve every event in causal order, each
+   event's immutable audience, revision fences, duplicate handling and replay. A latest-only
+   replacement is invalid: the current delta carries one event even when its state slice is
+   coalesced. First prove those contracts with a queued burst and late promotion; only then
+   choose event-preserving batching or a measured queue-service repair. Retain the ≤2 s
+   formation-tail target and the unchanged scale/ACK acceptance; run local 15 → 30 → 50 before
+   hosted acceptance with server timing off. Diagnostic timings do not replace that acceptance.
+2. **Recorder burst latency — low priority, regression not established.** The first twenty-pair
+   local probe showed total medians +0.2% for 1,000 small results and +2.1% for fifty larger
+   results. An independent twenty-pair process measured effectively 0% and +0.9%; paired
+   bootstrap intervals include zero in both populations. Append counts and output bytes match.
+   Keep both populations and the confirmed stalled-write improvement in the PR evidence.
+   Revisit when a representative receipt-bearing or sustained workload shows a repeatable cost:
+   separate record/serialization, batch construction, append/sync and receipt work, then profile
+   CPU/allocation before selecting a change. No speculative optimization or claimed burst
+   speedup follows from the present results; peak memory and hosted impact remain unmeasured.
 
 ## Completion and handoff
 

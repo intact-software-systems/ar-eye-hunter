@@ -10,7 +10,7 @@ interface WriteLog {
 }
 
 /** A flush whose writes either complete at once or stay open until the test finishes them. */
-function createFlush(minIntervalMs: number, writesStayOpen = false) {
+function createFlush(minIntervalMs: number, writesStayOpen = false, firstMarkDelayMs = 0) {
     const timers = createManualTimers(1_000);
     const log: WriteLog = { startedAtMs: [], completedAtMs: [] };
     const openWrites: (() => void)[] = [];
@@ -30,7 +30,7 @@ function createFlush(minIntervalMs: number, writesStayOpen = false) {
                 finish();
             });
         }
-    }, { minIntervalMs });
+    }, { minIntervalMs, firstMarkDelayMs });
     /** Completes the oldest open write and lets its settlement run. */
     const finishWrite = async (): Promise<void> => {
         openWrites.shift()?.();
@@ -46,6 +46,152 @@ async function settle(): Promise<void> {
 }
 
 describe('throttled flush', () => {
+    it('batches from the first mark without later marks postponing its deadline', async () => {
+        const { timers, log, flush } = createFlush(100, false, 250);
+
+        const first = flush.mark();
+        await timers.advance(200);
+        const joined = flush.mark();
+        await timers.advance(49);
+        expect(log.startedAtMs).toEqual([]);
+        await timers.advance(1);
+        await Promise.all([first, joined]);
+
+        expect(log.startedAtMs).toEqual([1_250]);
+        await timers.advance(1_000);
+        const afterQuiet = flush.mark();
+        await timers.advance(249);
+        expect(log.startedAtMs).toEqual([1_250]);
+        await timers.advance(1);
+        await afterQuiet;
+        expect(log.startedAtMs).toEqual([1_250, 2_500]);
+    });
+
+    it('waits for both the first mark delay and the interval between write starts', async () => {
+        const { timers, log, flush } = createFlush(400, false, 250);
+
+        void flush.mark();
+        await timers.advance(250);
+        void flush.mark();
+        await timers.advance(399);
+        expect(log.startedAtMs).toEqual([1_250]);
+        await timers.advance(1);
+        expect(log.startedAtMs).toEqual([1_250, 1_650]);
+    });
+
+    it('urgent marks bypass both delays without overlapping a stalled write', async () => {
+        const { timers, log, flush, finishWrite } = createFlush(400, true, 250);
+
+        const first = flush.mark();
+        const urgent = flush.mark(true);
+        void timers.advance(0);
+        await settle();
+        const duringWrite = flush.mark(true);
+        await timers.advance(10);
+        expect(log.startedAtMs).toEqual([1_000]);
+        expect(timers.pendingCount()).toBe(0);
+        await finishWrite();
+        await Promise.all([first, urgent]);
+        void timers.advance(0);
+        await settle();
+        expect(log.startedAtMs).toEqual([1_000, 1_010]);
+        await finishWrite();
+        await duringWrite;
+    });
+
+    it('drains scheduled work immediately and remains open for later marks', async () => {
+        const { timers, log, flush } = createFlush(400, false, 250);
+
+        const first = flush.mark();
+        await flush.drain();
+        await first;
+        expect(log.startedAtMs).toEqual([1_000]);
+        expect(timers.pendingCount()).toBe(0);
+        await flush.drain();
+        const later = flush.mark();
+        await timers.advance(399);
+        expect(log.startedAtMs).toEqual([1_000]);
+        await timers.advance(1);
+        await later;
+        expect(log.startedAtMs).toEqual([1_000, 1_400]);
+    });
+
+    it('concurrent drains join a write and include marks arriving during the drain without timers', async () => {
+        const { timers, log, flush, finishWrite } = createFlush(400, true, 250);
+
+        const first = flush.mark();
+        let drainsCompleted = 0;
+        const draining = flush.drain().then(() => drainsCompleted += 1);
+        const joined = flush.drain().then(() => drainsCompleted += 1);
+        await settle();
+        const duringDrain = flush.mark();
+        await timers.advance(10);
+        expect(timers.pendingCount()).toBe(0);
+        expect(log.startedAtMs).toEqual([1_000]);
+        await finishWrite();
+        await first;
+        expect(log.startedAtMs).toEqual([1_000, 1_010]);
+        expect(drainsCompleted).toBe(0);
+        await finishWrite();
+        await Promise.all([draining, joined, duringDrain]);
+        expect(drainsCompleted).toBe(2);
+        expect(timers.pendingCount()).toBe(0);
+        expect(log.completedAtMs).toEqual([1_010, 1_010]);
+    });
+
+    it('settles a failed drained mark while allowing later drains to succeed', async () => {
+        const timers = createManualTimers(0);
+        let attempts = 0;
+        const flush = new ThrottledFlush({
+            timers,
+            write: async () => {
+                attempts += 1;
+                if (attempts === 1) {
+                    throw new Error('disk full');
+                }
+            }
+        }, { minIntervalMs: 400, firstMarkDelayMs: 250 });
+
+        const failed = flush.mark();
+        await expect(flush.drain()).resolves.toBeUndefined();
+        await expect(failed).rejects.toThrow('disk full');
+        const recovered = flush.mark();
+        await flush.drain();
+        await expect(recovered).resolves.toBeUndefined();
+        expect(attempts).toBe(2);
+        expect(timers.pendingCount()).toBe(0);
+    });
+
+    it('publishes write and drain ownership before invoking a reentrant write callback', async () => {
+        const timers = createManualTimers(0);
+        const starts: number[] = [];
+        let nestedDrain: Promise<void> | undefined;
+        let finishFirst = () => {};
+        const firstWrite = new Promise<void>((resolve) => finishFirst = resolve);
+        const flush = new ThrottledFlush({
+            timers,
+            write: () => {
+                starts.push(timers.nowMs());
+                if (starts.length === 1) {
+                    void flush.mark();
+                    nestedDrain = flush.drain();
+                    return firstWrite;
+                }
+                return Promise.resolve();
+            }
+        }, { minIntervalMs: 400, firstMarkDelayMs: 250 });
+
+        void flush.mark();
+        const draining = flush.drain();
+        await settle();
+        expect(starts).toEqual([0]);
+        expect(timers.pendingCount()).toBe(0);
+        finishFirst();
+        await Promise.all([draining, nestedDrain]);
+        expect(starts).toEqual([0, 0]);
+        expect(timers.pendingCount()).toBe(0);
+    });
+
     it('writes at once when the interval since the last write began has already passed', async () => {
         const { timers, log, flush } = createFlush(150);
 
@@ -103,7 +249,7 @@ describe('throttled flush', () => {
                 await new Promise<void>((resolve) => setTimeout(resolve, 5));
                 completed = true;
             }
-        }, { minIntervalMs: 150 });
+        }, { minIntervalMs: 150, firstMarkDelayMs: 0 });
 
         void flush.mark();
         await timers.advance(0);
@@ -176,7 +322,7 @@ describe('throttled flush', () => {
                 attempts += 1;
                 return attempts === 1 ? Promise.reject(new Error('disk full')) : Promise.resolve();
             }
-        }, { minIntervalMs: 10 });
+        }, { minIntervalMs: 10, firstMarkDelayMs: 0 });
 
         const failed = flush.mark();
         const failedToo = flush.mark();

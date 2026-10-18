@@ -1,24 +1,12 @@
 import type { Timers } from './timers.ts';
 import { toError } from './to-error.ts';
 
-export namespace ThrottledFlush {
-    export interface Dependencies {
-        readonly timers: Timers;
-        /** The one write; it covers every mark made before it started. */
-        readonly write: () => Promise<void>;
-    }
-
-    export interface Config {
-        /** The least time between two writes' starts; an urgent mark writes at once. */
-        readonly minIntervalMs: number;
-    }
-}
-
 interface PendingWrite {
     /** Settles with the write that covers the marks made since the previous write started. */
     readonly completed: Promise<void>;
     readonly resolve: () => void;
     readonly reject: (error: Error) => void;
+    readonly firstMarkedAtMs: number;
     urgent: boolean;
     cancelTimer: (() => void) | undefined;
 }
@@ -31,16 +19,28 @@ export class ThrottledFlushStoppedError extends Error {
     }
 }
 
+export namespace ThrottledFlush {
+    export interface Dependencies {
+        readonly timers: Timers;
+        /** The one write; it covers every mark made before it started. */
+        readonly write: () => Promise<void>;
+    }
+
+    export interface Config {
+        /** The least time between two writes' starts; an urgent mark writes at once. */
+        readonly minIntervalMs: number;
+        /** Ordinary marks wait from the first mark in their group; later marks do not postpone it. */
+        readonly firstMarkDelayMs: number;
+    }
+}
+
 /**
- * Throttles marks into writes with a leading and a trailing edge: a mark made
- * while no write is in flight writes at once when `minIntervalMs` has passed
- * since the last write began, and otherwise schedules the write for that
- * write's start plus `minIntervalMs`; later marks join the scheduled write. A
- * mark made while a write is in flight schedules the next one the same way.
- * An urgent mark writes at once. One write is in flight at a time, and the
- * timer that starts a write settles with it. `stop()` drains: a scheduled
- * write runs at once, a write in flight is joined, and every mark made before
- * the drain ends gets its write.
+ * Coalesces marks into one write at a time. Ordinary writes wait for both the
+ * first mark's delay and the interval since the previous write started.
+ * Urgent marks bypass those delays. Marks during a write stay pending without
+ * timers until that write completes. A timer settles with the write it starts.
+ * Draining runs pending work immediately, includes new marks until idle, and
+ * leaves no timer. Only stop makes that drain terminal.
  */
 export class ThrottledFlush {
     private readonly dependencies: ThrottledFlush.Dependencies;
@@ -49,6 +49,7 @@ export class ThrottledFlush {
     /** The write in flight; it settles the marks it covers and never rejects. */
     private writing: Promise<void> | undefined;
     private lastWriteStartedAtMs = Number.NEGATIVE_INFINITY;
+    private draining: Promise<void> | undefined;
     private stopping = false;
     private stopped = false;
 
@@ -66,14 +67,14 @@ export class ThrottledFlush {
             return toRefusedMark();
         }
         if (this.pending === undefined) {
-            this.pending = createPendingWrite(urgent);
-            if (this.writing === undefined) {
+            this.pending = createPendingWrite(urgent, this.dependencies.timers.nowMs());
+            if (this.writing === undefined && this.draining === undefined) {
                 this.armTimer(this.pending);
             }
         }
         else if (urgent && !this.pending.urgent) {
             this.pending.urgent = true;
-            if (this.writing === undefined) {
+            if (this.writing === undefined && this.draining === undefined) {
                 this.pending.cancelTimer?.();
                 this.armTimer(this.pending);
             }
@@ -81,16 +82,34 @@ export class ThrottledFlush {
         return this.pending.completed;
     }
 
-    async stop(): Promise<void> {
+    /** Joins the current drain, including marks made until idle, without closing later recording. */
+    drain(): Promise<void> {
+        if (this.draining !== undefined) {
+            return this.draining;
+        }
+        if (this.writing === undefined && this.pending === undefined) {
+            this.stopped = this.stopping;
+            return Promise.resolve();
+        }
+        this.pending?.cancelTimer?.();
+        this.draining = Promise.resolve().then(() => this.drainPending());
+        return this.draining;
+    }
+
+    stop(): Promise<void> {
         this.stopping = true;
+        return this.drain();
+    }
+
+    private async drainPending(): Promise<void> {
         while (this.writing !== undefined || this.pending !== undefined) {
             if (this.writing === undefined) {
-                this.pending?.cancelTimer?.();
                 this.startWrite();
             }
             await this.writing;
         }
-        this.stopped = true;
+        this.draining = undefined;
+        this.stopped = this.stopping;
     }
 
     private armTimer(pending: PendingWrite): void {
@@ -101,8 +120,11 @@ export class ThrottledFlush {
         if (pending.urgent) {
             return 0;
         }
-        const sinceLastWriteMs = this.dependencies.timers.nowMs() - this.lastWriteStartedAtMs;
-        return Math.max(0, this.config.minIntervalMs - sinceLastWriteMs);
+        const earliestStartMs = Math.max(
+            pending.firstMarkedAtMs + this.config.firstMarkDelayMs,
+            this.lastWriteStartedAtMs + this.config.minIntervalMs
+        );
+        return Math.max(0, earliestStartMs - this.dependencies.timers.nowMs());
     }
 
     private startWrite(): Promise<void> {
@@ -113,14 +135,16 @@ export class ThrottledFlush {
         this.pending = undefined;
         pending.cancelTimer = undefined;
         this.lastWriteStartedAtMs = this.dependencies.timers.nowMs();
-        const writing = startWriteCovering(this.dependencies.write, pending).then(() => this.completeWrite());
+        const writing = Promise.resolve()
+            .then(() => startWriteCovering(this.dependencies.write, pending))
+            .then(() => this.completeWrite());
         this.writing = writing;
         return writing;
     }
 
     private completeWrite(): void {
         this.writing = undefined;
-        if (this.pending !== undefined && !this.stopping) {
+        if (this.pending !== undefined && this.draining === undefined) {
             this.armTimer(this.pending);
         }
     }
@@ -132,7 +156,7 @@ function toRefusedMark(): Promise<void> {
     return refused;
 }
 
-function createPendingWrite(urgent: boolean): PendingWrite {
+function createPendingWrite(urgent: boolean, firstMarkedAtMs: number): PendingWrite {
     let resolve: () => void = () => {};
     let reject: (error: Error) => void = () => {};
     const completed = new Promise<void>((resolveCompleted, rejectCompleted) => {
@@ -141,7 +165,7 @@ function createPendingWrite(urgent: boolean): PendingWrite {
     });
     // A mark nobody awaits must not raise an unhandled rejection; awaiting marks still see the failure.
     completed.catch(() => {});
-    return { completed, resolve, reject, urgent, cancelTimer: undefined };
+    return { completed, resolve, reject, firstMarkedAtMs, urgent, cancelTimer: undefined };
 }
 
 async function startWriteCovering(write: () => Promise<void>, pending: PendingWrite): Promise<void> {
