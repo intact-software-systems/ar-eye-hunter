@@ -198,6 +198,117 @@ describe('full-stack API timing stdio capture', () => {
         }
     });
 
+    it('retains only validated promotion identities through the spawned capture', async () => {
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-api-timing-'));
+        try {
+            const fixture = path.join(directory, 'test-only-child.cjs');
+            const expected = 'group=8;presence=5;version=1;state=active';
+            const planned = 'group=9;presence=6;version=2;state=active';
+            const applicationId = `application-${'a'.repeat(300)}`;
+            const promotion = {
+                type: 'rallar.timing',
+                component: 'group-topology-publication',
+                operation: 'promote',
+                status: 'ok',
+                durationMs: 3.25,
+                atEpochMs: 1792338493460,
+                serviceId: 'api-1',
+                requestId: `topology-publication:v1:apply:${
+                    JSON.stringify({
+                        groupRef: { applicationId, workspaceId: 'workspace-1', groupId: 'group-1' },
+                        formationEpoch: 2,
+                        expectedLayout: { groupRevision: 8, presenceRevision: 5, version: 1, state: 'active' }
+                    })
+                }`,
+                applicationId,
+                workspaceId: 'workspace-1',
+                groupId: 'group-1',
+                details: {
+                    expected,
+                    planned,
+                    outcome: 'promoted-newer',
+                    rejection: 'ERROR_SENTINEL',
+                    headers: { authorization: 'AUTH_SENTINEL' }
+                },
+                error: { message: 'ERROR_SENTINEL' },
+                payload: 'PAYLOAD_SENTINEL'
+            };
+            const invalid = [
+                { ...promotion, details: { ...promotion.details, planned: 'none' } },
+                { ...promotion, details: { ...promotion.details, planned: undefined } },
+                { ...promotion, details: { ...promotion.details, expected: 'group=08;presence=5;version=1;state=active' } },
+                { ...promotion, details: { ...promotion.details, planned: 'group=-1;presence=6;version=2;state=active' } },
+                { ...promotion, details: { ...promotion.details, planned: 'group=9007199254740992;presence=6;version=2;state=active' } },
+                { ...promotion, details: { ...promotion.details, planned: `${planned};extra=1` } },
+                { ...promotion, details: { ...promotion.details, expected: 'group=8;presence=5;version=1;state=unknown' } },
+                { ...promotion, details: { ...promotion.details, outcome: 'future-outcome' } },
+                { ...promotion, groupId: undefined },
+                { ...promotion, status: 'error' },
+                { ...promotion, durationMs: null }
+            ];
+            const lines = [
+                promotion,
+                { ...promotion, details: { ...promotion.details, expected: 'none', outcome: 'promoted' } },
+                { ...promotion, details: { ...promotion.details, planned: 'none', outcome: 'rejected' } },
+                ...invalid
+            ]
+                .map((record) => JSON.stringify(record)).join('\n') +
+                '\n' +
+                JSON.stringify(promotion).replace('"durationMs":3.25', '"durationMs":1e309') + '\n';
+            expect(promotion.requestId.length).toBeGreaterThan(512);
+            await writeFile(fixture, `process.stdout.write(${JSON.stringify(lines)});`);
+
+            expect(runCapture({ directory, fixture, appInboxPhaseTiming: 'true' }).status).toBe(0);
+            const { records, summary } = await readCapture(directory);
+            expect(records.trim().split('\n').map(toTimingCaptureObject)).toEqual([
+                {
+                    type: 'rallar.timing',
+                    component: 'group-topology-publication',
+                    operation: 'promote',
+                    status: 'ok',
+                    durationMs: 3.25,
+                    atEpochMs: 1792338493460,
+                    serviceId: 'api-1',
+                    applicationId,
+                    workspaceId: 'workspace-1',
+                    groupId: 'group-1',
+                    details: { expected, planned, outcome: 'promoted-newer' }
+                },
+                {
+                    type: 'rallar.timing',
+                    component: 'group-topology-publication',
+                    operation: 'promote',
+                    status: 'ok',
+                    durationMs: 3.25,
+                    atEpochMs: 1792338493460,
+                    serviceId: 'api-1',
+                    applicationId,
+                    workspaceId: 'workspace-1',
+                    groupId: 'group-1',
+                    details: { expected: 'none', planned, outcome: 'promoted' }
+                },
+                {
+                    type: 'rallar.timing',
+                    component: 'group-topology-publication',
+                    operation: 'promote',
+                    status: 'ok',
+                    durationMs: 3.25,
+                    atEpochMs: 1792338493460,
+                    serviceId: 'api-1',
+                    applicationId,
+                    workspaceId: 'workspace-1',
+                    groupId: 'group-1',
+                    details: { expected, planned: 'none', outcome: 'rejected' }
+                }
+            ]);
+            expect(records).not.toMatch(/requestId|formationEpoch|v1:apply|PAYLOAD_SENTINEL|AUTH_SENTINEL|ERROR_SENTINEL|headers|rejection/);
+            expect(summary).toMatchObject({ retainedRecords: 3, rejectedLines: 12, observation: 'partial', captureFailure: null });
+        }
+        finally {
+            await rm(directory, { recursive: true, force: true });
+        }
+    });
+
     it('represents an empty clean stream without claiming that requests completed', async () => {
         const directory = await mkdtemp(path.join(tmpdir(), 'rallar-api-timing-'));
         try {
