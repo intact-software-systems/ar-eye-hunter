@@ -2734,7 +2734,7 @@ outcomes completed by subsequent reviewed evidence.
 | Admission and retention source changes | Commit-before-notification, shared write-set, durable result release, complete artifact reading and reviewed ownership corrections are delivered. |
 | Console and worker capture | Reviewed Copy/Load/two same-session Native runs, Console Native application, lifecycle/export, checkpoint preservation, local/deployed HOST, Actions RUN and selected external/spawned/mixed/no-spawn outcomes retain their documented scopes. Partial Native coverage, unknown durable origin and cancellation-checkpoint limits remain explicit. |
 | B07 | Authorized PostgreSQL/GitHub Free acquisition is complete and descriptive; its controlled repeat remains noisy. The failed 50-agent diagnostics are preserved separately from the accepted generic two-agent no-spawn witness. |
-| E4 | Explicitly selected by the human. Extend the existing B06 capture owner for PostgreSQL, then acquire and independently review its primary and only controller-required repeat. No E4 result or database-backed optimization conclusion yet. |
+| E4 | Capture support is published. The first acquisition on `4a1ff4d448d5` failed at the default warmup because browser startup omitted E4 production proof; thirteen attempts were causally not run, with no repeat or accepted metrics. Correct that startup boundary, then acquire and independently review the corrected candidate under unchanged criteria. |
 | E3 | Canonical primary fails heap acceptance; no repeat was selected. Further heap investigation is deferred to #672. Zero accepted cohorts. |
 | Delivery and final conclusion | Reviewed source is published in PR #671. Native review/integration and the unresolved E3 gate remain distinct from completed non-heap work. No optimization ranking or overall baseline completion is claimed. |
 
@@ -2811,12 +2811,20 @@ E1/E2/B07 retain their terminal inconclusive performance conclusions; no second
 repeat or stable cross-tier ranking is justified. Historical pending statements
 do not require another acquisition.
 
+The first E4 acquisition, [run 39101724795](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/39101724795),
+completed PostgreSQL setup and migration but failed production evidence writing
+at the first default warmup. The matrix and artifact-bundle assertions passed;
+production-serving evidence was absent. Its one failure, thirteen causal not-run
+outcomes and no-repeat decision remain preserved. It supplies no accepted E4
+metrics or retention conclusion.
+
 The next two useful slices are:
 
-1. Extend the existing B06 runner, CLI, production evidence and workflow owners
-   to admit explicit `E4-pg` capture with isolated PostgreSQL and the repository
-   migration command. Keep E3 the default and the permanent observation stream
-   E3-only. Review and validate the complete affected support surface.
+1. Correct the actual browser startup boundary that still restricted production
+   proof to E3, despite the published E4 runner support. Reproduce the omission
+   through actual admission and browser-entry composition, preserve original
+   proof rejection, and independently review the correction. Keep the first E4
+   acquisition failure on `4a1ff4d448d5` and its original artifacts separate.
 2. Acquire E4 on the exact reviewed candidate: three warmups and eleven retained
    attempts, including its normal 100-cycle retention case. Run only the repeat
    selected by the existing controller. Preserve failed attempts, full event

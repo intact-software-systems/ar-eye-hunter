@@ -1,9 +1,8 @@
-import { resolveRallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
-
 import {
     toRallarBlackBoxRoutineBrowserDiagnostics,
     type RallarBlackBoxRoutineBrowserDiagnostics
 } from '@shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts';
+import { resolveRallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '@shared-test/rallar-bb-test/client-defaults.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
@@ -69,7 +68,7 @@ export const rtcCaptureMode: RtcSignalingDiagnostics.CaptureMode | undefined = p
 );
 
 const productionAttempt = await loadLiveRtcPerformanceAttempt({ repoRoot: process.cwd(), environment: process.env });
-const productionBuild = productionAttempt?.locator.environmentId === 'E3-memory'
+const productionBuild = productionAttempt
     ? await readDefaultFullStackRtcServedBuild(productionAttempt, {
         buildRoot: process.env.RALLAR_BLACK_BOX_RTC_BUILD_ROOT ?? '',
         apiBaseUrl: apiBaseUrl ?? '',
