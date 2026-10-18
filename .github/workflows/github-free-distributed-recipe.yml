@@ -418,11 +418,28 @@ jobs:
               echo "::error::Registering ${agent_id} failed before an HTTP response." >&2
               exit 1
             fi
-            code="$(jq -r '.code // empty' "${response_file}" 2>/dev/null || true)"
+            existing_user=false
+            if [[ "${status}" == 409 ]]; then
+              existing_user="$(node --import tsx --input-type=module - "${response_file}" 2>/dev/null <<'NODE' || true
+          import { readFileSync } from 'node:fs';
+          import { decodeApiMutationFailure } from './packages/shared/api/mutation/api-mutation-failure.ts';
+          try {
+            const failure = decodeApiMutationFailure(JSON.parse(readFileSync(process.argv[2], 'utf8')));
+            const existing = failure?.status === 409 && (
+              failure.code === 'auth-user-exists' ||
+              (failure.code === 'auth-mutation-rejected' && failure.message === 'Auth username already exists')
+            );
+            process.stdout.write(String(existing));
+          } catch {
+            process.stdout.write('false');
+          }
+          NODE
+              )"
+            fi
             rm -f "${response_file}"
             if [[ "${status}" == 201 ]]; then
               echo "Registered ${agent_id}."
-            elif [[ "${status}" == 409 && "${code}" == auth-user-exists ]]; then
+            elif [[ "${status}" == 409 && "${existing_user}" == true ]]; then
               echo "${agent_id} is already registered."
             else
               echo "::error::Registering ${agent_id} returned HTTP ${status}." >&2
