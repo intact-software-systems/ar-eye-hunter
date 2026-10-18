@@ -389,7 +389,19 @@ were normalized. Both have semantic RED/GREEN coverage; 37 affected tests and
 eleven lifecycle scenarios pass after the fixes. Local spec and quality review
 now approve the prerequisite. Live preflight remains pending. The two published CI
 failures have local fixes, but require verification on the next published head.
-No hosted diagnostic or restoration has run through this path yet.
+The first read-only live inspect failed at database projection: PostgreSQL emits
+OID values as JSON strings, while the strict output contract requires numbers.
+Explicit SQL casts now produce numeric OIDs, with real PostgreSQL RED/GREEN
+coverage and unchanged strict validation. Integration review also proved that
+the preceding optional TURN-secret sync replaced unrelated effective settings
+before rollout validation. Its existing writer now preserves those settings, with
+actual sync through preflight and rollout coverage; 45 focused tests and twelve
+lifecycle scenarios pass. The newly touched manual prompt also has a corrected
+output-channel defect and eight passing focused tests. Independent integration
+review approves the corrected source; a fresh live inspect must confirm the
+actual prerequisites before hosted mutation. The
+failed inspect skipped every mutating step; no hosted diagnostic or restoration
+has run through this path yet.
 
 ## Validation and delivery
 
