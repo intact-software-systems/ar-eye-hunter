@@ -15,9 +15,9 @@ Use the current repository owners, nearby tests and examples to recover each act
 this plan is neither a substitute for source navigation nor a delivery ledger. No new dependencies,
 runner, evaluator, generic diagnostic framework or duplicate policy engine are required.
 
-Step 1 and step 2a through step 2g are merged. Step 2h continues the shared-mechanism consolidation
-and V1c acceptance closure. The remaining shared-mechanism audit and next measured repair form the
-next increment; the full V1c acceptance and comparative evidence remain the following outcome.
+The artifact-flush consolidation is merged as #674. The next increment prioritizes the
+formation-tail delivery delay, with current-path measurement and a test-first repair at its owner.
+The remaining shared-mechanism audit, full V1c acceptance and comparative evidence remain open.
 Delivery of one consolidation does not make the full V1c outcome complete or waive its remaining gates.
 
 The live pull request owns delivery state. Git history, immutable ignored evidence and the
@@ -32,11 +32,18 @@ and V1d:
   `performance-analysis` skill (static audit → measurement plan → runtime validation → one change
   at a time) before selecting a repair. Problems exist in both Rallar production code and the
   black-box shared-test harness; both must be resolved, neither excuses the other.
+  This is a standing requirement for the current and following slices: identify, measure,
+  propose and validate repairs wherever the measured path crosses production or harness code.
+  Record unresolved findings and their next measurement; a passing workload does not erase a
+  demonstrated performance problem.
 - The queuebox engine (`packages/shared/queuebox`, the server AppInbox built on it and the browser
   IndexedDB engine) is the event-handling core. It must be quick, responsive, smooth and fault
   tolerant. Scale exposes intermittent faults, so fault tolerance (stale claims, lease expiry,
   duplicate delivery, retry exhaustion, breaker interaction, unbounded retention, wedged waits)
   is a first-class acceptance quality beside latency.
+  Increasing scale must exercise recovery from intermittent failures as well as healthy
+  throughput: prove bounded work, continued progress and correct eventual outcomes under
+  faults, without losing events, weakening authority or hiding exhausted retries.
 - The 15/30/50 recipes run locally first. The GitHub workflow `Run GitHub Free Distributed
   Recipe` is used only after a local pass; where it cannot carry a cohort, the plan states what
   is needed instead of adapting the workload.
@@ -188,11 +195,13 @@ final evidence reconciliation must preserve workload provenance and the unwaived
 
 ## Next two useful slices
 
-1. **Artifact flush consolidation:** add explicit first-mark delay and reusable drain to the
-   existing shared `ThrottledFlush`, then replace the recorder's timer loop. Preserve its durable
-   capture receipts, per-run overflow, pending cap and file/delete ordering. Prove stalled-write
-   scheduling and read/shutdown draining through semantic tests and real artifact files. The
-   base includes the merged retention/evidence changes from #671; preserve their capture contract.
+1. **Formation-tail delivery:** measure the current promotion-to-browser path, then use TDD
+   to repair the positively located queue-service bottleneck. Reuse existing queuebox and ALM
+   mechanisms; preserve every event, frozen audiences, causal fences and failure recovery.
+   Compare the same queued burst with a late promotion before and after the repair, including
+   stale claims and transient failures at the affected boundary. Validate affected packages
+   and the unchanged local 15 → 30 → 50 workload before hosted timing-off acceptance. Keep the
+   ≤2 s formation-tail target explicit; report any remaining delay without weakening acceptance.
 2. **Remaining shared-mechanism audit and next measured repair:** recover current consumers of
    the D278 candidates and D298's unread rate adjustment, prioritizing the measured formation-tail
    delivery delay below when selecting the next owned repair. The AL checkpoint writer,
