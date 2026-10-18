@@ -561,7 +561,7 @@ export function buildLiveRtcRetentionCohort(
             retainedAttemptCount: samples.length,
             requiredHeapBreachCount,
             heapBreachingSampleIds,
-            warnings,
+            warnings: warnings.map((warning) => ({ ...warning })),
             stateDriftSampleIds,
             failedMemberSampleIds
         },

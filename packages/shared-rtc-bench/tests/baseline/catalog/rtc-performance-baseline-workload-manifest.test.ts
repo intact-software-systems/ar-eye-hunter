@@ -9,7 +9,7 @@ import {
 } from '../../../baseline/catalog/rtc-baseline-workload-manifest.ts';
 import type { RtcBaselineJson } from '../../../baseline/contracts/rtc-baseline-contracts.ts';
 import { canonicalizeRtcBaselineRawReferences, classifyRtcBaselineArtifactPath } from '../../../baseline/evidence/rtc-baseline-evidence-layout.ts';
-import { evaluateRtcBaselineWorkloadRepeatOutcome, rtcBaselineRepeatWorkloadIds } from '../../../baseline/evidence/rtc-baseline-statistics.ts';
+import { evaluateRtcBaselineWorkloadRepeatOutcome, rtcBaselineTriggeredWorkloads } from '../../../baseline/evidence/rtc-baseline-statistics.ts';
 
 const primaryRequest = {
     schema: 'rallar.rtc-baseline.capture-request.v1' as const,
@@ -323,10 +323,18 @@ describe('RTC baseline workload manifests', () => {
         const b01 = { ...metric, workloadId: 'RTC-B01' as const, coefficientOfVariation: 0.05 };
         const b02 = { ...metric, workloadId: 'RTC-B02' as const, coefficientOfVariation: 0.3 };
         expect(
-            rtcBaselineRepeatWorkloadIds([{ ...b01, coefficientOfVariation: 0.4 }, b02], 'local', [
-                'RTC-B02',
-                'RTC-B01'
-            ])
+            rtcBaselineTriggeredWorkloads({
+                environment: { environmentId: 'E1-local', observation: { host: { executionContext: 'local' } } },
+                manifest: { workloadIds: ['RTC-B02', 'RTC-B01'] },
+                summary: {
+                    metricSummaries: [
+                        { ...b01, coefficientOfVariation: 0.4 },
+                        b02,
+                        { ...b01, coefficientOfVariation: 0.4 },
+                        { ...b02, workloadId: 'RTC-B03' }
+                    ]
+                }
+            })
         ).toEqual(['RTC-B02', 'RTC-B01']);
         expect(
             evaluateRtcBaselineWorkloadRepeatOutcome({
