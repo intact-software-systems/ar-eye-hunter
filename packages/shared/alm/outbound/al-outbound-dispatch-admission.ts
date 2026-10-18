@@ -10,6 +10,7 @@ import {
 } from '../../al-contracts/al-message-persistence-validation.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import { BoundedConcurrencyAdmission } from '../../resilience/bounded-concurrency-admission.ts';
 import { toError } from '../../resilience/to-error.ts';
 import { RetryableConflictError } from '../../resilience/try-with-policy.ts';
 import { decodeALAdmissionValue } from '../al-admission-decoder.ts';
@@ -59,6 +60,27 @@ import {
 } from './compute-al-outbound-dispatch.ts';
 import { validateALOutboundDispatch } from './validate-al-outbound-dispatch.ts';
 
+/** What one dispatch decided before its write: a result already, or a bundle its commit writes. */
+type ALOutboundDispatchDecision<TPrepared> =
+    | Readonly<{ kind: 'settled'; result: ALOutboundDispatchAdmission.Result<TPrepared>; }>
+    | ALOutboundCommitDecision<TPrepared>;
+
+interface ALOutboundCommitDecision<TPrepared> {
+    readonly kind: 'commit';
+    readonly input: ComputeALOutboundDispatchInput<TPrepared>;
+    readonly computed: ALOutboundComputedDto<TPrepared>;
+    readonly bundle: ALOutboundCommitBundle<TPrepared>;
+}
+
+/** One dispatch of a group, with the phases its one `commit-phases` event reports. */
+interface ALOutboundGroupMember<TPrepared> {
+    readonly dispatch: ALOutboundDispatchAdmission.Input<TPrepared>;
+    readonly phases: ALOutboundCommitPhases;
+}
+
+/** Two independent decision reads share backend batches without occupying the server's whole connection pool. */
+const AL_OUTBOUND_GROUP_READ_CONCURRENCY = 2;
+
 export namespace ALOutboundDispatchAdmission {
     export interface Result<TPrepared> {
         readonly computed: ALOutboundComputedDto<TPrepared>;
@@ -75,9 +97,9 @@ export namespace ALOutboundDispatchAdmission {
         readonly options: ALOutboundCommitDispatchOptions;
     }
 
-    /** One sender's serialized commit chain, and the origin of the commit currently at its end. */
+    /** One sender's admission and the origin of its most recently queued commit. */
     export interface SenderCommitQueue {
-        readonly tail: Promise<void>;
+        readonly admission: BoundedConcurrencyAdmission;
         readonly origin: ALOutboundCommitOrigin;
     }
 
@@ -106,24 +128,6 @@ export namespace ALOutboundDispatchAdmission {
         readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
         readonly settlements: ALOutboundSettlementEmitter;
     }
-}
-
-/** What one dispatch decided before its write: a result already, or a bundle its commit writes. */
-type ALOutboundDispatchDecision<TPrepared> =
-    | Readonly<{ kind: 'settled'; result: ALOutboundDispatchAdmission.Result<TPrepared>; }>
-    | ALOutboundCommitDecision<TPrepared>;
-
-interface ALOutboundCommitDecision<TPrepared> {
-    readonly kind: 'commit';
-    readonly input: ComputeALOutboundDispatchInput<TPrepared>;
-    readonly computed: ALOutboundComputedDto<TPrepared>;
-    readonly bundle: ALOutboundCommitBundle<TPrepared>;
-}
-
-/** One dispatch of a group, with the phases its one `commit-phases` event reports. */
-interface ALOutboundGroupMember<TPrepared> {
-    readonly dispatch: ALOutboundDispatchAdmission.Input<TPrepared>;
-    readonly phases: ALOutboundCommitPhases;
 }
 
 /** Owns optimistic read/compute/commit; ordinary data serializes by sender, while initial controls bypass that wait. */
@@ -281,17 +285,25 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         });
     }
 
-    /** Every optimistic group decision; `undefined` once one member settles before a write. */
+    /** All bounded reads settle before a group write or fresh single-member fallback may start. */
     private async readGroupDecisions(
         members: readonly ALOutboundGroupMember<TPrepared>[]
     ): Promise<readonly ALOutboundCommitDecision<TPrepared>[] | undefined> {
+        const reading = new BoundedConcurrencyAdmission({ maxConcurrent: AL_OUTBOUND_GROUP_READ_CONCURRENCY });
+        const reads = await Promise.allSettled(
+            members.map(({ dispatch, phases }) =>
+                reading.admit(() => this.readMemberDispatchDecision(dispatch, phases))
+            )
+        );
         const decisions: ALOutboundCommitDecision<TPrepared>[] = [];
-        for (const { dispatch, phases } of members) {
-            const decision = await this.readMemberDispatchDecision(dispatch, phases);
-            if (decision.kind === 'settled') {
+        for (const read of reads) {
+            if (read.status === 'rejected') {
+                throw toError(read.reason);
+            }
+            if (read.value.kind === 'settled') {
                 return undefined;
             }
-            decisions.push(decision);
+            decisions.push(read.value);
         }
         return decisions;
     }
@@ -579,31 +591,27 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         const senderId = dispatch.msg.id.senderId;
         const origin = dispatch.origin;
         const existing = this.commitQueuesBySenderId.get(senderId);
-        const previous = existing?.tail ?? Promise.resolve();
+        const queue = {
+            admission: existing?.admission ?? new BoundedConcurrencyAdmission({ maxConcurrent: 1 }),
+            origin
+        };
+        this.commitQueuesBySenderId.set(senderId, queue);
         const waitStartedAtMs = this.readNowMs();
-        let release: (() => void) | undefined;
-        const gate = new Promise<void>((resolve) => {
-            release = resolve;
-        });
-        const tail = previous.catch(() => undefined).then(() => gate);
-        this.commitQueuesBySenderId.set(senderId, { tail, origin });
-
-        await previous.catch(() => undefined);
-        writeALOutboundRuntimeDiagnostic(this.dependencies.diagnostics, {
-            kind: 'sender-queue-wait',
-            senderId,
-            origin,
-            queued: existing !== undefined,
-            queuedBehindOrigin: existing?.origin ?? 'none',
-            durationMs: this.elapsedSince(waitStartedAtMs)
-        });
-
         try {
-            return await this.withCrossContextCommitLock(senderId, origin, task);
+            return await queue.admission.admit(() => {
+                writeALOutboundRuntimeDiagnostic(this.dependencies.diagnostics, {
+                    kind: 'sender-queue-wait',
+                    senderId,
+                    origin,
+                    queued: existing !== undefined,
+                    queuedBehindOrigin: existing?.origin ?? 'none',
+                    durationMs: this.elapsedSince(waitStartedAtMs)
+                });
+                return this.withCrossContextCommitLock(senderId, origin, task);
+            });
         }
         finally {
-            release?.();
-            if (this.commitQueuesBySenderId.get(senderId)?.tail === tail) {
+            if (this.commitQueuesBySenderId.get(senderId) === queue) {
                 this.commitQueuesBySenderId.delete(senderId);
             }
         }
@@ -717,7 +725,7 @@ function toALOutboundRequestedMessage<TPrepared>(read: ALOutboundMessageReadDto<
     return read.orderingHead === undefined ? read.msg : toALSequenceMintComparableMessage(read.originalMsg, read.msg);
 }
 
-/** Members read the version of the sender one after another, so a version that moved between them splits the group. */
+/** Independent reads must agree on the sender version before their bundles can share one commit fence. */
 function hasOneALOutboundSenderVersion<TPrepared>(decisions: readonly ALOutboundCommitDecision<TPrepared>[]): boolean {
     const [first] = decisions;
     return decisions.every(({ bundle }) =>

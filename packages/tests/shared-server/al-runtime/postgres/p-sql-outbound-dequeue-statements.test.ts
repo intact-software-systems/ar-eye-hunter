@@ -45,7 +45,7 @@ interface PGliteStatementCounts {
 afterEach(() => vi.restoreAllMocks());
 
 describe('the PostgreSQL outbound lane on a dequeued row', () => {
-    // Before step 2g one dequeued row with one prepared send cost 33 statements, 19 of them
+    // Unbatched reads of one dequeued row with one prepared send cost 33 statements, 19 of them
     // autocommit reads (13 point reads of state rows, 6 queue rows, 2 of them the claimed row itself).
     it('reads each admission stage in one statement per store, and the claimed row never again', async () => {
         const storage = await createPSqlAdmissionTestStorage();
@@ -63,7 +63,7 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
         expect(counts()).toEqual({ autocommit: 8, transactions: 5, inTransaction: 10 });
     });
 
-    // Before step 2g every dequeued row committed alone: ten admission transactions and ten sender versions.
+    // Committing every dequeued row alone costs ten admission transactions and ten sender versions.
     it('commits the dequeued rows of one sender in one batch as one admission transaction and one version bump', async () => {
         const storage = await createPSqlAdmissionTestStorage();
         const { runtime, sent, outbox, admissionStore } = createDequeueLane(storage);
@@ -107,8 +107,8 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
 
         expect(sent.map((message) => message.id.msgId).sort()).toEqual(rows.map(toMsgId).sort());
         expect(maxInFlight).toBe(2);
-        // One at a time cost 62 autocommit statements here.
-        expect(counts()).toEqual({ autocommit: 57, transactions: 6, inTransaction: 74 });
+        // Serial decision reads cost 57 autocommit statements after the front reads were already paired.
+        expect(counts()).toEqual({ autocommit: 47, transactions: 6, inTransaction: 74 });
     });
 
     it('commits each row alone when two rows of the group write one supersedence track', async () => {
