@@ -444,6 +444,7 @@ function createBlackBoxBrowserTransportComposition(
     });
     const realtime = createBrowserRealtimeCoreComposition({
         runtime: foundation.runtime,
+        transportRuntime: foundation.transportRuntime,
         state,
         session: session.session
     });

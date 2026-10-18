@@ -2727,16 +2727,16 @@ Current acceptance is summarized below. The later numbered task snapshots are
 historical implementation records; their pending statements do not reopen
 outcomes completed by subsequent reviewed evidence.
 
-| Outcome | Current disposition |
-| --- | --- |
-| E1 / B01–B04 | Fresh complete primary and single controlled repeat pass correctness, accounting and canonical validation; performance remains inconclusive under the unchanged noise rule. No second repeat. |
-| E2 / browser observations | Bounded reconciliation is complete: 37 verified archives, 448 matching summaries, 35 separate populations. No pooling or stable cross-tier ranking is justified. |
-| Admission and retention source changes | Commit-before-notification, shared write-set, durable result release, complete artifact reading and reviewed ownership corrections are delivered. |
-| Console and worker capture | Reviewed Copy/Load/two same-session Native runs, Console Native application, lifecycle/export, checkpoint preservation, local/deployed HOST, Actions RUN and selected external/spawned/mixed/no-spawn outcomes retain their documented scopes. Partial Native coverage, unknown durable origin and cancellation-checkpoint limits remain explicit. |
-| B07 | Authorized PostgreSQL/GitHub Free acquisition is complete and descriptive; its controlled repeat remains noisy. The failed 50-agent diagnostics are preserved separately from the accepted generic two-agent no-spawn witness. |
-| E4 | Reviewed readiness correction `09b6e7579149` passes all ten default/all-scenarios attempts and progresses through nineteen retention reconnects. Cycle 20 fails on ICE configuration HTTP 429; three retained attempts are not run, with no repeat or accepted primary. All 184 captured result roots have verified release. Preserve all three failed acquisitions and resolve the ICE configuration lifetime decision without changing criteria. |
-| E3 | Canonical primary fails heap acceptance; no repeat was selected. Further heap investigation is deferred to #672. Zero accepted cohorts. |
-| Delivery and final conclusion | Reviewed source is published in PR #671. Native review/integration and the unresolved E3 gate remain distinct from completed non-heap work. No optimization ranking or overall baseline completion is claimed. |
+| Outcome                                | Current disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| E1 / B01–B04                           | Fresh complete primary and single controlled repeat pass correctness, accounting and canonical validation; performance remains inconclusive under the unchanged noise rule. No second repeat.                                                                                                                                                                                                                                                                                          |
+| E2 / browser observations              | Bounded reconciliation is complete: 37 verified archives, 448 matching summaries, 35 separate populations. No pooling or stable cross-tier ranking is justified.                                                                                                                                                                                                                                                                                                                       |
+| Admission and retention source changes | Commit-before-notification, shared write-set, durable result release, complete artifact reading and reviewed ownership corrections are delivered.                                                                                                                                                                                                                                                                                                                                      |
+| Console and worker capture             | Reviewed Copy/Load/two same-session Native runs, Console Native application, lifecycle/export, checkpoint preservation, local/deployed HOST, Actions RUN and selected external/spawned/mixed/no-spawn outcomes retain their documented scopes. Partial Native coverage, unknown durable origin and cancellation-checkpoint limits remain explicit.                                                                                                                                     |
+| B07                                    | Authorized PostgreSQL/GitHub Free acquisition is complete and descriptive; its controlled repeat remains noisy. The failed 50-agent diagnostics are preserved separately from the accepted generic two-agent no-spawn witness.                                                                                                                                                                                                                                                         |
+| E4                                     | Browser ICE reuse at `8ea05de55c0e` completes all fourteen individual attempts, including 100 cycles in all four retention executions. All three retained attempts breach the unchanged heap criterion (40.25–42.27 MiB growth); the primary fails and no repeat is selected. Independent packet review verifies original evidence, release and failed-acceptance classification. Earlier startup, readiness and ICE429 failures remain separate. Heap investigation remains deferred. |
+| E3                                     | Canonical primary fails heap acceptance; no repeat was selected. Further heap investigation is deferred to #672. Zero accepted cohorts.                                                                                                                                                                                                                                                                                                                                                |
+| Delivery and final conclusion          | Reviewed source is published in PR #671. Native review/integration and the unresolved E3 gate remain distinct from completed non-heap work. No optimization ranking or overall baseline completion is claimed.                                                                                                                                                                                                                                                                         |
 
 ### Historical task snapshots
 
@@ -2838,24 +2838,39 @@ nor completed settled-state acceptance can be evaluated. Three retained attempts
 are causally not run; no repeat or accepted primary follows. The seventeen partial
 metric summaries remain descriptive. All three failed acquisitions stay separate.
 
-The next two useful slices are:
+Browser ICE reuse at `8ea05de55c0e` passed independent source review. Its
+[complete E4 acquisition](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/39110663949)
+passes all fourteen individual attempts, including the warmup and all three
+retained 100-cycle runs. The previous ICE429 does not recur. The retained cohort
+fails the unchanged heap criterion in all three attempts: 41.60, 40.25 and
+42.27 MiB of post-GC growth. No repeat is selected and no metrics are accepted.
+All checkpoint series reach cycle 100. The canonical validator rejects only the
+failed finalized outcome. Independent review verifies all fourteen production
+and recording proofs, 132 checkpoint-agent continuity readings, twenty exact
+metric summaries and 3,111 released roots across all four retention executions.
+It confirms no settled peer/lane/timer drift and the exact failed heap cohort. These results do not attribute code/non-code growth or justify another
+heap investigation. Preserve this fourth E4 population separately.
 
-1. Implement the approved browser-side ICE configuration reuse: one current value
-   owned by the browser runtime through the existing shared cache, with no keyed
-   map or client/session/credential keys. Ordinary reconnect and token refresh
-   preserve server-valid configuration; API-target changes and retired pending
-   acquisitions cannot carry values into a later runtime generation. Keep normal
-   authentication and fresh transport construction. Test expiry, cancellation and
-   reconnect behavior, then independently review the correction. Server caching,
-   E4's request budget and workload timing remain unchanged.
-2. After an approved, tested and independently reviewed correction, acquire E4
-   on the exact candidate: three warmups and eleven retained attempts, including
-   its normal 100-cycle retention case. Run only the repeat selected by the
-   existing controller. Preserve full event history, failed attempts and original
-   artifacts; independently review correctness, noise and acceptance.
+The approved browser-only `rallar.rtc.refreshIceConfig()` operation is implemented
+and independently reviewed. It invalidates the completed browser value and fetches
+the normal authenticated endpoint, with timeout, cancellation and currentness
+protection. It reuses the shared cache, does not bypass server caching and does
+not connect or change existing peers. Nineteen new refresh tests and twenty-three
+reuse tests pass, along with affected public/package checks. The test-only
+reconnect-fixture correction at `389b346463ec` also passes the hosted Branch
+Release Gate. The new API's full isolated build/CI result remains a delivery gate.
 
-Publish both outcomes through the existing PR with the E3 follow-up visible.
-No default-branch commit, push or administrator merge is authorized.
+The remaining independent non-heap work is publication and normal PR delivery of
+this reviewed API and the independently reviewed E4 outcome. Complete that gate
+through the existing PR, retaining any actual CI failure and correcting it at its
+owner. No new E4 acquisition or repeat is selected merely because the API changed.
+There is no additional independent non-heap implementation slice selected.
+
+Heap investigation remains the final deferred point in the overall plan, tracked
+by the existing follow-up. E3 and E4 acceptance remain failed under their unchanged
+criteria; neither conditional sequencing nor completed correctness/evidence work
+makes those environments pass. No default-branch commit, push or administrator
+merge is authorized.
 
 No additional optimization is justified by noisy measurements or incomplete
 attribution. Prefer existing shared libraries and direct ownership. Retain no

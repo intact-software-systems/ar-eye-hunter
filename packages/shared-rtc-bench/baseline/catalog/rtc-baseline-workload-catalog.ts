@@ -435,6 +435,8 @@ const fullStackSourcePaths = [
     'packages/shared-web/browser/composition/browser-session-composition.ts',
     'packages/shared-web/browser/composition/create-rallar-facade.ts',
     'packages/shared-web/browser/connection/browser-transport-runtime.ts',
+    'packages/shared-web/browser/rtc/browser-rallar-rtc-controller.ts',
+    'packages/shared-web/browser/rallar-rtc-facade.ts',
     'packages/shared-web/browser/connection/connection-http-api.ts',
     'packages/shared-web/browser/api-client-config.ts',
     'packages/shared-web/browser/messages/browser-resync-recovery.ts',

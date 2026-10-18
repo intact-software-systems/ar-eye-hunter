@@ -1,6 +1,6 @@
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarWsStatus } from '@shared-web/browser/rallar-realtime-facade.ts';
-import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
+import type { RallarRtcFacade, RallarRtcIceConfigRefreshOptions } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { BrowserRoomTransportTarget } from '@shared-web/browser/rooms/room-group-state-translation.ts';
 import { BrowserRtcDiagnosticsRuntime } from '@shared-web/browser/rtc-diagnostics/browser-rtc-diagnostics-runtime.ts';
@@ -24,6 +24,7 @@ interface BrowserRtcRuntimes {
 
 export namespace BrowserRallarRtcController {
     export interface Input {
+        refreshIceConfig(options?: RallarRtcIceConfigRefreshOptions): Promise<void>;
         readMiddleware(): ApiMiddleware | undefined;
         readSession(): AuthSession | undefined;
         readWsStatus(): RallarWsStatus;
@@ -49,7 +50,7 @@ export class BrowserRallarRtcController {
     public constructor(input: BrowserRallarRtcController.Input) {
         const runtimes = createBrowserRtcRuntimes(input);
         this.lifecycle = runtimes.lifecycle;
-        this.operations = createBrowserRtcOperations(runtimes);
+        this.operations = createBrowserRtcOperations(runtimes, input);
     }
 }
 
@@ -98,7 +99,8 @@ function createBrowserRtcRuntimes(
 }
 
 function createBrowserRtcOperations(
-    runtimes: BrowserRtcRuntimes
+    runtimes: BrowserRtcRuntimes,
+    input: BrowserRallarRtcController.Input
 ): RallarRtcFacade {
     return {
         status: (options) => runtimes.status.read(options),
@@ -122,6 +124,7 @@ function createBrowserRtcOperations(
         peerIdsWithNoReconnectableLanes: () => runtimes.status.peerIdsWithNoReconnectableLanes(),
         readyPeerIds: (laneId) => runtimes.status.readyPeerIds(laneId),
         diagnostics: async (options) => await runtimes.diagnostics.read(options),
+        refreshIceConfig: input.refreshIceConfig,
         restartIce: async (peerId) => await runtimes.recovery.restartIce(peerId),
         reconnectPeer: async (peerId, options) => await runtimes.recovery.reconnectPeer(peerId, options)
     };

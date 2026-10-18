@@ -87,7 +87,12 @@ function createBrowserFacadeCompositions(
 ): BrowserFacadeCompositions {
     const { session, stateEvents, messaging } = createBrowserSessionMessaging(foundation, state, delivery);
     const sessionPort = session.session;
-    const realtime = createBrowserRealtimeCoreComposition({ runtime: foundation.runtime, state, session: sessionPort });
+    const realtime = createBrowserRealtimeCoreComposition({
+        runtime: foundation.runtime,
+        transportRuntime: foundation.transportRuntime,
+        state,
+        session: sessionPort
+    });
     const media = createBrowserMediaComposition({ session: sessionPort });
     const rooms = createBrowserRoomsComposition({
         state,

@@ -207,6 +207,7 @@ export type {
     RallarRtcCandidatePairDiagnostics,
     RallarRtcDiagnostics,
     RallarRtcDiagnosticsOptions,
+    RallarRtcIceConfigRefreshOptions,
     RallarRtcLaneStatus,
     RallarRtcLifecycleEvent,
     RallarRtcLifecycleKind,
