@@ -115,6 +115,10 @@ Controller** workflow with `action=inspect` and `ref` set to the reviewed full
 validator, and `07-status-controller.sh --inspect` over SSH stdin. It prints one JSON object
 with only source, migration, timing/topology, reviewed public operator settings,
 readiness, service/activity, health, and aggregate store-continuity evidence.
+`operatorSettingsSha256` fingerprints the complete validated ten-setting value
+projection as compact JSON with sorted keys and a trailing newline. Compare this
+opaque SHA-256 before and after operations at the same reviewed source, even
+when GitHub masks public values in logs. It adds no snapshot or retained state.
 The `operatorSettings` object projects ten named public values from the SPA
 environment, checks their expected shapes, and compares duplicate API/control
 CORS and SPA build values. Public health probes use those configured URLs. It does not copy scripts,
@@ -154,7 +158,7 @@ or transmitting them through workflow inputs. Caddy and
 Playwright choices are transient execution inputs, not persisted settings;
 restoration may leave them false and should verify prior service health/state.
 Run `action=inspect` again after the diagnostic and after restoration. Compare
-source identity, migrations, timing/topology, database/role/table OIDs, aggregate
+source identity, public-settings fingerprint, migrations, timing/topology, database/role/table OIDs, aggregate
 auth/group counts, service state, health, and failure fence before declaring
 restoration complete.
 Restore even if the diagnostic or artifact acquisition fails.

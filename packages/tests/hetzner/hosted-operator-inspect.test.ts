@@ -201,6 +201,7 @@ describe('hosted operator inspect', () => {
             'health',
             'jobCount',
             'operatorSettings',
+            'operatorSettingsSha256',
             'packageLockSha256',
             'prismaSchemaSha256',
             'processes',
@@ -246,6 +247,22 @@ describe('hosted operator inspect', () => {
         const mixed = JSON.parse((await fixture.run()).stdout);
         expect(mixed.configuration.RALLAR_TIMING_LOGS).toEqual({ present: true, value: '1', source: 'environment' });
         expect(mixed.configuration.RALLAR_APP_INBOX_PHASE_TIMING).toEqual({ present: false, value: null, source: null });
+    });
+
+    it('fingerprints all validated public settings deterministically without relying on masked values', async (context) => {
+        const fixture = await inspect(context);
+        const first = JSON.parse((await fixture.run()).stdout);
+        expect(first.operatorSettingsSha256).toMatch(/^[0-9a-f]{64}$/u);
+        expect(first.operatorSettingsSha256).toBe('f033c9d674af582e25b487c8e09af7faf10d0ba2a50c8c75b7facb3fff926e97');
+        const original = await readFile(fixture.spaFile, 'utf8');
+        await writeFile(fixture.spaFile, original.trim().split('\n').reverse().join('\n') + '\n');
+        const same = JSON.parse((await fixture.run()).stdout);
+        expect(same.operatorSettingsSha256).toBe(first.operatorSettingsSha256);
+        await writeFile(fixture.spaFile, original.replaceAll('https://api.example.test', 'https://changed-api.example.test'));
+        const changed = JSON.parse((await fixture.run()).stdout);
+        expect(changed.operatorSettings.RALLAR_API_BASE_URL.value).toBe('https://changed-api.example.test');
+        expect(changed.operatorSettingsSha256).toMatch(/^[0-9a-f]{64}$/u);
+        expect(changed.operatorSettingsSha256).not.toBe(first.operatorSettingsSha256);
     });
 
     it('fails closed on unsupported effective assignment', async (context) => {

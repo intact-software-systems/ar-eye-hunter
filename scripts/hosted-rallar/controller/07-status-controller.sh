@@ -268,9 +268,18 @@ inspect_health() {
 }
 
 inspect_hosted_controller() {
-	local configuration operator_settings source_state readiness database services activity health
+	local configuration operator_settings operator_settings_sha256 source_state readiness database services activity health
 	configuration="$(inspect_configuration)" || return 1
 	operator_settings="$(inspect_operator_settings)" || return 1
+	operator_settings_sha256="$(printf '%s' "${operator_settings}" | jq -cS 'with_entries(.value = .value.value)' | sha256sum)" || {
+		inspect_fail 'public settings fingerprint'
+		return 1
+	}
+	operator_settings_sha256="${operator_settings_sha256%% *}"
+	[[ "${operator_settings_sha256}" =~ ^[0-9a-f]{64}$ ]] || {
+		inspect_fail 'public settings fingerprint'
+		return 1
+	}
 	source_state="$(inspect_source_state)" || return 1
 	readiness="$(jq -ce '{deployedCommit, apiHealthStatus, controlHealthStatus, publicHealthStatus} |
 		select(.deployedCommit | test("^[0-9a-f]{40}$")) |
@@ -285,10 +294,11 @@ inspect_hosted_controller() {
 	health="$(inspect_health "${operator_settings}")" || return 1
 	jq -cn --argjson source "${source_state}" \
 		--argjson configuration "${configuration}" --argjson operatorSettings "${operator_settings}" \
+		--arg operatorSettingsSha256 "${operator_settings_sha256}" \
 		--argjson readiness "${readiness}" --argjson database "${database}" \
 		--argjson services "${services}" --argjson activity "${activity}" --argjson health "${health}" \
 		--argjson failureFence "$([[ -e "${RALLAR_API_STORE_FAILURE_FILE}" || -L "${RALLAR_API_STORE_FAILURE_FILE}" ]] && echo true || echo false)" \
-		'$source + {configuration: $configuration, operatorSettings: $operatorSettings, readiness: $readiness,
+		'$source + {configuration: $configuration, operatorSettings: $operatorSettings, operatorSettingsSha256: $operatorSettingsSha256, readiness: $readiness,
 		database: $database, failureFence: $failureFence, health: $health} + $services + $activity'
 }
 
