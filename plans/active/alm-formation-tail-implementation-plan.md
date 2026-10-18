@@ -239,6 +239,49 @@ instrumentation or changing publication semantics.
   scheduling before blaming its polling interval. The original ≤2 s delivery
   target and hosted acceptance are not waived by this diagnostic repair.
 
+### Task 6: Preserve the store during hosted diagnostic preparation
+
+The requested outcome remains a measured current hosted formation-delivery
+interval. Existing workflow timing changes invoke the normal controller rollout,
+which drops and recreates PostgreSQL. Repair that prerequisite at the existing
+owner; do not run a destructive diagnostic or add another workflow, timing lease,
+topology bypass or duplicate deployment path.
+
+- Replace ordinary rollout's reset with validated existing-store migration using
+  the existing migration command. Preserve database identity, role, credentials,
+  auth/operator secrets, memberships and unrelated durable rows. Validate the
+  effective configuration before rewriting it, including secret-file precedence.
+  Missing or malformed existing-store configuration must fail before replacement
+  or destructive effects. Initial absent-store provisioning is a separate existing
+  entry case; retain it only where a verified caller requires it, without erasing
+  an existing store. Remove the affected automatic reset path and migrate its
+  verified consumers rather than retaining a legacy adapter.
+- Keep services stopped during migration, the existing failure sentinel and API
+  start fence, exact source/topology/timing application, health checks and readiness
+  publication. A failed migration must not restart the API or claim readiness.
+  Do not replace established operations with a second lifecycle mechanism.
+- Use RED/GREEN shell-boundary tests for preservation, configuration rejection,
+  migration failure and service ordering. Run an isolated real PostgreSQL test
+  with preexisting auth/group/sentinel data through repeated preserve-store
+  operations and verify exact durable readback. Command-string absence alone is
+  insufficient. Use existing test fixtures and clean up only owned test resources.
+- Expected owners are the controller profile, ordinary rollout/deploy callers,
+  focused Hetzner tests and operational documentation. Review/remediate every
+  changed human-authored file in full; modified support files enter closure
+  recursively; independent untouched code remains outside closure. Direct
+  validation is the populated-store retention/failure test; affected application
+  validation is controller shell syntax and focused deployment/workflow tests,
+  plus test typing and required style/governance checks for changed guidance.
+- Independently review before publication or remote use. The controller then
+  verifies the actual deployed source/schema, migration history, current timing
+  and topology, auth continuity, idle services and runner capacity. Run one
+  unchanged native50 hosted diagnostic in a fresh explicit group with timing on,
+  retain journals and match promotion to its exact notification on the same
+  server clock. Preserve partial/capped-journal limits and do not subtract remote
+  browser clocks without bounds. Restore prior timing/topology through the same
+  reviewed non-reset path even after failure, and verify health/data continuity.
+  Any pending destructive migration or failed preservation proof blocks dispatch.
+
 The parent plan retains large-result certification, the post-terminal headless
 shutdown race, test-harness scheduling sensitivity, the shared-mechanism audit
 and all original V1c benefit gates. Native acceptance and complete diagnostics
