@@ -551,3 +551,120 @@ Deno.test('deleting in-flight and pending runs preserves file order and another 
         await Deno.remove(storageDir, { recursive: true });
     }
 });
+
+async function withStalledRemoval<T>(
+    path: string,
+    run: (entered: Promise<void>, release: () => void) => Promise<T>
+): Promise<T> {
+    const remove = Deno.remove;
+    let announce = () => {};
+    let release = () => {};
+    const entered = new Promise<void>((resolve) => announce = resolve);
+    const released = new Promise<void>((resolve) => release = resolve);
+    Deno.remove = async (...args: Parameters<typeof remove>) => {
+        if (args[0] === path) {
+            announce();
+            await released;
+        }
+        return remove(...args);
+    };
+    try {
+        return await run(entered, release);
+    }
+    finally {
+        release();
+        Deno.remove = remove;
+    }
+}
+
+Deno.test('a barrier includes recording that arrives while its queued deletion is stalled', async () => {
+    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-artifact-recorder-delete-barrier-' });
+    const timers = createManualTimers(0);
+    const recorder = new ControlArtifactRecorder({
+        storageDir,
+        commandSnapshots: NO_COMMAND_SNAPSHOTS,
+        timers,
+        config: DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG
+    });
+    try {
+        void recorder.record(eventEnvelope('deleted-run', 'old', 'old-marker'));
+        await recorder.stop();
+        await withStalledRemoval(`${storageDir}/runs/deleted-run`, async (entered, release) => {
+            recorder.deleteRun('deleted-run');
+            const stopping = recorder.stop();
+            await entered;
+            let captured = false;
+            const capture = recorder.record(eventEnvelope('kept-run', 'arriving', 'arriving-marker'))
+                .then((outcome) => {
+                    captured = true;
+                    return outcome;
+                });
+            release();
+            await stopping;
+            assert(captured, 'the barrier must settle capture that arrived during deletion');
+            assertEquals(timers.pendingCount(), 0);
+            assertEquals((await capture).right, []);
+            assertEquals(
+                readJsonlRows(await Deno.readTextFile(`${storageDir}/runs/kept-run/events.jsonl`)).map((row) => row.value),
+                ['arriving-marker']
+            );
+            assertEquals(await readTextFileOrEmpty(`${storageDir}/runs/deleted-run/events.jsonl`), '');
+        });
+    }
+    finally {
+        await recorder.stop();
+        await Deno.remove(storageDir, { recursive: true });
+    }
+});
+
+Deno.test('a barrier follows continued arrivals and appended deletions until the file boundary is idle', async () => {
+    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-artifact-recorder-delete-followup-' });
+    const timers = createManualTimers(0);
+    const recorder = new ControlArtifactRecorder({
+        storageDir,
+        commandSnapshots: NO_COMMAND_SNAPSHOTS,
+        timers,
+        config: DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG
+    });
+    try {
+        void recorder.record(eventEnvelope('deleted-first', 'old-first', 'old-first-marker'));
+        void recorder.record(eventEnvelope('deleted-second', 'old-second', 'old-second-marker'));
+        await recorder.stop();
+        await withStalledRemoval(`${storageDir}/runs/deleted-first`, async (firstEntered, releaseFirst) => {
+            await withStalledRemoval(`${storageDir}/runs/deleted-second`, async (secondEntered, releaseSecond) => {
+                recorder.deleteRun('deleted-first');
+                let stopped = false;
+                const stopping = recorder.stop().then(() => stopped = true);
+                await firstEntered;
+                const first = recorder.record(eventEnvelope('kept-run', 'first', 'first-marker'));
+                recorder.deleteRun('deleted-second');
+                releaseFirst();
+                await secondEntered;
+                for (let turn = 0; turn < 10; turn += 1) {
+                    await Promise.resolve();
+                }
+                assertEquals(stopped, false, 'the appended deletion is still part of the read barrier');
+                const second = recorder.record(eventEnvelope('kept-run', 'second', 'second-marker'));
+                const deleted = recorder.record(eventEnvelope('deleted-pending', 'pending', 'pending-marker'));
+                recorder.deleteRun('deleted-pending');
+                releaseSecond();
+                await stopping;
+                assertEquals(timers.pendingCount(), 0);
+                assertEquals((await first).right, []);
+                assertEquals((await second).right, []);
+                assertEquals((await deleted).left, 'The run was deleted before durable capture completed.');
+            });
+        });
+        assertEquals(
+            readJsonlRows(await Deno.readTextFile(`${storageDir}/runs/kept-run/events.jsonl`)).map((row) => row.value),
+            ['first-marker', 'second-marker']
+        );
+        for (const runId of ['deleted-first', 'deleted-second', 'deleted-pending']) {
+            assertEquals(await readTextFileOrEmpty(`${storageDir}/runs/${runId}/events.jsonl`), '');
+        }
+    }
+    finally {
+        await recorder.stop();
+        await Deno.remove(storageDir, { recursive: true });
+    }
+});

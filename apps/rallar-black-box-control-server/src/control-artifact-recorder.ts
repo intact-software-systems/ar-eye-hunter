@@ -146,10 +146,15 @@ export class ControlArtifactRecorder {
             .catch(() => undefined);
     }
 
-    /** Writes every pending row once the batch in flight is written; reads and shutdown await it. */
+    /** Includes rows and deletions that arrive while this read/shutdown barrier waits for ordered file work. */
     async stop(): Promise<void> {
-        await this.flush.drain();
-        await this.writeQueue;
+        let settledWriteQueue: Promise<void>;
+        do {
+            settledWriteQueue = this.writeQueue;
+            await this.flush.drain();
+            await settledWriteQueue;
+        }
+        while (this.pendingByRun.size > 0 || settledWriteQueue !== this.writeQueue);
     }
 
     async response({ runId, kind, fallbackRun, corsOrigins }: ControlArtifactResponseInput): Promise<Response> {
