@@ -428,6 +428,15 @@ four-arm comparison or the adaptive arm's removal, the rewritten evidence sectio
    choose event-preserving batching or a measured queue-service repair. Retain the ≤2 s
    formation-tail target and the unchanged scale/ACK acceptance; run local 15 → 30 → 50 before
    hosted acceptance with server timing off. Diagnostic timings do not replace that acceptance.
+   Current-path investigation selects bounded group-admission reads as the first repair:
+   `ALOutboundDispatchAdmission.readGroupDecisions` serializes independent members despite the
+   existing backend's turn-batched reads. A controlled-delay production-owner probe confirms
+   this serialization; it does not establish the hosted share of the delay. Preserve ordered
+   commit and fresh per-member fallback, and settle all active reads before either begins.
+   Serial after-admission publication and captured-policy reads remain a separate measurement
+   follow-up: attribute publish, policy validation and direct-send time before changing their
+   authority boundary. Use actual backend counters; overlapping per-message read-phase counter
+   windows and shared commit durations are not additive SQL or transaction costs.
 2. **Recorder burst latency — low priority, regression not established.** The first twenty-pair
    local probe showed total medians +0.2% for 1,000 small results and +2.1% for fifty larger
    results. An independent twenty-pair process measured effectively 0% and +0.9%; paired
