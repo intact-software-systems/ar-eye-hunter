@@ -136,10 +136,26 @@ attempts per accepted mutation are derived from these histories. Coherent hot
 baseline exhaustion is representable; comparison permits candidate hot
 exhaustion only up to that baseline while requiring zero in uncontended/shared.
 
-The timed command ends with AppInbox completion. After the measured phase, the
-harness queries completed `APP_INBOX` rows/results, production idempotency
-receipts, and final `APP_OUTBOX`/`WS_OUTBOX` rows from `resource_inbox` through
-an uninstrumented admin SQL stack.
+The timed command ends when its actual service sequence returns a validated
+AppInbox result. Profile-instance waits for a successful profile result before
+submitting the instance update, and its command ends after the instance result.
+Each command keeps one owned queue pump through that sequence. A dequeue pass or
+timer already in progress is joined after the command endpoint and before the
+command's concurrency slot is released. The measured phase, SQL and CPU counters,
+and diagnostic release events remain open through this cleanup. A pump failure
+after a successful command still fails the workload; it does not rewrite the
+observed command boundary.
+
+This completion behavior is a harness revision. A fresh main-versus-candidate
+comparison must run both roles with the same candidate perf-directory overlay
+and native-check both checkouts. Historical samples from the earlier completion
+behavior cannot be mixed with corrected-harness samples, even though both use
+schema `rallar.api-v1.state-write.v6`. The repaired boundary does not establish
+a production speedup or waive a failed comparison.
+
+After the measured phase, the harness queries completed `APP_INBOX` rows/results,
+production idempotency receipts, and final `APP_OUTBOX`/`WS_OUTBOX` rows from
+`resource_inbox` through an uninstrumented admin SQL stack.
 Profile-instance counts as received only when both profile and instance
 subcommand receipts are present and complete; a group command uses its exact
 request-ID receipt. Each operation projects its validated receipt's command and
