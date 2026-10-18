@@ -41,6 +41,16 @@ waiting; it does not establish its share of hosted formation delay. Local and
 hosted timing-off 15 → 30 → 50 workloads passed unchanged native acceptance.
 The full ≤2 s promotion-to-browser formation-tail target remains open.
 
+A subsequent real-runtime/PGlite/pubsub-bridge probe preserves production page
+size, exact events and captured audiences. With no injected wait, median drain
+for 1/10/50/200 rows is 0.014200/0.055567/0.227145/0.834552 s (three measured
+repeats after warmup). Captured-policy reads account for roughly 4–9% of that
+wall time; they do not dominate this local drain. A separately labelled 0.005 s
+policy-port delay adds 0.059523 s to the ten-row drain, confirming serial
+sensitivity only. Transport and final socket ports were capture adapters, so
+the result cannot establish hosted network cost or browser acceptance. Recover
+the actual full-stack timeline before selecting another publication optimization.
+
 The failed state-write investigation exposed two diagnostic defects, now repaired
 with TDD at their existing owners:
 
@@ -100,15 +110,55 @@ rounded durations must not be treated as exact additive CPU accounting.
    Preserve every immutable event/audience, causal fence and fault outcome. Run
    affected correctness checks and local 15 → 30 → 50 before hosted timing-off
    acceptance, with unchanged predicates and deadlines.
-2. **State-write completion and retry attribution.** At `runAppInboxMutation`,
-   correlate successful transaction, enqueue completion, pending dequeue and
-   caller return. A held-dequeue test should distinguish command completion from
-   required drain/cleanup joins before choosing a lifecycle repair. Attribute
-   process SQL to its actual dequeue owner; temporal overlap cannot establish
-   ownership. Separately measure optimistic-conflict incidence and retry-delay
-   amplification. Change no retry policy or comparison threshold to manufacture
-   a pass. Measure raw timing-array allocation/retention before claiming bounded
-   capture memory or selecting a streaming repair.
+2. **State-write command completion.** Repair the demonstrated harness wait after
+   service completion while retaining every owned drain, failure and phase cost.
+   The concrete TDD scope follows below. Retry-depth attribution and raw timing
+   array allocation remain unresolved outcomes, not speculative policy changes.
+
+### Task 4: Separate command completion from owned pump cleanup
+
+The requested outcome remains accurate command latency and a trustworthy
+main-versus-candidate comparison. The actual helper waits for its current dequeue
+and timer after the service result is available. Profile-instance also waits for
+that cleanup between its two service calls. The complete diagnostic exposes these
+gaps; it does not prove their share of the failed comparison.
+
+- At the existing workload owner, retain one pump per measured command across its
+  complete service sequence. Await each actual service result directly; profile
+  success must precede instance submission. Record the command endpoint when that
+  sequence settles, then join its pump before releasing its concurrency slot.
+  Keep phase timing and SQL/CPU accounting open through all owned cleanup.
+- Reuse the existing `settleAll` failure-preserving join after verifying identical
+  availability on the comparison base. Keep one canonical pump implementation and
+  migrate all seed consumers; do not retain a legacy setup adapter. Recheck settled
+  state after dequeue before scheduling another timer. Join any timer already
+  started. Do not detach work, race away from it, increase concurrency, or introduce
+  a background scheduler or new production cancellation policy.
+- Distinguish a failed service sequence from a later pump failure. A successful
+  command boundary remains factual if its pump later fails, but the workload and
+  phase must fail. Preserve sole errors by identity and multiple errors in observed
+  order; join started siblings before outward failure. Existing service wait
+  horizons and external hosted termination remain the bounds for stopped progress.
+  Uncancellable hung SQL has no new in-process deadline or guaranteed cleanup.
+- Use held-dequeue RED tests for an early command boundary with pending cleanup,
+  profile-to-instance progress, slot/kind admission only after cleanup, no extra
+  pump work after completion, and service/pump failures in both orders. Verify
+  seed joining, delayed release evidence retention and the existing host interrupt
+  contract. Do not weaken deadlines or assert incidental private call topology.
+- Expected owners are the workload, its seed consumers, focused workload tests
+  and perf README. Review and remediate every changed human-authored file in full;
+  support files changed by that remediation enter closure recursively; independent
+  untouched code remains outside closure. Inspect existing patterns before edits.
+- Direct validation: focused workload completion/failure tests plus `settleAll`
+  and affected diagnostic suites. Application validation: native Deno check of
+  the API-v1 state-write benchmark and affected style/type checks. Independent
+  spec/quality review precedes publication. The controller owns broader validation
+  and any fresh governed comparison.
+- Preserve canonical v6 and diagnostic v2 layout and documented metric meaning.
+  Document command completion versus slot/phase cleanup. A fresh comparison must
+  apply the same candidate perf-directory overlay to both roles and native-check
+  both; never mix historical and corrected-harness samples. This is a harness
+  repair, not a production speedup or waiver of the existing failed comparison.
 
 The parent plan retains large-result certification, the post-terminal headless
 shutdown race, test-harness scheduling sensitivity, the shared-mechanism audit

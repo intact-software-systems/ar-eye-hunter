@@ -206,15 +206,18 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    stale claims and transient failures at the affected boundary. Validate affected packages
    and the unchanged local 15 → 30 → 50 workload before hosted timing-off acceptance. Keep the
    ≤2 s formation-tail target explicit; report any remaining delay without weakening acceptance.
-2. **Attribute state-write completion waiting and retry work:** logical enqueue association
-   and bounded capture are repaired; the unchanged diagnostic now retains all twelve phases.
-   At the existing `runAppInboxMutation` workload owner, correlate enqueue completion, pending
-   dequeue work and caller return. Use a deterministic held-dequeue test to establish the
-   ownership/lifecycle contract before choosing a repair. Trace process SQL to its dequeue
-   owner before attributing it to a command; temporal overlap alone is insufficient. Separately
-   explain optimistic-conflict incidence and prescribed backoff before changing queue policy.
-   Preserve every command, attempt, release, canonical effect, cleanup obligation and original
-   comparison threshold. Run a new comparison only after a measured cause or repair justifies it.
+2. **Repair state-write command completion:** logical enqueue association and bounded capture
+   are repaired; complete evidence and source tracing locate a harness wait for dequeue/timer
+   cleanup after service completion, also inserted between profile and instance. Use held-dequeue
+   TDD to record the actual service-sequence endpoint while one command-owned pump remains joined
+   before releasing its slot. Keep phase duration, SQL/CPU counters and cleanup open through all
+   owned work. Reuse the existing failure-preserving join and canonical pump for measured and seed
+   callers; no detached work or additional concurrency. Preserve every command, attempt, release,
+   canonical effect and comparison threshold. A fresh comparison must use the same corrected
+   harness overlay on both roles; the correction is not a production speedup or regression waiver.
+   Trace process SQL to its dequeue owner before attributing it to a command; temporal overlap
+   alone is insufficient. Retry-depth distribution and prescribed backoff remain attribution
+   outcomes before any queue-policy change.
    The remaining D278/D298 shared-mechanism audit, large-result certification,
    headless shutdown and serial publication findings remain explicit outcomes below; passing
    native acceptance closes none of them.
