@@ -1,4 +1,3 @@
-import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import { assert, assertEquals } from '@std/assert';
 
 import { RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION } from '@shared-test/rallar-bb-test/control-protocol.ts';
@@ -6,6 +5,8 @@ import type { ControlClientEnvelope } from '@shared-test/rallar-bb-test/control-
 import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { RallarBlackBoxTestRecord } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
+import { createDefaultTimers } from '@shared/resilience/timers.ts';
+
 import { createManualTimers } from '../../../packages/tests/shared/resilience/manual-timers.ts';
 import {
     ControlArtifactRecorder,
@@ -304,7 +305,7 @@ function readJsonlRows(text: string): readonly RallarBlackBoxTestRecord[] {
 }
 
 function resultEnvelopeForRun(runId: string, commandId: string, marker: string): ControlClientEnvelope {
-    return { ...resultEnvelope(commandId, { marker }), runId } as ControlClientEnvelope;
+    return { ...resultEnvelope(commandId, { marker }), runId };
 }
 
 /** Holds every file append until `release` runs, as a disk that stops answering would. */
@@ -322,6 +323,7 @@ async function withStalledWrites<T>(run: (release: () => void, writesStarted: ()
         return await run(release, () => started);
     }
     finally {
+        release();
         Deno.writeTextFile = writeTextFile;
     }
 }
@@ -342,10 +344,8 @@ Deno.test('while a write stalls, rows stay pending under the cap and the oldest 
         });
         const { writesDuringStall, stalledRows } = await withStalledWrites(async (release, writesStarted) => {
             recorder.record(resultEnvelopeForRun('stalled-run', 'in-flight', 'in-flight'));
-            await timers.advanceTo(250);
-            while (writesStarted() === 0) {
-                await new Promise((resolve) => setTimeout(resolve, 1));
-            }
+            const ticking = timers.advanceTo(250);
+            await waitForFileWrite(writesStarted);
             const rows: string[] = [];
             // Each tick's rows fit under the cap; only rows held across ticks exceed it.
             for (let tick = 2; tick <= 9; tick += 1) {
@@ -358,6 +358,7 @@ Deno.test('while a write stalls, rows stay pending under the cap and the oldest 
             }
             const writes = writesStarted();
             release();
+            await ticking;
             await recorder.stop();
             return { writesDuringStall: writes, stalledRows: rows };
         });
@@ -427,6 +428,126 @@ Deno.test('a run over the cap drops only its own rows; a quiet run keeps all of 
     }
     finally {
         console.warn = warn;
+        await Deno.remove(storageDir, { recursive: true });
+    }
+});
+
+async function waitForFileWrite(writesStarted: () => number): Promise<void> {
+    for (let turn = 0; writesStarted() === 0 && turn < 1_000; turn += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    assert(writesStarted() > 0, 'the scheduled artifact write must reach the disk port');
+}
+
+Deno.test('a stalled artifact write leaves no periodic retry timers while rows stay pending', async () => {
+    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-artifact-recorder-idle-timers-' });
+    const timers = createManualTimers(0);
+    const recorder = new ControlArtifactRecorder({
+        storageDir,
+        commandSnapshots: NO_COMMAND_SNAPSHOTS,
+        timers,
+        config: DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG
+    });
+    try {
+        await withStalledWrites(async (release, writesStarted) => {
+            const first = recorder.record(eventEnvelope('timer-run', 'first', 'first-marker'));
+            const ticking = timers.advanceTo(250);
+            await waitForFileWrite(writesStarted);
+            try {
+                const pending = recorder.record(eventEnvelope('timer-run', 'pending', 'pending-marker'));
+                await timers.advanceTo(1_250);
+                assertEquals(timers.pendingCount(), 0, 'a stalled write cannot make progress on a retry tick');
+                release();
+                await recorder.stop();
+                await Promise.all([first, pending]);
+            }
+            finally {
+                release();
+                await ticking;
+                await recorder.stop();
+            }
+        });
+        const text = await Deno.readTextFile(`${storageDir}/runs/timer-run/events.jsonl`);
+        assertEquals(readJsonlRows(text).map((row) => row.value), ['first-marker', 'pending-marker']);
+    }
+    finally {
+        await Deno.remove(storageDir, { recursive: true });
+    }
+});
+
+Deno.test('a read barrier drains arriving rows without residual timers and allows later recording', async () => {
+    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-artifact-recorder-drain-' });
+    const timers = createManualTimers(0);
+    const recorder = new ControlArtifactRecorder({
+        storageDir,
+        commandSnapshots: NO_COMMAND_SNAPSHOTS,
+        timers,
+        config: DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG
+    });
+    try {
+        await withStalledWrites(async (release, writesStarted) => {
+            const first = recorder.record(eventEnvelope('barrier-run', 'first', 'first-marker'));
+            const reading = eventsTextForRun(recorder, 'barrier-run');
+            await waitForFileWrite(writesStarted);
+            const arriving = recorder.record(eventEnvelope('barrier-run', 'arriving', 'arriving-marker'));
+            release();
+            const text = await reading;
+            assertEquals(readJsonlRows(text).map((row) => row.value), ['first-marker', 'arriving-marker']);
+            await Promise.all([first, arriving]);
+            assertEquals(timers.pendingCount(), 0, 'the barrier must leave no wakeup for already drained rows');
+        });
+        const later = recorder.record(eventEnvelope('barrier-run', 'later', 'later-marker'));
+        await timers.advanceTo(249);
+        assertEquals(readJsonlRows(await Deno.readTextFile(`${storageDir}/runs/barrier-run/events.jsonl`)).length, 2);
+        await timers.advanceTo(250);
+        await later;
+        assertEquals(
+            readJsonlRows(await Deno.readTextFile(`${storageDir}/runs/barrier-run/events.jsonl`)).map((row) => row.value),
+            ['first-marker', 'arriving-marker', 'later-marker']
+        );
+        assertEquals(timers.pendingCount(), 0);
+    }
+    finally {
+        await recorder.stop();
+        await Deno.remove(storageDir, { recursive: true });
+    }
+});
+
+Deno.test('deleting in-flight and pending runs preserves file order and another run capture', async () => {
+    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-artifact-recorder-ordered-delete-' });
+    const timers = createManualTimers(0);
+    const recorder = new ControlArtifactRecorder({
+        storageDir,
+        commandSnapshots: NO_COMMAND_SNAPSHOTS,
+        timers,
+        config: DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG
+    });
+    try {
+        await withStalledWrites(async (release, writesStarted) => {
+            const first = recorder.record(eventEnvelope('deleted-flight', 'first', 'deleted-flight-marker'));
+            const ticking = timers.advanceTo(250);
+            await waitForFileWrite(writesStarted);
+            const deleted = recorder.record(eventEnvelope('deleted-pending', 'pending', 'deleted-pending-marker'));
+            const kept = recorder.record(eventEnvelope('kept-run', 'kept', 'kept-marker'));
+            recorder.deleteRun('deleted-flight');
+            recorder.deleteRun('deleted-pending');
+            release();
+            await ticking;
+            await recorder.stop();
+            await first;
+            assertEquals((await deleted).left, 'The run was deleted before durable capture completed.');
+            assertEquals((await kept).right, []);
+        });
+        assertEquals(await readTextFileOrEmpty(`${storageDir}/runs/deleted-flight/events.jsonl`), '');
+        assertEquals(await readTextFileOrEmpty(`${storageDir}/runs/deleted-pending/events.jsonl`), '');
+        assertEquals(
+            readJsonlRows(await Deno.readTextFile(`${storageDir}/runs/kept-run/events.jsonl`)).map((row) => row.value),
+            ['kept-marker']
+        );
+        assertEquals(timers.pendingCount(), 0);
+    }
+    finally {
+        await recorder.stop();
         await Deno.remove(storageDir, { recursive: true });
     }
 });

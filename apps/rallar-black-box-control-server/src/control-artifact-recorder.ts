@@ -11,6 +11,7 @@ import {
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import type { ResultCaptureReceipt } from '@shared-test/rallar-bb-test/result-release/result-release-protocol.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { ThrottledFlush } from '@shared/resilience/throttled-flush.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
 
 import {
@@ -37,7 +38,7 @@ export interface ControlArtifactResponseInput {
 }
 
 export interface ControlArtifactRecorderConfig {
-    /** Rows wait at most this long and are appended in one write per run file. */
+    /** Delay from the first pending row before a batch starts; later rows join without postponing it. */
     readonly flushIntervalMs: number;
     /**
      * Beyond this many pending bytes a run's oldest pending rows are dropped and the gap is recorded. Rows are counted
@@ -81,13 +82,16 @@ export class ControlArtifactRecorder {
     private readonly storage: ControlArtifactStorage | undefined;
     private pendingByRun = new Map<string, PendingRunArtifacts>();
     private pendingBytes = 0;
-    private writing = false;
-    private cancelFlush: (() => void) | undefined;
+    private readonly flush: ThrottledFlush;
     private writeQueue: Promise<void> = Promise.resolve();
 
     constructor(dependencies: ControlArtifactRecorderDependencies) {
         this.dependencies = dependencies;
         this.storage = dependencies.storageDir ? new ControlArtifactStorage(dependencies.storageDir) : undefined;
+        this.flush = new ThrottledFlush(
+            { timers: dependencies.timers, write: () => this.writePending() },
+            { minIntervalMs: 0, firstMarkDelayMs: dependencies.config.flushIntervalMs }
+        );
     }
 
     record(
@@ -111,7 +115,7 @@ export class ControlArtifactRecorder {
             this.pendingByRun.set(envelope.runId, pending);
             this.pendingBytes += entry.bytes;
             this.dropOldestOverCap(pending);
-            this.armFlush();
+            void this.flush.mark();
         });
     }
 
@@ -144,10 +148,8 @@ export class ControlArtifactRecorder {
 
     /** Writes every pending row once the batch in flight is written; reads and shutdown await it. */
     async stop(): Promise<void> {
-        this.cancelFlush?.();
-        this.cancelFlush = undefined;
+        await this.flush.drain();
         await this.writeQueue;
-        await this.writePending();
     }
 
     async response({ runId, kind, fallbackRun, corsOrigins }: ControlArtifactResponseInput): Promise<Response> {
@@ -180,25 +182,15 @@ export class ControlArtifactRecorder {
         pending.entries.splice(0, dropCount);
     }
 
-    private armFlush(): void {
-        this.cancelFlush ??= this.dependencies.timers.schedule(
-            () => this.flushTick(),
-            this.dependencies.config.flushIntervalMs
-        );
-    }
-
-    /** While a batch is in flight the rows stay pending under the cap and the next tick tries again. */
-    private flushTick(): void {
-        this.cancelFlush = undefined;
-        if (this.writing) {
-            this.armFlush();
-            return;
-        }
-        void this.writePending();
-    }
-
     private writePending(): Promise<void> {
         const storage = this.storage;
+        for (const [runId, pending] of this.pendingByRun) {
+            if (pending.omitted.omittedEventRows > 0) {
+                console.warn(
+                    `Control artifact recorder dropped ${pending.omitted.omittedEventRows} pending rows (${pending.omitted.omittedBytes} bytes) for ${runId}.`
+                );
+            }
+        }
         const batch = toArtifactWriteBatch(this.pendingByRun, {
             maxPendingBytes: this.dependencies.config.maxPendingBytes,
             atEpochMs: this.dependencies.timers.nowMs()
@@ -208,15 +200,11 @@ export class ControlArtifactRecorder {
         if (!storage || batch.length === 0) {
             return this.writeQueue;
         }
-        this.writing = true;
         this.writeQueue = this.writeQueue
             .then(() => storage.writeBatch(batch))
             .catch((error) => {
                 const message = error instanceof Error ? error.message : String(error);
                 console.warn(`Could not append control artifact JSONL: ${message}`);
-            })
-            .finally(() => {
-                this.writing = false;
             });
         return this.writeQueue;
     }
@@ -253,7 +241,7 @@ function toArtifactWriteBatch(
     facts: ArtifactOverflowFacts
 ): readonly ControlArtifactRunWrite[] {
     return Array.from(pendingByRun, ([runId, pending]) => {
-        const overflowLine = toArtifactOverflowLine(runId, {
+        const overflowLine = toArtifactOverflowLine({
             ...pending.omitted,
             maxPendingBytes: facts.maxPendingBytes
         }, facts.atEpochMs);
@@ -269,13 +257,10 @@ function toArtifactWriteBatch(
     });
 }
 
-function toArtifactOverflowLine(runId: string, counts: ControlArtifactOverflowCounts, atEpochMs: number): string {
+function toArtifactOverflowLine(counts: ControlArtifactOverflowCounts, atEpochMs: number): string {
     if (counts.omittedEventRows === 0) {
         return '';
     }
-    console.warn(
-        `Control artifact recorder dropped ${counts.omittedEventRows} pending rows (${counts.omittedBytes} bytes) for ${runId}.`
-    );
     return `${JSON.stringify(toControlArtifactOverflowRow(counts, atEpochMs))}\n`;
 }
 
