@@ -203,8 +203,9 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    and the unchanged local 15 → 30 → 50 workload before hosted timing-off acceptance. Keep the
    ≤2 s formation-tail target explicit; report any remaining delay without weakening acceptance.
 2. **Restore complete state-write attribution:** the failed comparative gate needs a usable
-   diagnostic before selecting a production repair. At the existing diagnostic association and
-   projection owners, reproduce rejection of real logical AppInbox identities with TDD, then
+   diagnostic before selecting a production repair. At `state-write-diagnostic-association.ts`
+   and `state-write-diagnostic-projection.ts` under `apps/api-v1/scripts/perf/state-write/`,
+   reproduce rejection of real logical AppInbox identities with TDD, then
    preserve correct association and privacy checks. Design bounded timing representation from
    the observed hot-phase volume; do not silently discard required evidence or simply inflate a
    shared cap. Prove completeness, fail-closed overflow and producer cleanup before recapturing
@@ -494,6 +495,11 @@ four-arm comparison or the adaptive arm's removal, the rewritten evidence sectio
    already prioritizes boundaries/releases; choose an explicit bounded representation before
    another diagnostic. Database postflight and cleanup succeeded: the secondary lifecycle label
    reflects the failed capture and is not evidence of another cleanup defect.
+   Retained config windows also show hundreds of process-level SQL transactions while the last
+   command waits for retry. The harness's per-command dequeue pump is therefore a concrete
+   attribution target, distinct from production queue behavior. These unassociated records do
+   not prove ownership or explain the full transaction-total regression; obtain complete scoped
+   evidence before changing that pump.
 
 ## Completion and handoff
 

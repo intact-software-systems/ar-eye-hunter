@@ -89,11 +89,20 @@ slowdown. Separate handler/completion waiting, transaction wall time, event-loop
 and GC activity, and PostgreSQL contention on a common timeline before another
 performance comparison. Instrumented diagnostic timings are not acceptance evidence.
 
-Local 15, 30 and 50 passed all native predicates, but hosted acceptance remains
-open. The first started hosted 15-agent attempt expired in agent readiness with
+Local 15, 30 and 50 passed all native predicates. Hosted timing-off 15, 30 and 50
+subsequently passed in order with the original manifests. The first started hosted
+15-agent attempt expired in agent readiness with
 only six browsers connected while worker jobs were queued; the recipe never ran.
 Remaining workers were stopped. Retry only after checking runner capacity, without
-changing cohort size or deadlines, and advance to hosted 30 and 50 only in order.
+changing cohort size or deadlines. The successful rerun followed a cleared CI
+queue. These cohorts establish native acceptance, not the complete formation-tail
+target or a passing comparative performance gate.
+
+The existing state-write diagnostic also failed closed: logical enqueue identity
+was rejected against physical-key expectations, and hot timing phases exceeded
+their byte budget. Database cleanup succeeded. The parent plan now selects
+diagnostic association and bounded capture as the next repair before further
+state-write attribution; preserve the failed receipt and original comparisons.
 
 Publish and update one semantic PR. The next useful slice remains the parent's
 remaining measured bottleneck/shared-mechanism audit; full V1c closure remains an
