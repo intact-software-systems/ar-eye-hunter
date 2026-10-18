@@ -205,8 +205,14 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    delay or establish a clock-bounded commit interval. Recover current hosted delivery evidence
    before selecting another repair. The preserving controller migration path now passes local
    lifecycle and real PostgreSQL retention tests plus independent review. The existing GitHub operator
-   channel also needs a genuinely read-only inspect action and explicit topology restoration
-   inputs at its existing owner; preserve absent/set keys and effective secrets. Use TDD for a positively
+   channel now has a reviewed read-only inspect action and explicit topology restoration
+   inputs. Live inspect passes with matching schema/migrations and healthy idle services.
+   Because GitHub masks two public setting values, the opt-in mode validates and
+   preserves the actual ten public settings on-controller through the existing writer,
+   with a fingerprint for pre/post equality. Local preservation tests pass; a subsequent
+   workflow-cleanup correction is independently approved. Repeat live preflight;
+   keep diagnostic worker scope independent and preserve absent/set topology and effective
+   secrets. Use TDD for a positively
    located defect and reuse existing queuebox and ALM
    mechanisms; preserve every event, frozen audiences, causal fences and failure recovery.
    Compare the same queued burst with a late promotion before and after the repair, including

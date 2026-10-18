@@ -157,8 +157,11 @@ depth nine or above are close to the fourth position’s 54. Tree share does not
 order the slowest samples. Effective input mix therefore needs no new capture.
 Exact submitted-input selection clocks and absolute retry due/release instants
 remain uncaptured; a future targeted capture should separate prescribed backoff
-from actual scheduling at the existing telemetry owner. These associations do
-not establish causation or waive the failed gate.
+from actual scheduling at the existing telemetry owner. Current retry due-age
+telemetry cannot supply that distinction: normal PostgreSQL reservation clears
+the due timestamp before the handler computes it, so the handler can fall back to
+the new claim time. Do not interpret that value as actual retry scheduling lateness.
+These associations do not establish causation or waive the failed gate.
 
 ## Next two useful slices
 
@@ -387,8 +390,8 @@ independent review found and verified fixes for two restoration gaps: an omitted
 operator-token lifetime was reset, and matching CORS lists without the SPA origin
 were normalized. Both have semantic RED/GREEN coverage; 37 affected tests and
 eleven lifecycle scenarios pass after the fixes. Local spec and quality review
-now approve the prerequisite. Live preflight remains pending. The two published CI
-failures have local fixes, but require verification on the next published head.
+approve the prerequisite. The subsequent published CI passed all required checks,
+including the two repaired static/tooling failures.
 The first read-only live inspect failed at database projection: PostgreSQL emits
 OID values as JSON strings, while the strict output contract requires numbers.
 Explicit SQL casts now produce numeric OIDs, with real PostgreSQL RED/GREEN
@@ -398,10 +401,18 @@ before rollout validation. Its existing writer now preserves those settings, wit
 actual sync through preflight and rollout coverage; 45 focused tests and twelve
 lifecycle scenarios pass. The newly touched manual prompt also has a corrected
 output-channel defect and eight passing focused tests. Independent integration
-review approves the corrected source; a fresh live inspect must confirm the
-actual prerequisites before hosted mutation. The
-failed inspect skipped every mutating step; no hosted diagnostic or restoration
+review approves the corrected source. The failed inspect skipped every mutating
+step; no hosted diagnostic or restoration
 has run through this path yet.
+
+The corrected live inspect passes. Deployed source is clean; proposed schema and
+all 25 source/applied migrations match, with no failed migration. Services are
+healthy and idle, timing is exactly present 0/false, and only mesh-min51 is set
+among topology overrides. Database, role and table identities and aggregate
+counts are retained for continuity. GitHub masks portions of two public settings
+in the log; preserve those actual values at the existing controller writer rather
+than guessing or bypassing masking to reconstruct restoration inputs. Complete
+that existing-owner route before the diagnostic and recheck live activity.
 
 ## Validation and delivery
 
@@ -425,3 +436,31 @@ Delete this narrow plan only after its selected acceptance is actually complete;
 the failed comparison and full formation-tail target currently keep it open.
 Run delivery status before broad final validation and ready once at handoff.
 The user owns merge; a readiness action does not waive the failed performance gate.
+
+### Preserve live public settings during diagnostic rollout
+
+Add an opt-in mode at the existing rollout owner that reads and validates the ten
+persisted public settings before defaults or mutation, then uses those values
+through the existing writers. Share the current inspect validator rather than
+duplicating it. Existing deploy and diagnostic prepare callers explicitly forward
+the mode; ordinary callers retain their current behavior. Timing and topology
+remain explicit. Test actual preservation under conflicting defaults and rejection
+of missing or inconsistent settings before checkout or service changes. This keeps
+restoration independent of GitHub log masking, without reconstructing masked values
+or introducing a settings snapshot or another deployment lifecycle. Preflight
+refusal must also prevent later workflow cleanup from stopping pre-existing
+workers; cleanup remains required after this operation begins its worker lifecycle.
+The existing
+inspect output also retains an opaque fingerprint of the validated canonical
+public-settings projection, so pre/post equality can be verified even when GitHub
+masks values. No unmasked values or reversible encoding are exposed.
+
+
+The preservation mode and fingerprint pass 306 affected tests, including twenty
+actual controller lifecycle scenarios. Full workflow review found a later cleanup
+step that could stop pre-existing workers after preflight refusal. A semantic RED
+reproduced that failure; cleanup now requires operation-owned worker lifecycle
+evidence and still runs after later start/recipe failures. Eleven focused cases,
+205 affected workflow/disposition checks, canonical test typing and changed-range
+style pass. Independent scoped review approves the correction. Live fingerprint roundtrip
+and current hosted formation measurement remain pending.
