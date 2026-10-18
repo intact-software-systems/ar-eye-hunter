@@ -67,7 +67,7 @@ read_required_value() {
 	if [[ -z "${value}" ]]; then
 		if [[ "${silent}" == "1" ]]; then
 			read -r -s -p "${prompt}: " value
-			printf '\n'
+			printf '\n' >&2
 		else
 			read -r -p "${prompt}: " value
 		fi

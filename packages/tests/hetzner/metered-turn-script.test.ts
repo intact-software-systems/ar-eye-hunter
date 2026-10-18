@@ -67,6 +67,66 @@ describe('configure Metered TURN Hetzner script', () => {
         expect(systemctlCalls).toContain('restart rallar-api-v1.service\n');
     });
 
+    it('keeps prompted values on one assignment line without exposing the key in output', async (context) => {
+        const fixture = await mkdtemp(path.join(tmpdir(), 'rallar-metered-prompt-'));
+        context.onTestFinished(() => rm(fixture, { recursive: true, force: true }));
+        const etcDir = path.join(fixture, 'etc/rallar');
+        const result = await runOwnedTestProcess(context, {
+            executable: 'bash',
+            args: ['-c', 'printf "%s\\n%s\\n" "$PROMPT_APP" "$PROMPT_KEY" | bash "$METERED_SCRIPT" --no-restart'],
+            options: {
+                cwd: repoRoot,
+                env: {
+                    ...process.env,
+                    RALLAR_REQUIRE_ROOT: '0',
+                    RALLAR_ETC_DIR: etcDir,
+                    RALLAR_SYSTEMD_DIR: path.join(fixture, 'etc/systemd/system'),
+                    METERED_APP_NAME: '',
+                    METERED_API_KEY: '',
+                    PROMPT_APP: 'prompted-app',
+                    PROMPT_KEY: 'synthetic-prompted-key',
+                    METERED_SCRIPT: scriptPath
+                }
+            }
+        });
+
+        expect(await readFile(path.join(etcDir, 'api-v1.secrets.env'), 'utf8')).toBe(
+            'RALLAR_ICE_MODE=metered\nMETERED_APP_NAME=prompted-app\nMETERED_API_KEY=synthetic-prompted-key\n'
+        );
+        expect(result.stdout).not.toContain('synthetic-prompted-key');
+        expect(result.stderr).not.toContain('synthetic-prompted-key');
+    });
+
+    it('rejects an unsupported prompted key before replacing the secret file', async (context) => {
+        const fixture = await mkdtemp(path.join(tmpdir(), 'rallar-metered-prompt-invalid-'));
+        context.onTestFinished(() => rm(fixture, { recursive: true, force: true }));
+        const etcDir = path.join(fixture, 'etc/rallar');
+        const secretFile = path.join(etcDir, 'api-v1.secrets.env');
+        const original = 'RALLAR_AUTH_CREDENTIAL_SECRET=prior-secret\n';
+        await mkdir(etcDir, { recursive: true });
+        await writeFile(secretFile, original);
+
+        await expect(runOwnedTestProcess(context, {
+            executable: 'bash',
+            args: ['-c', 'printf "%s\\n" "$PROMPT_KEY" | bash "$METERED_SCRIPT" --no-restart'],
+            options: {
+                cwd: repoRoot,
+                env: {
+                    ...process.env,
+                    RALLAR_REQUIRE_ROOT: '0',
+                    RALLAR_ETC_DIR: etcDir,
+                    RALLAR_SYSTEMD_DIR: path.join(fixture, 'etc/systemd/system'),
+                    METERED_APP_NAME: 'prompted-app',
+                    METERED_API_KEY: '',
+                    PROMPT_KEY: 'invalid prompted key',
+                    METERED_SCRIPT: scriptPath
+                }
+            }
+        })).rejects.toMatchObject({ stderr: expect.stringContaining('simple unquoted environment value') });
+
+        expect(await readFile(secretFile, 'utf8')).toBe(original);
+    });
+
     it('rejects unsupported existing secret assignments without replacing the file', async (context) => {
         const fixture = await mkdtemp(path.join(tmpdir(), 'rallar-metered-preserve-'));
         context.onTestFinished(() => rm(fixture, { recursive: true, force: true }));
