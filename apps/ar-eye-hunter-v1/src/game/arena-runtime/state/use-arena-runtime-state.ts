@@ -2,6 +2,7 @@ import { readWebSocketTicketBackoffState } from '@shared-web/browser/auth/websoc
 import { rallar, type RallarDirectorStatus, type RallarRoomSummary } from '@shared-web/browser/rallar.ts';
 import type { RallarGameDiagnostics } from '@shared-web/game/mod.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { SpaStatisticsSafeGroupSummary } from '@shared/api/spa-statistics-types.ts';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { AvatarProfile } from '../../avatarProfile.ts';
@@ -32,6 +33,7 @@ export function useArenaRuntimeState() {
     const [error, setError] = useState<string | undefined>();
     const [roomId, setRoomId] = useState<string | undefined>();
     const [rooms, setRooms] = useState<readonly RallarRoomSummary[]>([]);
+    const [openRooms, setOpenRooms] = useState<readonly SpaStatisticsSafeGroupSummary[]>([]);
     const [directorStatus, setDirectorStatus] = useState<RallarDirectorStatus>(
         () => rallar.director.status()
     );
@@ -150,6 +152,7 @@ export function useArenaRuntimeState() {
         setSession(undefined);
         setRoomId(undefined);
         setRooms([]);
+        setOpenRooms([]);
         const nextDirectorStatus = rallar.director.status();
         const nextDirectorAttempt: DirectorAttemptState = { status: 'idle' };
         const nextTransportDiagnostics: ArenaTransportDiagnostics = {
@@ -229,6 +232,7 @@ export function useArenaRuntimeState() {
         remotePlayerHits,
         remotePlayers,
         remotePlayersRef,
+        openRooms,
         remoteShots,
         resetForSignedOutAuth,
         roomId,
@@ -254,6 +258,7 @@ export function useArenaRuntimeState() {
         setRemotePlayers,
         setRemoteShots,
         setRoomId,
+        setOpenRooms,
         setRooms,
         setRtcLanes,
         setSession,

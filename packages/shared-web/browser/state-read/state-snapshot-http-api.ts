@@ -1,6 +1,7 @@
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupFormationView } from '@shared/api/group-lifecycle/group-formation-view.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { SpaStatisticsSafeGroupSummary } from '@shared/api/spa-statistics-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 
 import { readApiBaseUrl } from '../api-client-config.ts';
@@ -28,6 +29,19 @@ export async function listStateGroups(
     return await executeHttpRequest<void, GroupSnapshot[]>(
         readApiBaseUrl(),
         `${toStateScopeHttpPath(scope)}/groups`,
+        'GET',
+        undefined,
+        options
+    );
+}
+
+export async function listStateGroupDirectory(
+    scope: StateScope = defaultStateScope(),
+    options?: ApiRequestOptions
+): Promise<SpaStatisticsSafeGroupSummary[]> {
+    return await executeHttpRequest<void, SpaStatisticsSafeGroupSummary[]>(
+        readApiBaseUrl(),
+        `${toStateScopeHttpPath(scope)}/group-directory`,
         'GET',
         undefined,
         options

@@ -86,6 +86,7 @@ const mockRallar = vi.hoisted(() => ({
         state: vi.fn(),
         onChange: vi.fn(),
         refresh: vi.fn(),
+        directory: vi.fn(),
         create: vi.fn(),
         createAndSwitch: vi.fn(),
         join: vi.fn()
@@ -270,6 +271,7 @@ function resetArenaRoomsFixture(): void {
         rooms: [],
         currentRoomId: undefined
     });
+    mockRallar.rooms.directory.mockResolvedValue([]);
     mockRallar.rooms.create.mockReset();
     mockRallar.rooms.createAndSwitch.mockReset();
     mockRallar.director.onStatus.mockReturnValue(vi.fn());

@@ -36,6 +36,7 @@ export const RALLAR_FACADE_METHODS_NOT_RECIPE_COMMANDS = [
     'rooms.refresh',
     'rooms.onChange',
     'rooms.onEvent',
+    'rooms.directory',
     'rooms.listEvents',
     'rooms.listEventPage',
     'rooms.replayEvents',

@@ -1,7 +1,10 @@
 import { authorizationDenied } from '@shared-server/http/request-auth-service.ts';
 import { canUpdateGroupSnapshot } from '@shared-server/rallar-system/group-state/policy/group-governance-policy.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
-import { canReadGroupSnapshot } from '@shared-server/rallar-system/group-state/policy/group-snapshot-visibility-policy.ts';
+import {
+    canReadGroupSnapshot,
+    isGroupDirectoryVisible
+} from '@shared-server/rallar-system/group-state/policy/group-snapshot-visibility-policy.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { UpsertGroupMemberRequest } from '@shared/api/state-types.ts';
 
@@ -53,6 +56,13 @@ export function isGroupStateRouteSnapshotReadable(
         snapshot,
         actor: { principalId }
     }).allowed;
+}
+
+export function isGroupStateRouteSnapshotDirectoryListed(
+    snapshot: GroupSnapshot,
+    principalId: string | undefined
+): boolean {
+    return isGroupDirectoryVisible({ snapshot, actor: { principalId } });
 }
 
 export function createGroupStateRouteAuthorization(

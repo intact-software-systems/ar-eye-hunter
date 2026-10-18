@@ -639,6 +639,32 @@ paths:
                   $ref: '#/components/schemas/GroupSnapshot'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory:
+    get:
+      tags: [Group State]
+      summary: List joinable open groups
+      description: |
+        Lists active groups whose `joinMode` is `open` and that the caller may
+        join but cannot yet read in full. Entries are safe summaries: no member
+        roster, sessions, or metadata. Groups the caller already reads in full
+        are returned by the group snapshot list instead.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Joinable open group summaries for the requested scope.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SpaStatisticsSafeGroupSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/{requestId}:
     post:
       tags: [Group State]
