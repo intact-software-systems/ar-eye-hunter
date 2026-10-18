@@ -202,13 +202,16 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    stale claims and transient failures at the affected boundary. Validate affected packages
    and the unchanged local 15 → 30 → 50 workload before hosted timing-off acceptance. Keep the
    ≤2 s formation-tail target explicit; report any remaining delay without weakening acceptance.
-2. **Remaining shared-mechanism audit and next measured repair:** recover current consumers of
-   the D278 candidates and D298's unread rate adjustment, prioritizing the measured formation-tail
-   delivery delay below when selecting the next owned repair. Include the demonstrated large-result
-   certification limit and headless shutdown race below; passing native acceptance does not close
-   either finding. The AL checkpoint writer,
-   serialized chains, keyed limiter, abort scope, UTF-8 length and repeating-run copies remain
-   outcomes until that audit selects a concrete task.
+2. **Restore complete state-write attribution:** the failed comparative gate needs a usable
+   diagnostic before selecting a production repair. At the existing diagnostic association and
+   projection owners, reproduce rejection of real logical AppInbox identities with TDD, then
+   preserve correct association and privacy checks. Design bounded timing representation from
+   the observed hot-phase volume; do not silently discard required evidence or simply inflate a
+   shared cap. Prove completeness, fail-closed overflow and producer cleanup before recapturing
+   the unchanged workload. Then attribute conflict incidence and transaction work before changing
+   queue policy. The remaining D278/D298 shared-mechanism audit, large-result certification,
+   headless shutdown and serial publication findings remain explicit outcomes below; passing
+   native acceptance closes none of them.
 
 Full V1c closure still requires the original scale acceptance, D281's comparison against main
 before step 1, the PostgreSQL four-arm comparison or removal of the falsified adaptive arm,
@@ -476,6 +479,21 @@ four-arm comparison or the adaptive arm's removal, the rewritten evidence sectio
    the actual slow path: handler/completion waiting, SQL transaction wall time, event-loop/GC
    pressure and PostgreSQL contention on one timeline. Four-position variation is heterogeneous;
    do not dismiss it as noise or change retry/workload/comparator settings to obtain a pass.
+   Retained slow config and topology commands spent 6,832 and 7,572 ms in recorded retry delays
+   within 7,283 and 8,179 ms total latency, after eight optimistic conflicts each; final
+   transactions took about 3 ms. This locates retry-backoff amplification, not the cause of
+   differing conflict incidence or the total transaction-time regression. Use the existing
+   bounded diagnostic mode to distinguish failed attempts from process-wide SQL activity.
+   That diagnostic currently fails closed: every phase rejects 800 supported enqueue timings
+   because association expects physical hashed keys where the command client emits logical
+   resource/context identities. A real-client test using long logical identities must reproduce
+   this before repair; retain rejection of genuinely mismatched identity and privacy guarantees.
+   All four hot phases additionally exceed the 33,554,432-byte timing budget, dropping roughly
+   11,000–17,000 timing rows per phase. Boundaries and release records are complete, but timing
+   absence is not evidence. Preserve originals and the incomplete receipt. Existing capture
+   already prioritizes boundaries/releases; choose an explicit bounded representation before
+   another diagnostic. Database postflight and cleanup succeeded: the secondary lifecycle label
+   reflects the failed capture and is not evidence of another cleanup defect.
 
 ## Completion and handoff
 
