@@ -1705,6 +1705,15 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'toSafeApiTimingRecord'
     }),
+    // The promotion log record remains raw until its exact operation, scope,
+    // timing, outcome and layout labels validate. Only those safe fields leave
+    // this private projection; one reviewed occurrence permits no growth.
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-timing-record.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeTopologyPromotionRecord',
+        maximumMagnitude: 1
+    }),
     Object.freeze({
         path: 'apps/rallar-black-box/scripts/to-safe-api-timing-record.ts',
         rule: 'boundary.unknown',
