@@ -1052,8 +1052,9 @@ The deploy and rollout scripts also generate or preserve
 `/etc/rallar/api-v1.env` and `/etc/rallar/control-server.env`. API-v1 uses it
 for `POST /api/black-box/control-token`; the control server uses it to accept
 the signed operator token for distributed-run admin operations. Override
-`RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS` to change the default 24 hour TTL, and
-set `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS` to the authenticated client IDs that
+`RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS` to change the default 24 hour TTL; later
+rollouts preserve the effective persisted TTL when the override is omitted. Set
+`RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS` to the authenticated client IDs that
 may request operator tokens (see Controller Configuration Profile).
 
 The same scripts independently generate or preserve

@@ -9,9 +9,7 @@ import { runOwnedTestProcess } from './owned-test-process.ts';
 const repoRoot = path.resolve(__dirname, '../../..');
 const controllerDir = path.join(repoRoot, 'scripts/hosted-rallar/controller');
 
-async function inspect(context: TestContext, overrides: Record<string, string> = {}) {
-    const fixture = await mkdtemp(path.join(tmpdir(), 'rallar-hosted-inspect-'));
-    context.onTestFinished(() => rm(fixture, { recursive: true, force: true }));
+async function createInspectCommandPorts(fixture: string) {
     const bin = path.join(fixture, 'bin');
     await mkdir(bin);
     const commands = path.join(fixture, 'commands');
@@ -29,6 +27,10 @@ esac
         await writeFile(path.join(bin, name), name === 'pgrep' ? '#!/usr/bin/env bash\nexit 1\n' : stub);
         await chmod(path.join(bin, name), 0o755);
     }
+    return { bin, commands };
+}
+
+async function createInspectConfiguration(fixture: string) {
     const envFile = path.join(fixture, 'api.env');
     const secretFile = path.join(fixture, 'secret.env');
     const controlFile = path.join(fixture, 'control.env');
@@ -61,6 +63,10 @@ esac
             ''
         ].join('\n')
     );
+    return { envFile, secretFile, controlFile, spaFile };
+}
+
+async function createInspectSourceFixture(fixture: string) {
     await mkdir(path.join(fixture, '.git'));
     await mkdir(path.join(fixture, 'apps/api-v1/prisma/migrations/20261018000000_fixture'), { recursive: true });
     await writeFile(path.join(fixture, 'apps/api-v1/prisma/migrations/20261018000000_fixture/migration.sql'), 'SELECT 1;\n');
@@ -75,6 +81,14 @@ esac
             publicHealthStatus: 'passed'
         })
     );
+}
+
+async function inspect(context: TestContext, overrides: Record<string, string> = {}) {
+    const fixture = await mkdtemp(path.join(tmpdir(), 'rallar-hosted-inspect-'));
+    context.onTestFinished(() => rm(fixture, { recursive: true, force: true }));
+    const { bin, commands } = await createInspectCommandPorts(fixture);
+    const { envFile, secretFile, controlFile, spaFile } = await createInspectConfiguration(fixture);
+    await createInspectSourceFixture(fixture);
     const stream = `${await readFile(path.join(controllerDir, 'rallar-api-effective-env.sh'), 'utf8')}\n${await readFile(
         path.join(controllerDir, '07-status-controller.sh'),
         'utf8'
@@ -120,6 +134,27 @@ describe('hosted operator inspect', () => {
         const { stdout, stderr } = await fixture.run();
         expect(stderr).toBe('');
         const evidence = JSON.parse(stdout);
+        expect(Object.keys(evidence).sort()).toEqual([
+            'activity',
+            'configuration',
+            'database',
+            'deployedCommit',
+            'dirty',
+            'failureFence',
+            'health',
+            'jobCount',
+            'operatorSettings',
+            'packageLockSha256',
+            'prismaSchemaSha256',
+            'processes',
+            'readiness',
+            'services',
+            'sourceMigrations'
+        ].sort());
+        expect(evidence.deployedCommit).toBe('0'.repeat(40));
+        expect(evidence.dirty).toBe(false);
+        expect(evidence.jobCount).toBe(0);
+        expect(evidence.activity).toEqual({ rolloutProcessPresent: false, recipeProcessPresent: false });
         expect(evidence.configuration.RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT).toEqual({ present: true, value: '4', source: 'secret' });
         expect(evidence.configuration.RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE).toEqual({ present: false, value: null, source: null });
         expect(evidence.configuration.RALLAR_TIMING_LOGS).toEqual({ present: true, value: '0', source: 'environment' });
@@ -171,6 +206,15 @@ describe('hosted operator inspect', () => {
         });
     });
 
+    it('fails without printing partial evidence when source migration files are absent', async (context) => {
+        const fixture = await inspect(context);
+        await rm(path.join(fixture.fixture, 'apps/api-v1/prisma/migrations/20261018000000_fixture/migration.sql'));
+        await expect(fixture.run()).rejects.toMatchObject({
+            stderr: expect.stringContaining('required nonsecret evidence: migration files'),
+            stdout: ''
+        });
+    });
+
     it('fails closed when required database evidence cannot be read', async (context) => {
         const fixture = await inspect(context);
         await writeFile(
@@ -203,6 +247,25 @@ describe('hosted operator inspect', () => {
             spa.replace('VITE_RALLAR_CONTROL_URL=wss://control.example.test/control', 'VITE_RALLAR_CONTROL_URL=wss://different.example.test/control')
         );
         await expect(fixture.run()).rejects.toMatchObject({ stderr: expect.stringContaining('public settings mirror'), stdout: '' });
+    });
+
+    it('rejects matching CORS mirrors that omit the SPA origin because rollout would change them', async (context) => {
+        const fixture = await inspect(context);
+        const otherOrigin = 'https://other.example.test';
+        const spa = await readFile(fixture.spaFile, 'utf8');
+        await writeFile(fixture.spaFile, spa.replaceAll('ORIGINS=https://spa.example.test', `ORIGINS=${otherOrigin}`));
+        const api = await readFile(fixture.envFile, 'utf8');
+        await writeFile(fixture.envFile, api.replace('CORS_ORIGINS=https://spa.example.test', `CORS_ORIGINS=${otherOrigin}`));
+        const control = await readFile(fixture.controlFile, 'utf8');
+        await writeFile(
+            fixture.controlFile,
+            control.replace('RALLAR_BLACK_BOX_ALLOWED_ORIGINS=https://spa.example.test', `RALLAR_BLACK_BOX_ALLOWED_ORIGINS=${otherOrigin}`)
+        );
+
+        await expect(fixture.run()).rejects.toMatchObject({
+            stderr: expect.stringContaining('public settings SPA origin missing from CORS'),
+            stdout: ''
+        });
     });
 
     it('fails before printing a URL with a query or a missing required public setting', async (context) => {

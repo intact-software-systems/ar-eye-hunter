@@ -27,6 +27,9 @@ RALLAR_AUTH_CREDENTIAL_SECRET=$(printf 'x%.0s' {1..32})
 RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=stable-operator-token
 RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS=operations-admin
 EOF
+if [[ "${TEST_SCENARIO}" == rollout-success ]]; then
+	printf 'RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS=3600000\n' >>/etc/rallar/api-v1.env
+fi
 printf 'RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=stable-operator-token\nRALLAR_BLACK_BOX_ADMIN_TOKEN=stable-admin-token\n' >/etc/rallar/control-server.env
 original_api_environment="$(cat /etc/rallar/api-v1.env)"
 original_control_environment="$(cat /etc/rallar/control-server.env)"
@@ -117,7 +120,15 @@ case "${TEST_SCENARIO}" in
 esac
 
 case "${TEST_SCENARIO}" in
-	deploy-success | deploy-initial | rollout-success)
+	rollout-success)
+		RALLAR_API_SERVER_TIMING=1 bash "${script}" >/fixture/output.log 2>&1
+		grep -Fqx 'RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS=3600000' /etc/rallar/api-v1.env
+		grep -Fqx 'RALLAR_TIMING_LOGS=1' /etc/rallar/api-v1.env
+		RALLAR_API_SERVER_TIMING=0 bash "${script}" >>/fixture/output.log 2>&1
+		grep -Fqx 'RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS=3600000' /etc/rallar/api-v1.env
+		grep -Fqx 'RALLAR_TIMING_LOGS=0' /etc/rallar/api-v1.env
+		;;
+	deploy-success | deploy-initial)
 		bash "${script}" >/fixture/output.log 2>&1
 		;;
 	*)

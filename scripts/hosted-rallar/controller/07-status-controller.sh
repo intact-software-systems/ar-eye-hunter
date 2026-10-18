@@ -68,7 +68,7 @@ inspect_public_setting_shape() {
 }
 
 inspect_operator_settings() {
-	local key value api_cors control_cors mirror index settings='{}'
+	local key value mirror index settings='{}'
 	local keys=(
 		RALLAR_BLACK_BOX_SPA_URL RALLAR_BLACK_BOX_CONTROL_URL RALLAR_API_BASE_URL
 		RALLAR_API_CORS_ORIGINS RALLAR_BLACK_BOX_ALLOWED_ORIGINS
@@ -99,6 +99,12 @@ inspect_operator_settings() {
 			return 1
 		}
 	done
+	inspect_public_cors_consistency "${settings}" || return 1
+	printf '%s' "${settings}"
+}
+
+inspect_public_cors_consistency() {
+	local settings="$1" api_cors control_cors spa_origin
 	api_cors="$(read_rallar_api_effective_env_value "${RALLAR_API_ENV_FILE}" CORS_ORIGINS)" || {
 		inspect_fail "public settings API CORS"
 		return 1
@@ -115,7 +121,12 @@ inspect_operator_settings() {
 		inspect_fail "public settings control CORS mismatch"
 		return 1
 	}
-	printf '%s' "${settings}"
+	spa_origin="$(printf '%s' "${settings}" | jq -r '.RALLAR_BLACK_BOX_SPA_URL.value')"
+	spa_origin="${spa_origin%/}"
+	[[ ",${api_cors}," == *",${spa_origin},"* && ",${control_cors}," == *",${spa_origin},"* ]] || {
+		inspect_fail "public settings SPA origin missing from CORS"
+		return 1
+	}
 }
 
 inspect_service_state() {
@@ -147,15 +158,9 @@ inspect_health_code() {
 	printf '%s' "${code}"
 }
 
-inspect_hosted_controller() {
-	local configuration operator_settings deployed_commit dirty package_hash schema_hash readiness migrations='[]'
-	local migration_file migration_name migration_hash migration_files database services processes jobs health
-	local checkout_status api_state control_state postgres_state caddy_state headless_state
-	local api_process control_process headless_process
-	local api_loopback control_loopback api_public control_public rollout_activity recipe_activity
-	local api_base_url control_url control_host control_scheme
-	configuration="$(inspect_configuration)" || return 1
-	operator_settings="$(inspect_operator_settings)" || return 1
+inspect_source_state() {
+	local deployed_commit dirty package_hash schema_hash migrations='[]'
+	local migration_file migration_name migration_hash migration_files checkout_status
 	[[ -d "${RALLAR_CHECKOUT_DIR}/.git" ]] || { inspect_fail "checkout"; return 1; }
 	deployed_commit="$(git -C "${RALLAR_CHECKOUT_DIR}" rev-parse --verify HEAD 2>/dev/null)" || { inspect_fail "commit"; return 1; }
 	[[ "${deployed_commit}" =~ ^[0-9a-f]{40}$ ]] || { inspect_fail "commit"; return 1; }
@@ -177,10 +182,15 @@ inspect_hosted_controller() {
 		migrations="$(jq -cn --argjson prior "${migrations}" --arg name "${migration_name}" --arg checksum "${migration_hash}" \
 			'$prior + [{name: $name, checksum: $checksum}]')" || return 1
 	done <<<"${migration_files}"
-	readiness="$(jq -ce '{deployedCommit, apiHealthStatus, controlHealthStatus, publicHealthStatus} |
-		select(.deployedCommit | test("^[0-9a-f]{40}$")) |
-		select(all(.apiHealthStatus, .controlHealthStatus, .publicHealthStatus; . == "passed" or . == "failed"))' \
-		"${RALLAR_DEPLOYMENT_READINESS_PATH}" 2>/dev/null)" || { inspect_fail "readiness"; return 1; }
+	jq -cn --arg deployedCommit "${deployed_commit}" --argjson dirty "${dirty}" \
+		--arg packageLockSha256 "${package_hash}" --arg prismaSchemaSha256 "${schema_hash}" \
+		--argjson sourceMigrations "${migrations}" \
+		'{deployedCommit: $deployedCommit, dirty: $dirty, packageLockSha256: $packageLockSha256,
+		prismaSchemaSha256: $prismaSchemaSha256, sourceMigrations: $sourceMigrations}'
+}
+
+inspect_database() {
+	local database
 	database="$(runuser -u postgres -- psql --no-psqlrc --quiet -At -v ON_ERROR_STOP=1 -d rallar_api_v1 -c "
 BEGIN TRANSACTION READ ONLY;
 SELECT json_build_object(
@@ -201,6 +211,12 @@ COMMIT;" 2>/dev/null)" || { inspect_fail "database"; return 1; }
 		select(all(.migrations[]; (.name | test("^[0-9]{14}_[a-z0-9_]+$")) and (.checksum | test("^[0-9a-f]{64}$")) and (.applied | type == "boolean") and (.failed | type == "boolean"))) |
 		{databaseOid, roleOid, runtimeStateTableOid, totalRows, authUserRows, groupRows,
 		migrations: [.migrations[] | {name, checksum, applied, failed}]}' 2>/dev/null)" || { inspect_fail "database projection"; return 1; }
+	printf '%s' "${database}"
+}
+
+inspect_services() {
+	local api_state control_state postgres_state caddy_state headless_state
+	local api_process control_process headless_process services processes
 	api_state="$(inspect_service_state rallar-api-v1.service)" || return 1
 	control_state="$(inspect_service_state rallar-black-box-control.service)" || return 1
 	postgres_state="$(inspect_service_state postgresql.service)" || return 1
@@ -216,6 +232,11 @@ COMMIT;" 2>/dev/null)" || { inspect_fail "database"; return 1; }
 	headless_process="$(inspect_service_process rallar-black-box-headless-worker.service)" || return 1
 	processes="$(jq -cn --argjson api "${api_process}" --argjson control "${control_process}" \
 		--argjson headless "${headless_process}" '{api: $api, control: $control, headless: $headless}')" || return 1
+	jq -cn --argjson services "${services}" --argjson processes "${processes}" '{services: $services, processes: $processes}'
+}
+
+inspect_activity() {
+	local jobs rollout_activity recipe_activity
 	jobs="$(systemctl list-jobs --no-legend --no-pager 2>/dev/null)" || { inspect_fail "system jobs"; return 1; }
 	jobs="$(printf '%s\n' "${jobs}" | awk '$1 ~ /^[0-9]+$/ { n++ } END { print n+0 }')"
 	rollout_activity=false
@@ -226,6 +247,14 @@ COMMIT;" 2>/dev/null)" || { inspect_fail "database"; return 1; }
 	if pgrep -f '[1]4-run-distributed-recipe.sh' >/dev/null 2>&1; then recipe_activity=true; else
 		[[ "$?" == 1 ]] || { inspect_fail "recipe activity"; return 1; }
 	fi
+	jq -cn --argjson jobCount "${jobs}" --argjson rolloutProcessPresent "${rollout_activity}" \
+		--argjson recipeProcessPresent "${recipe_activity}" \
+		'{jobCount: $jobCount, activity: {rolloutProcessPresent: $rolloutProcessPresent, recipeProcessPresent: $recipeProcessPresent}}'
+}
+
+inspect_health() {
+	local operator_settings="$1" api_loopback control_loopback api_public control_public
+	local api_base_url control_url control_host control_scheme
 	api_loopback="$(inspect_health_code http://127.0.0.1:8080/api/config)" || return 1
 	control_loopback="$(inspect_health_code http://127.0.0.1:5180/health)" || return 1
 	api_base_url="$(printf '%s' "${operator_settings}" | jq -r '.RALLAR_API_BASE_URL.value')" || return 1
@@ -236,23 +265,32 @@ COMMIT;" 2>/dev/null)" || { inspect_fail "database"; return 1; }
 	control_host="${control_host%%/*}"
 	api_public="$(inspect_health_code "${api_base_url%/}/api/config")" || return 1
 	control_public="$(inspect_health_code "${control_scheme}://${control_host}/health")" || return 1
-	health="$(jq -cn \
+	jq -cn \
 		--arg apiLoopback "${api_loopback}" --arg controlLoopback "${control_loopback}" \
 		--arg apiPublic "${api_public}" --arg controlPublic "${control_public}" \
-		'{apiLoopback: $apiLoopback, controlLoopback: $controlLoopback, apiPublic: $apiPublic, controlPublic: $controlPublic}')" || return 1
-	jq -cn --arg deployedCommit "${deployed_commit}" --argjson dirty "${dirty}" \
-		--arg packageLockSha256 "${package_hash}" --arg prismaSchemaSha256 "${schema_hash}" \
-		--argjson configuration "${configuration}" --argjson operatorSettings "${operator_settings}" --argjson migrations "${migrations}" \
+		'{apiLoopback: $apiLoopback, controlLoopback: $controlLoopback, apiPublic: $apiPublic, controlPublic: $controlPublic}'
+}
+
+inspect_hosted_controller() {
+	local configuration operator_settings source_state readiness database services activity health
+	configuration="$(inspect_configuration)" || return 1
+	operator_settings="$(inspect_operator_settings)" || return 1
+	source_state="$(inspect_source_state)" || return 1
+	readiness="$(jq -ce '{deployedCommit, apiHealthStatus, controlHealthStatus, publicHealthStatus} |
+		select(.deployedCommit | test("^[0-9a-f]{40}$")) |
+		select(all(.apiHealthStatus, .controlHealthStatus, .publicHealthStatus; . == "passed" or . == "failed"))' \
+		"${RALLAR_DEPLOYMENT_READINESS_PATH}" 2>/dev/null)" || { inspect_fail "readiness"; return 1; }
+	database="$(inspect_database)" || return 1
+	services="$(inspect_services)" || return 1
+	activity="$(inspect_activity)" || return 1
+	health="$(inspect_health "${operator_settings}")" || return 1
+	jq -cn --argjson source "${source_state}" \
+		--argjson configuration "${configuration}" --argjson operatorSettings "${operator_settings}" \
 		--argjson readiness "${readiness}" --argjson database "${database}" \
-		--argjson services "${services}" --argjson processes "${processes}" \
-		--argjson jobCount "${jobs}" --argjson health "${health}" \
-		--argjson rolloutActivity "${rollout_activity}" --argjson recipeActivity "${recipe_activity}" \
+		--argjson services "${services}" --argjson activity "${activity}" --argjson health "${health}" \
 		--argjson failureFence "$([[ -e "${RALLAR_API_STORE_FAILURE_FILE}" || -L "${RALLAR_API_STORE_FAILURE_FILE}" ]] && echo true || echo false)" \
-		'{deployedCommit: $deployedCommit, dirty: $dirty, packageLockSha256: $packageLockSha256,
-		prismaSchemaSha256: $prismaSchemaSha256, sourceMigrations: $migrations,
-		configuration: $configuration, operatorSettings: $operatorSettings, readiness: $readiness, database: $database,
-		failureFence: $failureFence, services: $services, processes: $processes, jobCount: $jobCount,
-		activity: {rolloutProcessPresent: $rolloutActivity, recipeProcessPresent: $recipeActivity}, health: $health}'
+		'$source + {configuration: $configuration, operatorSettings: $operatorSettings, readiness: $readiness,
+		database: $database, failureFence: $failureFence, health: $health} + $services + $activity'
 }
 
 if [[ "${1:-}" == "--inspect" ]]; then

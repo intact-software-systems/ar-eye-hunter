@@ -10,7 +10,6 @@ RALLAR_INCLUDE_CADDY="${RALLAR_INCLUDE_CADDY:-0}"
 RALLAR_INSTALL_PLAYWRIGHT="${RALLAR_INSTALL_PLAYWRIGHT:-0}"
 RALLAR_BLACK_BOX_BROWSER_ENGINE="${RALLAR_BLACK_BOX_BROWSER_ENGINE:-chromium}"
 RALLAR_ACME_EMAIL="${RALLAR_ACME_EMAIL:-}"
-RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS="${RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS:-86400000}"
 RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS="${RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS:-}"
 RALLAR_DISTRIBUTED_ARTIFACT_DIR="${RALLAR_DISTRIBUTED_ARTIFACT_DIR:-/tmp/rallar-distributed-runs}"
 RALLAR_ROLLOUT_CONTROL_STATE_DIR="${RALLAR_ROLLOUT_CONTROL_STATE_DIR:-/var/lib/rallar-black-box-control}"
@@ -336,6 +335,24 @@ require_writable_api_diagnostic_configuration() {
 	done
 }
 
+resolve_operator_token_ttl_ms() {
+	local ttl status
+	if [[ "${RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS+x}" == x ]]; then
+		ttl="${RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS}"
+	elif ttl="$(read_rallar_api_effective_env_value "${RALLAR_API_ENV_FILE}" RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS)"; then
+		:
+	else
+		status=$?
+		[[ "${status}" == 3 ]] || return "${status}"
+		ttl=86400000
+	fi
+	[[ "${ttl}" =~ ^[1-9][0-9]*$ ]] || {
+		echo "RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS must be a positive integer." >&2
+		return 1
+	}
+	printf '%s' "${ttl}"
+}
+
 run_rollout_self_test() {
 	case "${RALLAR_ROLLOUT_SCRIPT_SELF_TEST:-}" in
 	checkout-ref)
@@ -474,11 +491,11 @@ normalize_api_environment_allowlist() {
 }
 
 ensure_operator_token_secret() {
-	local secret
+	local ttl="$1" secret
 	secret="$(read_rallar_api_effective_env_value "${RALLAR_API_ENV_FILE}" RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET)"
 
 	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET" "${secret}"
-	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS" "${RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS}"
+	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS" "${ttl}"
 	update_env_value "${RALLAR_CONTROL_ENV_FILE}" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET" "${secret}"
 }
 
@@ -519,6 +536,7 @@ fi
 
 validate_rallar_api_existing_store_configuration "${RALLAR_API_ENV_FILE}"
 require_writable_api_diagnostic_configuration
+operator_token_ttl_ms="$(resolve_operator_token_ttl_ms)"
 
 repair_known_rollout_generated_checkout_changes "${RALLAR_CHECKOUT_DIR}"
 
@@ -615,7 +633,7 @@ echo "==> Updating control-server browser origins"
 update_control_allowed_origins
 
 echo "==> Ensuring black-box operator token broker secret"
-ensure_operator_token_secret
+ensure_operator_token_secret "${operator_token_ttl_ms}"
 
 echo "==> Ensuring stable API auth credential secret"
 ensure_api_auth_credential_secret
