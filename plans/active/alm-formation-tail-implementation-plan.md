@@ -99,6 +99,50 @@ Canonical correctness, postflight and owned cleanup pass. The earlier incomplete
 capture remains evidence of the repaired defects, not a discarded run.
 Instrumented timings are attribution evidence, not performance acceptance.
 
+## Current hosted formation evidence
+
+The corrected timing-enabled fifty-agent workload passes registration in all
+seventeen shards and all 150 commands across fifty agents, with no reconnects,
+failed, missing, stale or flaky agents. The run takes 78.708 s. Its fifty warning
+diagnostics are the existing session-identity mismatch notices. Timing-off
+restoration and fresh inspection pass: public settings, exact timing/topology,
+database/role/table identities and all migrations match the baseline; services
+are healthy and idle. Existing users can sign in through the preserved store.
+
+The retained same-server evidence now locates a slow promotion: marker to publish
+5.424 s, publish to positive send to all fifty recipients 0.004 s, total 5.428 s.
+A later promotion takes 0.134 s. Correlation uses the actual shared queue-key
+translation, full scope and browser-observed accepted causal tuples; it does not
+assume emitted queue keys contain the command text or equate planned layout with
+accepted event revision. Both observed layouts have all fifty browser adoption
+identities. Browser-host clocks are not subtracted from the server clock.
+
+For the slow case, a uniquely scoped, single-work summary-write marker appears
+0.164 s after promotion, leaving 5.260 s before publication. This marker records
+routine return and does not explicitly encode committed outcome; preserve that
+limitation. Attribute this interval to actual queue claim, admission and dispatch
+stages using existing evidence before selecting a repair. Add only the minimum
+missing timing at the current owner if those stages cannot be distinguished.
+The passing workload does not establish the complete ≤2 s target.
+
+The next diagnostic uses optional timing at the existing summary, claim,
+admission and publication owners. Each committed summary output has its own
+post-transaction-return observation and physical key. Claimed attempts retain
+their own key and attempt identity; ordered dispatch also retains the actual
+publication key. Terminal outcomes distinguish cancellation, expiry, decoding
+failure and admission refusal. Attempt settlement precedes durable release and
+must not be presented as a release certificate. Production timing-off configuration
+omits these optional sinks before constructing their details. Held-work and
+failure tests validate the boundaries; only a hosted capture can attribute the
+remaining delay. No queue scheduling, concurrency or retry policy changes are
+selected by this instrumentation alone.
+
+The control journal again reports the post-terminal 100,000-node certification
+limit, distinct from native workload success. It also records 47 snapshot flushes,
+with a maximum 2.76621 s wall duration (0.305 s serialization, 2.461 s writing).
+This is a measured control-harness cost, not proof of ALM causation. Retain the
+large-result certification and snapshot allocation/I/O follow-ups.
+
 ## Unresolved comparative acceptance
 
 The fresh corrected-harness comparison is valid but still fails hot throughput:
@@ -165,18 +209,15 @@ These associations do not establish causation or waive the failed gate.
 
 ## Next two useful slices
 
-1. **Remaining formation-tail delivery.** The existing promotion marker and all
-   local browser endpoints are now measured. Establish the current hosted
-   promotion-to-send interval using existing same-server journals where possible.
-   The store-preserving rollout prerequisite is implemented and reviewed, with
-   actual lifecycle and PostgreSQL retention tests. Establish read-only remote
-   preflight and exact settings restoration before dispatch; keep cross-host
-   browser clock bounds explicit. The local policy probe does not justify an optimization. Add
-   intermediate delta/claim/publish spans only if the observed delivery interval
-   warrants them, then repair a positively located defect with TDD. Preserve
-   every immutable event/audience, causal fence and fault outcome. Diagnostic
-   local 15 → 30 → 50 uses the unchanged memory/headless workload; hosted
-   timing-off acceptance remains separate.
+1. **Remaining formation-tail delivery.** The current hosted fifty-agent run
+   passes unchanged native correctness but locates a 5.428 s promotion-to-send
+   interval. Its singleton summary-write return leaves 5.260 s before publish;
+   the exact entry has no claim/admission timing. Task 9 adds the minimum missing
+   identity-only boundaries at existing owners, then measures one unchanged
+   hosted workload to select a TDD repair. Preserve every immutable event/audience,
+   causal fence, retry and fault outcome. Store/settings preservation and exact
+   timing-off restoration are tested and live-verified prerequisites for each
+   diagnostic; cross-host browser clocks and physical commit limits stay explicit.
 2. **State-write command completion.** The demonstrated harness wait is repaired
    and independently reviewed; the fresh governed comparison uses that corrected
    harness on both roles. Retain every owned drain, failure and phase cost, and
@@ -480,15 +521,70 @@ preserving preparation succeeded, but all seventeen agent shards rejected HTTP
 fifty agents connected and no recipe started; operation artifacts and journals
 are retained. This invalidates the assumption that the registration consumer
 already supports persisted users. A real AppInbox duplicate registration, serialized
-by the existing API route, reproduces the rejected canonical response. Repair
-that consumer with the shared strict decoder and narrowly recognized duplicate-user
-semantics; reject unrelated conflicts and malformed responses. Keep registration
-on and preserve the database. Validate the actual shell against producer output,
-the affected workflow tests and test typing, then independently review before
-another hosted attempt. The deleted live response body remains unverified.
+by the existing API route, reproduces the rejected canonical response. The consumer
+now uses the shared strict decoder and narrowly recognized duplicate-user semantics,
+while rejecting unrelated conflicts and malformed responses. Registration stays
+on and the database is preserved. Producer-backed shell tests, 49 affected tests,
+test typing and independent review pass. The deleted live response body from the
+failed attempt remains unverified.
 Mandatory timing-off restoration succeeded after the failed attempt. Fresh
 inspection matches the prior public-settings fingerprint, exact timing/topology,
 database/role/table identities, all migrations and aggregate row counts; services
-are healthy and idle on the reviewed source. These aggregate checks do not prove
-individual login continuity; the corrected registration/login path still needs
-live verification before formation measurement can resume.
+are healthy and idle on the reviewed source. These aggregate checks alone do not
+prove individual login continuity. The subsequent corrected hosted diagnostic
+also succeeds through all seventeen registration shards and fifty existing-user
+logins, and passes native formation correctness. Its restoration and inspection
+also pass; the current formation measurement above remains the next repair target.
+
+### Task 9: Attribute the measured hosted outbox publication delay
+
+The requested outcome remains a faster, scalable and fault-tolerant formation
+path. The current hosted run establishes one 5.428 s promotion-to-send interval:
+5.424 s before publication and 0.004 s after it. A single-work summary-write return
+marker at +0.164 s leaves 5.260 s that the existing telemetry cannot split. The
+exact target key appears only at publish/send. Do not select new concurrency,
+batching, retry or queue policy from this unsplit interval.
+
+Use the performance-analysis, code-writing, realtime/platform and testing skills
+at the existing owners. First recover the actual committed summary output,
+outbox claim return, admission boundaries, ordered dispatch and bridge publish
+call. Add the smallest optional identity-only timing needed to correlate those
+boundaries for this same outbox entry. Reuse the current timing/observation
+mechanism, canonical queue-key translation and process identity; do not introduce
+a second observer, scheduler, retained timeline or copied key parser. Preserve
+all outputs of coalesced work and their own causal identities; never attribute a
+primary work item's marker to an unobserved sibling.
+
+- A committed-output marker must follow a successful transaction return and
+  identify each actual output; summary-changed, rollback and failed writes must
+  not claim commitment. If an existing outcome marker can be extended truthfully,
+  prefer it. Keep physical commit time distinct from post-return observation.
+- Queue markers must state the actual boundary they observe: reservation return,
+  admission start/end, ordered dispatch start, and publish start/end only where
+  existing evidence does not already provide the endpoint. Retries, duplicate
+  attempts, cancellation, rejection and zero-recipient results remain distinguishable.
+  Establish the minimal sufficient set from the current call path before editing.
+- Keep timing opt-in and bounded by the existing capture/export limits. Record
+  only already-permitted scope/key/process identity, stage, outcome and clocks;
+  no event payload, auth material, invented IDs or new public/persisted contract.
+  Disabled timing must not add storage reads, waits or retained collections.
+- TDD must execute the real affected owner boundaries: held work proves marker
+  ordering, failure/summary-changed proves no false commitment, coalesced work
+  preserves each output identity, and disabled timing leaves effects unchanged.
+  Use existing fixtures and ports; do not create a parallel miniature engine or
+  tests that merely assert log source strings.
+- Review and remediate every changed human-authored file in full. Every support
+  file modified by that remediation enters closure recursively; independent
+  untouched code remains outside closure. Remove affected unneeded legacy.
+- Direct validation is the focused owner tests proving these temporal and failure
+  semantics. Affected validation is the shared package/API typecheck and canonical
+  test typing selected by rallar-testing. Run focused tests before broader checks,
+  then independent spec/quality review. Do not rerun unchanged broad suites or a
+  performance comparison merely to obtain a favorable result.
+
+After publication and appropriate CI, the parent performs one unchanged native
+fifty-agent timing-enabled diagnostic with preserved settings and fresh group,
+exports its evidence, restores timing off on that exact source and verifies the
+baseline. Report the new stage intervals in seconds and choose a TDD repair only
+for the measured dominant interval. The failed hot-throughput comparison and
+full ≤2 s formation target remain open.

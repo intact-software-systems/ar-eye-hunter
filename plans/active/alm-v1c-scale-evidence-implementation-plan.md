@@ -197,39 +197,32 @@ final evidence reconciliation must preserve workload provenance and the unwaived
 
 ## Next two useful slices
 
-1. **Remaining formation-tail delivery:** the bounded group-admission read repair preserves
-   ordered commit/fallback and passes native scale acceptance, but does not establish the
-   complete target. Current local marker-to-adoption maxima are 0.039 / 0.359 / 0.386 s
-   at 15 / 30 / 50 agents with all expected browser pairs and native predicates covered.
-   These single memory-backend diagnostics do not reproduce the historical hosted PostgreSQL
-   delay or establish a clock-bounded commit interval. Recover current hosted delivery evidence
-   before selecting another repair. The preserving controller migration path now passes local
-   lifecycle and real PostgreSQL retention tests plus independent review. The existing GitHub operator
-   channel now has a reviewed read-only inspect action and explicit topology restoration
-   inputs. Live inspect passes with matching schema/migrations and healthy idle services.
-   Because GitHub masks two public setting values, the opt-in mode validates and
-   preserves the actual ten public settings on-controller through the existing writer,
-   with a fingerprint for pre/post equality. Local preservation tests pass; a subsequent
-   workflow-cleanup correction is independently approved. GitHub exposed its 25-input
-   dispatch limit before any job ran; the preserving mode now uses the existing
-   rollout choice without removing true/false invocation behavior. The correction
-   passes 49 workflow tests and independent review. GitHub accepted the corrected
-   workflow and preserving preparation succeeded, but all seventeen shards then
-   rejected registration conflicts before workers started. No recipe ran. A real
-   AppInbox/route-serializer test reproduces the consumer's unsupported canonical
-   persisted-user response. Repair it using the existing strict decoder with narrow
-   duplicate-user recognition, retaining fatal handling of other conflicts and
-   malformed responses. Keep registration enabled and the database intact. Retain
-   the failed attempt and restore timing off before a fresh inspected, reviewed
-   diagnostic; the unretained live response body is not verified. Repeat live preflight;
-   keep diagnostic worker scope independent and preserve absent/set topology and effective
-   secrets. Use TDD for a positively
-   located defect and reuse existing queuebox and ALM
-   mechanisms; preserve every event, frozen audiences, causal fences and failure recovery.
-   Compare the same queued burst with a late promotion before and after the repair, including
-   stale claims and transient failures at the affected boundary. Validate affected packages
-   and the unchanged local 15 → 30 → 50 workload before hosted timing-off acceptance. Keep the
-   ≤2 s formation-tail target explicit; report any remaining delay without weakening acceptance.
+1. **Remaining formation-tail delivery:** bounded group-admission reads preserve
+   ordered commit/fallback and pass native scale acceptance. Local marker-to-adoption
+   maxima are 0.039 / 0.359 / 0.386 s at 15 / 30 / 50 agents, but those memory-backend
+   observations do not establish hosted latency. The corrected unchanged hosted
+   fifty-agent diagnostic passes all registrations, 150 commands and 231 group
+   assertions. Its first retained all-cohort layout takes 5.428 s from promotion
+   marker to positive send to all fifty recipients; a later layout takes 0.134 s.
+   The slow singleton summary-write return precedes publish by 5.260 s, with no
+   exact-entry claim/admission markers. The optional identity-only timing slice
+   observes each committed output after transaction return, each claimed attempt,
+   admission, ordered publication and actual publish calls. Retain both claim and
+   publication keys, and distinguish cancelled, expired, malformed and refused
+   attempts. Attempt settlement is not durable release; physical commit and
+   queue-ready time remain unmeasured. Production timing-off omits the new sinks.
+   Use the next hosted capture to select a measured TDD repair. Do not change
+   concurrency, retries, workload, deadlines or predicates based on this unsplit
+   interval. Keep immutable events,
+   frozen audiences, causal fences and recovery intact.
+   Preserving rollout, strict read-only preflight and exact timing/topology/public
+   settings restoration now pass local tests, independent review and live checks.
+   Registration reuses the shared canonical decoder; the earlier failed attempts
+   remain retained. Every diagnostic still requires fresh preflight, exact-source
+   timing-off restoration and verification. Keep physical-commit and browser-clock
+   uncertainty explicit; the full ≤2 s target remains open. Retain the post-terminal
+   100,000-node certification limit and measured snapshot serialization/write costs
+   as distinct harness follow-ups, without asserting ALM causation.
 2. **Validate corrected state-write command completion:** logical enqueue association, bounded
    capture and the demonstrated harness wait for dequeue/timer cleanup are repaired with TDD.
    The actual service-sequence endpoint is recorded while one command-owned pump remains joined
