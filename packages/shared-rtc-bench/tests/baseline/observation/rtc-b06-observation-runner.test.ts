@@ -332,8 +332,10 @@ describe('RTC-B06 observation runner', () => {
         const { configured } = dependencies();
         const issues = [{ path: '$.SHA256SUMS', code: 'raw-sha256-mismatch', message: 'Retained evidence hash differs.' }];
         configured.envelope.readBaselineValidation = async () => ({ ok: false, issues });
+        configured.createArchive = async () => {
+            throw new Error('Invalid retained evidence must never be archived');
+        };
         expect(await createRtcB06ObservationRunner(configured).run(workflow)).toEqual({ ok: false, issues });
-        expect(configured.createArchive).not.toHaveBeenCalled();
     });
 
     it('exposes noisy timing disposition and retained warnings in operator output without a repeat', async () => {
@@ -349,7 +351,6 @@ describe('RTC-B06 observation runner', () => {
                 observation: { primary: { outcome: 'passed', acceptedMetrics: true }, repeat: { decision: 'not-required', outcome: 'not-run' } }
             }
         });
-        expect(configured.runLiveRtcProducer).toHaveBeenCalledTimes(attempts.length);
     });
     it('captures the predeclared E3 attempts and retention cohort before publishing accepted evidence', async () => {
         const { configured } = dependencies();

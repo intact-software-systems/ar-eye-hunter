@@ -327,3 +327,146 @@ it.each(['events', 'recentEvents', 'state.events'])(
         );
     }
 );
+
+it.each([
+    'resultCache.$.captured.value',
+    'resultCache.payload.captured.value',
+    'resultCache.$.payload.captured.value',
+    'state.$.resultCache.captured.value',
+    'state.payload.resultCache.captured.value',
+    'state.$.payload.resultCache.captured.value',
+    'state.$.commandHistory.length',
+    'state.payload.results.length',
+    'state.$.failures.length'
+])('uses canonical source grammar for released %s values', async (source) => {
+    const runtime = createDefaultRallarBlackBoxTestRuntime();
+    const captured = await runtime.execute({ kind: 'health', commandId: 'captured' }, identity);
+    expect((await runtime.execute({ kind: 'assert', source, operator: 'exists', expected: false }, identity)).error?.code).toBe(
+        'RALLAR_BLACK_BOX_ASSERT_FAILED'
+    );
+    const receipt = (await computeResultCaptureReceipt(captured, identity))!;
+    expect((await runtime.releaseResults({ ...identity, requestId: 'prefixed', receipts: [receipt] })).status).toBe('released');
+    expect((await runtime.execute({ kind: 'assert', source, operator: 'exists', expected: false }, identity)).error?.code).toBe(
+        'RALLAR_BLACK_BOX_RESULT_RELEASED'
+    );
+});
+
+it.each(['resultCache.$.captured.value', 'resultCache.payload.captured.value', 'state.$.resultCache.captured.value'])(
+    'protects a canonical comparison reference %s after release',
+    async (comparisonSource) => {
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
+            commandExecutor: (command) => command.kind === 'health' ? { status: 'ok', value: ['one'] } : undefined
+        });
+        const captured = await runtime.execute({ kind: 'health', commandId: 'captured' }, identity);
+        runtime.recordEvent({ kind: 'message', topic: 'application', payload: { values: ['one'] } });
+        const command = { kind: 'assert', source: 'events.1.payload.values', operator: 'sameUniqueStringSet', comparisonSource } as const;
+        expect((await runtime.execute(command, identity)).ok).toBe(true);
+        const receipt = (await computeResultCaptureReceipt(captured, identity))!;
+        expect((await runtime.releaseResults({ ...identity, requestId: 'comparison-prefix', receipts: [receipt] })).status).toBe('released');
+        expect((await runtime.execute(command, identity)).error?.code).toBe('RALLAR_BLACK_BOX_RESULT_RELEASED');
+    }
+);
+
+it.each([
+    { payloadPath: 'value', exists: true },
+    { payloadPath: '$.payload.value', exists: false },
+    { payloadPath: 'value.answer', equals: 'kept' },
+    { payloadPath: 'value.answer', contains: 'ke' },
+    { payloadFields: { 'value.answer': 'kept' } },
+    { contains: 'kept' }
+])('does not substitute released evidence for wait payload query %j', async (query) => {
+    for (const absent of [false, true]) {
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
+            commandExecutor: (command) => command.kind === 'health' ? { status: 'ok', value: { answer: 'kept' } } : undefined
+        });
+        const captured = await runtime.execute({ kind: 'health', commandId: 'captured' }, identity);
+        const receipt = (await computeResultCaptureReceipt(captured, identity))!;
+        expect((await runtime.releaseResults({ ...identity, requestId: 'wait-payload', receipts: [receipt] })).status).toBe('released');
+        const waited = await runtime.execute({
+            kind: 'wait',
+            commandId: 'query',
+            timeoutMs: 0,
+            ...(absent ? { absent: true } : {}),
+            match: { kind: 'result', commandId: 'captured', ...query }
+        }, identity);
+        expect(waited.error?.code).toBe('RALLAR_BLACK_BOX_RESULT_RELEASED');
+    }
+});
+
+it('preserves event presence, release metadata, actual application matches and routing/window exclusions', async () => {
+    const runtime = createDefaultRallarBlackBoxTestRuntime({
+        commandExecutor: (command) => command.kind === 'health' ? { status: 'ok', value: { answer: 'kept' } } : undefined
+    });
+    const captured = await runtime.execute({ kind: 'health', commandId: 'captured' }, identity);
+    const capturedAt = runtime.state().events[0].atEpochMs;
+    const receipt = (await computeResultCaptureReceipt(captured, identity))!;
+    expect((await runtime.releaseResults({ ...identity, requestId: 'wait-metadata', receipts: [receipt] })).status).toBe('released');
+    for (
+        const query of [
+            {},
+            { payloadPath: 'capture.ordinal', equals: captured.capture!.ordinal },
+            { payloadFields: { resultUnavailable: 'released-after-durable-capture' } },
+            { payloadPath: 'resultUnavailable', contains: 'durable-capture' },
+            { payloadPath: 'capture.absent', exists: false }
+        ]
+    ) {
+        expect((await runtime.execute({ kind: 'wait', timeoutMs: 0, match: { kind: 'result', commandId: 'captured', ...query } }, identity)).ok).toBe(true);
+    }
+    runtime.recordEvent({ kind: 'message', topic: 'application', payload: { value: 'known' } });
+    expect((await runtime.execute({ kind: 'wait', timeoutMs: 0, match: { payloadPath: 'value', equals: 'known' } }, identity)).ok).toBe(true);
+    const marker = runtime.state().events[0].payload;
+    runtime.recordEvent({ kind: 'result', topic: 'rallar.bb.command.result', commandId: 'application', payload: marker });
+    expect(
+        (await runtime.execute(
+            { kind: 'wait', timeoutMs: 0, match: { kind: 'result', commandId: 'application', payloadPath: 'value', exists: false } },
+            identity
+        )).ok
+    ).toBe(true);
+    for (
+        const match of [
+            { kind: 'message' as const, commandId: 'captured' },
+            { topic: 'application' },
+            { connection: 'other' },
+            { transport: 'messages.rtc' as const },
+            { severity: 'error' as const },
+            { kind: 'result' as const, commandId: 'other' },
+            { kind: 'result' as const, commandId: 'captured', sinceEpochMs: capturedAt + 1 }
+        ]
+    ) {
+        expect(
+            (await runtime.execute({
+                kind: 'wait',
+                timeoutMs: 0,
+                absent: true,
+                match: { commandId: 'captured', ...match, payloadPath: 'value', exists: true }
+            }, identity)).ok
+        )
+            .toBe(true);
+    }
+    expect((await runtime.execute({ kind: 'wait', timeoutMs: 0, absent: true, match: { payloadPath: 'value.answer', exists: true } }, identity)).error?.code)
+        .toBe('RALLAR_BLACK_BOX_RESULT_RELEASED');
+});
+
+it('defers release while a wait owns a future event window and admits release only after it settles', async () => {
+    const runtime = createDefaultRallarBlackBoxTestRuntime();
+    const captured = await runtime.execute({ kind: 'health', commandId: 'captured' }, identity);
+    const receipt = (await computeResultCaptureReceipt(captured, identity))!;
+    const request = { ...identity, requestId: 'pending-wait', receipts: [receipt] };
+    const pending = runtime.execute({
+        kind: 'wait',
+        commandId: 'future',
+        timeoutMs: 1_000,
+        match: { kind: 'message', topic: 'future', payloadPath: 'value', equals: 'known' }
+    }, identity);
+    expect((await runtime.releaseResults(request)).status).toBe('deferred');
+    expect(runtime.state().resultCache.captured).toBe(captured);
+    runtime.recordEvent({ kind: 'message', topic: 'future', payload: { value: 'known' } });
+    expect((await pending).ok).toBe(true);
+    expect((await runtime.releaseResults(request)).status).toBe('released');
+    const after = await runtime.execute({
+        kind: 'wait',
+        timeoutMs: 0,
+        match: { kind: 'result', commandId: 'captured', payloadPath: 'value', exists: false }
+    }, identity);
+    expect(after.error?.code).toBe('RALLAR_BLACK_BOX_RESULT_RELEASED');
+});
