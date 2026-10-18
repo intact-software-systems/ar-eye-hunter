@@ -213,7 +213,15 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    workflow-cleanup correction is independently approved. GitHub exposed its 25-input
    dispatch limit before any job ran; the preserving mode now uses the existing
    rollout choice without removing true/false invocation behavior. The correction
-   passes 49 workflow tests and independent review. Repeat live preflight;
+   passes 49 workflow tests and independent review. GitHub accepted the corrected
+   workflow and preserving preparation succeeded, but all seventeen shards then
+   rejected registration conflicts before workers started. No recipe ran. A real
+   AppInbox/route-serializer test reproduces the consumer's unsupported canonical
+   persisted-user response. Repair it using the existing strict decoder with narrow
+   duplicate-user recognition, retaining fatal handling of other conflicts and
+   malformed responses. Keep registration enabled and the database intact. Retain
+   the failed attempt and restore timing off before a fresh inspected, reviewed
+   diagnostic; the unretained live response body is not verified. Repeat live preflight;
    keep diagnostic worker scope independent and preserve absent/set topology and effective
    secrets. Use TDD for a positively
    located defect and reuse existing queuebox and ALM

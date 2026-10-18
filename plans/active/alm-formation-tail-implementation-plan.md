@@ -459,15 +459,14 @@ inspect output also retains an opaque fingerprint of the validated canonical
 public-settings projection, so pre/post equality can be verified even when GitHub
 masks values. No unmasked values or reversible encoding are exposed.
 
-
 The preservation mode and fingerprint pass 306 affected tests, including twenty
 actual controller lifecycle scenarios. Full workflow review found a later cleanup
 step that could stop pre-existing workers after preflight refusal. A semantic RED
 reproduced that failure; cleanup now requires operation-owned worker lifecycle
 evidence and still runs after later start/recipe failures. Eleven focused cases,
 205 affected workflow/disposition checks, canonical test typing and changed-range
-style pass. Independent scoped review approves the correction. Live fingerprint roundtrip
-and current hosted formation measurement remain pending.
+style pass. Independent scoped review approves the correction. The live fingerprint roundtrip subsequently passed; current hosted formation
+measurement remains pending.
 
 The initial GitHub Free publication exceeded the platform’s 25-input limit and
 was rejected before jobs started. The existing rollout choice now carries the
@@ -475,4 +474,21 @@ preserving mode, with every original input retained. Executed expression/planner
 tests cover all three choices, actual boolean forwarding and unchanged false
 topology refusal. Forty-nine affected workflow tests, 127 registry tests, typing,
 changed-range style and syntax pass; scoped review approves the correction. The
-failed publication remains recorded; local checks do not claim GitHub acceptance.
+failed publication remains recorded. GitHub accepted the corrected workflow;
+preserving preparation succeeded, but all seventeen agent shards rejected HTTP
+409 registration responses before workers started. Readiness ended with zero of
+fifty agents connected and no recipe started; operation artifacts and journals
+are retained. This invalidates the assumption that the registration consumer
+already supports persisted users. A real AppInbox duplicate registration, serialized
+by the existing API route, reproduces the rejected canonical response. Repair
+that consumer with the shared strict decoder and narrowly recognized duplicate-user
+semantics; reject unrelated conflicts and malformed responses. Keep registration
+on and preserve the database. Validate the actual shell against producer output,
+the affected workflow tests and test typing, then independently review before
+another hosted attempt. The deleted live response body remains unverified.
+Mandatory timing-off restoration succeeded after the failed attempt. Fresh
+inspection matches the prior public-settings fingerprint, exact timing/topology,
+database/role/table identities, all migrations and aggregate row counts; services
+are healthy and idle on the reviewed source. These aggregate checks do not prove
+individual login continuity; the corrected registration/login path still needs
+live verification before formation measurement can resume.
