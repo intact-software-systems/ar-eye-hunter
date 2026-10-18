@@ -1,6 +1,6 @@
 import type {
     RtcBaselineCaptureManifestDto,
-    RtcBaselineEnvironmentDto,
+    RtcBaselineEnvironmentId,
     RtcBaselineResult,
     RtcBaselineRuntimeObservationDto,
     RtcBaselineWorkloadId
@@ -28,6 +28,14 @@ type RtcBaselineStringGroupingField = Exclude<(typeof groupingFields)[number], '
 export type RtcBaselineMetricGrouping = Record<RtcBaselineStringGroupingField, string> & {
     workloadId: RtcBaselineWorkloadId;
 };
+export interface RtcBaselineNoiseEvidence {
+    environment: {
+        environmentId: RtcBaselineEnvironmentId;
+        observation: { host: { executionContext: 'local' | 'distributed'; }; } | null;
+    };
+    manifest: Pick<RtcBaselineCaptureManifestDto, 'workloadIds'>;
+    summary: { metricSummaries: readonly PersistedMetric[]; };
+}
 export interface RtcBaselineMetricObservation {
     grouping: RtcBaselineMetricGrouping;
     sampleId: string;
@@ -142,32 +150,22 @@ export function requiresRtcBaselineRepeat(
     return summary.coefficientOfVariation > (executionContext === 'local' ? 0.1 : 0.2);
 }
 
-export function rtcBaselineRepeatWorkloadIds(
-    metrics: readonly PersistedMetric[],
-    executionContext: 'local' | 'distributed',
-    workloadOrder: readonly RtcBaselineWorkloadId[]
-) {
-    const noisy = new Set(
-        metrics
-            .filter((metric) => requiresRtcBaselineRepeat(metric, executionContext))
-            .map((metric) => metric.workloadId)
-    );
-    return workloadOrder.filter((workloadId) => noisy.has(workloadId));
-}
-
-export function rtcBaselineTriggeredWorkloads(value: {
-    environment: RtcBaselineEnvironmentDto;
-    manifest: Pick<RtcBaselineCaptureManifestDto, 'workloadIds'>;
-    summary: { metricSummaries: readonly PersistedMetric[]; };
-}) {
+export function rtcBaselineTriggeredWorkloads(value: RtcBaselineNoiseEvidence) {
     const context = value.environment.observation?.host.executionContext;
     if (context === undefined) {
         return [];
     }
-    return rtcBaselineRepeatWorkloadIds(
-        value.summary.metricSummaries,
-        context,
-        value.manifest.workloadIds
+    const noisy = new Set(
+        value.summary.metricSummaries
+            .filter((metric) => requiresRtcBaselineRepeat(metric, context))
+            .map((metric) => metric.workloadId)
+    );
+    return value.manifest.workloadIds.filter((workloadId) => noisy.has(workloadId));
+}
+
+export function rtcBaselineAutomaticRepeatWorkloads(value: RtcBaselineNoiseEvidence) {
+    return rtcBaselineTriggeredWorkloads(value).filter((workloadId) =>
+        workloadId !== 'RTC-B06' || !['E3-memory', 'E4-pg'].includes(value.environment.environmentId)
     );
 }
 

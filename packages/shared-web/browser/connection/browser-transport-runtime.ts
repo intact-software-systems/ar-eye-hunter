@@ -7,6 +7,7 @@ import {
     BrowserPageLifecycleFlush,
     readBrowserPageLifecycle
 } from '@shared-web/browser/al-runtime/browser-page-lifecycle-flush.ts';
+import { readApiBaseUrl } from '@shared-web/browser/api-client-config.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { toAuthSessionKey } from '@shared-web/browser/auth/to-auth-session-key.ts';
 import {
@@ -17,14 +18,22 @@ import {
 } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { ApiMiddleware, RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarRtcIceConfigRefreshOptions } from '@shared-web/browser/rallar-rtc-facade.ts';
 import { readALBrowserLocks } from '@shared/alm/storage/al-browser-locks.ts';
-import { AppTopics, type AuthSession } from '@shared/api/api-config.ts';
+import {
+    AppTopics,
+    type AuthSession,
+    type IceConfig
+} from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import { Command } from '@shared/cache/Command.ts';
+import { LoanedValue } from '@shared/cache/LoanedValue.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 import { BrowserDeliverySettlements } from './browser-delivery-settlements.ts';
 import { closeBrowserTransportResources } from './close-browser-transport-resources.ts';
+import { readIceCandidates } from './connection-http-api.ts';
 import { createBrowserConnectionReservation } from './create-browser-connection-reservation.ts';
 import { checkRtcCaptureCompatibility } from './rallar-rtc-capture-connection-required-error.ts';
 
@@ -43,6 +52,7 @@ export interface BrowserTransportRuntimePort {
     isReady(): boolean;
     isInitializing(): boolean;
     init(options: BrowserTransportInitOptions): Promise<BrowserTransportRuntime.Connection>;
+    refreshIceConfig(options?: RallarRtcIceConfigRefreshOptions): Promise<void>;
     shutdown(reason?: string): void;
 }
 
@@ -67,9 +77,13 @@ export namespace BrowserTransportRuntime {
         readonly openSessionChannelPort: BrowserALSessionChannel.OpenPort;
     }
 
-    export interface PendingConnection {
+    export interface IceAcquisition {
         readonly session: AuthSession;
         readonly generation: number;
+        readonly apiBaseUrl: string;
+    }
+
+    export interface PendingConnection extends BrowserTransportRuntime.IceAcquisition {
         readonly durableWork: BrowserALDurableWorkClaim;
     }
 }
@@ -82,6 +96,9 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
     private activePageLifecycle: BrowserPageLifecycleFlush | undefined;
     private pendingConnection: Promise<BrowserTransportRuntime.Connection> | undefined;
     private generation = 0;
+    private iceCandidates: LoanedValue<IceConfig> | undefined;
+    private iceApiBaseUrl: string | undefined;
+    private icePendingAuthSessionKey: string | undefined;
     private rtcCaptureConfiguration: RtcSignalingDiagnostics.CaptureConfiguration | undefined;
 
     constructor(input: BrowserTransportRuntime.Input) {
@@ -120,6 +137,23 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
 
     public isInitializing(): boolean {
         return this.pendingConnection !== undefined;
+    }
+
+    public async refreshIceConfig(options: RallarRtcIceConfigRefreshOptions = {}): Promise<void> {
+        const session = readSession();
+        if (!session) {
+            throw new Error('Cannot refresh ICE configuration: no auth session.');
+        }
+        const acquisition: BrowserTransportRuntime.IceAcquisition = {
+            session,
+            generation: this.generation,
+            apiBaseUrl: readApiBaseUrl()
+        };
+        await new Command(async (signal) => {
+            const cache = this.readIceCache(acquisition, signal);
+            cache.clear();
+            await this.readCachedIceCandidates(acquisition, cache, signal);
+        }, { ...options, errorOnNull: false }).run();
     }
 
     public init(options: BrowserTransportInitOptions): Promise<BrowserTransportRuntime.Connection> {
@@ -171,16 +205,19 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
         pendingConnection: Promise<BrowserTransportRuntime.Connection>
     ): Promise<BrowserTransportRuntime.Connection> {
         const scope = options.scope ?? defaultStateScope();
+        const apiBaseUrl = readApiBaseUrl();
         const sessionChannel = this.openSessionChannel(scope, session, options.deliverySettlements);
         const durableWork = this.claimDurableWork(scope, session, sessionChannel);
         const epoch = this.deliverySettlements.open(options.deliverySettlements, sessionChannel);
         const connection: BrowserTransportRuntime.PendingConnection = {
             session,
             generation: this.generation,
+            apiBaseUrl,
             durableWork
         };
         return this.createMiddleware(session, {
             ...options,
+            readIceCandidates: (signal) => this.readConnectionIceCandidates(connection, signal),
             deliverySettlements: epoch.settlements,
             durableWorkOwnership: durableWork
         })
@@ -230,6 +267,10 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
     public shutdown(reason = 'rallar-disconnect'): void {
         this.deliverySettlements.close();
         this.generation += 1;
+        if (this.iceCandidates?.refreshing()) {
+            this.iceCandidates = undefined;
+            this.icePendingAuthSessionKey = undefined;
+        }
         this.pendingConnection = undefined;
         this.rtcCaptureConfiguration = undefined;
         const middleware = this.activeConnection?.middleware;
@@ -259,6 +300,93 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
             openPort: this.input.openSessionChannelPort,
             applySettlement: (settlement) => observers[settlement.carrier](settlement)
         });
+    }
+
+    private readConnectionIceCandidates(
+        acquisition: BrowserTransportRuntime.IceAcquisition,
+        signal?: AbortSignal
+    ): Promise<IceConfig> {
+        const cache = this.readIceCache(acquisition, signal);
+        return this.readCachedIceCandidates(acquisition, cache, signal);
+    }
+
+    private readIceCache(
+        acquisition: BrowserTransportRuntime.IceAcquisition,
+        signal?: AbortSignal
+    ): LoanedValue<IceConfig> {
+        this.assertIceAcquisitionCurrent(acquisition, signal);
+        if (
+            !this.iceCandidates || this.iceApiBaseUrl !== acquisition.apiBaseUrl ||
+            (this.iceCandidates.refreshing() && this.icePendingAuthSessionKey !== toAuthSessionKey(acquisition.session))
+        ) {
+            this.iceCandidates = this.createIceCandidates(acquisition.apiBaseUrl);
+            this.iceApiBaseUrl = acquisition.apiBaseUrl;
+        }
+        return this.iceCandidates;
+    }
+
+    private async readCachedIceCandidates(
+        acquisition: BrowserTransportRuntime.IceAcquisition,
+        cache: LoanedValue<IceConfig>,
+        signal?: AbortSignal
+    ): Promise<IceConfig> {
+        const retire = () => {
+            if (this.iceCandidates === cache) {
+                this.iceCandidates = undefined;
+                this.icePendingAuthSessionKey = undefined;
+            }
+        };
+        try {
+            const value = await cache.getWith(() => {
+                this.icePendingAuthSessionKey = toAuthSessionKey(acquisition.session);
+                signal?.addEventListener('abort', retire, { once: true });
+                return this.readFreshIceCandidates(acquisition, cache, signal);
+            });
+            this.assertIceAcquisitionCurrent(acquisition, signal);
+            if (this.iceCandidates !== cache) {
+                throw new Error('ICE configuration acquisition was cancelled because its cache was replaced.');
+            }
+            return value;
+        }
+        finally {
+            signal?.removeEventListener('abort', retire);
+            if (this.iceCandidates === cache && !cache.refreshing()) {
+                this.icePendingAuthSessionKey = undefined;
+            }
+        }
+    }
+
+    private createIceCandidates(apiBaseUrl: string): LoanedValue<IceConfig> {
+        return new LoanedValue(() => readIceCandidates(undefined, apiBaseUrl), {
+            isValid: (value, nowEpochMs) => value.expiresAtEpochMs > nowEpochMs
+        });
+    }
+
+    private async readFreshIceCandidates(
+        acquisition: BrowserTransportRuntime.IceAcquisition,
+        cache: LoanedValue<IceConfig>,
+        signal?: AbortSignal
+    ): Promise<IceConfig> {
+        const iceCandidates = await readIceCandidates({ signal }, acquisition.apiBaseUrl);
+        this.assertIceAcquisitionCurrent(acquisition, signal);
+        if (this.iceCandidates !== cache) {
+            throw new Error('ICE configuration acquisition was cancelled because its cache was replaced.');
+        }
+        return iceCandidates;
+    }
+
+    private assertIceAcquisitionCurrent(
+        acquisition: BrowserTransportRuntime.IceAcquisition,
+        signal?: AbortSignal
+    ): void {
+        signal?.throwIfAborted();
+        const currentSession = readSession();
+        if (
+            acquisition.generation !== this.generation || !currentSession ||
+            toAuthSessionKey(currentSession) !== toAuthSessionKey(acquisition.session)
+        ) {
+            throw new Error('Rallar connection was cancelled because auth ended.');
+        }
     }
 
     /** Requested once per connect, in the connect's scope; held, with the connect's session channel, until the connect ends. */

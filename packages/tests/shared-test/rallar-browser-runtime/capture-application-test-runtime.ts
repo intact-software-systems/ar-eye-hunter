@@ -1,4 +1,9 @@
-import { afterEach, beforeEach, expect, vi } from 'vitest';
+import {
+    beforeEach,
+    expect,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import type { BlackBoxRallarEvent } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
@@ -42,9 +47,20 @@ import '../../setup-browser-indexeddb.ts';
 import { installFakeBroadcastChannelPerTest } from '../../shared-web/data/rallar-data-test-runtime.ts';
 import { SimulatedWebSocket } from '../../shared/native-websocket-fixture.ts';
 
+export const CAPTURE_APPLICATION_API_CONFIG = {
+    apiBaseUrl: 'https://test.invalid',
+    wsBaseUrl: 'wss://test.invalid',
+    endpoints: { createWs: '/ws' }
+};
+
 export function installCaptureApplicationTestEnvironment(): void {
     installFakeBroadcastChannelPerTest();
     beforeEach(() => {
+        // Finished hooks run in reverse order: test-owned work settles before its ports are restored.
+        onTestFinished(() => {
+            vi.restoreAllMocks();
+            vi.unstubAllGlobals();
+        });
         vi.spyOn(auth, 'readSession').mockReturnValue({
             clientId: 'client',
             sessionId: 'session',
@@ -60,19 +76,11 @@ export function installCaptureApplicationTestEnvironment(): void {
                 removeItem: vi.fn()
             } satisfies Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
         );
-        vi.spyOn(connectionHttp, 'readApiConfig').mockResolvedValue({
-            apiBaseUrl: 'https://test.invalid',
-            wsBaseUrl: 'wss://test.invalid',
-            endpoints: { createWs: '/ws' }
-        });
+        vi.spyOn(connectionHttp, 'readApiConfig').mockResolvedValue(CAPTURE_APPLICATION_API_CONFIG);
         vi.spyOn(connectionHttp, 'readIceCandidates').mockResolvedValue({ iceServers: [], expiresAtEpochMs: Date.now() + 60_000 });
         vi.spyOn(JsonWebSocketClient.prototype, 'connect').mockResolvedValue();
         vi.spyOn(snapshots, 'refreshStateSnapshots').mockResolvedValue({ clients: [], groups: [] });
         vi.spyOn(heartbeat, 'initHeartbeat').mockResolvedValue({ sessionId: 'session', generationId: 'test', stop: () => {} });
-    });
-    afterEach(() => {
-        vi.restoreAllMocks();
-        vi.unstubAllGlobals();
     });
 }
 

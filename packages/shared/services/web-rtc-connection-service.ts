@@ -425,10 +425,8 @@ export class WebRtcConnectionService {
     ): boolean {
         this.nativeObservationDepth++;
         try {
-            console.log(`Cleaning up peer: ${peerId}`);
             const entry = this.peerEntryByPeerId.get(peerId);
             if (entry === undefined) {
-                console.log(`Peer ${peerId} not found. Ignoring`);
                 if (options.resetAttemptBudget !== false) {
                     this.attemptBudget.clear(peerId, 'removal');
                 }

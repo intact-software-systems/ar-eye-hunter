@@ -1582,6 +1582,14 @@ failed peer IDs. `rtc.openRoom(room, options?)` and
 `rtc.restartIce(peerId)` and `rtc.reconnectPeer(peerId, options?)` resolve a
 `RallarRtcRecoveryResult`.
 
+`await rtc.refreshIceConfig({ timeoutMs?, signal? })` invalidates this browser's
+completed ICE configuration and reloads it through the authenticated ICE endpoint.
+It works while disconnected and does not connect, restart ICE, or change existing
+peers or transports. Subsequent transport initialization uses the refreshed value.
+Concurrent acquisitions share one request. Failures reject without restoring the
+invalidated value; a later refresh or connection can fetch again. Server caching
+and rate limits still apply, so refresh may return the same server-cached value.
+
 `rtc.peer(peerId, options?)`, `knownPeerIds()`, `activePeerIds()`, `peerIdsWithNoReconnectableLanes()`, and `readyPeerIds(laneId?)` expose peer subsets.
 
 ```ts

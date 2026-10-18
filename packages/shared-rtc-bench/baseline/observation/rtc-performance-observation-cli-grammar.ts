@@ -18,6 +18,7 @@ export type RtcPerformanceObservationParsedCommand =
     )
     | ({
         readonly kind: 'capture-live-rtc';
+        readonly environmentId: 'E3-memory' | 'E4-pg';
         readonly sourceRef: string;
         readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
     } & Omit<RtcPerformanceObservationCommandInput, 'sourceRef'>)
@@ -44,6 +45,7 @@ const allowed = {
         'rtc-capture-mode'
     ],
     'capture-live-rtc': [
+        'environment',
         'source-ref',
         'github-run-id',
         'github-run-attempt',
@@ -152,6 +154,8 @@ function parseObservationInputs(
         );
     }
     validateObservationOptions(options, runId.ok ? runId.value : undefined, issues);
+    const environmentId = options.environment ?? 'E3-memory';
+    issues.push(...validateCaptureEnvironment(name === 'capture-live-rtc' ? environmentId : 'E3-memory'));
     const capture = parseRtcCaptureMode(name !== 'observe-browser' ? options['rtc-capture-mode'] : undefined);
     for (const captureIssue of capture.left ?? []) {
         issues.push(createRtcBaselineCliIssue('$.rtc-capture-mode', captureIssue.code, captureIssue.message));
@@ -169,7 +173,15 @@ function parseObservationInputs(
             : {})
     };
     return name === 'capture-live-rtc'
-        ? { ok: true, value: { ...normalized, kind: name, sourceRef: options['source-ref']! } }
+        ? {
+            ok: true,
+            value: {
+                ...normalized,
+                kind: name,
+                sourceRef: options['source-ref']!,
+                environmentId: environmentId as 'E3-memory' | 'E4-pg'
+            }
+        }
         : { ok: true, value: { ...normalized, kind: name, sourceRef: 'main' } };
 }
 
@@ -214,4 +226,12 @@ function validWorkflowUrl(value: string, runId: number) {
     catch {
         return false;
     }
+}
+
+function validateCaptureEnvironment(environmentId: string): RtcBaselineCliIssue[] {
+    return environmentId === 'E3-memory' || environmentId === 'E4-pg' ? [] : [createRtcBaselineCliIssue(
+        '$.environment',
+        'unsupported-capture-environment',
+        'Governed RTC capture environment must be E3-memory or E4-pg.'
+    )];
 }

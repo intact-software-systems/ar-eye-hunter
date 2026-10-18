@@ -446,7 +446,9 @@ describe('RTC baseline Deno runtime observation binding', () => {
                 ...initialized.value,
                 resolvedConfiguration: [
                     ...initialized.value.resolvedConfiguration.filter((entry) =>
-                        ['almDiagnostics', 'routineBrowserDiagnostics', 'eventHistoryMode', 'eventHistoryMaxEvents'].includes(entry.field)
+                        ['almDiagnostics', 'routineBrowserDiagnostics', 'eventHistoryMode', 'eventHistoryMaxEvents', 'releaseResultsAfterCapture'].includes(
+                            entry.field
+                        )
                     ),
                     ...['default', 'all-scenarios', 'retention-100'].map((caseId) => ({
                         caseKey: { workloadId: 'RTC-B06' as const, caseId, inputKey: `e3-memory-${caseId}` },
@@ -494,7 +496,11 @@ describe('RTC baseline Deno runtime observation binding', () => {
                 'tests/playwright/rallar-black-box/create-group-formation-lifecycle-driver.ts',
                 'tests/playwright/rallar-black-box/live-rtc-delivery-operations.ts',
                 'tests/playwright/rallar-black-box/live-rtc-agent-environment.ts',
-                'tests/playwright/rallar-black-box/to-live-rtc-native-acquisition.ts',
+                'packages/shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts',
+                'packages/shared-test/black-box-runner/artifacts/read-recorder-jsonl-rows.ts',
+                'tests/playwright/rallar-black-box/live-rtc-recorder-reader.ts',
+                'tests/playwright/rallar-black-box/live-rtc-recorder-rows.ts',
+                'tests/playwright/rallar-black-box/live-rtc-control-diagnostic-projections.ts',
                 'packages/shared/webrtc/rtc-capture-configuration.ts',
                 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-crdt-controller.ts',
                 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts',
@@ -511,6 +517,9 @@ describe('RTC baseline Deno runtime observation binding', () => {
                 'packages/shared-web/browser/composition/browser-session-composition.ts',
                 'packages/shared-web/browser/composition/create-rallar-facade.ts',
                 'packages/shared-web/browser/connection/browser-transport-runtime.ts',
+                'packages/shared-web/browser/connection/connection-http-api.ts',
+                'packages/shared-web/browser/api-client-config.ts',
+                'packages/shared/cache/LoanedValue.ts',
                 'packages/shared-web/browser/messages/browser-resync-recovery.ts',
                 'packages/shared-web/browser/session/rallar-session-controller.ts',
                 'packages/shared-web/browser/session/session-connection-lifecycle.ts',

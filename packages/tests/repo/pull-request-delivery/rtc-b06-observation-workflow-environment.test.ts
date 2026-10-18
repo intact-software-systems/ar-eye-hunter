@@ -1,6 +1,7 @@
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import {
     chmodSync,
+    cpSync,
     existsSync,
     mkdirSync,
     mkdtempSync,
@@ -19,10 +20,18 @@ import {
     it
 } from 'vitest';
 
+interface WorkflowUploadFixture {
+    readonly stepName: string;
+    readonly runnerTemp: string;
+    readonly checkout: string;
+    readonly download: string;
+}
+
 interface RtcB06WorkflowSelection {
     readonly captureMode: string | undefined;
     readonly almDiagnostics: string;
     readonly routineBrowserDiagnostics: string;
+    readonly releaseResultsAfterCapture: string;
 }
 
 interface RtcB06SourceAdmission {
@@ -47,6 +56,7 @@ const captureRecorderScript = `#!/usr/bin/env node
 const { appendFileSync } = require('node:fs');
 const names = [
     'RALLAR_BLACK_BOX_ALM_DIAGNOSTICS',
+    'RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE',
     'RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS',
     'DATABASE_URL',
     'RALLAR_ICE_MODE',
@@ -67,6 +77,10 @@ if (process.env.RTC_B06_CAPTURE_RECORD !== undefined) {
     }) + '\\n');
 }
 process.stdout.write('fake RTC-B06 execution ' + process.argv.slice(2).join(' ') + '\\n');
+if (process.env.RTC_B06_ECHO_DATABASE === '1') {
+    process.stdout.write('connection ' + process.env.DATABASE_URL + '\\n');
+    process.stderr.write('credential ' + new URL(process.env.DATABASE_URL).password + '\\n');
+}
 process.exit(Number(process.env.RTC_B06_FAKE_EXIT_STATUS ?? '0'));
 `;
 
@@ -77,6 +91,136 @@ afterEach(() => {
 });
 
 describe('RTC-B06 observation workflow environment', () => {
+    it.each([['baseline', 'E4-pg', 0], ['publish', 'E4-pg', 1], ['diagnostic', 'E4-pg', 1], ['baseline', 'E3-memory', 0], ['baseline', 'invalid', 1]])(
+        'admits %s/%s only through the selected source boundary',
+        (mode, environment, status) => {
+            const step = readWorkflowStep('Validate the requested source');
+            const result = spawnSync('bash', ['-euo', 'pipefail', '-c', step.run], {
+                encoding: 'utf8',
+                env: {
+                    ...process.env,
+                    RUN_MODE: mode,
+                    RTC_ENVIRONMENT: environment,
+                    DEFAULT_BRANCH: 'main',
+                    SOURCE_REF: 'refs/heads/main',
+                    SOURCE_SHA: 'a'.repeat(40)
+                }
+            });
+            expect(result.status).toBe(status);
+        }
+    );
+
+    it.each([['E3-memory', 0], ['E4-pg', 0], ['E4-pg', 9]] as const)(
+        'provisions only %s and retains safe migration output on exit %s',
+        (environmentId, migrationExitStatus) => {
+            const fixtureRoot = createEnvironmentCaptureFixture();
+            const docker = path.join(fixtureRoot, 'bin/docker');
+            writeFileSync(
+                docker,
+                '#!/usr/bin/env node\n' +
+                    'const { appendFileSync } = require("node:fs");\n' +
+                    'appendFileSync(process.env.RTC_DOCKER_RECORD, process.argv.slice(2).join(" ") + "\\n");\n' +
+                    'if (process.argv.includes("config")) process.stdout.write(JSON.stringify({ services: { postgres: { environment: { POSTGRES_USER: "fixture-user", POSTGRES_PASSWORD: "fixture-password", POSTGRES_DB: "fixture-db" }, ports: [{ target: 5432, published: "5432" }] } } }));\n'
+            );
+            chmodSync(docker, 0o755);
+            const setup = readWorkflowStep('Prepare isolated E4 PostgreSQL');
+            const result = spawnSync('bash', ['-euo', 'pipefail', '-c', setup.run], {
+                encoding: 'utf8',
+                env: {
+                    ...process.env,
+                    PATH: fixtureRoot + '/bin:' + process.env.PATH,
+                    RTC_ENVIRONMENT: environmentId,
+                    GITHUB_ENV: fixtureRoot + '/github-env',
+                    GITHUB_RUN_ID: '123',
+                    GITHUB_RUN_ATTEMPT: '1',
+                    RTC_OBSERVATION_OUTPUT: fixtureRoot,
+                    RTC_DOCKER_RECORD: fixtureRoot + '/docker.json',
+                    RTC_B06_ENVIRONMENT_RECORD: fixtureRoot + '/environment.json',
+                    RUNNER_ENVIRONMENT: 'github-hosted',
+                    RTC_B06_ECHO_DATABASE: '1',
+                    RTC_B06_FAKE_EXIT_STATUS: String(migrationExitStatus)
+                }
+            });
+            expect(result).toMatchObject({ status: migrationExitStatus, stderr: '' });
+            if (environmentId === 'E3-memory') {
+                expect(existsSync(fixtureRoot + '/docker.json')).toBe(false);
+                expect(existsSync(fixtureRoot + '/environment.json')).toBe(false);
+            }
+            else {
+                expect(readFileSync(fixtureRoot + '/docker.json', 'utf8')).toContain('up -d --wait postgres');
+                expect(readEnvironmentRecords(fixtureRoot)).toHaveLength(1);
+                const connection = 'postgresql://fixture-user:fixture-password@localhost:5432/fixture-db';
+                const mask = '::add-mask::' + connection;
+                expect(setup.run).not.toMatch(/postgres(?:ql)?:\/\/[^\s"']+:[^\s"']+@/);
+                expect(result.stdout.trim().split('\n')[0]).toBe(mask);
+                const exported = readFileSync(fixtureRoot + '/github-env', 'utf8');
+                expect(exported).toContain('DATABASE_URL=' + connection);
+                const renderedActionsEnvironment = exported.split(connection).join('***');
+                expect(renderedActionsEnvironment).not.toContain('fixture-password');
+                expect(setup.run.indexOf('::add-mask::')).toBeLessThan(setup.run.indexOf('printf \'DATABASE_URL='));
+                const migrationLog = readFileSync(fixtureRoot + '/database-migration.log', 'utf8');
+                expect(migrationLog).toContain('db:migrate');
+                expect(migrationLog).not.toContain(connection);
+                expect(migrationLog).not.toContain('fixture-password');
+                expect(migrationLog).toContain('[REDACTED_DATABASE_URL]');
+                expect(readFileSync(fixtureRoot + '/docker.json', 'utf8')).not.toContain(connection);
+                const cleanup = readWorkflowStep('Clean isolated E4 PostgreSQL');
+                expect(
+                    spawnSync('bash', ['-euo', 'pipefail', '-c', cleanup.run], {
+                        encoding: 'utf8',
+                        env: {
+                            ...process.env,
+                            PATH: fixtureRoot + '/bin:' + process.env.PATH,
+                            RTC_ENVIRONMENT: environmentId,
+                            RTC_DOCKER_RECORD: fixtureRoot + '/docker.json',
+                            RTC_POSTGRES_OWNED: 'true',
+                            COMPOSE_PROJECT_NAME: 'rtc-b06-123-1'
+                        }
+                    }).status
+                ).toBe(0);
+                expect(readFileSync(fixtureRoot + '/docker.json', 'utf8')).toContain('down --volumes');
+            }
+        }
+    );
+    it('forwards admitted E4 identity and its private connection to the existing capture command', () => {
+        const fixtureRoot = createEnvironmentCaptureFixture();
+        mkdirSync(fixtureRoot + '/output');
+        const step = readWorkflowStep('Capture RTC-B06 governed branch baseline');
+        const result = spawnSync('bash', ['-euo', 'pipefail', '-c', step.run], {
+            cwd: repoRoot,
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                PATH: fixtureRoot + '/bin:' + process.env.PATH,
+                RTC_B06_ENVIRONMENT_RECORD: fixtureRoot + '/environment.json',
+                RTC_B06_CAPTURE_RECORD: fixtureRoot + '/capture.jsonl',
+                RTC_OBSERVATION_OUTPUT: fixtureRoot + '/output',
+                RTC_SOURCE_REF: 'codex/e4',
+                RTC_ENVIRONMENT: 'E4-pg',
+                RTC_CAPTURE_MODE: 'signaling',
+                ALM_DIAGNOSTICS: 'false',
+                ROUTINE_BROWSER_DIAGNOSTICS: 'disabled',
+                RELEASE_RESULTS_AFTER_CAPTURE: 'true',
+                DATABASE_URL: 'postgres://private.invalid/test',
+                RALLAR_ICE_MODE: 'local',
+                GITHUB_RUN_ID: '123',
+                GITHUB_RUN_ATTEMPT: '1',
+                GITHUB_SERVER_URL: 'https://github.com',
+                GITHUB_REPOSITORY: 'example/repository'
+            }
+        });
+        expect(result).toMatchObject({ status: 0, stderr: '' });
+        expect(readCaptureRecords(fixtureRoot)[0]?.arguments).toContain('--environment=E4-pg');
+        expect(readCaptureRecords(fixtureRoot)[0]?.arguments.join(' ')).not.toContain('postgres://');
+        expect(readEnvironmentRecords(fixtureRoot)[0]).toMatchObject({
+            DATABASE_URL: 'postgres://private.invalid/test',
+            RALLAR_ICE_MODE: 'local',
+            RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: 'false',
+            RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS: 'disabled',
+            RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE: 'true'
+        });
+    });
+
     it.each(['true', 'false'])('forwards ALM %s into baseline initialization and the retention worker', (selection) => {
         const fixtureRoot = createEnvironmentCaptureFixture();
         const baseline = readWorkflowStep('Capture RTC-B06 governed branch baseline');
@@ -89,7 +233,8 @@ describe('RTC-B06 observation workflow environment', () => {
                 ...readSelectedCaptureEnvironment(baseline.env, fixtureRoot, {
                     captureMode: 'signaling',
                     almDiagnostics: selection,
-                    routineBrowserDiagnostics: selection === 'true' ? 'disabled' : 'enabled'
+                    routineBrowserDiagnostics: selection === 'true' ? 'disabled' : 'enabled',
+                    releaseResultsAfterCapture: selection
                 }),
                 PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
                 RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: 'conflicting-ambient',
@@ -114,7 +259,8 @@ describe('RTC-B06 observation workflow environment', () => {
                 ...readSelectedCaptureEnvironment(diagnostic.env, fixtureRoot, {
                     captureMode: 'signaling',
                     almDiagnostics: selection,
-                    routineBrowserDiagnostics: selection === 'true' ? 'disabled' : 'enabled'
+                    routineBrowserDiagnostics: selection === 'true' ? 'disabled' : 'enabled',
+                    releaseResultsAfterCapture: selection
                 }),
                 PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
                 RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: 'conflicting-ambient',
@@ -125,6 +271,7 @@ describe('RTC-B06 observation workflow environment', () => {
         });
         expect(diagnosticResult).toMatchObject({ status: 0, stderr: '' });
         expect(readEnvironmentRecords(fixtureRoot).slice(1).map((entry) => entry.RALLAR_BLACK_BOX_ALM_DIAGNOSTICS)).toEqual(['true', 'true', selection]);
+        expect(readEnvironmentRecords(fixtureRoot).map((entry) => entry.RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE)).toEqual([selection, null, null, selection]);
         expect(readEnvironmentRecords(fixtureRoot).map((entry) => entry.RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS)).toEqual([
             selection === 'true' ? 'disabled' : 'enabled',
             'enabled',
@@ -147,7 +294,8 @@ describe('RTC-B06 observation workflow environment', () => {
                     ...readSelectedCaptureEnvironment(step.env, fixtureRoot, {
                         captureMode: selection,
                         almDiagnostics: 'true',
-                        routineBrowserDiagnostics: 'enabled'
+                        routineBrowserDiagnostics: 'enabled',
+                        releaseResultsAfterCapture: 'false'
                     }),
                     PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
                     RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: 'inherited-invalid-mode',
@@ -185,7 +333,8 @@ describe('RTC-B06 observation workflow environment', () => {
                     ...readSelectedCaptureEnvironment(step.env, fixtureRoot, {
                         captureMode: selection,
                         almDiagnostics: 'true',
-                        routineBrowserDiagnostics: 'enabled'
+                        routineBrowserDiagnostics: 'enabled',
+                        releaseResultsAfterCapture: 'false'
                     }),
                     PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
                     RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: 'inherited-invalid-mode',
@@ -216,7 +365,8 @@ describe('RTC-B06 observation workflow environment', () => {
                 ...readSelectedCaptureEnvironment(step.env, fixtureRoot, {
                     captureMode: selection,
                     almDiagnostics: 'true',
-                    routineBrowserDiagnostics: 'enabled'
+                    routineBrowserDiagnostics: 'enabled',
+                    releaseResultsAfterCapture: 'false'
                 }),
                 PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
                 RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: 'inherited-invalid-mode',
@@ -258,6 +408,7 @@ describe('RTC-B06 observation workflow environment', () => {
             env: {
                 ...process.env,
                 DEFAULT_BRANCH: 'main',
+                RTC_ENVIRONMENT: 'E3-memory',
                 RUN_MODE: 'diagnostic',
                 SOURCE_REF: 'refs/heads/codex/rtc-b06-intermittent-readiness-fix',
                 SOURCE_SHA: sourceSha
@@ -272,6 +423,7 @@ describe('RTC-B06 observation workflow environment', () => {
                 env: {
                     ...process.env,
                     DEFAULT_BRANCH: 'main',
+                    RTC_ENVIRONMENT: 'E3-memory',
                     RUN_MODE: 'publish',
                     SOURCE_REF: 'refs/heads/codex/rtc-b06-intermittent-readiness-fix',
                     SOURCE_SHA: sourceSha
@@ -287,6 +439,7 @@ describe('RTC-B06 observation workflow environment', () => {
                 env: {
                     ...process.env,
                     DEFAULT_BRANCH: 'main',
+                    RTC_ENVIRONMENT: 'E3-memory',
                     RUN_MODE: 'publish',
                     SOURCE_REF: 'refs/heads/main',
                     SOURCE_SHA: sourceSha
@@ -316,7 +469,8 @@ describe('RTC-B06 observation workflow environment', () => {
                 ...readSelectedCaptureEnvironment(step.env, fixtureRoot, {
                     captureMode: 'native',
                     almDiagnostics: 'true',
-                    routineBrowserDiagnostics: 'enabled'
+                    routineBrowserDiagnostics: 'enabled',
+                    releaseResultsAfterCapture: 'false'
                 }),
                 PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
                 RTC_B06_ENVIRONMENT_RECORD: `${fixtureRoot}/environment.json`,
@@ -352,7 +506,8 @@ describe('RTC-B06 observation workflow environment', () => {
                 ...readSelectedCaptureEnvironment(step.env, fixtureRoot, {
                     captureMode: 'signaling',
                     almDiagnostics: 'true',
-                    routineBrowserDiagnostics: 'enabled'
+                    routineBrowserDiagnostics: 'enabled',
+                    releaseResultsAfterCapture: 'false'
                 }),
                 PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
                 DATABASE_URL: 'postgres://inherited.invalid/database',
@@ -380,9 +535,40 @@ describe('RTC-B06 observation workflow environment', () => {
                 RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
                 RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: '100',
                 RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR: null,
-                RALLAR_BLACK_BOX_STORAGE_DIR: null
+                RALLAR_BLACK_BOX_STORAGE_DIR: null,
+                RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE: 'false'
             }
         ]);
+    });
+
+    it('downloads the publication upload into the real locator layout while retaining recorder failure bytes separately', () => {
+        const fixtureRoot = createEnvironmentCaptureFixture();
+        const runnerTemp = path.join(fixtureRoot, 'runner-temp');
+        const checkout = path.join(fixtureRoot, 'checkout');
+        const observation = path.join(runnerTemp, 'rtc-b06-observation');
+        const recorder = path.join(checkout, 'tmp/perf/rtc-b06-recorder/current-attempt/runs/run');
+        mkdirSync(observation, { recursive: true });
+        mkdirSync(recorder, { recursive: true });
+        writeFileSync(path.join(observation, 'candidate.zip'), 'exact observation bytes');
+        writeFileSync(path.join(observation, 'index-entry.jsonl'), 'exact index bytes');
+        writeFileSync(path.join(recorder, 'results.jsonl'), 'failed acquisition payload');
+        const publication = path.join(fixtureRoot, 'publication-download');
+        writeWorkflowUploadFixture({ stepName: 'Retain RTC-B06 observation output', runnerTemp, checkout, download: publication });
+        const locator = readWorkflowStep('Locate captured observation');
+        const output = path.join(fixtureRoot, 'publication-output');
+        const result = spawnSync('bash', ['-euo', 'pipefail', '-c', locator.run], {
+            cwd: checkout,
+            encoding: 'utf8',
+            env: { ...process.env, RTC_OBSERVATION_DOWNLOAD: publication, GITHUB_OUTPUT: output }
+        });
+        expect(result).toMatchObject({ status: 0, stderr: '' });
+        expect(readFileSync(output, 'utf8').trim().split('\n')).toEqual([
+            'archive=' + path.join(publication, 'candidate.zip'),
+            'index_entry=' + path.join(publication, 'index-entry.jsonl')
+        ]);
+        const preserved = path.join(fixtureRoot, 'failed-recorder-download');
+        writeWorkflowUploadFixture({ stepName: 'Retain RTC-B06 raw recorder output', runnerTemp, checkout, download: preserved });
+        expect(readFileSync(path.join(preserved, 'current-attempt/runs/run/results.jsonl'), 'utf8')).toBe('failed acquisition payload');
     });
 
     it('runs all diagnostic cases without retries and propagates browser failure', () => {
@@ -400,7 +586,8 @@ describe('RTC-B06 observation workflow environment', () => {
                 ...readSelectedCaptureEnvironment(diagnosticStep.env, fixtureRoot, {
                     captureMode: 'signaling',
                     almDiagnostics: 'true',
-                    routineBrowserDiagnostics: 'enabled'
+                    routineBrowserDiagnostics: 'enabled',
+                    releaseResultsAfterCapture: 'false'
                 }),
                 RTC_B06_ENVIRONMENT_RECORD: `${fixtureRoot}/environment.json`,
                 RTC_B06_FAKE_EXIT_STATUS: '23',
@@ -414,14 +601,14 @@ describe('RTC-B06 observation workflow environment', () => {
         const storageDirectories = records.map((record) => record.RALLAR_BLACK_BOX_STORAGE_DIR);
         expect(new Set(storageDirectories).size).toBe(3);
         for (const directory of storageDirectories) {
-            expect(directory?.startsWith(path.join(fixtureRoot, 'rtc-b06-recorder-'))).toBe(true);
-            expect(directory?.startsWith(outputDirectory + path.sep)).toBe(false);
+            expect(directory?.startsWith(path.join(outputDirectory, 'rtc-b06-recorder-'))).toBe(true);
         }
         expect(records.map(({ RALLAR_BLACK_BOX_STORAGE_DIR, ...environment }) => environment)).toEqual([
             {
                 DATABASE_URL: null,
                 RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: 'true',
                 RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS: 'enabled',
+                RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE: null,
                 RALLAR_ICE_MODE: null,
                 RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: null,
                 RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: null,
@@ -436,6 +623,7 @@ describe('RTC-B06 observation workflow environment', () => {
                 DATABASE_URL: null,
                 RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: 'true',
                 RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS: 'enabled',
+                RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE: null,
                 RALLAR_ICE_MODE: null,
                 RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: '1',
                 RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: null,
@@ -454,6 +642,7 @@ describe('RTC-B06 observation workflow environment', () => {
                 RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: null,
                 RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
                 RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: '100',
+                RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE: 'false',
                 RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR: path.join(
                     outputDirectory,
                     'retention-100',
@@ -470,6 +659,10 @@ describe('RTC-B06 observation workflow environment', () => {
 });
 
 function readWorkflowStep(stepName: string): RtcB06WorkflowStep {
+    return decodeWorkflowStep(readWorkflowStepMapping(stepName));
+}
+
+function readWorkflowStepMapping(stepName: string): object {
     const jobs = decodeWorkflowMapping(Reflect.get(readWorkflow(), 'jobs'));
     const steps = Object.values(jobs).flatMap((job) => {
         const steps = Reflect.get(decodeWorkflowMapping(job), 'steps');
@@ -480,7 +673,7 @@ function readWorkflowStep(stepName: string): RtcB06WorkflowStep {
     });
     const selectedStep = steps.find((step) => Reflect.get(decodeWorkflowMapping(step), 'name') === stepName);
     expect(selectedStep, `RTC-B06 ${stepName} must provide an executable boundary`).toBeDefined();
-    return decodeWorkflowStep(selectedStep);
+    return decodeWorkflowMapping(selectedStep);
 }
 
 function decodeWorkflowStep(value: unknown): RtcB06WorkflowStep {
@@ -514,6 +707,7 @@ function admitWorkflowSource(fixtureRoot: string, selection: string): RtcB06Sour
                 ...toWorkflowEnvironment(step.env, {
                     '${{ inputs.rtc_capture_mode }}': selection,
                     '${{ inputs.mode }}': 'publish',
+                    '${{ inputs.environment }}': 'E3-memory',
                     '${{ github.event.repository.default_branch }}': 'main',
                     '${{ github.ref }}': 'refs/heads/main',
                     '${{ github.sha }}': 'a'.repeat(40)
@@ -553,8 +747,10 @@ function readSelectedCaptureEnvironment(
     return toWorkflowEnvironment(environment, {
         ...consumerOutputs,
         '${{ inputs.rtc_capture_mode }}': selection.captureMode ?? defaultMode,
+        '${{ inputs.environment }}': 'E3-memory',
         '${{ inputs.alm_diagnostics }}': selection.almDiagnostics,
         '${{ inputs.routine_browser_diagnostics }}': selection.routineBrowserDiagnostics,
+        '${{ inputs.release_results_after_capture }}': selection.releaseResultsAfterCapture,
         '${{ github.ref_name }}': 'codex/rtc-baseline-refresh'
     });
 }
@@ -651,4 +847,29 @@ function decodeCaptureRecord(value: unknown): RtcB06CaptureRecord {
         throw new Error('Recorded capture requires a string or null mode and string arguments.');
     }
     return { mode, arguments: arguments_ };
+}
+
+// The artifact action roots directory inputs at their least common ancestor.
+function writeWorkflowUploadFixture(fixture: WorkflowUploadFixture): void {
+    const step = readWorkflowStepMapping(fixture.stepName);
+    const inputs = decodeWorkflowMapping(Reflect.get(step, 'with'));
+    const uploadPath = Reflect.get(inputs, 'path');
+    if (typeof uploadPath !== 'string') {
+        throw new Error('Upload requires path input.');
+    }
+    const directories = uploadPath.split('\n').map((entry) => entry.trim()).filter(Boolean)
+        .map((entry) => path.resolve(fixture.checkout, entry.replace('${{ runner.temp }}', fixture.runnerTemp)));
+    let root = directories[0];
+    if (root === undefined) {
+        throw new Error('Upload requires a directory.');
+    }
+    while (directories.some((directory) => path.relative(root, directory).startsWith('..' + path.sep))) {
+        root = path.dirname(root);
+    }
+    mkdirSync(fixture.download, { recursive: true });
+    for (const directory of directories) {
+        if (existsSync(directory)) {
+            cpSync(directory, path.join(fixture.download, path.relative(root, directory)), { recursive: true });
+        }
+    }
 }

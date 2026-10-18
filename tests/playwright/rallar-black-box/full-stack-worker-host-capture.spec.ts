@@ -1,17 +1,27 @@
-import { expect, test, type APIRequestContext, type TestInfo } from '@playwright/test';
+import {
+    expect,
+    test,
+    type APIRequestContext,
+    type TestInfo
+} from '@playwright/test';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import type {
+    RtcNativeAcquisitionProof,
+    RtcNativeCapturedConnection,
+    RtcNativeRecipeAttribution
+} from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
 import { toRtcCaptureReadout } from '@shared-web/browser/connection/to-rtc-capture-readout.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-
-import { waitForHeadlessWorkerAgentRegistration } from '../../../apps/rallar-black-box/src/headless-worker-runtime.ts';
 import { decodeRallarBlackBoxTestResult } from '../../../packages/shared-test/rallar-bb-test/composite-results.ts';
 import { createRallarBlackBoxEnsureGroupCommands } from '../../../packages/shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
 import type { RallarBlackBoxTestCommand } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+
+import { waitForHeadlessWorkerAgentRegistration } from '../../../apps/rallar-black-box/src/headless-worker-runtime.ts';
 import { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import {
     jsonRecord,
@@ -129,8 +139,8 @@ test.describe('actual default headless worker HOST capture', () => {
                     connection: `worker-${ordinal}`
                 }));
                 const restoredSessions: WorkerIssuedSession[] = [];
-                const captures: LiveRtcControlClient.CapturedConnection[] = [];
-                const native: LiveRtcControlClient.NativeAcquisitionProof[] = [];
+                const captures: RtcNativeCapturedConnection[] = [];
+                const native: RtcNativeAcquisitionProof[] = [];
                 let failure: Error | undefined;
                 try {
                     for (const agent of agents) {
@@ -139,13 +149,21 @@ test.describe('actual default headless worker HOST capture', () => {
                     const issuedSessions = await ensureWorkerMemberships(run, agents);
                     expect(new Set(issuedSessions.map((session) => session.sessionId)).size).toBe(2);
                     expect(new Set(issuedSessions.map((session) => session.clientId)).size).toBe(2);
+                    const connectOutcomes = await Promise.allSettled(
+                        agents.map((agent) => connectWorkerAgent(run, agent, mode))
+                    );
+                    for (const outcome of connectOutcomes) {
+                        if (outcome.status === 'rejected') {
+                            throw toError(outcome.reason);
+                        }
+                        captures.push(outcome.value);
+                    }
                     for (const [index, agent] of agents.entries()) {
-                        const capture = await connectWorkerAgent(run, agent, mode);
+                        const capture = captures[index];
                         expect(capture.sessionId).toBe(issuedSessions[index].sessionId);
                         const restored = await readWorkerIssuedSession(run, agent, 'connected');
                         expect(restored).toEqual(issuedSessions[index]);
                         restoredSessions.push(restored);
-                        captures.push(capture);
                     }
                     expect(new Set(captures.map((capture) => capture.sessionId)).size).toBe(2);
                     for (const capture of captures) {
@@ -369,7 +387,7 @@ async function connectWorkerAgent(
     run: WorkerCaptureRun,
     agent: WorkerCaptureAgent,
     mode: 'native' | 'off'
-): Promise<LiveRtcControlClient.CapturedConnection> {
+): Promise<RtcNativeCapturedConnection> {
     const commandId = `connect-${agent.agentId}`;
     const connected = await executeWorkerRecipe(run, agent, {
         kind: 'rtc.connect',
@@ -382,14 +400,15 @@ async function connectWorkerAgent(
         roomRef: { ...run.group },
         transport: 'realtime',
         rallar: { apiBaseUrl, restoreSession: true, logoutOnClose: false, leaveRoomOnClose: false },
-        timeoutMs: 45_000
+        timeoutMs: 45_000,
+        readiness: { minReadyPeers: 1, timeoutMs: 10_000, intervalMs: 100 }
     });
     return toWorkerCapturedConnection(run, agent, { ...connected, mode, commandId });
 }
 
 interface WorkerRecipeResult {
     readonly connected: LiveRtcJsonRecord;
-    readonly recipeAttribution: LiveRtcControlClient.RecipeAttribution;
+    readonly recipeAttribution: RtcNativeRecipeAttribution;
 }
 
 interface WorkerConnectResult extends WorkerRecipeResult {
@@ -401,7 +420,7 @@ function toWorkerCapturedConnection(
     run: WorkerCaptureRun,
     agent: WorkerCaptureAgent,
     result: WorkerConnectResult
-): LiveRtcControlClient.CapturedConnection {
+): RtcNativeCapturedConnection {
     const { connected, mode, commandId } = result;
     const value = jsonRecord(connected.value);
     const readout = toRtcCaptureReadout(value?.rtcCapture).fold(

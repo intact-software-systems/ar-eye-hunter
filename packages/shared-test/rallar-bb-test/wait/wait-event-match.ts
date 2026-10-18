@@ -9,9 +9,15 @@ export type PayloadPathLookup =
     | Readonly<{ exists: false; }>
     | Readonly<{ exists: true; value: ApiJsonValue; }>;
 
+export interface PayloadPathReference {
+    readonly lookup: PayloadPathLookup;
+    readonly object: object | undefined;
+}
+
 type WaitEventRoutingKey = keyof RallarBlackBoxTestWaitMatch & keyof RallarBlackBoxTestEvent;
 
 const MISSING_PATH_VALUE: PayloadPathLookup = { exists: false };
+const MISSING_PATH_REFERENCE: PayloadPathReference = { lookup: MISSING_PATH_VALUE, object: undefined };
 const PAYLOAD_PATH_PREFIXES = ['$.payload.', 'payload.', '$.'];
 const WAIT_EVENT_ROUTING_KEYS: readonly WaitEventRoutingKey[] = [
     'kind',
@@ -27,7 +33,7 @@ const WAIT_EVENT_ROUTING_KEYS: readonly WaitEventRoutingKey[] = [
  * carries it, so a member without a JSON form is not reached.
  */
 export function decodePayloadPathValue(payload: unknown, path: string | undefined): PayloadPathLookup {
-    return decodePathSegmentsValue(payload, toPayloadPathSegments(path));
+    return decodePathSegmentsReference(payload, toPayloadPathSegments(path)).lookup;
 }
 
 export function isSameJsonValue(left: ApiJsonValue | undefined, right: ApiJsonValue | undefined): boolean {
@@ -53,7 +59,7 @@ export function resolveLatestWaitEvent(
     return undefined;
 }
 
-function toPayloadPathSegments(path: string | undefined): readonly string[] {
+export function toPayloadPathSegments(path: string | undefined): readonly string[] {
     if (path === undefined || path.trim().length === 0) {
         return [];
     }
@@ -87,27 +93,31 @@ function isWaitEventPayloadMatch(event: RallarBlackBoxTestEvent, match: RallarBl
         (contains === undefined || hasContainedText(value, contains));
 }
 
-function decodePathSegmentsValue(value: unknown, segments: readonly string[]): PayloadPathLookup {
+/** Keeps the reached object as an opaque identity beside its decoded JSON value for ownership checks. */
+export function decodePathSegmentsReference(value: unknown, segments: readonly string[]): PayloadPathReference {
     const [segment, ...rest] = segments;
     if (segment === undefined) {
         const json = decodeJsonValue(value);
-        return json === undefined ? MISSING_PATH_VALUE : { exists: true, value: json };
+        return {
+            lookup: json === undefined ? MISSING_PATH_VALUE : { exists: true, value: json },
+            object: typeof value === 'object' && value !== null ? value : undefined
+        };
     }
     if ((Array.isArray(value) || typeof value === 'string') && segment === 'length') {
-        return decodePathSegmentsValue(value.length, rest);
+        return decodePathSegmentsReference(value.length, rest);
     }
     if (Array.isArray(value)) {
         const index = Number(segment);
         if (!Number.isInteger(index) || index < 0 || index >= value.length) {
-            return MISSING_PATH_VALUE;
+            return MISSING_PATH_REFERENCE;
         }
         // JSON writes an array element that has no JSON form as null.
         const hasJsonForm = value[index] !== undefined &&
             typeof value[index] !== 'function' &&
             typeof value[index] !== 'symbol';
-        return decodePathSegmentsValue(hasJsonForm ? value[index] : null, rest);
+        return decodePathSegmentsReference(hasJsonForm ? value[index] : null, rest);
     }
     return isJsonRecordValue(value) && Object.hasOwn(value, segment)
-        ? decodePathSegmentsValue(value[segment], rest)
-        : MISSING_PATH_VALUE;
+        ? decodePathSegmentsReference(value[segment], rest)
+        : MISSING_PATH_REFERENCE;
 }

@@ -1,5 +1,90 @@
 // Reviewed recipe, assertion and report boundaries. Exact keys and caps remain local to each owner.
 export const reviewedScenarioDispositions = Object.freeze([
+    // Owner: Rallar shared-test maintainers; independently reviewed transform boundaries.
+    // The module cap is the sum of five separately reviewed declarations, not a wildcard:
+    // resolverRoot keeps heterogeneous authored/runtime leaves; remove when stores validate canonical values.
+    // result keeps an optional raw envelope; remove when callers decode its full actual/body contract.
+    // details.path retains invalid paths; remove when errors no longer retain raw operands.
+    // details' index retains invalid operator operands; remove when a closed diagnostic union replaces them.
+    // PathResolution.value proves presence only; remove when traversal admits only a validated value tree.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/scenario-transform/safe-output-transform-resolution.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 5
+    }),
+    // Raw paths are string-validated here and selected leaves remain opaque for consuming operators.
+    // Remove when paths arrive decoded and the entire result tree has a canonical validated contract.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/scenario-transform/safe-output-transform-resolution.ts',
+        rule: 'boundary.unknown',
+        symbol: 'resolveSafeOutputTransformPath',
+        maximumMagnitude: 2
+    }),
+    // Exact replacement preserves original values while interpolation stringifies them.
+    // Remove when exact replacement is restricted to a validated closed value contract.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/scenario-transform/safe-output-transform-resolution.ts',
+        rule: 'boundary.unknown',
+        symbol: 'resolveSafeOutputTransformTemplate',
+        maximumMagnitude: 1
+    }),
+    // Generic rendering preserves raw selected values, including null and undefined.
+    // Remove when every caller supplies a validated renderable contract with the same absence behavior.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/scenario-transform/safe-output-transform-resolution.ts',
+        rule: 'boundary.unknown',
+        symbol: 'stringifySafeOutputTransformValue',
+        maximumMagnitude: 1
+    }),
+    // The object/nonarray guard proves a record, not validated JSON or a transform schema.
+    // Remove when callers use closed decoded records and no longer need this generic guard.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/scenario-transform/safe-output-transform-resolution.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isSafeOutputTransformRecord',
+        maximumMagnitude: 1
+    }),
+    // Root assembly adds optional result/actual/body aliases without changing opaque leaves.
+    // Remove when roots and interaction envelopes are validated before this assembly boundary.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/scenario-transform/safe-output-transform-resolution.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toTransformResolverRoot',
+        maximumMagnitude: 1
+    }),
+    // Template traversal preserves arbitrary roots and selected values; absent paths throw.
+    // Remove when traversal accepts and returns only canonical validated tree values.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/scenario-transform/safe-output-transform-resolution.ts',
+        rule: 'boundary.unknown',
+        symbol: 'resolvePath',
+        maximumMagnitude: 2
+    }),
+    // String-path normalization cannot validate the raw root's arbitrary leaf contract.
+    // Remove when shared traversal is restricted to canonical validated roots.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/scenario-transform/safe-output-transform-resolution.ts',
+        rule: 'boundary.unknown',
+        symbol: 'tryResolvePath',
+        maximumMagnitude: 1
+    }),
+    // Projection validates arrays while preserving every raw leaf, order and nested shape.
+    // Remove when all traversed values and projected leaves have one canonical validated tree type.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/scenario-transform/safe-output-transform-resolution.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readPathSegments',
+        maximumMagnitude: 2
+    }),
+    // Dynamic property selection preserves actual opaque JavaScript leaves and null/undefined absence.
+    // Remove when closed validated object/array contracts prove each selected property's type.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/scenario-transform/safe-output-transform-resolution.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readProperty',
+        maximumMagnitude: 2
+    }),
     // Maintainer-approved bounded cohesion exceptions (2026-09-20). Prior review
     // separated command derivation, retained evidence and cleanup; the service
     // keeps actual mutations, while each reload policy remains a complete decision.

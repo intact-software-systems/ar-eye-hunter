@@ -13,6 +13,7 @@ export function toCommandResultEventPayload(result: RallarBlackBoxTestResult): R
     ) {
         return result;
     }
+    const { capture: _capture, ...metadata } = result;
     const { results, groups, ...summary } = result.value;
     const groupOutcomes = Array.isArray(groups) ? groups.map(decodeRecord) : [];
     const children = [
@@ -21,7 +22,7 @@ export function toCommandResultEventPayload(result: RallarBlackBoxTestResult): R
     ].map(decodeRecord);
     const passed = children.filter(isPassedChild).length;
     return {
-        ...result,
+        ...metadata,
         value: {
             ...summary,
             childResultCount: children.length,

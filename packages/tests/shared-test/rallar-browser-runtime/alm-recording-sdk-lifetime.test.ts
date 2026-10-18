@@ -17,6 +17,7 @@ import {
 } from '@shared/websocket/json-web-socket-client.ts';
 
 import {
+    CAPTURE_APPLICATION_API_CONFIG,
     createCaptureApplicationRuntime,
     installCaptureApplicationTestEnvironment
 } from './capture-application-test-runtime.ts';
@@ -44,10 +45,10 @@ it.each([true, false])('rejects actual SDK active and queued policy changes from
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
     onTestFinished(() => release.resolve());
-    vi.spyOn(connectionHttp, 'readIceCandidates').mockImplementation(async () => {
+    vi.spyOn(connectionHttp, 'readApiConfig').mockImplementation(async () => {
         entered.resolve();
         await release.promise;
-        return { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 };
+        return CAPTURE_APPLICATION_API_CONFIG;
     });
     const first = page.connect({ ...CONFIG, rallar: { ...CONFIG.rallar, almDiagnostics } });
     await entered.promise;
@@ -194,10 +195,10 @@ it('rejects unverified SDK pending and active lifetimes before preparing a harne
     const { page, facade, events } = createCaptureApplicationRuntime();
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
-    vi.spyOn(connectionHttp, 'readIceCandidates').mockImplementation(async () => {
+    vi.spyOn(connectionHttp, 'readApiConfig').mockImplementation(async () => {
         entered.resolve();
         await release.promise;
-        return { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 };
+        return CAPTURE_APPLICATION_API_CONFIG;
     });
     facade.configure({ apiBaseUrl: CONFIG.rallar.apiBaseUrl });
     const first = facade.connect();
@@ -300,10 +301,10 @@ it.each([
     facade.setDefaults({ applicationId: 'app' });
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
-    vi.spyOn(connectionHttp, 'readIceCandidates').mockImplementation(async () => {
+    vi.spyOn(connectionHttp, 'readApiConfig').mockImplementation(async () => {
         entered.resolve();
         await release.promise;
-        return { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 };
+        return CAPTURE_APPLICATION_API_CONFIG;
     });
     const replacement = facade.connect();
     onTestFinished(async () => {

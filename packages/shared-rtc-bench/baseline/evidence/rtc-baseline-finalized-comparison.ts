@@ -9,33 +9,56 @@ import type { RtcBaselineFinalizedArtifactVerifier } from './rtc-baseline-finali
 import {
     compareRtcBaselinePersistedMetrics,
     evaluateRtcBaselineWorkloadRepeatOutcome,
-    rtcBaselineTriggeredWorkloads
+    rtcBaselineAutomaticRepeatWorkloads,
+    rtcBaselineTriggeredWorkloads,
+    type RtcBaselineNoiseEvidence,
+    type RtcBaselinePersistedMetricComparison
 } from './rtc-baseline-statistics.ts';
 
 function failed(path: string, code: string, message: string): RtcBaselineResult<never> {
     return { ok: false, issues: [{ path, code, message }] };
 }
 
+interface RtcBaselineComparisonSelection {
+    selectedId: string;
+    repeatRequired: boolean;
+}
+
+function resolveComparisonSelection(
+    primary: RtcBaselineNoiseEvidence,
+    input: RtcBaselineComparisonChoiceInput
+): RtcBaselineResult<RtcBaselineComparisonSelection> {
+    const repeatRequired = rtcBaselineAutomaticRepeatWorkloads(primary).includes(input.workloadId);
+    const noisy = rtcBaselineTriggeredWorkloads(primary).includes(input.workloadId);
+    const repeatId = input.primaryBaselineId + '-repeat-01';
+    const permittedId = repeatRequired ? repeatId : input.primaryBaselineId;
+    const deliberateRepeat = noisy && !repeatRequired && input.comparisonBaselineId === repeatId;
+    if (input.comparisonBaselineId !== permittedId && !deliberateRepeat) {
+        return failed(
+            input.inputPath,
+            'invalid-comparison-baseline',
+            repeatRequired
+                ? 'A noisy primary requires its exact -repeat-01 baseline.'
+                : 'Compare the primary itself or an explicitly selected noisy-primary repeat.'
+        );
+    }
+    return { ok: true, value: { selectedId: input.comparisonBaselineId, repeatRequired } };
+}
+
 async function readComparisonChoice(
     verifier: RtcBaselineFinalizedArtifactVerifier,
     input: RtcBaselineComparisonChoiceInput
 ): Promise<RtcBaselineResult<RtcBaselineComparisonChoice>> {
-    const { primaryBaselineId, comparisonBaselineId, inputPath, workloadId } = input;
+    const { primaryBaselineId, workloadId } = input;
     const primary = await verifier.readVerifiedArtifacts(primaryBaselineId);
     if (!primary.ok) {
         return primary;
     }
-    const repeatRequired = rtcBaselineTriggeredWorkloads(primary.value).includes(workloadId);
-    const selectedId = repeatRequired ? `${primaryBaselineId}-repeat-01` : primaryBaselineId;
-    if (comparisonBaselineId !== selectedId) {
-        return failed(
-            inputPath,
-            'invalid-comparison-baseline',
-            repeatRequired
-                ? 'A noisy primary requires its exact -repeat-01 baseline.'
-                : 'A stable primary must compare from itself.'
-        );
+    const selection = resolveComparisonSelection(primary.value, input);
+    if (!selection.ok) {
+        return selection;
     }
+    const { selectedId, repeatRequired } = selection.value;
     const selected = selectedId === primaryBaselineId ? primary : await verifier.readVerifiedArtifacts(selectedId);
     if (!selected.ok) {
         return selected;
@@ -71,7 +94,9 @@ async function readComparisonChoice(
             selected: selected.value.summary,
             selectedId,
             repeatRequired,
-            stillNoisy: repeatEvaluation.value.stillNoisy,
+            stillNoisy: repeatRequired
+                ? repeatEvaluation.value.stillNoisy
+                : rtcBaselineTriggeredWorkloads(selected.value).includes(workloadId),
             environment: { ...environment, observation: environment.observation }
         }
     };
@@ -109,20 +134,28 @@ async function readPairedComparison(
     if (!compared.ok) {
         return compared;
     }
+    return toPairedComparison(primary.value, candidate.value, compared.value);
+}
+
+function toPairedComparison(
+    primary: RtcBaselineComparisonChoice,
+    candidate: RtcBaselineComparisonChoice,
+    comparisons: readonly RtcBaselinePersistedMetricComparison[]
+): RtcBaselineResult<RtcBaselinePairedComparison> {
     const value = {
         primary: {
-            primaryBaselineId: input.primaryBaselineId,
-            comparisonBaselineId: primary.value.selectedId,
-            repeatRequired: primary.value.repeatRequired
+            primaryBaselineId: primary.primary.baselineId,
+            comparisonBaselineId: primary.selectedId,
+            repeatRequired: primary.repeatRequired
         },
         candidate: {
-            primaryBaselineId: input.candidateBaselineId,
-            comparisonBaselineId: candidate.value.selectedId,
-            repeatRequired: candidate.value.repeatRequired
+            primaryBaselineId: candidate.primary.baselineId,
+            comparisonBaselineId: candidate.selectedId,
+            repeatRequired: candidate.repeatRequired
         },
-        comparisons: compared.value
+        comparisons
     };
-    if (primary.value.stillNoisy || candidate.value.stillNoisy) {
+    if (primary.stillNoisy || candidate.stillNoisy) {
         return {
             ok: true,
             value: {
@@ -132,7 +165,7 @@ async function readPairedComparison(
                     {
                         path: '$.comparisons',
                         code: 'repeat-still-noisy',
-                        message: 'Selected repeat is noisy.'
+                        message: 'Selected cohort is noisy; timings remain descriptive and inconclusive.'
                     }
                 ]
             }

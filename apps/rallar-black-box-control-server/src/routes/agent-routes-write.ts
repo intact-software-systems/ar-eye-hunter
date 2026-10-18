@@ -2,6 +2,7 @@ import {
     parseControlClientMessage,
     type ControlCommandEnvelope
 } from '@shared-test/rallar-bb-test/control-protocol.ts';
+import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 
 import type { ControlAgentIdentity, ControlAgentSockets } from '../control-agent-sockets.ts';
@@ -30,12 +31,13 @@ export interface AgentWriteRouteDependencies {
     readonly security: Pick<ControlHttpSecurity, 'authorizeRunToken'>;
     readonly requestBody: ControlRequestBodyReader;
     readonly commandDestinations: BrowserCommandDestinationPolicy;
-    readonly agentSockets: Pick<ControlAgentSockets, 'sendDispatchableCommands'>;
-    readonly artifactRecorder: Pick<ControlArtifactRecorder, 'record'>;
+    readonly agentSockets: Pick<ControlAgentSockets, 'sendDispatchableCommands' | 'requestResultRelease'>;
+    readonly artifactRecorder: Pick<ControlArtifactRecorder, 'record' | 'readResultReceipts'>;
     readonly persistence: Pick<ControlSnapshotPersistence, 'persist'>;
     readonly responses: ControlHttpResponses;
 }
 
+const AGENT_RESULT_RELEASE_PATH = /^\/runs\/([^/]+)\/agents\/([^/]+)\/results\/release$/;
 const AGENT_COMMANDS_PATH = /^\/runs\/([^/]+)\/agents\/([^/]+)\/commands$/;
 const AGENT_REPORT_PATH = /^\/runs\/([^/]+)\/agents\/([^/]+)\/report$/;
 const REPORT_TARGET_MISMATCH = toBadRequestRejection('Report upload envelope does not match the target run and agent.');
@@ -49,7 +51,8 @@ export async function routeAgentWriteRequest(
         return undefined;
     }
     const commandTarget = toPathParameters(url.pathname, AGENT_COMMANDS_PATH);
-    const [runId, agentId] = commandTarget ?? toPathParameters(url.pathname, AGENT_REPORT_PATH) ?? [];
+    const releaseTarget = toPathParameters(url.pathname, AGENT_RESULT_RELEASE_PATH);
+    const [runId, agentId] = commandTarget ?? releaseTarget ?? toPathParameters(url.pathname, AGENT_REPORT_PATH) ?? [];
     if (runId === undefined || agentId === undefined) {
         return undefined;
     }
@@ -57,6 +60,9 @@ export async function routeAgentWriteRequest(
     const agent: ControlAgentIdentity = { runId, agentId };
     if (!dependencies.security.authorizeRunToken({ ...agent, token: toControlRequestToken(request, url) })) {
         return dependencies.responses.rejection(RUN_TOKEN_REJECTION);
+    }
+    if (releaseTarget) {
+        return await releaseAgentResultsRoute(request, agent, dependencies);
     }
     return commandTarget
         ? await enqueueAgentCommandRoute(request, agent, dependencies)
@@ -123,4 +129,38 @@ async function uploadAgentReportRoute(
     }
     persistence.persist();
     return responses.json({ accepted: true }, 202);
+}
+
+async function releaseAgentResultsRoute(
+    request: Request,
+    agent: ControlAgentIdentity,
+    { requestBody, responses, artifactRecorder, agentSockets }: AgentWriteRouteDependencies
+): Promise<Response> {
+    const body = await requestBody.readJsonBody(request);
+    if (body.left) {
+        return responses.rejection(body.left);
+    }
+    const value = body.right;
+    if (
+        !isJsonRecordValue(value) || typeof value.requestId !== 'string' || !value.requestId ||
+        !Array.isArray(value.commandIds) || value.commandIds.length === 0 || value.commandIds.length > 1000 ||
+        !value.commandIds.every((commandId) => typeof commandId === 'string' && commandId.length > 0)
+    ) {
+        return responses.rejection(toBadRequestRejection('Release requires requestId and 1–1000 selected commandIds.'));
+    }
+    const captured = await artifactRecorder.readResultReceipts(agent, value.commandIds);
+    if (captured.right === undefined) {
+        return responses.rejection({ status: 409, message: captured.left ?? 'Durable capture failed.' });
+    }
+    const outcome = await agentSockets.requestResultRelease({
+        kind: 'results.release',
+        protocolVersion: 1,
+        ...agent,
+        requestId: value.requestId,
+        receipts: captured.right
+    }, AbortSignal.timeout(15_000));
+    return outcome.fold(
+        (message) => responses.rejection({ status: 409, message }),
+        (released) => responses.json(released, released.status === 'released' ? 200 : 409)
+    );
 }

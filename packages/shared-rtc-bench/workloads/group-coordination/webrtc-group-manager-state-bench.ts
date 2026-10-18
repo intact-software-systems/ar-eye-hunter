@@ -1,7 +1,9 @@
 import { dirname } from 'node:path';
 
-import type { ClientInfo } from '@shared/api/api-config.ts';
+import type { ClientInfo, OverlayInfo } from '@shared/api/api-config.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { toOverlayInfoForSession } from '@shared/api/overlay-topology.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import type { ReadableKeyedValues } from '@shared/cache/RepositoryInterfaces.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
@@ -170,9 +172,10 @@ async function seedGroupManagerState(
 ): Promise<SeededGroupManagerState> {
     const groupCache = new LatestRepository<string, GroupSnapshot>();
     const clientCache = new CountingClientCache();
+    const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
     const manager = new WebRtcGroupManager(
         connectionService,
-        { groupCache, clientCache }
+        { groupCache, clientCache, acceptedOverlayCache }
     );
 
     for (let index = 0; index < input.clients; index += 1) {
@@ -184,23 +187,49 @@ async function seedGroupManagerState(
         });
     }
 
-    await manager.acceptGroupUpdate(
-        createRtcGroupCoordinationSnapshot({
-            groupId: 'room-1',
-            membershipVersion: 1,
-            memberSessionIds: [
-                'self',
-                ...Array.from({ length: input.desired }, (_, index) => `peer-${index}`)
-            ],
-            presenceVersion: 0,
-            formationElectorate: [],
-            acceptedLayoutIdentity: null,
-            ownerSessionId: undefined,
-            connectedAtEpochMs: 1
-        })
+    const group = createRtcGroupCoordinationSnapshot({
+        groupId: 'room-1',
+        membershipVersion: 1,
+        memberSessionIds: [
+            'self',
+            ...Array.from({ length: input.desired }, (_, index) => `peer-${index}`)
+        ],
+        presenceVersion: 1,
+        formationElectorate: [],
+        acceptedLayoutIdentity: { groupRevision: 1, presenceRevision: 1, version: 1, state: 'active' },
+        ownerSessionId: undefined,
+        connectedAtEpochMs: 1
+    });
+    acceptedOverlayCache.set(
+        toScopedOverlayId(group.group),
+        createGroupManagerStateOverlay(group, connectionService.input.sessionId)
     );
+    await manager.acceptGroupUpdate(group);
     clientCache.resetCounters();
     return { manager, clientCache };
+}
+
+function createGroupManagerStateOverlay(group: GroupSnapshot, localSessionId: string): OverlayInfo {
+    const activeSessionIds = group.activeSessions.map((session) => session.sessionId);
+    const desiredPeerIds = activeSessionIds.filter((sessionId) => sessionId !== localSessionId);
+    return toOverlayInfoForSession({
+        sourceGroupStateCausalRevision: group.causalRevision,
+        state: 'active',
+        overlayId: toScopedOverlayId(group.group),
+        groupRef: group.group,
+        name: group.group.displayName,
+        topology: 'star',
+        activeSessionIds,
+        nextHopsBySessionId: Object.fromEntries(activeSessionIds.map((sessionId) => [
+            sessionId,
+            sessionId === localSessionId ? desiredPeerIds : [localSessionId]
+        ])),
+        degreeLimit: Math.max(1, desiredPeerIds.length),
+        version: 1,
+        createdByClientId: 'server',
+        createdAtEpochMs: 1,
+        updatedAtEpochMs: 1
+    }, localSessionId);
 }
 
 function measureStateLookups(

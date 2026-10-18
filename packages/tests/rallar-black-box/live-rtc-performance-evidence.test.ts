@@ -27,6 +27,7 @@ import {
     type LiveRtcPerformanceRawEvidence,
     type LiveRtcRetentionCheckpoint
 } from '../../../tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts';
+import { readRtcB06EvidenceReport } from '../../shared-rtc-bench/baseline/observation/read-rtc-b06-evidence-report.ts';
 
 import { writeLiveRtcPerformanceEvidence } from '../../../tests/playwright/rallar-black-box/write-live-rtc-performance-evidence.ts';
 
@@ -495,80 +496,100 @@ describe('live RTC external-attempt evidence', () => {
         ).toThrow(/production-serving-proof/);
     });
 
-    it('accepts exact production proof through the original external-attempt builder and original staging identity', () => {
-        const observation = {
-            ...runtimeObservation,
-            controllerInputs: [{ name: 'baselineId', value: baselineId, secret: false }],
-            resolvedConfiguration: [{
-                caseKey: { workloadId: 'RTC-B06' as const, caseId: 'default', inputKey: 'e3-memory-default' },
-                field: 'appServingMode',
-                value: 'production',
-                source: 'default' as const
-            }]
-        };
-        const buildRoot = `/repository/tmp/perf/rtc-b06-private-build/${baselineId}/default/retained-1`;
-        const files = [{ path: '.vite/manifest.json', sizeBytes: 90, sha256: 'd'.repeat(64) }, {
-            path: 'assets/entry.js',
-            sizeBytes: 20,
-            sha256: 'e'.repeat(64)
-        }, { path: 'index.html', sizeBytes: 100, sha256: 'f'.repeat(64) }];
-        const proof = {
-            build: {
-                seal: {
-                    version: 1,
-                    appServingMode: 'production',
-                    viteMode: 'production',
-                    nodeEnvironment: 'production',
-                    buildTarget: 'es2023',
-                    baselineId,
-                    attempt: { ...e3DefaultLocator, rawResultRelativePath: String(e3DefaultLocator.rawResultRelativePath) },
-                    buildRoot,
-                    apiOrigin: 'http://localhost:18080',
-                    spaOrigin: 'http://localhost:5177',
-                    git: observation.git,
-                    inputFiles: observation.sourceHashes,
-                    files,
-                    entryFiles: ['assets/entry.js'],
-                    buildArguments: [
-                        '--workspace',
-                        'rallar-black-box',
-                        'run',
-                        'build',
-                        '--',
-                        '--outDir',
-                        `${buildRoot}/output`,
-                        '--emptyOutDir',
-                        '--mode',
-                        'production',
-                        '--target',
-                        'es2023'
-                    ]
+    it.each(['E3-memory', 'E4-pg'] as const)(
+        'accepts exact %s production proof through the original external-attempt builder and staging identity',
+        (environmentId) => {
+            const postgres = environmentId === 'E4-pg';
+            const baselineId = postgres ? '20260829T081500417Z-0123456789ab-e4-pg-local' : '20260829T081500417Z-0123456789ab-e3-memory-local';
+            const locator = postgres
+                ? {
+                    ...e3DefaultLocator,
+                    environmentId,
+                    inputKey: 'e4-pg-default' as const,
+                    rawResultRelativePath: 'artifacts/staging/rtc-b06-default-e4-pg-default-retained-001.json'
+                }
+                : e3DefaultLocator;
+            const identity = postgres
+                ? { ...e3DefaultIdentity, inputKey: 'e4-pg-default' as const, sampleId: 'rtc-b06-default-e4-pg-default-retained-001-001' }
+                : e3DefaultIdentity;
+            const raw = defaultRawEvidence();
+            const producer = postgres
+                ? { ...raw.producer, databaseProvider: 'postgres' as const, databaseUrl: 'present' as const, iceMode: 'local' as const, iceModeRaw: 'local' }
+                : raw.producer;
+            const observation = {
+                ...runtimeObservation,
+                controllerInputs: [{ name: 'baselineId', value: baselineId, secret: false }],
+                resolvedConfiguration: [{
+                    caseKey: { workloadId: 'RTC-B06' as const, caseId: 'default', inputKey: locator.inputKey },
+                    field: 'appServingMode',
+                    value: 'production',
+                    source: 'default' as const
+                }]
+            };
+            const buildRoot = `/repository/tmp/perf/rtc-b06-private-build/${baselineId}/default/retained-1`;
+            const files = [{ path: '.vite/manifest.json', sizeBytes: 90, sha256: 'd'.repeat(64) }, {
+                path: 'assets/entry.js',
+                sizeBytes: 20,
+                sha256: 'e'.repeat(64)
+            }, { path: 'index.html', sizeBytes: 100, sha256: 'f'.repeat(64) }];
+            const proof = {
+                build: {
+                    seal: {
+                        version: 1,
+                        appServingMode: 'production',
+                        viteMode: 'production',
+                        nodeEnvironment: 'production',
+                        buildTarget: 'es2023',
+                        baselineId,
+                        attempt: { ...locator, rawResultRelativePath: String(locator.rawResultRelativePath) },
+                        buildRoot,
+                        apiOrigin: 'http://localhost:18080',
+                        spaOrigin: 'http://localhost:5177',
+                        git: observation.git,
+                        inputFiles: observation.sourceHashes,
+                        files,
+                        entryFiles: ['assets/entry.js'],
+                        buildArguments: [
+                            '--workspace',
+                            'rallar-black-box',
+                            'run',
+                            'build',
+                            '--',
+                            '--outDir',
+                            `${buildRoot}/output`,
+                            '--emptyOutDir',
+                            '--mode',
+                            'production',
+                            '--target',
+                            'es2023'
+                        ]
+                    },
+                    servedFiles: files.slice(1)
                 },
-                servedFiles: files.slice(1)
-            },
-            entries: ['A', 'B', 'C'].flatMap((prefix) => files.slice(1).map((file) => ({ prefix, ...file })))
-        };
-        const rawEvidence = { ...defaultRawEvidence(), productionServing: proof };
-        const accepted = buildLiveRtcExternalAttempt({
-            locator: e3DefaultLocator,
-            sampleIdentity: e3DefaultIdentity,
-            producerExitStatus: 0,
-            runtimeObservation: observation,
-            rawEvidence
-        });
-        expect(accepted.locator).toEqual(e3DefaultLocator);
-        expect(accepted.samples[0]?.outcome).toBe('passed');
-        proof.build.seal.attempt = { ...e3DefaultLocator, rawResultRelativePath: 'artifacts/staging/unrelated.json' };
-        expect(() =>
-            buildLiveRtcExternalAttempt({
-                locator: e3DefaultLocator,
-                sampleIdentity: e3DefaultIdentity,
+                entries: ['A', 'B', 'C'].flatMap((prefix) => files.slice(1).map((file) => ({ prefix, ...file })))
+            };
+            const rawEvidence = { ...raw, identity: { ...raw.identity, inputKey: locator.inputKey, environmentId }, producer, productionServing: proof };
+            const accepted = buildLiveRtcExternalAttempt({
+                locator,
+                sampleIdentity: identity,
                 producerExitStatus: 0,
                 runtimeObservation: observation,
                 rawEvidence
-            })
-        ).toThrow(/production-serving-proof/);
-    });
+            });
+            expect(accepted.locator).toEqual(locator);
+            expect(accepted.samples[0]?.outcome).toBe('passed');
+            proof.build.seal.attempt = { ...locator, rawResultRelativePath: 'artifacts/staging/unrelated.json' };
+            expect(() =>
+                buildLiveRtcExternalAttempt({
+                    locator,
+                    sampleIdentity: identity,
+                    producerExitStatus: 0,
+                    runtimeObservation: observation,
+                    rawEvidence
+                })
+            ).toThrow(/production-serving-proof/);
+        }
+    );
 
     it('loads one exact predeclared attempt from the controller environment', async () => {
         const repoRoot = await mkdtemp(join(tmpdir(), 'rallar-rtc-b06-context-'));
@@ -989,6 +1010,65 @@ describe('live RTC external-attempt evidence', () => {
 });
 
 describe('live RTC retention cohort evidence', () => {
+    it.each([
+        [3, 1, 100, 117, 0],
+        [3, 2, 100, 117, 1],
+        [6, 3, 100, 117, 0],
+        [6, 4, 100, 117, 1],
+        [3, 3, 100, 110, 0],
+        [3, 3, 20, 25, 0],
+        [3, 3, 20, 26, 1],
+        [3, 3, 100, 106, 0]
+    ])('keeps count=%i breaches=%i before=%i MiB after=%i MiB at %i warnings', (count, breaches, before, after, expectedWarnings) => {
+        const attempts = Array.from({ length: count! }, (_, index) =>
+            retentionAttempt({
+                outerOrdinal: index + 1,
+                cycle0HeapBytes: before! * 1024 * 1024,
+                finalHeapBytes: (index < breaches! ? after! : before!) * 1024 * 1024
+            }));
+        const cohort = buildLiveRtcRetentionCohort({
+            identity: {
+                cohortId: 'rtc-b06-e3-memory-retention',
+                workloadId: 'RTC-B06',
+                memberSampleIds: attempts.map((attempt) => attempt.samples[0]!.identity.sampleId)
+            },
+            attempts
+        });
+        expect(cohort.outcome).toBe('passed');
+        const raw = requiredJsonRecord(cohort.rawEvidence, '$.rawEvidence');
+        expect(raw.warnings).toHaveLength(expectedWarnings!);
+        expect(raw.requiredHeapBreachCount).toBe(count === 3 ? 2 : 4);
+    });
+
+    it('keeps missing heap measurements and failed members blocking even when heaps breach', () => {
+        const attempts = Array.from(
+            { length: 3 },
+            (_, index) => retentionAttempt({ outerOrdinal: index + 1, cycle0HeapBytes: 100 * 1024 * 1024, finalHeapBytes: 117 * 1024 * 1024 })
+        );
+        const first = attempts[0]!;
+        const firstSample = first.samples[0]!;
+        const raw = requiredJsonRecord(firstSample.rawEvidence, '$.rawEvidence');
+        const retention = requiredJsonRecord(raw.retention, '$.retention');
+        first.samples = [{ ...firstSample, rawEvidence: { ...raw, retention: { ...retention, checkpoints: [] } } }];
+        const cohort = buildLiveRtcRetentionCohort({
+            identity: {
+                cohortId: 'rtc-b06-e3-memory-retention',
+                workloadId: 'RTC-B06',
+                memberSampleIds: attempts.map((attempt) => attempt.samples[0]!.identity.sampleId)
+            },
+            attempts
+        });
+        expect(cohort.outcome).toBe('failed');
+        expect(cohort.issues).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'retention-state-drift' })]));
+        expect(requiredJsonRecord(cohort.rawEvidence, '$.rawEvidence').warnings).toHaveLength(1);
+        expect(() =>
+            buildLiveRtcRetentionCohort({
+                identity: { ...cohort.identity, memberSampleIds: cohort.identity.memberSampleIds.slice(0, 2) },
+                attempts: attempts.slice(0, 2)
+            })
+        ).toThrow(/exactly 3 primary or 6 repeat/);
+    });
+
     it('detects state drift at an intermediate settled checkpoint', () => {
         const retention = retentionRawEvidence({
             outerOrdinal: 1,
@@ -1011,7 +1091,7 @@ describe('live RTC retention cohort evidence', () => {
         expect(liveRtcRetentionStateReturned(checkpoints)).toBe(false);
     });
 
-    it('uses exact retained membership and applies the primary two-of-three heap rule', () => {
+    it('passes heap-only breaches with an explicit two-of-three warning', () => {
         const attempts = [
             retentionAttempt({
                 outerOrdinal: 1,
@@ -1043,11 +1123,17 @@ describe('live RTC retention cohort evidence', () => {
 
         expect(cohort.schema).toBe('rallar.rtc-baseline.external-cohort.v1');
         expect(cohort.identity.memberSampleIds).toEqual(memberSampleIds);
-        expect(cohort.outcome).toBe('failed');
+        expect(cohort.outcome).toBe('passed');
+        expect(cohort.issues).toEqual([]);
         expect(cohort.rawEvidence).toEqual({
             retainedAttemptCount: 3,
             requiredHeapBreachCount: 2,
             heapBreachingSampleIds: memberSampleIds.slice(0, 2),
+            warnings: [{
+                path: '$.rawEvidence.heapBreachingSampleIds',
+                code: 'retention-heap-threshold-breached',
+                message: '2 retained attempts breached the 2-attempt heap threshold.'
+            }],
             stateDriftSampleIds: [],
             failedMemberSampleIds: []
         });
@@ -1127,7 +1213,7 @@ describe('live RTC retention cohort evidence', () => {
             retentionAttempt({
                 outerOrdinal: locator.outerOrdinal,
                 cycle0HeapBytes: 100 * 1024 * 1024,
-                finalHeapBytes: 104 * 1024 * 1024
+                finalHeapBytes: 117 * 1024 * 1024
             })
         );
         const context = (index: number): LiveRtcPerformanceAttemptContext => ({
@@ -1175,13 +1261,54 @@ describe('live RTC retention cohort evidence', () => {
             'staging',
             'rtc-b06-e3-memory-retention.json'
         ));
+        const environmentBytes = new TextEncoder().encode(JSON.stringify({
+            schema: 'rallar.rtc-baseline.environment.v1',
+            baselineId,
+            workloadIds: ['RTC-B06'],
+            environmentId: 'E3-memory',
+            repeatLink: null,
+            conditionalEnvironmentDecisions: [],
+            observation: runtimeObservation
+        }));
+        const metricSummaries = [{
+            workloadId: 'RTC-B06' as const,
+            caseId: 'retention-100',
+            inputKey: 'e3-memory-retention-100',
+            metric: 'reconnect-ready',
+            unit: 'milliseconds',
+            count: 3,
+            minimum: 1,
+            median: 2,
+            maximum: 3,
+            mad: 1,
+            coefficientOfVariation: 0.4
+        }];
+        const report = readRtcB06EvidenceReport({
+            artifacts: new Map([['environment.json', environmentBytes], [
+                'results/external-cohorts/rtc-b06-e3-memory-retention.json',
+                new TextEncoder().encode(JSON.stringify(cohort))
+            ]]),
+            metricSummaries
+        });
+        expect(report).toMatchObject({ ok: true, value: { metricOutcome: 'inconclusive', warnings: [{ code: 'retention-heap-threshold-breached' }] } });
+        const invalid = { ...cohort, rawEvidence: { ...requiredJsonRecord(cohort.rawEvidence, '$.rawEvidence'), warnings: [] } };
+        expect(
+            readRtcB06EvidenceReport({
+                artifacts: new Map([['environment.json', environmentBytes], [
+                    'results/external-cohorts/rtc-b06-e3-memory-retention.json',
+                    new TextEncoder().encode(JSON.stringify(invalid))
+                ]]),
+                metricSummaries
+            })
+        ).toMatchObject({ ok: false });
         expect(cohort.schema).toBe('rallar.rtc-baseline.external-cohort.v1');
         expect(cohort).toMatchObject({
             identity: manifest.expectedCohorts[0],
             outcome: 'passed',
             rawEvidence: {
                 retainedAttemptCount: 3,
-                requiredHeapBreachCount: 2
+                requiredHeapBreachCount: 2,
+                warnings: [{ code: 'retention-heap-threshold-breached' }]
             }
         });
     });

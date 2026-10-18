@@ -1,3 +1,4 @@
+import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import { BrowserLocalMediaSourceRuntime } from '@shared-web/browser/media/browser-local-media-source-runtime.ts';
 import { BrowserRemoteMediaStreamRuntime } from '@shared-web/browser/media/browser-remote-media-stream-runtime.ts';
 import { BrowserChannelRecoveryOwners } from '@shared-web/browser/messages/browser-channel-recovery-owners.ts';
@@ -80,6 +81,7 @@ export interface CreateBrowserMessagingCompositionInput {
 }
 
 export interface CreateBrowserRealtimeCoreCompositionInput {
+    readonly transportRuntime: BrowserTransportRuntimePort;
     readonly runtime: RallarBrowserFacadeRuntimeContext;
     readonly state: BrowserStateComposition;
     readonly session: RallarSessionController;
@@ -194,6 +196,7 @@ function createBrowserRtcComposition(
         readConnectState: () => input.runtime.readConnectState()
     });
     const rtcController = new BrowserRallarRtcController({
+        refreshIceConfig: (options) => input.transportRuntime.refreshIceConfig(options),
         readMiddleware: input.session.readMiddleware,
         readSession,
         readWsStatus: () => wsController.facade.status(),

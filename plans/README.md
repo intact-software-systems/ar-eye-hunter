@@ -18,11 +18,6 @@ completion record here.
 - The ALM design set stays at `playground/alm/`. It is current work. The
   snapshot readers in `playground/alm/tools/` belong to the hosted lifecycle
   diagnosis beside those documents.
-- `docs/superpowers/plans/2026-08-06-rallar-rtc-performance-baseline-plan.md`
-  stays because it is not finished: RTC-B06 has no accepted E3-memory primary
-  and `RTC-B07` is held. Its status section names what pull request
-  [#566](https://github.com/intact-software-systems/ar-eye-hunter/pull/566)
-  delivered and what remains.
 
 ## When a plan is finished
 
@@ -34,5 +29,4 @@ A later deletion is allowed only when the outcomes are already in the tree or in
 request, no open pull request still modifies the path, and neither this file nor `docs/README.md`
 names the plan as current work. If one of those checks fails, leave the file.
 
-The keep-set is the ALM design and the RTC baseline plan named above. `plans/backlog.md` is not a
-plan to delete.
+The keep-set is the ALM design named above. `plans/backlog.md` is not a plan to delete.

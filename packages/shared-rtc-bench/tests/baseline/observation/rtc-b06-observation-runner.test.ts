@@ -10,7 +10,9 @@ import { decodeRtcBaselineCaptureRequest } from '../../../baseline/contracts/rtc
 import { createRtcB06ObservationRunner, type RtcB06ObservationRunnerDependencies } from '../../../baseline/observation/rtc-b06-observation-runner.ts';
 import type { RtcB06PerformanceObservation } from '../../../baseline/observation/rtc-b06-performance-observation.ts';
 import type { RtcPerformanceObservationArchiveWritten } from '../../../baseline/observation/rtc-performance-observation-archive.ts';
+import { createRtcB06FinalizedArtifacts } from './rtc-performance-observation-fixture.ts';
 
+const artifactFixture = await createRtcB06FinalizedArtifacts('20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3');
 const source = {
     commit: 'c0cadb8216cf27d82a3143755e6965f3831ea164',
     tree: 'd45ae178384826f49fa31ab1e52c0f66d8ff069a'
@@ -127,8 +129,24 @@ function finalizedSummary(outcome: 'passed' | 'failed' = 'passed') {
     };
 }
 
+function createReportArtifacts() {
+    const primaryArtifacts = new Map(artifactFixture);
+    const cohortPath = 'results/external-cohorts/rtc-b06-e3-memory-retention.json';
+    const cohort = JSON.parse(new TextDecoder().decode(primaryArtifacts.get(cohortPath)!));
+    cohort.rawEvidence = {
+        retainedAttemptCount: 3,
+        requiredHeapBreachCount: 2,
+        heapBreachingSampleIds: [],
+        stateDriftSampleIds: [],
+        failedMemberSampleIds: [],
+        warnings: []
+    };
+    primaryArtifacts.set(cohortPath, new TextEncoder().encode(JSON.stringify(cohort)));
+    return primaryArtifacts;
+}
+
 function dependencies() {
-    const primaryArtifacts = new Map([['summary.json', new Uint8Array([1])]]);
+    const primaryArtifacts = createReportArtifacts();
     const envelope: RtcB06ObservationRunnerDependencies['envelope'] = {
         initializeBaseline: vi.fn(async () => {
             return success(undefined);
@@ -147,9 +165,6 @@ function dependencies() {
         }),
         readBaselineValidation: vi.fn(async () => {
             return success({ baselineId: '', retainedArtifactPaths: [], checksumEntryCount: 0 });
-        }),
-        readRepeatRequirement: vi.fn(async () => {
-            return success({ workloadIds: [] });
         })
     };
     const configured: RtcB06ObservationRunnerDependencies = {
@@ -196,15 +211,96 @@ function createArchiveFixture(observation: RtcB06PerformanceObservation): RtcPer
 }
 
 describe('RTC-B06 governed branch baseline', () => {
-    it.each([false, true])('runs the full declared primary and only the canonically required repeat (%s)', async (requiredRepeat) => {
+    it.each(['E3-memory', 'E4-pg'] as const)(
+        'runs the full declared %s primary without automatic acquisition',
+        async (environmentId) => {
+            const { configured } = dependencies();
+            const produced: Array<{ baselineId: string; caseId: string; phase: string; ordinal: number; }> = [];
+            const initialized: object[] = [];
+            const cohorts: string[] = [];
+            configured.envelope.recordExternalCohortAssertion = async (input) => {
+                cohorts.push(input.cohortId);
+                return success({ acceptedCohortCount: 1 });
+            };
+            let manifest: ReturnType<typeof deriveRtcBaselineCaptureManifest>;
+            configured.envelope.initializeBaseline = async (request) => {
+                const captureRequest = typeof request === 'object' && request !== null
+                    ? Object.fromEntries(Object.entries(request).filter(([field]) => field !== 'repeatOf'))
+                    : request;
+                const decoded = decodeRtcBaselineCaptureRequest(captureRequest);
+                if (!decoded.ok) {
+                    throw new Error(JSON.stringify(decoded.issues));
+                }
+                initialized.push({
+                    ...decoded.value,
+                    ...(typeof request === 'object' && request !== null && 'repeatOf' in request ? { repeatOf: request.repeatOf } : {})
+                });
+                manifest = deriveRtcBaselineCaptureManifest(decoded.value);
+                return success(undefined);
+            };
+            configured.envelope.readExternalAttempts = async () => success(deriveRtcBaselineExternalAttempts(manifest, 'RTC-B06'));
+            configured.runLiveRtcProducer = async ({ baselineId, attempt }) => {
+                produced.push({ baselineId, caseId: attempt.caseId, phase: attempt.intendedPhase, ordinal: attempt.outerOrdinal });
+                return { exitStatus: 0 };
+            };
+            configured.createArchive = async () => {
+                throw new Error('Branch capture must never create a permanent archive');
+            };
+            configured.writeOutput = async () => {
+                throw new Error('Branch capture must never write a publication index');
+            };
+            const runner = createRtcB06ObservationRunner(configured);
+            const result = await runner.captureBaseline({ ...workflow, environmentId, sourceRef: 'codex/rtc-baseline-refresh' });
+            expect(result).toMatchObject({
+                ok: true,
+                value: {
+                    baselineId: `20260830T100000Z-c0cadb8216cf-${environmentId.toLowerCase()}-gh987654321-a3`,
+                    source: { ...source, ref: 'codex/rtc-baseline-refresh' },
+                    primaryOutcome: 'passed',
+                    acceptedMetrics: true,
+                    repeatDecision: 'not-required',
+                    repeatOutcome: 'not-run'
+                }
+            });
+            expect(initialized).toHaveLength(1);
+            for (const request of initialized) {
+                expect(request).toMatchObject({
+                    environmentId,
+                    conditionalEnvironmentDecisions: [{ environmentId: 'E4-pg', decision: environmentId === 'E4-pg' ? 'required' : 'not-required' }]
+                });
+            }
+            expect(cohorts).toEqual(['rtc-b06-' + environmentId.toLowerCase() + '-retention']);
+            const primary = produced.filter((attempt) => !attempt.baselineId.endsWith('-repeat-01'));
+            expect(primary.map(({ caseId, phase, ordinal }) => `${caseId}/${phase}/${ordinal}`)).toEqual([
+                'default/warmup/1',
+                'default/retained/1',
+                'default/retained/2',
+                'default/retained/3',
+                'default/retained/4',
+                'default/retained/5',
+                'all-scenarios/warmup/1',
+                'all-scenarios/retained/1',
+                'all-scenarios/retained/2',
+                'all-scenarios/retained/3',
+                'retention-100/warmup/1',
+                'retention-100/retained/1',
+                'retention-100/retained/2',
+                'retention-100/retained/3'
+            ]);
+            expect(new Set(produced.map((attempt) => attempt.baselineId))).toEqual(
+                new Set([
+                    '20260830T100000Z-c0cadb8216cf-' + environmentId.toLowerCase() + '-gh987654321-a3'
+                ])
+            );
+        }
+    );
+
+    it.each(['E3-memory', 'E4-pg'] as const)('keeps failed %s primary evidence unaccepted and never selects a repeat or publishes', async (environmentId) => {
         const { configured } = dependencies();
-        const produced: Array<{ baselineId: string; caseId: string; phase: string; ordinal: number; }> = [];
+        const produced: string[] = [];
         let manifest: ReturnType<typeof deriveRtcBaselineCaptureManifest>;
         configured.envelope.initializeBaseline = async (request) => {
-            const captureRequest = typeof request === 'object' && request !== null
-                ? Object.fromEntries(Object.entries(request).filter(([field]) => field !== 'repeatOf'))
-                : request;
-            const decoded = decodeRtcBaselineCaptureRequest(captureRequest);
+            const decoded = decodeRtcBaselineCaptureRequest(request);
             if (!decoded.ok) {
                 throw new Error(JSON.stringify(decoded.issues));
             }
@@ -212,77 +308,50 @@ describe('RTC-B06 governed branch baseline', () => {
             return success(undefined);
         };
         configured.envelope.readExternalAttempts = async () => success(deriveRtcBaselineExternalAttempts(manifest, 'RTC-B06'));
-        configured.envelope.readRepeatRequirement = async () => success({ workloadIds: requiredRepeat ? ['RTC-B06'] : [] });
-        configured.runLiveRtcProducer = async ({ baselineId, attempt }) => {
-            produced.push({ baselineId, caseId: attempt.caseId, phase: attempt.intendedPhase, ordinal: attempt.outerOrdinal });
-            return { exitStatus: 0 };
+        configured.runLiveRtcProducer = async ({ attempt }) => {
+            produced.push(attempt.rawResultRelativePath);
+            return { exitStatus: 9 };
         };
-        configured.createArchive = async () => {
-            throw new Error('Branch capture must never create a permanent archive');
-        };
-        configured.writeOutput = async () => {
-            throw new Error('Branch capture must never write a publication index');
-        };
-        const runner = createRtcB06ObservationRunner(configured);
-        const result = await runner.captureBaseline({ ...workflow, sourceRef: 'codex/rtc-baseline-refresh' });
-        expect(result).toMatchObject({
-            ok: true,
-            value: {
-                baselineId: '20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3',
-                source: { ...source, ref: 'codex/rtc-baseline-refresh' },
-                primaryOutcome: 'passed',
-                acceptedMetrics: true,
-                repeatDecision: requiredRepeat ? 'required' : 'not-required',
-                repeatOutcome: requiredRepeat ? 'passed' : 'not-run'
-            }
-        });
-        const primary = produced.filter((attempt) => !attempt.baselineId.endsWith('-repeat-01'));
-        expect(primary.map(({ caseId, phase, ordinal }) => `${caseId}/${phase}/${ordinal}`)).toEqual([
-            'default/warmup/1',
-            'default/retained/1',
-            'default/retained/2',
-            'default/retained/3',
-            'default/retained/4',
-            'default/retained/5',
-            'all-scenarios/warmup/1',
-            'all-scenarios/retained/1',
-            'all-scenarios/retained/2',
-            'all-scenarios/retained/3',
-            'retention-100/warmup/1',
-            'retention-100/retained/1',
-            'retention-100/retained/2',
-            'retention-100/retained/3'
-        ]);
-        const repeat = produced.filter((attempt) => attempt.baselineId.endsWith('-repeat-01'));
-        expect(repeat.length).toBe(requiredRepeat ? 25 : 0);
-        if (requiredRepeat) {
-            expect(repeat.filter(({ phase }) => phase === 'warmup').length).toBe(3);
-            expect(repeat.filter(({ caseId, phase }) => caseId === 'default' && phase === 'retained').length).toBe(10);
-            expect(repeat.filter(({ caseId, phase }) => caseId === 'all-scenarios' && phase === 'retained').length).toBe(6);
-            expect(repeat.filter(({ caseId, phase }) => caseId === 'retention-100' && phase === 'retained').length).toBe(6);
-        }
-    });
-
-    it('keeps failed primary evidence unaccepted and never selects a repeat or publishes', async () => {
-        const { configured } = dependencies();
-        configured.runLiveRtcProducer = async () => ({ exitStatus: 9 });
-        configured.envelope.recordExternalAttempt = async () => ({ ok: false, issues: [{ path: '$.producer', code: 'producer-failed', message: 'failed' }] });
         configured.envelope.finalize = async () => success(finalizedSummary('failed'));
-        configured.envelope.readRepeatRequirement = async () => {
-            throw new Error('Failed primary must not select a repeat');
-        };
         configured.createArchive = async () => {
             throw new Error('Branch capture must never publish');
         };
         const runner = createRtcB06ObservationRunner(configured);
-        expect(await runner.captureBaseline({ ...workflow, sourceRef: 'codex/rtc-baseline-refresh' })).toMatchObject({
+        expect(await runner.captureBaseline({ ...workflow, environmentId, sourceRef: 'codex/rtc-baseline-refresh' })).toMatchObject({
             ok: true,
             value: { primaryOutcome: 'failed', acceptedMetrics: false, repeatDecision: 'not-required', repeatOutcome: 'not-run' }
         });
+        expect(produced).toHaveLength(14);
+        expect(new Set(produced).size).toBe(14);
+        expect(produced.every((path) => path.includes(environmentId.toLowerCase()))).toBe(true);
     });
 });
 
 describe('RTC-B06 observation runner', () => {
+    it('keeps finalized primary integrity validation blocking publication', async () => {
+        const { configured } = dependencies();
+        const issues = [{ path: '$.SHA256SUMS', code: 'raw-sha256-mismatch', message: 'Retained evidence hash differs.' }];
+        configured.envelope.readBaselineValidation = async () => ({ ok: false, issues });
+        configured.createArchive = async () => {
+            throw new Error('Invalid retained evidence must never be archived');
+        };
+        expect(await createRtcB06ObservationRunner(configured).run(workflow)).toEqual({ ok: false, issues });
+    });
+
+    it('exposes noisy timing disposition and retained warnings in operator output without a repeat', async () => {
+        const { configured } = dependencies();
+        const summary = finalizedSummary();
+        summary.metricSummaries[0]!.coefficientOfVariation = 0.4;
+        configured.envelope.finalize = async () => success(summary);
+        const result = await createRtcB06ObservationRunner(configured).run(workflow);
+        expect(result).toMatchObject({
+            ok: true,
+            value: {
+                evidenceReport: { metricOutcome: 'inconclusive', warnings: [] },
+                observation: { primary: { outcome: 'passed', acceptedMetrics: true }, repeat: { decision: 'not-required', outcome: 'not-run' } }
+            }
+        });
+    });
     it('captures the predeclared E3 attempts and retention cohort before publishing accepted evidence', async () => {
         const { configured } = dependencies();
 
@@ -322,43 +391,6 @@ describe('RTC-B06 observation runner', () => {
             producerExitStatus: 0,
             rawResultRelativePath: 'artifacts/staging/rtc-b06-e3-memory-retention.json'
         });
-    });
-
-    it('captures one controlled double-sample repeat when E3 requires it', async () => {
-        const { configured } = dependencies();
-        vi.mocked(configured.envelope.readRepeatRequirement).mockImplementation(async () => {
-            return success({ workloadIds: ['RTC-B06'] });
-        });
-
-        const result = await createRtcB06ObservationRunner(configured).run(workflow);
-
-        expect(result).toMatchObject({
-            ok: true,
-            value: {
-                observation: {
-                    repeat: { decision: 'required', outcome: 'passed' }
-                }
-            }
-        });
-        expect(configured.envelope.initializeBaseline).toHaveBeenCalledWith({
-            schema: 'rallar.rtc-baseline.capture-request.v1',
-            baselineId: '20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3-repeat-01',
-            workloadIds: ['RTC-B06'],
-            environmentId: 'E3-memory',
-            retainedSampleMultiplier: 2,
-            repeatLink: null,
-            conditionalEnvironmentDecisions: [
-                {
-                    environmentId: 'E4-pg',
-                    decision: 'not-required',
-                    reason: 'E3-memory observation only; no database-backed candidate is being selected.'
-                }
-            ],
-            repeatOf: '20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3'
-        });
-        expect(configured.createArchive).toHaveBeenCalledWith(
-            expect.objectContaining({ repeatArtifacts: expect.any(Map) })
-        );
     });
 
     it('archives a producer failure without accepting metrics or selecting a repeat', async () => {

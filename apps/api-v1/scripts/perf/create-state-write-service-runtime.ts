@@ -61,6 +61,19 @@ export interface CreateStateWriteServiceRuntimeInput {
     readonly timing: RallarTimingSink;
 }
 
+interface CreateStateWriteInboxRuntimeInput {
+    readonly database: PSqlSql;
+    readonly nowEpochMs: () => number;
+    readonly context: StateWriteServiceRuntimeContext;
+}
+
+interface StateWriteInboxRuntime {
+    readonly database: PSqlSql;
+    readonly inboxQueueReader: InboxQueueReader;
+    readonly resourceInboxRepository: TopologyInboxService.Dependencies['resourceInboxRepository'];
+    readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
+}
+
 interface StateWriteDomainServiceInput {
     readonly database: PSqlSql;
     readonly serviceId: string;
@@ -97,18 +110,8 @@ export function createStateWriteServiceRuntime(input: CreateStateWriteServiceRun
         serviceId,
         timing
     });
-    const resourceInbox = createPSqlResourceInboxRepository(instrumentedSql, () => new Date(nowEpochMs()));
-    const inbox = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
-        laneBudgetPolicy: 'fixed-retry-two',
-        onAttemptReleaseTelemetry: (event) => context.attemptReleases.push(event)
-    });
-    const results = new ResourceInboxResultsRepository(instrumentedSql);
-    const appInboxDependencies = {
-        inboxQueueReader: inbox,
-        resourceInboxRepository: resourceInbox.entries,
-        resourceInboxResultsRepository: results,
-        database: instrumentedSql
-    };
+    const appInboxDependencies = createStateWriteInboxRuntime({ database: instrumentedSql, nowEpochMs, context });
+    const inbox = appInboxDependencies.inboxQueueReader;
     const client = new AppClientInboxService(
         {
             ...appInboxDependencies,
@@ -143,6 +146,23 @@ export function createStateWriteServiceRuntime(input: CreateStateWriteServiceRun
         groupStateRepository
     });
     return { client, group, topology, inbox, resilience: createBenchmarkResilience(), serviceId };
+}
+
+function createStateWriteInboxRuntime(
+    { database, nowEpochMs, context }: CreateStateWriteInboxRuntimeInput
+): StateWriteInboxRuntime {
+    const resourceInbox = createPSqlResourceInboxRepository(database, () => new Date(nowEpochMs()));
+    const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
+        laneBudgetPolicy: 'fixed-retry-two',
+        newLaneConcurrency: 1,
+        onAttemptReleaseTelemetry: (event) => context.attemptReleases.push(event)
+    });
+    return {
+        database,
+        inboxQueueReader,
+        resourceInboxRepository: resourceInbox.entries,
+        resourceInboxResultsRepository: new ResourceInboxResultsRepository(database)
+    };
 }
 
 function createStateWriteDomainServices(
@@ -201,7 +221,7 @@ function createStateWriteTopologyService({
             inboxQueueReader,
             resourceInboxRepository,
             resourceInboxResultsRepository,
-            database: database,
+            database,
             groupStateService: groupState,
             mutationOwners: {
                 configMutationService: topologyMutationOwners.configMutation,

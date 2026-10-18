@@ -890,5 +890,143 @@ export const reviewedBrowserDispositions = Object.freeze([
         rule: 'layout.feature-prefix-cluster',
         symbol: 'prefix:black',
         maximumMagnitude: 12
+    }),
+    // Explicit durable result release: independently reviewed exact boundary and
+    // lifecycle owners. Caps preserve current signals; touched owners need review.
+    // One serialized durable evidence lifecycle owns artifact append/flush, receipt
+    // publication/read and artifact response. Splitting the shared queue policy would obscure
+    // ordering and failure ownership; the metric is a reviewed cohesion warning below the
+    // mandatory refactor threshold.
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/src/control-artifact-recorder.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 62
+    }),
+    // The exact current module-attributed occurrence is the class method's `JSON.parse` receipt
+    // row. `isResultCaptureReceipt` guards it before selection or domain handoff. The checker
+    // does not assign the class method name.
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/src/control-artifact-recorder.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
+    }),
+    // Recursive persisted JSON discovery checks arrays/records, then the canonical result decoder
+    // and receipt guard before producing typed capture receipts. Arbitrary nested user payloads
+    // are not treated as domain results without these checks.
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/src/control-artifact-recorder.ts',
+        rule: 'boundary.unknown',
+        symbol: 'collectCaptureReceipts',
+        maximumMagnitude: 1
+    }),
+    // The current module-owned value is the transport OpenAPI document, whose embedded canonical
+    // JsonSchema supports opaque enum/const/examples/default data. It is only served as
+    // documentation, never consumed as application authority or receipt policy.
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/src/routes/swagger-routes.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
+    }),
+    // A schema translation boundary accepts a schema record, clones it through the guarded
+    // recursive owner, and preserves its record root. Its output remains an opaque transport-
+    // document record; no application domain object is asserted.
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/src/routes/swagger-routes.ts',
+        rule: 'boundary.unknown',
+        symbol: 'openApiJsonSchema',
+        maximumMagnitude: 3
+    }),
+    // The schema walker preserves primitive/opaque leaves, checks object/array shape, tracks
+    // actual ancestor identity and translates cycles into named schema references. The unknown
+    // values stay within this schema representation boundary. Canonical JsonSchema intentionally
+    // permits arbitrary enum/const/example/default values.
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/src/routes/swagger-routes.ts',
+        rule: 'boundary.unknown',
+        symbol: 'cloneJsonSchema',
+        maximumMagnitude: 4
+    }),
+    // The function projects the authored OpenAPI document and relative server URL into transport
+    // output. It makes no business decision from opaque schema values.
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/src/routes/swagger-routes.ts',
+        rule: 'boundary.unknown',
+        symbol: 'controlOpenApiSpec',
+        maximumMagnitude: 1
+    }),
+    // The only consumed operation is JSON serialization to an HTTP response with fixed status and
+    // owned CORS headers. The record's contents are not promoted into application domain state.
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/src/routes/swagger-routes.ts',
+        rule: 'boundary.unknown',
+        symbol: 'jsonResponse',
+        maximumMagnitude: 1
+    }),
+    // All three module-attributed occurrences describe partial observations of the served OpenAPI
+    // output: enum items, path records and oneOf alternatives. They terminate in independent
+    // assertions; no production input or policy is constructed from unchecked values.
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/test/swagger-routes.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 3
+    }),
+    // HTTP JSON is checked for response success, record shape, exact request identity, released
+    // status, count and reason before constructing the typed outcome.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/result-release/release-control-results.ts',
+        rule: 'boundary.unknown',
+        symbol: 'releaseControlResults',
+        maximumMagnitude: 1
+    }),
+    // Parsed socket JSON stays raw until protocol discriminant/version, identity strings, receipt
+    // array and each receipt's fields are checked. The resulting envelope is explicitly
+    // constructed from those checked fields.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/result-release/result-release-protocol.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeResultReleaseEnvelope',
+        maximumMagnitude: 1
+    }),
+    // Required separation review keeps one concrete runtime owner for assignment/reset, active
+    // execution and recipe leases, event/result commit and release fencing. Factory composition
+    // and stateless release/reference policies already have meaningful separate owners. Further
+    // method shuffling would hide shared race guards; discounted length is within 1200 and named
+    // methods within 60.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/runtime/in-memory-rallar-black-box-test-runtime.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 142
+    }),
+    // Arbitrary retained payload traversal checks array/record shape before descending and uses
+    // exact selected-result matching. Its output is only an ownership-presence boolean.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/runtime/release-runtime-results.ts',
+        rule: 'boundary.unknown',
+        symbol: 'containsReleasedResult',
+        maximumMagnitude: 1
+    }),
+    // A raw payload record is a selected result only after capture-record narrowing and exact
+    // canonical equality with a previously verified full result. Lookalikes do not gain result
+    // identity.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/runtime/release-runtime-results.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isSelectedResult',
+        maximumMagnitude: 1
+    }),
+    // The opaque-payload rewrite preserves arrays/records/leaves and substitutes only exact
+    // verified selected results. The caller first rejects any matching protected event and only
+    // rewrites runtime-owned result evidence. Its output intentionally remains opaque event
+    // payload data, never an asserted result DTO.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/runtime/release-runtime-results.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toReleasedResultMarkers',
+        maximumMagnitude: 2
     })
 ]);

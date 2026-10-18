@@ -22,11 +22,16 @@ interface ReportSnapshot {
     readonly summary: {
         readonly providerMode: string;
         readonly commands: number;
+        readonly retainedResults: number;
+        readonly releasedResults: number;
+        readonly fullResultHistoryAvailable: boolean;
+        readonly retainedEvents: number;
         readonly failures: number;
         readonly events: number;
-        readonly firstFailureCommandId: string | undefined;
+        readonly firstRetainedFailureCommandId: string | undefined;
     };
     readonly stats: RallarBlackBoxTestState['latestStats'];
+    readonly eventHistory: RallarBlackBoxTestState['eventHistory'];
     readonly results:
         readonly (RallarBlackBoxTestState['commandHistory'][number] & { readonly providerMode: string; })[];
     readonly events: RallarBlackBoxTestState['events'];
@@ -92,12 +97,17 @@ function toReportSnapshot(state: RallarBlackBoxTestState, generatedAtEpochMs: nu
             : undefined,
         summary: {
             providerMode,
-            commands: state.commandHistory.length,
-            failures: state.failures.length,
-            events: state.events.length,
-            firstFailureCommandId: state.failures[0]?.commandId
+            commands: state.resultHistory.totalCommands,
+            retainedResults: state.commandHistory.length,
+            releasedResults: state.resultHistory.releasedResults,
+            fullResultHistoryAvailable: state.resultHistory.releasedResults === 0,
+            failures: state.resultHistory.totalFailures,
+            events: state.eventHistory.totalEvents,
+            retainedEvents: state.events.length,
+            firstRetainedFailureCommandId: state.failures[0]?.commandId
         },
         stats: state.latestStats,
+        eventHistory: state.eventHistory,
         results: state.commandHistory.map((result) => ({
             ...result,
             providerMode

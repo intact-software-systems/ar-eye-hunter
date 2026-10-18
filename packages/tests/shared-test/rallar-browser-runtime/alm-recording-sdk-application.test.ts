@@ -13,6 +13,7 @@ import * as rtc from '@shared-web/browser/rtc/initialise-browser-rtc-runtime.ts'
 import * as ws from '@shared/services/ws-queue-box-client-service.ts';
 
 import {
+    CAPTURE_APPLICATION_API_CONFIG,
     createCaptureApplicationRuntime,
     installCaptureApplicationTestEnvironment
 } from './capture-application-test-runtime.ts';
@@ -77,10 +78,10 @@ it.each([true, false])('projects only the owned SDK application despite foreign 
         release.resolve();
         await page.close();
     });
-    vi.spyOn(connectionHttp, 'readIceCandidates').mockImplementation(async () => {
+    vi.spyOn(connectionHttp, 'readApiConfig').mockImplementation(async () => {
         entered.resolve();
         await release.promise;
-        return { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 };
+        return CAPTURE_APPLICATION_API_CONFIG;
     });
     const foreign = {
         kind: 'diagnostic' as const,

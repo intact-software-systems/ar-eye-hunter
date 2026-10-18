@@ -7,8 +7,6 @@ import type {
     ALDeliveryCarrier,
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import type {
     IndexedDbOperationKind,
@@ -18,17 +16,22 @@ import type { ScriptedStorageFault } from '@shared/persistence/storage-fault-por
 import type { ScriptedTransportFault } from '@shared/transport-faults/transport-fault-port.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import type { RecipeEventHistorySelection } from './recipe/validate-recipe-event-history.ts';
+import type { ResultCaptureIdentity, ResultReleaseOutcome, ResultReleaseRequest } from './result-release/result-release-protocol.ts';
 import type {
     RallarBlackBoxEventHistory,
     RallarBlackBoxEventHistoryPolicy,
     RallarBlackBoxEventHistorySequence,
     RallarBlackBoxTestConnectionFacts
 } from './runtime/event-history.ts';
+import type { RuntimeResultHistory } from './runtime/runtime-result-history.ts';
+import type { RallarBlackBoxTestStatsSnapshot } from './runtime/runtime-stats-contracts.ts';
 
 import type { BlackBoxRallarCrdtConnectionInput } from '../black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type { RallarBlackBoxTestMessagesControlFields } from './alm/rallar-black-box-test-messages-control-fields.ts';
 import type { ControlClientIdentity, ControlCommandEnvelope } from './control-protocol.ts';
 import type { RecipeCaptureSequence } from './recipe/recipe-capture-sequence.ts';
+
+export type { RallarBlackBoxTestAlmUsage, RallarBlackBoxTestStatsSnapshot } from './runtime/runtime-stats-contracts.ts';
 
 export const RALLAR_BLACK_BOX_TEST_COMMAND_KINDS = [
     'configure',
@@ -813,6 +816,8 @@ export interface RallarBlackBoxTestError {
 }
 
 export interface RallarBlackBoxTestResult<T = unknown> {
+    /** Absent on externally supplied results that cannot authorize payload release. */
+    readonly capture?: ResultCaptureIdentity;
     readonly commandId: string;
     readonly kind: RallarBlackBoxTestCommandKind;
     readonly status: RallarBlackBoxTestResultStatus;
@@ -1082,69 +1087,6 @@ export type RallarBlackBoxTestEvent<T = unknown> = Readonly<{
 
 export type RallarBlackBoxTestRuntimeEventInput = Omit<RallarBlackBoxTestEvent, 'eventId' | 'atEpochMs' | 'history'>;
 
-/**
- * The page's session ledger report (D180) beside `orderingTracks`, the ordering snapshots its inbound stores state
- * they hold, each store's latest statement since the page's last `close`, summed (D191).
- */
-export interface RallarBlackBoxTestAlmUsage extends ALVolatileSessionReport {
-    readonly orderingTracks: number;
-}
-
-export interface RallarBlackBoxTestStatsSnapshot {
-    readonly eventHistory: RallarBlackBoxEventHistory;
-    readonly atEpochMs: number;
-    readonly runId?: string;
-    readonly agentId?: string;
-    readonly status: RallarBlackBoxTestRuntimeStatus;
-    readonly counters: Readonly<{
-        commands: number;
-        events: number;
-        failures: number;
-        messages: number;
-        diagnostics: number;
-        reconnects?: number;
-    }>;
-    readonly lastCommandId?: string;
-    readonly lastEventAtEpochMs?: number;
-    readonly commandLatency?: Readonly<{
-        count: number;
-        minMs?: number;
-        maxMs?: number;
-        averageMs?: number;
-        lastMs?: number;
-    }>;
-    readonly rallar?: Readonly<{
-        connected?: boolean;
-        actor?: string;
-        sessionId?: string;
-        roomId?: string;
-        transport?: RallarBlackBoxTestTransport;
-        peerCount?: number;
-        laneHealth?: unknown;
-        /**
-         * The page's session ledger, read by the `stats` command through `rallar.messages.readUsage()` (D180), and
-         * its ordering snapshots. Absent before the page connects, on a runtime that drives no Rallar page, and in
-         * the control client's periodic stats and final report, which read no page.
-         */
-        alm?: RallarBlackBoxTestAlmUsage;
-        /**
-         * The congestion decisions the page counted since its last `close`, read by the `stats` command (D186).
-         * Absent exactly where `alm` is.
-         */
-        congestion?: ALCongestionCounters;
-    }>;
-    readonly load?: Readonly<{
-        loopCount: number;
-        latestLoopCommandId?: string;
-        latestPacing?: Omit<RallarBlackBoxTestLoopPacingSummary, 'iterations'>;
-        latestSends?: Omit<RallarBlackBoxTestLoopSendSummary, 'observations'>;
-        thresholdFailures?: readonly RallarBlackBoxTestLoopThresholdFailure[];
-        streamCount?: number;
-        latestStreamCommandId?: string;
-        latestStream?: Omit<RallarBlackBoxTestRtcStreamResultValue, 'observations'>;
-    }>;
-}
-
 export interface RallarBlackBoxTestReportFragment {
     readonly reportId: string;
     readonly runId?: string;
@@ -1157,6 +1099,7 @@ export interface RallarBlackBoxTestReportFragment {
 }
 
 export interface RallarBlackBoxTestState {
+    readonly resultHistory: RuntimeResultHistory;
     readonly eventHistory: RallarBlackBoxEventHistory;
     readonly connection: RallarBlackBoxTestConnectionFacts;
     readonly status: RallarBlackBoxTestRuntimeStatus;
@@ -1240,6 +1183,7 @@ export interface RallarBlackBoxTestRuntime {
         input?: RallarBlackBoxTestExecutionInput
     ): Promise<RallarBlackBoxTestResult>;
     /** Releases only this assignment's settled outer execution, including a terminal page replacement. */
+    releaseResults(request: ResultReleaseRequest): Promise<ResultReleaseOutcome>;
     releaseRecipeExecution(rootCommandId: string, controlIdentity?: ControlClientIdentity): void;
     state(): RallarBlackBoxTestState;
     beginEventCapture(identity: ControlClientIdentity): void;

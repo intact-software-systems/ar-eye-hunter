@@ -36,6 +36,32 @@ export interface LiveRtcJournalFailure {
     readonly source: RtcBaselineRawReferenceDto | null;
 }
 
+export async function writeLiveRtcDurableArtifact(
+    artifact: LiveRtcDurableJournalInput & {
+        readonly fileName: 'results.jsonl' | 'events.jsonl' | 'result-receipts.jsonl';
+    }
+): Promise<RtcBaselineRawReferenceDto> {
+    if (!/^[a-z0-9-]+$/.test(artifact.runId)) {
+        throw new Error('Unsupported recorder run directory.');
+    }
+    const file = await readConfinedJournalFile(
+        artifact.repoRoot,
+        resolve(artifact.storageDirectory, 'runs', artifact.runId, artifact.fileName)
+    );
+    try {
+        const before = await file.stat();
+        const reference = await writeJournalPrefix(file, { ...artifact, bytes: before.size });
+        const after = await file.stat();
+        if (after.size !== before.size || after.mtimeMs !== before.mtimeMs) {
+            throw new Error('Complete recorder artifact changed during archival.');
+        }
+        return reference;
+    }
+    finally {
+        await file.close();
+    }
+}
+
 export async function readLiveRtcDurableJournal(
     journal: LiveRtcDurableJournalInput
 ): Promise<Either<LiveRtcJournalFailure, LiveRtcDurableJournal>> {
@@ -140,6 +166,7 @@ async function writeJournalPrefix(
             }
             bytes += chunk.length;
         }
+        await output.sync();
     }
     finally {
         await output.close();

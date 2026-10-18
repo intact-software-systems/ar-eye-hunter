@@ -360,6 +360,7 @@ function toEmptySpaState(): RallarBlackBoxTestState {
         failures: [],
         resultCache: {},
         latestStats: {
+            resultRetention: { retainedResults: 0, releasedResults: 0 },
             eventHistory: runtimeState.eventHistory,
             atEpochMs: 1,
             status: 'completed',

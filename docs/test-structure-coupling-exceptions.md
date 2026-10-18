@@ -3905,17 +3905,17 @@ moved or changed test.
       }
     },
     {
-      "id": "recipe-adapter-compatible-connection-one-ice-request",
-      "domain": "Recipe adapter connection cache suppression",
+      "id": "recipe-adapter-compatible-connection-single-startup",
+      "domain": "Recipe adapter connection startup suppression",
       "owner": "Shared Test maintainers",
-      "summary": "The held initial Off connection plus rejected Native request and later compatible Off reuse make exactly one ICE configuration request.",
+      "summary": "The held initial Off connection plus rejected Native request and later compatible Off reuse initialize exactly one browser graph and request API configuration once.",
       "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts#queues different source intent while construction is held and rejects it with the actual original receipt",
-      "coverageRelation": "The actual page adapter holds its initial SDK construction at the ICE HTTP port, queues incompatible intent, then rejects it with the original receipt and reuses compatible intent without a second request.",
+      "coverageRelation": "The actual page adapter holds initial SDK construction at the uncached API configuration HTTP port, queues incompatible intent, rejects it with the original receipt and reuses compatible intent without a second startup request.",
       "interactionRequirement": {
         "interactionKind": "count",
-        "ownedPort": "readIceCandidates HTTP port during browser RTC transport initialization",
-        "observableEffect": "Each call requests ICE configuration from the server for a browser connection construction.",
-        "requiredConstraint": "The held initial Off connection plus rejected Native request and later compatible Off reuse make exactly one ICE configuration request.",
+        "ownedPort": "readApiConfig HTTP port during browser WebSocket transport initialization",
+        "observableEffect": "Each new middleware startup requests API configuration before allocating its WebSocket client and RTC graph, regardless of cached ICE configuration.",
+        "requiredConstraint": "The held initial Off connection plus rejected Native request and later compatible Off reuse initialize exactly one browser graph and request API configuration once.",
         "failureRationale": "A successful reused receipt alone could hide redundant server requests and connection construction. The incompatible request must not construct a replacement, and compatible adapter reuse must share the original."
       }
     },
@@ -3935,17 +3935,17 @@ moved or changed test.
       }
     },
     {
-      "id": "sdk-pending-compatible-connection-one-ice-request",
+      "id": "sdk-pending-compatible-connection-single-startup",
       "domain": "SDK pending connection reservation",
       "owner": "Shared Web maintainers",
-      "summary": "Before explicit disconnect, an initial held Native host request, a compatible Native run request and a rejected Off run request make exactly one ICE request.",
+      "summary": "Before explicit disconnect, an initial held Native host request, a compatible Native run request and a rejected Off run request initialize exactly one browser graph and request API configuration once.",
       "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts#preserves host selection and actual pending receipt across compatible direct SDK acquisition",
-      "coverageRelation": "The real SDK initializer is held at the HTTP port while compatible and incompatible connect requests arrive. Both accepted promises settle with the original host receipt; the literal one-request assertion precedes the separate explicit reconnect.",
+      "coverageRelation": "The real SDK initializer is held at its uncached API configuration HTTP port while compatible and incompatible connect requests arrive. Both accepted promises settle with the original host receipt; the literal one-startup-request assertion precedes the separate explicit reconnect.",
       "interactionRequirement": {
         "interactionKind": "count",
-        "ownedPort": "readIceCandidates HTTP port during browser RTC transport initialization",
-        "observableEffect": "Each call performs an ICE configuration request before constructing the browser RTC graph.",
-        "requiredConstraint": "Before explicit disconnect, an initial held Native host request, a compatible Native run request and a rejected Off run request make exactly one ICE request.",
+        "ownedPort": "readApiConfig HTTP port during browser WebSocket transport initialization",
+        "observableEffect": "Each new middleware startup requests API configuration before allocating its WebSocket client and RTC graph, regardless of cached ICE configuration.",
+        "requiredConstraint": "Before explicit disconnect, an initial held Native host request, a compatible Native run request and a rejected Off run request initialize exactly one browser graph and request API configuration once.",
         "failureRationale": "The final receipt can look correct even if pending callers performed duplicate network and graph initialization. Compatible callers share the reservation and an incompatible caller must add no construction."
       }
     },
@@ -4526,6 +4526,36 @@ moved or changed test.
         "observableEffect": "One failed publication produces one operator-visible warning and no exception in the caller.",
         "requiredConstraint": "Report each failed completion publication exactly once and never throw from the relay call.",
         "failureRationale": "A missing warning hides a broken pub/sub bridge (remote waiters silently fall back to the tick); repeated warnings flood the log under a sustained outage."
+      }
+    },
+    {
+      "id": "indexeddb-admission-pending-observer-opens-no-transaction",
+      "domain": "IndexedDB admission operation observer storage gate",
+      "owner": "Rallar shared maintainers",
+      "summary": "Each of the five admission operations waits for its pending observer Promise before opening its storage transaction, including foreign-realm Promises",
+      "semanticCoverage": "packages/tests/shared/alm/indexed-db-admission-observer-gates.test.ts#opens no storage transaction until its observer permits the operation",
+      "coverageRelation": "The test starts the real backend operation after initial storage readiness, leaves its first observer Promise pending through an event-loop turn, asserts no native transaction creation, then resolves the gate and waits for the operation and backend cleanup",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "IDBDatabase.prototype.transaction, the native storage transaction-opening port used by IndexedDbAdmissionBackend",
+        "observableEffect": "Opening a transaction begins storage work and acquires an IndexedDB scheduling position even if it produces no durable mutation.",
+        "requiredConstraint": "After storage readiness, the selected admission operation opens zero transactions while its operation observer Promise remains pending.",
+        "failureRationale": "The observer contract explicitly holds the operation before transaction entry; returning the same eventual value or delaying its Promise does not prove that storage work did not start early."
+      }
+    },
+    {
+      "id": "indexeddb-admission-rejected-observer-opens-no-transaction",
+      "domain": "IndexedDB admission operation observer storage gate",
+      "owner": "Rallar shared maintainers",
+      "summary": "Each of the five admission operations propagates observer rejection without opening a storage transaction or authoring state, including foreign-realm rejection",
+      "semanticCoverage": "packages/tests/shared/alm/indexed-db-admission-observer-gates.test.ts#fails before opening storage or authoring a mutation when the observer rejects",
+      "coverageRelation": "The test rejects the real operation's first observer Promise, asserts its caller-visible rejection and no native transaction opening, restores the storage spy, then independently reads back the absent authored row",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "IDBDatabase.prototype.transaction, the native storage transaction-opening port used by IndexedDbAdmissionBackend",
+        "observableEffect": "Rejected observation prevents the operation from starting any IndexedDB transaction, including readonly or ultimately rolled-back work.",
+        "requiredConstraint": "An admission operation whose observer Promise rejects opens zero storage transactions and rejects before authoring a mutation.",
+        "failureRationale": "The same rejection and unchanged stored rows could follow a prematurely opened or aborted transaction; the absence assertion separately proves the prescribed refusal-before-storage boundary."
       }
     }
   ],
@@ -9360,10 +9390,10 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-web/rallar-operation-options.test.ts#classifies arbitrary retry failures without coercing them"
     },
     {
-      "id": "test-structure-coupling-ac73e8d5e644dcb1",
+      "id": "test-structure-coupling-a7bb57caa87e4da9",
       "path": "packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "recipe-adapter-compatible-connection-one-ice-request",
+      "contract": "recipe-adapter-compatible-connection-single-startup",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Shared Test maintainers",
@@ -9382,10 +9412,10 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts#carries run Off through the WS fallback and retries exactly once"
     },
     {
-      "id": "test-structure-coupling-190b3ac3fc843b48",
+      "id": "test-structure-coupling-89b28668efcd1982",
       "path": "packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "sdk-pending-compatible-connection-one-ice-request",
+      "contract": "sdk-pending-compatible-connection-single-startup",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Shared Web maintainers",
@@ -9985,6 +10015,28 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The single captured warning proves a failed publication is reported once; that the relay call does not throw is asserted independently.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.test.ts#drops a notice whose publication fails, leaving the waiter its safety tick"
+    },
+    {
+      "id": "test-structure-coupling-556aa96485fe4bd5",
+      "path": "packages/tests/shared/alm/indexed-db-admission-observer-gates.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "indexeddb-admission-pending-observer-opens-no-transaction",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The assertion observes the native transaction-opening port while the observer decision is pending. A delayed caller-visible result or unchanged durable state alone would not exclude prematurely opened readonly, empty or rolled-back transactions",
+      "semanticCoverage": "packages/tests/shared/alm/indexed-db-admission-observer-gates.test.ts#opens no storage transaction until its observer permits the operation"
+    },
+    {
+      "id": "test-structure-coupling-719cae31894ccaff",
+      "path": "packages/tests/shared/alm/indexed-db-admission-observer-gates.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "indexeddb-admission-rejected-observer-opens-no-transaction",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The assertion proves the rejection prevented storage entry, in addition to the separately asserted error and absent durable row. A transaction opened then aborted, or a readonly transaction, could satisfy both those other assertions while violating the observer gate",
+      "semanticCoverage": "packages/tests/shared/alm/indexed-db-admission-observer-gates.test.ts#fails before opening storage or authoring a mutation when the observer rejects"
     }
   ]
 }

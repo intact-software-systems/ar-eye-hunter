@@ -1,28 +1,49 @@
+import { assert, assertEquals, assertObjectMatch } from '@std/assert';
+
 import { controlOpenApiSpec, handleSwaggerRoute, swaggerFallbackResponse } from '../src/routes/swagger-routes.ts';
 
-type OpenApiSchema = Readonly<{
-    $ref?: string;
-    additionalProperties?: boolean;
-    enum?: readonly unknown[];
-    items?: OpenApiSchema;
-    properties?: Record<string, OpenApiSchema>;
-    required?: readonly string[];
-    schema?: OpenApiSchema;
-}>;
-
-function assert(condition: unknown, message = 'Assertion failed.'): asserts condition {
-    if (!condition) {
-        throw new Error(message);
-    }
+interface OpenApiSchema {
+    readonly $ref?: string;
+    readonly additionalProperties?: boolean;
+    readonly enum?: readonly unknown[];
+    readonly items?: OpenApiSchema;
+    readonly properties?: Record<string, OpenApiSchema>;
+    readonly required?: readonly string[];
+    readonly schema?: OpenApiSchema;
 }
 
-function assertEquals<T>(actual: T, expected: T): void {
-    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-        throw new Error(
-            `Expected ${JSON.stringify(expected, null, 2)}, got ${JSON.stringify(actual, null, 2)}`
-        );
-    }
-}
+Deno.test('OpenAPI explains durable result release and distinguishes acknowledgement from deferred cleanup', async () => {
+    const response = handleSwaggerRoute(new Request('http://localhost:5180/openapi.json'));
+    assert(response);
+    const spec = await response.json();
+    const operation = spec.paths['/runs/{runId}/agents/{agentId}/results/release']?.post;
+    assert(operation, 'The explicit release endpoint must be discoverable.');
+    assertObjectMatch(operation, {
+        security: [{ bearerAuth: [] }, { runTokenHeader: [] }, { queryToken: [] }],
+        requestBody: {
+            required: true,
+            content: {
+                'application/json': {
+                    schema: {
+                        type: 'object',
+                        required: ['requestId', 'commandIds'],
+                        properties: {
+                            requestId: { type: 'string', minLength: 1 },
+                            commandIds: { type: 'array', minItems: 1, maxItems: 1000, items: { type: 'string', minLength: 1 } }
+                        }
+                    }
+                }
+            }
+        }
+    });
+    assert(operation.description.includes('durable capture'));
+    assert(operation.description.includes('unavailable'));
+    assert(operation.description.includes('tombstones'));
+    assert(operation.responses['200'].description.includes('browser acknowledgement'));
+    assert(operation.responses['409']);
+    assert(operation.responses['400']);
+    assert(operation.responses['401']);
+});
 
 Deno.test('control OpenAPI spec describes the current server and control endpoints', () => {
     const request = new Request('http://internal-control:5180/openapi.json', {

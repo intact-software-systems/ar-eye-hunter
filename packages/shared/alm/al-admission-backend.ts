@@ -1,14 +1,8 @@
 import type { Unsubscribe } from '../cache/RepositoryInterfaces.ts';
+import { SynchronousNotifications } from '../cache/synchronous-notifications.ts';
 import { requireLivePersistenceWrite } from '../persistence/persistence-write-deadline.ts';
-import { NEVER_EXPIRE_AT_TIMESTAMP } from '../persistence/PersistenceProvider.ts';
 import { InMemoryQueueBox } from '../queuebox/in-memory-queue-box.ts';
-import { toResourceEntrySnapshot } from '../queuebox/resource-entry-observations.ts';
-import {
-    toKeyAsString,
-    toResourceEntryKey,
-    type Key,
-    type ResourceEntry
-} from '../queuebox/ResourceEntry.ts';
+import type { Key, ResourceEntry } from '../queuebox/ResourceEntry.ts';
 
 import { decodeALAdmissionValue, type ALAdmissionDecoder } from './al-admission-decoder.ts';
 import { decodeALAdmissionNumber, decodeALAdmissionRecord } from './al-admission-value-validation.ts';
@@ -19,6 +13,7 @@ import {
     type ALAdmissionWorkWriteContext
 } from './al-admission-work-backend.ts';
 import { ALAdmissionBackendConflictError } from './ALAdmissionBackendConflictError.ts';
+import { InMemoryAdmissionWorkWriteBuffer } from './storage/in-memory-admission-work-write-buffer.ts';
 
 export interface ALAdmissionStoredValue {
     readonly key: string;
@@ -34,6 +29,9 @@ export interface ALAdmissionMemoryState {
 
 /** A write belongs to its shared memory state even when a second backend wrapper queued it. */
 const pendingWritesByState = new WeakMap<ALAdmissionMemoryState, number>();
+
+/** Admission-time proof follows the exact volatile row and cannot survive replacement or replay. */
+const terminalVolatileRowsByState = new WeakMap<ALAdmissionMemoryState, WeakSet<ALAdmissionStoredValue>>();
 
 export interface ALAdmissionBackendEntry<V> {
     readonly key: string;
@@ -56,6 +54,14 @@ export interface ALAdmissionWriteContext extends ALAdmissionReadContext {
     remove(key: string): Promise<void>;
 }
 
+interface ALAdmissionMemoryChanges {
+    readonly setRows: readonly ALAdmissionStoredValue[];
+    readonly removeKeys: readonly string[];
+    readonly unmarkRows: readonly ALAdmissionStoredValue[];
+    readonly terminalRows: readonly ALAdmissionStoredValue[];
+    readonly changedKeys: readonly string[];
+}
+
 export function createInMemoryALAdmissionState(workQueue = new InMemoryQueueBox()): ALAdmissionMemoryState {
     return {
         data: new Map<string, ALAdmissionStoredValue>(),
@@ -68,13 +74,18 @@ export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
     readonly workQueue: InMemoryQueueBox;
     private readonly state: ALAdmissionMemoryState;
     private readonly nowMs: () => number;
-    private readonly changeListeners = new Set<(key: string) => void>();
+    private readonly terminalVolatileRows: WeakSet<ALAdmissionStoredValue>;
+    private readonly changes = new SynchronousNotifications<string>((error) =>
+        console.error('Admission change observer failed', error)
+    );
 
     constructor(
         state: ALAdmissionMemoryState,
         nowMs: () => number
     ) {
         this.state = state;
+        this.terminalVolatileRows = terminalVolatileRowsByState.get(state) ?? new WeakSet<ALAdmissionStoredValue>();
+        terminalVolatileRowsByState.set(state, this.terminalVolatileRows);
         this.workQueue = state.workQueue;
         this.workQueue.retainCompletedUntilExpiry(AL_ADMISSION_WORK_COMPLETED_RETENTION);
         this.nowMs = nowMs;
@@ -85,8 +96,7 @@ export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
 
     /** Names, in the turn it happens, every admission key a write sets or removes or an expiry removes. */
     onChangeDo(listener: (key: string) => void): Unsubscribe {
-        this.changeListeners.add(listener);
-        return { unsubscribe: () => this.changeListeners.delete(listener) };
+        return this.changes.subscribe(listener);
     }
 
     /** The row as held now, expired or not; unlike `read` it removes nothing. */
@@ -99,12 +109,24 @@ export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
         return [...this.state.data.keys()];
     }
 
-    /** Removes exactly the row a volatile owner observed, only while every wrapper over this state is idle. */
-    removeObservedIfNoWrites(key: string, observed: ALAdmissionStoredValue): boolean {
-        if ((pendingWritesByState.get(this.state) ?? 0) !== 0 || this.state.data.get(key) !== observed) {
+    isTerminalVolatileRow(row: ALAdmissionStoredValue): boolean {
+        return this.terminalVolatileRows.has(row);
+    }
+
+    /** Removes an observed ownership group atomically, before notifying listeners that may enqueue new work. */
+    removeObservedRowsIfNoWrites(observed: readonly ALAdmissionStoredValue[]): boolean {
+        if (
+            (pendingWritesByState.get(this.state) ?? 0) !== 0 ||
+            observed.some((row) => this.state.data.get(row.key) !== row)
+        ) {
             return false;
         }
-        this.deleteStored(key);
+        const publication = this.changes.capture(observed.map((row) => row.key));
+        for (const row of observed) {
+            this.state.data.delete(row.key);
+            this.terminalVolatileRows.delete(row);
+        }
+        publication.publish();
         return true;
     }
 
@@ -186,20 +208,21 @@ export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
             await previous;
             const pending = new InMemoryAdmissionWorkWriteBuffer(this, this.nowMs, this.workQueue);
             const result = await fn(pending);
-            const mutations = pending.mutations();
+            const computed = computeALAdmissionMemoryChanges(
+                pending.mutations(),
+                this.state.data,
+                pending.terminalVolatileRows()
+            );
             const queueWrites = pending.queueWrites();
+            const publication = this.changes.capture(computed.changedKeys);
             requireLivePersistenceWrite(executionExpiresAtMs, this.nowMs());
-            if (!this.workQueue.writeIfAllObserved(queueWrites)) {
+            const queuePublication = this.workQueue.writeObservedBatch(queueWrites);
+            if (queuePublication === null) {
                 throw new ALAdmissionBackendConflictError('In-memory AL admission work write conflicted');
             }
-            for (const [key, stored] of mutations) {
-                if (stored === undefined) {
-                    this.deleteStored(key);
-                }
-                else {
-                    this.setStored(key, stored);
-                }
-            }
+            this.applyMutations(computed);
+            queuePublication.publish();
+            publication.publish();
             return result;
         }
         finally {
@@ -209,141 +232,77 @@ export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
         }
     }
 
-    /** Rows a checkpoint saved: a key the pair already holds keeps its own value. */
-    loadIfAbsent(rows: readonly ALAdmissionStoredValue[], entries: readonly ResourceEntry[]): void {
-        for (const row of rows) {
-            if (!this.state.data.has(row.key)) {
-                this.setStored(row.key, row);
-            }
+    private applyMutations(computed: ALAdmissionMemoryChanges): void {
+        for (const row of computed.unmarkRows) {
+            this.terminalVolatileRows.delete(row);
         }
-        for (const entry of entries) {
-            this.workQueue.writeIfAllObserved([{ expected: undefined, entry }]);
+        for (const key of computed.removeKeys) {
+            this.state.data.delete(key);
+        }
+        for (const row of computed.setRows) {
+            this.state.data.set(row.key, row);
+        }
+        for (const row of computed.terminalRows) {
+            this.terminalVolatileRows.add(row);
         }
     }
 
-    private setStored(key: string, stored: ALAdmissionStoredValue): void {
-        this.state.data.set(key, stored);
-        this.notifyChange(key);
+    /** Rows a checkpoint saved: a key the pair already holds keeps its own value. */
+    loadIfAbsent(rows: readonly ALAdmissionStoredValue[], entries: readonly ResourceEntry[]): void {
+        const mutations = new Map<string, ALAdmissionStoredValue>();
+        for (const row of rows) {
+            if (!this.state.data.has(row.key) && !mutations.has(row.key)) {
+                mutations.set(row.key, row);
+            }
+        }
+        const computed = computeALAdmissionMemoryChanges([...mutations], this.state.data, []);
+        const publication = this.changes.capture(computed.changedKeys);
+        const queuePublication = this.workQueue.loadIfAbsent(entries);
+        this.applyMutations(computed);
+        queuePublication.publish();
+        publication.publish();
     }
 
     private deleteStored(key: string): void {
+        const row = this.state.data.get(key);
+        if (row !== undefined) {
+            this.terminalVolatileRows.delete(row);
+        }
         if (this.state.data.delete(key)) {
             this.notifyChange(key);
         }
     }
 
     private notifyChange(key: string): void {
-        for (const listener of this.changeListeners) {
-            listener(key);
-        }
+        this.changes.capture([key]).publish();
     }
 }
 
-class ALAdmissionWriteBuffer implements ALAdmissionWriteContext {
-    private readonly pending = new Map<string, ALAdmissionStoredValue | undefined>();
-    private readonly storage: Pick<ALAdmissionBackend, 'read' | 'list'>;
-    private readonly nowMs: () => number;
-
-    constructor(storage: Pick<ALAdmissionBackend, 'read' | 'list'>, nowMs: () => number) {
-        this.storage = storage;
-        this.nowMs = nowMs;
-    }
-
-    async read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined> {
-        if (!this.pending.has(key)) {
-            return await this.storage.read(key, decode);
+function computeALAdmissionMemoryChanges(
+    mutations: readonly (readonly [key: string, stored: ALAdmissionStoredValue | undefined])[],
+    existing: ReadonlyMap<string, ALAdmissionStoredValue>,
+    terminalRows: readonly ALAdmissionStoredValue[]
+): ALAdmissionMemoryChanges {
+    const setRows: ALAdmissionStoredValue[] = [];
+    const removeKeys: string[] = [];
+    const unmarkRows: ALAdmissionStoredValue[] = [];
+    const changedKeys: string[] = [];
+    for (const [key, stored] of mutations) {
+        const previous = existing.get(key);
+        if (previous !== undefined && previous !== stored) {
+            unmarkRows.push(previous);
         }
-        const stored = this.pending.get(key);
-        if (!stored) {
-            return undefined;
+        if (stored === undefined) {
+            removeKeys.push(key);
         }
-        const value = decodeALAdmissionValue(stored.value, key, decode);
-        return stored.expireAtTimestamp <= this.nowMs() ? undefined : value;
-    }
-
-    async list<V>(prefix: string, decode: ALAdmissionDecoder<V>): Promise<readonly ALAdmissionBackendEntry<V>[]> {
-        const values = new Map<string, V>();
-        const entries = await this.storage.list(prefix, (value, key) =>
-            this.pending.has(key)
-                ? { kind: 'shadowed' as const }
-                : { kind: 'decoded' as const, value: decodeALAdmissionValue(value, key, decode) });
-        for (const entry of entries) {
-            if (entry.value.kind === 'decoded') {
-                values.set(entry.key, entry.value.value);
-            }
+        else {
+            setRows.push(stored);
         }
-        for (const [key, stored] of this.pending) {
-            if (!key.startsWith(prefix)) {
-                continue;
-            }
-            if (!stored) {
-                values.delete(key);
-                continue;
-            }
-            const value = decodeALAdmissionValue(stored.value, key, decode);
-            if (stored.expireAtTimestamp <= this.nowMs()) {
-                values.delete(key);
-                continue;
-            }
-            values.set(key, value);
+        if (stored !== undefined || previous !== undefined) {
+            changedKeys.push(key);
         }
-        return [...values].map(([key, value]) => ({ key, value }));
     }
-
-    async set<V>(key: string, value: V, expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP): Promise<void> {
-        this.pending.set(key, { key, value, expireAtTimestamp: decodeALAdmissionNumber(expireAtTimestamp) });
-    }
-
-    async remove(key: string): Promise<void> {
-        this.pending.set(key, undefined);
-    }
-
-    mutations(): readonly (readonly [key: string, stored: ALAdmissionStoredValue | undefined])[] {
-        return [...this.pending];
-    }
-}
-
-class InMemoryAdmissionWorkWriteBuffer extends ALAdmissionWriteBuffer implements ALAdmissionWorkWriteContext {
-    private readonly workQueue: InMemoryQueueBox;
-    private readonly observations = new Map<string, ResourceEntry | undefined>();
-    private readonly pendingWork = new Map<string, ResourceEntry>();
-
-    constructor(storage: ALAdmissionBackend, nowMs: () => number, workQueue: InMemoryQueueBox) {
-        super(storage, nowMs);
-        this.workQueue = workQueue;
-    }
-
-    async readWork(key: Key): Promise<ResourceEntry | undefined> {
-        const keyString = toKeyAsString(key);
-        const pending = this.pendingWork.get(keyString);
-        if (pending !== undefined) {
-            return toResourceEntrySnapshot(pending);
-        }
-        if (!this.observations.has(keyString)) {
-            this.observations.set(keyString, await this.workQueue.getItem(key));
-        }
-        const observed = this.observations.get(keyString);
-        return observed === undefined ? undefined : toResourceEntrySnapshot(observed);
-    }
-
-    async readClaimedWork(claimed: ResourceEntry): Promise<ResourceEntry | undefined> {
-        return await this.readWork(claimed.key);
-    }
-
-    writeWork(entry: ResourceEntry): void {
-        const key = toKeyAsString(entry.key);
-        if (!this.observations.has(key) || this.pendingWork.has(key)) {
-            throw new TypeError('Admission work requires one write after its slot has been read');
-        }
-        this.pendingWork.set(key, toResourceEntrySnapshot(entry));
-    }
-
-    queueWrites(): readonly InMemoryQueueBox.ComputedOperation[] {
-        return [...this.observations].map(([key, expected]) => {
-            const entry = this.pendingWork.get(key);
-            return entry === undefined ? { key: toResourceEntryKey(key), expected } : { entry, expected };
-        });
-    }
+    return { setRows, removeKeys, unmarkRows, terminalRows, changedKeys };
 }
 
 export function decodeALAdmissionStoredValue(value: unknown, key: string): ALAdmissionStoredValue {

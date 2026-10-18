@@ -2,9 +2,14 @@ import type { Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
+import type {
+    RtcNativeAcquisitionFailure,
+    RtcNativeAcquisitionProof,
+    RtcNativeAcquisitionSource,
+    RtcNativeCapturedConnection
+} from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
 import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-
-import { readFullStackRtcAttemptServingProof } from '../../../apps/rallar-black-box/rtc-production-serving-proof.ts';
+import { computeRtcB06RetentionHeapPolicy } from '../../../packages/shared-rtc-bench/baseline/acceptance/rtc-b06-retention-heap-policy.ts';
 import { deriveRtcBaselineExternalAttempts } from '../../../packages/shared-rtc-bench/baseline/catalog/rtc-baseline-workload-manifest.ts';
 import {
     decodeRtcBaselineEnvironment,
@@ -31,6 +36,7 @@ import type {
 } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 import { isRtcBaselineId } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-id.ts';
 
+import { readFullStackRtcAttemptServingProof } from '../../../apps/rallar-black-box/rtc-production-serving-proof.ts';
 import {
     compareLaneStates,
     decodeAgentDiagnostics,
@@ -200,9 +206,9 @@ export interface LiveRtcNackFailureDiagnostic {
 }
 
 export interface LiveRtcNativeAcquisitionFailureDiagnostic {
-    readonly reason: LiveRtcControlClient.NativeAcquisitionFailure['reason'];
-    readonly connection: LiveRtcControlClient.CapturedConnection;
-    readonly source: LiveRtcControlClient.NativeAcquisitionProof['source'] | null;
+    readonly reason: RtcNativeAcquisitionFailure['reason'];
+    readonly connection: RtcNativeCapturedConnection;
+    readonly source: RtcNativeAcquisitionSource | null;
     readonly failure: {
         readonly name: 'native-acquisition-refused';
         readonly message: 'RTC Native acquisition refused.';
@@ -210,7 +216,7 @@ export interface LiveRtcNativeAcquisitionFailureDiagnostic {
 }
 
 export function toLiveRtcNativeAcquisitionFailureDiagnostic(
-    failure: LiveRtcControlClient.NativeAcquisitionFailure
+    failure: RtcNativeAcquisitionFailure
 ): LiveRtcNativeAcquisitionFailureDiagnostic {
     return {
         reason: failure.reason,
@@ -221,8 +227,8 @@ export function toLiveRtcNativeAcquisitionFailureDiagnostic(
 }
 
 export interface LiveRtcPerformanceRawEvidence {
-    readonly rtcConnectCaptures: readonly LiveRtcControlClient.CapturedConnection[];
-    readonly nativeAcquisitions: readonly LiveRtcControlClient.NativeAcquisitionProof[];
+    readonly rtcConnectCaptures: readonly RtcNativeCapturedConnection[];
+    readonly nativeAcquisitions: readonly RtcNativeAcquisitionProof[];
     readonly nativeAcquisitionFailures: readonly LiveRtcNativeAcquisitionFailureDiagnostic[];
     identity: LiveRtcPerformanceIdentity;
     producer: LiveRtcPerformanceProducer;
@@ -518,7 +524,6 @@ export function buildLiveRtcRetentionCohort(
         throw new Error('Live RTC retention cohort workload must be RTC-B06.');
     }
     const samples = retainedSamplesInIdentityOrder(input);
-    const requiredHeapBreachCount = heapBreachThreshold(samples.length);
     const heapBreachingSampleIds = samples
         .filter(retentionHeapBreached)
         .map((sample) => sample.identity.sampleId);
@@ -528,15 +533,12 @@ export function buildLiveRtcRetentionCohort(
     const failedMemberSampleIds = samples
         .filter((sample) => sample.outcome !== 'passed' || sample.issues.length > 0)
         .map((sample) => sample.identity.sampleId);
-    const issues: RtcBaselineIssueDto[] = [];
-    if (heapBreachingSampleIds.length >= requiredHeapBreachCount) {
-        issues.push({
-            path: '$.rawEvidence.heapBreachingSampleIds',
-            code: 'retention-heap-threshold-breached',
-            message:
-                `${heapBreachingSampleIds.length} retained attempts breached the ${requiredHeapBreachCount}-attempt heap threshold.`
-        });
+    const heapPolicy = computeRtcB06RetentionHeapPolicy(samples.length, heapBreachingSampleIds);
+    if (!heapPolicy.ok) {
+        throw new Error(heapPolicy.issues.map((issue) => issue.message).join(' '));
     }
+    const { requiredHeapBreachCount, warnings } = heapPolicy.value;
+    const issues: RtcBaselineIssueDto[] = [];
     if (stateDriftSampleIds.length > 0) {
         issues.push({
             path: '$.rawEvidence.stateDriftSampleIds',
@@ -559,6 +561,7 @@ export function buildLiveRtcRetentionCohort(
             retainedAttemptCount: samples.length,
             requiredHeapBreachCount,
             heapBreachingSampleIds,
+            warnings: warnings.map((warning) => ({ ...warning })),
             stateDriftSampleIds,
             failedMemberSampleIds
         },
@@ -632,17 +635,9 @@ export async function writeLiveRtcRetentionCohortIfComplete(
 export async function writeLiveRtcPerformanceAttempt(
     input: WriteLiveRtcPerformanceAttemptInput
 ): Promise<string> {
-    let servingFailure: Error | null = null;
-    const productionServing = input.context.locator.environmentId === 'E3-memory'
-        ? (await readFullStackRtcAttemptServingProof(input.context)).fold(
-            (failure) => {
-                servingFailure = new Error(failure.message);
-                return null;
-            },
-            (proof) => proof
-        )
-        : null;
-    const rawEvidence = { ...input.rawEvidence, productionServing };
+    const servingProof = await readFullStackRtcAttemptServingProof(input.context);
+    const servingFailure = servingProof.left ? new Error(servingProof.left.message) : null;
+    const rawEvidence = { ...input.rawEvidence, productionServing: servingProof.right ?? null };
     const attempt = buildLiveRtcExternalAttempt({
         locator: input.context.locator,
         sampleIdentity: input.context.sampleIdentity,
@@ -1011,16 +1006,6 @@ function retainedSamplesInIdentityOrder(
         ordered.push(sample);
     }
     return ordered;
-}
-
-function heapBreachThreshold(sampleCount: number): number {
-    if (sampleCount === 3) {
-        return 2;
-    }
-    if (sampleCount === 6) {
-        return 4;
-    }
-    throw new Error('Live RTC retention cohort requires exactly 3 primary or 6 repeat samples.');
 }
 
 function retentionHeapBreached(sample: RtcBaselineSampleDto): boolean {

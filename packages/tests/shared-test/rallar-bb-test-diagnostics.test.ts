@@ -421,6 +421,12 @@ describe('rallar-bb-test runtime diagnostics', () => {
             { kind: 'recipe.run', value: expect.objectContaining({ childResultCount: 1, passed: 1, failed: 0 }) }
         ]);
         expect(JSON.stringify(compositeEventValues)).not.toContain('"results"');
+        const compositeEvents = runtime.state().events.filter((event) =>
+            event.topic === 'rallar.bb.command.result' && isJsonRecordValue(event.payload) &&
+            ['recipe.run', 'loop', 'parallel'].includes(String(event.payload.kind))
+        );
+        expect(compositeEvents.every((event) => isJsonRecordValue(event.payload) && event.payload.capture === undefined)).toBe(true);
+        expect(runtime.state().commandHistory.every((result) => result.capture !== undefined)).toBe(true);
         const nestedParallel = {
             kind: 'parallel',
             value: {

@@ -19,6 +19,52 @@ const workloadEnvironment = {
     RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
     RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: '100'
 };
+it.each([undefined, 'true', 'false'])('seals retention release %s and excludes other cases from ambient release', (raw) => {
+    const initialized = createRtcBaselineRuntimeObservationInput(request, {
+        ...workloadEnvironment,
+        ...(raw === undefined ? {} : { RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE: raw })
+    });
+    if (!initialized.ok) {
+        throw new Error(JSON.stringify(initialized.issues));
+    }
+    expect(
+        initialized.value.observation.resolvedConfiguration.filter((entry) => entry.field === 'releaseResultsAfterCapture')
+            .map((entry) => [entry.caseKey.caseId, entry.value, entry.source])
+    ).toEqual([
+        ['default', false, 'default'],
+        ['all-scenarios', false, 'default'],
+        ['retention-100', raw === 'true', raw === undefined ? 'default' : 'environment']
+    ]);
+    for (const caseId of ['default', 'all-scenarios', 'retention-100'] as const) {
+        const command = createRtcB06LiveProducerCommand({
+            repositoryRoot: '/repository',
+            baselineId: 'release',
+            releaseResultsAfterCapture: raw === 'true',
+            attempt: {
+                workloadId: 'RTC-B06',
+                caseId,
+                inputKey: `e3-memory-${caseId}`,
+                intendedPhase: 'retained',
+                outerOrdinal: 1,
+                environmentId: 'E3-memory',
+                rawResultRelativePath: 'artifacts/staging/attempt.json'
+            }
+        });
+        const observed = execFileSync(command.executable, [
+            ...command.arguments.slice(0, command.arguments.indexOf('npm')),
+            process.execPath,
+            '--eval',
+            'process.stdout.write(process.env.RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE ?? "absent")'
+        ], { encoding: 'utf8', env: { ...process.env, RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE: 'conflicting-ambient' } });
+        expect(observed).toBe(caseId === 'retention-100' && raw === 'true' ? 'true' : 'absent');
+    }
+});
+
+it.each(['yes', 'enabled', '', ' false '])('refuses malformed release selection %j', (raw) => {
+    expect(createRtcBaselineRuntimeObservationInput(request, { ...workloadEnvironment, RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE: raw }))
+        .toMatchObject({ ok: false });
+});
+
 it.each([undefined, 'enabled', 'disabled'])('freezes only retention recording %s independently of ALM', (mode) => {
     const result = createRtcBaselineRuntimeObservationInput(request, {
         ...workloadEnvironment,
@@ -188,3 +234,28 @@ it.each(['missing', 'duplicate', 'invalid'])('rejects %s initialized RTC capture
         issues: [{ code: failure === 'invalid' ? 'invalid-rtc-capture-mode' : 'missing-capture-admission' }]
     });
 });
+
+it.each(['missing', 'duplicate', 'wrong-case', 'non-boolean', 'enabled-default'])(
+    'refuses %s initialized release selection before launch',
+    async (failure) => {
+        const { resolveRtcB06DiagnosticSelection } = await import('../../../baseline/observation/read-rtc-b06-diagnostic-selection.ts');
+        const initialized = createRtcBaselineRuntimeObservationInput(request, { ...workloadEnvironment, RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE: 'true' });
+        if (!initialized.ok) {
+            throw new Error(JSON.stringify(initialized.issues));
+        }
+        const caseId = failure === 'enabled-default' ? 'default' : 'retention-100';
+        const configuration = initialized.value.observation.resolvedConfiguration;
+        const selected = configuration.find((entry) => entry.field === 'releaseResultsAfterCapture' && entry.caseKey.caseId === caseId)!;
+        const changed = failure === 'missing'
+            ? configuration.filter((entry) => entry !== selected)
+            : failure === 'duplicate'
+            ? [...configuration, selected]
+            : configuration.map((entry) =>
+                entry !== selected ? entry : failure === 'wrong-case'
+                    ? { ...entry, caseKey: { ...entry.caseKey, caseId: 'foreign' } }
+                    : { ...entry, value: failure === 'non-boolean' ? 'true' : true }
+            );
+        expect(resolveRtcB06DiagnosticSelection(changed, { workloadId: 'RTC-B06', caseId, inputKey: `e3-memory-${caseId}` }))
+            .toMatchObject({ ok: false, issues: [{ code: 'invalid-result-release-selection' }] });
+    }
+);

@@ -18,7 +18,7 @@ import {
     createRtcBaselineFinalizedArtifactVerifier,
     type RtcBaselineFinalizedArtifactVerifier
 } from './rtc-baseline-finalized-verification.ts';
-import { rtcBaselineTriggeredWorkloads } from './rtc-baseline-statistics.ts';
+import { rtcBaselineAutomaticRepeatWorkloads, rtcBaselineTriggeredWorkloads } from './rtc-baseline-statistics.ts';
 
 export type { RtcBaselineFinalizedArtifactValidation } from './rtc-baseline-evidence-layout.ts';
 export type {
@@ -105,7 +105,7 @@ async function readRepeatRequirement(
     if (!linked.ok) {
         return linked;
     }
-    const workloadIds = rtcBaselineTriggeredWorkloads(verified.value);
+    const workloadIds = rtcBaselineAutomaticRepeatWorkloads(verified.value);
     if (verified.value.summary.repeatLink !== null && workloadIds.length > 0) {
         return failed(
             '$.metricSummaries',

@@ -51,6 +51,7 @@ const SESSION: AuthSession = {
 };
 
 const OPTIONS: BrowserConnectOptions = {
+    readIceCandidates: (signal) => connectionHttp.readIceCandidates({ signal }),
     rtcCaptureConfiguration: { mode: 'off', origin: 'product-default' },
     qosProvider: undefined,
     readVolatileSessionLimits: () => ({ ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 3, maxBytes: 4_096 }),

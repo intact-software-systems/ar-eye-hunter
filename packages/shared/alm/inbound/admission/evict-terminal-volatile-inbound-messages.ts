@@ -13,6 +13,7 @@ import {
     decodeALAdmissionRecord,
     decodeALAdmissionString
 } from '../../al-admission-value-validation.ts';
+import type { ALInboundMessageOwner } from '../al-inbound-admission-store.ts';
 import {
     decodeALStoredInboundMessage,
     toALInboundMessageKey,
@@ -22,18 +23,28 @@ import {
     decodeALInboundBufferedSnapshot,
     type ALStoredInboundBufferedSnapshot
 } from '../al-inbound-ordering-validation.ts';
+import { decodeALInboundMessageOwner, toALInboundMessageOwnerKey } from '../al-inbound-source-validation.ts';
 import {
     decodeALInboundWorkEntry,
     toALInboundWorkKey,
     type ALPersistedInboundEffect
 } from '../al-inbound-work-entry.ts';
-import { toALInboundControlPendingKey } from '../control/al-inbound-control-rows.ts';
+import {
+    toALInboundControlAcksKey,
+    toALInboundControlOwnersKey,
+    toALInboundControlPendingKey
+} from '../control/al-inbound-control-rows.ts';
 import { toALPendingAckOwedPeerIds } from './compute-al-inbound-duplicate-changes.ts';
 
 interface HeldCanonical {
     readonly key: string;
     readonly row: ALAdmissionStoredValue;
     readonly message: ALStoredInboundMessage;
+}
+
+interface HeldProvenance {
+    readonly row: ALAdmissionStoredValue;
+    readonly owner: ALInboundMessageOwner;
 }
 
 interface HeldBuffered {
@@ -49,22 +60,64 @@ interface HeldPending {
 
 interface HeldInboundRows {
     readonly canonical: readonly HeldCanonical[];
+    readonly provenance: readonly HeldProvenance[];
     readonly buffered: readonly HeldBuffered[];
     readonly pending: readonly HeldPending[];
 }
 
-/** The volatile pair alone runs this after its ordinary expiry sweep. No retained fact is changed. */
+/** Release terminal envelopes and non-receipted provenance; dedup keeps its independent replay horizon. */
 export function evictTerminalVolatileInboundMessages(backend: InMemoryAdmissionBackend, namespace: string): void {
     const rows = readHeldInboundRows(backend, namespace);
     const work = readHeldInboundWork(backend, namespace);
-    const reclaimable = selectReclaimableEnvelopes(rows, work, namespace);
-    for (const message of reclaimable) {
-        backend.removeObservedIfNoWrites(message.key, message.row);
+    const required = selectRequiredEnvelopes(rows, work, namespace);
+    const removals = [
+        ...rows.canonical.filter((message) => !required.has(message.key)).map((message) => message.row),
+        ...rows.provenance.filter((held) =>
+            !required.has(toALInboundMessageKey(namespace, held.owner)) &&
+            isReclaimableProvenance(backend, namespace, held)
+        ).map((held) => held.row)
+    ];
+    backend.removeObservedRowsIfNoWrites(removals);
+}
+
+/** Missing admission-time proof and every retained control state preserve receipt provenance. */
+function isReclaimableProvenance(
+    backend: InMemoryAdmissionBackend,
+    namespace: string,
+    held: HeldProvenance
+): boolean {
+    if (!backend.isTerminalVolatileRow(held.row)) {
+        return false;
     }
+    const { msgId, senderId } = held.owner;
+    const controls = [
+        toALInboundControlAcksKey(namespace, msgId, senderId),
+        toALInboundControlPendingKey(namespace, msgId, senderId),
+        toALInboundControlOwnersKey(namespace, msgId)
+    ];
+    return controls.every((key) => backend.peek(key) === undefined);
+}
+
+function readProvenance(raw: ALAdmissionStoredValue, namespace: string): HeldProvenance {
+    const { key } = raw;
+    const owner = decodeALAdmissionValue(raw.value, key, (value) => {
+        const record = decodeALAdmissionRecord(value, ['msgId', 'senderId', 'source', 'supersedenceKey']);
+        return decodeALInboundMessageOwner(value, {
+            namespace,
+            key,
+            expectedMsgId: decodeALAdmissionString(record.msgId),
+            expectedSenderId: decodeALAdmissionString(record.senderId)
+        });
+    });
+    if (key !== toALInboundMessageOwnerKey(namespace, owner.msgId, owner.senderId)) {
+        throw new ALAdmissionCorruptionError(key, new TypeError('Provenance key differs from its message'));
+    }
+    return { row: raw, owner };
 }
 
 function readHeldInboundRows(backend: InMemoryAdmissionBackend, namespace: string): HeldInboundRows {
     const canonical: HeldCanonical[] = [];
+    const provenance: HeldProvenance[] = [];
     const buffered: HeldBuffered[] = [];
     const pending: HeldPending[] = [];
     for (const key of backend.peekKeys()) {
@@ -79,6 +132,9 @@ function readHeldInboundRows(backend: InMemoryAdmissionBackend, namespace: strin
         if (key.startsWith(`${namespace}:message:`)) {
             canonical.push(readCanonical(raw, row, namespace));
         }
+        else if (key.startsWith(`${namespace}:msg-owner:`)) {
+            provenance.push(readProvenance(raw, namespace));
+        }
         else if (key.startsWith(`${namespace}:buffered:`)) {
             buffered.push({ key, snapshot: readBuffered(key, row, namespace) });
         }
@@ -89,7 +145,7 @@ function readHeldInboundRows(backend: InMemoryAdmissionBackend, namespace: strin
             throw new ALAdmissionCorruptionError(key, new TypeError('Unknown volatile inbound admission row'));
         }
     }
-    return { canonical, buffered, pending };
+    return { canonical, provenance, buffered, pending };
 }
 
 function readCanonical(raw: ALAdmissionStoredValue, row: ALAdmissionStoredValue, namespace: string): HeldCanonical {
@@ -160,11 +216,11 @@ function readHeldInboundWork(
 }
 
 /** Complete and pure: one invalid dependency prevents every removal in this maintenance turn. */
-function selectReclaimableEnvelopes(
+function selectRequiredEnvelopes(
     rows: HeldInboundRows,
     work: readonly ALPersistedInboundEffect[],
     namespace: string
-): readonly HeldCanonical[] {
+): ReadonlySet<string> {
     const canonical = new Map(rows.canonical.map((message) => [message.key, message]));
     const required = new Set<string>();
     for (const buffered of rows.buffered) {
@@ -194,7 +250,7 @@ function selectReclaimableEnvelopes(
             required.add(key);
         }
     }
-    return rows.canonical.filter((message) => !required.has(message.key));
+    return required;
 }
 
 function requireCanonical(canonical: Map<string, HeldCanonical>, key: string, dependentKey: string): HeldCanonical {

@@ -84,6 +84,7 @@ function createRtcDiagnosticState(
         commandHistory,
         resultCache: Object.fromEntries(commandHistory.map((entry) => [entry.commandId, entry])),
         latestStats: {
+            resultRetention: { retainedResults: commandHistory.length, releasedResults: 0 },
             eventHistory: current.eventHistory,
             atEpochMs: 200,
             status: 'completed',

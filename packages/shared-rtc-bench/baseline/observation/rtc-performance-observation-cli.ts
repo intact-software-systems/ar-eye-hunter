@@ -1,4 +1,5 @@
 import type { RtcBaselineJson, RtcBaselineResult } from '../contracts/rtc-baseline-contracts.ts';
+import type { RtcB06EvidenceReport } from './read-rtc-b06-evidence-report.ts';
 import type { RtcB05ObservationOutput, RtcB05ObservationRunInput } from './rtc-b05-observation-runner.ts';
 import type {
     RtcB06BaselineCapture,
@@ -27,6 +28,7 @@ interface RtcPerformanceObservationRunner<RunInput> {
     run(input: RunInput): Promise<
         RtcBaselineResult<{
             observation: { observationId: string; };
+            evidenceReport?: RtcB06EvidenceReport;
             output: RtcB05ObservationOutput | RtcB06ObservationOutput;
         }>
     >;
@@ -77,7 +79,7 @@ async function captureLiveRtcBaselineCommand(
         input.writeStderr(`${JSON.stringify(result.issues)}\n`);
         return 1;
     }
-    const { repeatArtifacts: _repeatArtifacts, ...captured } = result.value;
+    const captured = result.value;
     input.writeStdout(`${JSON.stringify(captured)}\n`);
     return captured.acceptedMetrics && captured.repeatOutcome !== 'failed' && captured.repeatOutcome !== 'incomplete'
         ? 0
@@ -100,7 +102,8 @@ async function runObservationCommand(
         JSON.stringify({
             observationId: result.value.observation.observationId,
             archivePath: result.value.output.archivePath,
-            indexEntryPath: result.value.output.indexEntryPath
+            indexEntryPath: result.value.output.indexEntryPath,
+            ...(result.value.evidenceReport === undefined ? {} : { evidenceReport: result.value.evidenceReport })
         })
     }\n`);
     return 0;

@@ -1,4 +1,10 @@
-import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import * as connectionHttp from '@shared-web/browser/connection/connection-http-api.ts';
@@ -125,6 +131,7 @@ describe('browser IndexedDB terminal ownership', () => {
                 diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
                 onResyncRequired: () => {},
                 durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
+                readIceCandidates: (signal) => connectionHttp.readIceCandidates({ signal }),
                 scope: { applicationId: 'indexeddb-lifecycle', workspaceId: 'failure' }
             }
         )).rejects.toBe(failure);

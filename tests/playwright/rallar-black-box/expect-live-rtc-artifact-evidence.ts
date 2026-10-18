@@ -1,4 +1,5 @@
-import { Either } from '@shared/resilience/Either.ts';
+import { toRecorderJsonlRow } from '@shared-test/black-box-runner/artifacts/read-recorder-jsonl-rows.ts';
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import {
@@ -7,15 +8,9 @@ import {
     requiredJsonArray,
     requiredJsonRecord,
     requiredString,
-    stringValue,
     type LiveRtcJsonRecord
 } from './live-rtc-evidence-json.ts';
-import { readLiveRtcBrowserEvent, readLiveRtcRecorderJsonl } from './live-rtc-recorder-reader.ts';
-import {
-    computeLiveRtcRecorderScanWindow,
-    toLiveRtcRecorderLines,
-    toLiveRtcRecorderRow
-} from './live-rtc-recorder-rows.ts';
+import { readLiveRtcBrowserEvent, readLiveRtcRecorderRows } from './live-rtc-recorder-reader.ts';
 
 export async function expectLiveRtcArtifactEvidence(
     bundle: LiveRtcJsonRecord,
@@ -30,16 +25,21 @@ export async function expectLiveRtcArtifactEvidence(
         throw new Error('Artifact evidence requires nonempty executed command IDs.');
     }
     const endpoint = `${baseUrl}/runs/${encodeURIComponent(input.runId)}`;
-    const read = await readLiveRtcRecorderJsonl(`${endpoint}/results.jsonl`);
-    if (!read.right) {
-        throw new Error(`Durable results unavailable: ${read.left?.code}.`);
+    const missing = new Set(input.commandIds);
+    for await (const read of readLiveRtcRecorderRows(`${endpoint}/results.jsonl`)) {
+        if (!read.right) {
+            throw new Error(`Durable results unavailable: ${read.left?.code}.`);
+        }
+        if (read.right.kind === 'complete') {
+            continue;
+        }
+        if (!isLiveRtcResultReceipt(read.right.row)) {
+            throw new Error('Durable results contain malformed result evidence.');
+        }
+        missing.delete(String(read.right.row.commandId));
     }
-    if (read.right.retainedPrefixDropped || read.right.transportTruncated) {
-        throw new Error('Durable results incomplete within the recorder input/transport limit.');
-    }
-    const receipts = toLiveRtcExecutedCommandEvidence(read.right.jsonl, input.commandIds);
-    if (receipts.left) {
-        throw new Error(receipts.left);
+    if (missing.size) {
+        throw new Error(`Durable evidence missing executed commands: ${[...missing].join(', ')}.`);
     }
     const browserEvent = await readLiveRtcBrowserEvent(`${endpoint}/events.jsonl`);
     if (browserEvent.left) {
@@ -76,7 +76,7 @@ function validateLiveRtcArtifactPreview(bundle: LiveRtcJsonRecord, runId: string
         const preview = files['events.jsonl'];
         if (
             typeof preview !== 'string' ||
-            preview.split('\n').some((line) => line.trim() && !toLiveRtcRecorderRow(line))
+            preview.split('\n').some((line) => line.trim() && !toRecorderJsonlRow(line))
         ) {
             issues.push('Artifact event preview must contain JSONL records.');
         }
@@ -87,30 +87,12 @@ function validateLiveRtcArtifactPreview(bundle: LiveRtcJsonRecord, runId: string
     }
 }
 
-function toLiveRtcExecutedCommandEvidence(jsonl: string, commandIds: readonly string[]): Either<string, true> {
-    const scan = { jsonl, retainedPrefixDropped: false, transportTruncated: false };
-    if (computeLiveRtcRecorderScanWindow(scan).rowLimitReached) {
-        return Either.ofLeft('Durable result evidence exceeds the recorder scan limit.');
-    }
-    const missing = new Set(commandIds);
-    for (const { line } of toLiveRtcRecorderLines(scan)) {
-        const row = toLiveRtcRecorderRow(line);
-        if (!isLiveRtcResultReceipt(row)) {
-            return Either.ofLeft('Durable results contain malformed result evidence.');
-        }
-        missing.delete(String(row?.commandId));
-    }
-    return missing.size
-        ? Either.ofLeft(`Durable evidence missing executed commands: ${[...missing].join(', ')}.`)
-        : Either.ofRight(true);
-}
-
-function isLiveRtcResultReceipt(row: LiveRtcJsonRecord | null): boolean {
+function isLiveRtcResultReceipt(row: ApiJsonObject | null): boolean {
     if (!row || row.kind !== undefined) {
         return false;
     }
-    const commandId = stringValue(row.commandId);
-    const agentId = stringValue(row.agentId);
+    const commandId = typeof row.commandId === 'string' && row.commandId.length ? row.commandId : undefined;
+    const agentId = typeof row.agentId === 'string' && row.agentId.length ? row.agentId : undefined;
     return commandId !== undefined && agentId !== undefined &&
         row.name === commandId && row.resultKey === `${agentId}:${commandId}` &&
         typeof row.ok === 'boolean' && row.status === (row.ok ? 'SUCCESS' : 'FAILURE');
