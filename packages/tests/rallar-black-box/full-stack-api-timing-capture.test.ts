@@ -260,6 +260,8 @@ describe('full-stack API timing stdio capture', () => {
 
             expect(runCapture({ directory, fixture, appInboxPhaseTiming: 'true' }).status).toBe(0);
             const { records, summary } = await readCapture(directory);
+            expect(summary.retainedRecords).toBe(3);
+            expect(records.trim()).not.toBe('');
             expect(records.trim().split('\n').map(toTimingCaptureObject)).toEqual([
                 {
                     type: 'rallar.timing',

@@ -1,3 +1,5 @@
+import { setImmediate } from 'node:timers/promises';
+
 import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
@@ -254,7 +256,7 @@ describe('measured workload diagnostic boundary', () => {
             await Promise.resolve();
             expect(vi.getTimerCount()).toBe(1);
             service.resolve(Either.ofRight(1));
-            await Promise.resolve();
+            await setImmediate();
             expect(joined).toBe(false);
             await vi.runOnlyPendingTimersAsync();
             await setup;
