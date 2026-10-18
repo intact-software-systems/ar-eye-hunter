@@ -607,6 +607,7 @@ jobs:
               source ./rallar-public-spa-env.sh
               read_rallar_public_spa_settings >/dev/null
             fi
+            echo "RALLAR_WORKER_LIFECYCLE_STARTED=true"
             ./10-stop-headless-workers.sh || true
             ./08-rollout-controller.sh
             echo "Rollout completed; skipping duplicate Playwright install during headless worker start."
@@ -714,6 +715,7 @@ jobs:
           case "${RALLAR_BLACK_BOX_AGENT_SOURCE}" in
             hetzner)
               echo "RALLAR_OPERATION_STAGE=agent-readiness"
+              echo "RALLAR_WORKER_LIFECYCLE_STARTED=true"
               ./10-stop-headless-workers.sh || true
               RALLAR_WRITE_HEADLESS_ENV=1 ./09-start-headless-workers.sh
               ;;
@@ -723,6 +725,7 @@ jobs:
               ;;
             mixed)
               echo "RALLAR_OPERATION_STAGE=agent-readiness"
+              echo "RALLAR_WORKER_LIFECYCLE_STARTED=true"
               RALLAR_WRITE_HEADLESS_ENV=1 ./09-start-headless-workers.sh
               wait_for_external_agents_if_requested
               ;;
@@ -732,6 +735,11 @@ jobs:
           operation_exit_code="${PIPESTATUS[0]}"
           set -e
           operation_finished_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          worker_lifecycle_started=false
+          if grep -Fqx 'RALLAR_WORKER_LIFECYCLE_STARTED=true' "${operation_log}"; then
+            worker_lifecycle_started=true
+          fi
+          printf 'worker_lifecycle_started=%s\n' "${worker_lifecycle_started}" >> "${GITHUB_OUTPUT}"
           printf 'exit_code=%s\n' "${operation_exit_code}" >> "${GITHUB_OUTPUT}"
           printf 'started_at=%s\n' "${operation_started_at}" >> "${GITHUB_OUTPUT}"
           printf 'finished_at=%s\n' "${operation_finished_at}" >> "${GITHUB_OUTPUT}"
@@ -914,7 +922,7 @@ jobs:
           if-no-files-found: error
 
       - name: Stop headless browsers
-        if: always() && inputs.stop_after_run && inputs.agent_source != 'external' && steps.manifest_materialization.outcome == 'success'
+        if: always() && inputs.stop_after_run && inputs.agent_source != 'external' && steps.run_recipe.outputs.worker_lifecycle_started == 'true'
         shell: bash
         env:
           HETZNER_HOST: ${{ secrets.HETZNER_HOST }}

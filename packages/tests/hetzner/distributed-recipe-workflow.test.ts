@@ -1144,9 +1144,6 @@ describe('Hetzner workflow contracts and effects', () => {
         const stopIndex = steps.findIndex((step) => step.name === 'Stop headless browsers');
         expect(uploadIndex).toBeGreaterThanOrEqual(0);
         expect(stopIndex).toBeGreaterThan(uploadIndex);
-        expect(steps[stopIndex].if).toBe(
-            'always() && inputs.stop_after_run && inputs.agent_source != \'external\' && steps.manifest_materialization.outcome == \'success\''
-        );
     });
 
     it.for([distributedRunnerWorkflowPath, '.github/workflows/hetzner-headless-browsers.yml'])(

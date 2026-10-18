@@ -291,6 +291,29 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'readHeadlessEnvironmentStep'
     }),
+    // These exact Actions YAML boundaries validate every consumed field with
+    // the shared schema validator before narrowing. No raw YAML reaches the
+    // executable workflow assertions; one occurrence per named read owner.
+    Object.freeze({
+        path: 'packages/tests/hetzner/hosted-operator-inspect.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readControllerWorkflow',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/tests/hetzner/public-settings-workflow.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readWorkflow',
+        maximumMagnitude: 1
+    }),
+    // The owned Actions expression result is untrusted until typeof proves
+    // boolean; only that boolean selects the real cleanup port in this test.
+    Object.freeze({
+        path: 'packages/tests/hetzner/public-settings-workflow.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'applyWorkflowCleanup',
+        maximumMagnitude: 1
+    }),
     // Owned process recorder JSON validates every consumed argument/env field
     // before typed assertion evidence leaves the read boundary.
     Object.freeze({
