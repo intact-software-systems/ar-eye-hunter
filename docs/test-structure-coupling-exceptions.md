@@ -3905,17 +3905,17 @@ moved or changed test.
       }
     },
     {
-      "id": "recipe-adapter-compatible-connection-one-ice-request",
-      "domain": "Recipe adapter connection cache suppression",
+      "id": "recipe-adapter-compatible-connection-single-startup",
+      "domain": "Recipe adapter connection startup suppression",
       "owner": "Shared Test maintainers",
-      "summary": "The held initial Off connection plus rejected Native request and later compatible Off reuse make exactly one ICE configuration request.",
+      "summary": "The held initial Off connection plus rejected Native request and later compatible Off reuse initialize exactly one browser graph and request API configuration once.",
       "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts#queues different source intent while construction is held and rejects it with the actual original receipt",
-      "coverageRelation": "The actual page adapter holds its initial SDK construction at the ICE HTTP port, queues incompatible intent, then rejects it with the original receipt and reuses compatible intent without a second request.",
+      "coverageRelation": "The actual page adapter holds initial SDK construction at the uncached API configuration HTTP port, queues incompatible intent, rejects it with the original receipt and reuses compatible intent without a second startup request.",
       "interactionRequirement": {
         "interactionKind": "count",
-        "ownedPort": "readIceCandidates HTTP port during browser RTC transport initialization",
-        "observableEffect": "Each call requests ICE configuration from the server for a browser connection construction.",
-        "requiredConstraint": "The held initial Off connection plus rejected Native request and later compatible Off reuse make exactly one ICE configuration request.",
+        "ownedPort": "readApiConfig HTTP port during browser WebSocket transport initialization",
+        "observableEffect": "Each new middleware startup requests API configuration before allocating its WebSocket client and RTC graph, regardless of cached ICE configuration.",
+        "requiredConstraint": "The held initial Off connection plus rejected Native request and later compatible Off reuse initialize exactly one browser graph and request API configuration once.",
         "failureRationale": "A successful reused receipt alone could hide redundant server requests and connection construction. The incompatible request must not construct a replacement, and compatible adapter reuse must share the original."
       }
     },
@@ -3935,17 +3935,17 @@ moved or changed test.
       }
     },
     {
-      "id": "sdk-pending-compatible-connection-one-ice-request",
+      "id": "sdk-pending-compatible-connection-single-startup",
       "domain": "SDK pending connection reservation",
       "owner": "Shared Web maintainers",
-      "summary": "Before explicit disconnect, an initial held Native host request, a compatible Native run request and a rejected Off run request make exactly one ICE request.",
+      "summary": "Before explicit disconnect, an initial held Native host request, a compatible Native run request and a rejected Off run request initialize exactly one browser graph and request API configuration once.",
       "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts#preserves host selection and actual pending receipt across compatible direct SDK acquisition",
-      "coverageRelation": "The real SDK initializer is held at the HTTP port while compatible and incompatible connect requests arrive. Both accepted promises settle with the original host receipt; the literal one-request assertion precedes the separate explicit reconnect.",
+      "coverageRelation": "The real SDK initializer is held at its uncached API configuration HTTP port while compatible and incompatible connect requests arrive. Both accepted promises settle with the original host receipt; the literal one-startup-request assertion precedes the separate explicit reconnect.",
       "interactionRequirement": {
         "interactionKind": "count",
-        "ownedPort": "readIceCandidates HTTP port during browser RTC transport initialization",
-        "observableEffect": "Each call performs an ICE configuration request before constructing the browser RTC graph.",
-        "requiredConstraint": "Before explicit disconnect, an initial held Native host request, a compatible Native run request and a rejected Off run request make exactly one ICE request.",
+        "ownedPort": "readApiConfig HTTP port during browser WebSocket transport initialization",
+        "observableEffect": "Each new middleware startup requests API configuration before allocating its WebSocket client and RTC graph, regardless of cached ICE configuration.",
+        "requiredConstraint": "Before explicit disconnect, an initial held Native host request, a compatible Native run request and a rejected Off run request initialize exactly one browser graph and request API configuration once.",
         "failureRationale": "The final receipt can look correct even if pending callers performed duplicate network and graph initialization. Compatible callers share the reservation and an incompatible caller must add no construction."
       }
     },
@@ -9390,10 +9390,10 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-web/rallar-operation-options.test.ts#classifies arbitrary retry failures without coercing them"
     },
     {
-      "id": "test-structure-coupling-ac73e8d5e644dcb1",
+      "id": "test-structure-coupling-a7bb57caa87e4da9",
       "path": "packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "recipe-adapter-compatible-connection-one-ice-request",
+      "contract": "recipe-adapter-compatible-connection-single-startup",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Shared Test maintainers",
@@ -9412,10 +9412,10 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts#carries run Off through the WS fallback and retries exactly once"
     },
     {
-      "id": "test-structure-coupling-190b3ac3fc843b48",
+      "id": "test-structure-coupling-89b28668efcd1982",
       "path": "packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "sdk-pending-compatible-connection-one-ice-request",
+      "contract": "sdk-pending-compatible-connection-single-startup",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Shared Web maintainers",

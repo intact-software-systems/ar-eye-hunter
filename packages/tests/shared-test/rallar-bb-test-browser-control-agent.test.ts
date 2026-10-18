@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { decodeBlackBoxRallarConnectionConfig } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts';
 import type { RallarBlackBoxBootstrapEnvironment } from '@shared-test/rallar-bb-test/browser-control-agent/resolve-launch-value.ts';
@@ -21,6 +26,7 @@ import { createDefaultRallarBlackBoxTestRuntime } from '../../../packages/shared
 
 import { readHeadlessWorkerConfig } from '../../../apps/rallar-black-box/src/headless-worker-config.ts';
 import {
+    CAPTURE_APPLICATION_API_CONFIG,
     createCaptureApplicationRuntime,
     installCaptureApplicationTestEnvironment,
     type CaptureApplicationRuntime
@@ -385,10 +391,10 @@ describe('host capture through worker launch and real SDK application', () => {
         const { application, agent } = createLaunchCaptureAgent(new URL(worker.agents[0].url).search, {});
         const entered = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
-        vi.mocked(connectionHttp.readIceCandidates).mockImplementation(async () => {
+        vi.mocked(connectionHttp.readApiConfig).mockImplementation(async () => {
             entered.resolve();
             await release.promise;
-            return { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 };
+            return CAPTURE_APPLICATION_API_CONFIG;
         });
         try {
             expect((await agent.start()).right).toBe('connecting');

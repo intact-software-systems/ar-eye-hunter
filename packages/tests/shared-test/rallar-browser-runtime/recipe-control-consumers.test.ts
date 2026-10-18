@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { decodeBlackBoxRallarCrdtWaitInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts';
 import { matchesBlackBoxRallarCrdtWaitCondition } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/matches-black-box-rallar-crdt-wait-condition.ts';
@@ -22,6 +27,7 @@ import { createBrowserTestStorage } from '../browser-test-storage.ts';
 
 import { takeAgentDispatchableCommands } from '../../../../apps/rallar-black-box-control-server/test/support/take-agent-dispatchable-commands.ts';
 import {
+    CAPTURE_APPLICATION_API_CONFIG,
     createCaptureApplicationRuntime,
     createCaptureController,
     executeSerializedControllerCommand,
@@ -684,10 +690,10 @@ describe('SDK recipe execution across actual control consumers', () => {
         const originalBootstrap = store.getSnapshot().bootstrap;
         const entered = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
-        vi.mocked(connectionHttp.readIceCandidates).mockImplementationOnce(async () => {
+        vi.mocked(connectionHttp.readApiConfig).mockImplementationOnce(async () => {
             entered.resolve();
             await release.promise;
-            return { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 };
+            return CAPTURE_APPLICATION_API_CONFIG;
         });
         const rootCommandId = 'settling-control-root';
         try {
