@@ -99,6 +99,7 @@ export interface CreateApiV1MutationRuntimeInput {
     readonly maxConcurrentPasswordDerivations: number;
     readonly nowEpochMs: () => number;
     readonly timing: RallarTimingSink;
+    readonly outboxStageTiming?: RallarTimingSink;
     readonly appInboxOptions: AppInboxOptions;
     readonly appInboxLaneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
     readonly appInboxNewLaneConcurrency: number;
@@ -144,6 +145,7 @@ interface ApiV1StateMutationDependencies {
     readonly serviceId: string;
     readonly nowEpochMs: () => number;
     readonly timing: RallarTimingSink;
+    readonly outboxStageTiming?: RallarTimingSink;
     readonly appInboxOptions: AppInboxOptions;
     readonly resourceInboxRepository: PSqlResourceInboxRepository;
     readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
@@ -317,6 +319,7 @@ function createApiV1StateMutationDependencies(
         serviceId: input.serviceId,
         nowEpochMs: input.nowEpochMs,
         timing: input.timing,
+        outboxStageTiming: input.outboxStageTiming,
         appInboxOptions: input.appInboxOptions,
         resourceInboxRepository: resources.resourceInboxRepository,
         resourceInboxResultsRepository: resources.resourceInboxResultsRepository,
@@ -378,7 +381,7 @@ function createGroupStateInboxServiceFactory(
             wakeQueue: wakeQueueEngine,
             now: input.nowEpochMs,
             formationMetrics: input.groupFormationMetrics.presenceSummary,
-            timing: input.timing
+            timing: input.outboxStageTiming
         });
         outboxQueueReader.onOutboxMessageDo(AppOutboxType.GROUP_PRESENCE_SUMMARY, {
             onMessage: async (message, entry) => await presenceSummary.processReservedEntry(message, entry)

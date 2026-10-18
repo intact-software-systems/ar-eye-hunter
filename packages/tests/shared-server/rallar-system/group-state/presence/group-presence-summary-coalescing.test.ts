@@ -22,7 +22,10 @@ import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persis
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { validateGroupStateDeltaEnvelope, type GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type { GroupPresenceSummary, GroupRef } from '@shared/api/group-types.ts';
-import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+import {
+    computeGroupPresenceSummaryEntry,
+    decodeCanonicalGroupPresenceSummaryEntry
+} from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
@@ -45,17 +48,20 @@ describe('group presence summary coalescing', () => {
 
         const committed = await fixture.readCommittedOutbox(seeded.ref);
         const observed = timingEvents.filter((event) => event.operation === 'committed-output-observed');
+        const accepted = pending.map((entry) => decodeCanonicalGroupPresenceSummaryEntry(entry).acceptedCausalRevision);
         expect(observed).toHaveLength(3);
         expect(observedAtWake).toBe(3);
         expect(observed.map((event) => event.requestId)).toEqual(
             seeded.principalIds.map((principalId) => `connect-timed-coalesced-room-${principalId}`)
         );
-        expect(observed.map((event) => event.details)).toEqual(committed.map((entry) =>
+        expect(observed.map((event) => event.details)).toEqual(committed.map((entry, index) =>
             expect.objectContaining({
                 topicId: entry.key.topicId,
                 resourceId: entry.key.resourceId,
                 contextId: entry.key.contextId,
-                outcome: 'written'
+                outcome: 'written',
+                acceptedGroupRevision: accepted[index]!.groupRevision,
+                acceptedPresenceRevision: accepted[index]!.presenceRevision
             })
         ));
     });
@@ -170,18 +176,7 @@ async function createCoalescingFixture(
         timing: timingEvents === undefined ? undefined : (event) => timingEvents.push(event),
         wakeQueue
     });
-    const process = async (entry: ResourceEntry): Promise<void> => {
-        const reserved = [...(await queue.reserveEntries({
-            typeIds: new Set([EnqueuedType.APP_OUTBOX]),
-            statusIds: new Set([EntityStatus.NEW]),
-            reservationInput: 1,
-            observedEntries: [entry]
-        })).values()][0];
-        if (reserved === undefined) {
-            throw new Error(`Expected to reserve ${entry.key.resourceId}`);
-        }
-        await worker.processReservedEntry(decodePersistedALMessage(reserved.resource), reserved);
-    };
+    const process = createReservedSummaryProcessor(queue, worker);
     const enqueue = async (entries: readonly ResourceEntry[]): Promise<readonly ResourceEntry[]> => {
         const stored: ResourceEntry[] = [];
         for (const entry of entries) {
@@ -210,6 +205,25 @@ async function createCoalescingFixture(
         },
         readCommittedDeltas: async (ref) => await readCommittedDeltas(sql, ref),
         readCommittedOutbox: async (ref) => await readCommittedOutbox(sql, ref)
+    };
+}
+
+/** Runs the fixture through the real reservation-to-worker handoff. */
+function createReservedSummaryProcessor(
+    queue: PSqlQueueBox,
+    worker: GroupPresenceSummaryWork
+): (entry: ResourceEntry) => Promise<void> {
+    return async (entry) => {
+        const reserved = [...(await queue.reserveEntries({
+            typeIds: new Set([EnqueuedType.APP_OUTBOX]),
+            statusIds: new Set([EntityStatus.NEW]),
+            reservationInput: 1,
+            observedEntries: [entry]
+        })).values()][0];
+        if (reserved === undefined) {
+            throw new Error(`Expected to reserve ${entry.key.resourceId}`);
+        }
+        await worker.processReservedEntry(decodePersistedALMessage(reserved.resource), reserved);
     };
 }
 

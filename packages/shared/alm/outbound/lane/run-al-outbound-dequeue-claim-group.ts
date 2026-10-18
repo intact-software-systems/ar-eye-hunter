@@ -11,20 +11,23 @@ export namespace ALOutboundDequeueClaimGroup {
         readonly claims: readonly ALWorkClaim[];
         /** What `runOutboundClaim` runs before a dequeued row's admission, here for every row at once. */
         readonly readWork: (claim: ALWorkClaim) => ALOutboundEffectSnapshot<TPrepared>;
+        readonly timing: ALOutboundDequeuedAdmission.TimingSink | undefined;
         readonly hasReachedDeadline: (claim: ALWorkClaim) => boolean;
         readonly createEvidence: (
             work: ALOutboundEffectSnapshot<TPrepared>
         ) => ALOutboundReceiptWorkEvidence | undefined;
         readonly readSettledBeforeEffect: (
             work: ALOutboundEffectSnapshot<TPrepared>,
-            evidence: ALOutboundReceiptWorkEvidence | undefined
+            observed: ALOutboundClaimObservation
         ) => ALWorkAttemptResult | undefined;
         readonly admit: (
             members: readonly ALOutboundDequeuedAdmission.Member<TPrepared>[]
         ) => readonly Promise<ALWorkAttemptResult>[];
         readonly settle: (
             attempt: Promise<ALWorkAttemptResult>,
-            observed: ALOutboundClaimObservation
+            observed: ALOutboundClaimObservation,
+            claim: ALWorkClaim,
+            batchIndex: number
         ) => Promise<ALWorkAttemptResult>;
     }
 }
@@ -46,17 +49,21 @@ export function runALOutboundDequeueClaimGroup<TPrepared>(
     input.claims.forEach((claim, index) => {
         const start = starts[index]!;
         const attempt = start.kind === 'admit' ? admitted[admittedIndex++]! : start.attempt;
-        attempts.set(claim, input.settle(attempt, { evidence: start.member?.evidence }));
+        attempts.set(claim, input.settle(attempt, start.observation, claim, index));
     });
     return attempts;
 }
 
 /** A dequeued row of a group: admitted with the group, or already settled before its admission. */
 type ALOutboundDequeueStart<TPrepared> =
-    | Readonly<{ kind: 'admit'; member: ALOutboundDequeuedAdmission.Member<TPrepared>; }>
+    | Readonly<{
+        kind: 'admit';
+        member: ALOutboundDequeuedAdmission.Member<TPrepared>;
+        observation: ALOutboundClaimObservation;
+    }>
     | Readonly<{
         kind: 'settled';
-        member: ALOutboundDequeuedAdmission.Member<TPrepared> | undefined;
+        observation: ALOutboundClaimObservation;
         attempt: Promise<ALWorkAttemptResult>;
     }>;
 
@@ -66,23 +73,33 @@ function startDequeueClaim<TPrepared>(
     claim: ALWorkClaim,
     batchIndex: number
 ): ALOutboundDequeueStart<TPrepared> {
+    const observation: ALOutboundClaimObservation = { evidence: undefined };
+    if (input.timing !== undefined) {
+        observation.timing = input.timing;
+    }
     let work: ALOutboundEffectSnapshot<TPrepared>;
     try {
         work = input.readWork(claim);
     }
     catch (error) {
-        const attempt: Promise<ALWorkAttemptResult> = input.hasReachedDeadline(claim)
+        const expired = input.hasReachedDeadline(claim);
+        if (observation.timing !== undefined) {
+            observation.terminalReason = expired ? 'expired' : 'decode-failed';
+        }
+        const attempt: Promise<ALWorkAttemptResult> = expired
             ? Promise.resolve({ status: 'completed' })
             : Promise.reject(error);
-        return { kind: 'settled', member: undefined, attempt };
+        return { kind: 'settled', observation, attempt };
     }
+    observation.evidence = input.createEvidence(work);
     const member = {
         effect: work,
-        evidence: input.createEvidence(work),
+        evidence: observation.evidence,
+        observation,
         batchIndex
     };
-    const settled = input.readSettledBeforeEffect(work, member.evidence);
+    const settled = input.readSettledBeforeEffect(work, observation);
     return settled === undefined
-        ? { kind: 'admit', member }
-        : { kind: 'settled', member, attempt: Promise.resolve(settled) };
+        ? { kind: 'admit', member, observation }
+        : { kind: 'settled', observation, attempt: Promise.resolve(settled) };
 }

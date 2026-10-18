@@ -106,6 +106,7 @@ export interface CreateApiV1RuntimeInput {
     readonly maxConcurrentPasswordDerivations: number;
     readonly nowEpochMs: () => number;
     readonly timing: RallarTimingSink;
+    readonly outboxStageTiming?: RallarTimingSink;
     readonly wsReceiptObserver?: WsQueueBoxServerReceiptObserver;
     readonly appInboxOptions: AppInboxOptions;
     readonly appInboxLaneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
@@ -132,6 +133,13 @@ interface StartRuntimeStateExpiryInput {
     readonly startupGeneration: RuntimeStateExpiryStartupGeneration;
 }
 
+interface StartMutationInfrastructureInput {
+    readonly runtime: CreateApiV1RuntimeInput;
+    readonly mutation: ApiV1MutationRuntime;
+    readonly operations: ApiV1RuntimeConstructionOperations;
+    readonly startupGeneration: RuntimeStateExpiryStartupGeneration;
+}
+
 interface CreateSharedMiddlewareInput {
     readonly mutation: ApiV1MutationRuntime;
     readonly appInboxCompletionNotices: AppInboxCompletionNoticeChannel | undefined;
@@ -144,6 +152,7 @@ interface CreateSharedMiddlewareInput {
     readonly databasePubSubMode: ApiV1DatabaseConfiguration['pubSub'];
     readonly databaseNotification: ApiV1DatabaseNotificationPort | null;
     readonly timing: RallarTimingSink;
+    readonly outboxStageTiming?: RallarTimingSink;
     readonly wsReceiptObserver?: WsQueueBoxServerReceiptObserver;
     readonly almReceiptDiagnostics: RallarAlmReceiptDiagnosticsRecorder;
     readonly nowEpochMs: () => number;
@@ -205,14 +214,7 @@ export function constructApiV1Runtime(
     const mutation = operations.createMutationRuntime(toMutationRuntimeInput(input, appInboxCompletionNotices));
     const { rtcTopology, topology } = createRuntimeTopology(input, mutation, operations);
     input.backgroundTasks.register(rtcTopology.stop);
-    operations.configureWsRuntimeStores(input.wsRuntimeName, mutation.runtimeStateRepository);
-    operations.startResourceInboxExpiry(mutation);
-    operations.startRuntimeStateExpiry({
-        database: input.database,
-        nowEpochMs: input.nowEpochMs,
-        runtimeStateRepository: mutation.runtimeStateRepository,
-        startupGeneration
-    });
+    startMutationInfrastructure({ runtime: input, mutation, operations, startupGeneration });
     const runtime = operations.createMiddleware({
         mutation,
         appInboxCompletionNotices,
@@ -225,6 +227,7 @@ export function constructApiV1Runtime(
         databasePubSubMode: input.databasePubSubMode,
         databaseNotification: input.databaseNotification,
         timing: input.timing,
+        outboxStageTiming: input.outboxStageTiming,
         wsReceiptObserver: input.wsReceiptObserver,
         almReceiptDiagnostics,
         nowEpochMs: input.nowEpochMs
@@ -242,6 +245,19 @@ export function constructApiV1Runtime(
         almReceiptDiagnostics,
         topologyServices: topology,
         backgroundTasks: input.backgroundTasks
+    });
+}
+
+/** The mutation runtime's stores and expiry workers start before middleware owns its queue. */
+function startMutationInfrastructure(input: StartMutationInfrastructureInput): void {
+    const { runtime, mutation, operations, startupGeneration } = input;
+    operations.configureWsRuntimeStores(runtime.wsRuntimeName, mutation.runtimeStateRepository);
+    operations.startResourceInboxExpiry(mutation);
+    operations.startRuntimeStateExpiry({
+        database: runtime.database,
+        nowEpochMs: runtime.nowEpochMs,
+        runtimeStateRepository: mutation.runtimeStateRepository,
+        startupGeneration
     });
 }
 
@@ -292,6 +308,7 @@ function toMutationRuntimeInput(
         maxConcurrentPasswordDerivations: input.maxConcurrentPasswordDerivations,
         nowEpochMs: input.nowEpochMs,
         timing: input.timing,
+        outboxStageTiming: input.outboxStageTiming,
         appInboxOptions: input.appInboxOptions,
         appInboxLaneBudgetPolicy: input.appInboxLaneBudgetPolicy,
         appInboxNewLaneConcurrency: input.appInboxNewLaneConcurrency,
@@ -369,31 +386,7 @@ function createSharedMiddleware(
         wsOutboundDiagnostics: mutation.groupFormationMetrics.outboundWork,
         wsOutboundSettlements: input.almReceiptDiagnostics.settlements,
         wsReceiptObserver: input.wsReceiptObserver,
-        wsDequeueTiming: input.wsReceiptObserver === undefined ? undefined : (stage) => {
-            recordRallarTiming({
-                sink: input.timing,
-                event: {
-                    component: 'alm-outbound-dequeue',
-                    operation: stage.stage,
-                    serviceId: mutation.serviceId,
-                    details: {
-                        publisherId: input.queuePubSubPublisherId,
-                        topicId: stage.key.topicId,
-                        resourceId: stage.key.resourceId,
-                        contextId: stage.key.contextId,
-                        attempts: stage.attempts,
-                        claimStartedAtEpochMs: stage.claimStartedAtEpochMs,
-                        batchIndex: stage.batchIndex,
-                        publicationTopicId: stage.publicationKey?.topicId,
-                        publicationResourceId: stage.publicationKey?.resourceId,
-                        publicationContextId: stage.publicationKey?.contextId,
-                        outcome: stage.outcome
-                    }
-                },
-                status: stage.outcome === 'error' || stage.outcome === 'rejected' ? 'error' : 'ok',
-                durationMs: 0
-            });
-        },
+        wsDequeueTiming: createApiWsDequeueTiming(input),
         createGroupStateInboxService: mutation.createGroupStateInboxService,
         createTopologyInboxService: ({ inboxQueueReader, wakeQueueEngine }) =>
             createTopologyInboxService(input, inboxQueueReader, wakeQueueEngine),
@@ -419,6 +412,42 @@ function createSharedMiddleware(
     });
 }
 
+/** Translates the queue owner's claim identity into the existing process timing sink. */
+function createApiWsDequeueTiming(
+    input: CreateSharedMiddlewareInput
+): CreateRallarMiddlewareOptions['wsDequeueTiming'] {
+    if (input.outboxStageTiming === undefined) {
+        return undefined;
+    }
+    return (stage) => {
+        recordRallarTiming({
+            sink: input.outboxStageTiming,
+            event: {
+                component: 'alm-outbound-dequeue',
+                operation: stage.stage,
+                serviceId: input.mutation.serviceId,
+                details: {
+                    publisherId: input.queuePubSubPublisherId,
+                    topicId: stage.key.topicId,
+                    resourceId: stage.key.resourceId,
+                    contextId: stage.key.contextId,
+                    attempts: stage.attempts,
+                    claimStartedAtEpochMs: stage.claimStartedAtEpochMs,
+                    batchIndex: stage.batchIndex,
+                    publicationTopicId: stage.publicationKey?.topicId,
+                    publicationResourceId: stage.publicationKey?.resourceId,
+                    publicationContextId: stage.publicationKey?.contextId,
+                    outcome: stage.outcome,
+                    verdict: stage.verdict,
+                    reason: stage.reason
+                }
+            },
+            status: stage.outcome === 'error' || stage.outcome === 'rejected' ? 'error' : 'ok',
+            durationMs: 0
+        });
+    };
+}
+
 /** No volatile budget: the server sends nothing of its own on this lane, and an arrival is never refused. */
 function createServerWsQBoxALVolatileInboundRuntimeStores(wsRuntimeName: string): ALVolatileInboundRuntimeStores {
     return createVolatileALInboundRuntimeStores(
@@ -436,7 +465,7 @@ function createApiV1QueuePubSubBridge(
         localBus: input.queuePubSubLocalBus,
         channel: input.queuePubSubChannel,
         publisherId: input.queuePubSubPublisherId,
-        timing: input.timing,
+        timing: input.outboxStageTiming,
         wakeReplay: () => input.rtcTopology.topologyReplay.wake('notification'),
         filterEligibleCapturedSessionIds: (captured) =>
             filterEligibleDurableWsSessionIds({

@@ -98,6 +98,20 @@ interface GroupPresenceSummaryExpansion {
     readonly computed: GroupPresenceSummaryComputedWork;
 }
 
+interface ReadTopologyReplanPolicyFactsInput {
+    readonly work: GroupPresenceSummaryWorkData;
+    readonly group: GroupPresenceSummaryWorkRead['presence']['group']['value'];
+    readonly coalescedTopologyEntry: ResourceEntry | null;
+    readonly nowEpochMs: number;
+}
+
+interface RecordGroupPresenceSummaryPhaseInput {
+    readonly work: GroupPresenceSummaryWorkData;
+    readonly operation: GroupPresenceSummaryTiming.Phase;
+    readonly details: RallarTimingDetails;
+    readonly startedAtMs: number;
+}
+
 type GroupPresenceSummaryWriteOutcome = 'written' | 'summary-changed';
 
 /**
@@ -156,12 +170,12 @@ export class GroupPresenceSummaryWork {
             return Either.ofLeft(inconsistency);
         }
         const coalescedEvents = items.map((item) => item.work.event);
-        const topologyReplanPolicyFacts = await this.readTopologyReplanPolicyFacts(
-            first.work,
-            presence.group.value,
+        const topologyReplanPolicyFacts = await this.readTopologyReplanPolicyFacts({
+            work: first.work,
+            group: presence.group.value,
             coalescedTopologyEntry,
             nowEpochMs
-        );
+        });
         return Either.ofRight(items.map((item) => ({
             nowEpochMs,
             reservation: {
@@ -176,11 +190,9 @@ export class GroupPresenceSummaryWork {
     }
 
     private async readTopologyReplanPolicyFacts(
-        work: GroupPresenceSummaryWorkData,
-        group: GroupPresenceSummaryWorkRead['presence']['group']['value'],
-        coalescedTopologyEntry: ResourceEntry | null,
-        nowEpochMs: number
+        input: ReadTopologyReplanPolicyFactsInput
     ): Promise<TopologyReplanPolicyFacts> {
+        const { work, group, coalescedTopologyEntry, nowEpochMs } = input;
         const facts = toTopologyReplanEnqueueFacts(work, group, { coalescedTopologyEntry, nowEpochMs });
         if (!consultsTopologyReplanPolicy(facts)) {
             return { consulted: false };
@@ -271,7 +283,12 @@ export class GroupPresenceSummaryWork {
         const primary = decodeCanonicalGroupPresenceSummaryWork(message, entry);
         const claimStartedAtMs = nowMs();
         const claimed = await this.claimPendingSummaryWork(entry);
-        this.recordPhase(primary, 'claim', { coalescedWorkCount: claimed.length + 1 }, claimStartedAtMs);
+        this.recordPhase({
+            work: primary,
+            operation: 'claim',
+            details: { coalescedWorkCount: claimed.length + 1 },
+            startedAtMs: claimStartedAtMs
+        });
         try {
             const items = sortByCausalOrder([
                 { work: primary, reservation: toReservationRead(entry) },
@@ -329,7 +346,12 @@ export class GroupPresenceSummaryWork {
             recipientCount: toRecipientCount(expansions),
             deltaCount: coalesced.downstreamOutboxWrites.length
         };
-        this.recordPhase(primary, 'compute', effectDetails, computeStartedAtMs);
+        this.recordPhase({
+            work: primary,
+            operation: 'compute',
+            details: effectDetails,
+            startedAtMs: computeStartedAtMs
+        });
         const proofs = expansions.flatMap((expansion) => computeGroupDeltaProvenance(expansion.computed));
         const outcome = await timeRallarAsync(
             this.options.timing,
@@ -456,12 +478,8 @@ export class GroupPresenceSummaryWork {
         return (await this.options.outboxQueueReader.outbox.getItem(key)) ?? null;
     }
 
-    private recordPhase(
-        work: GroupPresenceSummaryWorkData,
-        operation: GroupPresenceSummaryTiming.Phase,
-        details: RallarTimingDetails,
-        startedAtMs: number
-    ): void {
+    private recordPhase(input: RecordGroupPresenceSummaryPhaseInput): void {
+        const { work, operation, details, startedAtMs } = input;
         recordRallarTiming({
             sink: this.options.timing,
             event: toGroupPresenceSummaryTimingEvent({ work, operation, serviceId: this.options.serviceId, details }),

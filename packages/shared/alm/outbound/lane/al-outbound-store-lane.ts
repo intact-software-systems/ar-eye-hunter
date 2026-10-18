@@ -71,6 +71,8 @@ import { computeALOutboundSettledCommittedRows } from './compute-al-outbound-com
 import { runALOutboundDequeueClaimGroup } from './run-al-outbound-dequeue-claim-group.ts';
 import {
     createALOutboundClaimEvidence,
+    createALOutboundClaimObservation,
+    recordALOutboundClaimTerminalReason,
     settleALOutboundClaim,
     type ALOutboundClaimObservation
 } from './settle-al-outbound-claim.ts';
@@ -389,19 +391,24 @@ export class ALOutboundStoreLane<TPrepared> {
         batchStartedAtMs: number,
         deferObservation?: ALWorkObservationDeferral
     ): Promise<ALWorkAttemptResult> {
-        const observed: ALOutboundClaimObservation = { evidence: undefined };
+        const observed = createALOutboundClaimObservation(
+            claim,
+            this.input.runtime.dequeueTiming,
+            this.input.dequeueTypes
+        );
         const attempt = (async (): Promise<ALWorkAttemptResult> => {
-            const work = await this.readExpirableOutboundWork(claim.entry);
+            const work = await this.readExpirableOutboundWork(claim.entry, observed);
             if (work === undefined) {
+                recordALOutboundClaimTerminalReason(observed, 'expired');
                 return { status: 'completed' };
             }
             observed.evidence = this.createClaimEvidence(work, batchStartedAtMs, deferObservation);
             if (commitsALOutboundWorkOutsideLane(work.payload.kind)) {
                 this.work.claimCommitted();
             }
-            return await this.runDurableEffect(work, observed.evidence, deferObservation);
+            return await this.runDurableEffect(work, observed, deferObservation);
         })();
-        return await this.settleOutboundClaim(attempt, observed);
+        return await this.settleOutboundClaim(attempt, observed, claim, 0);
     }
 
     /** A selection's dequeued rows admit as one group; every other claim runs alone through `runOutboundClaim`. */
@@ -413,11 +420,13 @@ export class ALOutboundStoreLane<TPrepared> {
         return runALOutboundDequeueClaimGroup<TPrepared>({
             claims: claims.filter((claim) => this.input.dequeueTypes.has(claim.entry.typeId)),
             readWork: (claim) => toALOutboundDequeueWork(claim.entry, this.input.runtime.readMessageFromEntry),
+            timing: this.input.runtime.dequeueTiming,
             hasReachedDeadline: (claim) => this.hasReachedDeadline(claim.entry),
             createEvidence: (work) => this.createClaimEvidence(work, batchStartedAtMs, deferObservation),
-            readSettledBeforeEffect: (work, evidence) => this.readSettledBeforeEffect(work, evidence),
+            readSettledBeforeEffect: (work, observed) => this.readSettledBeforeEffect(work, observed),
             admit: (members) => this.dequeuedAdmission.admitDequeuedMessages(members),
-            settle: (attempt, observed) => this.settleOutboundClaim(attempt, observed)
+            settle: (attempt, observed, claim, batchIndex) =>
+                this.settleOutboundClaim(attempt, observed, claim, batchIndex)
         });
     }
 
@@ -436,11 +445,15 @@ export class ALOutboundStoreLane<TPrepared> {
 
     private async settleOutboundClaim(
         attempt: Promise<ALWorkAttemptResult>,
-        observed: ALOutboundClaimObservation
+        observed: ALOutboundClaimObservation,
+        claim: ALWorkClaim,
+        batchIndex: number
     ): Promise<ALWorkAttemptResult> {
         return await settleALOutboundClaim({
             attempt,
             observed,
+            claim,
+            batchIndex,
             capture: this.input.runtime.receiptWorkCapture,
             readNowMs: () => this.readNowMs()
         });
@@ -448,7 +461,8 @@ export class ALOutboundStoreLane<TPrepared> {
 
     /** A deadline crossed during the read is expiry, not a defect: the work is dropped, not rejected. */
     private async readExpirableOutboundWork(
-        entry: ResourceEntry
+        entry: ResourceEntry,
+        observed: ALOutboundClaimObservation
     ): Promise<ALOutboundEffectSnapshot<TPrepared> | undefined> {
         try {
             return await this.readOutboundWork(entry);
@@ -457,6 +471,7 @@ export class ALOutboundStoreLane<TPrepared> {
             if (this.hasReachedDeadline(entry)) {
                 return undefined;
             }
+            recordALOutboundClaimTerminalReason(observed, 'decode-failed');
             throw error;
         }
     }
@@ -476,14 +491,15 @@ export class ALOutboundStoreLane<TPrepared> {
 
     private async runDurableEffect(
         effect: ALOutboundEffectSnapshot<TPrepared>,
-        evidence: ALOutboundReceiptWorkEvidence | undefined,
+        observed: ALOutboundClaimObservation,
         deferObservation: ALWorkObservationDeferral | undefined
     ): Promise<ALWorkAttemptResult> {
+        const evidence = observed.evidence;
         // Before anything else: a cancelled or handed-over message's remaining work completes silently, of any kind --
         // no `attempt-started`, no `expired`, no repair. A live attempt already past `attempt-started`
         // still terminates its own `attempt-settled cancelled` -- stated by the effects layer if the
         // abort lands before the carrier runs, or by the carrier's own settlement if it lands during it.
-        const settled = this.readSettledBeforeEffect(effect, evidence);
+        const settled = this.readSettledBeforeEffect(effect, observed);
         if (settled !== undefined) {
             return settled;
         }
@@ -491,7 +507,7 @@ export class ALOutboundStoreLane<TPrepared> {
             case 'admit-message':
                 return await this.effects.admitPendingMessage(effect, evidence);
             case 'dequeue-message':
-                return await this.dequeuedAdmission.admitDequeuedMessage(effect, evidence);
+                return await this.dequeuedAdmission.admitDequeuedMessage(effect, evidence, observed);
             case 'admit-control':
                 return effect.payload.msg.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID
                     ? await this.receiptAdmission.replay(effect.payload)
@@ -519,23 +535,22 @@ export class ALOutboundStoreLane<TPrepared> {
 
     private readSettledBeforeEffect(
         effect: ALOutboundEffectSnapshot<TPrepared>,
-        evidence: ALOutboundReceiptWorkEvidence | undefined
+        observed: ALOutboundClaimObservation
     ): ALWorkAttemptResult | undefined {
-        if (this.isEndedEffect(effect)) {
-            evidence?.recordStage('ended');
+        const msgId = resolveALOutboundEffectMsgId(effect);
+        const endedReason = msgId === undefined ? undefined : this.input.sendControls.readEndedReason(msgId);
+        if (endedReason !== undefined) {
+            recordALOutboundClaimTerminalReason(observed, endedReason);
+            observed.evidence?.recordStage('ended');
             return { status: 'completed' };
         }
         if (effect.expireAtTimestamp <= this.readNowMs()) {
-            evidence?.recordStage('expired');
+            recordALOutboundClaimTerminalReason(observed, 'expired');
+            observed.evidence?.recordStage('expired');
             this.emitWorkExpiry(effect);
             return { status: 'completed' };
         }
         return undefined;
-    }
-
-    private isEndedEffect(effect: ALOutboundEffectSnapshot<TPrepared>): boolean {
-        const msgId = resolveALOutboundEffectMsgId(effect);
-        return msgId !== undefined && this.input.sendControls.isEnded(msgId);
     }
 
     /** One attempt on one prepared copy: the attempt is stated before its carrier can settle it. */

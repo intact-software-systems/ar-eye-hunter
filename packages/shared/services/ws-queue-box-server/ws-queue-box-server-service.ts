@@ -27,9 +27,11 @@ import {
 } from '../../alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '../../alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { createDefaultALInboundRuntimeResources } from '../../alm/inbound/create-default-al-inbound-message-runtime.ts';
+import type { ALOutboundPlanningAuthority } from '../../alm/outbound/admission/al-outbound-admission-store.ts';
 import type { ALOutboundCapturedPolicy } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
 import {
     ALOutboundMessageRuntime,
+    type ALOutboundDispatchPlan,
     type ALOutboundEnqueueResult,
     type ALOutboundRuntimeDiagnosticsSink,
     type ALOutboundRuntimeStores,
@@ -81,6 +83,7 @@ import { WsQueueBoxServerInboundDelivery } from './ws-queue-box-server-inbound-d
 import { WsQueueBoxServerLiveDelivery } from './ws-queue-box-server-live-delivery.ts';
 import {
     WsQueueBoxServerOutboundPlanning,
+    type WsQueueBoxServerOutboundPhase,
     type WsQueueBoxServerPreparedMessage
 } from './ws-queue-box-server-outbound-planning.ts';
 import { WsQueueBoxServerReceiptAggregation } from './ws-queue-box-server-receipt-aggregation.ts';
@@ -399,28 +402,8 @@ export class WsQueueBoxServerService {
                 ),
             readMessageFromEntry: (entry) => decodePersistedALMessageRow(entry),
             readDequeueAuthority: (message, entry) => this.dequeueAuthority.readDequeueAuthority(message, entry),
-            planOutgoingMessage: (message, authority) =>
-                this.outboundPlanning.planOutboundMessage({
-                    message,
-                    phase: 'immediate',
-                    clusterPublisherRegistered: this.clusterPublication.hasPublisher(),
-                    admittedAudience: authority?.admittedAudience,
-                    recipientScope: authority?.recipientScope,
-                    principalTargetId: authority?.principalTargetId,
-                    sessionInvalidation: authority?.sessionInvalidation,
-                    referenceKey: authority?.referenceKey
-                }),
-            planDequeuedMessage: (message, authority) =>
-                this.outboundPlanning.planOutboundMessage({
-                    message,
-                    phase: 'dequeue',
-                    clusterPublisherRegistered: this.clusterPublication.hasPublisher(),
-                    admittedAudience: authority?.admittedAudience,
-                    recipientScope: authority?.recipientScope,
-                    principalTargetId: authority?.principalTargetId,
-                    sessionInvalidation: authority?.sessionInvalidation,
-                    referenceKey: authority?.referenceKey
-                }),
+            planOutgoingMessage: (message, authority) => this.planWorkDispatch(message, authority, 'immediate'),
+            planDequeuedMessage: (message, authority) => this.planWorkDispatch(message, authority, 'dequeue'),
             afterDequeueAdmission: async (message, entry) => {
                 await this.clusterPublication.writeDequeuedRow(message, entry);
                 await this.deferUnpublishedRowToAwaitedRecipients(message, entry);
@@ -429,6 +412,24 @@ export class WsQueueBoxServerService {
                 await this.sendPreparedMessage(prepared, lifecycle),
             planRepairMessage: (message, request) =>
                 Promise.resolve(this.outboundPlanning.planRepairMessage(message, request))
+        });
+    }
+
+    /** The work runtime's authority becomes the WS planner's phase-specific request. */
+    private planWorkDispatch(
+        message: ALMessage,
+        authority: ALOutboundPlanningAuthority | undefined,
+        phase: WsQueueBoxServerOutboundPhase
+    ): ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage> {
+        return this.outboundPlanning.planOutboundMessage({
+            message,
+            phase,
+            clusterPublisherRegistered: this.clusterPublication.hasPublisher(),
+            admittedAudience: authority?.admittedAudience,
+            recipientScope: authority?.recipientScope,
+            principalTargetId: authority?.principalTargetId,
+            sessionInvalidation: authority?.sessionInvalidation,
+            referenceKey: authority?.referenceKey
         });
     }
 

@@ -2,6 +2,7 @@ import { NonRetryableException } from '../../../queuebox/resource-inbox/create-d
 import { isNotReadyException } from '../../../queuebox/resource-inbox/not-ready-exception.ts';
 import type { Key } from '../../../queuebox/ResourceEntry.ts';
 import { BoundedConcurrencyAdmission } from '../../../resilience/bounded-concurrency-admission.ts';
+import type { ALDeliveryAdmissionVerdict } from '../../delivery/al-delivery-lifecycle.ts';
 import type { ALWorkAttemptResult } from '../../work/al-work-handler.ts';
 import type { ALWorkOutcome } from '../../work/al-work-queue-port.ts';
 import type {
@@ -18,6 +19,10 @@ import type { ALOutboundComputedDto } from '../compute-al-outbound-dispatch.ts';
 import { recordALOutboundDequeueTiming } from './al-outbound-dequeue-timing.ts';
 import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observation.ts';
 import { readALOutboundDequeueWait } from './read-al-outbound-dequeue-wait.ts';
+import {
+    recordALOutboundClaimAdmissionVerdict,
+    type ALOutboundClaimObservation
+} from './settle-al-outbound-claim.ts';
 
 /** How many rows of one dequeued batch read at once, against the server's pool of five connections. */
 export const AL_OUTBOUND_DEQUEUED_READ_CONCURRENCY = 2;
@@ -34,7 +39,8 @@ export namespace ALOutboundDequeuedAdmission {
         | 'admission-commit-start'
         | 'admission-commit-end'
         | 'ordered-dispatch-start'
-        | 'admission-end';
+        | 'admission-end'
+        | 'attempt-settled';
 
     export interface TimingEvent {
         readonly stage: TimingStage;
@@ -44,6 +50,8 @@ export namespace ALOutboundDequeuedAdmission {
         readonly batchIndex: number;
         readonly publicationKey?: Key;
         readonly outcome?: string;
+        readonly verdict?: ALDeliveryAdmissionVerdict['kind'];
+        readonly reason?: string;
     }
 
     export type TimingSink = (event: TimingEvent) => void;
@@ -66,6 +74,7 @@ export namespace ALOutboundDequeuedAdmission {
     export interface Member<TPrepared> {
         readonly effect: ALOutboundEffectSnapshot<TPrepared>;
         readonly evidence: ALOutboundReceiptWorkEvidence | undefined;
+        readonly observation: ALOutboundClaimObservation;
         readonly batchIndex: number;
     }
 }
@@ -81,9 +90,10 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
     /** One dequeued row admitted on its own: a batch of one. */
     async admitDequeuedMessage(
         effect: ALOutboundEffectSnapshot<TPrepared>,
-        evidence?: ALOutboundReceiptWorkEvidence
+        evidence: ALOutboundReceiptWorkEvidence | undefined,
+        observation: ALOutboundClaimObservation
     ): Promise<ALWorkAttemptResult> {
-        const [attempt] = this.admitDequeuedMessages([{ effect, evidence, batchIndex: 0 }]);
+        const [attempt] = this.admitDequeuedMessages([{ effect, evidence, observation, batchIndex: 0 }]);
         return await attempt!;
     }
 
@@ -268,6 +278,7 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
         }
         const computed = commit.value;
         member.evidence?.recordAdmission(computed.verdict.kind);
+        recordALOutboundClaimAdmissionVerdict(member.observation, computed.verdict);
         if (computed.verdict.kind === 'unroutable' && computed.verdict.reason === 'no-route') {
             return { status: 'retry' };
         }

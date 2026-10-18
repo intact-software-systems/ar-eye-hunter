@@ -19,6 +19,14 @@ export function createApiTimingSink(
     });
 }
 
+/** New per-output stage records are constructed only while timing is enabled. */
+export function toApiOutboxStageTimingSink(
+    configuration: ApiV1ObservabilityConfiguration,
+    timing: RallarTimingSink
+): RallarTimingSink | undefined {
+    return configuration.timingLogs ? timing : undefined;
+}
+
 export function toApiAppInboxServiceOptions(
     configuration: ApiV1AppInboxConfiguration
 ): AppInboxOptions {

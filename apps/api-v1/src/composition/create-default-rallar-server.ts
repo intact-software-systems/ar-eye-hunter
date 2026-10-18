@@ -24,7 +24,11 @@ import {
 } from '../runtime/runtime-identity.ts';
 import { createRuntimeStateExpiryLifecycle } from '../services/runtime-state-expiry-startup.ts';
 import { startEventLoopLagTiming } from '../services/start-event-loop-lag-timing.ts';
-import { createApiTimingSink, toApiAppInboxServiceOptions } from '../services/timing-service.ts';
+import {
+    createApiTimingSink,
+    toApiAppInboxServiceOptions,
+    toApiOutboxStageTimingSink
+} from '../services/timing-service.ts';
 import { createApiV1RoomWsAuthorizer } from '../services/ws-topic-room-authorizer.ts';
 import {
     createApiV1BackgroundTaskLifecycle,
@@ -198,6 +202,7 @@ function createConfiguredApiV1Runtime(
         maxConcurrentPasswordDerivations: configuration.authentication.maxConcurrentPasswordDerivations,
         nowEpochMs,
         timing,
+        outboxStageTiming: toApiOutboxStageTimingSink(configuration.observability, timing),
         wsReceiptObserver: createApiV1WsReceiptObserver({
             enabled: configuration.observability.timingLogs,
             timing,

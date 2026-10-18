@@ -5,7 +5,6 @@ import type { GroupRestSnapshotReadSelector } from '@shared-server/rallar-system
 import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/rallar-middleware-runtime.ts';
 import type { RallarAlmReceiptDiagnosticsRecorder } from '@shared-server/rallar-system/observability/alm-receipt-diagnostics.ts';
 import type { AppInboxCompletionNoticeChannel } from '@shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.ts';
-import type { ApiRtcTopologyRuntime } from '../../src/runtime/rtc-topology/create-api-rtc-topology-runtime.ts';
 
 import type { ApiV1Runtime } from '../../src/composition/api-v1-runtime.ts';
 import type { ApiV1MutationRuntime } from '../../src/composition/create-api-v1-mutation-runtime.ts';
@@ -15,8 +14,34 @@ import {
     type CreateApiV1RuntimeInput
 } from '../../src/composition/create-api-v1-runtime.ts';
 import type { ApiV1TopologyServices } from '../../src/composition/create-api-v1-topology-services.ts';
+import { decodeApiV1Configuration } from '../../src/configuration/decode-api-v1-configuration.ts';
 import { createLocalQueuePubSubBus } from '../../src/db/local-queue-pubsub-bridge.ts';
+import type { ApiRtcTopologyRuntime } from '../../src/runtime/rtc-topology/create-api-rtc-topology-runtime.ts';
+import { createApiTimingSink, toApiOutboxStageTimingSink } from '../../src/services/timing-service.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
+import { validDecodeApiV1ConfigurationInput } from '../configuration/api-v1-configuration-test-fixture.ts';
+
+Deno.test('production timing-off configuration omits outbox stage sinks before owner construction', () => {
+    const configuration = decodeApiV1Configuration(validDecodeApiV1ConfigurationInput());
+    const observability = { ...configuration.observability, timingLogs: false };
+    const timing = createApiTimingSink(observability);
+    const operations = createOperations([]);
+    let mutationStageTiming: CreateApiV1RuntimeInput['outboxStageTiming'];
+    let middlewareStageTiming: CreateApiV1RuntimeInput['outboxStageTiming'];
+    constructApiV1Runtime({ ...createInput([]), timing, outboxStageTiming: toApiOutboxStageTimingSink(observability, timing) }, {
+        ...operations,
+        createMutationRuntime: (input) => {
+            mutationStageTiming = input.outboxStageTiming;
+            return MUTATION_RUNTIME;
+        },
+        createMiddleware: (input) => {
+            middlewareStageTiming = input.outboxStageTiming;
+            return SHARED_RUNTIME;
+        }
+    });
+    assert.equal(mutationStageTiming, undefined);
+    assert.equal(middlewareStageTiming, undefined);
+});
 
 Deno.test('runtime construction preserves the owned startup sequence', () => {
     const events: string[] = [];

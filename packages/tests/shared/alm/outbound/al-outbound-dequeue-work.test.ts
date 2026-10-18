@@ -116,7 +116,8 @@ describe('AL outbound dequeue work', () => {
                 'admission-commit-start',
                 'admission-commit-end',
                 'ordered-dispatch-start',
-                'admission-end'
+                'admission-end',
+                'attempt-settled'
             ]);
             expect(timings.every((event) =>
                 event.key.topicId === queued.key.topicId &&
@@ -237,9 +238,11 @@ describe('AL outbound dequeue work', () => {
         async (dropReasonCode) => {
             const outbox = createOutboxQueue();
             const published: string[] = [];
+            const timings: ALOutboundDequeuedAdmission.TimingEvent[] = [];
             const runtime = createDefaultOutboundTestRuntime({
                 outbox,
                 dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
+                dequeueTiming: (event) => timings.push(event),
                 planOutgoingMessage: (msg) => ({
                     msg,
                     dropReason: 'Dropped before a route exists',
@@ -260,8 +263,112 @@ describe('AL outbound dequeue work', () => {
 
             expect((await outbox.getItem(queued.key))?.status).toBe(EntityStatus.COMPLETED);
             expect(published).toEqual([]);
+            expect(timings.filter((event) => event.stage === 'attempt-settled')).toEqual([
+                expect.objectContaining({ key: queued.key, outcome: 'completed', verdict: expect.any(String) })
+            ]);
+            if (dropReasonCode === 'unauthorized') {
+                expect(timings.find((event) => event.stage === 'attempt-settled')).toMatchObject({
+                    verdict: 'refused',
+                    reason: 'unauthorized'
+                });
+            }
         }
     );
+
+    it('settles a grouped cancelled and expired claim before admission with distinct identity-only reasons', async () => {
+        let nowMs = Date.now();
+        const outbox = new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(nowMs));
+        const timings: ALOutboundDequeuedAdmission.TimingEvent[] = [];
+        const runtime = createDefaultOutboundTestRuntime({
+            outbox,
+            nowMs: () => nowMs,
+            dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
+            dequeueTiming: (event) => timings.push(event),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+        });
+        const cancelled = createDequeuedMessage('cancelled-before-admission');
+        const expiring = createDequeuedMessage('expired-before-admission');
+        const entries = [cancelled, expiring].map((message) =>
+            QueueBoxUtilities.toResourceEntryFromMsg(message, DEQUEUE_TYPE, Temporal.Instant.fromEpochMilliseconds(nowMs))
+        );
+        try {
+            await runtime.ready();
+            for (const entry of entries) {
+                await outbox.enqueueIfAbsent(entry);
+            }
+            runtime.cancel(cancelled.id.msgId);
+            const reserveEntries = outbox.reserveEntries.bind(outbox);
+            vi.spyOn(outbox, 'reserveEntries').mockImplementation(async (input) => {
+                const reserved = await reserveEntries(input);
+                nowMs += 31_000;
+                return reserved;
+            });
+            await runOutboundWorkTask(runtime);
+            expect(timings.filter((event) => event.stage === 'reservation-return')).toHaveLength(2);
+            expect(timings.filter((event) => event.stage === 'admission-start')).toHaveLength(0);
+            expect(timings.filter((event) => event.stage === 'attempt-settled')).toEqual([
+                expect.objectContaining({ key: entries[0]!.key, outcome: 'completed', reason: 'cancelled' }),
+                expect.objectContaining({ key: entries[1]!.key, outcome: 'completed', reason: 'expired' })
+            ]);
+        }
+        finally {
+            await runtime.dispose();
+        }
+    });
+
+    it('settles a singleton cancelled claim before admission', async () => {
+        const outbox = createOutboxQueue();
+        const timings: ALOutboundDequeuedAdmission.TimingEvent[] = [];
+        const runtime = createDefaultOutboundTestRuntime({
+            outbox,
+            dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
+            dequeueTiming: (event) => timings.push(event),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+        });
+        const message = createDequeuedMessage('single-cancelled');
+        const queued = QueueBoxUtilities.toResourceEntryFromMsg(message, DEQUEUE_TYPE, Temporal.Now.instant());
+        try {
+            await runtime.ready();
+            await outbox.enqueueIfAbsent(queued);
+            runtime.cancel(message.id.msgId);
+            await runOutboundWorkTask(runtime);
+            expect(timings.filter((event) => event.stage === 'admission-start')).toHaveLength(0);
+            expect(timings.filter((event) => event.stage === 'attempt-settled')).toEqual([
+                expect.objectContaining({ key: queued.key, outcome: 'completed', reason: 'cancelled', batchIndex: 0 })
+            ]);
+        }
+        finally {
+            await runtime.dispose();
+        }
+    });
+
+    it('settles a malformed singleton claim as a decode failure without admission', async () => {
+        const outbox = createOutboxQueue();
+        const timings: ALOutboundDequeuedAdmission.TimingEvent[] = [];
+        const runtime = createDefaultOutboundTestRuntime({
+            outbox,
+            dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
+            dequeueTiming: (event) => timings.push(event),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+        });
+        const message = createDequeuedMessage('decode-failed');
+        const queued = QueueBoxUtilities.toResourceEntryFromMsg(message, DEQUEUE_TYPE, Temporal.Now.instant());
+        try {
+            await runtime.ready();
+            await outbox.enqueueIfAbsent({ ...queued, resource: '{malformed' });
+            await runOutboundWorkTask(runtime);
+            expect(timings.filter((event) => event.stage === 'admission-start')).toHaveLength(0);
+            expect(timings.filter((event) => event.stage === 'attempt-settled')).toEqual([
+                expect.objectContaining({ key: queued.key, outcome: 'error', reason: 'decode-failed' })
+            ]);
+        }
+        finally {
+            await runtime.dispose();
+        }
+    });
 
     it('keeps a no-route dequeue on the retry budget and a failed admission non-retryable', async () => {
         // The batch reschedules the no-route row 1 ms out, and the admission the failed row commits

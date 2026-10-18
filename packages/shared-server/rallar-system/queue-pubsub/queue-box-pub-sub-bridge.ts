@@ -226,29 +226,8 @@ async function writeQueueBoxOutboxPublication(
     try {
         const envelope = toPubSubMessage({ channel: options.channel, publisherId: options.publisherId, entry });
         publishCall = 'invoked';
-        if (options.timing) {
-            recordPubSubTiming({
-                timing: options.timing,
-                operation: 'outbox-cluster-publish-start',
-                message: envelope
-            });
-        }
-        try {
-            await options.bridge.publish(options.channel, envelope);
-        }
-        catch (error) {
-            if (options.timing) {
-                recordPubSubTiming({
-                    timing: options.timing,
-                    operation: 'outbox-cluster-publish-error',
-                    message: envelope,
-                    status: 'error'
-                });
-            }
-            throw error;
-        }
+        await publishOutboxClusterNotice(envelope, options);
         publishCall = 'returned';
-        recordPubSubTiming({ timing: options.timing, operation: 'outbox-cluster-publish', message: envelope });
         const policy = await readCapturedPublicationPolicy(options.wsQBoxServerService, message, entry);
         directCall = 'invoked';
         result = sendToCapturedLocalTargets({ message, entry, policy }, options);
@@ -290,6 +269,31 @@ async function writeQueueBoxOutboxPublication(
             }, deferObservation);
         }
     }
+}
+
+/** The actual cluster publish call and its existing return endpoint share one side-effect boundary. */
+async function publishOutboxClusterNotice(
+    envelope: QueueBoxPubSubMessage,
+    options: RegisterQueueBoxOutboxPublisherInput
+): Promise<void> {
+    if (options.timing !== undefined) {
+        recordPubSubTiming({ timing: options.timing, operation: 'outbox-cluster-publish-start', message: envelope });
+    }
+    try {
+        await options.bridge.publish(options.channel, envelope);
+    }
+    catch (error) {
+        if (options.timing !== undefined) {
+            recordPubSubTiming({
+                timing: options.timing,
+                operation: 'outbox-cluster-publish-error',
+                message: envelope,
+                status: 'error'
+            });
+        }
+        throw error;
+    }
+    recordPubSubTiming({ timing: options.timing, operation: 'outbox-cluster-publish', message: envelope });
 }
 
 async function receiveQueueBoxPubSubMessage(
@@ -604,7 +608,16 @@ async function readLiveCanonicalIdentityForNotice(
 
 interface RecordPubSubTimingInput {
     readonly timing: RallarTimingSink | undefined;
-    readonly operation: string;
+    readonly operation:
+        | 'outbox-cluster-publish-start'
+        | 'outbox-cluster-publish-error'
+        | 'outbox-cluster-publish'
+        | 'outbox-direct-send'
+        | 'drop-malformed'
+        | 'outbox-remote-send-failed'
+        | 'key-load-miss'
+        | 'key-load-mismatch'
+        | 'outbox-key-loaded';
     readonly message: Partial<QueueBoxPubSubMessage> | undefined;
     readonly details?: RallarTimingDetails;
     readonly status?: 'ok' | 'error';

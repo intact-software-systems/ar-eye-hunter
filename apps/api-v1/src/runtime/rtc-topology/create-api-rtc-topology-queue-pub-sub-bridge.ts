@@ -18,7 +18,7 @@ interface CreateApiRtcTopologyQueuePubSubBridgeInput {
     readonly localBus: LocalQueuePubSubBus;
     readonly channel: string;
     readonly publisherId: string;
-    readonly timing: RallarTimingSink;
+    readonly timing?: RallarTimingSink;
     readonly wakeReplay: () => void;
     readonly filterEligibleCapturedSessionIds: NonNullable<
         InstallQueueBoxPubSubBridgeOptions['filterEligibleCapturedSessionIds']
