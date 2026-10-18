@@ -227,6 +227,14 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    latency. Other numeric gates pass; keep every position and all eighteen samples
    per role. Diagnose current kind/command endpoints and the joined pump tail;
    identical exercised code does not explain the result or waive acceptance.
+   The corrected-endpoint diagnostic reconciles all twelve phases. Measured hot
+   external gaps total 0.007737–0.009891 s; retries finish several kinds, but the
+   earlier 30–39 s phase tail does not recur. Clock-derived topology choices and
+   random retry jitter remain repeatability limits. This candidate-only capture
+   does not waive the failed comparison or establish pump/SQL ownership.
+   Retained receipts recover effective mesh/tree inputs and all hot retry depths;
+   tree share does not order the slowest runs. Actual retry due/release instants
+   remain missing, so distinguish chosen backoff from scheduling before attribution.
    Trace process SQL to its dequeue owner before attributing it to a command; temporal overlap
    alone is insufficient. Retry-depth distribution and prescribed backoff remain attribution
    outcomes before any queue-policy change.

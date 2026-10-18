@@ -139,6 +139,27 @@ These selected examples do not explain the distribution-wide regression or prove
 ownership of concurrent process SQL. Approximate wall-clock timestamps and
 rounded durations must not be treated as exact additive CPU accounting.
 
+The corrected-endpoint diagnostic reconciles all twelve phases, 9,600 operations
+and 11,986 attempts. Its measured hot phase walls are 23.722–26.233 s, with only
+0.007737–0.009891 s of total startup, between-kind and final external gaps. Retry
+chains are on several kinds' completion paths. It does not reproduce the failed
+comparison's 30–39 s third-position phases or ten-attempt commands, so it cannot
+explain or waive that failure. Exact pump/SQL ownership remains uncaptured. The
+workload's topology choice uses wall-clock parity and retry jitter is random;
+identical command counts do not prove identical sampled inputs. Retain those
+repeatability limits and select further instrumentation only for a concrete
+unresolved attribution, rather than rerunning for a favorable result.
+
+Retained hot samples recover all 25,200 command retry depths and 3,600 applied
+topology configurations. Tree counts per position are 446 / 429 / 463 / 447;
+the third position alone has two ten-attempt commands, but its 55 commands at
+depth nine or above are close to the fourth position’s 54. Tree share does not
+order the slowest samples. Effective input mix therefore needs no new capture.
+Exact submitted-input selection clocks and absolute retry due/release instants
+remain uncaptured; a future targeted capture should separate prescribed backoff
+from actual scheduling at the existing telemetry owner. These associations do
+not establish causation or waive the failed gate.
+
 ## Next two useful slices
 
 1. **Remaining formation-tail delivery.** The existing promotion marker and all
@@ -327,7 +348,16 @@ channel supplies these operations, complete the narrow workflow prerequisite.
   fence, service/job/activity state, health and database/table/role continuity
   markers with aggregate auth/group counts. Never print credentials, environment
   contents, raw identities, user data, command arguments or unrelated logs.
-  Query failures or missing required evidence must remain failures.
+  Query failures or missing required evidence must remain failures. Extend that
+  explicit projection to the persisted public operator inputs needed for restore:
+  SPA/control/API URLs, API/control CORS, default room, agent prefix/count and
+  application/workspace. Read only named values through the shared reader, validate
+  their public shape and report presence/origin; never dump their environment file.
+  Verify agreement between representations of the same effective setting. Restore
+  from actual live values rather than an unverified historical dispatch. Caddy and
+  browser-install flags are transient execution choices; use the existing safe
+  restoration choices and verify prior service health rather than inventing a
+  historical-input requirement for them.
 - Add explicit timing and optional topology inputs to the existing rollout path.
   Ordinary callers preserve topology by default. Explicit restoration distinguishes
   an absent key from a positive integer. Pass values to the established writer;
@@ -348,6 +378,18 @@ channel supplies these operations, complete the narrow workflow prerequisite.
   Preserve its output, journal limits and source identity. Check for other operator
   activity immediately before dispatch; a past workflow list is not a service
   lock. Restoration is required even if recipe or artifact acquisition fails.
+
+The operator prerequisite is implemented locally: the existing deploy workflow
+streams a read-only inspect probe and accepts explicit restoration inputs. Ten
+validated public settings supplement timing/topology and continuity evidence.
+Focused validation passes 92 tests and eleven actual lifecycle scenarios;
+independent review found and verified fixes for two restoration gaps: an omitted
+operator-token lifetime was reset, and matching CORS lists without the SPA origin
+were normalized. Both have semantic RED/GREEN coverage; 37 affected tests and
+eleven lifecycle scenarios pass after the fixes. Local spec and quality review
+now approve the prerequisite. Live preflight remains pending. The two published CI
+failures have local fixes, but require verification on the next published head.
+No hosted diagnostic or restoration has run through this path yet.
 
 ## Validation and delivery
 
