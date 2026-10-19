@@ -54,14 +54,19 @@ it('constructs the WS server\'s shared inbound store without an ordering-track c
 it('forwards enabled timing through the real server factory only to outbound captured-policy reads', async () => {
     const storage = await createPSqlAdmissionTestStorage();
     const observations: ALOutboundCapturedPolicyTiming.Observation[] = [];
-    const readMonotonicMs = vi.fn(() => performance.now());
-    const createOwner = vi.fn((namespace: string) =>
-        new ALOutboundCapturedPolicyTiming(namespace, {
-            readMonotonicMs,
+    const createdOwners: string[] = [];
+    let clockSampled = false;
+    const createOwner = (namespace: string) => {
+        createdOwners.push(namespace);
+        return new ALOutboundCapturedPolicyTiming(namespace, {
+            readMonotonicMs: () => {
+                clockSampled = true;
+                return performance.now();
+            },
             readEpochMs: Date.now,
             record: (observation) => observations.push(observation)
-        })
-    );
+        });
+    };
     const enabledName = 'captured-policy-timed';
     configureServerWsQBoxALRuntimeStores(enabledName, {
         repository: storage.repository,
@@ -71,23 +76,23 @@ it('forwards enabled timing through the real server factory only to outbound cap
     const inbound = resolveServerWsQBoxALInboundRuntimeStores(enabledName);
     await inbound.admissionStore.ready();
     await inbound.workQueue.getItem({ topicId: 'absent', resourceId: 'absent', contextId: 'absent' });
-    expect(createOwner).not.toHaveBeenCalled();
-    expect(readMonotonicMs).not.toHaveBeenCalled();
+    expect(createdOwners).toEqual([]);
+    expect(clockSampled).toBe(false);
     expect(observations).toEqual([]);
 
     const outbound = resolveServerWsQBoxALOutboundRuntimeStores(enabledName);
     const enabled = await seedCapturedPolicyRead(storage, enabledName, outbound.workQueue);
     await expect(outbound.admissionStore.readCapturedPolicy(enabled.message, enabled.entry))
         .resolves.toMatchObject({ admittedAudience: ['session-a'] });
-    expect(createOwner).toHaveBeenCalledTimes(1);
-    expect(readMonotonicMs).toHaveBeenCalled();
+    expect(createdOwners).toEqual([`server-ws-qbox:${enabledName}:outbound:admission`]);
+    expect(clockSampled).toBe(true);
     expect(observations).toHaveLength(1);
     expect(observations[0]).toMatchObject({
         availability: 'available',
         outcome: 'succeeded',
         namespace: `server-ws-qbox:${enabledName}:outbound:admission`
     });
-    const enabledClockSamples = readMonotonicMs.mock.calls.length;
+    clockSampled = false;
 
     const disabledName = 'captured-policy-untimed';
     configureServerWsQBoxALRuntimeStores(disabledName, { repository: storage.repository });
@@ -96,8 +101,8 @@ it('forwards enabled timing through the real server factory only to outbound cap
     await expect(disabledOutbound.admissionStore.readCapturedPolicy(disabled.message, disabled.entry))
         .resolves.toMatchObject({ admittedAudience: ['session-a'] });
     expect(observations).toHaveLength(1);
-    expect(createOwner).toHaveBeenCalledTimes(1);
-    expect(readMonotonicMs).toHaveBeenCalledTimes(enabledClockSamples);
+    expect(createdOwners).toEqual([`server-ws-qbox:${enabledName}:outbound:admission`]);
+    expect(clockSampled).toBe(false);
 });
 
 async function seedCapturedPolicyRead(
