@@ -120,6 +120,8 @@ interface RtcMessageSubscription {
 interface RtcDataChannelOpenWaiter {
     resolve: (isOpen: boolean) => void;
     timeout: ReturnType<typeof setTimeout> | undefined;
+    readonly signal: AbortSignal | undefined;
+    readonly onAbort: () => void;
 }
 
 interface RtcQueuedPayload {
@@ -454,8 +456,12 @@ export class QRtcDataChannel {
     }
 
     waitUntilOpen(
-        timeoutMs: number = DEFAULT_RTC_DATA_CHANNEL_OPEN_TIMEOUT_MS
+        timeoutMs: number = DEFAULT_RTC_DATA_CHANNEL_OPEN_TIMEOUT_MS,
+        signal?: AbortSignal
     ): Promise<boolean> {
+        if (signal?.aborted) {
+            return Promise.resolve(false);
+        }
         if (this.status.dc?.readyState === 'open') {
             this.status.state = RtcSessionState.Open;
             return Promise.resolve(true);
@@ -474,7 +480,9 @@ export class QRtcDataChannel {
         return new Promise<boolean>((resolve) => {
             const waiter: RtcDataChannelOpenWaiter = {
                 resolve,
-                timeout: undefined
+                timeout: undefined,
+                signal,
+                onAbort: () => this.resolveOpenWaiter(waiter, false)
             };
 
             waiter.timeout = setTimeout(
@@ -482,6 +490,10 @@ export class QRtcDataChannel {
                 timeoutMs
             );
             this.openWaiters.push(waiter);
+            signal?.addEventListener('abort', waiter.onAbort, { once: true });
+            if (signal?.aborted) {
+                waiter.onAbort();
+            }
         });
     }
 
@@ -917,6 +929,7 @@ export class QRtcDataChannel {
             if (waiter.timeout) {
                 clearTimeout(waiter.timeout);
             }
+            waiter.signal?.removeEventListener('abort', waiter.onAbort);
             waiter.resolve(isOpen);
         }
     }
@@ -934,6 +947,7 @@ export class QRtcDataChannel {
         if (waiter.timeout) {
             clearTimeout(waiter.timeout);
         }
+        waiter.signal?.removeEventListener('abort', waiter.onAbort);
         waiter.resolve(isOpen);
     }
 

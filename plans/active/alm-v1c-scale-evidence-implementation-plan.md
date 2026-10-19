@@ -336,6 +336,16 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    minimum readiness while preserving authority, timeout/abort and owned-observer
    cleanup; only then measure formation and remaining connect/join costs. See the
    focused formation plan for the next two slices and retained limitations.
+   The maintainer now authorizes a dedicated RTC implementation agent while the
+   primary agent investigates larger waits and runs the matched timing-off
+   native-50 comparison. Independent review covers authority and cleanup; unit
+   readiness gains alone cannot close full-formation performance acceptance.
+   The RTC fix now completes at the requested current-authority minimum, cleans
+   up only caller-owned waits, preserves shared transports, and rechecks pinned
+   authority/lane health after cleanup. Real channel cancellation and public
+   threshold REDs preceded the fix; 229 focused regression tests and 32 public
+   boundary tests pass. Adversarial timeout/abort, changing authority and native
+   cleanup cases are covered. Full-formation performance remains pending.
    Delivery deadlines and serial sends remain enforced at their existing owner. No
    redundant read, safe cache or send reordering is established. Full details
    and constraints are Tasks 19–21 in the focused formation plan. Native 150-result/231-assertion reconciliation

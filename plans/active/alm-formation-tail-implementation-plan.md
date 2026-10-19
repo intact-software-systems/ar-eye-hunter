@@ -626,7 +626,71 @@ restored and passes 30/30. No RTC production behavior changed in this investigat
 The defect exists in both compared sources: 7.903 s is observed wait exposure,
 not a measured fix speedup or an explanation of the A/B difference.
 
+### RTC minimum-readiness repair
+
+The room runtime now observes the requested positive minimum while the existing
+lane owner establishes desired peers. On threshold or terminal outcome it aborts
+and joins only caller-owned waits, then the public result rereads pinned room
+scope, current accepted authority and healthy lanes. Undefined/nonpositive
+minimum and lower explicit lane expectations retain their behavior;
+`connect: false` remains observation-only. Native channel open waits now own
+AbortSignal cleanup of their waiter, timer and listener; the old wrapper around
+an uncancellable promise is removed. Shared transports remain alive.
+
+Both public held-peer readiness and actual channel cancellation tests failed
+before implementation. A later adversarial test caught cleanup opening a lane
+and incorrectly converting timeout to success; terminal status projection fixes
+that case. The focused RTC regression passes 229/229 across 14 files, including
+30 native room-authority cases. A final test-only boundary narrowing passes the
+channel suite 27/27. Shared/shared-web typing, consumer builds, browser budgets
+and 32 public-boundary tests pass. Consumer builds retain known chunk-size
+warnings. Full formation benefit remains unmeasured until the matched block;
+these unit results do not close that acceptance.
+
+### Larger signaling wait attribution
+
+The same B3 tail also exposes delayed inbound offer handling at controller-36,
+controller-08's final peer. On the receiver's own clock, eight policy deferrals
+precede application: first retry→application is 6.805 s, peer-created→application
+is 2.966 s, and applying the offer takes 0.007 s. The eighth retry→application
+interval is 4.025 s, consistent with the existing jittered 4 s retry stage. The
+capture does not contain the work row's due-time receipt, so it cannot isolate
+prescribed backoff from queue scheduling or justify changing retry policy.
+Current room/layout authority must remain enforced.
+
+Across A1/B2/B3/A4, 18/3/15/10 observed offers have policy retries; 18/3/14/10 have
+matched application endpoints. Matched first-retry→application maxima are
+6.764/3.177/7.302/3.486 s. B3 retains one unmatched offer with ten policy deferrals
+over 14.458 s; native recipe pass does not prove every signaling offer completed.
+Do not discard that missing terminal evidence. Complete connection startup and
+room join remain composite spans: configuration/socket/ICE/state hydration and
+membership/presence/adoption respectively. Linked same-owner phase boundaries
+and actual inbox due/reservation facts are the next diagnostic if these waits
+remain material after the matched RTC comparison. No retry or connect/join
+production change is selected from these observations alone.
+
 ## Next two useful slices
+
+The maintainer has authorized both slices to proceed together. A dedicated
+implementation agent owns the RTC fix and semantic TDD; an independent reviewer
+checks authority, cancellation, cleanup and complete changed-file closure. The
+primary agent continues connect/join and signaling-wait attribution, owns the
+matched full-formation comparison, and updates this plan and the PR. A passing
+minimum-peer test does not finish the measurement slice.
+
+Freeze a timing-off A–B–B–A native-50 block before dispatch: the serial rollback
+is A, and the reviewed RTC fix is B. Keep the exact same manifest, settings,
+50 agents, 30 s traffic, 17 jobs of at most three agents, persistent PostgreSQL
+store and source verification. Preserve all runs and existing semantic gates.
+Primary remains group-created barrier release→layout acceptance; secondary is
+connected barrier release→acceptance. Report 49-player distributions per whole
+run and same-agent connection/join/readiness/barrier components. Earlier minimum
+readiness may move negotiation into a later phase; only full-path evidence can
+establish formation benefit. Capture source/settings/database identity before
+mutation and verify exact restoration afterward. Keep server timing and extra
+capture disabled for comparison; any later diagnostic requires a named missing
+observation. Record exact inputs, source revisions and originals under ignored
+`tmp/perf/`, with remote results linked from the PR.
 
 1. **Honor minimum RTC readiness without abandoning owned waits.** Make the
    public held-second-peer reproduction green using existing RTC ownership and
