@@ -1,5 +1,9 @@
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+    existsSync,
+    readFileSync,
+    writeFileSync
+} from 'node:fs';
 import path from 'node:path';
 
 import { ApiCpuCapture, toApiCaptureConfiguration } from '../../../scripts/hosted-rallar/controller/rallar-api-cpu-capture.mjs';
@@ -13,6 +17,9 @@ export class ApiCpuCaptureFixture {
         this.pid = 123;
         this.source = '0'.repeat(40);
         this.children = [];
+        this.healthAttempts = 0;
+        this.inspectorStopped = false;
+        this.captureJournal = null;
         this.configuration = toApiCaptureConfiguration({
             RALLAR_API_CAPTURE_ROOT: root,
             RALLAR_API_CAPTURE_OVERRIDE: path.join(root, 'unit', 'override.conf'),
@@ -51,7 +58,9 @@ export class ApiCpuCaptureFixture {
         this.capture = new ApiCpuCapture(this.configuration, this);
     }
 
-    run(program, args, { environment, capabilityDirectory }) {
+    /** @param {{ environment: NodeJS.ProcessEnv, capabilityDirectory?: string }} execution */
+    run(program, args, execution) {
+        const { environment, capabilityDirectory } = execution;
         const command = `${program} ${args.join(' ')}`;
         this.effects.push(command);
         if (program === 'runuser' || (program === 'timeout' && args.includes('runuser'))) {
@@ -69,6 +78,12 @@ export class ApiCpuCaptureFixture {
         }
         if (program === 'free' && this.failAt === 'resources') {
             throw new Error('Resource snapshot failed');
+        }
+        if (program === 'curl') {
+            this.healthAttempts += 1;
+            if (this.failAt === 'health-starting' && this.healthAttempts === 1) {
+                throw new Error('curl connection refused');
+            }
         }
         if (program === 'git') {
             return this.source;
@@ -108,14 +123,21 @@ export class ApiCpuCaptureFixture {
             if (this.failAt === 'export') {
                 throw new Error('Journal export failed');
             }
-            return `2026-10-19 API[${this.pid}]: [${this.pid}:0xabc] 40 ms: pause=1.0 gc=s\n`;
+            return this.captureJournal ?? `2026-10-19 deno[${this.pid}]: [${this.pid}:0xabc:0] 40 ms: GC: {"pause":1.0,"gc":"s"}\n`;
         }
         return '';
     }
 
     readSystemd(args) {
         if (args[0] === 'stop' && args[1].endsWith('-inspector.service')) {
-            this.profilePresentAtInspectorStop = existsSync(path.join(this.readState().segment, 'api.cpuprofile'));
+            this.profilePresentAtInspectorStop = existsSync(path.join(this.inspectorDirectory, 'api.cpuprofile'));
+            if (this.failAt === 'inspector-stop') {
+                throw new Error('Inspector stop refused');
+            }
+            this.inspectorStopped = true;
+            if (this.failAt === 'inspector-collected' || this.failAt === 'inspector-race') {
+                throw new Error('Inspector unit not loaded');
+            }
         }
         if (args[0] === 'start' && args[1] === 'rallar-api-v1.service') {
             if (this.failAt === 'start') {
@@ -132,6 +154,18 @@ export class ApiCpuCaptureFixture {
         if (args.includes('--property=ExecStart')) {
             return '{ path=/usr/local/bin/deno ; argv[]=/usr/local/bin/deno run --allow-net /opt/api/main.ts ; }';
         }
+        if (args[0] === 'show' && args.at(-1).endsWith('-inspector.service')) {
+            if (this.inspectorStopped && this.failAt === 'inspector-failed-during-stop') {
+                return 'LoadState=loaded\nActiveState=inactive\nSubState=dead\nMainPID=0\nResult=exit-code\nExecMainCode=1\nExecMainStatus=23\n';
+            }
+            if (this.inspectorStopped || this.failAt === 'inspector-collected') {
+                return 'LoadState=not-found\nActiveState=inactive\nSubState=dead\n';
+            }
+            if (this.failAt === 'inspector-failed') {
+                return 'LoadState=loaded\nActiveState=failed\nSubState=failed\nMainPID=0\nResult=exit-code\nExecMainCode=1\nExecMainStatus=23\n';
+            }
+            return 'LoadState=loaded\nActiveState=active\nSubState=running\nMainPID=456\nResult=success\nExecMainCode=0\nExecMainStatus=0\n';
+        }
         if (args[0] === 'show') {
             return `MainPID=${this.pid}\nExecMainStartTimestampMonotonic=10000\nCPUUsageNSec=2000\nMemoryCurrent=100000\nActiveState=active\n`;
         }
@@ -139,6 +173,7 @@ export class ApiCpuCaptureFixture {
     }
 
     startInspector(directory) {
+        this.inspectorDirectory = directory;
         writeFileSync(path.join(directory, 'started.json'), JSON.stringify({ pid: this.pid }));
         const result = { status: this.failAt === 'invalid-profile' ? 'failed' : 'valid', pid: this.pid };
         const child = spawn(process.execPath, [

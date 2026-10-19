@@ -1,8 +1,24 @@
 import { execFile } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import {
+    chmod,
+    mkdtemp,
+    readFile,
+    rm,
+    writeFile
+} from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
+import { toError } from '../../shared/resilience/to-error.ts';
+
+import { runOwnedTestProcess } from './owned-test-process.ts';
 
 const repoRoot = path.resolve(__dirname, '../../..');
 const execFileAsync = promisify(execFile);
@@ -28,7 +44,11 @@ const runDryFailure = async (args: readonly string[]) => {
         });
     }
     catch (error) {
-        return error as Readonly<{ stderr?: string; code?: number; }>;
+        const failure = toError(error);
+        if (!('stderr' in failure) || !('code' in failure)) {
+            throw failure;
+        }
+        return failure;
     }
     throw new Error(`Expected rallar-logs ${args.join(' ')} to fail.`);
 };
@@ -88,11 +108,73 @@ describe('Hetzner logs script', () => {
         }
     });
 
-    it('documents stable browser log topics used by the filter', async () => {
-        const script = await readFile(logsScriptPath, 'utf8');
+    it('exports a bounded oldest-first journal interval through the existing redaction boundary', async (context) => {
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-logs-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const journal = path.join(directory, 'journalctl');
+        await writeFile(
+            journal,
+            `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[args.indexOf('--since') + 1] !== '@1700001000') {
+  process.exit(8);
+}
+const count = args[args.indexOf('-n') + 1];
+const lines = [
+  'first browser.console Bearer private-token',
+  'second browser.pageerror token=private-query',
+  'third browser.requestfailed RALLAR_API_SECRET=private-env',
+  'last ordinary service message'
+];
+const selected = count === '+3' ? lines.slice(0, 3) : lines.slice(-3);
+console.log(selected.join('\\n'));
+`
+        );
+        await chmod(journal, 0o755);
+        const result = await runOwnedTestProcess(context, {
+            executable: 'bash',
+            args: [logsScriptPath, '--raw', '--no-color', '--browser', '--since', '@1700001000', '--lines', '+3'],
+            options: { env: { ...process.env, PATH: `${directory}:${process.env.PATH}` } }
+        });
+        expect(result.stdout).toBe([
+            'first browser.console Bearer [REDACTED]',
+            'second browser.pageerror token=[REDACTED]',
+            'third browser.requestfailed RALLAR_SECRET=[REDACTED]',
+            ''
+        ].join('\n'));
+    });
 
-        expect(script).toContain('browser.console');
-        expect(script).toContain('browser.pageerror');
-        expect(script).toContain('browser.requestfailed');
+    it('flushes redacted journal lines before the journal reader exits', async (context) => {
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-logs-flush-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const journal = path.join(directory, 'journalctl');
+        const output = path.join(directory, 'output');
+        const release = path.join(directory, 'release');
+        await writeFile(
+            journal,
+            `#!/usr/bin/env node
+const fs = require('node:fs');
+console.log('partial token=private-value');
+const deadline = Date.now() + 4000;
+const timer = setInterval(() => {
+  if (fs.existsSync(process.env.JOURNAL_RELEASE) || Date.now() >= deadline) {
+    clearInterval(timer);
+  }
+}, 10);
+`
+        );
+        await chmod(journal, 0o755);
+        const execution = runOwnedTestProcess(context, {
+            executable: 'bash',
+            args: ['-c', 'bash "$1" --raw --no-color --services api >"$2"', 'journal-flush', logsScriptPath, output],
+            options: { env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, JOURNAL_RELEASE: release } }
+        });
+        try {
+            await vi.waitFor(async () => expect(await readFile(output, 'utf8')).toBe('partial token=[REDACTED]\n'), { timeout: 1500 });
+        }
+        finally {
+            await writeFile(release, '');
+            await execution;
+        }
     });
 });

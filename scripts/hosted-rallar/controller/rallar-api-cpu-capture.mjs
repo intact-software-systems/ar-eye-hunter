@@ -314,6 +314,14 @@ export class ApiCpuCapture {
             process: this.state.api
         });
         this.run('chown', ['-R', 'rallar:rallar', this.state.segment]);
+        this.startInspectorClient();
+        this.waitForFile(path.join(this.state.segment, 'started.json'), 15000);
+        this.waitForApiHealth();
+        this.state.profileStatus = 'recording';
+        this.state.resourcesBefore = this.readResources();
+    }
+
+    startInspectorClient() {
         this.run('systemd-run', [
             '--quiet',
             `--unit=rallar-${this.configuration.id}-inspector`,
@@ -330,11 +338,35 @@ export class ApiCpuCapture {
             'capture',
             this.state.segment
         ]);
-        this.waitForFile(path.join(this.state.segment, 'started.json'), 15000);
-        this.verifyProcess();
-        this.run('curl', ['--fail', '--silent', '--max-time', '10', 'http://127.0.0.1:8080/api/config']);
-        this.state.profileStatus = 'recording';
-        this.state.resourcesBefore = this.readResources();
+    }
+
+    waitForApiHealth() {
+        const deadline = Date.now() + 30000;
+        let failure = 'API HTTP readiness timed out';
+        while (Date.now() < deadline) {
+            this.verifyProcess();
+            try {
+                this.run('curl', [
+                    '--fail',
+                    '--silent',
+                    '--show-error',
+                    '--max-time',
+                    String(Math.min(10, Math.max(0.001, (deadline - Date.now()) / 1000))),
+                    'http://127.0.0.1:8080/api/config'
+                ]);
+            }
+            catch (error) {
+                failure = `API HTTP readiness timed out: ${error.message}`;
+                const remainingMs = deadline - Date.now();
+                if (remainingMs > 0) {
+                    this.run('sleep', [String(Math.min(1, remainingMs / 1000))]);
+                }
+                continue;
+            }
+            this.verifyProcess();
+            return;
+        }
+        throw new Error(failure);
     }
 
     check() {
@@ -427,12 +459,53 @@ export class ApiCpuCapture {
         this.state.profileStatus = valid ? 'valid' : 'failed';
         this.state.profileFinalized = true;
         try {
-            this.run('systemctl', ['stop', `rallar-${this.configuration.id}-inspector.service`]);
+            this.stopInspectorClient();
         }
         catch (error) {
             this.state.profileStatus = 'failed';
             this.state.errors.push(error.message);
         }
+    }
+
+    stopInspectorClient() {
+        const unit = `rallar-${this.configuration.id}-inspector.service`;
+        const before = this.readInspectorUnit(unit);
+        this.state.inspectorCleanup = { before, after: null, stopError: null };
+        if (before.LoadState === 'not-found' && before.ActiveState === 'inactive') {
+            return;
+        }
+        try {
+            this.run('systemctl', ['stop', unit]);
+        }
+        catch (error) {
+            this.state.inspectorCleanup.stopError = error.message;
+        }
+        const after = this.readInspectorUnit(unit);
+        this.state.inspectorCleanup.after = after;
+        if (
+            after.ActiveState !== 'inactive' ||
+            (after.LoadState !== 'not-found' && after.MainPID !== '0')
+        ) {
+            throw new Error(this.state.inspectorCleanup.stopError ?? 'Inspector unit did not stop');
+        }
+        for (const status of [before, after]) {
+            if (status.LoadState !== 'not-found' && (status.ActiveState === 'failed' || status.Result !== 'success')) {
+                throw new Error(
+                    `Inspector unit failed: ${status.Result ?? 'unavailable'}, exit ${
+                        status.ExecMainStatus ?? 'unavailable'
+                    }`
+                );
+            }
+        }
+    }
+
+    readInspectorUnit(unit) {
+        return toProperties(this.run('systemctl', [
+            'show',
+            '--all',
+            '--property=LoadState,ActiveState,SubState,MainPID,Result,ExecMainCode,ExecMainStatus',
+            unit
+        ]));
     }
 
     restore() {
@@ -545,10 +618,11 @@ export class ApiCpuCapture {
         const lines = journal.split('\n');
         writeFileSync(
             path.join(this.evidence, 'api-gc-journal.log'),
-            lines.filter((line) => line.includes(`[${this.state.api.pid}:`) && /pause=/.test(line)).join('\n')
+            lines.filter((line) => line.includes(`[${this.state.api.pid}]:`) && line.includes('GC: {')).join('\n')
         );
         writeJson(path.join(this.evidence, 'journal-coverage.json'), {
             lineCap: 1000000,
+            lineSelection: 'Oldest entries at or after since; reaching the cap fails coverage',
             byteCap: 128 * 1024 * 1024,
             timeoutSeconds: 30,
             sourceJournalBounds: { lineCapPerService: 50000, byteCapPerFile: 64 * 1024 * 1024, timeoutSeconds: 180 },
@@ -560,6 +634,8 @@ export class ApiCpuCapture {
             truncationPossible: lines.length >= 1000000,
             suppressionReported: /suppressed \d+ messages/i.test(journal),
             gcEvents: 'Unverified: empty or incomplete output does not prove no GC',
+            gcCompanion:
+                'Verbatim GC JSON lines for the journal PID; native identity and payload completeness are unverified',
             gcClock:
                 'Process-launch to first-evaluation interval; trace prefix is observation time, not exact pause end'
         });
@@ -579,7 +655,7 @@ export class ApiCpuCapture {
                 '--since',
                 since,
                 '--lines',
-                '1000000'
+                '+1000000'
             ], 30);
         }
         catch (error) {

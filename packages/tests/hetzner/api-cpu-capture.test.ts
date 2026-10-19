@@ -7,6 +7,7 @@ import {
     symlink,
     writeFile
 } from 'node:fs/promises';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -21,6 +22,140 @@ import {
     toApiCaptureConfiguration
 } from '../../../scripts/hosted-rallar/controller/rallar-api-cpu-capture.mjs';
 import { runOwnedTestProcess } from './owned-test-process.ts';
+
+it('reaches HTTP readiness through real curl after a startup service response', async (context) => {
+    const root = await mkdtemp(path.join(tmpdir(), 'rallar-capture-http-'));
+    context.onTestFinished(() => rm(root, { recursive: true, force: true }));
+    let requests = 0;
+    const server = createServer((_request, response) => {
+        requests += 1;
+        response.writeHead(requests === 1 ? 503 : 200);
+        response.end('{}');
+    });
+    context.onTestFinished(() => new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())));
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') {
+        throw new Error('HTTP test listener address unavailable');
+    }
+    const script = `
+import { ApiCpuCapture, runControllerCommand } from './scripts/hosted-rallar/controller/rallar-api-cpu-capture.mjs';
+import { ApiCpuCaptureFixture } from './packages/tests/hetzner/api-cpu-capture-fixture.mjs';
+const fixture = new ApiCpuCaptureFixture(process.env.CAPTURE_TEST_ROOT);
+const commands = {
+  run(program, args, execution) {
+    if (program === 'curl') {
+      return runControllerCommand(program, [...args.slice(0, -1), process.env.CAPTURE_TEST_URL], execution);
+    }
+    return fixture.run(program, args, execution);
+  }
+};
+const capture = new ApiCpuCapture(fixture.configuration, commands);
+try {
+  capture.begin();
+  console.log(JSON.stringify({status: fixture.readState().status, complete: capture.finish('shell-exit', 0)}));
+} finally {
+  await fixture.dispose();
+}
+`;
+    const result = await runOwnedTestProcess(context, {
+        executable: process.execPath,
+        args: ['--input-type=module', '-e', script],
+        options: { env: { ...process.env, CAPTURE_TEST_ROOT: root, CAPTURE_TEST_URL: `http://127.0.0.1:${address.port}/api/config` } }
+    });
+    expect(JSON.parse(result.stdout)).toEqual({ status: 'capturing', complete: true });
+    expect(requests).toBe(2);
+});
+
+it('waits for API HTTP readiness after the inspector starts', async (context) => {
+    const { ApiCpuCaptureFixture } = await import('./api-cpu-capture-fixture.mjs');
+    const root = await mkdtemp(path.join(tmpdir(), 'rallar-capture-'));
+    context.onTestFinished(() => rm(root, { recursive: true, force: true }));
+    const fixture = new ApiCpuCaptureFixture(root);
+    context.onTestFinished(() => fixture.dispose());
+    fixture.failAt = 'health-starting';
+    fixture.capture.begin();
+    expect(fixture.readState()).toMatchObject({ status: 'capturing', profileStatus: 'recording' });
+    expect(fixture.healthAttempts).toBe(2);
+    expect(fixture.capture.finish('shell-exit', 0)).toBe(true);
+});
+
+it.for(['inspector-collected', 'inspector-race', 'inspector-failed', 'inspector-failed-during-stop', 'inspector-stop'])(
+    'distinguishes completed inspector units from cleanup failure for %s',
+    async (scenario, context) => {
+        const { ApiCpuCaptureFixture } = await import('./api-cpu-capture-fixture.mjs');
+        const root = await mkdtemp(path.join(tmpdir(), 'rallar-capture-'));
+        context.onTestFinished(() => rm(root, { recursive: true, force: true }));
+        const fixture = new ApiCpuCaptureFixture(root);
+        context.onTestFinished(() => fixture.dispose());
+        fixture.capture.begin();
+        fixture.failAt = scenario;
+        const completed = ['inspector-collected', 'inspector-race'].includes(scenario);
+        expect(fixture.capture.finish('shell-exit', 0)).toBe(completed);
+        expect(fixture.readState()).toMatchObject({
+            profileStatus: completed ? 'valid' : 'failed',
+            restoreStatus: 'restored',
+            recipeExitCode: 0
+        });
+        const profile = JSON.parse(await readFile(path.join(fixture.readState().segment, 'api.cpuprofile'), 'utf8'));
+        expect(profile.samples).toEqual([1]);
+        await expect(readFile(path.join(root, 'active'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    }
+);
+
+it('bounds failed HTTP readiness and restores without losing its original preparation error', async (context) => {
+    const { ApiCpuCaptureFixture } = await import('./api-cpu-capture-fixture.mjs');
+    const root = await mkdtemp(path.join(tmpdir(), 'rallar-capture-health-'));
+    context.onTestFinished(() => rm(root, { recursive: true, force: true }));
+    const fixture = new ApiCpuCaptureFixture(root);
+    context.onTestFinished(() => fixture.dispose());
+    let epochMs = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => epochMs);
+    context.onTestFinished(() => clock.mockRestore());
+    const run = fixture.run.bind(fixture);
+    const commands = {
+        run(program: string, args: string[], execution: { environment: NodeJS.ProcessEnv; capabilityDirectory?: string; }) {
+            if (program === 'curl') {
+                epochMs += Number(args[args.indexOf('--max-time') + 1]) * 1000;
+                throw new Error('HTTP connection never became ready');
+            }
+            if (program === 'sleep') {
+                epochMs += Number(args[0]) * 1000;
+                return '';
+            }
+            return run(program, args, execution);
+        }
+    };
+    const capture = new ApiCpuCapture(fixture.configuration, commands);
+    expect(() => capture.begin()).toThrow(/HTTP readiness timed out.*never became ready/);
+    expect(fixture.readState().errors).toEqual([expect.stringMatching(/HTTP readiness timed out/)]);
+    expect(fixture.readState()).toMatchObject({ status: 'failed', recipeExitCode: 1, restoreStatus: 'restored', profileStatus: 'valid' });
+    expect(fixture.capture.finish('repeat', 0)).toBe(false);
+    await expect(readFile(path.join(root, 'active'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+it('retains native JSON GC lines verbatim without repairing their payload or native identity', async (context) => {
+    const { ApiCpuCaptureFixture } = await import('./api-cpu-capture-fixture.mjs');
+    const root = await mkdtemp(path.join(tmpdir(), 'rallar-capture-'));
+    context.onTestFinished(() => rm(root, { recursive: true, force: true }));
+    const fixture = new ApiCpuCaptureFixture(root);
+    context.onTestFinished(() => fixture.dispose());
+    fixture.capture.begin();
+    const gc = [
+        '2026-10-19T05:34:03+00:00 host deno[124]: [124:0x5d67ec466000:0] 240 ms: GC: {"pause":4.108,"gc":"s","stack":true}',
+        '2026-10-19T05:34:03+00:00 host deno[124]: 781 ms: GC: {"pause":5.854,"gc":"s"}',
+        '2026-10-19T05:34:05+00:00 host deno[124]: [124:0x5d67ec466000:0] 2411 ms: GC: {"pause":21.338,"during_sweeping":fals{"type":"rallar.timing"}'
+    ];
+    fixture.captureJournal = [
+        '2026-10-19T05:34:03+00:00 host deno[124]: [124:0x5d67ec466000:0] 240 ms: Memory pool: Removed pages: 0',
+        ...gc,
+        '2026-10-19T05:34:03+00:00 host deno[999]: [999:0xabc:0] 240 ms: GC: {"pause":1,"gc":"s"}',
+        ''
+    ].join('\n');
+    expect(fixture.capture.finish('shell-exit', 0)).toBe(true);
+    expect(await readFile(path.join(fixture.capture.evidence, 'api-capture-journal.log'), 'utf8')).toBe(fixture.captureJournal);
+    expect(await readFile(path.join(fixture.capture.evidence, 'api-gc-journal.log'), 'utf8')).toBe(gc.join('\n'));
+});
 
 it('rejects contradictory capture settings before creating capture state or invoking controller commands', async (context) => {
     const root = await mkdtemp(path.join(tmpdir(), 'rallar-capture-'));
