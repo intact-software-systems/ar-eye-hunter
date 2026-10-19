@@ -129,6 +129,14 @@ export const RALLAR_SERVER_STATE_ENDPOINT_PRESETS: readonly RallarServerEndpoint
         requiresAuth: true
     },
     {
+        presetId: 'group-directory',
+        tag: 'Group State',
+        label: 'List joinable open groups',
+        method: 'GET',
+        pathTemplate: stateWorkbenchPath('/group-directory'),
+        requiresAuth: true
+    },
+    {
         presetId: 'group-create',
         tag: 'Group State',
         label: 'Create group',

@@ -233,7 +233,7 @@ Common fields:
 - `expect.headers`: expected response headers by name (case-insensitive), with
   exact values or the usual type tokens (`string`, `integer`, `any`, `a|b`);
   only the runner's allow-listed observability headers are observable
-  (`Cache-Control`, `Rallar-Group-Revision`, `Rallar-Presence-Revision`,
+  (`Cache-Control`, `ETag`, `Rallar-Group-Revision`, `Rallar-Presence-Revision`,
   `Rallar-State-Revision`, `Rallar-State-Source`), so expecting any other name
   fails
 - `expect.body`: expected response JSON

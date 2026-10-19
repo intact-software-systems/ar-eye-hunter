@@ -1,0 +1,745 @@
+{
+  "description": "Group directory contract: a non-member lists joinable open groups as safe entries, with kind and name filters, a stable keyset-paged order, an empty lobby hidden by default, members excluded once they can read the room in full, ETag revalidation with 304, and typed 400/401 failures.",
+  "variables": {
+    "apiPrimary": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "rallarWsBaseUrl": {
+      "env": "RALLAR_WS_BASE_URL",
+      "default": "ws://127.0.0.1:18080"
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    },
+    "applicationId": "group-directory-{runId}",
+    "workspaceId": "default-{runId}",
+    "aliceUsername": {
+      "env": "RALLAR_ALICE_USERNAME",
+      "default": "alice"
+    },
+    "alicePassword": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "bobUsername": {
+      "env": "RALLAR_BOB_USERNAME",
+      "default": "bob"
+    },
+    "bobPassword": {
+      "env": "RALLAR_BOB_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "alphaId": "dir-alpha-{runId}",
+    "betaId": "dir-beta-{runId}",
+    "partyId": "dir-party-{runId}",
+    "privateId": "dir-private-{runId}",
+    "gammaId": "dir-gamma-{runId}"
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "primary": {
+      "type": "http",
+      "baseUrl": "{apiPrimary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ],
+  "steps": [
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-group-directory-alice-{runId}",
+        "body": {
+          "username": "{aliceUsername}",
+          "password": "{alicePassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceSessionId": "body.sessionId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-group-directory-bob-{runId}",
+        "body": {
+          "username": "{bobUsername}",
+          "password": "{bobPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobSessionId": "body.sessionId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createAlpha",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/bb-group-directory-create-alpha-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{alphaId}",
+          "displayName": "Directory Arena Alpha {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{alphaId}",
+            "joinMode": "open"
+          }
+        }
+      }
+    },
+    {
+      "name": "createBeta",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/bb-group-directory-create-beta-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{betaId}",
+          "displayName": "Directory Arena Beta {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{betaId}",
+            "joinMode": "open"
+          }
+        }
+      }
+    },
+    {
+      "name": "createParty",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/bb-group-directory-create-party-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{partyId}",
+          "displayName": "Directory Lounge {runId}",
+          "kind": "party",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{partyId}",
+            "joinMode": "open"
+          }
+        }
+      }
+    },
+    {
+      "name": "createPrivate",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/bb-group-directory-create-private-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{privateId}",
+          "displayName": "Directory Private {runId}",
+          "kind": "room",
+          "joinMode": "invite-only",
+          "createdByPrincipalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{privateId}",
+            "joinMode": "invite-only"
+          }
+        }
+      }
+    },
+    {
+      "name": "emptyRoomsAreHiddenByDefault",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "entries": [],
+          "nextCursor": null
+        }
+      }
+    },
+    {
+      "name": "nonMemberListsOpenRoomsOnly",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "outputs": {
+          "directoryEtag": "headers.etag"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "entries": [
+            {
+              "groupRef": {
+                "groupId": "{alphaId}"
+              },
+              "joinMode": "open",
+              "maxMembers": null,
+              "isFull": false
+            },
+            {
+              "groupRef": {
+                "groupId": "{betaId}"
+              },
+              "joinMode": "open",
+              "maxMembers": null,
+              "isFull": false
+            },
+            {
+              "groupRef": {
+                "groupId": "{partyId}"
+              },
+              "joinMode": "open",
+              "maxMembers": null,
+              "isFull": false
+            }
+          ],
+          "nextCursor": null
+        }
+      }
+    },
+    {
+      "name": "kindFilterNarrowsTheList",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true&kind=room",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "entries": [
+            {
+              "groupRef": {
+                "groupId": "{alphaId}"
+              },
+              "joinMode": "open",
+              "maxMembers": null,
+              "isFull": false
+            },
+            {
+              "groupRef": {
+                "groupId": "{betaId}"
+              },
+              "joinMode": "open",
+              "maxMembers": null,
+              "isFull": false
+            }
+          ],
+          "nextCursor": null
+        }
+      }
+    },
+    {
+      "name": "nameFilterIsCaseInsensitive",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true&q=LOUNGE",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "entries": [
+            {
+              "groupRef": {
+                "groupId": "{partyId}"
+              },
+              "joinMode": "open",
+              "maxMembers": null,
+              "isFull": false
+            }
+          ],
+          "nextCursor": null
+        }
+      }
+    },
+    {
+      "name": "firstPageIsStable",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true&limit=1",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "outputs": {
+          "firstCursor": "body.nextCursor"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "entries": [
+            {
+              "groupRef": {
+                "groupId": "{alphaId}"
+              },
+              "joinMode": "open",
+              "maxMembers": null,
+              "isFull": false
+            }
+          ],
+          "nextCursor": "string"
+        }
+      }
+    },
+    {
+      "name": "secondPageFollowsTheCursor",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true&limit=1&cursor={firstCursor}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "outputs": {
+          "secondCursor": "body.nextCursor"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "entries": [
+            {
+              "groupRef": {
+                "groupId": "{betaId}"
+              },
+              "joinMode": "open",
+              "maxMembers": null,
+              "isFull": false
+            }
+          ],
+          "nextCursor": "string"
+        }
+      }
+    },
+    {
+      "name": "lastPageEndsTheCursor",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true&limit=1&cursor={secondCursor}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "entries": [
+            {
+              "groupRef": {
+                "groupId": "{partyId}"
+              },
+              "joinMode": "open",
+              "maxMembers": null,
+              "isFull": false
+            }
+          ],
+          "nextCursor": null
+        }
+      }
+    },
+    {
+      "name": "membersDoNotSeeTheirOwnRooms",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "entries": [],
+          "nextCursor": null
+        }
+      }
+    },
+    {
+      "name": "directoryIsRevalidatedWithTheEtag",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}",
+          "If-None-Match": "{directoryEtag}"
+        }
+      },
+      "expect": {
+        "status": 304
+      }
+    },
+    {
+      "name": "joinAlpha",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{alphaId}/join/requests/bb-group-directory-join-alpha-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "joinedRoomLeavesTheDirectory",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "entries": [
+            {
+              "groupRef": {
+                "groupId": "{betaId}"
+              },
+              "joinMode": "open",
+              "maxMembers": null,
+              "isFull": false
+            },
+            {
+              "groupRef": {
+                "groupId": "{partyId}"
+              },
+              "joinMode": "open",
+              "maxMembers": null,
+              "isFull": false
+            }
+          ],
+          "nextCursor": null
+        }
+      }
+    },
+    {
+      "name": "changedDirectoryIgnoresAStaleEtag",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}",
+          "If-None-Match": "{directoryEtag}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "entries": [
+            {
+              "groupRef": {
+                "groupId": "{betaId}"
+              },
+              "joinMode": "open",
+              "maxMembers": null,
+              "isFull": false
+            },
+            {
+              "groupRef": {
+                "groupId": "{partyId}"
+              },
+              "joinMode": "open",
+              "maxMembers": null,
+              "isFull": false
+            }
+          ],
+          "nextCursor": null
+        }
+      }
+    },
+    {
+      "name": "rejectZeroLimit",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?limit=0",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "code": "invalid-group-directory-query"
+        }
+      }
+    },
+    {
+      "name": "rejectOversizedLimit",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?limit=201",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "code": "invalid-group-directory-query"
+        }
+      }
+    },
+    {
+      "name": "rejectUnknownKind",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?kind=lobby",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "code": "invalid-group-directory-query"
+        }
+      }
+    },
+    {
+      "name": "rejectNonBooleanIncludeEmpty",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=1",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "code": "invalid-group-directory-query"
+        }
+      }
+    },
+    {
+      "name": "rejectForeignCursor",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?cursor=!!!",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "code": "invalid-group-directory-query"
+        }
+      }
+    },
+    {
+      "name": "rejectMissingBearerToken",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": "Unauthorized: Missing bearer token"
+        }
+      }
+    }
+  ]
+}

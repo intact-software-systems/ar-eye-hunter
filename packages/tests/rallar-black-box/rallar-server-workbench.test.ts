@@ -15,6 +15,7 @@ import { toRallarServerRestCollectionRecipe } from '../../../apps/rallar-black-b
 import { decodeRallarServerOpenApiEndpoints } from '../../../apps/rallar-black-box/src/rallar-server-workbench/decode-rallar-server-open-api-endpoints.ts';
 import { RALLAR_SERVER_ENDPOINT_PRESETS } from '../../../apps/rallar-black-box/src/rallar-server-workbench/rallar-server-endpoint-presets.ts';
 import type {
+    RallarServerRestCollectionExpectation,
     RallarServerWorkbenchVariables
 } from '../../../apps/rallar-black-box/src/rallar-server-workbench/rallar-server-workbench-contracts.ts';
 import {
@@ -568,7 +569,7 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
             commands: Array<{
                 kind: string;
                 commandId: string;
-                metadata?: { restCollection?: { expect?: unknown; attachAuth?: boolean; }; };
+                metadata?: { restCollection?: { expect?: RallarServerRestCollectionExpectation; attachAuth?: boolean; }; };
             }>;
         } = JSON.parse(JSON.stringify(toRight(toRallarServerRestCollectionRecipe({
             collection,
@@ -645,7 +646,7 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
         ).flatMap((collection) => collection.steps);
 
         for (const step of steps) {
-            const templated = step.request.path.replaceAll(/\{\{(\w+)\}\}/gu, '{$1}');
+            const templated = step.request.path.replaceAll(/\{\{(\w+)\}\}/gu, '{$1}').split('?')[0]!;
             const candidates = [...served].filter((servedPath) => toPathShape(servedPath) === toPathShape(templated));
             expect(candidates, `${step.stepId} -> ${step.request.path}`).not.toHaveLength(0);
             const methods = served.has(candidates[0]!)
