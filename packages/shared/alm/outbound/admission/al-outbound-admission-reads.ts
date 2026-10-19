@@ -70,6 +70,7 @@ import {
     type ALOutboundCapturedPolicy,
     type ALStoredOutboundMessage
 } from './al-outbound-admission-validation.ts';
+import type { ALOutboundCapturedPolicyTimingInvocation } from './al-outbound-captured-policy-timing.ts';
 import { resolveALOutboundScopeAuthority } from './al-outbound-scope-authority.ts';
 import { computeALOutboundDispatchPlan, requireALOutboundPlannedMessage } from './compute-al-outbound-dispatch-plan.ts';
 import { decodeALOutboundOrderingHead } from './decode-al-outbound-ordering-head.ts';
@@ -247,9 +248,12 @@ export class ALOutboundAdmissionReads<TPrepared> {
     async readCapturedPolicy(
         session: ALAdmissionReadSession,
         message: ALMessage,
-        entry: ResourceEntry
+        entry: ResourceEntry,
+        timing?: ALOutboundCapturedPolicyTimingInvocation
     ): Promise<ALOutboundCapturedPolicy> {
+        timing?.markMethodStart();
         const stored = await this.readStoredMessage(session, message.id.msgId);
+        timing?.markStoredReadEnd();
         const expiresAtMs = resolveALMessageExpireAtMs(message);
         const admissionKey = toALOutboundSentMessageKey(this.namespace, message.id.msgId);
         if (
@@ -266,7 +270,9 @@ export class ALOutboundAdmissionReads<TPrepared> {
                 new TypeError('Durable WS outbox row differs from captured outbound admission')
             );
         }
+        timing?.markReferenceValidationEnd();
         const identity = await this.readQueueItem(session, toALOutboundIdentityKey(entry.key));
+        timing?.markIdentityReadEnd();
         const canonical = decodeALOutboundCanonicalMessage(stored.reference, entry, identity);
         if (!jsonEquals(canonical, message)) {
             throw new ALAdmissionCorruptionError(
@@ -278,6 +284,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
         if (authority.left) {
             throw new ALAdmissionCorruptionError(admissionKey, new TypeError(authority.left.join('; ')));
         }
+        timing?.markMethodEnd();
         return stored.policy;
     }
 

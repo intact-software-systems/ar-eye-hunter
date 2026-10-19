@@ -155,6 +155,44 @@ describe('captured outbound audience read', () => {
         });
     });
 
+    it('separates reference and canonical validation at the actual policy owner', async () => {
+        const observations: ALOutboundCapturedPolicyTiming.Observation[] = [];
+        let monotonicMs = 0;
+        const fixture = await createFixture(['session-a'], undefined, {
+            readMonotonicMs: () => monotonicMs,
+            readEpochMs: () => 10_000,
+            record: (observation) => observations.push(observation)
+        });
+        const entry = { ...fixture.entry };
+        Object.defineProperties(entry, {
+            typeId: {
+                get: () => {
+                    monotonicMs = Math.max(monotonicMs, 11);
+                    return fixture.entry.typeId;
+                }
+            },
+            resource: {
+                get: () => {
+                    monotonicMs = Math.max(monotonicMs, 29);
+                    return fixture.entry.resource;
+                }
+            }
+        });
+
+        await expect(fixture.store.readCapturedPolicy(fixture.message, entry))
+            .resolves.toMatchObject({ admittedAudience: ['session-a'] });
+        expect(observations[0]).toMatchObject({
+            availability: 'available',
+            phases: {
+                readStoredMessageElapsedMs: 0,
+                referenceValidationElapsedMs: 11,
+                queueIdentityReadElapsedMs: 0,
+                canonicalValidationElapsedMs: 18,
+                ownerElapsedMs: 29
+            }
+        });
+    });
+
     it('reports missing and corrupt authority as unavailable without changing the original failure or later success', async () => {
         const observations: ALOutboundCapturedPolicyTiming.Observation[] = [];
         const fixture = await createFixture(['session-a'], undefined, {

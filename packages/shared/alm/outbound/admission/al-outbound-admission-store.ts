@@ -529,15 +529,18 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
     }
 
     async readCapturedPolicy(message: ALMessage, entry: ResourceEntry): Promise<ALOutboundCapturedPolicy> {
-        if (this.capturedPolicyTiming === undefined) {
-            return await this.backend.readWithin((session) => this.reads.readCapturedPolicy(session, message, entry));
+        const invocation = this.capturedPolicyTiming?.start();
+        let succeeded = false;
+        try {
+            const policy = await this.backend.readWithin((session) =>
+                this.reads.readCapturedPolicy(session, message, entry, invocation)
+            );
+            succeeded = true;
+            return policy;
         }
-        return await this.capturedPolicyTiming.readCapturedPolicy({
-            backend: this.backend,
-            message,
-            entry,
-            readPolicy: (session) => this.reads.readCapturedPolicy(session, message, entry)
-        });
+        finally {
+            invocation?.record(succeeded ? 'succeeded' : 'failed', message, entry);
+        }
     }
 
     async readSentMessage(msgId: string): Promise<ALOutboundSentMessageSnapshot | undefined> {

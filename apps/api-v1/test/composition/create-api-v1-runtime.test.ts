@@ -85,7 +85,7 @@ Deno.test('enabled outbound composition provides captured-policy timing at the r
     });
     assert.equal(capabilities.length, 1);
     assert.ok(capabilities[0]);
-    assert.equal(typeof capabilities[0].createOwner('outbound').readCapturedPolicy, 'function');
+    assert.equal(typeof capabilities[0].createOwner('outbound').start, 'function');
 });
 
 Deno.test('runtime construction preserves the owned startup sequence', () => {
