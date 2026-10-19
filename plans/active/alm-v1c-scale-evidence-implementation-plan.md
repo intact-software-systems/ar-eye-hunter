@@ -235,6 +235,21 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    Local repaired lifecycle checks pass, including native Linux delayed readiness,
    bounded failure and interrupted journal output. Keep host verification separate
    from these local results and preserve the failed originals.
+   The next hosted cohort reached all browser shards, but signed profile-delta
+   validation failed and restoration cleanup deleted native artifacts before
+   remote copying. Resolve these measured lifecycle/interpretation gaps and
+   recover retained results before considering another run; restoration itself
+   is independently verified. Read-only recovery now reconciles 50 passed recipes,
+   150 successful top-level commands and 231 passing canonical group assertions.
+   The first fully corroborated promotion still waits 5.748 s before reservation,
+   overlapping 5.746 s of same-worker batches; an earlier output waits 20.722 s.
+   Formation lag peaks at 0.188 s, so long queue delay persists without reproducing
+   the historical giant stall. The evidence lifecycle repair passes focused
+   tests, typing, style and scoped review. Next run the bounded ingress/admission
+   validation-cost experiment. Existing wake/page/
+   ordered-dispatch coverage already protects the proposed generic hold fixture.
+   Distinguish required trust-boundary validation from repeated unchanged work;
+   do not rerun solely for a pass.
    Preserve bounded reads, ordered sends, immutable events/audiences, causal fences,
    retries, deadlines, full-row release fences, rollback and healthy-neighbor
    recovery. Do not detach owned cleanup or infer queue eligibility from overlap.

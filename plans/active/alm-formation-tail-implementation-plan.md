@@ -305,6 +305,69 @@ fixture cleanup. Interrupted journal output survives redaction while retaining
 its failed status, and replay preserves all 63 original raw rows and eight GC
 companion lines verbatim. These validate the local lifecycle boundaries; review,
 selected CI and a successful hosted workload capture remain necessary.
+The following hosted workload reached all seventeen browser shards and exported
+its bounded journal. Capture still failed: the profile validator rejected one
+−0.000003 s delta among 210,203 samples, and restoration's rollout cleanup removed
+the completed native artifact directory before remote copying. Preserve the failed
+profile; pinned producer and consumer evidence supports signed timestamp emission.
+Never clamp or drop samples to obtain a pass. Preserve the owned native artifact
+through restoration and keep recovery separate from capture acceptance.
+Independent inspection confirms original source/settings and healthy idle state;
+workload rows and one new group are retained. Read-only recovery from the durable
+recorder preserves all four original files with matching before/after host and
+local hashes. Recovered distributed metadata reconciles 50 passed recipes, 150
+unique successful command results and 231 distinct group assertions, all passing;
+these differ from the 700 direct recipe assert commands and 6,870 recursively
+captured assertions. The single signed timestamp reversal is supported by the
+pinned runtime's producer and primary consumer, but the original capture remains
+failed. These are measurement-lifecycle gaps, not evidence that formation latency
+or the failed main comparison is resolved.
+
+The repaired validator accepts signed native deltas with safe integer arithmetic
+and bounds every reconstructed sample timestamp. Offline replay preserves all
+210,203 samples and both original file hashes; the historical verdict stays
+failed. The capture owner now preserves only its owned native export before
+restoration and restages it through the existing transport path. Actual destructive
+cleanup, EXIT/TERM, partial/missing data and repeat recovery tests pass. Independent
+review also found and resolved stale aggregate success after staging failure;
+persisted and exported status now agree while retaining separate outcome facts.
+The initial 68 focused tests and final 45 affected lifecycle tests pass, as do
+maintained test typing, committed-source style and scoped review. These are local
+boundary results, not a new successful hosted capture or latency improvement.
+
+The recovered formation evidence still has a long pre-reservation tail. The
+first fully corroborated fifty-browser layout is version 7; its own output waits
+5.748 s before reservation and reaches local send after 6.942 s. Same-worker
+batch envelopes overlap 5.746 s of that wait. Its separate activation waits
+4.925 s before reservation and 6.933 s before local send; do not substitute it
+for the promotion. Earlier partial-cohort promotions wait 20.722 / 14.639 /
+12.727 / 10.696 / 6.958 s before reservation. Preserve these earlier outputs.
+
+The version 7 interval crosses six prior batch tails. Those batches mix authority
+reads, grouped decision/bundle work, ordered publication and release; the largest
+whole prior batch lasts 1.884 s, including a 0.702 s admission group and a
+0.523 s ordered-dispatch envelope. These whole-batch phases do not partition the
+clipped pre-reservation interval. The own promotion's authority read is 0.013 s;
+publish, policy and direct-send observations total 0.031 s after dispatch starts.
+The activation separately waits 0.962 s after commit before ordered dispatch.
+Maximum observed formation lag is 0.188 s, so the historical 1.650 s stall does
+not reproduce even though the queue delay persists.
+
+CPU samples identify canonical serialization/validation and bridge delivery in
+these occupied windows, alongside idle and profiling/logging work. Counts are
+not CPU durations; calibration uncertainty is 0.253 s, and 245 GC payloads remain
+malformed/interleaved. No SQL or GC cause is established. Existing mid-batch,
+page-bound, held-admission and external-wake tests already cover the proposed
+held-phase progress failures, so another generic fixture would duplicate them.
+The v7 preclaim window has 296 definite samples containing
+`decodeALMessageEnvelopeValue`; only two also include the outbound bridge and
+146 include `acceptIncomingMessage` in the same ancestry. These inclusive counts
+are not time or a causal partition.
+Follow the actual ingress/admission owners before selecting an avoidable-work
+hypothesis; distinct trust and mutation boundaries may require validation.
+Do not infer repeated per-recipient encoding or re-prove serial backlog. Retained
+receipts do not prove the exact key was eligible in every preceding selection. No new
+capture is justified solely to turn the original failed verdict into a pass.
 
 ### Earlier diagnostic motivating stage attribution
 
@@ -442,13 +505,15 @@ measurement remains first.
 
 ## Next two useful slices
 
-1. **Remaining formation-tail delivery.** Same-source captures show nearly all
-   of the 4.343 / 5.963 s pre-reservation waits overlapping active owner batches.
-   The slow stages vary: authority reads in one capture, release processing with
-   a 1.650 s process-wide timer delay in the other. The local actual-API profile
-   does not reproduce that stall. Use bounded hosted CPU/GC capture with clock
-   calibration and exact restoration, then real-owner fixtures to distinguish
-   shared-process stalls from database work before selecting a focused TDD repair. Preserve immutable
+1. **Remaining formation-tail delivery.** Recovered hosted evidence places
+   5.746 s of the first fully corroborated promotion's 5.748 s pre-reservation
+   wait inside active same-worker batches; earlier outputs wait up to 20.722 s.
+   The historical large loop stall does not reproduce, while mixed admission,
+   ordered publication and release occupancy persists. Signed-profile and
+   restoration-artifact repairs pass local tests and review. Select a distinct
+   avoidable-work falsification at the measured ingress/admission owners;
+   existing progress fixtures already cover the proposed generic hold test.
+   Use the original evidence before considering another capture. Preserve immutable
    events/audiences, causal fences, retries, deadlines, release recovery and
    ordered sends. Keep timing overhead, physical commit, queue eligibility and
    browser-causality limits explicit; every hosted diagnostic retains fresh
@@ -1135,3 +1200,118 @@ Keep profile fixtures/generated evidence under tmp/perf; commit only reviewed
 reusable source/tests. Report RED/GREEN commands, full-file closure, original-mode
 compatibility, exact artifact meanings, cleanup risks, and all uncaptured metrics.
 No hosted execution, push, PR edit or child agent is part of the implementer task.
+
+### Task 14: Preserve native capture evidence through validation and restoration
+
+The requested outcome remains measured formation-tail improvement. The latest
+hosted cohort produced original CPU and native evidence, but the inspector
+validator rejected legitimate signed timestamp representation and restoration
+cleanup deleted the temporary native export before remote transport. Resolve
+these two load-bearing measurement boundaries before another capture. Retain the
+original failed verdict; do not rerun merely to obtain a favorable profile.
+
+Use the existing inspector/profile and capture/rollout/export owners. Read the
+actual retained-artifact analysis and route audit before choosing a repair. The
+pinned V8 producer emits signed integer deltas and its primary consumer preserves
+paired sample identity while reconstructing timestamps. Preserve raw bytes and
+sample order. Validate safe native endpoints and signed arithmetic, referenced
+node/sample identities, equal nonempty cardinality and every reconstructed sample
+timestamp against profile bounds. Retain byte/sample limits, clock calibration,
+PID/source fencing and genuine failed-inspector checks. Do not clamp, drop or
+special-case the observed negative value, or reinterpret a failed inspector exit
+as success. A derived chronological view is unnecessary unless an actual consumer
+requires it. Report timestamp reversals and unrepresented tail explicitly.
+
+Preserve this capture's native artifacts before restoration can remove their
+temporary directory, and carry them through the existing export/transport owner.
+Keep exact source/settings restoration on every outcome, the immutable cleanup
+owner and deadline, capture/deploy isolation, existing ordinary run behavior and
+failure separation. Do not add a second exporter, arbitrary remote file input,
+new workflow dispatch input, generic command facility or duplicate recovery API.
+Keep artifact scope tied to the actual owned run; missing/incomplete exports stay
+visible. Failed profile acceptance must not discard otherwise available native
+results. The direct read-only recovery of this run's durable recorder files is
+separate operational evidence, not a replacement for fixing the lifecycle.
+
+Use TDD. First reproduce signed bounded sample reversals and the actual destructive
+restore/export ordering. Cover multi-reversal valid timestamps, out-of-bounds
+negative accumulation, noninteger/nonfinite/unsafe values, bad IDs/cardinality,
+clock failures and real failed-inspector outcomes. For artifact preservation,
+exercise production-shaped EXIT/finish/restoration with actual file deletion at
+the existing cleanup boundary and compare retained bytes after transport staging;
+include failed recipe/profile, interruption, absent partial artifacts and repeated
+cleanup. Reuse focused tests and native fixtures; do not assert private topology
+or weaken existing deadlines, caps, assertions, retries, manifest or workload.
+
+Review and remediate every changed human-authored file in full. Every support file
+modified by remediation enters closure recursively; independent untouched code
+remains outside closure. Validate the direct capture behavior with focused owned
+lifecycle/profile tests and the affected maintained test typecheck, then the
+committed-source style gate and independent scoped review. Use the retained
+original profile for an offline regression replay without rewriting its files or
+status. No hosted operation belongs to the implementer; the parent owns recovery,
+publication, selected CI and whether evidence earns a further measurement.
+
+### Task 15: Measure full validation work on the existing ingress route
+
+The requested outcome remains a measured formation-tail repair. Existing wake,
+mid-batch, page and held-admission tests already cover the generic progress
+fixture proposed from the hosted batch overlap. Do not duplicate it. The original
+profile instead earns a bounded ingress/admission cost experiment: determine
+whether repeated full validation of unchanged owner-controlled content is both
+avoidable and material. Static repeated entry alone is not redundant work.
+
+Read `/tmp/alm-formation-next-falsification.md` for the source map and falsifiers,
+and the retained hosted analysis for the workload/clock limits. Use performance
+analysis, code-writing, realtime/platform and testing skills and required
+references before selecting instrumentation. Read nearby existing tests and
+examples. Reuse `createServerIngressFixture` and the existing addressed-receipt
+ACK route. Do not create another queue, scheduler, topology harness, permanent
+production telemetry, public input or cache. Keep all generated measurement
+support and results under `tmp/perf/`; retain its exact instrumentation diff and
+uninstrumented reference. Production source and existing tests must be restored
+unchanged when the measurement finishes. Parent owns tracked plans/publication.
+
+First run the focused existing ingress/addressed-receipt correctness tests and
+select the affected package or maintained test typecheck. Use one authenticated
+data admission and its valid receiver ACK as two real owned routes. A bounded
+pilot uses 50 distinct message identities and their ACK identities per repetition,
+one setup/warmup outside measurement, and three repetitions with fresh fixture
+state. Keep actual delivery/receipt, admitted state and terminal work readbacks.
+Use real elapsed time and no deliberate holds. This memory-backed fixture isolates
+JavaScript owner work; it cannot replay hosted PostgreSQL delay. Use a complete
+retained native input only if actually available; otherwise label the existing
+fixture and never invent production wire bytes from profiler names.
+
+Count full decoder/resource-validator work versus existing memo hits by distinct
+message identity, attempt and representation, identifying the immediate trust or
+mutation boundary. Exported-function spies that miss internal calls are not
+sufficient. Use the smallest temporary instrumentation at actual bodies, without
+per-call console output. Record content changes at deadline/planner/persistence
+boundaries; object identity across an await is not immutability. Separate count
+instrumentation from timing if it materially perturbs the route. Report exclusive
+or otherwise nonoverlapping synchronous validation elapsed cost and end-to-end
+owner wall time separately; neither is automatically CPU time. Retain command,
+source, runtime, workload, repetition, overhead and uncertainty evidence.
+
+Preserve unknown-input validation, specialized control authorization, malformed
+input rejection, caller mutation, deadline change, mismatched recipient and
+persisted-corruption behavior. Existing persisted-row memoization/freezing and
+encode-once delivery must be counted truthfully, not claimed as absent. A candidate
+handoff must prove ownership and unchanged representation at the exact boundary;
+never globally trust a message ID, key or caller-owned object. Generated support
+also receives full-file review/remediation; modified support enters closure
+recursively and untouched code remains outside closure.
+
+Stop this pilot when it distinguishes required boundary checks from avoidable
+work. Material repeated traversal of one safely owned representation may select a
+narrow test-first handoff repair for the next step, with semantic correctness
+regressions before production edits. If full checks protect changed/untrusted
+values, memo hits dominate, or measured cost is small/noisy, falsify the candidate
+and stop instead of increasing repetitions to seek a benefit. If the fixture
+cannot preserve real ownership or observe actual full work, report inconclusive.
+No production optimization belongs to this measurement task. Retain snapshot
+equality as the competing hypothesis, but do not start a second harness before
+this result is independently reviewed. Do not run another hosted capture or alter
+the failed main-comparison result. Clean up only owned processes/files and leave
+original evidence and parent changes intact.
