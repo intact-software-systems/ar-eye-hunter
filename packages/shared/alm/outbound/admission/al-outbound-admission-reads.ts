@@ -4,12 +4,10 @@ import type {
     ALNackPayload,
     ALRepairPayload
 } from '../../../al-contracts/al-control.ts';
-import { isALFreezeOfMessage } from '../../../al-contracts/al-frozen-multicast-audience.ts';
 import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
 import type { ALSupersedenceInput } from '../../../al-contracts/al-runtime.ts';
 import { toALOrderingTrackKey, toALSequenceMintTrackKey } from '../../../al-contracts/al-runtime.ts';
 import { EnqueuedType } from '../../../api/api-config.ts';
-import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import {
     isKeysEqual,
     type Key,
@@ -44,7 +42,6 @@ import { toALOutboundWorkKey } from '../al-outbound-work-entry.ts';
 import { toALOutboundSendEffectId } from '../to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from '../to-al-outbound-prepared-fingerprint.ts';
 import { isALOutboundReceiptComplete } from '../transition-al-outbound-pending-ack.ts';
-import { validateALOutboundPlannedMessage } from '../validate-al-outbound-dispatch.ts';
 import {
     toALOutboundControlHistoryKey,
     toALOutboundOrderingHeadKey,
@@ -74,6 +71,7 @@ import {
     type ALStoredOutboundMessage
 } from './al-outbound-admission-validation.ts';
 import { resolveALOutboundScopeAuthority } from './al-outbound-scope-authority.ts';
+import { computeALOutboundDispatchPlan, requireALOutboundPlannedMessage } from './compute-al-outbound-dispatch-plan.ts';
 import { decodeALOutboundOrderingHead } from './decode-al-outbound-ordering-head.ts';
 
 export type ALOutboundControlHistoryKind = 'acks' | 'nacks' | 'repairs';
@@ -149,7 +147,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
         });
         const { plan, orderingHead } = await this.readSequenceMint(
             session,
-            this.readDispatchPlan(input, canonical, stored),
+            computeALOutboundDispatchPlan(input, canonical, stored),
             stored === undefined
         );
         const fences = await this.readAdmissionFences({ session, outgoing: input, plan, nowMs });
@@ -400,32 +398,6 @@ export class ALOutboundAdmissionReads<TPrepared> {
         );
     }
 
-    private readDispatchPlan(
-        input: ALOutboundOutgoingReadInput<TPrepared>,
-        canonical: ALMessage | undefined,
-        stored: ALStoredOutboundMessage | undefined
-    ): ALOutboundDispatchPlan<TPrepared> {
-        const { msg, planner, intent } = input;
-        const authority = stored?.policy ?? input.dequeueAuthority;
-        const selected = planner(
-            canonical ?? msg,
-            authority === undefined ? undefined : {
-                admittedAudience: authority.admittedAudience,
-                recipientScope: authority.recipientScope,
-                principalTargetId: authority.principalTargetId,
-                sessionInvalidation: authority.sessionInvalidation,
-                referenceKey: stored ? stored.reference.key : input.observedCanonicalEntry?.key
-            }
-        );
-        requireALOutboundPlannedMessage(canonical ?? msg, selected.msg);
-        const planned = canonical && !isALFreezeOfMessage(canonical, selected.msg)
-            ? { ...selected, msg: canonical }
-            : selected;
-        const plan = stored && intent !== 'repair' ? applyALOutboundCapturedPolicy(planned, stored.policy) : planned;
-        requireALOutboundPlannedMessage(msg, plan.msg);
-        return plan;
-    }
-
     /**
      * An admission whose plan asks for a sequence takes the next one on its track: the head this session
      * read, plus one. Only a message with no sent row is minted -- a first attempt, or the replay of the
@@ -587,13 +559,6 @@ export class ALOutboundAdmissionReads<TPrepared> {
                 supersedenceKey: stored.supersedenceKey ?? null
             }
             : undefined;
-    }
-}
-
-function requireALOutboundPlannedMessage(source: ALMessage, planned: ALMessage): void {
-    const issues = validateALOutboundPlannedMessage(source, planned);
-    if (issues.length > 0) {
-        throw new NonRetryableException(issues.map((issue) => issue.message).join('; '));
     }
 }
 

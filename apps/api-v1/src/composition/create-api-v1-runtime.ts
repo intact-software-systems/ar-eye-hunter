@@ -17,6 +17,7 @@ import { initPresenceExpiryReconciliation } from '@shared-server/rallar-system/g
 import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/create-rallar-middleware.ts';
 import type { CreateRallarMiddlewareOptions } from '@shared-server/rallar-system/middleware/rallar-middleware-construction.ts';
 import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/rallar-middleware-runtime.ts';
+import { createRallarALOutboundCapturedPolicyTiming } from '@shared-server/rallar-system/observability/al-outbound-captured-policy-timing.ts';
 import { createRallarALOutboundDequeueTiming } from '@shared-server/rallar-system/observability/al-outbound-dequeue-timing.ts';
 import {
     createRallarAlmReceiptDiagnosticsRecorder,
@@ -40,6 +41,7 @@ import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgre
 import { RuntimeStateExpiryWorker } from '@shared-server/runtime-state/postgres/runtime-state-expiry-worker.ts';
 import { createVolatileALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALVolatileInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALOutboundCapturedPolicyTiming } from '@shared/alm/outbound/admission/al-outbound-captured-policy-timing.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { WsQueueBoxServerReceiptObserver } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
@@ -168,11 +170,7 @@ export interface ApiV1RuntimeConstructionOperations {
     createMutationRuntime(input: CreateApiV1MutationRuntimeInput): ApiV1MutationRuntime;
     createRtcTopologyRuntime(input: CreateApiRtcTopologyRuntimeInput): ApiRtcTopologyRuntime;
     createTopologyServices(input: CreateApiV1TopologyServicesInput): ApiV1TopologyServices;
-    configureWsRuntimeStores(
-        name: string,
-        repository: ApiV1MutationRuntime['runtimeStateRepository'],
-        outboundReleaseTiming: PSqlQueueReleaseTiming.Port | undefined
-    ): void;
+    configureWsRuntimeStores(input: ConfigureWsRuntimeStoresInput): void;
     startResourceInboxExpiry(
         mutation: Pick<ApiV1MutationRuntime, 'resourceInboxRepository' | 'resourceInboxResultsRepository'>
     ): void;
@@ -186,6 +184,13 @@ export interface ApiV1RuntimeConstructionOperations {
         timing: RallarTimingSink
     ): ApiStateSnapshotReadSelectors;
     requireRuntime(input: Parameters<typeof requireApiV1Runtime>[0]): ApiV1Runtime;
+}
+
+interface ConfigureWsRuntimeStoresInput {
+    readonly name: string;
+    readonly repository: ApiV1MutationRuntime['runtimeStateRepository'];
+    readonly outboundReleaseTiming: PSqlQueueReleaseTiming.Port | undefined;
+    readonly capturedPolicyTiming: ALOutboundCapturedPolicyTiming.Capability | undefined;
 }
 
 export function createApiV1Runtime(input: CreateApiV1RuntimeInput): ApiV1Runtime {
@@ -263,7 +268,23 @@ function startMutationInfrastructure(input: StartMutationInfrastructureInput): v
         readMonotonicMs: () => performance.now(),
         readEpochMs: runtime.nowEpochMs
     });
-    operations.configureWsRuntimeStores(runtime.wsRuntimeName, mutation.runtimeStateRepository, outboundReleaseTiming);
+    const capturedPolicyTiming = runtime.outboxStageTiming === undefined
+        ? undefined
+        : createRallarALOutboundCapturedPolicyTiming({
+            timing: runtime.outboxStageTiming,
+            serviceId: runtime.serviceId,
+            publisherId: runtime.queuePubSubPublisherId,
+            processId: Deno.pid,
+            processStartedAtEpochMs: performance.timeOrigin,
+            readMonotonicMs: () => performance.now(),
+            readEpochMs: runtime.nowEpochMs
+        });
+    operations.configureWsRuntimeStores({
+        name: runtime.wsRuntimeName,
+        repository: mutation.runtimeStateRepository,
+        outboundReleaseTiming,
+        capturedPolicyTiming
+    });
     operations.startResourceInboxExpiry(mutation);
     operations.startRuntimeStateExpiry({
         database: runtime.database,
@@ -337,8 +358,12 @@ const PRODUCTION_OPERATIONS: ApiV1RuntimeConstructionOperations = {
     createMutationRuntime: createApiV1MutationRuntime,
     createRtcTopologyRuntime: createApiRtcTopologyRuntime,
     createTopologyServices: createApiV1TopologyServices,
-    configureWsRuntimeStores: (name, repository, outboundReleaseTiming) => {
-        configureServerWsQBoxALRuntimeStores(name, { repository, outboundReleaseTiming });
+    configureWsRuntimeStores: (input) => {
+        configureServerWsQBoxALRuntimeStores(input.name, {
+            repository: input.repository,
+            outboundReleaseTiming: input.outboundReleaseTiming,
+            capturedPolicyTiming: input.capturedPolicyTiming
+        });
     },
     startResourceInboxExpiry,
     startRuntimeStateExpiry,

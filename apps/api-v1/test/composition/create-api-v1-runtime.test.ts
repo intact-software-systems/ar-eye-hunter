@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import type { PSqlQueueReleaseTiming } from '@shared-server/queuebox/postgres/p-sql-queue-release-timing.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
+import type { ALOutboundCapturedPolicyTiming } from '@shared/alm/outbound/admission/al-outbound-captured-policy-timing.ts';
 
 import type { ClientRestSnapshotReadSelector } from '@shared-server/rallar-system/client-state/snapshot/client-rest-snapshot-read-selector.ts';
 import type { GroupRestSnapshotReadSelector } from '@shared-server/rallar-system/group-state/snapshot/group-rest-snapshot-read-selector.ts';
@@ -32,10 +33,12 @@ Deno.test('production timing-off configuration omits outbox stage sinks before o
     let mutationStageTiming: CreateApiV1RuntimeInput['outboxStageTiming'];
     let middlewareStageTiming: CreateApiV1RuntimeInput['outboxStageTiming'];
     const releasePorts: Array<PSqlQueueReleaseTiming.Port | undefined> = [];
+    const capturedPolicyPorts: Array<ALOutboundCapturedPolicyTiming.Capability | undefined> = [];
     constructApiV1Runtime({ ...createInput([]), timing, outboxStageTiming: toApiOutboxStageTimingSink(observability, timing) }, {
         ...operations,
-        configureWsRuntimeStores: (_name, _repository, port) => {
-            releasePorts.push(port);
+        configureWsRuntimeStores: (input) => {
+            releasePorts.push(input.outboundReleaseTiming);
+            capturedPolicyPorts.push(input.capturedPolicyTiming);
         },
         createMutationRuntime: (input) => {
             mutationStageTiming = input.outboxStageTiming;
@@ -49,6 +52,7 @@ Deno.test('production timing-off configuration omits outbox stage sinks before o
     assert.equal(mutationStageTiming, undefined);
     assert.equal(middlewareStageTiming, undefined);
     assert.deepEqual(releasePorts, [undefined]);
+    assert.deepEqual(capturedPolicyPorts, [undefined]);
 });
 
 Deno.test('enabled outbound release timing captures process identity only at the root store composition', () => {
@@ -56,8 +60,8 @@ Deno.test('enabled outbound release timing captures process identity only at the
     const ports: Array<PSqlQueueReleaseTiming.Port | undefined> = [];
     constructApiV1Runtime({ ...createInput([]), outboxStageTiming: (event) => events.push(event) }, {
         ...createOperations([]),
-        configureWsRuntimeStores: (_name, _repository, port) => {
-            ports.push(port);
+        configureWsRuntimeStores: (input) => {
+            ports.push(input.outboundReleaseTiming);
         }
     });
     assert.equal(ports.length, 1);
@@ -69,6 +73,19 @@ Deno.test('enabled outbound release timing captures process identity only at the
     assert.equal(events[0].details?.transactionScope, 'root');
     assert.equal(events[0].details?.processId, Deno.pid);
     assert.equal(events[0].details?.processStartedAtEpochMs, performance.timeOrigin);
+});
+
+Deno.test('enabled outbound composition provides captured-policy timing at the root store boundary', () => {
+    const capabilities: Array<ALOutboundCapturedPolicyTiming.Capability | undefined> = [];
+    constructApiV1Runtime({ ...createInput([]), outboxStageTiming: () => {} }, {
+        ...createOperations([]),
+        configureWsRuntimeStores: (input) => {
+            capabilities.push(input.capturedPolicyTiming);
+        }
+    });
+    assert.equal(capabilities.length, 1);
+    assert.ok(capabilities[0]);
+    assert.equal(typeof capabilities[0].createOwner('outbound').readCapturedPolicy, 'function');
 });
 
 Deno.test('runtime construction preserves the owned startup sequence', () => {

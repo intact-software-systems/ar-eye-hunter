@@ -70,6 +70,7 @@ import {
     writeALOutboundCanonicalFacts,
     type ALOutboundCanonicalFactWrite
 } from './al-outbound-canonical-fact-writes.ts';
+import type { ALOutboundCapturedPolicyTiming } from './al-outbound-captured-policy-timing.ts';
 import { ALOutboundDecisionReadSession } from './al-outbound-decision-read-session.ts';
 import { readALOutboundSendGuards, type ALOutboundSendGuards } from './read-al-outbound-send-guards.ts';
 
@@ -83,6 +84,7 @@ export interface CreateALOutboundAdmissionStoreInput<TPrepared> {
     readonly supersedenceTrackTtlMs: number;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
     readonly decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>;
+    readonly capturedPolicyTiming?: ALOutboundCapturedPolicyTiming.Capability;
 }
 
 export interface ALOutboundVersionedClientRecord {
@@ -425,6 +427,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
     private readonly reads: ALOutboundAdmissionReads<TPrepared>;
     private readonly mutations: ALOutboundAdmissionMutations;
     private readonly decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>;
+    private readonly capturedPolicyTiming: ALOutboundCapturedPolicyTiming | undefined;
 
     constructor(input: ALOutboundPairAdmissionStoreInput<TPrepared>) {
         this.namespace = input.namespace;
@@ -435,6 +438,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         this.backend = input.backend;
         this.nowMs = input.nowMs;
         this.decodePrepared = input.decodePrepared;
+        this.capturedPolicyTiming = input.capturedPolicyTiming?.createOwner(input.namespace);
         this.effectStore = new ALOutboundAdmissionEffectStore({
             nowMs: input.nowMs,
             canonicalScope: input.canonicalScope,
@@ -525,7 +529,15 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
     }
 
     async readCapturedPolicy(message: ALMessage, entry: ResourceEntry): Promise<ALOutboundCapturedPolicy> {
-        return await this.backend.readWithin((session) => this.reads.readCapturedPolicy(session, message, entry));
+        if (this.capturedPolicyTiming === undefined) {
+            return await this.backend.readWithin((session) => this.reads.readCapturedPolicy(session, message, entry));
+        }
+        return await this.capturedPolicyTiming.readCapturedPolicy({
+            backend: this.backend,
+            message,
+            entry,
+            readPolicy: (session) => this.reads.readCapturedPolicy(session, message, entry)
+        });
     }
 
     async readSentMessage(msgId: string): Promise<ALOutboundSentMessageSnapshot | undefined> {
