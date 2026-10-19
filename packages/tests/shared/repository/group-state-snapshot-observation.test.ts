@@ -11,13 +11,45 @@ import {
     findGroupStateSnapshotByRef,
     observeGroupStateSnapshot,
     onGroupStateSnapshotChange,
+    removeGroupStateSnapshotByRef,
     replaceGroupStateSnapshotIfUnchanged,
-    waitForGroupStateSnapshotChangesIdle
+    waitForGroupStateSnapshotChangesIdle,
+    type GroupStateSnapshotChange
 } from '@shared/repository/group-state-snapshots-repository.ts';
 
 import { createGroupSnapshot } from '../../shared-server/rallar-system/group-state/snapshot/group-state-snapshot-test-fixtures.ts';
 
 describe('group snapshot observation', () => {
+    it('reports the current or deleted snapshot version in change events', async () => {
+        const manager = new RepositoryManager();
+        configureGroupStateSnapshotRepository({ ttlMs: 60_000 }, manager);
+        const first = createGroupSnapshot(7, []);
+        const newer = createGroupSnapshot(11, []);
+        const events: GroupStateSnapshotChange[] = [];
+        const unsubscribe = onGroupStateSnapshotChange((change) => {
+            events.push(change);
+        }, manager);
+
+        try {
+            expect(observeGroupStateSnapshot(first, manager)).toBe('inserted');
+            expect(observeGroupStateSnapshot(newer, manager)).toBe('advanced');
+            expect(removeGroupStateSnapshotByRef(newer.group, manager)).toBe(true);
+            await waitForGroupStateSnapshotChangesIdle(manager);
+
+            expect(events).toMatchObject([
+                { kind: 'created', version: 7, previousVersion: undefined },
+                { kind: 'updated', version: 11, previousVersion: 7 },
+                { kind: 'deleted', version: 11, previousVersion: 11 }
+            ]);
+            expect(events[2]?.snapshot).toBeUndefined();
+            expect(findGroupStateSnapshotByRef(newer.group, manager)).toBeUndefined();
+        }
+        finally {
+            unsubscribe();
+            await manager.clear();
+        }
+    });
+
     it.each(
         [
             ['group revision', 2, 0, 1],

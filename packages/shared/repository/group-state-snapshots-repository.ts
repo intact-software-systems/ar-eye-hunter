@@ -459,11 +459,7 @@ function toGroupStateSnapshotChange(
         groupRef: snapshot.group,
         snapshot: event.value,
         previous: event.previous,
-        version: event.value
-            ? readGroupVersion(event.value)
-            : event.previous
-            ? readGroupVersion(event.previous)
-            : 0,
+        version: readGroupVersion(snapshot),
         previousVersion: event.previous
             ? readGroupVersion(event.previous)
             : undefined,
