@@ -533,7 +533,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         let succeeded = false;
         try {
             const policy = await this.backend.readWithin((session) =>
-                this.reads.readCapturedPolicy(session, message, entry, invocation)
+                this.reads.readCapturedPolicy({ session, message, entry, timing: invocation })
             );
             succeeded = true;
             return policy;

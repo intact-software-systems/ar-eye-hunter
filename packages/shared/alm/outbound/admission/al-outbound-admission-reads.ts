@@ -85,6 +85,13 @@ export interface CreateALOutboundAdmissionReadsInput {
     readonly supersedenceTrackTtlMs: number;
 }
 
+export interface ReadALOutboundCapturedPolicyInput {
+    readonly session: ALAdmissionReadSession;
+    readonly message: ALMessage;
+    readonly entry: ResourceEntry;
+    readonly timing?: ALOutboundCapturedPolicyTimingInvocation;
+}
+
 /** One supersedence read: the key's pointer, the message's own row, and a named predecessor's row. */
 export interface ALOutboundSupersedenceReadInput {
     readonly key: string | undefined;
@@ -165,7 +172,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
             clientRecord,
             plan,
             orderingHead,
-            sentSnapshot: this.toLiveSentSnapshot(stored, canonical),
+            sentSnapshot: stored && canonical ? this.toLiveSentSnapshot(stored, canonical, this.nowMs()) : undefined,
             ...control,
             repairs,
             ...fences
@@ -245,12 +252,8 @@ export class ALOutboundAdmissionReads<TPrepared> {
         return stored !== undefined;
     }
 
-    async readCapturedPolicy(
-        session: ALAdmissionReadSession,
-        message: ALMessage,
-        entry: ResourceEntry,
-        timing?: ALOutboundCapturedPolicyTimingInvocation
-    ): Promise<ALOutboundCapturedPolicy> {
+    async readCapturedPolicy(input: ReadALOutboundCapturedPolicyInput): Promise<ALOutboundCapturedPolicy> {
+        const { session, message, entry, timing } = input;
         timing?.markMethodStart();
         const stored = await this.readStoredMessage(session, message.id.msgId);
         timing?.markStoredReadEnd();
@@ -551,14 +554,15 @@ export class ALOutboundAdmissionReads<TPrepared> {
             return undefined;
         }
         const msg = decodeALOutboundCanonicalMessage(stored.reference, canonical, identity);
-        return this.toLiveSentSnapshot(stored, msg);
+        return this.toLiveSentSnapshot(stored, msg, this.nowMs());
     }
 
     private toLiveSentSnapshot(
-        stored: ALStoredOutboundMessage | undefined,
-        message: ALMessage | undefined
+        stored: ALStoredOutboundMessage,
+        message: ALMessage,
+        observedAtMs: number
     ): ALOutboundSentMessageSnapshot | undefined {
-        return stored && message && stored.reference.expiresAtMs > this.nowMs()
+        return stored.reference.expiresAtMs > observedAtMs
             ? {
                 msgId: stored.msgId,
                 msg: message,
