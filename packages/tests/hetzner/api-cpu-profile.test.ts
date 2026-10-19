@@ -4,6 +4,8 @@ import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { expect, it } from 'vitest';
 
+import { toError } from '../../shared/resilience/to-error.ts';
+
 import { runOwnedTestProcess } from './owned-test-process.ts';
 
 it('returns a valid same-binary inspector profile before terminating and reaping the probe', async (context) => {
@@ -82,7 +84,7 @@ it('reaps a probe that exits during capture while preserving the original inspec
         executable: 'deno',
         args: ['run', '--no-config', '--allow-all', 'scripts/hosted-rallar/controller/rallar-api-inspector.mjs', 'probe', directory],
         options: { timeout: 15000 }
-    }).then(() => null, (error: unknown) => error);
+    }).then(() => null, toError);
     let pid: number | undefined;
     const deadline = Date.now() + 5000;
     while (pid === undefined && Date.now() < deadline) {
