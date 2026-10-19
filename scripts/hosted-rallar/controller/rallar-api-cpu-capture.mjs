@@ -15,6 +15,8 @@ import {
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { sanitizeOperationLog } from './rallar-operation-diagnostics.mjs';
+
 const controllerDirectory = path.dirname(fileURLToPath(import.meta.url));
 const diagnosticKeys = [
     'RALLAR_TIMING_LOGS',
@@ -28,6 +30,7 @@ const cleanupFiles = [
     'rallar-api-cpu-capture.mjs',
     'rallar-api-cpu-capture.sh',
     'rallar-api-inspector.mjs',
+    'rallar-operation-diagnostics.mjs',
     'rallar-controller-lock.sh',
     '08-rollout-controller.sh',
     '07-status-controller.sh',
@@ -109,6 +112,7 @@ export class ApiCpuCapture {
     }
 
     begin() {
+        console.error('RALLAR_OPERATION_STAGE=api-capture-preflight');
         if (lstatSync(this.configuration.override, { throwIfNoEntry: false })) {
             throw new Error('Pre-existing capture override is not owned');
         }
@@ -139,8 +143,10 @@ export class ApiCpuCapture {
             this.state.mutationStarted = true;
             this.state.restoreStatus = 'required';
             this.writeState();
+            console.error('RALLAR_OPERATION_STAGE=api-capture-rollout');
             this.rollout(this.configuration.identity.source, null);
             this.armDeadline(this.configuration.remainingSeconds);
+            console.error('RALLAR_OPERATION_STAGE=api-capture-start');
             this.startProfile();
             this.state.status = 'capturing';
             this.writeState();
@@ -191,12 +197,21 @@ export class ApiCpuCapture {
     }
 
     probeInspector() {
-        this.run('chown', ['-R', 'rallar:rallar', this.evidence]);
-        this.run('runuser', [
-            '-u',
-            'rallar',
-            '--',
-            this.state.launchArguments[0],
+        const cacheDirectory = path.join(this.directory, 'deno-cache');
+        mkdirSync(cacheDirectory, { mode: 0o700 });
+        this.run('chown', ['-R', 'rallar:rallar', this.evidence, cacheDirectory]);
+        this.state.capability = {
+            serviceUser: this.state.serviceUser,
+            executable: this.state.launchArguments[0],
+            workingDirectory: this.evidence,
+            cacheDirectory,
+            timeoutSeconds: 30,
+            outputByteLimit: 65536,
+            runtimeVersion: null,
+            step: 'runtime-version'
+        };
+        this.state.capability.runtimeVersion = this.runInspectorCapability('runtime-version', ['--version']).trim();
+        this.runInspectorCapability('inspector-probe', [
             'run',
             '--no-config',
             '--allow-all',
@@ -204,15 +219,37 @@ export class ApiCpuCapture {
             'probe',
             path.join(this.evidence, 'preflight-probe')
         ]);
-        this.run('runuser', [
-            '-u',
-            'rallar',
-            '--',
-            this.state.launchArguments[0],
+        this.runInspectorCapability('loopback-port', [
             'eval',
             '--no-config',
             'const socket=Deno.listen({hostname:"127.0.0.1",port:9229});socket.close();'
         ]);
+    }
+
+    runInspectorCapability(step, args) {
+        this.state.capability.step = step;
+        this.writeState();
+        // GNU timeout owns the complete probe process group, including the temporary Deno child.
+        return this.commands.run(
+            'timeout',
+            [
+                '--kill-after=5s',
+                '30s',
+                'runuser',
+                '-u',
+                this.state.serviceUser,
+                '--',
+                'env',
+                '-i',
+                `HOME=${this.evidence}`,
+                `DENO_DIR=${this.state.capability.cacheDirectory}`,
+                'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+                'NO_COLOR=1',
+                this.state.launchArguments[0],
+                ...args
+            ],
+            { environment: this.configuration.environment, capabilityDirectory: this.evidence }
+        );
     }
 
     readLaunchArguments() {
@@ -281,6 +318,8 @@ export class ApiCpuCapture {
             '--quiet',
             `--unit=rallar-${this.configuration.id}-inspector`,
             '--property=User=rallar',
+            `--property=WorkingDirectory=${this.evidence}`,
+            `--setenv=DENO_DIR=${this.state.capability.cacheDirectory}`,
             `--property=RuntimeMaxSec=${this.configuration.remainingSeconds}s`,
             '--property=KillMode=control-group',
             this.state.launchArguments[0],
@@ -440,7 +479,7 @@ export class ApiCpuCapture {
         if (configurationFile) {
             environment.RALLAR_API_RESTORE_CONFIGURATION = configurationFile;
         }
-        this.commands.run('bash', [path.join(this.tooling, '08-rollout-controller.sh')], environment);
+        this.commands.run('bash', [path.join(this.tooling, '08-rollout-controller.sh')], { environment });
     }
 
     verifyProcess() {
@@ -628,7 +667,7 @@ export class ApiCpuCapture {
             this.state.exportStatus !== 'failed';
     }
     run(program, args) {
-        return this.commands.run(program, args, this.configuration.environment);
+        return this.commands.run(program, args, { environment: this.configuration.environment });
     }
 }
 
@@ -676,23 +715,41 @@ function hashEvidence(directory) {
     return hashes;
 }
 
-function runControllerCommand(program, args, environment) {
+/** @param {{ environment: NodeJS.ProcessEnv, capabilityDirectory?: string }} execution */
+export function runControllerCommand(program, args, execution) {
+    const { environment, capabilityDirectory } = execution;
     const inheritedLock = process.env.RALLAR_CONTROLLER_LOCK_HELD === '1';
     const stdio = inheritedLock
         ? ['ignore', 'pipe', 'pipe', 'ignore', 'ignore', 'ignore', 'ignore', 'ignore', 'ignore', 9]
         : ['ignore', 'pipe', 'pipe'];
     const result = spawnSync(program, args, {
-        env: { ...process.env, ...environment },
+        env: capabilityDirectory
+            ? { PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' }
+            : { ...process.env, ...environment },
+        cwd: capabilityDirectory,
         encoding: 'utf8',
-        timeout: 360 * 60 * 1000,
-        maxBuffer: 128 * 1024 * 1024,
+        timeout: capabilityDirectory ? 40000 : 360 * 60 * 1000,
+        maxBuffer: capabilityDirectory ? 65536 : 128 * 1024 * 1024,
         stdio
     });
     if (result.error || result.status !== 0) {
+        const privateValues = Object.entries({ ...process.env, ...environment })
+            .filter(([key]) =>
+                /password|token|secret|credential|(?:^|_)key(?:_|$)|private.key|database.url|authorization|cookie/i
+                    .test(key)
+            )
+            .map(([, value]) => value);
+        const sanitized = sanitizeOperationLog(result.stderr ?? '', privateValues);
+        const excerpt = sanitized.slice(0, 8192);
+        const truncated = sanitized.length > 8192 || result.error?.code === 'ENOBUFS';
         const error = new Error(
-            `Controller command failed: ${path.basename(program)} (exit ${result.status ?? 'unavailable'})`
+            `Controller command failed: ${path.basename(program)} (exit ${result.status ?? 'unavailable'}, signal ${
+                result.signal ?? 'none'
+            }, code ${result.error?.code ?? 'none'})` +
+                (excerpt ? `\n${excerpt}` : '') +
+                (truncated ? '\n[truncated command stderr; retained at most 8192 characters]' : '')
         );
-        if (program === 'timeout') {
+        if (program === 'timeout' && !capabilityDirectory) {
             error.stdout = result.stdout;
         }
         throw error;

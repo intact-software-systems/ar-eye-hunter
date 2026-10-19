@@ -1,6 +1,7 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { expect, it } from 'vitest';
 
 import { runOwnedTestProcess } from './owned-test-process.ts';
@@ -57,4 +58,53 @@ it('preserves a consistent wide clock mapping while leaving stall attribution in
         calibration: 'interval-calibrated',
         attribution: 'inconclusive-until-stall-window-analysis'
     });
+});
+
+it.for(['stdout.log', 'stderr.log'])('fails probe output setup at %s without leaving an owned child', async (file, context) => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'rallar-api-probe-output-'));
+    context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+    await mkdir(path.join(directory, file));
+    await expect(runOwnedTestProcess(context, {
+        executable: 'deno',
+        args: ['run', '--no-config', '--allow-all', 'scripts/hosted-rallar/controller/rallar-api-inspector.mjs', 'probe', directory],
+        options: { timeout: 15000 }
+    })).rejects.toMatchObject({ stderr: expect.stringContaining(file) });
+    const probe = JSON.parse(await readFile(path.join(directory, 'probe.json'), 'utf8'));
+    expect(probe).toMatchObject({ pid: null, reaped: false, outcome: null });
+    expect(probe.error).toContain(file);
+    await expect(readFile(path.join(directory, 'api.cpuprofile'))).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+it('reaps a probe that exits during capture while preserving the original inspector failure', async (context) => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'rallar-api-probe-exit-'));
+    context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+    const execution = runOwnedTestProcess(context, {
+        executable: 'deno',
+        args: ['run', '--no-config', '--allow-all', 'scripts/hosted-rallar/controller/rallar-api-inspector.mjs', 'probe', directory],
+        options: { timeout: 15000 }
+    }).then(() => null, (error: unknown) => error);
+    let pid: number | undefined;
+    const deadline = Date.now() + 5000;
+    while (pid === undefined && Date.now() < deadline) {
+        try {
+            pid = JSON.parse(await readFile(path.join(directory, 'started.json'), 'utf8')).pid;
+        }
+        catch (error) {
+            if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
+                throw error;
+            }
+            await sleep(5);
+        }
+    }
+    if (pid === undefined) {
+        throw new Error('Probe did not publish its owned process identity');
+    }
+    process.kill(pid, 'SIGTERM');
+    expect(await execution).toMatchObject({ code: 1 });
+    const probe = JSON.parse(await readFile(path.join(directory, 'probe.json'), 'utf8'));
+    const result = JSON.parse(await readFile(path.join(directory, 'profile-result.json'), 'utf8'));
+    expect(probe).toMatchObject({ pid, reaped: true, error: result.error });
+    expect(probe.error).toMatch(/Inspector.*(connection|transport)/i);
+    expect(probe.error).not.toContain('already terminated');
+    expect(() => process.kill(pid, 0)).toThrow();
 });

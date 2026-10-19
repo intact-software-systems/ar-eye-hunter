@@ -1,9 +1,11 @@
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 
-import { ApiCpuCapture, toApiCaptureConfiguration } from '../../../scripts/hosted-rallar/controller/rallar-api-cpu-capture.mjs';
+import { runOwnedTestProcess } from './owned-test-process.ts';
+
+import { ApiCpuCapture, runControllerCommand, toApiCaptureConfiguration } from '../../../scripts/hosted-rallar/controller/rallar-api-cpu-capture.mjs';
 
 it('rejects contradictory capture settings before creating capture state or invoking controller commands', async (context) => {
     const root = await mkdtemp(path.join(tmpdir(), 'rallar-capture-'));
@@ -218,3 +220,129 @@ it.for(['changed-source', 'changed-pid', 'resources'])(
         }
     }
 );
+
+it('runs the capability probe in owned accessible storage with an isolated child environment', async (context) => {
+    const { ApiCpuCaptureFixture } = await import('./api-cpu-capture-fixture.mjs');
+    const root = await mkdtemp(path.join(tmpdir(), 'rallar-capture-'));
+    context.onTestFinished(() => rm(root, { recursive: true, force: true }));
+    const fixture = new ApiCpuCaptureFixture(root);
+    context.onTestFinished(() => fixture.dispose());
+    const output = vi.spyOn(console, 'error').mockImplementation(() => {});
+    context.onTestFinished(() => output.mockRestore());
+    fixture.failAt = 'preflight';
+    expect(() => fixture.capture.begin()).toThrow('Linux capability probe failed');
+    const probe = fixture.capabilityInvocations.find((call: { args: string[]; }) => call.args.includes('probe'));
+    expect(probe).toMatchObject({ program: 'timeout', capabilityDirectory: fixture.capture.evidence });
+    expect(probe.args).toEqual([
+        '--kill-after=5s',
+        '30s',
+        'runuser',
+        '-u',
+        'rallar',
+        '--',
+        'env',
+        '-i',
+        `HOME=${fixture.capture.evidence}`,
+        `DENO_DIR=${fixture.capture.directory}/deno-cache`,
+        'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+        'NO_COLOR=1',
+        '/usr/local/bin/deno',
+        'run',
+        '--no-config',
+        '--allow-all',
+        path.join(fixture.capture.tooling, 'rallar-api-inspector.mjs'),
+        'probe',
+        path.join(fixture.capture.evidence, 'preflight-probe')
+    ]);
+    const state = fixture.readState();
+    expect(state).toMatchObject({
+        mutationStarted: false,
+        restoreStatus: 'not-required',
+        profileStatus: 'not-started',
+        capability: {
+            step: 'inspector-probe',
+            serviceUser: 'rallar',
+            executable: '/usr/local/bin/deno',
+            workingDirectory: fixture.capture.evidence,
+            cacheDirectory: `${fixture.capture.directory}/deno-cache`,
+            runtimeVersion: 'deno 2.9.5\nv8 15.0',
+            timeoutSeconds: 30,
+            outputByteLimit: 65536
+        }
+    });
+    expect(output).toHaveBeenCalledWith('RALLAR_OPERATION_STAGE=api-capture-preflight');
+    await expect(readFile(path.join(root, 'active'))).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+it('retains bounded sanitized command failures before capture artifacts can persist them', () => {
+    const secret = 'opaque-value-that-must-not-escape';
+    const diagnostic = [
+        'Permission denied: inaccessible cwd',
+        'Authorization: Bearer bearer-value',
+        'PASSWORD="quoted value"',
+        'postgres://db:database-value@localhost/db',
+        'https://example.test/?token=query-value&password=query-password',
+        secret,
+        ''
+    ].join('\n');
+    const command = `process.stderr.write(${JSON.stringify(diagnostic)} + 'x'.repeat(20000));process.exit(7);`;
+    let message = '';
+    try {
+        runControllerCommand(process.execPath, ['-e', command], { environment: { RALLAR_API_SECRET: secret } });
+    }
+    catch (error) {
+        if (!(error instanceof Error)) {
+            throw error;
+        }
+        message = error.message;
+    }
+    expect(message).toContain('exit 7');
+    expect(message).toContain('Permission denied: inaccessible cwd');
+    expect(message).toContain('[truncated');
+    for (const value of [secret, 'bearer-value', 'quoted value', 'database-value', 'query-value', 'query-password']) {
+        expect(message).not.toContain(value);
+    }
+    expect(message.length).toBeLessThan(8500);
+});
+
+it('isolates capability subprocess cwd and environment and refuses oversized diagnostic output', async (context) => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'rallar-capability-command-'));
+    context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+    const output = runControllerCommand(
+        process.execPath,
+        ['-e', 'console.log(JSON.stringify({cwd:process.cwd(),secret:process.env.RALLAR_API_SECRET,cache:process.env.DENO_DIR}))'],
+        { environment: { RALLAR_API_SECRET: 'must-not-inherit', DENO_DIR: '/root/private-cache' }, capabilityDirectory: directory }
+    );
+    expect(JSON.parse(output)).toEqual({ cwd: await realpath(directory) });
+    expect(() =>
+        runControllerCommand(process.execPath, ['-e', 'process.stderr.write("capability output overflow\\n" + "x".repeat(1000000))'], {
+            environment: {},
+            capabilityDirectory: directory
+        })
+    )
+        .toThrow(/ENOBUFS[\s\S]*truncated/);
+});
+
+it('preserves the real preflight stage when stdout is discarded and keeps directory output clean', async (context) => {
+    const { ApiCpuCaptureFixture } = await import('./api-cpu-capture-fixture.mjs');
+    const root = await mkdtemp(path.join(tmpdir(), 'rallar-capture-stage-'));
+    context.onTestFinished(() => rm(root, { recursive: true, force: true }));
+    const fixture = new ApiCpuCaptureFixture(root);
+    await mkdir(path.dirname(fixture.configuration.override));
+    await writeFile(fixture.configuration.override, 'foreign owner');
+    const script = path.resolve('scripts/hosted-rallar/controller/rallar-api-cpu-capture.mjs');
+    const environment = { ...process.env, ...fixture.configuration.environment };
+    const directory = await runOwnedTestProcess(context, {
+        executable: process.execPath,
+        args: [script, 'directory'],
+        options: { env: environment }
+    });
+    expect(directory.stdout).toBe(`${fixture.capture.directory}\n`);
+    expect(directory.stderr).toBe('');
+    await expect(runOwnedTestProcess(context, {
+        executable: 'bash',
+        args: ['-c', '"$1" "$2" begin >/dev/null', 'capture-stage', process.execPath, script],
+        options: { env: environment }
+    })).rejects.toMatchObject({ code: 1, stdout: '', stderr: expect.stringContaining('RALLAR_OPERATION_STAGE=api-capture-preflight\n') });
+    await expect(readFile(path.join(root, 'active'))).rejects.toMatchObject({ code: 'ENOENT' });
+});

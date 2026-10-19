@@ -268,23 +268,30 @@ async function probeApiInspector(directory) {
     const port = listener.addr.port;
     listener.close();
     const launch = readHostClock();
-    const child = new Deno.Command(Deno.execPath(), {
-        args: [
-            'eval',
-            '--no-config',
-            `--inspect=127.0.0.1:${port}`,
-            '--v8-flags=--trace-gc-nvp',
-            'setInterval(() => {}, 20)'
-        ],
-        stdout: 'piped',
-        stderr: 'piped'
-    }).spawn();
-    const stdout = await Deno.open(`${directory}/stdout.log`, { create: true, write: true });
-    const stderr = await Deno.open(`${directory}/stderr.log`, { create: true, write: true });
-    const streams = Promise.all([child.stdout.pipeTo(stdout.writable), child.stderr.pipeTo(stderr.writable)]);
-    let outcome;
-    const stopTimer = setTimeout(() => Deno.writeTextFile(`${directory}/stop`, '').catch(() => {}), 500);
+    let child;
+    let stdout;
+    let stderr;
+    let streams;
+    let stopTimer;
+    let outcome = null;
+    let failure;
     try {
+        // Output setup must succeed before creating the process this probe owns.
+        stdout = await Deno.open(`${directory}/stdout.log`, { create: true, write: true });
+        stderr = await Deno.open(`${directory}/stderr.log`, { create: true, write: true });
+        child = new Deno.Command(Deno.execPath(), {
+            args: [
+                'eval',
+                '--no-config',
+                `--inspect=127.0.0.1:${port}`,
+                '--v8-flags=--trace-gc-nvp',
+                'setInterval(() => {}, 20)'
+            ],
+            stdout: 'piped',
+            stderr: 'piped'
+        }).spawn();
+        streams = Promise.allSettled([child.stdout.pipeTo(stdout.writable), child.stderr.pipeTo(stderr.writable)]);
+        stopTimer = setTimeout(() => Deno.writeTextFile(`${directory}/stop`, '').catch(() => {}), 500);
         await captureApiProfile(directory, {
             pid: child.pid,
             endpoint: `http://127.0.0.1:${port}`,
@@ -292,19 +299,57 @@ async function probeApiInspector(directory) {
             deadlineEpochMs: Date.now() + 10000
         });
     }
+    catch (error) {
+        failure = error;
+    }
     finally {
         clearTimeout(stopTimer);
-        child.kill('SIGTERM');
-        outcome = await child.status;
-        await streams;
-        await writeJson(`${directory}/probe.json`, {
-            pid: child.pid,
-            runtime: Deno.version,
-            launch,
-            reaped: true,
-            outcome,
-            gcEvents: 'not-established'
-        });
+        if (child) {
+            const kill = (signal) => {
+                try {
+                    child.kill(signal);
+                }
+                catch (error) {
+                    if (!(error instanceof Deno.errors.NotFound)) {
+                        failure ??= error;
+                    }
+                }
+            };
+            kill('SIGTERM');
+            const forceStop = setTimeout(() => kill('SIGKILL'), 1000);
+            try {
+                outcome = await child.status;
+                for (const result of await streams) {
+                    if (result.status === 'rejected') {
+                        failure ??= result.reason;
+                    }
+                }
+            }
+            finally {
+                clearTimeout(forceStop);
+            }
+        }
+        else {
+            stdout?.close();
+            stderr?.close();
+        }
+        try {
+            await writeJson(`${directory}/probe.json`, {
+                pid: child?.pid ?? null,
+                runtime: Deno.version,
+                launch,
+                reaped: outcome !== null,
+                outcome,
+                error: failure?.message ?? null,
+                gcEvents: 'not-established'
+            });
+        }
+        catch (error) {
+            failure ??= error;
+        }
+    }
+    if (failure) {
+        throw failure;
     }
 }
 

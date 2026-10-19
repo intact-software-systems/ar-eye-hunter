@@ -8,6 +8,7 @@ export class ApiCpuCaptureFixture {
     constructor(root) {
         this.root = root;
         this.effects = [];
+        this.capabilityInvocations = [];
         this.failAt = null;
         this.pid = 123;
         this.source = '0'.repeat(40);
@@ -50,9 +51,16 @@ export class ApiCpuCaptureFixture {
         this.capture = new ApiCpuCapture(this.configuration, this);
     }
 
-    run(program, args, environment) {
+    run(program, args, { environment, capabilityDirectory }) {
         const command = `${program} ${args.join(' ')}`;
         this.effects.push(command);
+        if (program === 'runuser' || (program === 'timeout' && args.includes('runuser'))) {
+            this.capabilityInvocations.push({ program, args, capabilityDirectory });
+            if (args.includes('probe') && this.failAt === 'preflight') {
+                throw new Error('Linux capability probe failed');
+            }
+            return args.includes('--version') ? 'deno 2.9.5\nv8 15.0\n' : '';
+        }
         if (program === 'timeout') {
             return this.runScript(args.slice(6), environment);
         }
@@ -70,9 +78,6 @@ export class ApiCpuCaptureFixture {
         }
         if (program === 'cat') {
             return '/usr/local/bin/deno\0run\0--allow-net\0/opt/api/main.ts\0';
-        }
-        if (program === 'runuser' && args.includes('probe') && this.failAt === 'preflight') {
-            throw new Error('Linux capability probe failed');
         }
         if (program === 'systemd-run' && args.some((arg) => arg.endsWith('-inspector'))) {
             this.startInspector(args.at(-1));
