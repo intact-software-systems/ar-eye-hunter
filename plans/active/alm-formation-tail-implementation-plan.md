@@ -236,6 +236,36 @@ instrumentation. The controller artifact append limit recurs in both modes;
 that evidence. Neither passed recipes nor retained accepted events certify full
 recorder retention or satisfy the full formation-tail target.
 
+### Local actual-API CPU/GC result
+
+One unchanged native-fifty capture against an isolated real PostgreSQL database
+passes 50/50 recipes and 231/231 assertions. All 150 unique command-result IDs
+match the control snapshot. The API produces a valid profile with 39,315 samples
+over 62.254 s; 79.80% are classified idle. These are sample counts, not measured
+wall-time fractions or proof of SQL waiting. The largest named project leaf,
+`toOrderedJson`, accounts for 0.65% of all samples and does not justify a repair.
+
+The hosted stall does not reproduce: local maximum event-loop lag is 0.161 s
+across 60 windows, and maximum release flush is 0.155 s across 59 batches. Of 239
+observed GC prefixes, 237 have measurable pauses; median/p95/maximum are
+0.00075 / 0.00250 / 0.02988 s. Two interleaved records remain unresolved. Native
+profile, GC and epoch clocks lack precise calibration, so no exact stall-window
+attribution or categorical GC exclusion is claimed. Startup is included. macOS,
+colocated browsers, a fresh small database and loopback networking differ from
+hosted Linux; this is not a main comparison or evidence that hosted cost is gone.
+
+Default signal termination failed to flush the native profile. A verified
+shutdown-only orderly-exit preload preserved the profile after terminal results,
+worker completion and export, but does not certify durable API drain. All owned
+processes and the isolated database were removed. The existing canonical-node
+artifact append warning recurred; retained-export equality is not full retention.
+
+Next, enable a bounded actual-host capture through the existing prepare/run and
+artifact lifecycle, with verified profile flush, bounded clock calibration and
+failure-safe exact restoration. Do not repeat the local workload or optimize
+release SQL from this non-reproduction. Keep the formation repair as the active
+outcome and corrected state-write attribution as the second outcome.
+
 ### Earlier diagnostic motivating stage attribution
 
 The corrected timing-enabled fifty-agent workload passes registration in all
@@ -375,9 +405,10 @@ measurement remains first.
 1. **Remaining formation-tail delivery.** Same-source captures show nearly all
    of the 4.343 / 5.963 s pre-reservation waits overlapping active owner batches.
    The slow stages vary: authority reads in one capture, release processing with
-   a 1.650 s process-wide timer delay in the other. Use existing CPU/GC profiling
-   and real-owner fixtures to distinguish shared-process stalls from repeated
-   database work before selecting the focused TDD repair. Preserve immutable
+   a 1.650 s process-wide timer delay in the other. The local actual-API profile
+   does not reproduce that stall. Use bounded hosted CPU/GC capture with clock
+   calibration and exact restoration, then real-owner fixtures to distinguish
+   shared-process stalls from database work before selecting a focused TDD repair. Preserve immutable
    events/audiences, causal fences, retries, deadlines, release recovery and
    ordered sends. Keep timing overhead, physical commit, queue eligibility and
    browser-causality limits explicit; every hosted diagnostic retains fresh
@@ -939,3 +970,128 @@ task-owned processes/containers/volumes after evidence export. Produce a concise
 finding with code locations, measured versus suspected claims, falsifying signals,
 exact commands, passed/failed/skipped checks, and the next focused TDD repair or
 measurement. No production source change or hosted profiling is selected here.
+
+### Task 13: Capture the hosted API CPU profile through the existing run lifecycle
+
+The requested outcome remains a measured formation-tail repair. Local native-fifty
+profiling does not reproduce the hosted 1.650 s event-loop delay. Implement one
+bounded, opt-in hosted capture in the existing prepare/run/artifact lifecycle so
+CPU stacks and GC evidence can be compared with that process's existing timing.
+This task builds and validates the capture capability; the parent owns dispatch
+only after review and selected CI. Do not change production ALM, queuebox, SQL,
+retries, concurrency, deadlines, manifests, thresholds or browser workload.
+
+Use the existing Free workflow's `execution_mode` choice for an explicit
+`hetzner-control-cpu-gc` mode. Keep its 25 public dispatch inputs and all existing
+choices. Route the new mode through the same hosted prepare, external-agent and
+operator jobs; carry one internal capture boolean to the reusable runner. Require
+timing and preserving rollout explicitly, and reject contradictory configuration
+before controller mutation. Keep both topology gates, source-manifest fencing,
+agent counts, setup allowances, terminal timeouts and all native assertions intact.
+No detached deploy-then-skip-prepare workaround or synthetic prepare marker.
+
+Recover existing controller rollout, inspect, operation-artifact, journal and
+owned-process test patterns before implementation. Use a small API-specific
+controller capture owner, with explicit begin/finish/restore boundaries, and a
+focused inspector client where its protocol/lifetime warrants a separate file.
+Keep these beside the existing controller tooling; reusable artifact contracts
+remain in shared-test if any contract actually needs changing. Do not introduce
+a generic profiler framework, arbitrary remote-command input, new dependency,
+production observer or second deployment engine. Parent design context is
+`/tmp/alm-hosted-cpu-profile-route.md`; the requirements here govern this task.
+
+Use the actual deployed Deno inspector bound only to loopback. A bounded local
+Deno probe establishes that `Profiler.start`/`Profiler.stop` returns a valid
+profile before process termination; `Tracing.start` is unsupported. Repeat a
+small same-binary Linux capability probe under the service user before mutating
+the API, and retain failure evidence. Do not rely on default SIGTERM/SIGINT native
+profile flushing, force `Deno.exit`, expose an inspector externally, force GC,
+change heap/pool/sampling policy or claim inspector tracing supplies GC events.
+Use supported native GC logging and keep normal timing output in the journal.
+
+Capture lifecycle requirements:
+
+- Own one unique capture identity bound to workflow run/attempt, operation,
+  selected source, source-manifest hash and actual API PID/start identity. A
+  timestamp alone is not identity. Refuse a pre-existing same-name override or
+  overlapping capture/deploy activity. Use one owned lock across begin, finish
+  and deadline cleanup. Preserve unowned files and configuration.
+- Before mutation, retain safe source/public-settings restoration facts using
+  existing validated readers, never secret environment files or reconstructed
+  masked values. Keep an immutable copy of necessary cleanup tooling/state
+  outside the checkout so restoring a source cannot remove its cleanup owner.
+  Record original source and selected capture source separately; restore the
+  exact pre-capture source and public settings, including absent topology keys.
+  Preserve the database and existing store-failure fence.
+- Arm a finite host-local cleanup deadline before activating the temporary
+  override. It covers the gap between successful preparation and the later run
+  SSH shell, including workflow cancellation. Its duration derives from existing
+  prepare/readiness/run/teardown bounds plus a declared cleanup margin; it does
+  not alter recipe timeouts. Existing EXIT/always cleanup calls the same
+  idempotent owner. A deadline-expired capture fails attribution. Do not promise
+  immediate restoration while the host is powered off or unreachable.
+- Install only an owned temporary runtime systemd drop-in, preserving the actual
+  executable, arguments, working directory, permissions and environment sources.
+  Bind inspector only to a verified available loopback endpoint. Use a dedicated
+  writable capture directory outside the service's private `/tmp`. Start capture
+  before external agents can connect and before the final prepare record. Prefer
+  the existing stopped/start rollout boundary; a second pre-agent restart is
+  acceptable only if materially simpler and explicitly reported. Never restart
+  the API mid-cohort to acquire samples.
+- Keep the inspector session owned for the whole selected capture. Bracket actual
+  `Profiler.start` and `Profiler.stop` using API epoch evaluations and retain the
+  bounds used to map returned monotonic profile timestamps. Retain process-launch
+  and first-evaluation bounds for the V8 GC clock; never equate GC process age with
+  `performance.timeOrigin` or claim exact pause alignment without evidence. Expose
+  calibration uncertainty and actual capture bounds in artifacts. If the bounds
+  cannot distinguish the hypothesized stall, report attribution inconclusive.
+- Follow existing recipe terminal, worker completion and native export ordering.
+  Save and validate the actual profile before stopping the API. A canary pass is
+  not profile validity. Check node/sample/time-delta integrity and process
+  identity; retain all segments on restart/PID change and refuse a false single-
+  process join. A lost inspector, invalid profile, unexpected restart or failed
+  export remains a capture failure even when recipes pass.
+- Finish/restore on every outcome. Remove only the owned drop-in, reload units
+  and use existing controlled rollout/restoration to restore recorded source,
+  timing/topology and public-settings fingerprint. Verify health and absence of
+  the override. Cancel the cleanup deadline only after restoration succeeds.
+  Concurrent/repeated finish and deadline calls must be safe. Retain the original
+  recipe result separately from profile, export and restore status; failed
+  restoration must remain visible and actionable.
+- Export original profile, GC/journals, preflight, clock bounds, runtime/source/
+  manifest/PID identities, safe resource snapshots, hashes and cleanup facts
+  through the existing recursive operation-artifact transport, including prepare
+  failure. Preserve safe redaction and check journal suppression/truncation;
+  an empty GC trace does not prove no GC. Do not replace raw artifacts with a
+  projection. Before/after selected systemd API/control CPU/memory/I/O counters
+  and PID-only process snapshots suffice; unavailable counters stay unavailable,
+  and full-capture deltas must not be presented as stall-window measurements.
+
+Use TDD at existing owned process, deployment, workflow and artifact boundaries.
+Prove ordinary modes remain unchanged and the new mode reaches prepare/run with
+consistent identity. Exercise failed preflight without API mutation, failure after
+owned override, cancellation between prepare/run, agent/readiness/recipe failure,
+lost inspector or malformed profile, export failure and restoration failure.
+Prove repeated cleanup and deadline races, pre-existing ownership refusal, changed
+PID/source refusal, preserved unrelated settings/files, and explicit restoration
+failure even after a successful recipe. Prefer a few complete lifecycle fixtures
+over duplicated implementation-shaped string assertions. Existing workflow source
+checks supplement actual command/owned-port behavior; they do not prove cleanup.
+
+Before source edits load code-writing, repository-structure, testing, performance,
+hosted-operations and TDD skills plus applicable required references; inspect
+nearby examples/tests. Review and remediate every changed human-authored file in
+full. Every support file modified by remediation enters closure recursively;
+independent untouched code remains outside closure. Remove affected unneeded
+legacy without silently changing a public compatibility contract.
+
+Direct validation is focused behavioral capture/failure/restoration tests plus a
+small actual-runtime profile probe. Affected-tooling validation is shell syntax,
+workflow parsing/dispatch-contract checks, relevant TypeScript/native checks and
+the exact main-to-head changed-style gate. Select affected existing Hetzner suites
+from rallar-testing, run them once after focused checks, and report warnings or
+skips. Full production benchmark reruns are not earned by tooling-only changes.
+Keep profile fixtures/generated evidence under tmp/perf; commit only reviewed
+reusable source/tests. Report RED/GREEN commands, full-file closure, original-mode
+compatibility, exact artifact meanings, cleanup risks, and all uncaptured metrics.
+No hosted execution, push, PR edit or child agent is part of the implementer task.

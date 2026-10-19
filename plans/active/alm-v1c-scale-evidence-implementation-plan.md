@@ -212,7 +212,13 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    batch, and a 2.660 s release interval in another. Existing API samples expose
    a 1.650 s process-wide timer delay during that release. Profile the actual
    process with existing CPU/GC facilities before attributing this to sequential
-   PostgreSQL release statements or selecting the focused TDD repair. The generic
+   PostgreSQL release statements or selecting the focused TDD repair. One local
+   actual-API/real-PostgreSQL/native-fifty profile passes all 50 recipes and 231
+   assertions but does not reproduce the hosted stall: maximum lag/release are
+   0.161 / 0.155 s. Its 39,315 samples are 79.80% idle; the measurable GC maximum
+   is 0.02988 s, with two unresolved records and no precise cross-clock alignment.
+   Next capture the actual hosted process with bounded clock calibration and
+   verified restoration; do not infer a SQL bottleneck or repeat the local run. The generic
    local probe omits the WS authority callback and cannot rule out that wave.
    Preserve bounded reads, ordered sends, immutable events/audiences, causal fences,
    retries, deadlines, full-row release fences, rollback and healthy-neighbor
