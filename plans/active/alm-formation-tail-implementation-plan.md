@@ -865,9 +865,13 @@ old path. The candidate passes all 10 real SQL/PGlite cases: five 50-member
 principal audiences transfer at most 80 value rows, plus revocation, concurrent
 group change, workspace isolation, original failure and later recovery. All 197
 focused group/client tests pass. Shared-server, API and maintained-test types,
-changed style and focused coupling pass. Independent source review and exact-source
-PostgreSQL/release gates precede the frozen full-formation comparison; local row
-suppression is not yet a demonstrated full-formation speedup.
+changed style and focused coupling pass. Independent source review passes. The local 15/30/50 native cohorts pass with
+reaped workers; the known 50-agent recorder-limit warning remains. Exact-source
+release and affected medium-scale/formation PostgreSQL gates precede the frozen
+full-formation comparison (merge-checkout qualification below); state-write
+comparison runs separately on an isolated GitHub runner and remains a required
+acceptance gate. The local row bound alone does not establish a full-formation
+speedup; the completed hosted comparison below supplies that evidence.
 
 D2 [restoration](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/39331246443)
 passes all 19 checks against its preflight, retaining persistent data. Runner
@@ -876,45 +880,173 @@ usual 50 warning diagnostics and #682 journal limitation visible. Shared-server,
 maintained-test and native API-v1 typechecks pass; changed style and 26 committed
 coupling classifications pass. Incremental legacy review has no candidates.
 Exact-source release, medium-scale PostgreSQL and formation PostgreSQL gates
-pass. The required state-write comparison is running; it is not waived by the
-additive timing scope.
+pass. The required state-write comparison is completed below; the additive
+timing scope did not waive it.
+
+### Current pre-cache PostgreSQL regression comparison
+
+The fresh comparison of source `7bb102bfd` against the governed main baseline
+passes unchanged thresholds. Immutable artifact bytes/hashes/CRC verify, all
+four original positions repool to the exact producer output hashes, and the
+local comparator reproduces PASS. All 108 measured samples remain; each
+role/workload has 12,600 accepted commands/receipts and 18,000 outbox intents,
+with no exhausted commands, transient retries, atomic failures or DBW findings.
+
+| Workload    | Baseline mutations/s | Pre-cache mutations/s |  Change | Baseline p99 (s) | Pre-cache p99 (s) |
+| ----------- | -------------------: | --------------------: | ------: | ---------------: | ----------------: |
+| Uncontended |           100.767937 |            100.175612 | −0.588% |         0.172505 |          0.175495 |
+| Shared      |            88.908728 |             88.022456 | −0.997% |         0.174355 |          0.176849 |
+| Hot         |            24.254831 |             23.595183 | −2.720% |         4.301475 |          4.042750 |
+
+Do not describe threshold passage as an improvement. Hot run-wall totals by
+A1/B2/B3/A4 are 263.338/276.677/257.330/256.146 s. The only ten-attempt
+command is candidate B2 topology-source:20, sample 8: 16.269 s total, 15.731 s
+prescribed retry delays. Candidate B3's slowest is 9.024 s. This locates retry
+amplification in the observed tail; it does not establish the cause of differing
+conflict incidence or all aggregate throughput variation. Keep this result and
+the older failed comparison distinct. No policy change or favorable rerun is
+selected. The cache candidate has its own completed comparison below.
+
+### Cache-source PostgreSQL regression comparison
+
+The [required comparison](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/39334030963)
+passes unchanged thresholds on candidate `536e9ff1c`. All four original position
+hashes and both locally reconstructed pooled hashes match the producer; the local
+canonical comparator reproduces PASS. All 108 samples remain, with 18 per
+workload/role. Every workload/role retains 12,600 accepted commands/receipts and
+18,000 outbox intents, with zero exhausted retries, atomic failures or DBW findings.
+The approved main base uses the same candidate harness overlay. The harness does
+not supply `currentGroupSnapshots`: this is a regression gate, not evidence of
+API cache benefit.
+
+| Workload    | Main baseline mutations/s | Candidate mutations/s |      Change | Baseline p99 (s) | Candidate p99 (s) |
+| ----------- | ------------------------: | --------------------: | ----------: | ---------------: | ----------------: |
+| Uncontended |                105.237355 |            104.372907 |     −0.821% |         0.163817 |          0.166488 |
+| Shared      |                 92.516572 |             92.746720 |     +0.249% |         0.165759 |          0.166539 |
+| Hot         |                 24.470064 |             23.811323 | **−2.692%** |         3.969012 |          3.930342 |
+
+The hot slowdown remains unresolved; passing the 5% allowance does not repair or
+explain it. Summed hot wall is 514.915→529.160 s; per-position A1/B2/B3/A4 totals
+are 261.839/258.466/270.694/253.076 s. Every position has one ten-attempt command.
+The baseline A1 maximum is 16.920 s including 15.492 s prescribed retry delays;
+candidate maxima are 13.929/15.247 s including 12.984/14.306 s retry delays.
+Total hot conflicts are 10,311→10,316; this near-equal count does not explain the
+wall difference. Hot p99 and median CPU (27.048→26.918 s) improve slightly while
+throughput falls. Retry depth and prescribed delay describe tail content, not a
+proven role-level cause. Preserve every position and the earlier −2.720%, +2.405%
+and failed −5.103% source-specific outcomes. No retry-policy change, sample removal
+or favorable rerun is selected.
+
+### Completed group-audience cache formation comparison
+
+Candidate `536e9ff1c` is published and independently source-reviewed. Local
+15/30/50 native acceptance and worker cleanup pass. Release passes on the exact
+candidate; medium-scale and formation PostgreSQL gates pass on GitHub's merge
+checkout, whose seven-file difference is verified outside their API/shared/test/
+dependency graph. The separate required state-write comparison passes, with the
+remaining hot throughput decline explicitly retained above.
+
+One frozen timing-off native-50 A–B–B–A block compares pre-cache `7bb102bfd`
+with cache candidate `536e9ff1c`, on the same persistent PostgreSQL controller,
+30 s traffic, 17 worker shards and unchanged settings. This formation comparison
+isolates the cache increment; it is not a direct comparison against main.
+
+| Run                                                                                              | Player primary median / p95 / max (s) | Director primary (s) | Player connected→accepted median (s) |
+| ------------------------------------------------------------------------------------------------ | ------------------------------------: | -------------------: | -----------------------------------: |
+| [A1 baseline](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/39335973289) |              48.241 / 48.244 / 48.245 |               48.243 |                                2.019 |
+| [B2 cache](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/39336921001)    |              40.635 / 40.638 / 40.640 |               40.635 |                                1.796 |
+| [B3 cache](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/39337754142)    |              45.338 / 45.340 / 45.342 |               45.340 |                                1.762 |
+| [A4 baseline](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/39338555532) |              49.185 / 49.188 / 49.188 |               49.185 |                                1.998 |
+
+Primary is each agent's group-created barrier end→layout-accepted end, with
+49 correlated players and the director reported separately. All-agent maxima
+match the player maxima. Both adjacent primary contrasts favor the candidate:
+**−7.606 / −3.847 s**. Mean run medians fall **48.7130→42.9865 s**, a symmetric
+**−5.7265 s (11.8%)** contrast. This satisfies the frozen descriptive benefit
+rule; it is not a significance claim or a guarantee at other scales. Baseline
+drift is **+0.944 s**, candidate drift **+4.703 s**, with only two whole runs per
+source. No extra favorable run, sample removal or per-leg tuning was used.
+Secondary connected→accepted contrasts are **−0.223/−0.236 s**, symmetric
+**−0.2295 s**. Recipe-start→accepted run medians are
+**66.243/57.845/65.687/67.016 s**, symmetric **−4.8635 s**. Neither timing-off
+measure proves physical commit→browser ≤2 s; that acceptance remains open.
+
+| Player component median (s) |     A1 |     B2 |     B3 |     A4 |
+| --------------------------- | -----: | -----: | -----: | -----: |
+| Recipe start→group created  | 18.004 | 17.212 | 20.348 | 17.831 |
+| Group created→connected     | 46.222 | 38.839 | 43.577 | 47.187 |
+| Connected→appointed         |  2.012 |  1.787 |  1.754 |  1.989 |
+| Appointed→accepted          |  0.007 |  0.008 |  0.008 |  0.008 |
+
+Independent component medians are not additive. Most remaining wait is before
+connected. The final controller-recorded arrivals are controllers 15/03/25/25;
+their SDK-connect times are **8.138/28.287/25.592/36.569 s**, room joins
+**24.325/4.313/8.987/4.953 s**, readiness **13.506/5.970/8.708/5.415 s** and
+barrier waits **0.244/0.262/0.278/0.242 s**. Earlier agents wait for those tails.
+These are same-agent page spans, not proof of loaded SQL, pool, CPU or retry
+causation. Reusing group snapshots removes measured repeated materialization;
+the remaining owner-level contribution must be measured on the cache source.
+
+Every run passes 50 recipes, 150 distinct successful semantic result/control
+bindings, 231 unique assertions, 300 released barriers, 50 RTC outcomes and all
+50 primary/secondary pairs. Failed/missing/stale/flaky agents, reconnects and
+parse errors are zero. All original artifact bytes/API digests/CRC/extracted
+bytes and frozen source/manifest/scope bindings verify. All four idle controller
+inspections pass 19/19; workloads did not overlap. Preserve the 50 session-label
+warnings per run, recoverable conflict/redelivery and persistent-user/stale-layout
+rejections, plus #682's control-journal append failure. Native completeness does
+not certify full journal retention or uninstrumented API teardown balance.
+
+[Final restoration](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/39339292122)
+succeeds. Independent inspection passes all **19/19** checks for exact original
+source `75bbba68a0c0b0cc8de712b78b3d8bfc930ae298`, preserved public/timing/topology
+settings, schema and database identity, healthy services and idle workers.
+Persistent rows grow 59,453→70,902 and groups 23→27; auth users remain 50.
+No database reset occurs. Original artifacts and frozen projections remain under
+ignored `tmp/perf/`; no generated profiles are committed.
 
 ## Next two useful slices
 
-The dedicated RTC agent completed the minimum-readiness/cleanup repair with TDD;
-the primary agent completed the frozen full-formation block and restoration.
-Independent source and artifact review preserve both correctness and the negative
-performance result. The maintainer's performance, scalability, QueueBox
+The dedicated RTC agent completed the earlier minimum-readiness/cleanup repair
+with TDD; the primary agent completed that RTC block and restoration. Independent
+review preserves its negative performance result. The later cache block above
+now meets its separate descriptive benefit rule. The maintainer's performance, scalability, QueueBox
 responsiveness and fault-tolerance requirements continue to govern both product
 and shared-test code. Use `performance-analysis`, `rallar-code-writing`,
 `rallar-realtime`, `rallar-testing`, `adaptive-plan-execution`, and
 `publishing-plan-progress`; add the existing Hetzner operations skill before any
 hosted measurement. Do not repeat a broad capture without a named missing boundary.
 
-1. **Validate the measured group-audience repair.** Complete independent review of
-   the version-probed cache reuse, touched-file standards closure and exact-source
-   release, medium-scale PostgreSQL, formation and state-write comparison gates.
-   Preserve all negative results and investigate any regression at its owner.
-2. **Verify the entire formation path.** Freeze one timing-disabled A–B–B–A block
-   comparing the pre-cache source with the candidate under the unchanged native-50
-   workload. Primary: 49-player same-agent group-created barrier end to accepted
-   end (median/p95/max), with the director separate. Require every native and
-   provenance gate, both negative adjacent median contrasts and a negative
-   symmetric contrast for descriptive benefit; two runs per source do not prove
-   significance. Keep all runs, no per-leg tuning or favorable reruns, persistent
-   data and exact controller restoration. Diagnose remaining waits from the actual
-   final participant and owned queue boundaries. Full setup and physical
-   commit→browser ≤2 s remain separate outcomes. No retry shortening, authority
-   bypass, duplicate expiry guard or detached work.
+1. **Attribute the remaining connection and join tails on the cache source.**
+   Reuse the existing bounded owner timings to separate SDK configuration/ticket/
+   authorized-WS initialization from membership completion queue age and actual
+   handler read work. Start from the final participant, preserve immutable scope
+   and same-clock joins, and distinguish eligibility, retry due time, transaction
+   return and completion observation. Add a diagnostic only for a named missing
+   boundary, with TDD for off/error behavior. Do not infer SQL/pool/CPU causation
+   from page spans or repeat a broad unchanged capture.
+2. **Repair the demonstrated remaining owner and verify the whole path.** Apply
+   TDD to the strongest reproduced bottleneck using existing production owners.
+   Preserve authority, serial captured-policy reads, delivery expiry, cleanup and
+   fault recovery. Select required PostgreSQL regression gates and one frozen
+   full-formation comparison only after the executable change earns it. Keep the
+   physical commit→browser ≤2 s target distinct from barrier-tail timing. The
+   current hot throughput decline is unresolved: retain exact command/retry/phase
+   evidence and do not shorten retry policy or label it noise without a cause.
 
-The retained pre-rollback state-write comparison passes unchanged thresholds
-(+2.405% hot throughput). Its earlier −5.103306% failure remains retained for a
-different candidate; retry depth explains tail content but not role variation.
-The browser RTC change did not exercise that mutation benchmark's path. The
-current client-read candidate does, so a fresh state-write comparison is required. Raw collection/scanning scalability and
-control retention remain [#686](https://github.com/intact-software-systems/ar-eye-hunter/issues/686)
-and [#682](https://github.com/intact-software-systems/ar-eye-hunter/issues/682).
-No new issue was created; remaining formation work stays in this active plan.
+The cache slice satisfies its measured native-50 descriptive benefit rule;
+the broader ALM performance/scalability outcome remains active. Production and
+shared-test both remain in scope, and QueueBox responsiveness and intermittent
+fault recovery are acceptance qualities. Earlier parallel-read and RTC-only
+experiments failed their full-formation benefit rule; the parallel code was
+reverted, while the RTC authority/cleanup correction remains without a speedup
+claim. Current state-write passes despite −2.692% hot throughput; earlier
+−2.720%, +2.405% and failed −5.103% comparisons remain source-specific evidence.
+Raw collection/scanning scalability and control retention remain
+[#686](https://github.com/intact-software-systems/ar-eye-hunter/issues/686) and
+[#682](https://github.com/intact-software-systems/ar-eye-hunter/issues/682).
+No new issue was created; dependent formation and throughput investigation stays
+in this active plan.
 
 ### Task 4: Separate command completion from owned pump cleanup
 

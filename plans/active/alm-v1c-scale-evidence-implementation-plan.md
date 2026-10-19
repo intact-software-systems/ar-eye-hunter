@@ -197,35 +197,57 @@ final evidence reconciliation must preserve workload provenance and the unwaived
 
 ## Next two useful slices
 
-The RTC minimum-readiness repair and its frozen A–B–B–A comparison are complete.
-The repair preserves authority, delivery expiry and owned cleanup, but the full
-formation benefit rule fails: player medians are 37.100/41.543/45.226/44.038 s,
-adjacent contrasts +4.443/+1.188 s and symmetric +2.8155 s. All four runs pass
-50 recipes/150 semantic bindings/231 assertions; exact original controller
-restoration passes all 19 checks. Baseline drift is +6.938 s, so the two runs per
-source do not prove a stable causal regression. Keep the contract fix without a
-speedup claim and retain #682's journal limitation. The focused formation plan
-contains source IDs, linked runs, the component breakdown and negative evidence.
+D1/D2 identify repeated group-audience reads as a dominant authorized-WS read
+owner: median/p95 0.503/0.923 s across 50 complete requests. The implemented
+repair reuses the API's existing bounded, durable row-version-probed group
+snapshot cache while preserving before/after membership guards, current scope,
+expiry, fresh fallback and errors. TDD reproduces repeated transfer and expiry;
+10 SQL/PGlite and 197 affected unit tests pass. Local native 15/30/50 cohorts
+pass with reaped workers, while known recorder warnings remain. Exact-candidate
+release and affected PostgreSQL gates pass; the PostgreSQL merge-checkout delta
+is verified outside their API/shared/test/dependency graph.
 
-1. D1/D2 locate dominant group-audience reads (D2 median/p95 0.503/0.923 s,
-   50 complete requests). Idle PostgreSQL replay returns 2,071 rows / 1,338,004
-   value bytes in 0.010075 s; loaded database attribution remains separate. Reuse
-   the existing bounded, durable row-version-probed group snapshot cache with
-   unchanged before/after membership guards, expiry, scope and failure behavior.
-   TDD reproduces repeated roster transfer and expiry; all 10 PGlite and 197
-   affected unit tests pass. Complete independent review and exact-source release,
-   medium-scale PostgreSQL, formation and state-write comparison gates.
-2. Measure the candidate against its pre-cache source in one frozen timing-off
-   native-50 A–B–B–A block. Require complete native/provenance gates and negative
-   adjacent and symmetric primary formation contrasts before claiming descriptive
-   benefit. Retain every result, no per-leg tuning, all faults/recovery and exact
-   controller restoration. The physical commit→browser ≤2 s target remains open;
-   QueueBox responsiveness and scalable fault tolerance remain requirements.
+The frozen native-50 A–B–B–A block now supports a descriptive formation benefit:
+pre-cache/candidate/candidate/pre-cache player medians are
+**48.241/40.635/45.338/49.185 s**. Adjacent contrasts are **−7.606/−3.847 s**;
+mean run medians fall **48.7130→42.9865 s (11.8%)**. Baseline/candidate drift is
++0.944/+4.703 s, with two whole runs/source, so no significance or broader-scale
+guarantee is claimed. All four runs pass 50 recipes/150 semantic bindings/231
+assertions/300 barriers/50 RTC outcomes and all native pairs. Each post-leg
+controller inspection passes 19/19. Final original-source/settings restoration
+succeeds and independent inspection passes all 19 checks, including database
+identity, health and idle workers. Persistent data is preserved. The focused
+formation plan retains linked originals, component breakdown and fault evidence.
+
+The required current-source PostgreSQL comparison passes, while **hot throughput
+is 2.692% lower than the approved main baseline** (24.470064→23.811323
+mutations/s). All 108 samples and reconstructed hashes verify. Hot p99 and median
+CPU improve slightly; the throughput cause remains unresolved. Retry tails
+explain substantial command latency but not the role-level wall difference.
+The harness does not inject the API cache. Keep previous failed and negative
+comparisons visible; neither threshold passage nor native benefit waives them.
+
+1. **Locate the remaining cached-source SDK and room-join tail.** Reuse existing
+   bounded owner timings, beginning with the actual final participant. Distinguish
+   configuration/ticket/authorized-WS initialization, membership queue age and
+   handler reads, retry eligibility, completion and adoption. Add only a named
+   missing diagnostic with TDD for off/error behavior; preserve authority,
+   immutable scope and owned cleanup. Page spans do not establish SQL/pool/CPU
+   causation. Do not repeat an unchanged broad capture.
+2. **Repair the demonstrated owner and verify end-to-end performance.** Use TDD
+   and existing ownership; keep serial captured-policy reads and existing delivery
+   expiry. Select required PostgreSQL and full-formation comparisons after a
+   concrete change. Preserve all faults and exact controller restoration. Keep
+   the unresolved throughput decline and physical commit→browser ≤2 s target
+   explicit. QueueBox responsiveness, scalability and intermittent-fault recovery
+   remain requirements in production and shared-test.
 
 Use the focused plan's performance, coding, realtime, testing, adaptive execution,
-publication and hosted-operations skills. The prior state-write comparator passes;
-the client-read candidate requires a fresh comparison, unlike the RTC-only path. Independent harness scalability
-and artifact durability remain #686 and #682. No new issue was created.
+publication and hosted-operations skills. The earlier RTC minimum-readiness fix
+preserves authority/cleanup but its formation comparison worsened by 2.8155 s;
+keep it as a contract correction, not a speedup. The parallel-read experiment was
+reverted. Independent harness scalability and artifact durability remain #686
+and #682. No new issue was created; dependent formation work stays in this plan.
 
 ## Retained slice history
 
