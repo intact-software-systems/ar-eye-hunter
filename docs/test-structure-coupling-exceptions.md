@@ -89,15 +89,60 @@ moved or changed test.
       "id": "alm-outbound-captured-policy-indexeddb-session-settlement",
       "domain": "ALM outbound captured-policy IndexedDB read-session lifetime",
       "owner": "Rallar shared maintainers",
-      "summary": "A held canonical-identity read settles before the captured-policy owner closes its IndexedDB read session, including when the stored reference is corrupt.",
-      "semanticCoverage": "packages/tests/shared/alm/outbound-admitted-audience.test.ts#keeps a genuine IndexedDB read session open until a held sibling settles",
-      "coverageRelation": "The test holds the real IndexedDB work read, observes the session-close port before release, then releases the read, asserts the original corruption failure and session closure, repairs the stored reference and proves a healthy follow-up read.",
+      "summary": "A held canonical-identity read settles before the captured-policy owner closes its IndexedDB read session.",
+      "semanticCoverage": "packages/tests/shared/alm/outbound-admitted-audience.test.ts#keeps a genuine IndexedDB read session open until a held identity read settles",
+      "coverageRelation": "The test holds the real IndexedDB identity read, observes the session-close port before release, then releases the read and proves success and session closure. A subsequent corrupt stored reference fails closed, and a repaired row permits recovery.",
       "interactionRequirement": {
         "interactionKind": "order",
         "ownedPort": "IndexedDbAdmissionReadSession.close, invoked by IndexedDbAdmissionBackend.readWithin",
-        "observableEffect": "Closing the session aborts its active readonly snapshot; a sibling read still using that session can lose its storage boundary or continue after the owner has returned.",
-        "requiredConstraint": "The captured-policy read session remains open while the identity read is held and closes only after both started reads settle, even when reference validation then fails.",
-        "failureRationale": "The same corruption error and later successful read could appear after an early close if the pending sibling happened to reopen or finish on another snapshot. Observing close on both sides of release proves the session lifetime that owns both reads."
+        "observableEffect": "Closing the session aborts its active readonly snapshot; an identity read still using that session can lose its storage boundary or continue after the owner has returned.",
+        "requiredConstraint": "The captured-policy read session remains open while its identity read is held and closes only after that read settles.",
+        "failureRationale": "The same successful policy could appear after an early close if the pending identity read happened to reopen or finish on another snapshot. Observing close on both sides of release proves the session lifetime that owns the read."
+      }
+    },
+    {
+      "id": "alm-outbound-captured-policy-serial-read-order",
+      "domain": "ALM outbound captured-policy read order",
+      "owner": "Rallar shared maintainers",
+      "summary": "Canonical identity storage work starts only after the stored admission read has completed.",
+      "semanticCoverage": "packages/tests/shared/alm/outbound-admitted-audience.test.ts#starts the canonical identity read only after the stored admission read completes",
+      "coverageRelation": "The test holds the real stored admission read, observes the identity storage port before release, then releases the stored read and proves the captured policy and one identity read complete.",
+      "interactionRequirement": {
+        "interactionKind": "order",
+        "ownedPort": "InMemoryAdmissionBackend.readWork, the captured-policy canonical identity read port",
+        "observableEffect": "Starting the identity read early adds storage work to a read session before the stored admission is known to be valid.",
+        "requiredConstraint": "The canonical identity read starts after the stored admission read completes.",
+        "failureRationale": "The same final policy could be returned after speculative parallel identity work; observing the storage port while the stored read is held distinguishes the required serial order."
+      }
+    },
+    {
+      "id": "alm-outbound-captured-policy-stored-failure-short-circuit",
+      "domain": "ALM outbound captured-policy stored-read failure",
+      "owner": "Rallar shared maintainers",
+      "summary": "A failed stored admission read returns its original error without starting canonical identity storage work.",
+      "semanticCoverage": "packages/tests/shared/alm/outbound-admitted-audience.test.ts#does not start the identity read after a stored admission failure and permits recovery",
+      "coverageRelation": "The test fails the stored read once, proves the original error and absence of identity storage work, then proves the next healthy read reaches identity and returns the policy.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "InMemoryAdmissionBackend.readWork, the captured-policy canonical identity read port",
+        "observableEffect": "An unnecessary identity read after stored failure can occupy a session and add latency or a second failure without any valid policy to return.",
+        "requiredConstraint": "Stored admission failure ends the attempt before canonical identity storage work begins.",
+        "failureRationale": "The original stored error could still win after both reads start; the absence assertion proves failure short-circuiting at the storage port."
+      }
+    },
+    {
+      "id": "alm-outbound-captured-policy-reference-failure-short-circuit",
+      "domain": "ALM outbound captured-policy reference validation",
+      "owner": "Rallar shared maintainers",
+      "summary": "An invalid stored reference fails closed before canonical identity storage work starts.",
+      "semanticCoverage": "packages/tests/shared/alm/outbound-admitted-audience.test.ts#rejects stored reference corruption before reading canonical identity",
+      "coverageRelation": "The test corrupts the stored scope, observes the canonical identity storage port remains untouched, then repairs the row and proves the policy read succeeds.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "InMemoryAdmissionBackend.readWork, the captured-policy canonical identity read port",
+        "observableEffect": "Canonical identity storage work is unnecessary when the stored reference is already invalid and cannot produce an authorized policy.",
+        "requiredConstraint": "Stored reference validation precedes the canonical identity read.",
+        "failureRationale": "The same corruption error could be returned after a speculative identity read; observing absence at the storage port proves the fail-fast boundary."
       }
     },
     {
@@ -4583,6 +4628,61 @@ moved or changed test.
   ],
   "entries": [
     {
+      "id": "test-structure-coupling-b98be65b2158586a",
+      "path": "packages/tests/shared/alm/outbound-admitted-audience.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-outbound-captured-policy-serial-read-order",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "No identity storage call while the stored read is held proves the required serial order; eventual policy success alone cannot distinguish parallel reads.",
+      "semanticCoverage": "packages/tests/shared/alm/outbound-admitted-audience.test.ts#starts the canonical identity read only after the stored admission read completes"
+    },
+    {
+      "id": "test-structure-coupling-2d855d0e3143e5d3",
+      "path": "packages/tests/shared/alm/outbound-admitted-audience.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-outbound-captured-policy-serial-read-order",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "One identity storage call after release proves the serial path still validates canonical identity before returning policy.",
+      "semanticCoverage": "packages/tests/shared/alm/outbound-admitted-audience.test.ts#starts the canonical identity read only after the stored admission read completes"
+    },
+    {
+      "id": "test-structure-coupling-588d92e9f2da9611",
+      "path": "packages/tests/shared/alm/outbound-admitted-audience.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-outbound-captured-policy-stored-failure-short-circuit",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "No identity storage call after the stored read fails proves failure short-circuiting; the original error alone could also win after a parallel identity read.",
+      "semanticCoverage": "packages/tests/shared/alm/outbound-admitted-audience.test.ts#does not start the identity read after a stored admission failure and permits recovery"
+    },
+    {
+      "id": "test-structure-coupling-6bc542e9d917fb57",
+      "path": "packages/tests/shared/alm/outbound-admitted-audience.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-outbound-captured-policy-stored-failure-short-circuit",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The healthy follow-up reaches identity storage exactly once after the failed attempt skipped it, proving the store remains usable.",
+      "semanticCoverage": "packages/tests/shared/alm/outbound-admitted-audience.test.ts#does not start the identity read after a stored admission failure and permits recovery"
+    },
+    {
+      "id": "test-structure-coupling-953fc9164f0b8dc6",
+      "path": "packages/tests/shared/alm/outbound-admitted-audience.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-outbound-captured-policy-reference-failure-short-circuit",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "No canonical identity storage call on a corrupt stored reference proves validation precedes the identity read; the corruption error alone would not rule out speculative storage work.",
+      "semanticCoverage": "packages/tests/shared/alm/outbound-admitted-audience.test.ts#rejects stored reference corruption before reading canonical identity"
+    },
+    {
       "id": "test-structure-coupling-4ed32dcbca1bae41",
       "path": "packages/tests/shared/alm/outbound-admitted-audience.test.ts",
       "kind": "mock-invocation-count-or-order",
@@ -4590,8 +4690,8 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar shared maintainers",
-      "rationale": "The absence of close while the real identity read is held proves the backend has not ended the session before its already-started sibling settles; a pending returned Promise alone does not prove that storage lifetime.",
-      "semanticCoverage": "packages/tests/shared/alm/outbound-admitted-audience.test.ts#keeps a genuine IndexedDB read session open until a held sibling settles"
+      "rationale": "The absence of close while the real identity read is held proves the backend has not ended the session before that read settles; a pending returned Promise alone does not prove that storage lifetime.",
+      "semanticCoverage": "packages/tests/shared/alm/outbound-admitted-audience.test.ts#keeps a genuine IndexedDB read session open until a held identity read settles"
     },
     {
       "id": "test-structure-coupling-c5abef22a4ad4c49",
@@ -4601,8 +4701,8 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar shared maintainers",
-      "rationale": "The close observation after release proves the failed read returns its session to the backend once both reads settle; the corruption error and healthy follow-up do not by themselves prove that cleanup occurred at this boundary.",
-      "semanticCoverage": "packages/tests/shared/alm/outbound-admitted-audience.test.ts#keeps a genuine IndexedDB read session open until a held sibling settles"
+      "rationale": "The close observation after release proves the successful read returns its session to the backend once identity settles; the policy and healthy follow-up do not by themselves prove that cleanup occurred at this boundary.",
+      "semanticCoverage": "packages/tests/shared/alm/outbound-admitted-audience.test.ts#keeps a genuine IndexedDB read session open until a held identity read settles"
     },
     {
       "id": "test-structure-coupling-90e8563b42965575",

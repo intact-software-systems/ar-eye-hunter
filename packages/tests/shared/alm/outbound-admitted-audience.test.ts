@@ -66,55 +66,28 @@ interface CapturedAudienceFixture {
 describe('captured outbound audience read', () => {
     afterEach(() => vi.restoreAllMocks());
 
-    it.each(['stored', 'identity'] as const)('settles both policy reads when %s completes first', async (first) => {
+    it('starts the canonical identity read only after the stored admission read completes', async () => {
         const fixture = await createFixture(['session-a']);
         const storedEntered = Promise.withResolvers<void>();
-        const identityEntered = Promise.withResolvers<void>();
         const releaseStored = Promise.withResolvers<void>();
-        const releaseIdentity = Promise.withResolvers<void>();
         const read = fixture.backend.read.bind(fixture.backend);
-        const readWork = fixture.backend.readWork.bind(fixture.backend);
         vi.spyOn(fixture.backend, 'read').mockImplementation(async (key, decode) => {
             storedEntered.resolve();
             await releaseStored.promise;
             return await read(key, decode);
         });
-        vi.spyOn(fixture.backend, 'readWork').mockImplementation(async (key) => {
-            identityEntered.resolve();
-            await releaseIdentity.promise;
-            return await readWork(key);
-        });
-        onTestFinished(() => {
-            releaseStored.resolve();
-            releaseIdentity.resolve();
-        });
+        const identityRead = vi.spyOn(fixture.backend, 'readWork');
+        onTestFinished(() => releaseStored.resolve());
 
         const policy = fixture.store.readCapturedPolicy(fixture.message, fixture.entry);
-        let settled = false;
-        void policy.finally(() => {
-            settled = true;
-        });
         await storedEntered.promise;
-        await Promise.resolve();
-        const bothEntered = await Promise.race([
-            identityEntered.promise.then(() => true),
-            new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 25))
-        ]);
-        expect(bothEntered).toBe(true);
-        if (first === 'stored') {
-            releaseStored.resolve();
-        }
-        else {
-            releaseIdentity.resolve();
-        }
-        await Promise.resolve();
-        expect(settled).toBe(false);
+        expect(identityRead).not.toHaveBeenCalled();
         releaseStored.resolve();
-        releaseIdentity.resolve();
         await expect(policy).resolves.toMatchObject({ admittedAudience: ['session-a'] });
+        expect(identityRead).toHaveBeenCalledOnce();
     });
 
-    it('accounts for overlapping read spans through one disjoint combined interval', async () => {
+    it('reports disjoint stored, reference, and identity phases for a serial read', async () => {
         const observations: ALOutboundCapturedPolicyTiming.Observation[] = [];
         let monotonicMs = 0;
         const fixture = await createFixture(['session-a'], undefined, {
@@ -144,22 +117,20 @@ describe('captured outbound audience read', () => {
         });
 
         const policy = fixture.store.readCapturedPolicy(fixture.message, fixture.entry);
-        await Promise.all([storedEntered.promise, identityEntered.promise]);
+        await storedEntered.promise;
         monotonicMs = 10;
-        releaseIdentity.resolve();
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        expect(observations).toEqual([]);
-        monotonicMs = 30;
         releaseStored.resolve();
+        await identityEntered.promise;
+        expect(observations).toEqual([]);
+        monotonicMs = 25;
+        releaseIdentity.resolve();
         await expect(policy).resolves.toMatchObject({ admittedAudience: ['session-a'] });
         expect(observations[0]).toMatchObject({
             availability: 'available',
             phases: {
-                readShape: 'parallel',
-                combinedReadElapsedMs: 30,
-                readStoredMessageElapsedMs: 30,
-                queueIdentityReadElapsedMs: 10,
-                ownerElapsedMs: 30
+                readStoredMessageElapsedMs: 10,
+                queueIdentityReadElapsedMs: 15,
+                ownerElapsedMs: 25
             }
         });
         const observation = observations[0];
@@ -168,58 +139,39 @@ describe('captured outbound audience read', () => {
         }
         const phases = observation.phases;
         expect(
-            phases.ownerEntryElapsedMs + phases.combinedReadElapsedMs + phases.referenceValidationElapsedMs +
-                phases.canonicalValidationElapsedMs + phases.sessionReturnElapsedMs
+            phases.ownerEntryElapsedMs + phases.readStoredMessageElapsedMs + phases.referenceValidationElapsedMs +
+                phases.queueIdentityReadElapsedMs + phases.canonicalValidationElapsedMs + phases.sessionReturnElapsedMs
         ).toBe(phases.ownerElapsedMs);
-        expect(phases.readStoredMessageElapsedMs + phases.queueIdentityReadElapsedMs).toBeGreaterThan(phases.combinedReadElapsedMs);
     });
 
-    it('keeps stored failure precedence after both reads settle and permits a healthy follow-up', async () => {
+    it('does not start the identity read after a stored admission failure and permits recovery', async () => {
         const fixture = await createFixture(['session-a']);
         const storedFailure = new Error('stored read failed');
-        const identityFailure = new Error('identity read failed');
-        const storedEntered = Promise.withResolvers<void>();
-        const identityEntered = Promise.withResolvers<void>();
-        const releaseStored = Promise.withResolvers<void>();
-        const releaseIdentity = Promise.withResolvers<void>();
-        vi.spyOn(fixture.backend, 'read').mockImplementationOnce(async () => {
-            storedEntered.resolve();
-            await releaseStored.promise;
-            throw storedFailure;
-        });
-        vi.spyOn(fixture.backend, 'readWork').mockImplementationOnce(async () => {
-            identityEntered.resolve();
-            await releaseIdentity.promise;
-            throw identityFailure;
-        });
-        onTestFinished(() => {
-            releaseStored.resolve();
-            releaseIdentity.resolve();
-        });
+        vi.spyOn(fixture.backend, 'read').mockRejectedValueOnce(storedFailure);
+        const identityRead = vi.spyOn(fixture.backend, 'readWork');
 
-        const policy = fixture.store.readCapturedPolicy(fixture.message, fixture.entry);
-        await Promise.all([storedEntered.promise, identityEntered.promise]);
-        releaseIdentity.resolve();
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        releaseStored.resolve();
-        await expect(policy).rejects.toBe(storedFailure);
+        await expect(fixture.store.readCapturedPolicy(fixture.message, fixture.entry)).rejects.toBe(storedFailure);
+        expect(identityRead).not.toHaveBeenCalled();
+        await expect(fixture.store.readCapturedPolicy(fixture.message, fixture.entry))
+            .resolves.toMatchObject({ admittedAudience: ['session-a'] });
+        expect(identityRead).toHaveBeenCalledOnce();
+    });
+
+    it('rejects stored reference corruption before reading canonical identity', async () => {
+        const fixture = await createFixture(['session-a']);
+        const reference = fixture.stored.reference;
+        fixture.stored.reference = { ...reference, scope: 'wrong-scope' };
+        const identityRead = vi.spyOn(fixture.backend, 'readWork');
+
+        await expect(fixture.store.readCapturedPolicy(fixture.message, fixture.entry))
+            .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        expect(identityRead).not.toHaveBeenCalled();
+        fixture.stored.reference = reference;
         await expect(fixture.store.readCapturedPolicy(fixture.message, fixture.entry))
             .resolves.toMatchObject({ admittedAudience: ['session-a'] });
     });
 
-    it('keeps reference corruption ahead of an identity failure after joining both reads', async () => {
-        const fixture = await createFixture(['session-a']);
-        fixture.stored.reference = { ...fixture.stored.reference, scope: 'wrong-scope' };
-        const identityFailure = new Error('identity read failed');
-        vi.spyOn(fixture.backend, 'readWork').mockRejectedValueOnce(identityFailure);
-
-        await expect(fixture.store.readCapturedPolicy(fixture.message, fixture.entry))
-            .rejects.toMatchObject({ name: 'ALAdmissionCorruptionError' });
-        await expect(fixture.store.readCapturedPolicy(fixture.message, fixture.entry))
-            .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
-    });
-
-    it('keeps a genuine IndexedDB read session open until a held sibling settles', async () => {
+    it('keeps a genuine IndexedDB read session open until a held identity read settles', async () => {
         const fixture = await createFixture(['session-a']);
         const identityEntered = Promise.withResolvers<void>();
         const releaseIdentity = Promise.withResolvers<void>();
@@ -248,7 +200,7 @@ describe('captured outbound audience read', () => {
         await backend.ready();
         const key = toALOutboundSentMessageKey('server-namespace', fixture.message.id.msgId);
         await backend.write(async (write) => {
-            await write.set(key, { ...fixture.stored, reference: { ...fixture.stored.reference, scope: 'wrong-scope' } }, Date.now() + 120_000);
+            await write.set(key, fixture.stored, Date.now() + 120_000);
         });
         await backend.workQueue.enqueue(toALOutboundIdentityEntry(
             fixture.stored.reference,
@@ -272,9 +224,14 @@ describe('captured outbound audience read', () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
         expect(close).not.toHaveBeenCalled();
         releaseIdentity.resolve();
-        await expect(policy).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        await expect(policy).resolves.toMatchObject({ admittedAudience: ['session-a'] });
         expect(close).toHaveBeenCalled();
 
+        await backend.write(async (write) => {
+            await write.set(key, { ...fixture.stored, reference: { ...fixture.stored.reference, scope: 'wrong-scope' } }, Date.now() + 120_000);
+        });
+        await expect(store.readCapturedPolicy(fixture.message, fixture.entry))
+            .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         await backend.write(async (write) => {
             await write.set(key, fixture.stored, Date.now() + 120_000);
         });
@@ -282,7 +239,7 @@ describe('captured outbound audience read', () => {
             .resolves.toMatchObject({ admittedAudience: ['session-a'] });
     });
 
-    it('uses the live delivery expiry guard when a read pair crosses the message deadline', async () => {
+    it('uses the live delivery expiry guard when a policy read crosses the message deadline', async () => {
         const fixture = await createFixture(['session-a']);
         const deadline = resolveALMessageExpireAtMs(fixture.message)!;
         const clock = {
@@ -625,8 +582,10 @@ describe('captured outbound audience read', () => {
                 reservationStartedAtEpochMs: 'unavailable',
                 anchorEpochMs: 10_000,
                 anchorMonotonicMs: 5,
-                readShape: 'parallel',
-                combinedReadElapsedMs: 0,
+                readStoredMessageElapsedMs: 0,
+                referenceValidationElapsedMs: 0,
+                queueIdentityReadElapsedMs: 0,
+                canonicalValidationElapsedMs: 0,
                 ownerElapsedMs: 0
             }
         });

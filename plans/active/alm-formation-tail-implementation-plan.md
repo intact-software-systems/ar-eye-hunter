@@ -594,40 +594,69 @@ honest unavailable values for backends without that observation before selecting
 this repair. Keep this a bounded attribution follow-up while formation-tail
 measurement remains first.
 
+## Serial rollback and larger-wait finding
+
+Captured-policy reads are serial again: read and validate stored admission before
+starting canonical identity I/O. Existing delivery entry and per-recipient expiry
+guards remain; no reader-level expiry check was added. Parallel-only phase fields
+and overlap tests were removed. Three tests failed first for speculative identity
+I/O and overlapping attribution, then passed after the rollback. The final focused
+policy/PostgreSQL-factory/QueueBox bridge suite passes 58/58; shared/server/test
+typing and API native checking pass. Timing now reports disjoint serial phases.
+This is a simplification decision after no demonstrated formation benefit, not a
+claim that two runs per source prove parallel reads caused the slowdown.
+
+The retained four-run investigation identifies each connected barrier's final
+arrival. That agent waits only 0.321 / 0.338 / 0.316 / 0.236 s for release in
+A1/B2/B3/A4, while B3's player median barrier wait is 6.257 s. Its final agent,
+controller-08, spends 41.389 s in composite `rtc.connect`, including 24.589 s in
+readiness. A current accepted room has one of five peers ready 7.903 s before
+readiness completes; four are ready 5.880 s before completion. These durations
+use that agent's own clock, not uncalibrated cross-host timestamp subtraction.
+
+The recipe requests `minReadyPeers: 1`. `BrowserRtcRoomRuntime` forwards that
+option without translating it to the lane expectation, and
+`BrowserRtcWaitRuntime.waitForRoomLane` joins every desired peer before evaluating
+readiness. The shared-test contract accepts an open or partial room with the
+requested minimum. A focused public test confirms partial status with one open
+peer, then fails because `waitForRoom({connect: true, minReadyPeers: 1})` cannot
+return while another peer remains pending. The temporary test and output remain
+under ignored `tmp/perf/formation-wait-investigation/`; the original suite was
+restored and passes 30/30. No RTC production behavior changed in this investigation.
+The defect exists in both compared sources: 7.903 s is observed wait exposure,
+not a measured fix speedup or an explanation of the A/B difference.
+
 ## Next two useful slices
 
-1. **Explain the measured formation slowdown before selecting another repair.**
-   The completed timing-off A–B–B–A artifact block does not demonstrate a
-   full-path benefit from parallel policy reads. Complete-setup player medians
-   average 38.6425 s serial versus 42.5500 s parallel; connected-to-accepted
-   medians average 1.7315 versus 1.9825 s. Both adjacent contrasts favor serial.
-   Two runs per source and correlated players do not establish a stable causal
-   regression. Keep this negative result beside the positive local owner probe.
-   Use the retained same-agent RTC, barrier, audience and appointment evidence
-   to locate the remaining wait before another experiment. A matched timing-on
-   diagnostic is a separate bounded attribution decision only after naming the
-   missing owner boundary and falsifier; do not rerun merely for a pass or add
-   speculative instrumentation. The physical commit-to-browser ≤2 s target
-   remains open. Preserve immutable events/audiences, ordered sends, existing
-   expiry guards, causal fences, retries and fault recovery; any selected fix
-   requires a failing semantic test at its actual owner, then affected checks
-   and matched benefit evidence. Every hosted mutation requires exact source,
-   settings, health, idle-state and persistent database restoration checks.
-2. **Close current state-write evidence and retain the unresolved retry finding.**
-   The fresh pinned comparison with the same corrected harness on both roles
-   passes every unchanged comparator threshold: hot throughput is 24.082769 →
-   24.661880 mutations/s (+2.405%). The older −5.103306% comparison remains a
-   valid failed result for its different candidate; do not rewrite it as noise.
-   Current artifacts contain the only ten-attempt command on the baseline:
-   15.314 s latency including 14.385 s prescribed backoff. The same candidate
-   differs by 18.616 s across its two nine-run hot positions, alongside differing
-   deep-retry counts. This explains observed tail content, not the cause of
-   role differences, and earns no retry-policy repair. Preserve all samples,
-   native receipts, artifact integrity and pending remote-finalization limits.
-   If a later required comparison fails with an unexplained scheduling residual,
-   join exact command/pump/dequeue observations to existing retry facts before
-   TDD repair. Raw collection and repeated-scan scalability remain independent
-   follow-up #686; no additional favorable-rerun loop is selected.
+1. **Honor minimum RTC readiness without abandoning owned waits.** Make the
+   public held-second-peer reproduction green using existing RTC ownership and
+   wait patterns. Preserve default exact-all behavior, pinned room scope,
+   current-presence/accepted-layout authorization, active lane validity, timeout
+   and abort outcomes, and fault recovery. Recheck authority before returning
+   partial readiness. Clean up owned observers without closing healthy shared
+   transports or detaching pending work. Mapping the minimum into `expect` alone
+   is insufficient while the all-peer join remains. Use TDD for the threshold,
+   changed authority, abort and cleanup cases, then focused RTC tests and affected
+   package typing. Review every changed file in full and recursively include any
+   changed support file; independent untouched code remains outside closure.
+2. **Measure the corrected wait and attribute remaining formation cost.** After
+   correctness passes, use a bounded matched native-50 comparison to quantify
+   formation benefit. Retain every run and separate `rallar.connect`, `rooms.join`,
+   readiness and connected-barrier durations. Their player medians currently span
+   11.565–14.301 s, 9.123–12.731 s, 8.898–10.414 s and 1.735–6.257 s respectively;
+   these component medians are not additive. Investigate the actual slowest
+   participant rather than inferring a controller fanout bottleneck from waiting
+   players. Session bootstrap is reused in the retained capture; do not infer
+   repeated login. Name any missing observation before adding instrumentation.
+   Preserve events, audiences, deadlines, fences, retries and recovery. Physical
+   commit-to-browser ≤2 s acceptance remains open.
+
+The retained pre-rollback candidate state-write comparison passes unchanged thresholds
+(+2.405% hot throughput). The earlier −5.103306% failure remains retained for its
+different candidate; retry depth explains observed tail content but not role
+variation. That harness does not dispatch captured-policy delivery reads. No
+retry-policy change or repeat comparison is selected merely to test this rollback.
+Raw collection/scanning scalability and control retention remain #686 and #682.
 
 ### Task 4: Separate command completion from owned pump cleanup
 
@@ -2176,9 +2205,8 @@ are failed, missing, stale or flaky; zero reconnects and parse errors occur.
 Each run retains 50 known session-label mismatch warnings. The #682 control
 retention limit recurs; native pairs are complete, full event history is not.
 The original source/settings, schema/database identity, health and idle state
-are restored and independently verified by all 18 checks. GitHub's B3/A4 overall
-workflow summaries remain stale despite completed successful product artifacts;
-formal workflow acceptance remains pending rather than inferred from artifacts.
+are restored and independently verified by all 18 checks. GitHub subsequently confirms successful completion for all four workflows;
+the delayed summary metadata is resolved without changing any measured result.
 
 | Native player median (s), 49 correlated players/run | A1 serial | B2 parallel | B3 parallel | A4 serial | Mean parallel − mean serial |
 | --------------------------------------------------- | --------: | ----------: | ----------: | --------: | --------------------------: |
@@ -2209,8 +2237,9 @@ unchanged thresholds, workloads and cleanup. All 108 measured samples are retain
 and receipts and 18,000 expected/actual outbox intents, with zero exhausted
 commands, transient retries, atomic failures or DBW violations. Original ZIPs,
 producer inventory, position/environment hashes and the complete successful
-terminal record are verified. The comparator artifact passes; GitHub's overall
-workflow summary is still stale and is not claimed as finalized CI success.
+terminal record are verified. The comparator artifact passes and GitHub subsequently confirms successful
+workflow completion. The original delayed summary is retained as an operational
+observation, not an unresolved product failure.
 
 | Workload    | Baseline mutations/s | Candidate mutations/s |  Change | Baseline p99 (s) | Candidate p99 (s) |
 | ----------- | -------------------: | --------------------: | ------: | ---------------: | ----------------: |

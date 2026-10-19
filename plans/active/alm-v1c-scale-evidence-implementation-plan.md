@@ -310,15 +310,32 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    Both adjacent contrasts favor serial; two runs per source, correlated players
    and substantial RTC/barrier variation limit causal conclusions. All native
    correctness checks pass and all 18 original-controller restoration checks
-   pass. Delayed GitHub summary metadata remains a formal admission limit.
+   pass. GitHub subsequently confirms all four workflow conclusions as successful.
    Preserve the negative result; inspect existing RTC/barrier/appointment waits
    before selecting a bounded matched diagnostic or TDD fix. The absent server
    promotion marker leaves the physical commit-to-browser ≤2 s target open.
-   The separate fresh current-source state-write comparator passes unchanged
+   The retained pre-rollback candidate state-write comparator passes unchanged
    thresholds: hot throughput 24.082769 → 24.661880 mutations/s (+2.405%).
    It was justified by executable QueueBox/harness changes since the earlier
    failed candidate. That older −5.103% result remains retained; neither result
    verifies outbound policy reads, which this harness does not exercise.
+   Captured-policy reads are now serial again: stored admission is read and
+   validated before canonical identity I/O. Existing delivery expiry guards are
+   retained without a duplicate reader check. Three semantic tests failed first;
+   the focused policy/PostgreSQL-factory/QueueBox bridge suite passes 58/58, and
+   shared/server/test typing plus API native checking pass. The negative parallel
+   measurements remain evidence; rollback is not a causal regression claim.
+   Investigation of the four original captures finds the last-arriving player's
+   composite connection governs the connected barrier: last-agent release waits
+   are 0.236–0.338 s. In B3, controller-08 has one current accepted peer ready
+   7.903 s before readiness completes despite requesting `minReadyPeers: 1`.
+   The room/lane wait drops the minimum expectation and joins every desired peer.
+   A public held-second-peer test reproduces this defect; the restored original
+   RTC suite passes 30/30. It exists in both measured sources, so neither a causal
+   A/B explanation nor a fixed speedup is claimed. The next TDD slice repairs
+   minimum readiness while preserving authority, timeout/abort and owned-observer
+   cleanup; only then measure formation and remaining connect/join costs. See the
+   focused formation plan for the next two slices and retained limitations.
    Delivery deadlines and serial sends remain enforced at their existing owner. No
    redundant read, safe cache or send reordering is established. Full details
    and constraints are Tasks 19–21 in the focused formation plan. Native 150-result/231-assertion reconciliation
@@ -408,8 +425,8 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    including 14.385 s prescribed backoff. Candidate hot-position wall sums
    differ by 18.616 s across nine runs alongside 60 versus 40 deep-retry
    commands. This identifies tail content but not the cause of role variation;
-   no retry-policy fix or additional rerun is earned. Formal GitHub workflow
-   completion is still pending despite verified successful terminal artifacts.
+   no retry-policy fix or additional rerun is earned. GitHub subsequently confirms
+   successful completion, matching the verified successful terminal artifacts.
    The remaining D278/D298 shared-mechanism audit, large-result certification,
    headless shutdown and serial publication findings remain explicit outcomes below; passing
    native acceptance closes none of them.
