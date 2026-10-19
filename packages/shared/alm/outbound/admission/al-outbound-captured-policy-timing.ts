@@ -23,11 +23,15 @@ export namespace ALOutboundCapturedPolicyTiming {
     }
 
     export interface Phases {
+        readonly readShape: 'parallel';
         readonly ownerEntryElapsedMs: number;
-        /** Includes the stored-message read and row decoding; not SQL-only time. */
+        /** Disjoint wall interval from starting the pair until both reads settle. */
+        readonly combinedReadElapsedMs: number;
+        /** Overlapping span including stored-message decoding; not additive to combinedReadElapsedMs. */
         readonly readStoredMessageElapsedMs: number;
         /** Includes captured-reference validation and its continuations. */
         readonly referenceValidationElapsedMs: number;
+        /** Overlapping span; not additive to combinedReadElapsedMs. */
         readonly queueIdentityReadElapsedMs: number;
         /** Includes canonical decoding, equality and scope validation. */
         readonly canonicalValidationElapsedMs: number;
@@ -122,9 +126,12 @@ interface ALOutboundCapturedPolicyBoundaries {
     readonly startedAtMs: number;
     readonly anchorAfterMs: number;
     readonly methodStartedAtMs: number;
+    readonly storedReadStartedAtMs: number;
     readonly storedReadEndedAtMs: number;
-    readonly referenceValidationEndedAtMs: number;
+    readonly identityReadStartedAtMs: number;
     readonly identityReadEndedAtMs: number;
+    readonly readPairEndedAtMs: number;
+    readonly referenceValidationEndedAtMs: number;
     readonly methodEndedAtMs: number;
     readonly ownerEndedAtMs: number;
 }
@@ -133,9 +140,12 @@ interface ALOutboundCapturedPolicyBoundaries {
 export class ALOutboundCapturedPolicyTimingInvocation {
     private readonly input: CreateALOutboundCapturedPolicyTimingInvocationInput;
     private methodStartedAtMs: number | undefined;
+    private storedReadStartedAtMs: number | undefined;
     private storedReadEndedAtMs: number | undefined;
-    private referenceValidationEndedAtMs: number | undefined;
+    private identityReadStartedAtMs: number | undefined;
     private identityReadEndedAtMs: number | undefined;
+    private readPairEndedAtMs: number | undefined;
+    private referenceValidationEndedAtMs: number | undefined;
     private methodEndedAtMs: number | undefined;
 
     constructor(input: CreateALOutboundCapturedPolicyTimingInvocationInput) {
@@ -146,16 +156,28 @@ export class ALOutboundCapturedPolicyTimingInvocation {
         this.methodStartedAtMs = this.input.readMonotonicMs();
     }
 
+    markStoredReadStart(): void {
+        this.storedReadStartedAtMs = this.input.readMonotonicMs();
+    }
+
     markStoredReadEnd(): void {
         this.storedReadEndedAtMs = this.input.readMonotonicMs();
     }
 
-    markReferenceValidationEnd(): void {
-        this.referenceValidationEndedAtMs = this.input.readMonotonicMs();
+    markIdentityReadStart(): void {
+        this.identityReadStartedAtMs = this.input.readMonotonicMs();
     }
 
     markIdentityReadEnd(): void {
         this.identityReadEndedAtMs = this.input.readMonotonicMs();
+    }
+
+    markReadPairEnd(): void {
+        this.readPairEndedAtMs = this.input.readMonotonicMs();
+    }
+
+    markReferenceValidationEnd(): void {
+        this.referenceValidationEndedAtMs = this.input.readMonotonicMs();
     }
 
     markMethodEnd(): void {
@@ -224,16 +246,36 @@ export class ALOutboundCapturedPolicyTimingInvocation {
             startedAtMs: this.input.startedAtMs,
             anchorAfterMs: this.input.anchorAfterMs,
             methodStartedAtMs: this.methodStartedAtMs,
+            storedReadStartedAtMs: this.storedReadStartedAtMs,
             storedReadEndedAtMs: this.storedReadEndedAtMs,
-            referenceValidationEndedAtMs: this.referenceValidationEndedAtMs,
+            identityReadStartedAtMs: this.identityReadStartedAtMs,
             identityReadEndedAtMs: this.identityReadEndedAtMs,
+            readPairEndedAtMs: this.readPairEndedAtMs,
+            referenceValidationEndedAtMs: this.referenceValidationEndedAtMs,
             methodEndedAtMs: this.methodEndedAtMs,
             ownerEndedAtMs
         };
-        const points = Object.values(candidate);
         if (
-            points.some((value) => value === undefined || !Number.isFinite(value)) ||
-            points.some((value, index) => index > 0 && value! < points[index - 1]!)
+            !isOrdered(
+                candidate.startedAtMs,
+                candidate.anchorAfterMs,
+                candidate.methodStartedAtMs,
+                candidate.storedReadStartedAtMs,
+                candidate.identityReadStartedAtMs
+            ) ||
+            !isOrdered(
+                candidate.storedReadStartedAtMs,
+                candidate.storedReadEndedAtMs,
+                candidate.readPairEndedAtMs,
+                candidate.referenceValidationEndedAtMs,
+                candidate.methodEndedAtMs,
+                candidate.ownerEndedAtMs
+            ) ||
+            !isOrdered(
+                candidate.identityReadStartedAtMs,
+                candidate.identityReadEndedAtMs,
+                candidate.readPairEndedAtMs
+            )
         ) {
             return undefined;
         }
@@ -275,16 +317,29 @@ function computeALOutboundCapturedPolicyPhases(
     boundaries: ALOutboundCapturedPolicyBoundaries
 ): ALOutboundCapturedPolicyTiming.Phases | undefined {
     const phases = {
+        readShape: 'parallel' as const,
         ownerEntryElapsedMs: boundaries.methodStartedAtMs - boundaries.startedAtMs,
-        readStoredMessageElapsedMs: boundaries.storedReadEndedAtMs - boundaries.methodStartedAtMs,
-        referenceValidationElapsedMs: boundaries.referenceValidationEndedAtMs - boundaries.storedReadEndedAtMs,
-        queueIdentityReadElapsedMs: boundaries.identityReadEndedAtMs - boundaries.referenceValidationEndedAtMs,
-        canonicalValidationElapsedMs: boundaries.methodEndedAtMs - boundaries.identityReadEndedAtMs,
+        combinedReadElapsedMs: boundaries.readPairEndedAtMs - boundaries.methodStartedAtMs,
+        readStoredMessageElapsedMs: boundaries.storedReadEndedAtMs - boundaries.storedReadStartedAtMs,
+        referenceValidationElapsedMs: boundaries.referenceValidationEndedAtMs - boundaries.readPairEndedAtMs,
+        queueIdentityReadElapsedMs: boundaries.identityReadEndedAtMs - boundaries.identityReadStartedAtMs,
+        canonicalValidationElapsedMs: boundaries.methodEndedAtMs - boundaries.referenceValidationEndedAtMs,
         sessionReturnElapsedMs: boundaries.ownerEndedAtMs - boundaries.methodEndedAtMs,
         ownerElapsedMs: boundaries.ownerEndedAtMs - boundaries.startedAtMs
     };
-    const sum = phases.ownerEntryElapsedMs + phases.readStoredMessageElapsedMs +
-        phases.referenceValidationElapsedMs + phases.queueIdentityReadElapsedMs +
+    const sum = phases.ownerEntryElapsedMs + phases.combinedReadElapsedMs +
+        phases.referenceValidationElapsedMs +
         phases.canonicalValidationElapsedMs + phases.sessionReturnElapsedMs;
     return Number.isFinite(sum) && Math.abs(sum - phases.ownerElapsedMs) <= 0.001 ? phases : undefined;
+}
+
+function isOrdered(...values: readonly (number | undefined)[]): boolean {
+    let previous = -Infinity;
+    for (const value of values) {
+        if (value === undefined || !Number.isFinite(value) || value < previous) {
+            return false;
+        }
+        previous = value;
+    }
+    return true;
 }

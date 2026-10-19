@@ -254,9 +254,21 @@ export class ALOutboundAdmissionReads<TPrepared> {
 
     async readCapturedPolicy(input: ReadALOutboundCapturedPolicyInput): Promise<ALOutboundCapturedPolicy> {
         const { session, message, entry, timing } = input;
+        const identityKey = toALOutboundIdentityKey(entry.key);
         timing?.markMethodStart();
-        const stored = await this.readStoredMessage(session, message.id.msgId);
-        timing?.markStoredReadEnd();
+        timing?.markStoredReadStart();
+        const storedRead = this.readStoredMessage(session, message.id.msgId);
+        timing?.markIdentityReadStart();
+        const identityRead = this.readQueueItem(session, identityKey);
+        const [storedResult, identityResult] = await Promise.allSettled([
+            timing ? storedRead.finally(() => timing.markStoredReadEnd()) : storedRead,
+            timing ? identityRead.finally(() => timing.markIdentityReadEnd()) : identityRead
+        ]);
+        timing?.markReadPairEnd();
+        if (storedResult.status === 'rejected') {
+            throw storedResult.reason;
+        }
+        const stored = storedResult.value;
         const expiresAtMs = resolveALMessageExpireAtMs(message);
         const admissionKey = toALOutboundSentMessageKey(this.namespace, message.id.msgId);
         if (
@@ -274,9 +286,10 @@ export class ALOutboundAdmissionReads<TPrepared> {
             );
         }
         timing?.markReferenceValidationEnd();
-        const identity = await this.readQueueItem(session, toALOutboundIdentityKey(entry.key));
-        timing?.markIdentityReadEnd();
-        const canonical = decodeALOutboundCanonicalMessage(stored.reference, entry, identity);
+        if (identityResult.status === 'rejected') {
+            throw identityResult.reason;
+        }
+        const canonical = decodeALOutboundCanonicalMessage(stored.reference, entry, identityResult.value);
         if (!jsonEquals(canonical, message)) {
             throw new ALAdmissionCorruptionError(
                 admissionKey,

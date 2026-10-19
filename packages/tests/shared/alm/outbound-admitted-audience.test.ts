@@ -15,6 +15,7 @@ import {
     newALRoute,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
+import { resolveALMessageExpireAtMs } from '@shared/al-contracts/al-policy.ts';
 import {
     createInMemoryALAdmissionState,
     InMemoryAdmissionBackend,
@@ -22,6 +23,9 @@ import {
 } from '@shared/alm/al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
+import { IndexedDbAdmissionReadSession } from '@shared/alm/indexed-db-admission-read-session.ts';
+import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { toALOutboundSentMessageKey } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import { createALOutboundAdmissionStore, type ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { captureALOutboundPolicy, type ALStoredOutboundMessage } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
@@ -35,6 +39,15 @@ import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
+import { toWsQueueBoxServerCapturedSendInput } from '@shared/services/ws-queue-box-server/scope/to-ws-queue-box-server-captured-send-input.ts';
+import { WsQueueBoxServerDeliveryReporting } from '@shared/services/ws-queue-box-server/ws-queue-box-server-delivery-reporting.ts';
+import { WsQueueBoxServerLiveDelivery } from '@shared/services/ws-queue-box-server/ws-queue-box-server-live-delivery.ts';
+import { WsQueueBoxServerTargetResolution } from '@shared/services/ws-queue-box-server/ws-queue-box-server-target-resolution.ts';
+import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
+
+import { TestWebSocket } from '../websocket/test-web-socket.ts';
+
+import '../../setup-browser-indexeddb.ts';
 
 // Corruption scenarios deliberately replace the stored reference after the row is written.
 interface CapturedAudienceStoredMessage extends Omit<ALStoredOutboundMessage, 'reference'> {
@@ -52,6 +65,274 @@ interface CapturedAudienceFixture {
 
 describe('captured outbound audience read', () => {
     afterEach(() => vi.restoreAllMocks());
+
+    it.each(['stored', 'identity'] as const)('settles both policy reads when %s completes first', async (first) => {
+        const fixture = await createFixture(['session-a']);
+        const storedEntered = Promise.withResolvers<void>();
+        const identityEntered = Promise.withResolvers<void>();
+        const releaseStored = Promise.withResolvers<void>();
+        const releaseIdentity = Promise.withResolvers<void>();
+        const read = fixture.backend.read.bind(fixture.backend);
+        const readWork = fixture.backend.readWork.bind(fixture.backend);
+        vi.spyOn(fixture.backend, 'read').mockImplementation(async (key, decode) => {
+            storedEntered.resolve();
+            await releaseStored.promise;
+            return await read(key, decode);
+        });
+        vi.spyOn(fixture.backend, 'readWork').mockImplementation(async (key) => {
+            identityEntered.resolve();
+            await releaseIdentity.promise;
+            return await readWork(key);
+        });
+        onTestFinished(() => {
+            releaseStored.resolve();
+            releaseIdentity.resolve();
+        });
+
+        const policy = fixture.store.readCapturedPolicy(fixture.message, fixture.entry);
+        let settled = false;
+        void policy.finally(() => {
+            settled = true;
+        });
+        await storedEntered.promise;
+        await Promise.resolve();
+        const bothEntered = await Promise.race([
+            identityEntered.promise.then(() => true),
+            new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 25))
+        ]);
+        expect(bothEntered).toBe(true);
+        if (first === 'stored') {
+            releaseStored.resolve();
+        }
+        else {
+            releaseIdentity.resolve();
+        }
+        await Promise.resolve();
+        expect(settled).toBe(false);
+        releaseStored.resolve();
+        releaseIdentity.resolve();
+        await expect(policy).resolves.toMatchObject({ admittedAudience: ['session-a'] });
+    });
+
+    it('accounts for overlapping read spans through one disjoint combined interval', async () => {
+        const observations: ALOutboundCapturedPolicyTiming.Observation[] = [];
+        let monotonicMs = 0;
+        const fixture = await createFixture(['session-a'], undefined, {
+            readMonotonicMs: () => monotonicMs,
+            readEpochMs: () => 10_000,
+            record: (observation) => observations.push(observation)
+        });
+        const storedEntered = Promise.withResolvers<void>();
+        const identityEntered = Promise.withResolvers<void>();
+        const releaseStored = Promise.withResolvers<void>();
+        const releaseIdentity = Promise.withResolvers<void>();
+        const read = fixture.backend.read.bind(fixture.backend);
+        const readWork = fixture.backend.readWork.bind(fixture.backend);
+        vi.spyOn(fixture.backend, 'read').mockImplementation(async (key, decode) => {
+            storedEntered.resolve();
+            await releaseStored.promise;
+            return await read(key, decode);
+        });
+        vi.spyOn(fixture.backend, 'readWork').mockImplementation(async (key) => {
+            identityEntered.resolve();
+            await releaseIdentity.promise;
+            return await readWork(key);
+        });
+        onTestFinished(() => {
+            releaseStored.resolve();
+            releaseIdentity.resolve();
+        });
+
+        const policy = fixture.store.readCapturedPolicy(fixture.message, fixture.entry);
+        await Promise.all([storedEntered.promise, identityEntered.promise]);
+        monotonicMs = 10;
+        releaseIdentity.resolve();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(observations).toEqual([]);
+        monotonicMs = 30;
+        releaseStored.resolve();
+        await expect(policy).resolves.toMatchObject({ admittedAudience: ['session-a'] });
+        expect(observations[0]).toMatchObject({
+            availability: 'available',
+            phases: {
+                readShape: 'parallel',
+                combinedReadElapsedMs: 30,
+                readStoredMessageElapsedMs: 30,
+                queueIdentityReadElapsedMs: 10,
+                ownerElapsedMs: 30
+            }
+        });
+        const observation = observations[0];
+        if (observation?.availability !== 'available') {
+            throw new Error('Expected available timing after both reads settled');
+        }
+        const phases = observation.phases;
+        expect(
+            phases.ownerEntryElapsedMs + phases.combinedReadElapsedMs + phases.referenceValidationElapsedMs +
+                phases.canonicalValidationElapsedMs + phases.sessionReturnElapsedMs
+        ).toBe(phases.ownerElapsedMs);
+        expect(phases.readStoredMessageElapsedMs + phases.queueIdentityReadElapsedMs).toBeGreaterThan(phases.combinedReadElapsedMs);
+    });
+
+    it('keeps stored failure precedence after both reads settle and permits a healthy follow-up', async () => {
+        const fixture = await createFixture(['session-a']);
+        const storedFailure = new Error('stored read failed');
+        const identityFailure = new Error('identity read failed');
+        const storedEntered = Promise.withResolvers<void>();
+        const identityEntered = Promise.withResolvers<void>();
+        const releaseStored = Promise.withResolvers<void>();
+        const releaseIdentity = Promise.withResolvers<void>();
+        vi.spyOn(fixture.backend, 'read').mockImplementationOnce(async () => {
+            storedEntered.resolve();
+            await releaseStored.promise;
+            throw storedFailure;
+        });
+        vi.spyOn(fixture.backend, 'readWork').mockImplementationOnce(async () => {
+            identityEntered.resolve();
+            await releaseIdentity.promise;
+            throw identityFailure;
+        });
+        onTestFinished(() => {
+            releaseStored.resolve();
+            releaseIdentity.resolve();
+        });
+
+        const policy = fixture.store.readCapturedPolicy(fixture.message, fixture.entry);
+        await Promise.all([storedEntered.promise, identityEntered.promise]);
+        releaseIdentity.resolve();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        releaseStored.resolve();
+        await expect(policy).rejects.toBe(storedFailure);
+        await expect(fixture.store.readCapturedPolicy(fixture.message, fixture.entry))
+            .resolves.toMatchObject({ admittedAudience: ['session-a'] });
+    });
+
+    it('keeps reference corruption ahead of an identity failure after joining both reads', async () => {
+        const fixture = await createFixture(['session-a']);
+        fixture.stored.reference = { ...fixture.stored.reference, scope: 'wrong-scope' };
+        const identityFailure = new Error('identity read failed');
+        vi.spyOn(fixture.backend, 'readWork').mockRejectedValueOnce(identityFailure);
+
+        await expect(fixture.store.readCapturedPolicy(fixture.message, fixture.entry))
+            .rejects.toMatchObject({ name: 'ALAdmissionCorruptionError' });
+        await expect(fixture.store.readCapturedPolicy(fixture.message, fixture.entry))
+            .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+    });
+
+    it('keeps a genuine IndexedDB read session open until a held sibling settles', async () => {
+        const fixture = await createFixture(['session-a']);
+        const identityEntered = Promise.withResolvers<void>();
+        const releaseIdentity = Promise.withResolvers<void>();
+        let holdIdentity = true;
+        const backend = new IndexedDbAdmissionBackend({
+            dbName: `captured-policy-${crypto.randomUUID()}`,
+            storeName: 'entries',
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {},
+            nowMs: Date.now,
+            newWriteToken: crypto.randomUUID.bind(crypto),
+            observer: {
+                observe: (operation) => {
+                    if (operation.kind === 'work-read' && holdIdentity) {
+                        holdIdentity = false;
+                        identityEntered.resolve();
+                        return releaseIdentity.promise;
+                    }
+                }
+            }
+        });
+        onTestFinished(async () => {
+            releaseIdentity.resolve();
+            await backend.close();
+        });
+        await backend.ready();
+        const key = toALOutboundSentMessageKey('server-namespace', fixture.message.id.msgId);
+        await backend.write(async (write) => {
+            await write.set(key, { ...fixture.stored, reference: { ...fixture.stored.reference, scope: 'wrong-scope' } }, Date.now() + 120_000);
+        });
+        await backend.workQueue.enqueue(toALOutboundIdentityEntry(
+            fixture.stored.reference,
+            fixture.entry,
+            fixture.stored.creationExpiry
+        ));
+        const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: 'server-scope',
+            namespace: 'server-namespace',
+            backend,
+            supersedenceTrackTtlMs: 60_000,
+            retention: normalizeALRuntimeStoreRetention(),
+            decodePrepared: () => {
+                throw new TypeError('No prepared messages');
+            }
+        });
+        const close = vi.spyOn(IndexedDbAdmissionReadSession.prototype, 'close');
+        const policy = store.readCapturedPolicy(fixture.message, fixture.entry);
+        await identityEntered.promise;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(close).not.toHaveBeenCalled();
+        releaseIdentity.resolve();
+        await expect(policy).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        expect(close).toHaveBeenCalled();
+
+        await backend.write(async (write) => {
+            await write.set(key, fixture.stored, Date.now() + 120_000);
+        });
+        await expect(store.readCapturedPolicy(fixture.message, fixture.entry))
+            .resolves.toMatchObject({ admittedAudience: ['session-a'] });
+    });
+
+    it('uses the live delivery expiry guard when a read pair crosses the message deadline', async () => {
+        const fixture = await createFixture(['session-a']);
+        const deadline = resolveALMessageExpireAtMs(fixture.message)!;
+        const clock = {
+            epochMs: deadline - 1,
+            nowMs() {
+                return this.epochMs;
+            }
+        };
+        const socket = new JsonWebSocketServer();
+        const recipient = new TestWebSocket('ws://session-a');
+        recipient.open();
+        socket.addConnection(new ConnectionContext({ id: 'session-a', socket: recipient }));
+        const live = new WsQueueBoxServerLiveDelivery({
+            socket,
+            clock,
+            targetResolution: new WsQueueBoxServerTargetResolution({
+                socket,
+                targetResolver: { resolveBroadcastRecipients: () => [{ peerId: 'session-a', connectionId: 'session-a' }] }
+            }),
+            deliveryReporting: new WsQueueBoxServerDeliveryReporting({}),
+            readAuthenticatedConnectionScope: () => ({
+                scope: { applicationId: 'app', workspaceId: 'workspace' },
+                expiresAtEpochMs: deadline + 60_000
+            })
+        });
+        const storedEntered = Promise.withResolvers<void>();
+        const releaseStored = Promise.withResolvers<void>();
+        const read = fixture.backend.read.bind(fixture.backend);
+        vi.spyOn(fixture.backend, 'read').mockImplementation(async (key, decode) => {
+            storedEntered.resolve();
+            await releaseStored.promise;
+            return await read(key, decode);
+        });
+        onTestFinished(() => releaseStored.resolve());
+
+        const reading = fixture.store.readCapturedPolicy(fixture.message, fixture.entry);
+        await storedEntered.promise;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        clock.epochMs = deadline;
+        releaseStored.resolve();
+        const policy = await reading;
+        const send = live.sendToTargetsWithResult(toWsQueueBoxServerCapturedSendInput({
+            message: fixture.message,
+            key: fixture.entry.key,
+            policy,
+            eligibleSessionIds: undefined
+        }));
+        expect(send).toMatchObject({ status: 'expired', sentCount: 0 });
+        expect(recipient.sent).toEqual([]);
+    });
 
     it('attributes a held stored-message read at the real admission-store boundary', async () => {
         const observations: ALOutboundCapturedPolicyTiming.Observation[] = [];
@@ -75,6 +356,7 @@ describe('captured outbound audience read', () => {
         onTestFinished(() => release.resolve());
         await entered.promise;
         expect(observations).toEqual([]);
+        await new Promise((resolve) => setTimeout(resolve, 0));
         monotonicMs = 40;
         release.resolve();
         await expect(policy).resolves.toMatchObject({ admittedAudience: ['session-a'] });
@@ -105,6 +387,7 @@ describe('captured outbound audience read', () => {
         onTestFinished(() => release.resolve());
         await entered.promise;
         expect(observations).toEqual([]);
+        await new Promise((resolve) => setTimeout(resolve, 0));
         monotonicMs = 35;
         release.resolve();
         await expect(policy).resolves.toMatchObject({ admittedAudience: ['session-a'] });
@@ -342,6 +625,8 @@ describe('captured outbound audience read', () => {
                 reservationStartedAtEpochMs: 'unavailable',
                 anchorEpochMs: 10_000,
                 anchorMonotonicMs: 5,
+                readShape: 'parallel',
+                combinedReadElapsedMs: 0,
                 ownerElapsedMs: 0
             }
         });
