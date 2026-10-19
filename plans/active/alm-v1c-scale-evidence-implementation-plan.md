@@ -197,6 +197,38 @@ final evidence reconciliation must preserve workload provenance and the unwaived
 
 ## Next two useful slices
 
+The RTC minimum-readiness repair and its frozen A–B–B–A comparison are complete.
+The repair preserves authority, delivery expiry and owned cleanup, but the full
+formation benefit rule fails: player medians are 37.100/41.543/45.226/44.038 s,
+adjacent contrasts +4.443/+1.188 s and symmetric +2.8155 s. All four runs pass
+50 recipes/150 semantic bindings/231 assertions; exact original controller
+restoration passes all 19 checks. Baseline drift is +6.938 s, so the two runs per
+source do not prove a stable causal regression. Keep the contract fix without a
+speedup claim and retain #682's journal limitation. The focused formation plan
+contains source IDs, linked runs, the component breakdown and negative evidence.
+
+1. Attribute SDK connection and room-join internals at existing owners using TDD
+   for bounded opt-in observations, preserving disabled behavior, authority,
+   failures and cleanup. Resolve configuration/socket/ICE/state hydration and
+   membership/presence/adoption; link delayed signaling to actual inbox due and
+   reservation facts before changing retry behavior.
+2. Repair the demonstrated dominant product or shared-test cause with TDD, then
+   verify full formation under a frozen matched workload and proportional real
+   PostgreSQL checks. Keep every run, faults and recovery, and exact controller
+   restoration. The physical commit→browser ≤2 s target remains open. QueueBox
+   responsiveness and scalable fault tolerance remain acceptance requirements.
+
+Use the focused plan's performance, coding, realtime, testing, adaptive execution,
+publication and hosted-operations skills. The prior state-write comparator passes;
+no new comparison is selected for an RTC-only path. Independent harness scalability
+and artifact durability remain #686 and #682. No new issue was created.
+
+## Retained slice history
+
+The following chronology preserves earlier source-specific results and decisions.
+Its historical next-step wording is superseded by the two current slices above;
+it is not a request to repeat completed captures or measurements.
+
 1. **Remaining formation-tail delivery:** bounded admission reads and native scale
    acceptance remain passing, but the full ≤2 s target is open. The occupied-owner
    wake fixture passes unchanged production, and the warmed local PostgreSQL owner
@@ -345,7 +377,8 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    authority/lane health after cleanup. Real channel cancellation and public
    threshold REDs preceded the fix; 229 focused regression tests and 32 public
    boundary tests pass. Adversarial timeout/abort, changing authority and native
-   cleanup cases are covered. Full-formation performance remains pending.
+   cleanup cases are covered. The completed RTC comparison above reports no verified
+   full-formation benefit; correctness and performance acceptance stay distinct.
    Delivery deadlines and serial sends remain enforced at their existing owner. No
    redundant read, safe cache or send reordering is established. Full details
    and constraints are Tasks 19–21 in the focused formation plan. Native 150-result/231-assertion reconciliation

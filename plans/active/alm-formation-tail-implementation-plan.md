@@ -644,12 +644,95 @@ that case. The focused RTC regression passes 229/229 across 14 files, including
 30 native room-authority cases. A final test-only boundary narrowing passes the
 channel suite 27/27. Shared/shared-web typing, consumer builds, browser budgets
 and 32 public-boundary tests pass. Consumer builds retain known chunk-size
-warnings. Full formation benefit remains unmeasured until the matched block;
-these unit results do not close that acceptance.
+warnings. Exact RTC-source release, formation-large PostgreSQL and medium-scale
+PostgreSQL CI pass. The matched block below does not verify a full-formation benefit;
+these correctness results do not close that acceptance.
 
-### Larger signaling wait attribution
+### Matched RTC comparison: no verified full-formation benefit
 
-The same B3 tail also exposes delayed inbound offer handling at controller-36,
+One frozen A1–B2–B3–A4 block compares serial rollback
+`c04cb0d08ae022a49fb07b19389803fb13132208` with RTC candidate
+`50c95057029ba76d2f2a701fa850b991d403d88d`, not main. All four unchanged
+50-agent / 30 s workloads pass: 50 recipes, 150 distinct successful unreplayed
+semantic result/control bindings, 231 unique assertions, 50 RTC outcomes,
+300 released barriers and 50 complete native timing pairs per run. Original ZIP
+hashes, CRCs, extracted bytes, exact source/materialization and post-run controller
+inspections are independently verified. All four workflows conclude successfully.
+
+| Run                                                                                              | Full setup player median / p95 / max (s) | Connected→accepted player median (s) | Partial readiness returns / 49 players |
+| ------------------------------------------------------------------------------------------------ | ---------------------------------------: | -----------------------------------: | -------------------------------------: |
+| [A1 baseline](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/39318672409) |                 37.100 / 37.104 / 37.105 |                                1.824 |                                      0 |
+| [B2 RTC fix](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/39320337486)  |                 41.543 / 41.546 / 41.547 |                                1.957 |                                      9 |
+| [B3 RTC fix](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/39321523602)  |                 45.226 / 45.230 / 45.231 |                                1.662 |                                      4 |
+| [A4 baseline](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/39322682138) |                 44.038 / 44.041 / 44.043 |                                1.888 |                                      0 |
+
+Full setup is group-created barrier end→layout-accepted end on the same browser
+clock. Adjacent candidate-minus-baseline player-median contrasts are
+**+4.443 / +1.188 s**; mean candidate run medians minus mean baseline run medians
+is **+2.8155 s** (40.5690→43.3845 s). The predeclared benefit rule fails.
+Baseline drift is +6.938 s and candidate drift +3.683 s; two whole runs per source
+cannot establish significance, a stable effect size or causal regression. Retain
+all four positions; no replacement or favorable expansion is selected.
+The 49 players are correlated, not independent replicates. Director full-setup
+durations are 37.100/41.541/45.227/44.039 s; all-agent maxima equal the displayed
+player maxima. The selected secondary contrasts use 49-player medians:
++0.133/−0.226 s, symmetric −0.0465 s. Do not substitute the unselected A4
+50-agent median of 1.8875 s for its player median of 1.888 s.
+
+| Player component median (s) |     A1 |     B2 |     B3 |     A4 |
+| --------------------------- | -----: | -----: | -----: | -----: |
+| SDK `rallar.connect`        | 13.054 | 14.637 | 14.508 | 13.981 |
+| `rooms.join`                | 11.106 | 10.559 | 10.979 | 11.602 |
+| RTC readiness               |  8.609 | 10.007 | 10.696 | 12.432 |
+| Connected-barrier wait      |  1.965 |  3.532 |  4.270 |  1.589 |
+
+Component medians are not additive costs. Group-created→connected median contrast
+is +2.863 s; connected→appointed is −0.0465 s; appointed→accepted medians are
+0.008 s in all four runs. Most measured variation precedes the connected barrier.
+The final arrivals are controllers 28/12/21/07. Their SDK connection durations are
+6.865/22.068/23.224/27.937 s, room joins 13.445/10.749/8.414/5.193 s, readiness
+14.344/6.025/11.418/8.541 s and barrier waits 0.611/0.733/0.496/0.463 s.
+A slow participant amplifies cohort barrier waiting. No controller-fanout or SQL
+cause follows from those elapsed spans.
+
+The fix is exercised by 9/49 and 4/49 partial player readiness returns in the two
+candidate runs; both baselines return open for all 49 players. The director's
+successful RTC command has no player-readiness diagnostic. Keep the repair as a
+requested contract/cleanup correction, with no performance-win claim. The larger
+wait and physical commit→browser ≤2 s target remain open. Browser WS `connected`
+is emitted by `acceptConnection` after middleware initialization and lifecycle
+attachment, so it does not isolate physical socket-open time. Retained HTTP recipe
+events do not split internal SDK requests. Next observe configuration/ticket/socket,
+ICE and state hydration, plus room membership/presence/adoption, at their owners.
+
+Observed offer-policy retries are 0/5/7/17 offers in this block; all observed
+retried offers have application endpoints. Retry→application maxima are absent /
+7.843 / 7.838 / 3.480 s, with B3 peer-created→application maximum 4.054 s.
+These are selected event observations, not complete inbox histories or evidence
+that backoff caused whole-run differences. Reuse actual attempt/release/due/next
+reservation evidence before selecting a retry repair. Authority stays mandatory.
+
+Each run retains 50 expected-session-label warnings and the #682 canonical-node
+append failure; complete native pairs do not certify the full journal. API logs
+retain 4/3/4/1 conflict/redelivery records and 45/34/16/0 existing-username
+rejections during persistent-store registration; B2 also rejects one stale-layout
+activation. Native failed/missing/stale/flaky counts, reconnects and parse errors
+are zero. The database grows 41,882→53,631 rows and 17→21 groups; identities and
+schema stay fixed. No reset or workload overlap occurred. The initial A1 artifact
+lookup used room scope instead of the workflow's `dist-` artifact ID, returned no
+artifacts, and was corrected without rerunning or changing measurements; both
+receipts are retained. Generated originals and projections remain ignored under
+`tmp/perf/rtc-minimum-readiness-20261019/` and the reused acquisition directory.
+
+[Restoration](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/39323718904)
+returns the controller to original source `75bbba68a0c0b0cc8de712b78b3d8bfc930ae298`.
+All 19 direct checks verify exact public/timing/topology settings, schema/lock and
+persistent database identity, health/readiness and idle workers. Timing remains
+off, mesh minimum 51, other topology inputs absent. Workload rows remain intact.
+
+### Earlier policy-read block: signaling wait attribution
+
+The earlier policy-read block's B3 tail also exposes delayed inbound offer handling at controller-36,
 controller-08's final peer. On the receiver's own clock, eight policy deferrals
 precede application: first retry→application is 6.805 s, peer-created→application
 is 2.966 s, and applying the offer takes 0.007 s. The eighth retry→application
@@ -665,62 +748,51 @@ over 14.458 s; native recipe pass does not prove every signaling offer completed
 Do not discard that missing terminal evidence. Complete connection startup and
 room join remain composite spans: configuration/socket/ICE/state hydration and
 membership/presence/adoption respectively. Linked same-owner phase boundaries
-and actual inbox due/reservation facts are the next diagnostic if these waits
-remain material after the matched RTC comparison. No retry or connect/join
+and actual inbox due/reservation facts are the next diagnostic; these waits
+remain material in the matched RTC comparison above. No retry or connect/join
 production change is selected from these observations alone.
 
 ## Next two useful slices
 
-The maintainer has authorized both slices to proceed together. A dedicated
-implementation agent owns the RTC fix and semantic TDD; an independent reviewer
-checks authority, cancellation, cleanup and complete changed-file closure. The
-primary agent continues connect/join and signaling-wait attribution, owns the
-matched full-formation comparison, and updates this plan and the PR. A passing
-minimum-peer test does not finish the measurement slice.
+The dedicated RTC agent completed the minimum-readiness/cleanup repair with TDD;
+the primary agent completed the frozen full-formation block and restoration.
+Independent source and artifact review preserve both correctness and the negative
+performance result. The maintainer's performance, scalability, QueueBox
+responsiveness and fault-tolerance requirements continue to govern both product
+and shared-test code. Use `performance-analysis`, `rallar-code-writing`,
+`rallar-realtime`, `rallar-testing`, `adaptive-plan-execution`, and
+`publishing-plan-progress`; add the existing Hetzner operations skill before any
+hosted measurement. Do not repeat a broad capture without a named missing boundary.
 
-Freeze a timing-off A–B–B–A native-50 block before dispatch: the serial rollback
-is A, and the reviewed RTC fix is B. Keep the exact same manifest, settings,
-50 agents, 30 s traffic, 17 jobs of at most three agents, persistent PostgreSQL
-store and source verification. Preserve all runs and existing semantic gates.
-Primary remains group-created barrier release→layout acceptance; secondary is
-connected barrier release→acceptance. Report 49-player distributions per whole
-run and same-agent connection/join/readiness/barrier components. Earlier minimum
-readiness may move negotiation into a later phase; only full-path evidence can
-establish formation benefit. Capture source/settings/database identity before
-mutation and verify exact restoration afterward. Keep server timing and extra
-capture disabled for comparison; any later diagnostic requires a named missing
-observation. Record exact inputs, source revisions and originals under ignored
-`tmp/perf/`, with remote results linked from the PR.
+1. **Attribute connection and join waits at existing owners.** Use semantic TDD
+   for bounded opt-in phase observations around middleware startup and room join:
+   configuration/ticket/native socket, ICE, complete state refresh/hydration,
+   membership/presence mutation and adoption. Reuse existing observer and timing
+   ports; prove disabled-path behavior, exact phase meaning, failure preservation
+   and joined cleanup. Correlate a delayed signaling offer to its actual inbox
+   attempt, persisted due time and next reservation where existing evidence permits.
+   Keep current authority, delivery expiry, retry policy and shared transports.
+   Inspect the actual last participant and any linked server queue waits; do not
+   infer SQL, pool, CPU or off-CPU attribution from composite wall time. A bounded
+   diagnostic must retain native correctness and exact controller restoration.
+2. **Repair the measured dominant owner and verify the entire path.** Select the
+   smallest production or shared-test change only after the preceding evidence
+   identifies a cause. Reproduce it RED, preserve faults/recovery and make it GREEN
+   using existing patterns with full touched-file standards closure. Then select
+   proportional real-PostgreSQL and unchanged full-formation comparisons, freezing
+   inputs/metrics first and retaining every result. A faster local wait is not
+   sufficient; the full setup and physical commit→browser outcomes remain separate.
+   No speculative retry shortening, duplicate expiry guard, authority bypass,
+   detached work or favorable-rerun loop is authorized by these measurements.
 
-1. **Honor minimum RTC readiness without abandoning owned waits.** Make the
-   public held-second-peer reproduction green using existing RTC ownership and
-   wait patterns. Preserve default exact-all behavior, pinned room scope,
-   current-presence/accepted-layout authorization, active lane validity, timeout
-   and abort outcomes, and fault recovery. Recheck authority before returning
-   partial readiness. Clean up owned observers without closing healthy shared
-   transports or detaching pending work. Mapping the minimum into `expect` alone
-   is insufficient while the all-peer join remains. Use TDD for the threshold,
-   changed authority, abort and cleanup cases, then focused RTC tests and affected
-   package typing. Review every changed file in full and recursively include any
-   changed support file; independent untouched code remains outside closure.
-2. **Measure the corrected wait and attribute remaining formation cost.** After
-   correctness passes, use a bounded matched native-50 comparison to quantify
-   formation benefit. Retain every run and separate `rallar.connect`, `rooms.join`,
-   readiness and connected-barrier durations. Their player medians currently span
-   11.565–14.301 s, 9.123–12.731 s, 8.898–10.414 s and 1.735–6.257 s respectively;
-   these component medians are not additive. Investigate the actual slowest
-   participant rather than inferring a controller fanout bottleneck from waiting
-   players. Session bootstrap is reused in the retained capture; do not infer
-   repeated login. Name any missing observation before adding instrumentation.
-   Preserve events, audiences, deadlines, fences, retries and recovery. Physical
-   commit-to-browser ≤2 s acceptance remains open.
-
-The retained pre-rollback candidate state-write comparison passes unchanged thresholds
-(+2.405% hot throughput). The earlier −5.103306% failure remains retained for its
-different candidate; retry depth explains observed tail content but not role
-variation. That harness does not dispatch captured-policy delivery reads. No
-retry-policy change or repeat comparison is selected merely to test this rollback.
-Raw collection/scanning scalability and control retention remain #686 and #682.
+The retained pre-rollback state-write comparison passes unchanged thresholds
+(+2.405% hot throughput). Its earlier −5.103306% failure remains retained for a
+different candidate; retry depth explains tail content but not role variation.
+The browser RTC change does not exercise that mutation benchmark's path, so no
+new state-write comparison was selected. Raw collection/scanning scalability and
+control retention remain [#686](https://github.com/intact-software-systems/ar-eye-hunter/issues/686)
+and [#682](https://github.com/intact-software-systems/ar-eye-hunter/issues/682).
+No new issue was created; remaining formation work stays in this active plan.
 
 ### Task 4: Separate command completion from owned pump cleanup
 
