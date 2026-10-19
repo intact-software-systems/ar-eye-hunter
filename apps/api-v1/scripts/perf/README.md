@@ -269,7 +269,8 @@ exactly derived timing-row properties are omitted: `approximateStartedAtEpochMs`
 is `completedAtEpochMs - roundedDurationMs`; `statusMeaning` is
 `wrapper-finally-not-commit` for component `state-write-benchmark-phase` and
 `timed-operation-status` otherwise. Wrapper-finally status never proves commit.
-Machine fields retain millisecond units; human reports use seconds. The schema
+Existing timing fields retain millisecond units; reservation intervals use microseconds.
+Human reports use seconds. The schema
 version identifies this derivation contract without repeating it in every timing row.
 
 The sidecar exports fixed labels and phase-local command ordinals. Private exact
