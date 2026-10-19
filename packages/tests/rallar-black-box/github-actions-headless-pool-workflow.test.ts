@@ -318,7 +318,8 @@ node -e 'console.log(JSON.stringify({wsCapture: process.env.RALLAR_BLACK_BOX_CAP
 
     it.each([
         { executionMode: 'all-local', selectedJobs: ['all-local'] },
-        { executionMode: 'hetzner-control', selectedJobs: ['github-agents', 'operator', 'plan', 'prepare-hetzner'] }
+        { executionMode: 'hetzner-control', selectedJobs: ['github-agents', 'operator', 'plan', 'prepare-hetzner'] },
+        { executionMode: 'hetzner-control-cpu-gc', selectedJobs: ['github-agents', 'operator', 'plan', 'prepare-hetzner'] }
     ])('routes $executionMode exclusively to its selected job family', async ({ executionMode, selectedJobs }) => {
         const jobs = required((await readWorkflow()).jobs, 'jobs');
         expect(resolveManualModeJobs(jobs, executionMode)).toEqual(selectedJobs);
@@ -330,7 +331,7 @@ node -e 'console.log(JSON.stringify({wsCapture: process.env.RALLAR_BLACK_BOX_CAP
         expect(mode).toMatchObject({
             type: 'choice',
             default: 'hetzner-control',
-            options: ['hetzner-control', 'all-local']
+            options: ['hetzner-control', 'hetzner-control-cpu-gc', 'all-local']
         });
         const local = required(workflow.jobs?.['all-local'], 'all-local job');
         expect(local['runs-on']).toBe('ubuntu-latest');

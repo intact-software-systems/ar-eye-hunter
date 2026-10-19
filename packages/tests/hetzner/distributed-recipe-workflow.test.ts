@@ -380,7 +380,8 @@ async function createRemoteRecipeFixture(context: TestContext): Promise<RemoteRe
             '#!/usr/bin/env bash',
             'set -euo pipefail',
             'cat > "${OWNED_REMOTE_BODY}"',
-            'bash --noprofile --norc -c \'source "${OWNED_REMOTE_BOUNDARIES}"; source "${OWNED_REMOTE_BODY}"\''
+            // Execute the remote body as stdin, like production SSH; sourcing it adds a shell function frame around EXIT cleanup.
+            '{ printf \'source "%s"\\n\' "${OWNED_REMOTE_BOUNDARIES}"; cat "${OWNED_REMOTE_BODY}"; } | bash --noprofile --norc -s'
         ].join('\n')
     );
     await chmod(sshPath, 0o755);
@@ -511,6 +512,7 @@ describe('Hetzner workflow contracts and effects', () => {
             `capture|finish|${captureDirectory}`
         ]);
         expect(await readFile(path.join(fixture.directory, 'run-output.txt'), 'utf8')).toContain('exit_code=17\n');
+        await expect(readFile(path.join(fixture.directory, 'remote.env'))).rejects.toMatchObject({ code: 'ENOENT' });
     });
 
     it.for(['manifest', 'override'] as const)('complete defaults body resolves %s values and every topology field', async (mode, context) => {
@@ -719,6 +721,7 @@ describe('Hetzner workflow contracts and effects', () => {
         });
         expect((await readFile(fixture.effectsPath, 'utf8')).trim().split('\n')).toEqual(['wait', 'recipe', runJournalExportEffect]);
         expect(await readFile(path.join(fixture.directory, 'run-output.txt'), 'utf8')).toContain('exit_code=17\n');
+        await expect(readFile(path.join(fixture.directory, 'remote.env'))).rejects.toMatchObject({ code: 'ENOENT' });
         expect(await readFile(path.join(fixture.directory, 'hetzner-operation.log'), 'utf8')).toContain('RALLAR_OPERATION_STAGE=agent-readiness');
         const steps = (await readWorkflow(distributedRunnerWorkflowPath)).jobs.run.steps ?? [];
         const stepIndex = (name: string) => steps.findIndex((step) => step.name === name);
