@@ -1,10 +1,10 @@
 import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { isNotReadyException } from '../../../queuebox/resource-inbox/not-ready-exception.ts';
-import type { Key } from '../../../queuebox/ResourceEntry.ts';
+import type { Key, ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
 import { BoundedConcurrencyAdmission } from '../../../resilience/bounded-concurrency-admission.ts';
 import type { ALDeliveryAdmissionVerdict } from '../../delivery/al-delivery-lifecycle.ts';
 import type { ALWorkAttemptResult } from '../../work/al-work-handler.ts';
-import type { ALWorkOutcome } from '../../work/al-work-queue-port.ts';
+import type { ALWorkClaim, ALWorkOutcome } from '../../work/al-work-queue-port.ts';
 import type {
     ALOutboundAdmissionStore,
     ALOutboundEffectSnapshot
@@ -21,6 +21,7 @@ import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observ
 import { readALOutboundDequeueWait } from './read-al-outbound-dequeue-wait.ts';
 import {
     recordALOutboundClaimAdmissionVerdict,
+    type ALOutboundClaimAttemptSettlement,
     type ALOutboundClaimObservation
 } from './settle-al-outbound-claim.ts';
 
@@ -54,7 +55,33 @@ export namespace ALOutboundDequeuedAdmission {
         readonly reason?: string;
     }
 
-    export type TimingSink = (event: TimingEvent) => void;
+    /** The claimed row identity and position required by server timing translation. */
+    export interface TimingMember {
+        readonly effect: Readonly<{ entry: ResourceEntry; attempts: number; }>;
+        readonly batchIndex: number;
+    }
+
+    /** Source facts cross the optional port; only the server timing owner constructs log details. */
+    export type TimingObservation =
+        | Readonly<{
+            kind: 'reservation-returns';
+            claims: readonly ALWorkClaim[];
+            dequeueTypes: ReadonlySet<string>;
+        }>
+        | Readonly<{
+            kind: 'admission-stage';
+            stage: TimingStage;
+            member: TimingMember;
+            outcome?: string;
+            publicationKey?: Key;
+        }>
+        | Readonly<{
+            kind: 'attempt-settled';
+            settlement: ALOutboundClaimAttemptSettlement;
+            outcome: string;
+        }>;
+
+    export type TimingSink = (observation: TimingObservation) => void;
 
     export interface Dependencies<TPrepared> {
         readonly runtime: ALOutboundMessageRuntime.Dependencies<TPrepared>;
@@ -300,7 +327,12 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
         if (sink === undefined) {
             return;
         }
-        recordALOutboundDequeueTiming(sink, this.toTimingEvent(member, stage, outcome));
+        recordALOutboundDequeueTiming(sink, {
+            kind: 'admission-stage',
+            stage,
+            member,
+            outcome
+        });
     }
 
     private recordOrderedDispatchStart(
@@ -313,26 +345,12 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
             return;
         }
         recordALOutboundDequeueTiming(sink, {
-            ...this.toTimingEvent(member, 'ordered-dispatch-start', outcome),
+            kind: 'admission-stage',
+            stage: 'ordered-dispatch-start',
+            member,
+            outcome,
             publicationKey
         });
-    }
-
-    private toTimingEvent(
-        member: ALOutboundDequeuedAdmission.Member<TPrepared>,
-        stage: ALOutboundDequeuedAdmission.TimingStage,
-        outcome?: string
-    ): ALOutboundDequeuedAdmission.TimingEvent {
-        return {
-            stage,
-            key: member.effect.entry.key,
-            attempts: member.effect.attempts,
-            claimStartedAtEpochMs: member.effect.entry.dequeueAudit.startTs === undefined
-                ? undefined
-                : Number(member.effect.entry.dequeueAudit.startTs.epochMilliseconds),
-            batchIndex: member.batchIndex,
-            outcome
-        };
     }
 
     /**

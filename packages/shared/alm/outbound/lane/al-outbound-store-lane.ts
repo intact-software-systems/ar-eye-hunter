@@ -63,7 +63,7 @@ import type {
 } from '../control/al-outbound-control-admission.ts';
 import { ALOutboundReceiptAdmission } from '../control/al-outbound-receipt-admission.ts';
 import type { ALOutboundCanonicalHandoff } from './al-outbound-canonical-handoff.ts';
-import { recordALOutboundDequeueReservationReturns } from './al-outbound-dequeue-timing.ts';
+import { recordALOutboundDequeueTiming } from './al-outbound-dequeue-timing.ts';
 import { ALOutboundDequeuedAdmission } from './al-outbound-dequeued-admission.ts';
 import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observation.ts';
 import type { ALOutboundSendControls } from './al-outbound-send-controls.ts';
@@ -339,10 +339,10 @@ export class ALOutboundStoreLane<TPrepared> {
         const startedAtMs = this.readNowMs();
         const claims = await port.claim({ maxCount: pageSize, observedEntries: undefined });
         if (this.input.runtime.dequeueTiming !== undefined) {
-            recordALOutboundDequeueReservationReturns({
+            recordALOutboundDequeueTiming(this.input.runtime.dequeueTiming, {
+                kind: 'reservation-returns',
                 claims,
-                dequeueTypes: this.input.dequeueTypes,
-                timing: this.input.runtime.dequeueTiming
+                dequeueTypes: this.input.dequeueTypes
             });
         }
         return {

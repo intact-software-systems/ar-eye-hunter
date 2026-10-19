@@ -7,6 +7,7 @@ import {
     vi
 } from 'vitest';
 
+import { toALOutboundDequeueTimingEvents } from '@shared-server/rallar-system/observability/al-outbound-dequeue-timing.ts';
 import type { ALOutboundDropReasonCode } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     AL_OUTBOUND_WORK_PAGE_SIZE,
@@ -37,6 +38,12 @@ import {
 import type { OutboundTestPayload } from '../outbound-test-payload.ts';
 
 const DEQUEUE_TYPE = 'WS_OUTBOX';
+
+function captureDequeueTiming(
+    events: ALOutboundDequeuedAdmission.TimingEvent[]
+): ALOutboundDequeuedAdmission.TimingSink {
+    return (observation) => events.push(...toALOutboundDequeueTimingEvents(observation));
+}
 
 function createDequeueResilience(maxConsecutiveFailures = 10, openMs = 500): ResourceInboxResilience {
     const open = Temporal.Duration.from({ milliseconds: openMs });
@@ -77,7 +84,7 @@ describe('AL outbound dequeue work', () => {
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
             dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
-            dequeueTiming: (event) => timings.push(event),
+            dequeueTiming: captureDequeueTiming(timings),
             readDequeueAuthority: async () => {
                 entered.resolve();
                 await release.promise;
@@ -210,7 +217,7 @@ describe('AL outbound dequeue work', () => {
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
             dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
-            dequeueTiming: (event) => timings.push(event),
+            dequeueTiming: captureDequeueTiming(timings),
             readDequeueAuthority: async () => {
                 throw new Error('authority unavailable');
             },
@@ -242,7 +249,7 @@ describe('AL outbound dequeue work', () => {
             const runtime = createDefaultOutboundTestRuntime({
                 outbox,
                 dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
-                dequeueTiming: (event) => timings.push(event),
+                dequeueTiming: captureDequeueTiming(timings),
                 planOutgoingMessage: (msg) => ({
                     msg,
                     dropReason: 'Dropped before a route exists',
@@ -283,7 +290,7 @@ describe('AL outbound dequeue work', () => {
             outbox,
             nowMs: () => nowMs,
             dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
-            dequeueTiming: (event) => timings.push(event),
+            dequeueTiming: captureDequeueTiming(timings),
             planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
@@ -323,7 +330,7 @@ describe('AL outbound dequeue work', () => {
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
             dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
-            dequeueTiming: (event) => timings.push(event),
+            dequeueTiming: captureDequeueTiming(timings),
             planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
@@ -350,7 +357,7 @@ describe('AL outbound dequeue work', () => {
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
             dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
-            dequeueTiming: (event) => timings.push(event),
+            dequeueTiming: captureDequeueTiming(timings),
             planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
@@ -416,7 +423,7 @@ describe('AL outbound dequeue work', () => {
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
             dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
-            dequeueTiming: (event) => timings.push(event),
+            dequeueTiming: captureDequeueTiming(timings),
             // The RTC origin that owns no child re-plans a queued send to no-route (R-S2c-ii-9a).
             planOutgoingMessage: (msg) => ({
                 msg,

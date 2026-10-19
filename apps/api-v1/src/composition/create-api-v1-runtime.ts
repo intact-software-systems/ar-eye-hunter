@@ -15,12 +15,13 @@ import { initPresenceExpiryReconciliation } from '@shared-server/rallar-system/g
 import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/create-rallar-middleware.ts';
 import type { CreateRallarMiddlewareOptions } from '@shared-server/rallar-system/middleware/rallar-middleware-construction.ts';
 import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/rallar-middleware-runtime.ts';
+import { createRallarALOutboundDequeueTiming } from '@shared-server/rallar-system/observability/al-outbound-dequeue-timing.ts';
 import {
     createRallarAlmReceiptDiagnosticsRecorder,
     RALLAR_ALM_RECEIPT_DIAGNOSTICS_CAPACITY,
     type RallarAlmReceiptDiagnosticsRecorder
 } from '@shared-server/rallar-system/observability/alm-receipt-diagnostics.ts';
-import { recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
+import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import type { AppInboxCompletionNoticeChannel } from '@shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.ts';
 import { RtcRttInboxService } from '@shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-inbox-service.ts';
 import {
@@ -370,9 +371,7 @@ function createSharedMiddleware(
         inbox: mutation.queueBox,
         outbox: mutation.queueBox,
         appInboxDequeueOptions: mutation.appInboxDequeueOptions,
-        appInboxDequeuePassTiming: normalizeAppInboxOptions(mutation.appInboxOptions).phaseTiming
-            ? { database: mutation.database, serviceId: mutation.serviceId, sink: input.timing }
-            : undefined,
+        ...createMiddlewareTimingOptions(input),
         webSocketServer: mutation.webSocketServer,
         readAuthenticatedConnectionScope: readAuthorisedWsConnectionEligibility,
         readWsOutboxProducerProvenance: (message, entry) => wsOutboxProvenance.readProducerProvenance(message, entry),
@@ -386,7 +385,6 @@ function createSharedMiddleware(
         wsOutboundDiagnostics: mutation.groupFormationMetrics.outboundWork,
         wsOutboundSettlements: input.almReceiptDiagnostics.settlements,
         wsReceiptObserver: input.wsReceiptObserver,
-        wsDequeueTiming: createApiWsDequeueTiming(input),
         createGroupStateInboxService: mutation.createGroupStateInboxService,
         createTopologyInboxService: ({ inboxQueueReader, wakeQueueEngine }) =>
             createTopologyInboxService(input, inboxQueueReader, wakeQueueEngine),
@@ -412,39 +410,19 @@ function createSharedMiddleware(
     });
 }
 
-/** Translates the queue owner's claim identity into the existing process timing sink. */
-function createApiWsDequeueTiming(
+/** Composes the independently gated inbox and outbound dequeue process timings. */
+function createMiddlewareTimingOptions(
     input: CreateSharedMiddlewareInput
-): CreateRallarMiddlewareOptions['wsDequeueTiming'] {
-    if (input.outboxStageTiming === undefined) {
-        return undefined;
-    }
-    return (stage) => {
-        recordRallarTiming({
-            sink: input.outboxStageTiming,
-            event: {
-                component: 'alm-outbound-dequeue',
-                operation: stage.stage,
-                serviceId: input.mutation.serviceId,
-                details: {
-                    publisherId: input.queuePubSubPublisherId,
-                    topicId: stage.key.topicId,
-                    resourceId: stage.key.resourceId,
-                    contextId: stage.key.contextId,
-                    attempts: stage.attempts,
-                    claimStartedAtEpochMs: stage.claimStartedAtEpochMs,
-                    batchIndex: stage.batchIndex,
-                    publicationTopicId: stage.publicationKey?.topicId,
-                    publicationResourceId: stage.publicationKey?.resourceId,
-                    publicationContextId: stage.publicationKey?.contextId,
-                    outcome: stage.outcome,
-                    verdict: stage.verdict,
-                    reason: stage.reason
-                }
-            },
-            status: stage.outcome === 'error' || stage.outcome === 'rejected' ? 'error' : 'ok',
-            durationMs: 0
-        });
+): Pick<CreateRallarMiddlewareOptions, 'appInboxDequeuePassTiming' | 'wsDequeueTiming'> {
+    return {
+        appInboxDequeuePassTiming: normalizeAppInboxOptions(input.mutation.appInboxOptions).phaseTiming
+            ? { database: input.mutation.database, serviceId: input.mutation.serviceId, sink: input.timing }
+            : undefined,
+        wsDequeueTiming: input.outboxStageTiming === undefined ? undefined : createRallarALOutboundDequeueTiming({
+            timing: input.outboxStageTiming,
+            serviceId: input.mutation.serviceId,
+            publisherId: input.queuePubSubPublisherId
+        })
     };
 }
 
