@@ -740,8 +740,9 @@ export function runControllerCommand(program, args, execution) {
             )
             .map(([, value]) => value);
         const sanitized = sanitizeOperationLog(result.stderr ?? '', privateValues);
-        const excerpt = sanitized.slice(0, 8192);
-        const truncated = sanitized.length > 8192 || result.error?.code === 'ENOBUFS';
+        const framed = sanitized ? sanitized.slice(0, 8192).replace(/^/gm, 'stderr: ') : '';
+        const excerpt = framed.slice(0, 8192);
+        const truncated = sanitized.length > 8192 || framed.length > 8192 || result.error?.code === 'ENOBUFS';
         const error = new Error(
             `Controller command failed: ${path.basename(program)} (exit ${result.status ?? 'unavailable'}, signal ${
                 result.signal ?? 'none'

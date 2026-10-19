@@ -285,7 +285,7 @@ it('retains bounded sanitized command failures before capture artifacts can pers
         secret,
         ''
     ].join('\n');
-    const command = `process.stderr.write(${JSON.stringify(diagnostic)} + 'x'.repeat(20000));process.exit(7);`;
+    const command = `process.stderr.write(${JSON.stringify(diagnostic)} + 'x\\n'.repeat(10000));process.exit(7);`;
     let message = '';
     try {
         runControllerCommand(process.execPath, ['-e', command], { environment: { RALLAR_API_SECRET: secret } });
