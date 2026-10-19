@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 
+import type { PSqlQueueReleaseTiming } from '@shared-server/queuebox/postgres/p-sql-queue-release-timing.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
+
 import type { ClientRestSnapshotReadSelector } from '@shared-server/rallar-system/client-state/snapshot/client-rest-snapshot-read-selector.ts';
 import type { GroupRestSnapshotReadSelector } from '@shared-server/rallar-system/group-state/snapshot/group-rest-snapshot-read-selector.ts';
 import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/rallar-middleware-runtime.ts';
@@ -28,8 +31,12 @@ Deno.test('production timing-off configuration omits outbox stage sinks before o
     const operations = createOperations([]);
     let mutationStageTiming: CreateApiV1RuntimeInput['outboxStageTiming'];
     let middlewareStageTiming: CreateApiV1RuntimeInput['outboxStageTiming'];
+    const releasePorts: Array<PSqlQueueReleaseTiming.Port | undefined> = [];
     constructApiV1Runtime({ ...createInput([]), timing, outboxStageTiming: toApiOutboxStageTimingSink(observability, timing) }, {
         ...operations,
+        configureWsRuntimeStores: (_name, _repository, port) => {
+            releasePorts.push(port);
+        },
         createMutationRuntime: (input) => {
             mutationStageTiming = input.outboxStageTiming;
             return MUTATION_RUNTIME;
@@ -41,6 +48,27 @@ Deno.test('production timing-off configuration omits outbox stage sinks before o
     });
     assert.equal(mutationStageTiming, undefined);
     assert.equal(middlewareStageTiming, undefined);
+    assert.deepEqual(releasePorts, [undefined]);
+});
+
+Deno.test('enabled outbound release timing captures process identity only at the root store composition', () => {
+    const events: RallarTimingEvent[] = [];
+    const ports: Array<PSqlQueueReleaseTiming.Port | undefined> = [];
+    constructApiV1Runtime({ ...createInput([]), outboxStageTiming: (event) => events.push(event) }, {
+        ...createOperations([]),
+        configureWsRuntimeStores: (_name, _repository, port) => {
+            ports.push(port);
+        }
+    });
+    assert.equal(ports.length, 1);
+    assert.ok(ports[0]);
+    assert.equal(ports[0].readEpochMs(), 1_000);
+    assert.ok(Number.isFinite(ports[0].readMonotonicMs()));
+    ports[0].record({ namespace: 'outbound', sequence: 1, outcome: 'failed', availability: 'unavailable', reason: 'release-failed' });
+    assert.equal(events.length, 1);
+    assert.equal(events[0].details?.transactionScope, 'root');
+    assert.equal(events[0].details?.processId, Deno.pid);
+    assert.equal(events[0].details?.processStartedAtEpochMs, performance.timeOrigin);
 });
 
 Deno.test('runtime construction preserves the owned startup sequence', () => {
@@ -208,21 +236,7 @@ function createInput(events: string[]): CreateApiV1RuntimeInput {
             outbox: createApiV1TestQueueResilience(),
             appOutbox: createApiV1TestQueueResilience()
         },
-        backgroundTasks: {
-            beginStartupGeneration: () => {
-                events.push('begin-expiry-generation');
-                return {
-                    isCurrent: () => true,
-                    startRtcRttReceiptFamilyCleanup: () => Promise.resolve(0),
-                    startRuntimeStateExpiryEviction: () => Promise.resolve(0)
-                };
-            },
-            register: () => {
-                events.push('register:rtc-stop');
-                return () => {};
-            },
-            stop: () => Promise.resolve()
-        }
+        backgroundTasks: createBackgroundTasks(events)
     };
 }
 const TEST_TOPOLOGY_DELIVERY: CreateApiV1RuntimeInput['topologyDelivery'] = {
@@ -258,20 +272,7 @@ function createOperations(
         },
         createRtcTopologyRuntime: () => {
             record('rtc');
-            return {
-                publicationRepository: {} as ApiRtcTopologyRuntime['publicationRepository'],
-                executionRepository: {} as ApiRtcTopologyRuntime['executionRepository'],
-                topologyDelivery: {} as ApiRtcTopologyRuntime['topologyDelivery'],
-                readiness: Promise.resolve(),
-                healthFailure: new Promise<never>(() => {}),
-                topologyReplay: {
-                    attach: () => record('attach-replay'),
-                    wake: () => {},
-                    readMetrics: () => ({}) as ReturnType<ApiRtcTopologyRuntime['topologyReplay']['readMetrics']>,
-                    resetMetrics: () => {}
-                },
-                stop: RTC_STOP
-            };
+            return createRtcTopology(record);
         },
         createTopologyServices: () => {
             record('topology');
@@ -299,5 +300,40 @@ function createOperations(
             record('require-runtime');
             return COMPLETE_RUNTIME;
         }
+    };
+}
+
+function createBackgroundTasks(events: string[]): CreateApiV1RuntimeInput['backgroundTasks'] {
+    return {
+        beginStartupGeneration: () => {
+            events.push('begin-expiry-generation');
+            return {
+                isCurrent: () => true,
+                startRtcRttReceiptFamilyCleanup: () => Promise.resolve(0),
+                startRuntimeStateExpiryEviction: () => Promise.resolve(0)
+            };
+        },
+        register: () => {
+            events.push('register:rtc-stop');
+            return () => {};
+        },
+        stop: () => Promise.resolve()
+    };
+}
+
+function createRtcTopology(record: (name: string) => void): ApiRtcTopologyRuntime {
+    return {
+        publicationRepository: {} as ApiRtcTopologyRuntime['publicationRepository'],
+        executionRepository: {} as ApiRtcTopologyRuntime['executionRepository'],
+        topologyDelivery: {} as ApiRtcTopologyRuntime['topologyDelivery'],
+        readiness: Promise.resolve(),
+        healthFailure: new Promise<never>(() => {}),
+        topologyReplay: {
+            attach: () => record('attach-replay'),
+            wake: () => {},
+            readMetrics: () => ({}) as ReturnType<ApiRtcTopologyRuntime['topologyReplay']['readMetrics']>,
+            resetMetrics: () => {}
+        },
+        stop: RTC_STOP
     };
 }

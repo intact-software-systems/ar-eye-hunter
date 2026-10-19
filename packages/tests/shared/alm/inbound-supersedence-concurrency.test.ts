@@ -21,7 +21,7 @@ import {
     computeALInboundPlanningObservations
 } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
 import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
-import { readALInboundEffectFacts } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
+import { readALInboundEffectFacts, type ALInboundEffectFacts } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
@@ -210,7 +210,7 @@ async function createStore(storage: 'memory' | 'indexeddb' | 'pglite'): Promise<
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: createPassThroughIndexedDbOperationObserver()
         })
-        : new PSqlAdmissionWorkBackend((await createPSqlAdmissionTestStorage()).sql, namespace, Date.now);
+        : new PSqlAdmissionWorkBackend({ sql: (await createPSqlAdmissionTestStorage()).sql, namespace, nowMs: Date.now });
     return {
         admissionStore: createALInboundAdmissionStore({
             nowMs: Date.now,
@@ -259,7 +259,7 @@ async function readDecision(store: ALInboundAdmissionStore, message: ALMessage):
     };
 }
 
-function readEffectFacts(nowMs: number) {
+function readEffectFacts(nowMs: number): ALInboundEffectFacts {
     return readALInboundEffectFacts(nowMs, {
         newControlId: crypto.randomUUID.bind(crypto),
         selfPeerId: 'receiver',

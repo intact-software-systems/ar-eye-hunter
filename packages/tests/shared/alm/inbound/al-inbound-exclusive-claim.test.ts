@@ -270,7 +270,7 @@ async function createClaimBackend(
         return new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), nowMs);
     }
     const { sql } = await createPSqlAdmissionTestStorage();
-    return new PSqlAdmissionWorkBackend(sql, namespace, nowMs);
+    return new PSqlAdmissionWorkBackend({ sql, namespace, nowMs });
 }
 
 async function commitClaim(fixture: ClaimFixture, message: ALMessage): Promise<void> {

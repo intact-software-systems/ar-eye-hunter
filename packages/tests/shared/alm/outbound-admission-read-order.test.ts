@@ -191,7 +191,7 @@ describe('outbound admission observation order', () => {
     it('rereads repair state from Postgres after capturing that sender version', async () => {
         const namespace = 'repair-race-psql';
         const storage = await createPSqlAdmissionTestStorage();
-        const backend = new PSqlAdmissionWorkBackend(storage.sql, namespace, Date.now);
+        const backend = new PSqlAdmissionWorkBackend({ sql: storage.sql, namespace, nowMs: Date.now });
         const store = createALOutboundAdmissionStore({
             nowMs: Date.now,
             canonicalScope: namespace,

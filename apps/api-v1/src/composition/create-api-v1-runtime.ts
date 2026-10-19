@@ -5,12 +5,14 @@ import {
     toServerWsQBoxALRuntimeStoreId
 } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type { PSqlQueueReleaseTiming } from '@shared-server/queuebox/postgres/p-sql-queue-release-timing.ts';
 import { initResourceInboxExpiryEviction } from '@shared-server/queuebox/postgres/resource-inbox-maintenance.ts';
 import {
     normalizeAppInboxOptions,
     validateAppInboxAttemptDeadlineMargin,
     type AppInboxOptions
 } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
+import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import { initPresenceExpiryReconciliation } from '@shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.ts';
 import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/create-rallar-middleware.ts';
 import type { CreateRallarMiddlewareOptions } from '@shared-server/rallar-system/middleware/rallar-middleware-construction.ts';
@@ -21,6 +23,7 @@ import {
     RALLAR_ALM_RECEIPT_DIAGNOSTICS_CAPACITY,
     type RallarAlmReceiptDiagnosticsRecorder
 } from '@shared-server/rallar-system/observability/alm-receipt-diagnostics.ts';
+import { createRallarPSqlReleaseTiming } from '@shared-server/rallar-system/observability/p-sql-release-timing.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import type { AppInboxCompletionNoticeChannel } from '@shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.ts';
 import { RtcRttInboxService } from '@shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-inbox-service.ts';
@@ -41,9 +44,6 @@ import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { WsQueueBoxServerReceiptObserver } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 
-import type {
-    GroupPolicyCapacityConfig
-} from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import type {
     ApiV1DatabaseConfiguration,
     ApiV1TopologyDeliveryConfiguration,
@@ -170,7 +170,8 @@ export interface ApiV1RuntimeConstructionOperations {
     createTopologyServices(input: CreateApiV1TopologyServicesInput): ApiV1TopologyServices;
     configureWsRuntimeStores(
         name: string,
-        repository: ApiV1MutationRuntime['runtimeStateRepository']
+        repository: ApiV1MutationRuntime['runtimeStateRepository'],
+        outboundReleaseTiming: PSqlQueueReleaseTiming.Port | undefined
     ): void;
     startResourceInboxExpiry(
         mutation: Pick<ApiV1MutationRuntime, 'resourceInboxRepository' | 'resourceInboxResultsRepository'>
@@ -252,7 +253,17 @@ export function constructApiV1Runtime(
 /** The mutation runtime's stores and expiry workers start before middleware owns its queue. */
 function startMutationInfrastructure(input: StartMutationInfrastructureInput): void {
     const { runtime, mutation, operations, startupGeneration } = input;
-    operations.configureWsRuntimeStores(runtime.wsRuntimeName, mutation.runtimeStateRepository);
+    const outboundReleaseTiming = runtime.outboxStageTiming === undefined ? undefined : createRallarPSqlReleaseTiming({
+        timing: runtime.outboxStageTiming,
+        serviceId: runtime.serviceId,
+        publisherId: runtime.queuePubSubPublisherId,
+        processId: Deno.pid,
+        processStartedAtEpochMs: performance.timeOrigin,
+        transactionScope: 'root',
+        readMonotonicMs: () => performance.now(),
+        readEpochMs: runtime.nowEpochMs
+    });
+    operations.configureWsRuntimeStores(runtime.wsRuntimeName, mutation.runtimeStateRepository, outboundReleaseTiming);
     operations.startResourceInboxExpiry(mutation);
     operations.startRuntimeStateExpiry({
         database: runtime.database,
@@ -326,8 +337,8 @@ const PRODUCTION_OPERATIONS: ApiV1RuntimeConstructionOperations = {
     createMutationRuntime: createApiV1MutationRuntime,
     createRtcTopologyRuntime: createApiRtcTopologyRuntime,
     createTopologyServices: createApiV1TopologyServices,
-    configureWsRuntimeStores: (name, repository) => {
-        configureServerWsQBoxALRuntimeStores(name, { repository });
+    configureWsRuntimeStores: (name, repository, outboundReleaseTiming) => {
+        configureServerWsQBoxALRuntimeStores(name, { repository, outboundReleaseTiming });
     },
     startResourceInboxExpiry,
     startRuntimeStateExpiry,

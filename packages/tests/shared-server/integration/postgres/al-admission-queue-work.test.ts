@@ -635,8 +635,8 @@ async function createStorage(
     const otherSql = await createRuntimeStatePostgresSql(requirePostgresDatabaseUrl());
     onTestFinished(() => otherSql.end());
     return {
-        backend: new PSqlAdmissionWorkBackend(sql, namespace, nowMs),
-        other: new PSqlAdmissionWorkBackend(otherSql, namespace, Date.now),
+        backend: new PSqlAdmissionWorkBackend({ sql, namespace, nowMs }),
+        other: new PSqlAdmissionWorkBackend({ sql: otherSql, namespace, nowMs: Date.now }),
         entry: createEntry(namespace),
         ownedKeys
     };

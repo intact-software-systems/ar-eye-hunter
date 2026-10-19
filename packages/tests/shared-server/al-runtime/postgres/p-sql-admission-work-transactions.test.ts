@@ -23,7 +23,7 @@ describe('AL admission persistence-ready queue work', () => {
 
     it.each(['insert', 'replace'] as const)('converts caller timestamps before the %s transaction', async (operation) => {
         const { sql } = await createPSqlAdmissionTestStorage();
-        const backend = new PSqlAdmissionWorkBackend(sql, 'admission', Date.now);
+        const backend = new PSqlAdmissionWorkBackend({ sql, namespace: 'admission', nowMs: Date.now });
         const entry = createEntry();
         if (operation === 'replace') {
             await backend.workQueue.enqueue({ ...entry, resource: 'previous' });
@@ -72,7 +72,7 @@ describe('AL admission persistence-ready queue work', () => {
 
     it('commits one mixed release batch in one transaction, each entry on its own disposition', async () => {
         const { sql } = await createPSqlAdmissionTestStorage();
-        const backend = new PSqlAdmissionWorkBackend(sql, 'admission', Date.now);
+        const backend = new PSqlAdmissionWorkBackend({ sql, namespace: 'admission', nowMs: Date.now });
         for (const resourceId of ['mixed-completed', 'mixed-retry', 'mixed-not-ready']) {
             await backend.workQueue.enqueue({ ...createEntry(), key: { topicId: 'alm-work', resourceId, contextId: 'admission' } });
         }
@@ -113,7 +113,7 @@ describe('AL admission persistence-ready queue work', () => {
         'fences a commit on a %s claimed row without reading it again',
         async (use) => {
             const { sql } = await createPSqlAdmissionTestStorage();
-            const backend = new PSqlAdmissionWorkBackend(sql, 'admission', Date.now);
+            const backend = new PSqlAdmissionWorkBackend({ sql, namespace: 'admission', nowMs: Date.now });
             const claimed = await claimEntry(backend);
             const findByKey = vi.spyOn(PSqlResourceInboxEntryReader.prototype, 'findByKey');
             const findByKeys = vi.spyOn(PSqlResourceInboxEntryReader.prototype, 'findByKeys');
@@ -138,7 +138,7 @@ describe('AL admission persistence-ready queue work', () => {
         'conflicts the whole commit when a %s claimed row moved after its claim',
         async (use) => {
             const { sql } = await createPSqlAdmissionTestStorage();
-            const backend = new PSqlAdmissionWorkBackend(sql, 'admission', Date.now);
+            const backend = new PSqlAdmissionWorkBackend({ sql, namespace: 'admission', nowMs: Date.now });
             const claimed = await claimEntry(backend);
             // Another owner's claim after a lease expiry moves exactly the attempt columns.
             await sql`update resource_inbox set ri_attempts = ri_attempts + 1 where ri_resource_id = ${claimed.key.resourceId}`;
@@ -158,7 +158,7 @@ describe('AL admission persistence-ready queue work', () => {
 
     it('commits two concurrent writes on disjoint keys, neither fencing the other', async () => {
         const { sql } = await createPSqlAdmissionTestStorage();
-        const backend = new PSqlAdmissionWorkBackend(sql, 'admission', Date.now);
+        const backend = new PSqlAdmissionWorkBackend({ sql, namespace: 'admission', nowMs: Date.now });
 
         await Promise.all([
             backend.write(async (write) => {

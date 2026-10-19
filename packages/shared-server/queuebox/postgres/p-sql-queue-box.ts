@@ -44,6 +44,7 @@ import { TurnBatchedReads } from '@shared/resilience/turn-batched-reads.ts';
 
 import { isAdminPruneHandlerFinalizedRelease } from '../../rallar-system/admin-operations/prune/is-admin-prune-handler-finalized-release.ts';
 import type { PSqlResourceInboxRepository } from './create-p-sql-resource-inbox-repository.ts';
+import { PSqlQueueReleaseTiming } from './p-sql-queue-release-timing.ts';
 import { computeResourceInboxObservedReplacement } from './p-sql-resource-inbox-entry-repository.ts';
 import type {
     ResourceInboxWorkPresence,
@@ -58,6 +59,16 @@ interface PSqlQueueReleaseCandidate {
     readonly replacement: ResourceInboxObservedReplacement;
 }
 
+interface PSqlQueueReleaseComputed {
+    readonly candidates: readonly PSqlQueueReleaseCandidate[];
+    readonly releasedAt: Temporal.Instant;
+}
+
+interface PSqlQueueReleased {
+    readonly entries: Map<Key, ResourceEntry>;
+    readonly timing: PSqlQueueReleaseTiming.Callback;
+}
+
 interface PSqlObservedReservation {
     readonly typeIds: ReadonlySet<string>;
     readonly statusIds: ReadonlySet<EntityStatus>;
@@ -68,15 +79,18 @@ interface PSqlObservedReservation {
 export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     public readonly resourceInbox: PSqlResourceInboxRepository;
     private readonly now: () => Temporal.Instant;
+    private readonly releaseTiming: PSqlQueueReleaseTiming | undefined;
     /** Every lane's probe of one engine round is one statement. */
     private readonly workPresenceReads: TurnBatchedReads<ResourceInboxWorkPresenceRead, ResourceInboxWorkPresence>;
 
     constructor(
         resourceInbox: PSqlResourceInboxRepository,
-        now: () => Temporal.Instant
+        now: () => Temporal.Instant,
+        releaseTiming?: PSqlQueueReleaseTiming.Dependencies
     ) {
         this.resourceInbox = resourceInbox;
         this.now = now;
+        this.releaseTiming = releaseTiming === undefined ? undefined : new PSqlQueueReleaseTiming(releaseTiming);
         this.workPresenceReads = new TurnBatchedReads({
             toKeyId: (read) => JSON.stringify([[...read.typeIds].sort(), toWorkPresenceDurations(read)]),
             readBatch: (reads) => resourceInbox.reservations.readWorkPresences(reads)
@@ -359,40 +373,90 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async releaseEntries(releases: readonly ResourceInboxRelease[]): Promise<Map<Key, ResourceEntry>> {
-        const releasedAt = this.now().round({ smallestUnit: 'microsecond', roundingMode: 'halfEven' });
-        const candidates = toPSqlQueueReleaseCandidates(releases, releasedAt);
-        return await this.resourceInbox.transaction(
-            async (txRepo: PSqlResourceInboxRepository) => {
-                const releasedEntries = new Map<Key, ResourceEntry>();
-
-                for (const { disposition, replacement } of candidates) {
-                    const entry = replacement.expected.entry;
-                    const updated = await txRepo.reservations.releaseReserved(replacement);
-                    if (!updated) {
-                        const current = await txRepo.entries.findAnyByKey(entry.key);
-                        if (
-                            !current || !isIdempotentHandlerFinalizedRelease({
-                                    current,
-                                    reserved: entry,
-                                    disposition,
-                                    observedAt: releasedAt
-                                }) && !isAdminPruneHandlerFinalizedRelease(current, entry, disposition)
-                        ) {
-                            throw new ResourceInboxLostReservationError(
-                                entry.key,
-                                entry.dequeueAudit.attempts
-                            );
-                        }
-                        releasedEntries.set(entry.key, current);
-                        continue;
-                    }
-
-                    releasedEntries.set(entry.key, updated);
-                }
-
-                return releasedEntries;
+        const timing = this.releaseTiming;
+        const invocation = timing?.start();
+        try {
+            const candidateStartedAtMs = timing?.readMonotonicMs();
+            const releasedAt = this.now().round({ smallestUnit: 'microsecond', roundingMode: 'halfEven' });
+            const candidates = toPSqlQueueReleaseCandidates(releases, releasedAt);
+            const candidateEndedAtMs = timing?.readMonotonicMs();
+            const transactionCalledAtMs = timing?.readMonotonicMs();
+            const released = await this.resourceInbox.transaction((transaction) =>
+                this.releaseCandidates(transaction, { candidates, releasedAt })
+            );
+            const transactionReturnedAtMs = timing?.readMonotonicMs();
+            if (released instanceof Map) {
+                return released;
             }
-        );
+            timing?.recordSucceeded({
+                invocation: invocation!,
+                memberCount: candidates.length,
+                candidateStartedAtMs,
+                candidateEndedAtMs,
+                transactionCalledAtMs,
+                transactionReturnedAtMs,
+                callback: released.timing
+            });
+            return released.entries;
+        }
+        catch (error) {
+            if (invocation !== undefined) {
+                timing?.recordFailed(invocation);
+            }
+            throw error;
+        }
+    }
+
+    private async releaseCandidates(
+        transaction: PSqlResourceInboxRepository,
+        computed: PSqlQueueReleaseComputed
+    ): Promise<Map<Key, ResourceEntry> | PSqlQueueReleased> {
+        const timing = this.releaseTiming;
+        const startedAtMs = timing?.readMonotonicMs();
+        const members: PSqlQueueReleaseTiming.MemberSpan[] | undefined = timing === undefined ? undefined : [];
+        const entries = new Map<Key, ResourceEntry>();
+        let fallbackCount = 0;
+        for (const { disposition, replacement } of computed.candidates) {
+            const ordinal = members?.length ?? 16;
+            const entry = replacement.expected.entry;
+            const memberStartedAtMs = ordinal < 16 ? timing?.readMonotonicMs() : undefined;
+            const updated = await transaction.reservations.releaseReserved(replacement);
+            const memberEndedAtMs = ordinal < 16 ? timing?.readMonotonicMs() : undefined;
+            if (ordinal < 16) {
+                members?.push({
+                    entry,
+                    ordinal,
+                    startedAtMs: memberStartedAtMs,
+                    endedAtMs: memberEndedAtMs,
+                    updated: updated !== null
+                });
+            }
+            if (!updated) {
+                if (timing !== undefined) {
+                    fallbackCount += 1;
+                }
+                const current = await transaction.entries.findAnyByKey(entry.key);
+                if (
+                    !current ||
+                    !isIdempotentHandlerFinalizedRelease({
+                            current,
+                            reserved: entry,
+                            disposition,
+                            observedAt: computed.releasedAt
+                        }) &&
+                        !isAdminPruneHandlerFinalizedRelease(current, entry, disposition)
+                ) {
+                    throw new ResourceInboxLostReservationError(entry.key, entry.dequeueAudit.attempts);
+                }
+                entries.set(entry.key, current);
+                continue;
+            }
+            entries.set(entry.key, updated);
+        }
+        return members === undefined ? entries : {
+            entries,
+            timing: { startedAtMs, endedAtMs: timing?.readMonotonicMs(), fallbackCount, members }
+        };
     }
 
     async enqueue(resourceEntry: ResourceEntry): Promise<ResourceEntry | undefined> {
