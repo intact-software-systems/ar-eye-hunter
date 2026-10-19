@@ -30,7 +30,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
-import type { SpaStatisticsSafeGroupSummary } from '@shared/api/spa-statistics-types.ts';
+import type { GroupDirectoryPage, GroupDirectoryRequest } from '@shared/api/group-directory/group-directory-types.ts';
 import { Command, CommandCancelledError } from '@shared/cache/Command.ts';
 import {
     findGroupStateSnapshotByRef,
@@ -108,7 +108,7 @@ export interface BrowserRallarRooms {
     state(): RallarRoomState;
     list(): readonly RallarRoomSummary[];
     refresh(input?: StateScope | RallarScopedOperationOptions): Promise<RallarRoomState>;
-    directory(input?: StateScope | RallarScopedOperationOptions): Promise<readonly SpaStatisticsSafeGroupSummary[]>;
+    directory(request?: GroupDirectoryRequest, options?: RallarScopedOperationOptions): Promise<GroupDirectoryPage>;
     listEvents(input: RallarListRoomEventsInput): Promise<readonly GroupEvent[]>;
     listEventPage(input: RallarListRoomEventsInput): Promise<StateEventPage<GroupEvent>>;
     replayEvents(
@@ -261,7 +261,7 @@ function createRoomReadOperations(
         state: () => input.stateStore.state(),
         list: () => input.stateStore.state().rooms,
         refresh,
-        directory: async (directoryInput) => await readRoomDirectory(input, directoryInput),
+        directory: async (request, options) => await readRoomDirectory(input, request, options),
         listEvents: async (eventInput) => await input.roomEvents.list(eventInput),
         listEventPage: async (eventInput) => await input.roomEvents.listPage(eventInput),
         replayEvents: async (eventInput, listener) => await input.roomEvents.replay(eventInput, listener),
@@ -392,14 +392,15 @@ async function refreshRooms(
 
 async function readRoomDirectory(
     input: CreateBrowserRallarRoomsInput,
-    directoryInput?: StateScope | RallarScopedOperationOptions
-): Promise<readonly SpaStatisticsSafeGroupSummary[]> {
+    request: GroupDirectoryRequest = {},
+    options: RallarScopedOperationOptions = {}
+): Promise<GroupDirectoryPage> {
     return await input.runAuthAwareOperation(async () => {
-        const options = toRallarScopedOperationOptions(directoryInput);
         const operationOptions = input.resolveOperationOptions(options);
         await input.connect(operationOptions);
         return await listStateGroupDirectory(
             input.resolveOperationScope(options.scope),
+            request,
             { signal: operationOptions.signal }
         );
     });

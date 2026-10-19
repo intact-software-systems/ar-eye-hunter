@@ -266,6 +266,7 @@ function useArenaConnectionActions(
         setConnectionState: state.setConnectionState,
         setError: state.setError,
         setOpenRooms: state.setOpenRooms,
+        setOpenRoomsError: state.setOpenRoomsError,
         setRoomId: state.setRoomId,
         setRooms: state.setRooms,
         setSession: state.setSession
@@ -353,6 +354,7 @@ function useArenaConnectionView(input: ArenaConnectionViewInput): ArenaConnectio
             state.isNetworkEnabled,
             state.networkGenerationRef,
             state.openRooms,
+            state.openRoomsError,
             state.pickupAcceptances,
             state.presenceNotices,
             state.remoteEvents,
@@ -386,6 +388,7 @@ function readArenaConnectionView(input: ArenaConnectionViewInput): ArenaConnecti
         roomId: state.roomId,
         rooms: state.rooms,
         openRooms: state.openRooms,
+        openRoomsError: state.openRoomsError,
         directorStatus: state.directorStatus,
         rtcLanes: state.rtcLanes,
         directorAttempt: state.directorAttempt,

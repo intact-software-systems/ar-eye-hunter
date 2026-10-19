@@ -1,7 +1,7 @@
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import type { GroupDirectoryPage, GroupDirectoryRequest } from '@shared/api/group-directory/group-directory-types.ts';
 import type { GroupFormationView } from '@shared/api/group-lifecycle/group-formation-view.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import type { SpaStatisticsSafeGroupSummary } from '@shared/api/spa-statistics-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 
 import { readApiBaseUrl } from '../api-client-config.ts';
@@ -37,15 +37,37 @@ export async function listStateGroups(
 
 export async function listStateGroupDirectory(
     scope: StateScope = defaultStateScope(),
+    request: GroupDirectoryRequest = {},
     options?: ApiRequestOptions
-): Promise<SpaStatisticsSafeGroupSummary[]> {
-    return await executeHttpRequest<void, SpaStatisticsSafeGroupSummary[]>(
+): Promise<GroupDirectoryPage> {
+    return await executeHttpRequest<void, GroupDirectoryPage>(
         readApiBaseUrl(),
-        `${toStateScopeHttpPath(scope)}/group-directory`,
+        `${toStateScopeHttpPath(scope)}/group-directory${toGroupDirectoryQueryString(request)}`,
         'GET',
         undefined,
         options
     );
+}
+
+function toGroupDirectoryQueryString(request: GroupDirectoryRequest): string {
+    const query = new URLSearchParams();
+    if (request.kind !== undefined) {
+        query.set('kind', request.kind);
+    }
+    if (request.q !== undefined) {
+        query.set('q', request.q);
+    }
+    if (request.limit !== undefined) {
+        query.set('limit', String(request.limit));
+    }
+    if (request.cursor !== undefined) {
+        query.set('cursor', request.cursor);
+    }
+    if (request.includeEmpty !== undefined) {
+        query.set('includeEmpty', String(request.includeEmpty));
+    }
+    const serialized = query.toString();
+    return serialized.length > 0 ? `?${serialized}` : '';
 }
 
 export async function findStateGroup(

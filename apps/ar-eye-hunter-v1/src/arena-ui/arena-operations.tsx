@@ -194,12 +194,9 @@ function ArenaRoomList({ arena }: Pick<ArenaOperationsProps, 'arena'>) {
     const rooms = arena.rooms.filter((room) =>
         room.name.toLowerCase().includes('eye hunter') || room.name === GAME_ROOM_NAME
     );
-    const openRooms = arena.openRooms.filter((room) =>
-        room.displayName.toLowerCase().includes('eye hunter') || room.displayName === GAME_ROOM_NAME
-    );
     return (
         <div className="room-list">
-            {rooms.length === 0 && openRooms.length === 0 && (
+            {rooms.length === 0 && arena.openRooms.length === 0 && (
                 <p className="muted">Create an arena or join from another browser session.</p>
             )}
             {rooms.map((room) => (
@@ -213,18 +210,20 @@ function ArenaRoomList({ arena }: Pick<ArenaOperationsProps, 'arena'>) {
                     <small>{room.onlineMemberCount} online</small>
                 </button>
             ))}
-            {openRooms.length > 0 && <p className="muted">Open arenas</p>}
-            {openRooms.map((room) => (
+            {arena.openRooms.length > 0 && <p className="muted">Open arenas</p>}
+            {arena.openRooms.map((room) => (
                 <button
                     type="button"
                     key={room.groupRef.groupId}
                     className="room-row"
+                    disabled={room.isFull}
                     onClick={() => arena.joinRoom(room.groupRef.groupId)}
                 >
                     <span>{room.displayName}</span>
-                    <small>{room.onlineMemberCount} online · Join</small>
+                    <small>{room.isFull ? 'Full' : `${room.onlineMemberCount} online · Join`}</small>
                 </button>
             ))}
+            {arena.openRoomsError && <p className="muted">Could not load open arenas: {arena.openRoomsError}</p>}
         </div>
     );
 }

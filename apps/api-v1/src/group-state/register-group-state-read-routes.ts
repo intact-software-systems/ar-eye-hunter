@@ -1,10 +1,12 @@
 import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
 
-import { toSafeGroupSummary } from '@shared-server/rallar-system/admin-support/statistics/spa-statistics-projections.ts';
+import { computeGroupDirectoryPage } from '@shared-server/rallar-system/group-state/directory/compute-group-directory-page.ts';
+import { decodeGroupDirectoryQuery } from '@shared-server/rallar-system/group-state/directory/decode-group-directory-query.ts';
 import {
     readStateEventListQuery,
     type StateEventListQuery
 } from '@shared-server/rallar-system/state-events/state-event-listing.ts';
+import type { GroupDirectoryPage } from '@shared/api/group-directory/group-directory-types.ts';
 import type { GroupEvent, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { readGroupSnapshotPointQuery } from '../routes/state-snapshot-read/state-snapshot-read-query.ts';
@@ -71,20 +73,42 @@ async function readGroupDirectory(
     authorization: GroupStateRouteAuthorization
 ): Promise<Response> {
     try {
-        const authSession = await authorization.readStrictAuthSession(context.req);
-        const snapshots = await dependencies.groupStateService.listSnapshots(
-            toGroupStateRouteScope(context)
-        );
+        return await decodeGroupDirectoryQuery(new URL(context.req.raw.url).searchParams).fold(
+            (issues) =>
+                Promise.resolve(
+                    context.json({ error: issues.join('; '), code: 'invalid-group-directory-query' }, 400)
+                ),
+            async (query) => {
+                const authSession = await authorization.readStrictAuthSession(context.req);
+                const snapshots = await dependencies.groupStateService.listSnapshots(
+                    toGroupStateRouteScope(context)
+                );
+                const listed = snapshots.filter((snapshot) =>
+                    isGroupStateRouteSnapshotDirectoryListed(snapshot, authSession?.clientId)
+                );
 
-        return context.json(
-            snapshots
-                .filter((snapshot) => isGroupStateRouteSnapshotDirectoryListed(snapshot, authSession?.clientId))
-                .map(toSafeGroupSummary)
+                return await toValidatedJsonResponse(context, computeGroupDirectoryPage(listed, query));
+            }
         );
     }
     catch (error) {
         return toGroupStateErrorResponse(context, error);
     }
+}
+
+async function toValidatedJsonResponse(context: Context, body: GroupDirectoryPage): Promise<Response> {
+    const serialized = JSON.stringify(body);
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(serialized));
+    const etag = `"${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')}"`;
+    const headers = { ETag: etag, 'Cache-Control': 'no-cache' };
+    if (context.req.header('if-none-match') === etag) {
+        return new Response(null, { status: 304, headers });
+    }
+
+    return new Response(serialized, {
+        status: 200,
+        headers: { ...headers, 'Content-Type': 'application/json' }
+    });
 }
 
 async function readGroupSnapshot(

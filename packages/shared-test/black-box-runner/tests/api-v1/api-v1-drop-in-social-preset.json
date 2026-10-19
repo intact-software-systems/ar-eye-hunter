@@ -184,7 +184,7 @@
       "connection": "primary",
       "request": {
         "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
@@ -192,15 +192,39 @@
       },
       "expect": {
         "status": 200,
-        "body": [
-          {
-            "groupRef": {
-              "groupId": "{groupId}"
-            },
-            "joinMode": "open",
-            "memberCount": 1
-          }
-        ]
+        "body": {
+          "entries": [
+            {
+              "groupRef": {
+                "groupId": "{groupId}"
+              },
+              "joinMode": "open",
+              "memberCount": 1,
+              "maxMembers": null,
+              "isFull": false
+            }
+          ],
+          "nextCursor": null
+        }
+      }
+    },
+    {
+      "name": "directoryRejectsAnOutOfRangeLimit",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?limit=0",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "code": "invalid-group-directory-query"
+        }
       }
     },
     {
