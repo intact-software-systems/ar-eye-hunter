@@ -147,7 +147,7 @@ Report a falsified adaptive hypothesis rather than substituting an easier outcom
 Mutation or concurrency changes retain the unweakened PostgreSQL medium-scale correctness gate and
 governed state-write comparison: original workloads, dependencies, durable receipt/effect equality,
 retry/exhaustion/atomicity checks, pinned fresh environments and comparison thresholds. The valid
-balanced 36-sample comparison remains failed at a 5.40% shared-throughput regression against the
+earlier balanced 36-sample comparison remains a retained failure at a 5.40% shared-throughput regression against the
 unchanged 5% allowance. No sample removal, threshold waiver or blind comparative retry is selected.
 Preserve the current source-owned canonical bundle budgets, compression settings, dependency
 boundaries and strict comparisons. Accepted bundle growth is not a runtime benefit.
@@ -304,18 +304,26 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    This isolates the policy owner, not full dequeue/publication or hosted
    formation. Retain the full-path benefit gap and the previous failed state-write
    comparison; that command harness does not dispatch these outbound reads.
-   The next bounded measurement is one timing-off serial-versus-parallel A–B–B–A
-   native-50 formation block with exact controller restoration. Common browser
-   boundaries measure full-path behavior; absent server-promotion markers cannot
-   close the ≤2 s target. Separately, one fresh current-HEAD governed state-write
-   comparison is justified by executable QueueBox/harness changes since the
-   frozen failed candidate. It retains every tail and the unchanged thresholds;
-   a fix requires a reproduced owner defect and TDD, not a favorable rerun.
+   The complete timing-off serial-versus-parallel A–B–B–A native-50 artifact
+   block shows no full-path benefit: complete-setup player medians average
+   38.6425 → 42.5500 s and connected-to-accepted medians 1.7315 → 1.9825 s.
+   Both adjacent contrasts favor serial; two runs per source, correlated players
+   and substantial RTC/barrier variation limit causal conclusions. All native
+   correctness checks pass and all 18 original-controller restoration checks
+   pass. Delayed GitHub summary metadata remains a formal admission limit.
+   Preserve the negative result; inspect existing RTC/barrier/appointment waits
+   before selecting a bounded matched diagnostic or TDD fix. The absent server
+   promotion marker leaves the physical commit-to-browser ≤2 s target open.
+   The separate fresh current-source state-write comparator passes unchanged
+   thresholds: hot throughput 24.082769 → 24.661880 mutations/s (+2.405%).
+   It was justified by executable QueueBox/harness changes since the earlier
+   failed candidate. That older −5.103% result remains retained; neither result
+   verifies outbound policy reads, which this harness does not exercise.
    Delivery deadlines and serial sends remain enforced at their existing owner. No
    redundant read, safe cache or send reordering is established. Full details
-   and constraints are Task 19 in the focused formation plan. Native 150-result/231-assertion reconciliation
+   and constraints are Tasks 19–21 in the focused formation plan. Native 150-result/231-assertion reconciliation
    passes; complete recorder retention remains unproved under #682.
-   Neither non-recurrence nor passing native predicates waives either performance gate. The live-PG pass includes expected fault-path diagnostic output.
+   Passing native predicates does not establish the remaining formation benefit. The live-PG pass includes expected fault-path diagnostic output.
    Label all awaited spans as elapsed; pool wait, SQL server time
    and off-CPU time need independent evidence. Preserve rollback and full-row
    release fences, and prove the missing boundary before another capture.
@@ -341,11 +349,11 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    callers; no detached work or additional concurrency. Preserve every command, attempt, release,
    canonical effect and comparison threshold. A fresh comparison must use the same corrected
    harness overlay on both roles; the correction is not a production speedup or regression waiver.
-   The fresh corrected-harness comparison remains failed: hot throughput is
+   The earlier corrected-harness comparison remains a retained failure: hot throughput is
    24.675951 → 23.416662 mutations/s (-5.103%), concentrated in the third position.
    Two commands there spend 15.881/15.442 s in retry delays within 16.551/16.330 s
    latency. Other numeric gates pass; keep every position and all eighteen samples
-   per role. Diagnose current kind/command endpoints and the joined pump tail;
+   per workload per role. Diagnose current kind/command endpoints and the joined pump tail;
    identical exercised code does not explain the result or waive acceptance.
    The corrected-endpoint diagnostic reconciles all twelve phases. Measured hot
    external gaps total 0.007737–0.009891 s; retries finish several kinds, but the
@@ -394,6 +402,14 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    Trace process SQL to its dequeue owner before attributing it to a command; temporal overlap
    alone is insufficient. Retry-depth distribution and prescribed backoff remain attribution
    outcomes before any queue-policy change.
+   Current-source artifacts retain all 108 measured samples, complete native
+   receipts/outbox effects and every unchanged comparator threshold passing.
+   The unique ten-attempt tail now occurs on the baseline: 15.314 s latency,
+   including 14.385 s prescribed backoff. Candidate hot-position wall sums
+   differ by 18.616 s across nine runs alongside 60 versus 40 deep-retry
+   commands. This identifies tail content but not the cause of role variation;
+   no retry-policy fix or additional rerun is earned. Formal GitHub workflow
+   completion is still pending despite verified successful terminal artifacts.
    The remaining D278/D298 shared-mechanism audit, large-result certification,
    headless shutdown and serial publication findings remain explicit outcomes below; passing
    native acceptance closes none of them.

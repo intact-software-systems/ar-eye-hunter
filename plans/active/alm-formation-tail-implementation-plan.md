@@ -518,11 +518,12 @@ with a maximum 2.76621 s wall duration (0.305 s serialization, 2.461 s writing).
 This is a measured control-harness cost, not proof of ALM causation. Retain the
 large-result certification and snapshot allocation/I/O follow-ups.
 
-## Unresolved comparative acceptance
+## Retained earlier comparative failure
 
-The fresh corrected-harness comparison is valid but still fails hot throughput:
+The earlier corrected-harness comparison is valid and failed hot throughput;
+the current-source comparison below separately passes. Its original result is:
 24.675951 → 23.416662 mutations/s (-5.103%). Both roles use the same corrected
-harness; every A-B-B-A position and all eighteen samples per role are retained.
+harness; every A-B-B-A position and all eighteen samples per workload per role are retained.
 Uncontended p99 is 0.170083 → 0.169386 s; shared throughput is 89.9957 →
 89.9159 mutations/s. Neither fails its gate. Hot p99 is 3.917735 → 3.922594 s;
 median per-run transaction wall-duration sum is 168.573 → 168.266 s. The earlier
@@ -595,38 +596,38 @@ measurement remains first.
 
 ## Next two useful slices
 
-1. **Remaining formation-tail delivery.** Task 20 implements parallel captured-policy
-   reads with full sibling settlement, ordered validation/errors and the existing
-   delivery expiry guards. Reviewed local PostgreSQL owner medians improve by
-   24.8% / 16.3%; full formation remains unmeasured. Run one frozen A–B–B–A
-   comparison of the preceding serial implementation and the reviewed parallel
-   implementation, with the same 50-agent / 30 s native recipe, timing disabled,
-   identical settings and artifact admission. Retain every leg and failure.
-   Report actual browser formation/convergence boundaries in seconds; timing-off
-   evidence cannot establish a missing server-promotion-to-browser boundary or
-   close the ≤2 s tail target. Preserve source, manifest, environment and metric
-   provenance. Inspect before mutation and restore the exact prior controller
-   source, public settings, timing, topology and persistent database identity
-   after the block or on failure. No CPU profiler in the primary comparison.
-   Keep immutable events/audiences, fences, retry/deadline semantics, ordered
-   sends and fault recovery unchanged. Instrumented attribution is a separate
-   bounded decision only if the matched result leaves an actionable gap.
-2. **State-write command completion.** The corrected older comparison remains
-   failed: hot throughput 24.675951 → 23.416662 mutations/s (−5.103306%). Its
-   third position contains two ten-attempt commands with 15.881 / 15.442 s
-   prescribed backoff. The later single-candidate reservation diagnostic does
-   not reproduce that depth and cannot explain or waive the role difference.
-   Current HEAD changes executable QueueBox claim/release owners and benchmark
-   composition since that frozen candidate, so run one fresh pinned governed
-   A–B–B–A comparison, applying the same candidate harness to both roles. Keep
-   nine measured samples per position, all tails, warmup, concurrency, native
-   receipt/outbox validation and the unchanged comparator/thresholds. This
-   validates current HEAD; it is not a rerun to select a favorable result.
-   Attribute any failure from per-position walls, retry depth/backoff and
-   command evidence before choosing a repair. Only a reproduced unexplained
-   tail earns the next exact command/pump/dequeue diagnostic. Use a failing
-   owned-boundary test before any fix. Raw timing-array scalability remains
-   independently tracked in #686; no speculative retry-policy change.
+1. **Explain the measured formation slowdown before selecting another repair.**
+   The completed timing-off A–B–B–A artifact block does not demonstrate a
+   full-path benefit from parallel policy reads. Complete-setup player medians
+   average 38.6425 s serial versus 42.5500 s parallel; connected-to-accepted
+   medians average 1.7315 versus 1.9825 s. Both adjacent contrasts favor serial.
+   Two runs per source and correlated players do not establish a stable causal
+   regression. Keep this negative result beside the positive local owner probe.
+   Use the retained same-agent RTC, barrier, audience and appointment evidence
+   to locate the remaining wait before another experiment. A matched timing-on
+   diagnostic is a separate bounded attribution decision only after naming the
+   missing owner boundary and falsifier; do not rerun merely for a pass or add
+   speculative instrumentation. The physical commit-to-browser ≤2 s target
+   remains open. Preserve immutable events/audiences, ordered sends, existing
+   expiry guards, causal fences, retries and fault recovery; any selected fix
+   requires a failing semantic test at its actual owner, then affected checks
+   and matched benefit evidence. Every hosted mutation requires exact source,
+   settings, health, idle-state and persistent database restoration checks.
+2. **Close current state-write evidence and retain the unresolved retry finding.**
+   The fresh pinned comparison with the same corrected harness on both roles
+   passes every unchanged comparator threshold: hot throughput is 24.082769 →
+   24.661880 mutations/s (+2.405%). The older −5.103306% comparison remains a
+   valid failed result for its different candidate; do not rewrite it as noise.
+   Current artifacts contain the only ten-attempt command on the baseline:
+   15.314 s latency including 14.385 s prescribed backoff. The same candidate
+   differs by 18.616 s across its two nine-run hot positions, alongside differing
+   deep-retry counts. This explains observed tail content, not the cause of
+   role differences, and earns no retry-policy repair. Preserve all samples,
+   native receipts, artifact integrity and pending remote-finalization limits.
+   If a later required comparison fails with an unexplained scheduling residual,
+   join exact command/pump/dequeue observations to existing retry facts before
+   TDD repair. Raw collection and repeated-scan scalability remain independent
+   follow-up #686; no additional favorable-rerun loop is selected.
 
 ### Task 4: Separate command completion from owned pump cleanup
 
@@ -876,9 +877,9 @@ Publish one readable PR with main-versus-candidate comparisons, metric units,
 limitations and unresolved follow-ups. Keep only the next two slices concrete;
 Git history and ignored artifacts retain detailed implementation chronology.
 Delete this narrow plan only after its selected acceptance is actually complete;
-the failed comparison and full formation-tail target currently keep it open.
+the full formation-tail target keeps it open; the earlier failed comparison remains retained.
 Run delivery status before broad final validation and ready once at handoff.
-The user owns merge; a readiness action does not waive the failed performance gate.
+The user owns merge; a readiness action does not waive unresolved formation acceptance.
 
 ### Preserve live public settings during diagnostic rollout
 
@@ -2144,3 +2145,96 @@ policy reads, so repeating it cannot verify this optimization. Continue its
 existing independent completion/retry investigation without a favorable-rerun
 loop. The next formation measurement must test end-to-end benefit under the
 unchanged workload, not infer it from these local fractions of a second.
+
+### Task 21: Measure full native formation with timing disabled
+
+Freeze one serial–parallel–parallel–serial block of the existing 50-agent / 30 s
+native workload. Preserve all legs, scopes, source and manifest hashes; make no
+per-leg tuning or database reset. Each leg must reconcile 50 native recipe
+results, 150 distinct result/control links, 231 unique assertions, 50 RTC
+connections and 300 released barriers. Require both the native and semantic
+projection checks, artifact integrity, exact effective settings, healthy idle
+services and persistent database identity. Reuse existing analysis and owned
+controller operations; restore the original source/settings after completion or
+abort. A delayed GitHub status is an operational observation, not a product
+failure or permission to overlap loads.
+
+Report two same-agent page-clock intervals in seconds: group-created barrier end
+to confirmed layout acceptance (complete setup), and connected barrier end to
+confirmed acceptance (audience convergence, appointment and acceptance after RTC).
+The latter boundary was selected from prior original artifacts before examining
+this block's timings. Also retain recipe-start sensitivity and the existing RTC,
+HTTP, barrier and browser-event distributions. These waits are correlated; their
+medians cannot be added as a cost breakdown. Each whole run is one replicate.
+Neither interval establishes physical commit-to-browser latency or the ≤2 s
+formation-tail target.
+
+All four product runs pass native correctness: 50 recipes, 231 unique group
+assertions, 150 distinct successful unreplayed result/control links, 50 RTC
+connections, 300 released barriers and all 50 timing pairs per run. Zero agents
+are failed, missing, stale or flaky; zero reconnects and parse errors occur.
+Each run retains 50 known session-label mismatch warnings. The #682 control
+retention limit recurs; native pairs are complete, full event history is not.
+The original source/settings, schema/database identity, health and idle state
+are restored and independently verified by all 18 checks. GitHub's B3/A4 overall
+workflow summaries remain stale despite completed successful product artifacts;
+formal workflow acceptance remains pending rather than inferred from artifacts.
+
+| Native player median (s), 49 correlated players/run | A1 serial | B2 parallel | B3 parallel | A4 serial | Mean parallel − mean serial |
+| --------------------------------------------------- | --------: | ----------: | ----------: | --------: | --------------------------: |
+| Group-created → accepted                            |    39.225 |      41.417 |      43.683 |    38.060 |                     +3.9075 |
+| Connected → accepted                                |     1.657 |       1.988 |       1.977 |     1.806 |                     +0.2510 |
+
+The adjacent complete-setup contrasts are +2.192 / +5.623 s, and tail contrasts
++0.331 / +0.171 s. These are two whole-run replicates per source; no statistical
+significance, stable effect size or causal policy-read regression is established.
+Most observed extra setup time precedes the connected barrier. The retrospective
+phase medians locate +3.6565 s there and +0.2495 s between connected and appointed;
+component medians are not additive costs. Appointed-to-accepted is only
+0.006–0.009 s. RTC end-to-connected-barrier medians are 3.301 / 3.208 / 6.257 /
+1.736 s; shared barrier release amplifies late-agent variation. Browser
+planned-to-accepted matches only 46 / 29 / 26 / 30 agents and points in a different
+direction; missing starts and #682 prevent it from overriding complete native
+results. Timing-off evidence cannot establish physical promotion-to-browser
+latency. Parallel reads improve the isolated PostgreSQL owner but have no
+measured full-formation benefit in this block.
+
+### Current state-write comparison and retry investigation
+
+Executable QueueBox and benchmark composition changes since the older failed
+candidate justified one fresh governed comparison. Both roles use the same
+candidate harness, four balanced positions, nine measured samples per workload per position,
+unchanged thresholds, workloads and cleanup. All 108 measured samples are retained:
+18 samples per workload per role. Every role/workload has 12,600 accepted commands
+and receipts and 18,000 expected/actual outbox intents, with zero exhausted
+commands, transient retries, atomic failures or DBW violations. Original ZIPs,
+producer inventory, position/environment hashes and the complete successful
+terminal record are verified. The comparator artifact passes; GitHub's overall
+workflow summary is still stale and is not claimed as finalized CI success.
+
+| Workload    | Baseline mutations/s | Candidate mutations/s |  Change | Baseline p99 (s) | Candidate p99 (s) |
+| ----------- | -------------------: | --------------------: | ------: | ---------------: | ----------------: |
+| Uncontended |           103.162099 |            103.476044 | +0.304% |         0.170185 |          0.167861 |
+| Shared      |            90.480717 |             91.261066 | +0.862% |         0.173807 |          0.169061 |
+| Hot         |            24.082769 |             24.661880 | +2.405% |         4.017653 |          3.978229 |
+
+Hot wall sums are 523.196 → 510.910 s; median per-run CPU is 26.934 → 27.510 s
+(+2.142%), SQL statements 58,835 → 58,328, summed transaction wall durations
+165.242 → 167.512 s and sampled lock wait 2.991 → 3.002 s. Overlapping transaction
+walls are not CPU time. All unchanged resource/latency/correctness gates pass.
+The unique ten-attempt command is baseline A1 topology-source:1: 15.314 s,
+including 14.385 s prescribed backoff and nine conflicts; its phase lasts
+37.387 s. Candidate B2's longest command is topology-source:12 at 9.437 s,
+including 7.521 s backoff and eight conflicts. Its nine hot runs total 264.763 s
+versus 246.147 s in B3, with 60 versus 40 commands reaching at least nine attempts.
+Retry depth explains substantial tail content but does not establish why roles
+or positions differ. No production fix or policy change is selected from these
+facts. The earlier failed comparison and single-candidate reservation diagnostic
+retain their original meanings; this harness does not exercise outbound policy
+reads and cannot validate their formation benefit.
+
+Independent review reproduces the pooled comparison and tail results from all
+original samples. Scratch analyzer standards remediation preserves outputs
+exactly across all four earlier and four current positions. No runtime source
+changed in this measurement slice, so no new RED/GREEN claim is made. Prior
+parallel-read TDD and release/formation/medium-scale validation remain separate.
