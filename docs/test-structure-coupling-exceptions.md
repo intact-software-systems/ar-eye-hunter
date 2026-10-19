@@ -86,6 +86,21 @@ moved or changed test.
   "version": 1,
   "contracts": [
     {
+      "id": "alm-outbound-captured-policy-indexeddb-session-settlement",
+      "domain": "ALM outbound captured-policy IndexedDB read-session lifetime",
+      "owner": "Rallar shared maintainers",
+      "summary": "A held canonical-identity read settles before the captured-policy owner closes its IndexedDB read session, including when the stored reference is corrupt.",
+      "semanticCoverage": "packages/tests/shared/alm/outbound-admitted-audience.test.ts#keeps a genuine IndexedDB read session open until a held sibling settles",
+      "coverageRelation": "The test holds the real IndexedDB work read, observes the session-close port before release, then releases the read, asserts the original corruption failure and session closure, repairs the stored reference and proves a healthy follow-up read.",
+      "interactionRequirement": {
+        "interactionKind": "order",
+        "ownedPort": "IndexedDbAdmissionReadSession.close, invoked by IndexedDbAdmissionBackend.readWithin",
+        "observableEffect": "Closing the session aborts its active readonly snapshot; a sibling read still using that session can lose its storage boundary or continue after the owner has returned.",
+        "requiredConstraint": "The captured-policy read session remains open while the identity read is held and closes only after both started reads settle, even when reference validation then fails.",
+        "failureRationale": "The same corruption error and later successful read could appear after an early close if the pending sibling happened to reopen or finish on another snapshot. Observing close on both sides of release proves the session lifetime that owns both reads."
+      }
+    },
+    {
       "id": "alm-outbound-group-holds-late-sender-decision-read",
       "domain": "ALM outbound sender admission lifetime",
       "owner": "Rallar shared maintainers",
@@ -4567,6 +4582,28 @@ moved or changed test.
     }
   ],
   "entries": [
+    {
+      "id": "test-structure-coupling-4ed32dcbca1bae41",
+      "path": "packages/tests/shared/alm/outbound-admitted-audience.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-outbound-captured-policy-indexeddb-session-settlement",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The absence of close while the real identity read is held proves the backend has not ended the session before its already-started sibling settles; a pending returned Promise alone does not prove that storage lifetime.",
+      "semanticCoverage": "packages/tests/shared/alm/outbound-admitted-audience.test.ts#keeps a genuine IndexedDB read session open until a held sibling settles"
+    },
+    {
+      "id": "test-structure-coupling-c5abef22a4ad4c49",
+      "path": "packages/tests/shared/alm/outbound-admitted-audience.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-outbound-captured-policy-indexeddb-session-settlement",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The close observation after release proves the failed read returns its session to the backend once both reads settle; the corruption error and healthy follow-up do not by themselves prove that cleanup occurred at this boundary.",
+      "semanticCoverage": "packages/tests/shared/alm/outbound-admitted-audience.test.ts#keeps a genuine IndexedDB read session open until a held sibling settles"
+    },
     {
       "id": "test-structure-coupling-90e8563b42965575",
       "path": "packages/tests/shared/alm/outbound/al-outbound-dispatch-admission.test.ts",
