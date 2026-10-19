@@ -17,7 +17,7 @@ class ApiInspector {
 
     receive(text) {
         try {
-            if (new TextEncoder().encode(text).byteLength > 128 * 1024 * 1024) {
+            if (new TextEncoder().encode(text).byteLength >= 128 * 1024 * 1024) {
                 this.fail(new Error('Profile protocol limit exceeded (128 MiB)'));
                 return;
             }
@@ -91,7 +91,7 @@ export function validateApiCpuProfile(profile) {
     ) {
         return ['Missing profile nodes, samples or time deltas'];
     }
-    if (profile.samples.length > 6_000_000) {
+    if (profile.samples.length >= 6_000_000) {
         return ['Profile sample limit exceeded'];
     }
     const ids = new Set(profile.nodes.map((node) => node.id));
@@ -165,7 +165,7 @@ async function captureApiProfile(directory, target) {
         }
         clocks.stop = { before: await inspector.readClock() };
         const stopped = await inspector.request('Profiler.stop');
-        await writeJson(`${directory}/api.cpuprofile`, stopped.profile);
+        await Deno.writeTextFile(`${directory}/api.cpuprofile`, JSON.stringify(stopped.profile));
         clocks.stop.after = await inspector.readClock();
         const issues = validateApiCpuProfile(stopped.profile);
         if (issues.length) {

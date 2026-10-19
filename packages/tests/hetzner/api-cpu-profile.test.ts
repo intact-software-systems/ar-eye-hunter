@@ -36,7 +36,7 @@ it('rejects malformed profile nodes, deltas and samples without inventing a cloc
     expect(validateApiCpuProfile({ ...profile, timeDeltas: [-1] })).not.toEqual([]);
     expect(validateApiCpuProfile({ ...profile, nodes: [{ id: 1, callFrame: {}, children: [4] }] })).not.toEqual([]);
     expect(validateApiCpuProfile({ ...profile, timeDeltas: [5000] })).not.toEqual([]);
-    expect(validateApiCpuProfile({ ...profile, samples: Array(6_000_001).fill(1), timeDeltas: Array(6_000_001).fill(0) })).toContain(
+    expect(validateApiCpuProfile({ ...profile, samples: Array(6_000_000).fill(1), timeDeltas: Array(6_000_000).fill(0) })).toContain(
         'Profile sample limit exceeded'
     );
     const clock = (epochMs: number, monotonicMs: number) => ({ api: { epochMs, monotonicMs } });
