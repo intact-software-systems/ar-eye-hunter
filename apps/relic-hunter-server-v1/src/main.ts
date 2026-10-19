@@ -1,13 +1,11 @@
 import { loadSync } from '@std/dotenv';
 import { Hono, type Context } from 'hono';
-import { cors } from 'hono/cors';
 
 import { createDefaultRallarServer } from '@api-v1/src/composition/create-default-rallar-server.ts';
 import { createDefaultApiV1DatabaseLifecycle } from '@api-v1/src/db/api-v1-database-lifecycle.ts';
-import {
-    STATE_SNAPSHOT_READ_EXPOSED_HEADERS
-} from '@api-v1/src/routes/state-snapshot-read/state-snapshot-read-exposed-headers.ts';
+import { installApiHttpMiddleware } from '@api-v1/src/services/install-api-http-middleware.ts';
 import { requireApiAuthSession, toAuthErrorResponse } from '@api-v1/src/services/request-auth-service.ts';
+import { createApiTimingSink } from '@api-v1/src/services/timing-service.ts';
 import { isRelicCommand, toRelicRoomGroupRef } from '@relic-hunters/mod.ts';
 import { isGroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import type { ApiConfigResponse } from '@shared/api/api-config.ts';
@@ -76,28 +74,10 @@ const relicGame = await installRelicHunterGame(rallar, {
     readSession: (sessionId) => rallar.runtime.authSessionRepository.findBySessionId(sessionId)
 });
 
-const apiCors = cors({
-    origin: (origin) => resolveCorsOrigin(origin, configuration.http.corsOrigins),
-    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization', 'x-client-id'],
-    exposeHeaders: [
-        'Content-Length',
-        'Server-Timing',
-        'x-request-id',
-        'Retry-After',
-        ...STATE_SNAPSHOT_READ_EXPOSED_HEADERS
-    ],
-    maxAge: configuration.http.preflightMaxAgeSeconds,
-    credentials: true
-});
-
-app.use('/api/*', async (c, next) => {
-    if (isWebSocketUpgradeRequest(c.req.path, c.req.header('upgrade'))) {
-        await next();
-        return;
-    }
-
-    return await apiCors(c, next);
+installApiHttpMiddleware(app, {
+    http: configuration.http,
+    stateApi: configuration.apiV1.stateApi,
+    timing: createApiTimingSink(configuration.apiV1.observability)
 });
 
 app.get(
@@ -197,21 +177,6 @@ if (configuration.apiV1.topology.replay.queueWorkers === 'enabled') {
 
 Deno.serve({ port: configuration.http.port }, app.fetch);
 console.log(`Relic Hunter server started on port ${configuration.http.port}.`);
-
-function resolveCorsOrigin(
-    origin: string,
-    allowedOrigins: readonly string[]
-): string | undefined {
-    if (allowedOrigins.includes('*')) {
-        return origin || undefined;
-    }
-
-    return allowedOrigins.includes(origin) ? origin : undefined;
-}
-
-function isWebSocketUpgradeRequest(path: string, upgrade?: string): boolean {
-    return path.startsWith('/api/ws/') && upgrade?.trim().toLowerCase() === 'websocket';
-}
 
 async function readRelicGroupSnapshotForPolicy(
     gameId: string
