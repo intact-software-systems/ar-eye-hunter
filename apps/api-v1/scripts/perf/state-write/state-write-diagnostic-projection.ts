@@ -125,24 +125,25 @@ function appendReleaseRecords(
     { releases, index, eventsPerPhase }: DiagnosticReleaseProjection
 ): void {
     for (const release of releases) {
+        let record: DiagnosticReleaseRecord | undefined;
+        let retained = false;
         if (state.releases.retained >= eventsPerPhase) {
             state.releases.truncated += 1;
-            if (release.selectedLane === 'RETRY') {
-                state.reservationObservations.expected += 1;
-                state.reservationObservations.unavailable += 1;
-            }
+        }
+        else {
+            record = toReleaseRecord(release, index);
+            retained = appendDiagnosticRecord(state, record, state.releases);
+        }
+
+        if (release.selectedLane !== 'RETRY') {
             continue;
         }
-        const record = toReleaseRecord(release, index);
-        const retained = appendDiagnosticRecord(state, record, state.releases);
-        if (release.selectedLane === 'RETRY') {
-            state.reservationObservations.expected += 1;
-            if (retained && record?.reservationObservation.availability === 'available') {
-                state.reservationObservations.available += 1;
-            }
-            else {
-                state.reservationObservations.unavailable += 1;
-            }
+        state.reservationObservations.expected += 1;
+        if (retained && record?.reservationObservation.availability === 'available') {
+            state.reservationObservations.available += 1;
+        }
+        else {
+            state.reservationObservations.unavailable += 1;
         }
     }
 }
