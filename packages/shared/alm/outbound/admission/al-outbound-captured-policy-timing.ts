@@ -256,26 +256,26 @@ export class ALOutboundCapturedPolicyTimingInvocation {
             ownerEndedAtMs
         };
         if (
-            !isOrdered(
+            !isOrdered([
                 candidate.startedAtMs,
                 candidate.anchorAfterMs,
                 candidate.methodStartedAtMs,
                 candidate.storedReadStartedAtMs,
                 candidate.identityReadStartedAtMs
-            ) ||
-            !isOrdered(
+            ]) ||
+            !isOrdered([
                 candidate.storedReadStartedAtMs,
                 candidate.storedReadEndedAtMs,
                 candidate.readPairEndedAtMs,
                 candidate.referenceValidationEndedAtMs,
                 candidate.methodEndedAtMs,
                 candidate.ownerEndedAtMs
-            ) ||
-            !isOrdered(
+            ]) ||
+            !isOrdered([
                 candidate.identityReadStartedAtMs,
                 candidate.identityReadEndedAtMs,
                 candidate.readPairEndedAtMs
-            )
+            ])
         ) {
             return undefined;
         }
@@ -333,7 +333,7 @@ function computeALOutboundCapturedPolicyPhases(
     return Number.isFinite(sum) && Math.abs(sum - phases.ownerElapsedMs) <= 0.001 ? phases : undefined;
 }
 
-function isOrdered(...values: readonly (number | undefined)[]): boolean {
+function isOrdered(values: readonly (number | undefined)[]): boolean {
     let previous = -Infinity;
     for (const value of values) {
         if (value === undefined || !Number.isFinite(value) || value < previous) {
