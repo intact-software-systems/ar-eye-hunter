@@ -266,6 +266,22 @@ failure-safe exact restoration. Do not repeat the local workload or optimize
 release SQL from this non-reproduction. Keep the formation repair as the active
 outcome and corrected state-write attribution as the second outcome.
 
+The first hosted profiling attempt failed in its service-user capability probe
+before API mutation, agent startup or recipe execution. Independent inspection
+matches the complete pre-attempt baseline; no workload profile was produced.
+The original error retained only the command and exit status, so its exact cause
+remains unconfirmed. A real Linux reproduction demonstrates that the probe cannot
+spawn its child from an inaccessible root-owned working directory and succeeds
+from an owned accessible directory. The repair uses that owned directory and an
+isolated environment, retains bounded sanitized errors with the actual operation
+stage, and joins probe cleanup after startup/I/O failures. The complete repaired
+owner saves a valid profile and reaps its child in a real Linux service-user
+replay. Focused tests also exposed and fixed slow oversized-error sanitization.
+Independent review and fresh selected CI precede another hosted attempt. Exercise
+the actual runtime boundary and complete `bash -s` workflow body; macOS fixtures
+alone do not establish Linux behavior. This tooling repair does not establish a
+formation improvement.
+
 ### Earlier diagnostic motivating stage attribution
 
 The corrected timing-enabled fifty-agent workload passes registration in all

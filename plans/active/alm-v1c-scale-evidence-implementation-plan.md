@@ -220,6 +220,13 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    Next capture the actual hosted process with bounded clock calibration and
    verified restoration; do not infer a SQL bottleneck or repeat the local run. The generic
    local probe omits the WS authority callback and cannot rule out that wave.
+   The first hosted profile attempt failed before API mutation or recipe startup;
+   post-inspection matches the baseline and no workload profile exists. The repaired
+   capability owner now passes a real Linux service-user profile/cleanup replay and
+   retains bounded sanitized errors with accurate stages. The original host error
+   is insufficient to confirm its exact cause. Independent review and fresh CI
+   precede another hosted attempt. Keep this prerequisite within the formation
+   outcome rather than claiming progress against latency from tooling alone.
    Preserve bounded reads, ordered sends, immutable events/audiences, causal fences,
    retries, deadlines, full-row release fences, rollback and healthy-neighbor
    recovery. Do not detach owned cleanup or infer queue eligibility from overlap.
