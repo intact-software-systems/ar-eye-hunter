@@ -363,11 +363,54 @@ The v7 preclaim window has 296 definite samples containing
 `decodeALMessageEnvelopeValue`; only two also include the outbound bridge and
 146 include `acceptIncomingMessage` in the same ancestry. These inclusive counts
 are not time or a causal partition.
-Follow the actual ingress/admission owners before selecting an avoidable-work
-hypothesis; distinct trust and mutation boundaries may require validation.
+The bounded ingress pilot now finds six full checks per original data message
+and eight per ACK, including one during ACK construction. Existing row memoization
+avoids 81.8–82.0% of wrapper decoding. Three local memory-backed repetitions measure
+0.046869–0.055648 s of exclusive synchronous validation within 0.193155–0.240760 s
+of instrumented admission/delivery/ACK/settlement wall time. Final owner/work
+readbacks occur after that timer. This is not CPU or hosted delay attribution.
+Generated receipts change representation; unchanged fingerprints do not prove
+ownership. Timing cannot assign cost to one safe handoff, and the constant attempt
+label is not observed retry identity. Independent review accepts the bounded
+no-repair result; no ingress bypass is selected. The next falsification uses
+complete retained snapshots to examine advanced-write observable equality.
 Do not infer repeated per-recipient encoding or re-prove serial backlog. Retained
 receipts do not prove the exact key was eligible in every preceding selection. No new
 capture is justified solely to turn the original failed verdict into a pass.
+
+### Advanced-snapshot observation repair
+
+The bounded actual-value experiment confirms redundant whole-snapshot comparison
+on the accepted advanced-write path. Repository observable equality now checks the
+two mandatory causal revision components before invoking existing `jsonEquals`.
+Same-tuple comparison, lease changes, conflict rejection, observer events, scoped
+readback and identity fencing remain unchanged. The generic comparator and stable
+persisted bytes are untouched. Full-file closure removes the unused internal
+unscoped lookup; package surfaces, examples and consumers do not expose it.
+
+With actual retained 2,272 B and 65,802 B snapshots, three fixed repetitions of
+500 advanced observations take 0.358125/0.337201/0.338648 s before and
+0.001787/0.001576/0.001403 s after. Median synchronous owner elapsed falls from
+0.338648 s to 0.001576 s per 500 observations (99.53% lower locally). Setup,
+async observer draining and final assertions are outside the timed observation.
+Each observation's actual event and readback still pass. Count instrumentation
+separately confirms 2,324,000 enumerated fields per baseline batch versus zero
+after; same/equal content retains its required comparison. All repetitions and
+instrumentation noise remain retained. This is not a matched main comparison,
+CPU measurement, full formation replay or hosted latency claim.
+
+TDD reproduces four bounded-work failures before the repair, followed by 60 green
+checks and 218 final affected checks. Shared/server/web and maintained-test typing,
+API native checking and both game builds pass; builds retain chunk warnings.
+The full local suite remains failed with three tooling timeouts and 19,350 passing
+tests; one isolated unchanged-deadline run passes all 40 tests in those files.
+Contention is plausible, not proven. Independent review accepts the bounded
+measurement and repair. It identified a redundant event-version branch during
+full-file closure; the correction reuses the already checked snapshot, preserves
+created/updated/deleted versions, and passes 54 covering tests and the exact
+committed-source style gate. Scoped re-review found no new breakage. New-source
+CI and timing-off local 15 → 30 → 50 acceptance remain next, followed by actual
+formation attribution. Do not substitute the microbenchmark for the ≤2 s target.
 
 ### Earlier diagnostic motivating stage attribution
 
@@ -510,9 +553,14 @@ measurement remains first.
    wait inside active same-worker batches; earlier outputs wait up to 20.722 s.
    The historical large loop stall does not reproduce, while mixed admission,
    ordered publication and release occupancy persists. Signed-profile and
-   restoration-artifact repairs pass local tests and review. Select a distinct
-   avoidable-work falsification at the measured ingress/admission owners;
-   existing progress fixtures already cover the proposed generic hold test.
+   restoration-artifact repairs pass local tests and review. The bounded
+   ingress pilot did not establish a safe material bypass. Actual snapshot-owner
+   measurements earn a narrow causal-tuple equality guard, now implemented with
+   TDD, local before/after evidence and independent review. Complete new-source
+   validation and timing-off local 15 → 30 → 50 acceptance, then use the existing
+   formation workload to measure the remaining tail. Preserve same-tuple lease/conflict and observer semantics; local owner
+   savings do not establish hosted formation acceptance.
+   Existing progress fixtures already cover the proposed generic hold test.
    Use the original evidence before considering another capture. Preserve immutable
    events/audiences, causal fences, retries, deadlines, release recovery and
    ordered sends. Keep timing overhead, physical commit, queue eligibility and
@@ -1315,3 +1363,68 @@ equality as the competing hypothesis, but do not start a second harness before
 this result is independently reviewed. Do not run another hosted capture or alter
 the failed main-comparison result. Clean up only owned processes/files and leave
 original evidence and parent changes intact.
+
+
+### Task 16: Measure and, if earned, remove redundant advanced-snapshot equality work
+
+The outcome remains measured formation-tail improvement with preserved queuebox
+fault tolerance. Task 15 is independently reviewed and selects no ingress bypass.
+Use the complete retained snapshot corpus described in
+`/tmp/alm-snapshot-corpus-availability.md`. A and B are actual nonconsecutive
+snapshots, 2,272 and 65,802 compact bytes; they are not the exact historical v2
+comparison operands. Do not manufacture missing production values or infer a
+hosted speedup from this local experiment.
+
+Before code decisions load performance-analysis, rallar-code-writing,
+rallar-platform, rallar-realtime, rallar-testing, organizing-repository-structure
+and TDD skills plus applicable required references. Read nearby examples and
+existing snapshot revision, repository observation and read-through-cache tests.
+Trace `writeGroupStateSnapshot` through causal classification, repository.set,
+observable change classification and final event/readback. The hypothesis is that
+an already advanced causal tuple reaches generic whole-value equality although
+its mandatory revision fields already establish inequality. Establish the exact
+contract and actual cost before selecting a production change.
+
+Keep the experiment under `tmp/perf/task-16-snapshot/`, using the existing
+observe-only cache/repository fixture. Extract A/B from the exact verified original
+rows, validate their accepted production shape, retain original hashes and record
+runtime/source/commands. Do not invoke current-time authoritative refresh for old
+leases. Measure same-reference B, equal-content independently parsed B, A-to-B
+advanced and B-to-A stale cases. Reuse fixture setup outside timed observation;
+report setup exclusions and final event/readback correctness. Use a bounded warmup
+and three repetitions with a fixed operation count chosen before measurements.
+Retain baseline and actual-body count instrumentation separately from timing if
+it changes costs. Report whole owner elapsed and comparator elapsed without nested
+double counting, plus instrumentation overhead and uncaptured CPU/heap/GC metrics.
+Do not increase repetitions to obtain a favorable result.
+
+If this proves material avoidable traversal on the exact owner path, implement
+one narrow owner-specific repair with TDD. Preserve the generic `jsonEquals`
+unknown-input contract and stable persisted encoding; no generic comparator
+replacement, cache, new public API, new scheduler or duplicated algorithm.
+First demonstrate the relevant failure at the existing owned behavioral/performance
+boundary. Prefer semantic tests; a bounded-work assertion must describe the
+independent scalability contract and observe an owned port, not pin helper calls.
+Retain equal-tuple conflict rejection, lease renewal and liveness reduction,
+same-reference and equal-content behavior, advanced/stale decisions, observer
+events, current readback, failure behavior, scope and session-index semantics.
+If the evidence cannot justify a safe repair, stop with the measured negative or
+inconclusive result rather than change code speculatively.
+
+Run focused snapshot/revision/repository tests and affected shared-package
+TypeScript checks; preserve exact RED/GREEN logs. If repaired, repeat the same
+bounded baseline/candidate experiment, retain every repetition and compare each
+case separately. Broaden to actual affected consumers as selected by rallar-testing;
+explain whether a persisted mutation/concurrency contract changed and therefore
+requires its additional gates. Human-facing durations use seconds. No host operation,
+new capture, PR edit or push belongs to this worker. The parent owns publication
+and selected CI. Commit only reviewed source/tests on the existing feature branch;
+measurement support stays ignored and original evidence is immutable.
+
+Review and remediate every changed human-authored file in full. Every support file
+modified by that remediation enters closure recursively; independent untouched
+code remains outside closure. Trace construction and runtime callbacks separately,
+classify affected legacy, and record remaining limitations. Report the full
+measurement, any selected repair and tests to the task report. The second active
+outcome remains the failed main hot-throughput comparison; this experiment cannot
+waive it or the full formation acceptance target.

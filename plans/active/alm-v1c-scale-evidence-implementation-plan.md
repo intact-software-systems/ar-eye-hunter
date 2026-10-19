@@ -245,11 +245,20 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    overlapping 5.746 s of same-worker batches; an earlier output waits 20.722 s.
    Formation lag peaks at 0.188 s, so long queue delay persists without reproducing
    the historical giant stall. The evidence lifecycle repair passes focused
-   tests, typing, style and scoped review. Next run the bounded ingress/admission
-   validation-cost experiment. Existing wake/page/
-   ordered-dispatch coverage already protects the proposed generic hold fixture.
-   Distinguish required trust-boundary validation from repeated unchanged work;
-   do not rerun solely for a pass.
+   tests, typing, style and scoped review. The bounded ingress pilot is reviewed:
+   repeated checks exist, but no safe material bypass is established. Existing row
+   memoization suppresses about 82% of wrapper decoding; generated controls change
+   representation. Its 0.046869–0.055648 s exclusive validation elapsed is local
+   fixture evidence, not hosted CPU attribution. Complete retained snapshot inputs
+   now prove avoidable advanced-write equality traversal. A narrow mandatory-tuple
+   guard reduces median local synchronous observation from 0.338648 to 0.001576 s
+   per 500 observations, with 218 affected tests passing. Same-tuple checks remain.
+   Independent review and the committed-source style gate pass after a redundant
+   event-version branch is removed with 54 covering tests. New-source validation,
+   local timing-off 15 → 30 → 50 and remaining actual formation measurement are
+   next; this local result cannot establish the full target. Existing
+   wake/page/ordered-dispatch coverage already protects the generic hold fixture.
+   Do not rerun solely for a pass.
    Preserve bounded reads, ordered sends, immutable events/audiences, causal fences,
    retries, deadlines, full-row release fences, rollback and healthy-neighbor
    recovery. Do not detach owned cleanup or infer queue eligibility from overlap.
