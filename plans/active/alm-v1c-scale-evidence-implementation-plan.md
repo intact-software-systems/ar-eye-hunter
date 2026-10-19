@@ -316,7 +316,11 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    found a byte-cap footer inconsistency; the correction now counts omitted retry
    records as unavailable while preserving fail-closed capture. Both byte-limit
    regressions, 77 covering checks, affected typing/native checks, committed style
-   and scoped re-review pass. No new performance run or retry-policy change is selected,
+   and scoped re-review pass. Fresh CI exposed stale exact transaction-owner
+   classification after method extraction. The narrow analyzer inventory repair
+   keeps adjacent/domain writes strict and passes 105 covering tests, full governance,
+   affected typing and independent review without changing production SQL or runtime.
+   No new performance run or retry-policy change is selected,
    and the existing failed comparison remains failed. Record the phase-local
    release-reference array with the raw timing-array memory follow-up; serialized
    caps do not bound either collection.

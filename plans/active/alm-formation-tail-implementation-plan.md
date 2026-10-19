@@ -1641,6 +1641,17 @@ Enabled capture has bounded per-claim association cost, and its per-phase releas
 reference array is not bounded by serialized artifact caps. Keep that memory
 limitation alongside the existing raw timing-array follow-up.
 
+Fresh source CI exposed an analyzer ownership regression: extracting the observed
+reservation method left its exact specialized PostgreSQL QueueBox inventory stale.
+The callback's bounded returned-row normalization and attempt increment are
+unchanged; no caller work moved into a transaction. The narrow inventory repair
+passes a failing-then-passing semantic test while adjacent and same-named domain
+writes remain strict. All 105 covering tests, affected typing, the full four-phase
+governance gate and exact committed style pass; independent scoped review is clean.
+Formation-large and medium-scale PostgreSQL CI passed on the preceding source;
+the failed release gate remains recorded, with fresh correction CI required.
+No production SQL, transaction semantics, performance workload or acceptance changed.
+
 ### Task 18: Attribute one PostgreSQL outbound release by elapsed phase
 
 This continues the primary formation-tail outcome after Task 17's source review.
@@ -1688,6 +1699,9 @@ so boundaries can be reconstructed. Never subtract database, browser, V8, epoch
 and monotonic clocks from each other. Existing epoch-based AL batch timing and
 persisted release-clock values remain unchanged. Invalid, non-finite, regressing
 or throwing optional clocks make diagnostics unavailable without failing release.
+The named diagnostic clock port permits synchronous `readMonotonicMs` sampling
+only; it is neither a timer nor an arbitrary operation callback. Samples never
+become persistence inputs, decisions, retry conditions or authoritative results.
 
 Keep callback timing arrays private until the existing transaction returns. No
 sink, JSON formatting or logging runs inside it; no observer registry, wrapped SQL
