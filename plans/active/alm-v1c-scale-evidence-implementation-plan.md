@@ -304,6 +304,13 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    This isolates the policy owner, not full dequeue/publication or hosted
    formation. Retain the full-path benefit gap and the previous failed state-write
    comparison; that command harness does not dispatch these outbound reads.
+   The next bounded measurement is one timing-off serial-versus-parallel A–B–B–A
+   native-50 formation block with exact controller restoration. Common browser
+   boundaries measure full-path behavior; absent server-promotion markers cannot
+   close the ≤2 s target. Separately, one fresh current-HEAD governed state-write
+   comparison is justified by executable QueueBox/harness changes since the
+   frozen failed candidate. It retains every tail and the unchanged thresholds;
+   a fix requires a reproduced owner defect and TDD, not a favorable rerun.
    Delivery deadlines and serial sends remain enforced at their existing owner. No
    redundant read, safe cache or send reordering is established. Full details
    and constraints are Task 19 in the focused formation plan. Native 150-result/231-assertion reconciliation

@@ -595,51 +595,38 @@ measurement remains first.
 
 ## Next two useful slices
 
-1. **Remaining formation-tail delivery.** Task 19's direct policy-owner timing
-   is implemented, independently reviewed and passes selected CI. The latest
-   hosted capture has 647 uniquely joined observations: the two read/decoding
-   regions account for 9.141666 s of 9.338936 s summed owner elapsed (97.89%).
-   The first layout accepted by all 50 agents has its own promotion reserved
-   after 0.881 s and sent by the server after 1.378 s. The separate activation
-   still waits 9.460 s before reservation, with 9.455 s inside same-worker batch
-   envelopes. Occupancy does not prove eligibility or a scheduler defect.
-   Policy owners total only 0.034947 / 0.077159 s in the two immediate predecessor
-   pages; the prior long policy region did not recur there. An earlier 4.450 s
-   page spends 1.115543 s in policy owners, split across both reads. Investigate
-   a bounded combined-read opportunity at the existing authority/session owner;
-   do not introduce read overlap without preserving expiry, error precedence and
-   complete settlement. No query removal, cache or send reordering is earned.
-   The maintainer authorizes parallel reads with the existing delivery expiry
-   guard. Do not add a policy-reader expiry check. Join both reads before
-   returning or failing, preserve ordered validation/error precedence and sends,
-   and verify the benefit with a paired PostgreSQL measurement. Task 20 owns
-   the implementation and its overlapping timing semantics.
-   These single-run observations are not a matched improvement. Native
-   correctness, capture validity and exact restoration pass; the full target
-   and the old release-stall attribution remain open.
-   Awaited elapsed is not pool, SQL server or off-CPU time. Preserve
-   same-tuple lease/conflict and observer semantics; the reviewed local snapshot
-   savings do not establish hosted formation acceptance.
-   Existing progress fixtures already cover the proposed generic hold test.
-   Use the original evidence before considering another capture. Preserve immutable
-   events/audiences, causal fences, retries, deadlines, release recovery and
-   ordered sends. Keep timing overhead, physical commit, queue eligibility and
-   browser-causality limits explicit; every hosted diagnostic retains fresh
-   preflight and exact timing-off restoration with settings verification.
-2. **State-write command completion.** The demonstrated harness wait is repaired
-   and independently reviewed; the fresh governed comparison uses that corrected
-   harness on both roles. Retain every owned drain, failure and phase cost, and
-   keep its failed hot-throughput result visible. Investigate the third position’s
-   deeper retries, command endpoints/derived kind envelopes and joined pump tail
-   before claiming comparative acceptance. The ordinary-RETRY probe now reconciles
-   all 2,280 observations in one reviewed diagnostic. Measured lateness p99/max are
-   0.035220 / 0.279353 s; its hot phases do not reproduce the earlier ten-attempt
-   tail. No further blind rerun or retry-policy repair is selected. If a governed
-   comparison reproduces that tail, correlate exact command-owned pump completion
-   and bounded dequeue/timer spans with these existing reservation facts. Keep
-   diagnostics unable to strand claimed work, v6 semantics and retry policy
-   unchanged. Retry-depth causation and raw timing-array allocation remain
-   unresolved outcomes, not speculative policy changes.
+1. **Remaining formation-tail delivery.** Task 20 implements parallel captured-policy
+   reads with full sibling settlement, ordered validation/errors and the existing
+   delivery expiry guards. Reviewed local PostgreSQL owner medians improve by
+   24.8% / 16.3%; full formation remains unmeasured. Run one frozen A–B–B–A
+   comparison of the preceding serial implementation and the reviewed parallel
+   implementation, with the same 50-agent / 30 s native recipe, timing disabled,
+   identical settings and artifact admission. Retain every leg and failure.
+   Report actual browser formation/convergence boundaries in seconds; timing-off
+   evidence cannot establish a missing server-promotion-to-browser boundary or
+   close the ≤2 s tail target. Preserve source, manifest, environment and metric
+   provenance. Inspect before mutation and restore the exact prior controller
+   source, public settings, timing, topology and persistent database identity
+   after the block or on failure. No CPU profiler in the primary comparison.
+   Keep immutable events/audiences, fences, retry/deadline semantics, ordered
+   sends and fault recovery unchanged. Instrumented attribution is a separate
+   bounded decision only if the matched result leaves an actionable gap.
+2. **State-write command completion.** The corrected older comparison remains
+   failed: hot throughput 24.675951 → 23.416662 mutations/s (−5.103306%). Its
+   third position contains two ten-attempt commands with 15.881 / 15.442 s
+   prescribed backoff. The later single-candidate reservation diagnostic does
+   not reproduce that depth and cannot explain or waive the role difference.
+   Current HEAD changes executable QueueBox claim/release owners and benchmark
+   composition since that frozen candidate, so run one fresh pinned governed
+   A–B–B–A comparison, applying the same candidate harness to both roles. Keep
+   nine measured samples per position, all tails, warmup, concurrency, native
+   receipt/outbox validation and the unchanged comparator/thresholds. This
+   validates current HEAD; it is not a rerun to select a favorable result.
+   Attribute any failure from per-position walls, retry depth/backoff and
+   command evidence before choosing a repair. Only a reproduced unexplained
+   tail earns the next exact command/pump/dequeue diagnostic. Use a failing
+   owned-boundary test before any fix. Raw timing-array scalability remains
+   independently tracked in #686; no speculative retry-policy change.
 
 ### Task 4: Separate command completion from owned pump cleanup
 
