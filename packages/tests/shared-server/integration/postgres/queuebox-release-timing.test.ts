@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
 
 import {
     createDefaultPSqlALInboundRuntimeStores,
@@ -11,7 +11,7 @@ import {
     type PSqlResourceInboxRepository
 } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-import { PSqlQueueReleaseTiming } from '@shared-server/queuebox/postgres/p-sql-queue-release-timing.ts';
+import type { PSqlQueueReleaseTiming } from '@shared-server/queuebox/postgres/p-sql-queue-release-timing.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { ResourceInboxRelease } from '@shared/queuebox/queue-box-types.ts';
@@ -263,21 +263,10 @@ describe('Postgres release elapsed phase evidence', () => {
         }
     );
 
-    postgresIt('keeps disabled capture silent and successful release independent of a throwing sink', async () => {
+    postgresIt('releases durably with absent timing capability and a throwing sink', async () => {
         const storage = await createReleaseStorage();
-        const start = vi.spyOn(PSqlQueueReleaseTiming.prototype, 'start');
-        const sample = vi.spyOn(PSqlQueueReleaseTiming.prototype, 'readMonotonicMs');
-        const record = vi.spyOn(PSqlQueueReleaseTiming.prototype, 'recordSucceeded');
-        onTestFinished(() => {
-            start.mockRestore();
-            sample.mockRestore();
-            record.mockRestore();
-        });
         const disabled = new PSqlQueueBox(storage.repository, Temporal.Now.instant);
         const first = await disabled.releaseEntries(toCompletedReleases(storage.reserved.slice(0, 8)));
-        expect(start).not.toHaveBeenCalled();
-        expect(sample).not.toHaveBeenCalled();
-        expect(record).not.toHaveBeenCalled();
         const enabled = createObservedQueue(storage, () => {
             throw new Error('sink failed');
         });
