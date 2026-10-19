@@ -267,7 +267,13 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    The next falsifier correlates the existing PostgreSQL release owner's
    synchronous preparation, transaction entry, conditional-write awaits and
    completion with same-PID evidence, starting with a controlled real-PostgreSQL
-   boundary test. Label all awaited spans as elapsed; pool wait, SQL server time
+   boundary test. That test now fails then passes at the real queue boundary;
+   the optional outbound-only probe passes 68 live-PostgreSQL tests, 147 focused
+   tests and seven native API composition tests, including real COMMIT failure
+   rollback and optional diagnostic faults. The owned database is removed.
+   Independent source review approves the probe and combined full-main style
+   validation passes; fresh CI remains before the next hosted capture. The live-PG pass includes
+   expected fault-path diagnostic output. Label all awaited spans as elapsed; pool wait, SQL server time
    and off-CPU time need independent evidence. Preserve rollback and full-row
    release fences, and prove the missing boundary before another capture.
    This local result and capture success cannot establish the full target. Existing
@@ -320,10 +326,15 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    classification after method extraction. The narrow analyzer inventory repair
    keeps adjacent/domain writes strict and passes 105 covering tests, full governance,
    affected typing and independent review without changing production SQL or runtime.
+   A later full-main static failure is repaired by consolidating duplicated RETRY
+   footer accounting, with 54 tests passing before/after and the review limit
+   unchanged. Independent review and the combined full-main style gate pass.
    No new performance run or retry-policy change is selected,
    and the existing failed comparison remains failed. Record the phase-local
-   release-reference array with the raw timing-array memory follow-up; serialized
-   caps do not bound either collection.
+   release-reference array with the raw timing-array memory and repeated evidence-scan
+   follow-up in [#686](https://github.com/intact-software-systems/ar-eye-hunter/issues/686);
+   serialized caps do not bound either collection. Runtime heap/GC cost and causal
+   contribution to the failed throughput comparison remain unmeasured.
    Trace process SQL to its dequeue owner before attributing it to a command; temporal overlap
    alone is insufficient. Retry-depth distribution and prescribed backoff remain attribution
    outcomes before any queue-policy change.

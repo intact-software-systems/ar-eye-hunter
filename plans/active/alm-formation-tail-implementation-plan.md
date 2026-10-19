@@ -1639,7 +1639,11 @@ style gate and scoped re-review pass; no review findings remain. These are
 instrumentation correctness results, not a new performance run or acceptance.
 Enabled capture has bounded per-claim association cost, and its per-phase release
 reference array is not bounded by serialized artifact caps. Keep that memory
-limitation alongside the existing raw timing-array follow-up.
+limitation alongside the existing raw timing-array follow-up, now tracked in
+[#686](https://github.com/intact-software-systems/ar-eye-hunter/issues/686).
+Durable AppInbox evidence also scans the complete timing array for each command
+row. Collection growth and reconstruction complexity are proven from code;
+heap/GC impact and contribution to the failed throughput gate remain unmeasured.
 
 Fresh source CI exposed an analyzer ownership regression: extracting the observed
 reservation method left its exact specialized PostgreSQL QueueBox inventory stale.
@@ -1649,7 +1653,13 @@ passes a failing-then-passing semantic test while adjacent and same-named domain
 writes remain strict. All 105 covering tests, affected typing, the full four-phase
 governance gate and exact committed style pass; independent scoped review is clean.
 Formation-large and medium-scale PostgreSQL CI passed on the preceding source;
-the failed release gate remains recorded, with fresh correction CI required.
+the failed release gate remains recorded. Its subsequent full-branch static check
+exposed duplicated RETRY footer accounting: the incremental check had tolerated
+same-tier growth while the full comparison against main crossed a tier. One local
+refactor consolidates that accounting, reducing cognitive load from 67 to 64 under
+the unchanged reviewed limit of 66. The same 54 projection/writer tests pass before
+and after, native/test typing passes, scoped review is clean, and the combined
+full-main style gate passes. Fresh publication CI remains required.
 No production SQL, transaction semantics, performance workload or acceptance changed.
 
 ### Task 18: Attribute one PostgreSQL outbound release by elapsed phase
@@ -1757,3 +1767,40 @@ Every changed human-authored file is reviewed and remediated in full; support
 files modified by that remediation enter closure recursively; independent
 untouched code remains outside closure. Direct release behavior tests and the
 shared-server typecheck/API native check are separate acceptance evidence.
+
+
+**Implementation and current validation:** optional observation now reaches the
+actual outbound PostgreSQL queue only when outbox-stage timing is enabled.
+The existing release loop, conditional SQL, persistence clock, retry/fallback
+policy and returned map remain. All 32 internal backend constructor callers use
+the named input; no positional compatibility adapter remains. Bounded private
+phase data is emitted only after repository return, with root-commit meaning
+confined to the verified API composition.
+
+The direct real-PostgreSQL RED failed only because no observation existed after
+sixteen durable releases. Controlled clock gates distinguish 0.005 s candidate,
+0.007 s admission, 0.100 s callback and 0.013 s return intervals inside 0.125 s
+owner elapsed. These assigned test intervals prove partitioning, not measured
+runtime cost. Final live checks pass 68 tests, focused affected checks pass 147,
+and native API composition passes seven. Server/test typing, API native and
+affected benchmark consumer checks, full governance and the exact task-range
+style gate pass. The disposable PostgreSQL container is removed.
+
+Real stale-member, returned-row decoding and deferred-constraint COMMIT failures
+preserve rollback and the original error; no successful member evidence escapes.
+Invalid optional clocks and throwing sinks do not suppress successful release.
+The phase evidence is capped at sixteen members while the real release keeps its
+full workload. Enabled diagnostics have clock/allocation/serialization cost;
+emission remains inside the outer release envelope. Local eligibility does not
+certify the external same-process worker/batch join.
+
+Independent source review approves specification compliance and code quality with
+no blocking finding. The passing live-PG run includes expected fault-path stderr
+and FAIRNESS stdout; the validation report now states this explicitly. The
+combined full-main style check passes; fresh publication CI remains pending.
+Two additional unchanged benchmark fixtures fail broader typing because presence
+session literals omit `connectionGenerationId`; unchanged direct files/types
+support an inferred pre-existing classification, without a baseline replay.
+Affected consumers pass. This is not a clean-whole-repository or performance
+acceptance claim. The next earned capture must preserve exact identity joins,
+clock uncertainty, unmeasured remainders and complete restoration evidence.
