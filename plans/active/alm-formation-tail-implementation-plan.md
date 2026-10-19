@@ -2117,3 +2117,43 @@ in `readCapturedPolicy`.
    concurrency change; the existing failed hot-throughput comparison and full
    hosted formation target remain open until independently satisfied. Do not
    hide a negative or inconclusive result or launch another blind host capture.
+
+**Implementation and measured boundary:** the two reads now start together and
+both settle before the existing validation sequence and session return. No policy
+expiry check was added. RED demonstrated the missing overlap in both completion
+orders; the seven-file focused suite passes 88 tests, including actual IndexedDB
+session settlement and expiry crossing through real live delivery with no socket
+send. Shared/server/test typing, API native checking and browser bundle boundaries
+pass. A review correction changes the optional timing sequence helper to one
+readonly array; its covering owner suite passes 20 tests.
+
+A paired local PostgreSQL comparison confirms a benefit at the captured-policy
+owner with production timing disabled. Baseline and candidate run from exact
+source snapshots with identical fixtures, pool maximum five, warmup and two
+A–B–B–A blocks. Each payload/version retains 64 measured calls:
+
+| Encoded payload (bytes) | Serial median (s) | Parallel median (s) | Reduction |
+| ----------------------: | ----------------: | ------------------: | --------: |
+|                   1,112 |       0.000803479 |         0.000604209 |     24.8% |
+|                  61,528 |       0.000970354 |         0.000812626 |     16.3% |
+
+Both balanced blocks favor parallel reads at both sizes. All 304 calls including
+warmups return the expected audience and observe two SELECT starts. The first
+attempt's oversized 64 KiB content failed the actual encoded-payload limit before
+any candidate sample; it remains separately retained and excluded. The corrected
+60 KiB content is valid. Both task-owned PostgreSQL containers were removed.
+Generated harnesses, manifests and all samples remain under
+`tmp/perf/policy-read-overlap/`; they are not committed profiles.
+
+This is narrower than the whole dequeue/publication measurement contemplated
+above: only the real policy owner is timed. Full-path ordered-send correctness is
+covered separately, but no end-to-end speedup, pool-wait reduction, SQL execution
+time or CPU saving is established. The optional timing helper correction is
+outside the disabled timing path used by the comparison. Final source and
+measurement review, fresh release/formation/medium-scale CI and hosted acceptance
+remain separate checks; results belong in the PR. The prior failed state-write
+comparison is not waived. Its command harness does not dispatch these outbound
+policy reads, so repeating it cannot verify this optimization. Continue its
+existing independent completion/retry investigation without a favorable-rerun
+loop. The next formation measurement must test end-to-end benefit under the
+unchanged workload, not infer it from these local fractions of a second.

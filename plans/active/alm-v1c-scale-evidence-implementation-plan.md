@@ -294,8 +294,16 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    This proves occupancy, not earlier eligibility, a scheduling fault or a paired
    speedup. The maintainer now authorizes the two policy reads in parallel,
    reusing the existing delivery expiry guard without adding a reader check.
-   Task 20 in the focused plan owns TDD, full sibling settlement, ordered error
-   precedence, honest overlapping timing and paired PostgreSQL measurement.
+   Task 20 implements full sibling settlement, ordered error precedence and
+   honest overlapping timing, with no additional policy expiry check. Its 88
+   focused tests cover real delivery expiry and IndexedDB session closure. Paired
+   local PostgreSQL owner medians fall from 0.000803479 to 0.000604209 s for a
+   1,112-byte payload and from 0.000970354 to 0.000812626 s for 61,528 bytes:
+   24.8% and 16.3% lower, respectively. Both balanced A–B–B–A blocks favor the
+   candidate; each payload/version has 64 measured calls with timing disabled.
+   This isolates the policy owner, not full dequeue/publication or hosted
+   formation. Retain the full-path benefit gap and the previous failed state-write
+   comparison; that command harness does not dispatch these outbound reads.
    Delivery deadlines and serial sends remain enforced at their existing owner. No
    redundant read, safe cache or send reordering is established. Full details
    and constraints are Task 19 in the focused formation plan. Native 150-result/231-assertion reconciliation
