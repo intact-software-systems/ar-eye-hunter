@@ -1,11 +1,26 @@
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+    mkdir,
+    mkdtemp,
+    readFile,
+    realpath,
+    rm,
+    symlink,
+    writeFile
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { expect, it, vi } from 'vitest';
+import {
+    expect,
+    it,
+    vi
+} from 'vitest';
 
+import {
+    ApiCpuCapture,
+    runControllerCommand,
+    toApiCaptureConfiguration
+} from '../../../scripts/hosted-rallar/controller/rallar-api-cpu-capture.mjs';
 import { runOwnedTestProcess } from './owned-test-process.ts';
-
-import { ApiCpuCapture, runControllerCommand, toApiCaptureConfiguration } from '../../../scripts/hosted-rallar/controller/rallar-api-cpu-capture.mjs';
 
 it('rejects contradictory capture settings before creating capture state or invoking controller commands', async (context) => {
     const root = await mkdtemp(path.join(tmpdir(), 'rallar-capture-'));
