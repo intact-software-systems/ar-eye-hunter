@@ -1980,11 +1980,11 @@ Direct owner instrumentation replaces the initial measured-session adapter. The
 adapter and its read-topology bookkeeping were removed: keeping the actual read
 and validation boundaries visible is more important than fitting the old bundle
 limits. The user explicitly authorized proportionate budget increases. The
-browser facade measures 272,567 Brotli bytes against a new strict 267 KiB limit
-(273,408 B), leaving 841 B. Headless measures 363,512 B against 356 KiB
-(364,544 B), leaving 1,032 B. Each budget increases by 1 KiB; dependency-boundary
-checks remain active. Relative to the pinned task base, growth is 248 B for the
-browser facade and 150 B for headless.
+browser facade measures 272,521 Brotli bytes against a new strict 267 KiB limit
+(273,408 B), leaving 887 B. Headless measures 363,581 B against 356 KiB
+(364,544 B), leaving 963 B. Each budget increases by 1 KiB; dependency-boundary
+checks remain active. Relative to the pinned task base, growth is 202 B for the
+browser facade and 219 B for headless.
 
 The final direct-owner implementation passes 72 focused tests, shared and
 shared-server typing, maintained test typing, API native tests/check, both bundle
@@ -1997,3 +1997,15 @@ reports 13 untouched files; the broader direct test-project TypeScript command
 reported dependency declarations and duplicate PGlite identities, without a
 pinned-base replay. Neither failure is represented as resolved by the maintained
 checks.
+
+Independent source review found a four-argument internal call, missing real
+factory wiring coverage, and an implicit clock in a translation helper. The
+bounded repair uses one named input, passes observation time explicitly, and
+exercises the real configured PostgreSQL factory against PGlite. A deliberately
+removed timing forwarding field makes the new test fail; restored forwarding
+produces one enabled outbound observation, while disabled and inbound operations
+create/sample no timing owner. The repair passes 27 covering tests, eight native
+API composition tests, affected typing and both bundle checks. Its follow-up
+uses explicit timing-port observations in place of mock call counts and passes
+the two factory tests. Independent review approves both the three original repairs and the test-only
+follow-up. Final-source static gates and CI remain required before capture.
