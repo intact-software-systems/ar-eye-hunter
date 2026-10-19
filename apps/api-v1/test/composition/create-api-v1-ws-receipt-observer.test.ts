@@ -62,14 +62,29 @@ for (const enabled of [false, true]) {
                     databaseLifecycle
                 });
                 await server.runtime.readiness;
-                await server.runtime.wsQBoxServerService.enqueueOutboxIfAbsent(newALUnicastMessage(
-                    'server',
-                    { topicId: 'timing-test', resourceId: 'no-recipient', contextId: 'test' },
-                    'absent-peer',
-                    'timing.test.v1',
-                    {},
-                    { ttlMs: 30_000 }
-                ));
+                const expectedWarning = 'Skipping outbound dispatch: WS message has no verified scoped audience';
+                const warnings: Parameters<typeof console.warn>[] = [];
+                const originalWarn = console.warn;
+                console.warn = (...values) => {
+                    warnings.push(values);
+                    if (values.length !== 1 || values[0] !== expectedWarning) {
+                        originalWarn(...values);
+                    }
+                };
+                try {
+                    await server.runtime.wsQBoxServerService.enqueueOutboxIfAbsent(newALUnicastMessage(
+                        'server',
+                        { topicId: 'timing-test', resourceId: 'no-recipient', contextId: 'test' },
+                        'absent-peer',
+                        'timing.test.v1',
+                        {},
+                        { ttlMs: 30_000 }
+                    ));
+                }
+                finally {
+                    console.warn = originalWarn;
+                }
+                assert.deepEqual(warnings, [[expectedWarning]]);
                 const batches = logs.filter((line) => line.startsWith('{')).map((line) => JSON.parse(line))
                     .filter((event) => event.component === 'alm-outbound-dequeue' && event.operation === 'work-batch');
                 assert.equal(batches.length > 0, enabled);

@@ -204,6 +204,14 @@ interface ALWorkBatchProgress extends ALWorkCounts {
     releaseDurationMs: number;
 }
 
+/** The mutable batch records and source start used while selecting and running its claims. */
+interface ALWorkClaimedRunInput {
+    readonly releases: ALWorkRelease[];
+    readonly progress: ALWorkBatchProgress;
+    readonly deferObservation: ALWorkObservationDeferral | undefined;
+    readonly batchStartedAtMs: number;
+}
+
 /** A batch that flushed its releases: what it counted, and its run unless disposal cut the claims short. */
 interface ALWorkBatchEnd {
     readonly progress: ALWorkBatchProgress;
@@ -464,7 +472,12 @@ export class ALWorkHandler {
         let run: ALWorkClaimedRun | undefined;
         try {
             if (!this.shutdown.signal.aborted) {
-                run = await this.runClaimedWork(releases, progress, deferObservation, startedAtMs);
+                run = await this.runClaimedWork({
+                    releases,
+                    progress,
+                    deferObservation,
+                    batchStartedAtMs: startedAtMs
+                });
             }
         }
         finally {
@@ -483,12 +496,8 @@ export class ALWorkHandler {
      * disposal ended the batch mid-claim, which leaves the wake and the diagnostics to whichever batch
      * resumes.
      */
-    private async runClaimedWork(
-        releases: ALWorkRelease[],
-        progress: ALWorkBatchProgress,
-        deferObservation: ALWorkObservationDeferral | undefined,
-        batchStartedAtMs: number
-    ): Promise<ALWorkClaimedRun | undefined> {
+    private async runClaimedWork(input: ALWorkClaimedRunInput): Promise<ALWorkClaimedRun | undefined> {
+        const { releases, progress, deferObservation, batchStartedAtMs } = input;
         const { clock, port, pageSize, selectReady } = this.dependencies;
         const selection = await selectReady(port, pageSize, batchStartedAtMs);
         const queued = [...selection.claims];
