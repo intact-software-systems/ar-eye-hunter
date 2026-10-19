@@ -154,6 +154,7 @@ interface ApiV1StateMutationDependencies {
     readonly clientStateEventStore: PSqlClientStateEventRepository;
     readonly clientSnapshotCache: ClientStateSnapshotReadThroughCache;
     readonly groupSnapshotCache: GroupStateSnapshotReadThroughCache;
+    readonly groupCurrentSnapshotCache: GroupStateCurrentSnapshotCache;
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
 }
 
@@ -328,6 +329,7 @@ function createApiV1StateMutationDependencies(
         clientStateEventStore: resources.clientStateEventStore,
         clientSnapshotCache: resources.clientSnapshotCache,
         groupSnapshotCache: resources.groupSnapshotCache,
+        groupCurrentSnapshotCache: resources.groupCurrentSnapshotCache,
         groupFormationMetrics: resources.groupFormationMetrics
     };
 }
@@ -416,7 +418,8 @@ function createAppClientInboxServiceFactory(
                 runtimeRepository: input.runtimeStateRepository,
                 clientStateEventStore: input.clientStateEventStore,
                 serviceId: input.serviceId,
-                timing: input.timing
+                timing: input.timing,
+                currentGroupSnapshots: input.groupCurrentSnapshotCache
             }),
             cache: input.clientSnapshotCache
         });

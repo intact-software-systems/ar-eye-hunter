@@ -207,25 +207,24 @@ source do not prove a stable causal regression. Keep the contract fix without a
 speedup claim and retain #682's journal limitation. The focused formation plan
 contains source IDs, linked runs, the component breakdown and negative evidence.
 
-1. D1 (workflow 39327276505) passes native correctness; its instrumented player
-   formation median is 57.574 s. Current-source timing confirms admission waits
-   (slowest membership 18.842 s HTTP, 0.072 s handler) and authorized-WS client
-   reads (median 0.798 s). Restore the captured controller, then use one bounded
-   D2 to split own-state/receipt/group-audience/client-audience reads. The four
-   new timing cases pass TDD; all 209 affected tests and shared-server types pass.
-   Use TDD for any missing bounded observation, preserving disabled behavior, authority,
-   failures and cleanup. Resolve configuration/socket/ICE/state hydration and
-   membership/presence/adoption; link delayed signaling to actual inbox due and
-   reservation facts before changing retry behavior.
-2. Repair the demonstrated dominant product or shared-test cause with TDD, then
-   verify full formation under a frozen matched workload and proportional real
-   PostgreSQL checks. Keep every run, faults and recovery, and exact controller
-   restoration. The physical commit→browser ≤2 s target remains open. QueueBox
-   responsiveness and scalable fault tolerance remain acceptance requirements.
+1. D1/D2 locate dominant group-audience reads (D2 median/p95 0.503/0.923 s,
+   50 complete requests). Idle PostgreSQL replay returns 2,071 rows / 1,338,004
+   value bytes in 0.010075 s; loaded database attribution remains separate. Reuse
+   the existing bounded, durable row-version-probed group snapshot cache with
+   unchanged before/after membership guards, expiry, scope and failure behavior.
+   TDD reproduces repeated roster transfer and expiry; all 10 PGlite and 197
+   affected unit tests pass. Complete independent review and exact-source release,
+   medium-scale PostgreSQL, formation and state-write comparison gates.
+2. Measure the candidate against its pre-cache source in one frozen timing-off
+   native-50 A–B–B–A block. Require complete native/provenance gates and negative
+   adjacent and symmetric primary formation contrasts before claiming descriptive
+   benefit. Retain every result, no per-leg tuning, all faults/recovery and exact
+   controller restoration. The physical commit→browser ≤2 s target remains open;
+   QueueBox responsiveness and scalable fault tolerance remain requirements.
 
 Use the focused plan's performance, coding, realtime, testing, adaptive execution,
 publication and hosted-operations skills. The prior state-write comparator passes;
-no new comparison is selected for an RTC-only path. Independent harness scalability
+the client-read candidate requires a fresh comparison, unlike the RTC-only path. Independent harness scalability
 and artifact durability remain #686 and #682. No new issue was created.
 
 ## Retained slice history

@@ -1,8 +1,10 @@
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+
 import { GroupStateRepositoryReads } from '../../group-state/persistence/group-state-repository-reads.ts';
 import { readGroupVisibility } from '../../group-state/policy/group-snapshot-visibility-policy.ts';
+import type { GroupStateCurrentSnapshotCache } from '../../group-state/snapshot/group-state-current-snapshot-cache.ts';
 import { StateSnapshotReadConflictError } from '../../state-events/state-snapshot-read.ts';
 import { timeClientStateReadPhase, type ClientStateMutationTiming } from '../client-state-service-timing.ts';
 import { ClientStateRepository } from '../persistence/client-state-repository.ts';
@@ -38,6 +40,7 @@ export interface ReadClientMutationInput {
     readonly command: ClientMutationCommand;
     readonly audienceObservedAtEpochMs: number;
     readonly timing?: ClientStateMutationTiming;
+    readonly currentGroupSnapshots?: Pick<GroupStateCurrentSnapshotCache, 'readSnapshot'>;
 }
 
 type ClientMutationStateRead = Pick<
@@ -107,7 +110,12 @@ async function readPrincipalAudience(
     };
     const audienceGroupSnapshots = await timeClientStateReadPhase(
         { timing, command, operation: 'mutation.read-audience-groups' },
-        () => groupRepository.listSnapshotsForPrincipal(scope, command.aggregateRef.principalId)
+        () =>
+            groupRepository.listSnapshotsForPrincipal(
+                scope,
+                command.aggregateRef.principalId,
+                input.currentGroupSnapshots
+            )
     );
     const coGroupPrincipalIds = new Set<string>();
     for (const snapshot of audienceGroupSnapshots) {

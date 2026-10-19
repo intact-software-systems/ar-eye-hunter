@@ -1,5 +1,6 @@
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { ClientSession } from '@shared/api/client-types.ts';
+
 import { GroupStateRepositoryReads } from '../group-state/persistence/group-state-repository-reads.ts';
 import { toClientSessionExpiryCandidate } from '../presence/session-expiry.ts';
 import { createWsSessionGenerationLifecycleService } from '../websocket/ws-session-generation-lifecycle.ts';
@@ -37,7 +38,8 @@ export function createClientStateService(
                 authSessionRepository,
                 command,
                 audienceObservedAtEpochMs: nowMs(),
-                timing: { sink: dependencies.timing, serviceId: dependencies.serviceId }
+                timing: { sink: dependencies.timing, serviceId: dependencies.serviceId },
+                currentGroupSnapshots: dependencies.currentGroupSnapshots
             }),
         write: async (transaction, computed) => await writeClientMutation(transaction, computed),
         readExpiredSessionPage: async (input) => {

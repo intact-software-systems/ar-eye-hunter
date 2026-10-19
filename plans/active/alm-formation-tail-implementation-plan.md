@@ -815,6 +815,70 @@ comparison after a measured fix. D1 [restoration](https://github.com/intact-soft
 completes; a fresh streamed inspection passes all 19 captured source, settings,
 health, idle-service and database-identity checks. Persistent data is retained.
 
+D1's last arriving player is controller-21. Its SDK connection is 40.273 s,
+room join 5.766 s and RTC readiness 8.765 s. Its ticket HTTP request is 15.933 s.
+Browser principal identity joins to server `senderId`: authorized-WS completion
+wait 20.223 s, handler-action 0.653 s, first NEW attempt queue age 19.686 s.
+Other AppInbox handler intervals cover 17.983 s of its 19.547 s pre-handler
+window; overlapping handler time is wall occupancy, not CPU attribution or proof
+of original row eligibility. Preserve that distinction when selecting a fix.
+
+The four phase observations are published at `7bb102bfd`. Frozen
+[D2](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/39329106049)
+passes 50 recipes/150 semantic bindings/231 assertions, with all 300 barriers,
+50 RTC results and 50 complete native primary pairs. No failed/missing/stale/flaky
+agent or reconnect is reported. Its 49-player formation median/p95/max is
+50.978/50.981/50.983 s. D1 and D2 are instrumented attribution runs, not matched
+speedup samples; do not subtract their formation medians as an optimization result.
+
+All 50 authorized-WS mutation reads have complete successful phase observations:
+
+| Read owner        |     Median |        p95 |    Maximum |
+| ----------------- | ---------: | ---------: | ---------: |
+| Own state         | 0.027890 s | 0.063730 s | 0.092840 s |
+| Receipt           | 0.000020 s | 0.000250 s | 0.000710 s |
+| Audience groups   | 0.502845 s | 0.923360 s | 0.972010 s |
+| Co-member clients | 0.207850 s | 0.447070 s | 0.566910 s |
+| Whole read        | 0.746980 s | 1.198680 s | 1.536300 s |
+
+Per-request whole-read minus serial measured phases has median 0.002180 s,
+p95 0.013720 s and maximum 0.019310 s. This includes visibility-policy work,
+timing emission and orchestration; it is not CPU-only. Do not add independent
+medians. Group snapshot reads are the dominant measured owner; own-state,
+receipt and the visibility loop are not the leading target in this capture.
+A read-only idle PostgreSQL replay of the actual child-read statement for the
+last D1 principal returns 2,071 rows containing 1,338,004 stored-value bytes
+across 21 groups. SQL execution is 0.010075 s on this warm idle snapshot. This
+is evidence of repeated transfer/materialization cost, not a loaded SQL profile
+or proof that database contention is absent.
+
+The candidate reuses the API's existing bounded `GroupStateCurrentSnapshotCache`
+for principal audiences. Every retained group is checked against durable row
+versions; original before/after membership and group guards and fresh-read
+fallback remain. Expired rows/sessions invalidate cached values. Backends without
+this capability retain the existing batched durable read. Serial per-group cache
+reads bound active work and leave no detached reads on failure. No new cache,
+TTL authority shortcut, policy-read parallelism or delivery expiry check is added.
+
+TDD first fails the unchanged-roster transfer bound and cache-clock expiry on the
+old path. The candidate passes all 10 real SQL/PGlite cases: five 50-member
+principal audiences transfer at most 80 value rows, plus revocation, concurrent
+group change, workspace isolation, original failure and later recovery. All 197
+focused group/client tests pass. Shared-server, API and maintained-test types,
+changed style and focused coupling pass. Independent source review and exact-source
+PostgreSQL/release gates precede the frozen full-formation comparison; local row
+suppression is not yet a demonstrated full-formation speedup.
+
+D2 [restoration](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/39331246443)
+passes all 19 checks against its preflight, retaining persistent data. Runner
+capacity delayed setup; all shards and the recipe ultimately complete. Keep the
+usual 50 warning diagnostics and #682 journal limitation visible. Shared-server,
+maintained-test and native API-v1 typechecks pass; changed style and 26 committed
+coupling classifications pass. Incremental legacy review has no candidates.
+Exact-source release, medium-scale PostgreSQL and formation PostgreSQL gates
+pass. The required state-write comparison is running; it is not waived by the
+additive timing scope.
+
 ## Next two useful slices
 
 The dedicated RTC agent completed the minimum-readiness/cleanup repair with TDD;
@@ -827,35 +891,27 @@ and shared-test code. Use `performance-analysis`, `rallar-code-writing`,
 `publishing-plan-progress`; add the existing Hetzner operations skill before any
 hosted measurement. Do not repeat a broad capture without a named missing boundary.
 
-1. **Attribute connection and join waits at existing owners.** D1 confirms admission waits
-   and material authorized-WS reads. Complete its exact restoration, then use one
-   D2 capture to separate the four TDD-tested client read phases. Correlate those
-   reads with waiting HTTP commands and the last arriving participant. Add further
-   bounded observations only for a named remaining boundary. Candidate browser boundaries are:
-   configuration/ticket/native socket, ICE, complete state refresh/hydration,
-   membership/presence mutation and adoption. Reuse existing observer and timing
-   ports; prove disabled-path behavior, exact phase meaning, failure preservation
-   and joined cleanup. Correlate a delayed signaling offer to its actual inbox
-   attempt, persisted due time and next reservation where existing evidence permits.
-   Keep current authority, delivery expiry, retry policy and shared transports.
-   Inspect the actual last participant and any linked server queue waits; do not
-   infer SQL, pool, CPU or off-CPU attribution from composite wall time. A bounded
-   diagnostic must retain native correctness and exact controller restoration.
-2. **Repair the measured dominant owner and verify the entire path.** Select the
-   smallest production or shared-test change only after the preceding evidence
-   identifies a cause. Reproduce it RED, preserve faults/recovery and make it GREEN
-   using existing patterns with full touched-file standards closure. Then select
-   proportional real-PostgreSQL and unchanged full-formation comparisons, freezing
-   inputs/metrics first and retaining every result. A faster local wait is not
-   sufficient; the full setup and physical commit→browser outcomes remain separate.
-   No speculative retry shortening, duplicate expiry guard, authority bypass,
-   detached work or favorable-rerun loop is authorized by these measurements.
+1. **Validate the measured group-audience repair.** Complete independent review of
+   the version-probed cache reuse, touched-file standards closure and exact-source
+   release, medium-scale PostgreSQL, formation and state-write comparison gates.
+   Preserve all negative results and investigate any regression at its owner.
+2. **Verify the entire formation path.** Freeze one timing-disabled A–B–B–A block
+   comparing the pre-cache source with the candidate under the unchanged native-50
+   workload. Primary: 49-player same-agent group-created barrier end to accepted
+   end (median/p95/max), with the director separate. Require every native and
+   provenance gate, both negative adjacent median contrasts and a negative
+   symmetric contrast for descriptive benefit; two runs per source do not prove
+   significance. Keep all runs, no per-leg tuning or favorable reruns, persistent
+   data and exact controller restoration. Diagnose remaining waits from the actual
+   final participant and owned queue boundaries. Full setup and physical
+   commit→browser ≤2 s remain separate outcomes. No retry shortening, authority
+   bypass, duplicate expiry guard or detached work.
 
 The retained pre-rollback state-write comparison passes unchanged thresholds
 (+2.405% hot throughput). Its earlier −5.103306% failure remains retained for a
 different candidate; retry depth explains tail content but not role variation.
-The browser RTC change does not exercise that mutation benchmark's path, so no
-new state-write comparison was selected. Raw collection/scanning scalability and
+The browser RTC change did not exercise that mutation benchmark's path. The
+current client-read candidate does, so a fresh state-write comparison is required. Raw collection/scanning scalability and
 control retention remain [#686](https://github.com/intact-software-systems/ar-eye-hunter/issues/686)
 and [#682](https://github.com/intact-software-systems/ar-eye-hunter/issues/682).
 No new issue was created; remaining formation work stays in this active plan.
