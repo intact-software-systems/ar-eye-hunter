@@ -409,8 +409,49 @@ measurement and repair. It identified a redundant event-version branch during
 full-file closure; the correction reuses the already checked snapshot, preserves
 created/updated/deleted versions, and passes 54 covering tests and the exact
 committed-source style gate. Scoped re-review found no new breakage. New-source
-CI and timing-off local 15 → 30 → 50 acceptance remain next, followed by actual
-formation attribution. Do not substitute the microbenchmark for the ≤2 s target.
+CI passes 21 checks with one skipped RTC lane. Fresh timing-off local 15 → 30 → 50
+cohorts each pass all 231 assertions, with verified recorder bytes/counts, no
+reconnects and reaped cleanup. Their native durations are 36.200/39.507/46.121 s;
+these correctness runs are not a matched speed comparison. The 50-agent
+canonical-node append warning recurs. The earned hosted profile now completes
+with a valid profile and copied native artifacts; independent inspection verifies
+exact original source/settings and healthy idle restoration. Do not substitute
+the microbenchmark or successful capture for the ≤2 s target.
+
+Independent review of the new capture confirms the first fully corroborated
+fifty-agent layout is v6, identity 56/41. Its own promotion emits 57/41 and takes
+7.964 s from output observation to reservation, then reaches server direct-send
+after 8.403 s. Same-worker batch envelopes overlap 7.961 s of the preclaim wait.
+The distinct activation emits 58/41, waits 5.262 s before reservation and reaches
+send after 5.723 s in a different batch. These are same-API-PID observations, not
+browser receipt latency or a matched speed comparison; the ≤2 s target remains
+unmet. All eight actual promotion chains remain retained, including the earlier
+16.304 s preclaim wait. Native correctness passes 50 recipes, 150 commands and
+231 assertions; whole-run duration 89.214 s includes the 30 s traffic phase.
+
+A preceding sixteen-entry batch takes 5.013 s, including a 3.759 s release await.
+Two overlapping timer-lag windows report maxima of 1.185 s and 0.775 s. These
+maxima are not additive blocked periods. Of 5,528 definite preclaim CPU-profile
+samples, 178 contain the full snapshot-write → causal-decision → equality path
+(181 contain the snapshot writer), while 547 contain envelope decoding. These
+overlapping counts do not partition CPU or elapsed time; clock uncertainty is
+0.395531 s and 212 of 545 GC rows are malformed/interleaved. Neither another
+snapshot optimization nor a SQL/GC cause is established. Only 24 agents have a
+retained matching preceding layout plan: their browser-local planned-to-accepted
+median is 2.251 s, p95 2.414 s and maximum 2.424 s; the other 26 are missing, and
+API/browser clocks are not subtracted.
+
+The next formation falsifier follows the existing PostgreSQL release owner:
+correlate one actual batch with synchronous candidate preparation, transaction
+call-to-callback elapsed, individual conditional-write awaits and transaction
+completion elapsed, alongside same-PID lag/profile evidence. First use a
+controlled real-PostgreSQL test at that owner to distinguish held awaits from
+synchronous preparation and preserve rollback/release fences. Transaction entry
+elapsed is not standalone pool wait, and statement elapsed is not SQL server
+time or off-CPU time without an independent signal. Reuse current timing and
+release ownership; no generic observer framework, duplicate workload or new
+capture is justified before the missing boundary is proved. The independent
+canonical-node retention issue remains #682.
 
 ### Earlier diagnostic motivating stage attribution
 
@@ -548,17 +589,17 @@ measurement remains first.
 
 ## Next two useful slices
 
-1. **Remaining formation-tail delivery.** Recovered hosted evidence places
-   5.746 s of the first fully corroborated promotion's 5.748 s pre-reservation
-   wait inside active same-worker batches; earlier outputs wait up to 20.722 s.
-   The historical large loop stall does not reproduce, while mixed admission,
-   ordered publication and release occupancy persists. Signed-profile and
-   restoration-artifact repairs pass local tests and review. The bounded
-   ingress pilot did not establish a safe material bypass. Actual snapshot-owner
-   measurements earn a narrow causal-tuple equality guard, now implemented with
-   TDD, local before/after evidence and independent review. Complete new-source
-   validation and timing-off local 15 → 30 → 50 acceptance, then use the existing
-   formation workload to measure the remaining tail. Preserve same-tuple lease/conflict and observer semantics; local owner
+1. **Remaining formation-tail delivery.** The reviewed snapshot-repair capture
+   places 7.961 s of the first fully corroborated promotion's 7.964 s preclaim
+   wait inside same-worker batch envelopes. Its own output reaches server send
+   after 8.403 s; the separate activation takes 5.723 s. A prior sixteen-entry
+   batch includes a 3.759 s release await overlapping timer-lag maxima of
+   1.185/0.775 s. Native correctness, capture validity and exact restoration pass,
+   but neither SQL/GC causation nor a hosted speed improvement is established.
+   Task 18 tests and measures the existing outbound PostgreSQL release owner's
+   preparation, transaction admission, conditional-write awaits and completion
+   boundaries. Awaited elapsed is not pool, SQL server or off-CPU time. Preserve
+   same-tuple lease/conflict and observer semantics; the reviewed local snapshot
    savings do not establish hosted formation acceptance.
    Existing progress fixtures already cover the proposed generic hold test.
    Use the original evidence before considering another capture. Preserve immutable
@@ -571,8 +612,12 @@ measurement remains first.
    harness on both roles. Retain every owned drain, failure and phase cost, and
    keep its failed hot-throughput result visible. Investigate the third position’s
    deeper retries, actual command/kind endpoints and joined pump tail before
-   claiming comparative acceptance. Retry-depth causation and raw timing-array
-   allocation remain unresolved outcomes, not speculative policy changes.
+   claiming comparative acceptance. Add one explicit opt-in ordinary-RETRY
+   reservation observation through existing claim and release owners, separating
+   preceding persisted backoff from signed database-observed lateness. Keep
+   diagnostics unable to strand claimed work, v6 semantics and retry policy
+   unchanged. Retry-depth causation and raw timing-array allocation remain
+   unresolved outcomes, not speculative policy changes.
 
 ### Task 4: Separate command completion from owned pump cleanup
 
@@ -1364,7 +1409,6 @@ this result is independently reviewed. Do not run another hosted capture or alte
 the failed main-comparison result. Clean up only owned processes/files and leave
 original evidence and parent changes intact.
 
-
 ### Task 16: Measure and, if earned, remove redundant advanced-snapshot equality work
 
 The outcome remains measured formation-tail improvement with preserved queuebox
@@ -1428,3 +1472,274 @@ classify affected legacy, and record remaining limitations. Report the full
 measurement, any selected repair and tests to the task report. The second active
 outcome remains the failed main hot-throughput comparison; this experiment cannot
 waive it or the full formation acceptance target.
+
+### Task 17: Separate preceding retry backoff from late reservation
+
+The failed hot-throughput comparison remains −5.103306%. Its deeper retries are
+measured, but ordinary v6 due-age loses the pre-claim due instant, and current
+release retry delay describes the next reservation rather than the preceding one.
+Resolve this attribution gap end-to-end using existing queue and diagnostic
+owners. This is optional instrumentation, not a retry-policy optimization or a
+favorable comparative rerun. Formation attribution remains the first outcome.
+
+**Source and design inputs.** Read the bounded composition report at
+`/tmp/alm-retry-attribution-composition.md` and preceding design review at
+`/tmp/alm-retry-attribution-design-review.md`. Reverify current owners and examples
+before choosing implementation. The composition report traces the benchmark's
+root PostgreSQL clients through adapter and queue construction. Nested adapters
+use savepoints or join a transaction and must not be called outer commits.
+
+**Required outcome.** A focused test through root-backed PSqlQueueBox, the real
+dequeuer and existing release projection must distinguish independently known
+preceding persisted delay from overdue time at the claim statement's RETURNING
+evaluation. The ordinary Map operation, returned rows, eligibility/order,
+handler/release, leases, immutable facts, retries and canonical v6 artifacts remain
+unchanged. Diagnostic failures invalidate observation only; they never suppress
+mandatory work or release.
+
+**Transport and scope.** Prefer the existing reserveEntries operation with a
+specific explicitly opted-in result overload returning named entries and readonly
+observations. Keep its canonical claiming implementation and independently used
+ordinary Map signature. This additive caller capability has a real structural
+implementer cost: concrete backends, typed ports and spies must typecheck. Do not
+introduce forwarding adapters, a subclassed Map, mutable request-output collector,
+a second observer, after-commit registry or parallel claim path. If the overload
+cannot retain visible ownership, report the concrete conflict before migrating a
+verified public return contract. Type organization follows the current standard;
+no renaming aliases.
+
+Only unobserved ordinary PostgreSQL RETRY is measured. NEW is not applicable;
+observed claims and non-PostgreSQL stores explicitly report unavailable; FAIRNESS,
+TIMEOUT and FINALIZATION are disclosed uncaptured lanes. Do not invent backend
+clock parity or alter their claims. Enable capture only from the benchmark's
+explicit diagnostics option, through its runtime into the RETRY request. Existing
+observers are not enablement. Disabled execution adds no clock projection,
+diagnostic array or association work.
+
+**Facts and clock.** The ordinary SQL already returns selected_end_ts and
+selected_next_ts; preserve those with the returned incremented reservation
+attempt and full physical key in the private transaction result. The row's
+updated next_ts stays null. Evaluate the opt-in signed duration by subtracting
+selected_next_ts from clock_timestamp() normalized to UTC timestamp-without-time-
+zone within RETURNING, before conversion to integral microseconds. The previous
+persisted delay is selected_next_ts minus selected_end_ts. Use exact numeric
+interval subtraction, truncation toward zero to integral microseconds and text
+transport; range-check to signed safe integers without SQL bigint overflow. No
+independent endpoint truncation, local clock substitution, now() claim timestamp,
+negative clamping or invented zero. Keep quantization and database-clock-change
+limits explicit. The timestamp is post-update/pre-commit observation, not lock,
+commit or handler time.
+
+Private transaction output follows the existing root return; no mutable facts
+escape a failed transaction. A nested provisional result may exist inside its
+outer transaction but must not emit successful claim evidence after rollback.
+Decode/match optional facts through a bounded total operation after canonical
+reservation succeeds. Missing/duplicate/wrong-attempt/cross-context facts and
+invalid numeric text yield unavailable diagnostics while normal handling/release
+continues. Distinguish diagnostic corruption from authoritative row corruption.
+Use structural full key plus returned attempt within that invocation; retain
+reservationAttempt separately from not-ready-adjusted release attempt. Do not
+assume a key/attempt is globally unique across redelivery.
+
+**Versioned projection.** Carry the optional observation through current attempt
+and release telemetry and existing state-write writer. Use diagnostic v3, with
+required availability/boundary/association semantics and signed safe-integer
+microsecond durations only for available observations. Update the existing hosted
+validator and fixtures in the same slice. Preserve original v2 artifacts; do not
+add a historical adapter to the current-only capture path. Project existing
+redacted command ordinal/operation, not raw key, SQL, row ID or payload. Missing
+expected ordinary-RETRY observations invalidate diagnostic completeness, while
+known uncaptured lanes are explicit limits. Canonical v6 dueAgeMs/retryDelayMs,
+phase budgets, comparator and thresholds remain unchanged. Human results use
+seconds with explicit notation.
+
+**Comparison-harness compatibility.** The existing workflow overlays the same
+candidate perf directory onto baseline production and native-checks both roles.
+Keep that contract, the documented existing CLI (including --diagnostics-dir),
+and one shared workload runner. Use explicit comparison/diagnostic composition:
+the current CLI dispatches ordinary comparison through the static shared graph,
+and lazy-loads one fixed named current-candidate diagnostic entry only for the
+requested diagnostic mode. This is a concrete mode boundary, not a plugin registry.
+The shared comparison graph must not import candidate-only diagnostic types or
+production options, including indirectly through an output helper. The diagnostic
+entry owns the current typed opt-in InboxQueueReader construction and existing
+v3 writer/projection through a small named run/phase lifecycle port. Required
+current production validation is a real runtime dependency used for projection
+safety; absent capability fails before database/workload setup. Do not add a
+meaningless marker export or validation call merely to force capability detection.
+
+Keep the single runtime/workload implementation, canonical context and v6 metrics;
+do not duplicate the runner, create a production overlay, widen unchecked options,
+probe production shapes or use casts to hide unsupported capability. Preserve
+normal seed and diagnostics-off reader construction. Validate the fixed module's
+named run export and let import/invocation failures propagate through the existing
+CLI failure boundary. Native-check the comparison entry on the baseline with the
+exact candidate perf overlay, and both comparison/diagnostic entries on candidate.
+Exercise old CLI diagnostic dispatch and disabled mode, unsupported baseline
+diagnostic admission, and the existing workflow's correct mode selection. Extra
+composition work must remain outside the measured phase and be recorded as a
+maintenance/measurement cost.
+
+**TDD and validation.** Start with a real-owner RED showing lost previous due/end
+facts at ordinary RETRY and unavailable final projection. Prove unchanged claimed
+row/order/attempt plus successful handler and release after implementation. Cover
+queue-order and context-head ordinary statements, enabled and disabled paths,
+malformed/missing/duplicate associations, not-ready identity, concurrent capture
+isolation, unsupported stores/observed claims, and explicit lane limits. Do not
+duplicate existing retry-policy tests.
+
+Use real PostgreSQL with an isolated schema and existing storage fixture, not a
+shared destructive appdb fixture: non-UTC session, transaction started before
+claim, database clock brackets around RETURNING and an explicit held-commit gate.
+Prove the observation lies at statement evaluation before commit; deterministic
+expression cases prove positive/negative submillisecond and one-microsecond
+values. PGlite agreement alone does not prove the real driver. Root rollback,
+commit failure and nested outer rollback must emit no successful observation;
+unknown commit outcome is unavailable, not proof of no claim. Disabled SQL has
+no added clock expression/query. In-memory partial-call behavior remains honest.
+
+Test v3 producer/validator agreement, signed integer bounds, wrong lane/boundary,
+not-ready reservation identity, incomplete expected observation and redaction.
+Run focused shared queue, PostgreSQL, browser-backend and diagnostic tests, shared/
+server/web and maintained-test typechecks, benchmark native Deno check, exact
+committed-source changed-style gate and full-file structure/legacy review. Do not
+start broad suites concurrently with the isolated database tests. Parent selects
+wider CI and any earned diagnostic workload only after review. No performance
+acceptance, benchmark rerun, host mutation or push is authorized to the worker.
+
+Every changed human-authored file is reviewed and remediated in full; support
+files changed by that remediation enter closure recursively; independent
+untouched code remains outside closure. Preserve readable direct ownership and
+existing domain boundaries rather than split files merely to satisfy a metric.
+Report RED/GREEN exact commands/results, source commits, full-file and support
+closure, actual API impact, runtime/off-path cost evidence and remaining limits.
+
+The implementation now carries these optional facts into v3 diagnostics. Its
+real-owner RED exposed absent prior-backoff evidence while handling and release
+already succeeded. GREEN distinguishes a persisted 5.000000 s backoff from at
+least 3.000000 s due-to-RETURNING elapsed. Sixteen isolated real-PostgreSQL tests
+cover non-UTC sessions, signed submillisecond intervals, held commit, rollback,
+commit failure, unknown outcome, malformed facts and concurrent capture. The
+disposable database is removed. Focused queue/backend checks pass 191 tests,
+diagnostic/hosted checks pass 95, and final projection/CLI closure passes 43.
+Shared/server/web and maintained-test typing pass.
+
+Exact archived production sources with only the candidate performance directory
+overlaid pass native comparison checks on both roles. Candidate diagnostics also
+compile; baseline diagnostic invocation fails at the absent current production
+validator before workload/database initialization. The single shared runner and
+documented CLI remain. Task-level structure and committed-source style checks,
+plus the full-branch committed-source style gate, pass. Independent review found
+byte-truncated retry records were counted as available despite being omitted;
+capture correctly remained incomplete. Two byte-limit RED cases now pass after
+accounting moves behind actual record admission. Import grouping is remediated
+throughout the touched files, with unchanged bindings and non-import statements.
+All 77 covering tests, affected typing/native checks, the exact committed fix
+style gate and scoped re-review pass; no review findings remain. These are
+instrumentation correctness results, not a new performance run or acceptance.
+Enabled capture has bounded per-claim association cost, and its per-phase release
+reference array is not bounded by serialized artifact caps. Keep that memory
+limitation alongside the existing raw timing-array follow-up.
+
+### Task 18: Attribute one PostgreSQL outbound release by elapsed phase
+
+This continues the primary formation-tail outcome after Task 17's source review.
+The reviewed hosted capture has a 3.759 s release await overlapping large timer
+lag, but no internal phase attribution. The intended outcome is truthful,
+bounded evidence for that existing release owner, not a release-policy change or
+an optimization inferred from awaited wall time.
+
+Read `/tmp/alm-release-phase-falsifier-design.md` as the bounded design input,
+including its constructor compatibility follow-up, and
+`/tmp/alm-snapshot-hosted-measurement-review.md` as the measurement constraints.
+The design traced pinned source before Task 17. Re-read the committed queue,
+reservation observation transport and diagnostic safety rules before editing.
+Reuse the current implementation, clocks, timing service and test fixtures.
+
+**Owner and compatibility.** Hosted outbound work uses
+`PSqlAdmissionWorkBackend.workQueue` from `create-p-sql-al-runtime-stores`, not the
+mutation runtime's separate queue. Add a narrow optional release-timing capability
+at the existing PostgreSQL queue constructor, wired only into the outbound store
+when the existing outbox-stage timing dependency is present. Keep incoming work
+and disabled construction without it. The backend's positional constructor is
+internal: two production calls and thirty test calls at the reviewed baseline,
+no curated export or documented external constructor. Reverify current callers
+and migrate them together to one named input for SQL, namespace, existing clock
+and optional timing. Do not retain an unused positional adapter. This is an
+internal source-signature migration, not a claim of no API impact. No shared or
+browser release signature, durable format, SQL, transaction count, queue page
+size, ordering, fallback, retry or release fence changes are intended.
+
+**Observation contract.** Use one canonical release loop. For an opted-in
+invocation record synchronous candidate-region elapsed; repository-transaction
+call to its queue callback; each existing `releaseReserved` await; whole callback
+elapsed; successful callback end to transaction return; and whole queue release
+elapsed before diagnostic emission. Keep callback/setup remainders explicit.
+These are elapsed boundaries: transaction admission includes wrapper/driver/start
+work, and a releaseReserved await includes statement construction, network,
+execution, returned-row decoding and scheduling. They do not isolate pool wait,
+SQL server time, COMMIT server time, CPU or off-CPU time. Root transaction return
+means commit resolved only at the verified root composition; never label a
+nested savepoint return as root commit.
+
+Use explicit monotonic clocks for new durations, with an epoch/monotonic anchor
+pair and sampling uncertainty for journal correlation. Keep endpoints or offsets
+so boundaries can be reconstructed. Never subtract database, browser, V8, epoch
+and monotonic clocks from each other. Existing epoch-based AL batch timing and
+persisted release-clock values remain unchanged. Invalid, non-finite, regressing
+or throwing optional clocks make diagnostics unavailable without failing release.
+
+Keep callback timing arrays private until the existing transaction returns. No
+sink, JSON formatting or logging runs inside it; no observer registry, wrapped SQL
+dispatcher or second transaction/release path. Candidate, statement, row validation,
+rollback and commit errors retain their original failure and release-recovery
+behavior. A failed invocation may report only failed status with inner phases
+unavailable; it must not publish a successful committed member projection or
+fabricate commit endpoints. Optional diagnostic projection/emission failures must
+not strand work, reject a successful release or mask an authoritative error.
+
+**Correlation and bounded cost.** Use an enabled queue-instance invocation
+sequence and store namespace, captured process identity, and at most sixteen
+member records containing ordinal, physical key, reservation attempt, exact
+reservation-start timestamp and textual row identity. Never log resource payload.
+Join to existing reservation-return records by same process and actual identities,
+then require all sixteen unique members to identify one worker/batch and one
+matching work-batch envelope. All sixteen must update successfully with no fallback
+read or intervening failed invocation. Missing or ambiguous joins are inconclusive;
+no nearest-time joins or assumption that every mixed work type has a marker.
+Invocations beyond the observation bound are explicitly ineligible; never reduce
+the real workload to satisfy it.
+
+Emit one bounded aggregate through existing safe `recordRallarTiming` after root
+return, with scalar details and one named JSON-string member projection. Keep the
+general timing type unchanged. Disabled execution adds no clocks, arrays,
+identity formatting, sequence increments or sink calls. Enabled serialization/log
+cost remains inside the outer AL release envelope; retain that remainder and do
+not claim zero overhead. No new DB query, locking, polling or global context.
+
+**TDD and validation.** The new live-PostgreSQL test family must reserve sixteen
+rows through the real queue, gate completion of one real conditional UPDATE at
+the existing SQL port, and independently advance the diagnostic clock at owned
+gates. RED is the absent phase observation. GREEN separates that held await from
+candidate/admission/return intervals, emits only after root transaction resolution,
+and matches the ordinary returned map to an independent client's durable readback.
+Do not drive clock values by incidental read counts or use arbitrary sleeps.
+A stale final member must roll back earlier writes and preserve the original lost
+reservation error without successful committed phase evidence. Cover disabled
+capture, bad clocks, throwing sinks, fallback/ineligible observations and current
+projection/wiring behavior without duplicating existing release-policy tests.
+
+Run the distinct new test first, then directly affected live-PG release/fencing,
+shared AL lifecycle and server projection/composition checks. Validate shared-server
+and maintained-test typing, the actual API native graph, affected public consumers,
+full-file structure/legacy review and exact committed-source changed-style gate.
+Retain exact RED/GREEN commands/results; a skipped integration test is not GREEN.
+Use isolated real-PostgreSQL storage, no destructive shared application fixture and
+no broad suite concurrently with the live database tests. Reap owned resources.
+The parent selects broad CI and any earned hosted capture after review; this task
+authorizes no push, host mutation, benchmark rerun or performance acceptance.
+
+Every changed human-authored file is reviewed and remediated in full; support
+files modified by that remediation enter closure recursively; independent
+untouched code remains outside closure. Direct release behavior tests and the
+shared-server typecheck/API native check are separate acceptance evidence.

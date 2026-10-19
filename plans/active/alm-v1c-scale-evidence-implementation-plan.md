@@ -254,9 +254,23 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    guard reduces median local synchronous observation from 0.338648 to 0.001576 s
    per 500 observations, with 218 affected tests passing. Same-tuple checks remain.
    Independent review and the committed-source style gate pass after a redundant
-   event-version branch is removed with 54 covering tests. New-source validation,
-   local timing-off 15 → 30 → 50 and remaining actual formation measurement are
-   next; this local result cannot establish the full target. Existing
+   event-version branch is removed with 54 covering tests. New-source CI passes
+   21 checks with one skipped RTC lane. Fresh local timing-off 15 → 30 → 50
+   cohorts pass all 231 assertions each, verified recorder bytes/counts and reaped
+   cleanup. The earned hosted profile completes with native artifacts retained
+   and exact source/settings restoration independently verified. Reviewed same-PID
+   evidence now gives the first fully corroborated layout's own promotion a
+   7.964 s preclaim wait, 7.961 s overlapping same-worker batches and 8.403 s to
+   direct-send; its distinct activation takes 5.262/5.723 s. A preceding sixteen-entry
+   batch includes a 3.759 s release await overlapping timer-lag maxima of
+   1.185/0.775 s. Neither a hosted speedup nor SQL/GC causation is established.
+   The next falsifier correlates the existing PostgreSQL release owner's
+   synchronous preparation, transaction entry, conditional-write awaits and
+   completion with same-PID evidence, starting with a controlled real-PostgreSQL
+   boundary test. Label all awaited spans as elapsed; pool wait, SQL server time
+   and off-CPU time need independent evidence. Preserve rollback and full-row
+   release fences, and prove the missing boundary before another capture.
+   This local result and capture success cannot establish the full target. Existing
    wake/page/ordered-dispatch coverage already protects the generic hold fixture.
    Do not rerun solely for a pass.
    Preserve bounded reads, ordered sends, immutable events/audiences, causal fences,
@@ -291,7 +305,21 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    does not waive the failed comparison or establish pump/SQL ownership.
    Retained receipts recover effective mesh/tree inputs and all hot retry depths;
    tree share does not order the slowest runs. Actual retry due/release instants
-   remain missing, so distinguish chosen backoff from scheduling before attribution.
+   remain missing from that retained run. The new optional ordinary-RETRY
+   observation now distinguishes preceding persisted backoff from signed
+   database due-to-RETURNING elapsed, with sixteen live-PostgreSQL boundary tests
+   passing and diagnostic corruption unable to suppress handling/release.
+   Current v3 projection and hosted validation agree; the documented CLI keeps
+   one common runner and an explicitly loaded candidate diagnostic composition.
+   Exact candidate-perf-only overlay checks pass against main in comparison mode;
+   unsupported main diagnostics fail before workload setup. Independent review
+   found a byte-cap footer inconsistency; the correction now counts omitted retry
+   records as unavailable while preserving fail-closed capture. Both byte-limit
+   regressions, 77 covering checks, affected typing/native checks, committed style
+   and scoped re-review pass. No new performance run or retry-policy change is selected,
+   and the existing failed comparison remains failed. Record the phase-local
+   release-reference array with the raw timing-array memory follow-up; serialized
+   caps do not bound either collection.
    Trace process SQL to its dequeue owner before attributing it to a command; temporal overlap
    alone is insufficient. Retry-depth distribution and prescribed backoff remain attribution
    outcomes before any queue-policy change.
