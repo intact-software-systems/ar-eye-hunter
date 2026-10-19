@@ -58,6 +58,8 @@ import {
     type ALOutboundComputeIntent,
     type ComputeALOutboundDispatchInput
 } from './compute-al-outbound-dispatch.ts';
+import type { ALOutboundDequeuedAdmission } from './lane/al-outbound-dequeued-admission.ts';
+import { recordALOutboundDequeueTiming } from './lane/record-al-outbound-dequeue-timing.ts';
 import { validateALOutboundDispatch } from './validate-al-outbound-dispatch.ts';
 
 /** What one dispatch decided before its write: a result already, or a bundle its commit writes. */
@@ -126,6 +128,7 @@ export namespace ALOutboundDispatchAdmission {
         readonly clock: ALOutboundMessageRuntime.Clock;
         readonly browserLocks: ALBrowserLocks | undefined;
         readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
+        readonly dequeueTiming?: ALOutboundDequeuedAdmission.TimingSink;
         readonly settlements: ALOutboundSettlementEmitter;
     }
 }
@@ -265,24 +268,53 @@ export class ALOutboundDispatchAdmission<TPrepared> {
     private async commitGroupOnce(
         members: readonly ALOutboundGroupMember<TPrepared>[]
     ): Promise<readonly ALOutboundDispatchAdmission.Result<TPrepared>[] | undefined> {
-        const decisions = await this.readGroupDecisions(members);
-        if (decisions === undefined || !hasOneALOutboundSenderVersion(decisions)) {
-            return undefined;
-        }
-        const written = this.admissionStore.commitBundles(decisions.map((decision) => decision.bundle));
-        const statuses = await Promise.all(members.map(({ phases }) => phases.withCommitPhase(() => written)));
-        if (statuses.some((status) => status !== 'committed')) {
-            return undefined;
-        }
-        return decisions.map((decision, index) => {
-            const result = this.toCommitResult('committed', {
-                computed: decision.computed,
-                msg: decision.input.read.msg,
-                intent: members[index]!.dispatch.intent
+        const timing = this.dependencies.dequeueTiming;
+        const entry = timing === undefined ? undefined : members[0]?.dispatch.options.claimedOutboxEntry;
+        const startedAtMs = timing === undefined ? 0 : this.readNowMs();
+        let decisionEndedAtMs: number | undefined;
+        let bundleEndedAtMs: number | undefined;
+        let outcome: 'not-attempted' | 'committed' | 'conflict' | 'expired' | 'error' = 'error';
+        try {
+            const decisions = await this.readGroupDecisions(members);
+            decisionEndedAtMs = timing === undefined ? 0 : this.readNowMs();
+            if (decisions === undefined || !hasOneALOutboundSenderVersion(decisions)) {
+                outcome = 'not-attempted';
+                return undefined;
+            }
+            const written = this.admissionStore.commitBundles(decisions.map((decision) => decision.bundle));
+            const statuses = await Promise.all(members.map(({ phases }) => phases.withCommitPhase(() => written)));
+            bundleEndedAtMs = timing === undefined ? 0 : this.readNowMs();
+            outcome = statuses[0]!;
+            if (statuses.some((status) => status !== 'committed')) {
+                return undefined;
+            }
+            return decisions.map((decision, index) => {
+                const result = this.toCommitResult('committed', {
+                    computed: decision.computed,
+                    msg: decision.input.read.msg,
+                    intent: members[index]!.dispatch.intent
+                });
+                this.emitCommitSettlements(result, decision.input);
+                return result;
             });
-            this.emitCommitSettlements(result, decision.input);
-            return result;
-        });
+        }
+        finally {
+            if (timing !== undefined && entry !== undefined) {
+                const endedAtMs = bundleEndedAtMs ?? this.readNowMs();
+                recordALOutboundDequeueTiming(timing, {
+                    kind: 'admission-group',
+                    lane: this.dependencies.lane,
+                    entry,
+                    memberCount: members.length,
+                    startedAtMs,
+                    decisionDurationMs: Math.max(0, (decisionEndedAtMs ?? endedAtMs) - startedAtMs),
+                    bundleDurationMs: decisionEndedAtMs === undefined || outcome === 'not-attempted'
+                        ? 0
+                        : Math.max(0, endedAtMs - decisionEndedAtMs),
+                    outcome
+                });
+            }
+        }
     }
 
     /** All bounded reads settle before a group write or fresh single-member fallback may start. */

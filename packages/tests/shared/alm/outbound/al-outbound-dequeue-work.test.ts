@@ -7,7 +7,8 @@ import {
     vi
 } from 'vitest';
 
-import { toALOutboundDequeueTimingEvents } from '@shared-server/rallar-system/observability/al-outbound-dequeue-timing.ts';
+import { createRallarALOutboundDequeueTiming, toALOutboundDequeueTimingEvents } from '@shared-server/rallar-system/observability/al-outbound-dequeue-timing.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import type { ALOutboundDropReasonCode } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     AL_OUTBOUND_WORK_PAGE_SIZE,
@@ -174,10 +175,10 @@ describe('AL outbound dequeue work', () => {
         expect((await outbox.getItem(queued.key))?.status).toBe(EntityStatus.COMPLETED);
     });
 
-    it('finishes a claimed row when the optional timing sink throws', async () => {
+    it('finishes grouped claims when the optional timing sink throws', async () => {
         const outbox = createOutboxQueue();
-        const message = createDequeuedMessage('timing-sink-throws');
-        const queued = QueueBoxUtilities.toResourceEntryFromMsg(message, DEQUEUE_TYPE, Temporal.Now.instant());
+        const messages = ['timing-sink-throws-1', 'timing-sink-throws-2'].map(createDequeuedMessage);
+        const entries = messages.map((message) => QueueBoxUtilities.toResourceEntryFromMsg(message, DEQUEUE_TYPE, Temporal.Now.instant()));
         const sent: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
@@ -199,10 +200,14 @@ describe('AL outbound dequeue work', () => {
 
         try {
             await runtime.ready();
-            await outbox.enqueueIfAbsent(queued);
+            for (const entry of entries) {
+                await outbox.enqueueIfAbsent(entry);
+            }
             await runOutboundWorkTask(runtime);
-            expect(sent).toEqual([message.id.msgId]);
-            expect((await outbox.getItem(queued.key))?.status).toBe(EntityStatus.COMPLETED);
+            expect(sent).toEqual(messages.map((message) => message.id.msgId));
+            for (const entry of entries) {
+                expect((await outbox.getItem(entry.key))?.status).toBe(EntityStatus.COMPLETED);
+            }
         }
         finally {
             await runtime.dispose();
@@ -536,4 +541,241 @@ describe('AL outbound dequeue work', () => {
         expect(await peekOutboundWorkReadyAt(stores.workQueue, stores.admissionStore.namespace))
             .toBeUndefined();
     });
+});
+
+it('separates held claim and execution from reservation logging in one completed batch', async () => {
+    const outbox = createOutboxQueue();
+    const events: RallarTimingEvent[] = [];
+    let nowMs = Date.now();
+    const claimEntered = Promise.withResolvers<void>();
+    const claimRelease = Promise.withResolvers<void>();
+    const runEntered = Promise.withResolvers<void>();
+    const runRelease = Promise.withResolvers<void>();
+    const timing = createRallarALOutboundDequeueTiming({ timing: (event) => events.push(event), serviceId: 'api', publisherId: 'publisher' });
+    const runtime = createDefaultOutboundTestRuntime({
+        outbox,
+        nowMs: () => nowMs,
+        dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
+        dequeueTiming: (observation) => {
+            timing(observation);
+            if (observation.kind === 'reservation-returns') {
+                nowMs += 19;
+            }
+        },
+        readDequeueAuthority: async () => {
+            runEntered.resolve();
+            await runRelease.promise;
+            return undefined;
+        },
+        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
+        sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+    });
+    onTestFinished(async () => {
+        claimRelease.resolve();
+        runRelease.resolve();
+        await runtime.dispose();
+        vi.restoreAllMocks();
+    });
+    await runtime.ready();
+    events.length = 0;
+    const claim = outbox.reserveEntries.bind(outbox);
+    vi.spyOn(outbox, 'reserveEntries').mockImplementation(async (...args) => {
+        claimEntered.resolve();
+        await claimRelease.promise;
+        return await claim(...args);
+    });
+    const entry = QueueBoxUtilities.toResourceEntryFromMsg(createDequeuedMessage('batch-cost'), DEQUEUE_TYPE, Temporal.Now.instant());
+    await outbox.enqueueIfAbsent(entry);
+    const batchStartedAtMs = nowMs;
+    const work = runOutboundWorkTask(runtime);
+    await claimEntered.promise;
+    nowMs += 31;
+    claimRelease.resolve();
+    await runEntered.promise;
+    expect(events.some((event) => event.operation === 'work-batch')).toBe(false);
+    nowMs += 47;
+    runRelease.resolve();
+    await work;
+    const batches = events.filter((event) => event.operation === 'work-batch' && event.details?.claimedCount === 1);
+    expect(batches).toHaveLength(1);
+    expect(batches[0]).toMatchObject({
+        durationMs: 97,
+        details: {
+            lane: 'durable',
+            batchStartedAtMs,
+            runStartedAtMs: batchStartedAtMs + 50,
+            selectionDurationMs: 0,
+            claimDurationMs: 31,
+            runDurationMs: 47,
+            releaseDurationMs: 0,
+            queueWaitMs: 0,
+            claimedCount: 1,
+            completedCount: 1,
+            rescheduledCount: 0,
+            rejectedCount: 0
+        }
+    });
+    expect(events.find((event) => event.operation === 'reservation-return')?.details).toMatchObject({
+        ...entry.key,
+        batchStartedAtMs,
+        workerId: batches[0]?.details?.workerId,
+        lane: 'durable'
+    });
+    expect((await outbox.getItem(entry.key))?.status).toBe(EntityStatus.COMPLETED);
+});
+
+it.each(['committed', 'conflict', 'error', 'decision-error'] as const)(
+    'observes one held group decision and bundle window before %s resolution',
+    async (outcome) => {
+        const outbox = createOutboxQueue();
+        const stores = createDefaultOutboundTestStores(outbox);
+        const events: RallarTimingEvent[] = [];
+        let nowMs = Date.now();
+        const readEntered = Promise.withResolvers<void>();
+        const readRelease = Promise.withResolvers<void>();
+        const transactionEntered = Promise.withResolvers<void>();
+        const transactionRelease = Promise.withResolvers<void>();
+        const read = stores.admissionStore.readOutgoingMessage.bind(stores.admissionStore);
+        vi.spyOn(stores.admissionStore, 'readOutgoingMessage').mockImplementation(async (input) => {
+            readEntered.resolve();
+            await readRelease.promise;
+            if (outcome === 'decision-error') {
+                throw new Error('group decision read failed');
+            }
+            return await read(input);
+        });
+        const write = stores.backend.write.bind(stores.backend);
+        vi.spyOn(stores.backend, 'write').mockImplementationOnce(async (operation, deadline) => {
+            transactionEntered.resolve();
+            await transactionRelease.promise;
+            if (outcome === 'error') {
+                throw new Error('held bundle failed');
+            }
+            return await write(operation, deadline);
+        });
+        if (outcome === 'conflict') {
+            vi.spyOn(stores.admissionStore, 'commitBundles').mockImplementationOnce(async () => {
+                transactionEntered.resolve();
+                await transactionRelease.promise;
+                return 'conflict';
+            });
+        }
+        const sent: string[] = [];
+        const runtime = createDefaultOutboundTestRuntime({
+            outbox,
+            stores,
+            nowMs: () => nowMs,
+            dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
+            dequeueTiming: createRallarALOutboundDequeueTiming({ timing: (event) => events.push(event), serviceId: 'api', publisherId: 'publisher' }),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
+            afterDequeueAdmission: async (msg) => {
+                sent.push(msg.id.msgId);
+            },
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+        });
+        onTestFinished(async () => {
+            readRelease.resolve();
+            transactionRelease.resolve();
+            await runtime.dispose();
+            vi.restoreAllMocks();
+        });
+        await runtime.ready();
+        const messages = ['group-first', 'group-second'].map(createDequeuedMessage);
+        const entries = messages.map((message) => QueueBoxUtilities.toResourceEntryFromMsg(message, DEQUEUE_TYPE, Temporal.Now.instant()));
+        for (const entry of entries) {
+            await outbox.enqueueIfAbsent(entry);
+        }
+        const work = runOutboundWorkTask(runtime);
+        await readEntered.promise;
+        nowMs += 23;
+        readRelease.resolve();
+        if (outcome !== 'decision-error') {
+            await transactionEntered.promise;
+        }
+        expect(events.some((event) => event.operation === 'admission-group')).toBe(false);
+        expect(sent).toEqual([]);
+        if (outcome !== 'decision-error') {
+            nowMs += 41;
+        }
+        transactionRelease.resolve();
+        await work;
+        const groups = events.filter((event) => event.operation === 'admission-group');
+        expect(groups).toHaveLength(1);
+        expect(groups[0]).toMatchObject({
+            durationMs: outcome === 'decision-error' ? 23 : 64,
+            status: outcome === 'error' || outcome === 'decision-error' ? 'error' : 'ok',
+            details: {
+                ...entries[0]!.key,
+                memberCount: 2,
+                decisionDurationMs: 23,
+                bundleDurationMs: outcome === 'decision-error' ? 0 : 41,
+                outcome: outcome === 'decision-error' ? 'error' : outcome
+            }
+        });
+        expect(sent).toEqual(messages.map((message) => message.id.msgId));
+        expect(events.filter((event) => event.operation === 'work-batch' && event.details?.claimedCount === 2)).toHaveLength(1);
+        for (const entry of entries) {
+            expect((await outbox.getItem(entry.key))?.status).toBe(EntityStatus.COMPLETED);
+        }
+    }
+);
+
+it('keeps simultaneous owner reservations separate and reports an empty claim without inventing a completed failed claim', async () => {
+    const events: RallarTimingEvent[] = [];
+    const nowMs = Date.now();
+    const release = Promise.withResolvers<void>();
+    const owners = ['owner-one', 'owner-two'].map((name) => {
+        const outbox = createOutboxQueue();
+        const entered = Promise.withResolvers<void>();
+        const runtime = createDefaultOutboundTestRuntime({
+            outbox,
+            nowMs: () => nowMs,
+            dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
+            dequeueTiming: createRallarALOutboundDequeueTiming({ timing: (event) => events.push(event), serviceId: 'api', publisherId: 'publisher' }),
+            readDequeueAuthority: async () => {
+                entered.resolve();
+                await release.promise;
+                return undefined;
+            },
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+        });
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(createDequeuedMessage(name), DEQUEUE_TYPE, Temporal.Now.instant());
+        return { outbox, runtime, entered, entry };
+    });
+    onTestFinished(async () => {
+        release.resolve();
+        await Promise.all(owners.map((owner) => owner.runtime.dispose()));
+        vi.restoreAllMocks();
+    });
+    await Promise.all(owners.map((owner) => owner.runtime.ready()));
+    expect(events.filter((event) => event.operation === 'work-batch')).toHaveLength(2);
+    for (const event of events.filter((event) => event.operation === 'work-batch')) {
+        expect(event).toMatchObject({ durationMs: 0, details: { claimedCount: 0, completedCount: 0, queueWaitMs: 0 } });
+    }
+    events.length = 0;
+    await Promise.all(owners.map((owner) => owner.outbox.enqueueIfAbsent(owner.entry)));
+    const work = owners.map((owner) => runOutboundWorkTask(owner.runtime));
+    await Promise.all(owners.map((owner) => owner.entered.promise));
+    const reservations = events.filter((event) => event.operation === 'reservation-return');
+    expect(reservations).toHaveLength(2);
+    expect(new Set(reservations.map((event) => event.details?.workerId)).size).toBe(2);
+    release.resolve();
+    await Promise.all(work);
+    for (const reservation of reservations) {
+        const batches = events.filter((event) =>
+            event.operation === 'work-batch' && event.details?.claimedCount === 1 &&
+            event.serviceId === reservation.serviceId && event.details?.publisherId === reservation.details?.publisherId &&
+            event.details?.lane === reservation.details?.lane && event.details?.workerId === reservation.details?.workerId &&
+            event.details?.batchStartedAtMs === reservation.details?.batchStartedAtMs
+        );
+        expect(batches).toHaveLength(1);
+    }
+    const owner = owners[0]!;
+    events.length = 0;
+    vi.spyOn(owner.outbox, 'reserveEntries').mockRejectedValueOnce(new Error('claim unavailable'));
+    await runOutboundWorkTask(owner.runtime);
+    expect(events.filter((event) => event.operation === 'work-batch')).toEqual([]);
+    await runOutboundWorkTask(owner.runtime);
+    expect(events.filter((event) => event.operation === 'work-batch')).toHaveLength(1);
 });

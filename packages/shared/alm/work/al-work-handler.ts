@@ -70,7 +70,8 @@ export interface ALWorkHandlerDependencies {
     /** Reads eligible work; the port owns reservation. */
     readonly selectReady: (
         port: ALWorkQueuePort,
-        pageSize: number
+        pageSize: number,
+        batchStartedAtMs: number
     ) => Promise<ALWorkReadySelection>;
     /**
      * Reserves the claim a completed one hands its place in the batch to, which the batch then runs
@@ -127,6 +128,8 @@ export type ALWorkDiagnostics = ALWorkBatchDiagnostics | ALWorkReadinessProbeDia
  */
 export interface ALWorkBatchDiagnostics {
     readonly kind: 'work-batch';
+    /** Source-process start before exhaustion, selection and claim. */
+    readonly batchStartedAtMs: number;
     readonly workerId: string;
     readonly durationMs: number;
     readonly claimedCount: number;
@@ -461,7 +464,7 @@ export class ALWorkHandler {
         let run: ALWorkClaimedRun | undefined;
         try {
             if (!this.shutdown.signal.aborted) {
-                run = await this.runClaimedWork(releases, progress, deferObservation);
+                run = await this.runClaimedWork(releases, progress, deferObservation, startedAtMs);
             }
         }
         finally {
@@ -483,10 +486,11 @@ export class ALWorkHandler {
     private async runClaimedWork(
         releases: ALWorkRelease[],
         progress: ALWorkBatchProgress,
-        deferObservation: ALWorkObservationDeferral | undefined
+        deferObservation: ALWorkObservationDeferral | undefined,
+        batchStartedAtMs: number
     ): Promise<ALWorkClaimedRun | undefined> {
         const { clock, port, pageSize, selectReady } = this.dependencies;
-        const selection = await selectReady(port, pageSize);
+        const selection = await selectReady(port, pageSize, batchStartedAtMs);
         const queued = [...selection.claims];
         progress.claimedCount = queued.length;
         const runStartedAtMs = clock.nowMs();
@@ -539,6 +543,7 @@ export class ALWorkHandler {
         const { clock, workerId, diagnostics } = this.dependencies;
         diagnostics?.({
             kind: 'work-batch',
+            batchStartedAtMs: startedAtMs,
             workerId,
             durationMs: computeElapsedMs(startedAtMs, clock.nowMs()),
             ...progress,

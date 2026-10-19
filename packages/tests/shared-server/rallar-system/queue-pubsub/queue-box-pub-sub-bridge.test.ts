@@ -208,6 +208,63 @@ describe('QueueBoxPubSubBridge', () => {
         expect(timingEvents.map((event) => event.operation)).toContain('outbox-cluster-publish');
     });
 
+    it.each(['returned', 'error', 'throwing-timing'] as const)('separates held captured-policy read from local send with its %s outcome', async (outcome) => {
+        const publishers: ClusterPublisher[] = [];
+        const events: RallarTimingEvent[] = [];
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const sends: WsServerLiveSendInputDto[] = [];
+        const service = createTestQueueBoxPubSubWsService({
+            registerOutboxPublisher: (publisher) => publishers.push(publisher),
+            sends,
+            readAudience: async () => {
+                entered.resolve();
+                await release.promise;
+                if (outcome === 'error') {
+                    throw new Error('captured policy unavailable');
+                }
+                return ['captured-session'];
+            },
+            sendToTargetsWithResult: (message) => {
+                expect(events.filter((event) => event.operation === 'outbox-captured-policy-read')).toHaveLength(1);
+                expect(events.some((event) => event.operation === 'outbox-direct-send')).toBe(false);
+                return sentLiveResult(message);
+            }
+        });
+        await installQueueBoxPubSubBridge({
+            wsQBoxServerService: service,
+            bridge: createBridge(),
+            channel: 'queuebox-events',
+            publisherId: 'publisher',
+            timing: (event) => {
+                events.push(event);
+                if (outcome === 'throwing-timing') {
+                    throw new Error('optional publication timing failed');
+                }
+            }
+        });
+        const entry = createWsOutboxEntry();
+        const publication = publishers[0]!(decodePersistedALMessage(entry.resource), entry);
+        await entered.promise;
+        expect(events.some((event) => event.operation === 'outbox-cluster-publish')).toBe(true);
+        expect(events.some((event) => event.operation === 'outbox-captured-policy-read')).toBe(false);
+        expect(sends).toEqual([]);
+        release.resolve();
+        if (outcome === 'error') {
+            await expect(publication).rejects.toThrow('captured policy unavailable');
+        }
+        else {
+            await publication;
+        }
+        expect(events.filter((event) => event.operation === 'outbox-captured-policy-read')).toEqual([
+            expect.objectContaining({ status: outcome === 'error' ? 'error' : 'ok', details: expect.objectContaining(entry.key) })
+        ]);
+        expect(sends).toHaveLength(outcome === 'error' ? 0 : 1);
+        if (outcome !== 'error') {
+            expect(sends[0]?.admittedPeerIds).toEqual(['captured-session']);
+        }
+    });
+
     it('marks a rejected cluster publish without claiming a returned publication', async () => {
         const outboxPublishers: ClusterPublisher[] = [];
         const timingEvents: RallarTimingEvent[] = [];

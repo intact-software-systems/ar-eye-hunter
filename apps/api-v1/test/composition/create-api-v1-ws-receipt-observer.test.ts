@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 
 import { createConsoleRallarTimingSink, type RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
+import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { createApiV1WsReceiptObserver } from '../../src/composition/create-api-v1-ws-receipt-observer.ts';
 import { createDefaultRallarServer } from '../../src/composition/create-default-rallar-server.ts';
@@ -61,6 +62,21 @@ for (const enabled of [false, true]) {
                     databaseLifecycle
                 });
                 await server.runtime.readiness;
+                await server.runtime.wsQBoxServerService.enqueueOutboxIfAbsent(newALUnicastMessage(
+                    'server',
+                    { topicId: 'timing-test', resourceId: 'no-recipient', contextId: 'test' },
+                    'absent-peer',
+                    'timing.test.v1',
+                    {},
+                    { ttlMs: 30_000 }
+                ));
+                const batches = logs.filter((line) => line.startsWith('{')).map((line) => JSON.parse(line))
+                    .filter((event) => event.component === 'alm-outbound-dequeue' && event.operation === 'work-batch');
+                assert.equal(batches.length > 0, enabled);
+                if (enabled) {
+                    assert.ok(batches.every((event) => event.details.claimedCount === 0 && event.details.completedCount === 0));
+                    assert.ok(batches.every((event) => typeof event.details.workerId === 'string'));
+                }
                 const ack = newALAckControlMessage({ v: 3, msgId: 'ack-1', senderId: 'recipient', ts: Date.now() }, {
                     ackedMsgId: 'subject',
                     originPeerId: 'origin',

@@ -2,8 +2,9 @@ import { NonRetryableException } from '../../../queuebox/resource-inbox/create-d
 import { isNotReadyException } from '../../../queuebox/resource-inbox/not-ready-exception.ts';
 import type { Key, ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
 import { BoundedConcurrencyAdmission } from '../../../resilience/bounded-concurrency-admission.ts';
+import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import type { ALDeliveryAdmissionVerdict } from '../../delivery/al-delivery-lifecycle.ts';
-import type { ALWorkAttemptResult } from '../../work/al-work-handler.ts';
+import type { ALWorkAttemptResult, ALWorkBatchDiagnostics } from '../../work/al-work-handler.ts';
 import type { ALWorkClaim, ALWorkOutcome } from '../../work/al-work-queue-port.ts';
 import type {
     ALOutboundAdmissionStore,
@@ -45,6 +46,9 @@ export namespace ALOutboundDequeuedAdmission {
 
     export interface TimingEvent {
         readonly stage: TimingStage;
+        readonly lane?: ALStoreDurability;
+        readonly workerId?: string;
+        readonly batchStartedAtMs?: number;
         readonly key: Key;
         readonly attempts: number;
         readonly claimStartedAtEpochMs: number | undefined;
@@ -63,8 +67,22 @@ export namespace ALOutboundDequeuedAdmission {
 
     /** Source facts cross the optional port; only the server timing owner constructs log details. */
     export type TimingObservation =
+        | Readonly<{ kind: 'work-batch'; lane: ALStoreDurability; batch: ALWorkBatchDiagnostics; }>
+        | Readonly<{
+            kind: 'admission-group';
+            lane: ALStoreDurability;
+            entry: ResourceEntry;
+            memberCount: number;
+            startedAtMs: number;
+            decisionDurationMs: number;
+            bundleDurationMs: number;
+            outcome: 'not-attempted' | 'committed' | 'conflict' | 'expired' | 'error';
+        }>
         | Readonly<{
             kind: 'reservation-returns';
+            lane: ALStoreDurability;
+            workerId: string;
+            batchStartedAtMs: number;
             claims: readonly ALWorkClaim[];
             dequeueTypes: ReadonlySet<string>;
         }>

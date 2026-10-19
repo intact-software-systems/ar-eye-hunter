@@ -138,6 +138,12 @@ interface SendToCapturedLocalTargetsInput {
     readonly policy: ALOutboundCapturedPolicy | undefined;
 }
 
+interface QueueBoxOutboxPublication {
+    readonly message: ALMessage;
+    readonly entry: ResourceEntry;
+    readonly deferObservation: ALWorkObservationDeferral | undefined;
+}
+
 interface ObserveCapturedLocalSendInput extends SendToCapturedLocalTargetsInput {
     readonly result: WsServerLiveSendResult;
     readonly envelope: QueueBoxPubSubMessage;
@@ -214,11 +220,7 @@ function registerQueueBoxOutboxPublisher(
 }
 
 async function writeQueueBoxOutboxPublication(
-    publication: {
-        readonly message: ALMessage;
-        readonly entry: ResourceEntry;
-        readonly deferObservation: ALWorkObservationDeferral | undefined;
-    },
+    publication: QueueBoxOutboxPublication,
     options: RegisterQueueBoxOutboxPublisherInput
 ): Promise<void> {
     const { message, entry, deferObservation } = publication;
@@ -233,7 +235,9 @@ async function writeQueueBoxOutboxPublication(
         publishCall = 'invoked';
         await publishOutboxClusterNotice(envelope, options);
         publishCall = 'returned';
-        const policy = await readCapturedPublicationPolicy(options.wsQBoxServerService, message, entry);
+        const policy = options.timing === undefined
+            ? await readCapturedPublicationPolicy(options.wsQBoxServerService, message, entry)
+            : await readLocalPublicationPolicy(publication, envelope, options);
         directCall = 'invoked';
         result = sendToCapturedLocalTargets({ message, entry, policy }, options);
         directCall = 'returned';
@@ -258,6 +262,34 @@ async function writeQueueBoxOutboxPublication(
                 sentCount: result?.sentCount,
                 failedCount: result?.failedCount
             }, deferObservation);
+        }
+    }
+}
+
+/** One endpoint separates the captured-policy read from synchronous send and deferred-audience bookkeeping. */
+async function readLocalPublicationPolicy(
+    publication: QueueBoxOutboxPublication,
+    envelope: QueueBoxPubSubMessage,
+    options: RegisterQueueBoxOutboxPublisherInput
+): Promise<ALOutboundCapturedPolicy | undefined> {
+    let status: 'ok' | 'error' = 'error';
+    try {
+        const policy = await readCapturedPublicationPolicy(
+            options.wsQBoxServerService,
+            publication.message,
+            publication.entry
+        );
+        status = 'ok';
+        return policy;
+    }
+    finally {
+        if (options.timing !== undefined) {
+            recordPubSubTiming({
+                timing: options.timing,
+                operation: 'outbox-captured-policy-read',
+                message: envelope,
+                status
+            });
         }
     }
 }
@@ -626,6 +658,7 @@ interface RecordPubSubTimingInput {
         | 'outbox-cluster-publish-start'
         | 'outbox-cluster-publish-error'
         | 'outbox-cluster-publish'
+        | 'outbox-captured-policy-read'
         | 'outbox-direct-send'
         | 'drop-malformed'
         | 'outbox-remote-send-failed'

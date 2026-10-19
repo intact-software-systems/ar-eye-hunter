@@ -333,14 +333,19 @@ export class ALOutboundStoreLane<TPrepared> {
     /** The outbound owner reserves straight from the queue, so it reads no page and observes no row's wait. */
     private async selectOutboundWork(
         port: ALWorkQueuePort,
-        pageSize: number
+        pageSize: number,
+        batchStartedAtMs: number
     ): Promise<ALWorkReadySelection> {
         this.evictWhenDue();
         const startedAtMs = this.readNowMs();
         const claims = await port.claim({ maxCount: pageSize, observedEntries: undefined });
+        const claimDurationMs = Math.max(0, this.readNowMs() - startedAtMs);
         if (this.input.runtime.dequeueTiming !== undefined) {
             recordALOutboundDequeueTiming(this.input.runtime.dequeueTiming, {
                 kind: 'reservation-returns',
+                lane: this.input.lane,
+                workerId: this.input.workerId,
+                batchStartedAtMs,
                 claims,
                 dequeueTypes: this.input.dequeueTypes
             });
@@ -349,7 +354,7 @@ export class ALOutboundStoreLane<TPrepared> {
             claims,
             nextReadyAtMs: undefined,
             selectionDurationMs: 0,
-            claimDurationMs: Math.max(0, this.readNowMs() - startedAtMs),
+            claimDurationMs,
             earliestDueAtMs: undefined
         };
     }
@@ -611,9 +616,6 @@ export class ALOutboundStoreLane<TPrepared> {
      */
     private recordWorkDiagnostics(event: ALWorkDiagnostics): void {
         const { diagnostics } = this.input.runtime;
-        if (event.kind === 'work-batch') {
-            this.input.stores.storageRecovery?.reportFirstBatch(event.claimedCount);
-        }
         if (event.kind === 'readiness-probe') {
             diagnostics?.({
                 kind: 'readiness-probe',
@@ -624,6 +626,14 @@ export class ALOutboundStoreLane<TPrepared> {
                 durationMs: event.durationMs
             });
             return;
+        }
+        this.input.stores.storageRecovery?.reportFirstBatch(event.claimedCount);
+        if (this.input.runtime.dequeueTiming !== undefined) {
+            recordALOutboundDequeueTiming(this.input.runtime.dequeueTiming, {
+                kind: 'work-batch',
+                lane: this.input.lane,
+                batch: event
+            });
         }
         diagnostics?.({
             kind: 'effect-drain',
@@ -648,7 +658,8 @@ export class ALOutboundStoreLane<TPrepared> {
             pageSize: AL_OUTBOUND_WORK_PAGE_SIZE,
             readNextReadyAtMs: (port) => this.readiness.readOpenedStore(() => this.readNextReadyAtMs(port), undefined),
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
-            selectReady: (port, pageSize) => this.selectOutboundWork(port, pageSize),
+            selectReady: (port, pageSize, batchStartedAtMs) =>
+                this.selectOutboundWork(port, pageSize, batchStartedAtMs),
             claimSuccessor: undefined,
             batchObservations: runtime.receiptWorkCapture?.batchObservations,
             runClaim: (claim, batchStartedAtMs, deferObservation) =>
@@ -708,6 +719,7 @@ function createALOutboundLaneAdmissions<TPrepared>(
         clock: runtime.clock,
         browserLocks: input.browserLocks,
         diagnostics: runtime.diagnostics,
+        dequeueTiming: runtime.dequeueTiming,
         settlements
     });
     const controlAdmission = stores.admissionStore.createControlAdmission({
