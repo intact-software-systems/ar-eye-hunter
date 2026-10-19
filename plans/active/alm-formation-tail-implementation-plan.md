@@ -137,6 +137,21 @@ failure tests validate the boundaries; only a hosted capture can attribute the
 remaining delay. No queue scheduling, concurrency or retry policy changes are
 selected by this instrumentation alone.
 
+The timing slice also reaches the shared browser dependency graph. Publication
+validation measured headless Brotli output at 354.092 KiB against a 354 KiB budget
+and the browser entry at 265.353 KiB against 265 KiB. A controlled pre-instrumentation
+source overlay measured 353.446 KiB and 264.829 KiB respectively; this attributes
+the added cost but is not a comparison against main. Moving event translation to
+the server owner leaves one optional source-facts port in shared code and measures
+354.084 KiB headless / 265.338 KiB browser. Keep that direct ownership boundary;
+a compact callback/tuple experiment made both size and comprehension worse.
+Explicitly adjust the two affected budgets to 355 KiB / 266 KiB, retaining the
+measured cost and all other bundle constraints. This limited diagnostic cost
+acceptance does not waive runtime throughput or formation-tail gates. Preserve
+the phase-timing contract while extending its tests for the new committed-output
+observation. Browser/headless bundle checks and independent review are required
+before hosted measurement.
+
 The control journal again reports the post-terminal 100,000-node certification
 limit, distinct from native workload success. It also records 47 snapshot flushes,
 with a maximum 2.76621 s wall duration (0.305 s serialization, 2.461 s writing).
