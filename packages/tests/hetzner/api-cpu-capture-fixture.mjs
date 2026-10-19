@@ -59,6 +59,9 @@ export class ApiCpuCaptureFixture {
         if (program === 'bash') {
             return this.runScript(args, environment);
         }
+        if (program === 'free' && this.failAt === 'resources') {
+            throw new Error('Resource snapshot failed');
+        }
         if (program === 'git') {
             return this.source;
         }
@@ -106,6 +109,9 @@ export class ApiCpuCaptureFixture {
     }
 
     readSystemd(args) {
+        if (args[0] === 'stop' && args[1].endsWith('-inspector.service')) {
+            this.profilePresentAtInspectorStop = existsSync(path.join(this.readState().segment, 'api.cpuprofile'));
+        }
         if (args[0] === 'start' && args[1] === 'rallar-api-v1.service') {
             if (this.failAt === 'start') {
                 throw new Error('API start failed after override');

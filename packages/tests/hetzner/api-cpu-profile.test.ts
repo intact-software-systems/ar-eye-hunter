@@ -43,3 +43,18 @@ it('rejects malformed profile nodes, deltas and samples without inventing a cloc
     const clocks = { start: { before: clock(1000, 0), after: clock(1001, 1) }, stop: { before: clock(2000, 2), after: clock(2001, 3) } };
     expect(computeApiProfileClockBounds(profile, clocks)).toMatchObject({ attribution: 'inconclusive-clock-disagreement', offsetEpochMs: null });
 });
+
+it('preserves a consistent wide clock mapping while leaving stall attribution inconclusive', async () => {
+    const { computeApiProfileClockBounds } = await import('../../../scripts/hosted-rallar/controller/rallar-api-inspector.mjs');
+    const clock = (epochMs: number, monotonicMs: number) => ({ api: { epochMs, monotonicMs } });
+    const clocks = {
+        start: { before: clock(1000, 0), after: clock(3000, 2000) },
+        stop: { before: clock(6000, 5000), after: clock(8000, 7000) }
+    };
+    expect(computeApiProfileClockBounds({ startTime: 1_000_000, endTime: 6_000_000 }, clocks)).toMatchObject({
+        offsetEpochMs: [-1, 2001],
+        uncertaintyMs: 2002,
+        calibration: 'interval-calibrated',
+        attribution: 'inconclusive-until-stall-window-analysis'
+    });
+});

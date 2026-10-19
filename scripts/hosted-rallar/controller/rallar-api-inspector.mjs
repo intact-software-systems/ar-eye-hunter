@@ -141,7 +141,8 @@ export function computeApiProfileClockBounds(profile, clocks) {
         stopOffsetEpochMs: stop,
         offsetEpochMs: stable ? offset : null,
         uncertaintyMs: stable ? offset[1] - offset[0] : null,
-        attribution: stable ? 'interval-calibrated' : 'inconclusive-clock-disagreement'
+        calibration: stable ? 'interval-calibrated' : 'invalid-clock-disagreement',
+        attribution: stable ? 'inconclusive-until-stall-window-analysis' : 'inconclusive-clock-disagreement'
     };
 }
 

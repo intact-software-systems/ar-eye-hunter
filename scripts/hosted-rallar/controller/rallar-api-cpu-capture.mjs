@@ -362,24 +362,30 @@ export class ApiCpuCapture {
     }
 
     stopProfile() {
+        let valid = true;
         try {
             this.verifyProcess();
             this.state.resourcesAfter = this.readResources();
+        }
+        catch (error) {
+            valid = false;
+            this.state.errors.push(error.message);
+        }
+        // This segment signals the existing connection only; never attach to a replacement process.
+        try {
             writeFileSync(path.join(this.state.segment, 'stop'), '');
             this.waitForFile(path.join(this.state.segment, 'profile-result.json'), 15000);
             const result = readJson(path.join(this.state.segment, 'profile-result.json'));
-            this.state.profileStatus = result.status === 'valid' && result.pid === this.state.api.pid
-                ? 'valid'
-                : 'failed';
-            if (this.state.profileStatus !== 'valid') {
+            if (result.status !== 'valid' || result.pid !== this.state.api.pid) {
                 throw new Error('Inspector profile validation failed');
             }
             this.verifyProcess();
         }
         catch (error) {
-            this.state.profileStatus = 'failed';
+            valid = false;
             this.state.errors.push(error.message);
         }
+        this.state.profileStatus = valid ? 'valid' : 'failed';
         this.state.profileFinalized = true;
         try {
             this.run('systemctl', ['stop', `rallar-${this.configuration.id}-inspector.service`]);

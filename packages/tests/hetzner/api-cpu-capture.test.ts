@@ -183,3 +183,38 @@ it('bounds journal subprocesses and retains partial output as incomplete evidenc
     });
     expect(fixture.effects.some((command: string) => command.startsWith('timeout --kill-after=5s 180s bash -c ulimit -f 65536'))).toBe(true);
 });
+
+it.for(['changed-source', 'changed-pid', 'resources'])(
+    'retains the original owned profile before client termination despite %s failure',
+    async (failure, context) => {
+        const { ApiCpuCaptureFixture } = await import('./api-cpu-capture-fixture.mjs');
+        const root = await mkdtemp(path.join(tmpdir(), 'rallar-capture-'));
+        context.onTestFinished(() => rm(root, { recursive: true, force: true }));
+        const fixture = new ApiCpuCaptureFixture(root);
+        context.onTestFinished(() => fixture.dispose());
+        fixture.capture.begin();
+        const original = fixture.readState();
+        if (failure === 'changed-source') {
+            fixture.source = 'd'.repeat(40);
+        }
+        else if (failure === 'changed-pid') {
+            fixture.pid += 1;
+        }
+        else {
+            fixture.failAt = 'resources';
+        }
+        expect(fixture.capture.finish('shell-exit', 0)).toBe(false);
+        expect(fixture.readState()).toMatchObject({
+            recipeExitCode: 0,
+            profileStatus: 'failed',
+            restoreStatus: failure === 'changed-source' ? 'failed' : 'restored'
+        });
+        expect(JSON.parse(await readFile(path.join(original.segment, 'api.cpuprofile'), 'utf8')).samples).not.toEqual([]);
+        expect(fixture.profilePresentAtInspectorStop).toBe(true);
+        expect(fixture.effects.filter((command: string) => command.startsWith('systemd-run') && command.includes('-inspector'))).toHaveLength(1);
+        if (failure === 'changed-source') {
+            expect(fixture.source).toBe('d'.repeat(40));
+            expect(fixture.replayedConfiguration).toBeUndefined();
+        }
+    }
+);
