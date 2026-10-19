@@ -282,6 +282,30 @@ the actual runtime boundary and complete `bash -s` workflow body; macOS fixtures
 alone do not establish Linux behavior. This tooling repair does not establish a
 formation improvement.
 
+The next hosted attempt passed the actual service-user capability probe and saved
+an API startup profile, but failed before the cohort started. Inspector readiness
+preceded HTTP readiness; the immediate health request failed. Raw journal export
+then exceeded its 30 s bound, and cleanup treated an already-unloaded inspector
+unit as a stop failure. Preserve the failed capture and its valid startup bytes;
+they cannot establish formation latency. Independent inspection verifies exact
+source/settings restoration and healthy idle state. Repair and falsify these
+startup, export and terminal-cleanup boundaries before another workload attempt;
+do not simply increase capture limits or hide the failed lifecycle verdict.
+A native Linux journal experiment returns the same 63 interval rows in
+0.589–0.722 s when selecting a million-entry tail, versus 0.019–0.020 s when
+seeking the interval first and capping forward output. This demonstrates avoidable
+history-dependent work, not the exact cause of the hosted 30 s timeout. Use the
+existing log owner for forward selection and prompt redacted-output flushing;
+retain current bounds and verify partial output survives interruption. Cover the
+host's actual JSON GC format without reconstructing interleaved records or
+claiming complete retention from a filtered companion.
+The repair passes 88 focused tests. A real Linux delayed-listener replay reaches
+readiness in 2.093 s; the never-ready case retains failure after 30.156 s including
+fixture cleanup. Interrupted journal output survives redaction while retaining
+its failed status, and replay preserves all 63 original raw rows and eight GC
+companion lines verbatim. These validate the local lifecycle boundaries; review,
+selected CI and a successful hosted workload capture remain necessary.
+
 ### Earlier diagnostic motivating stage attribution
 
 The corrected timing-enabled fifty-agent workload passes registration in all

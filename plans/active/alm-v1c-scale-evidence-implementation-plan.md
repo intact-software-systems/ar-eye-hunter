@@ -227,6 +227,14 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    is insufficient to confirm its exact cause. Independent review and fresh CI
    precede another hosted attempt. Keep this prerequisite within the formation
    outcome rather than claiming progress against latency from tooling alone.
+   The next hosted attempt passed capability probing and retained a valid startup
+   profile, but HTTP readiness, journal export and completed-client cleanup failed
+   before the cohort began. Exact restoration is independently verified. Resolve
+   these lifecycle gaps with focused tests before retrying; startup samples are
+   not formation evidence and capture-bound increases do not explain export cost.
+   Local repaired lifecycle checks pass, including native Linux delayed readiness,
+   bounded failure and interrupted journal output. Keep host verification separate
+   from these local results and preserve the failed originals.
    Preserve bounded reads, ordered sends, immutable events/audiences, causal fences,
    retries, deadlines, full-row release fences, rollback and healthy-neighbor
    recovery. Do not detach owned cleanup or infer queue eligibility from overlap.
