@@ -79,6 +79,10 @@ on:
         description: Preserve validated live controller public settings during rollout
         type: boolean
         default: false
+      capture_api_cpu_gc:
+        description: Internal opt-in bounded API CPU and GC capture owned by prepare/run
+        type: boolean
+        default: false
       server_timing:
         description: Roll the API out with its timing and AppInbox phase timing logs; off leaves it uninstrumented
         type: boolean
@@ -181,6 +185,9 @@ jobs:
           INPUT_TERMINAL_TIMEOUT_SECONDS: ${{ inputs.terminal_timeout_seconds }}
           INPUT_ROLLOUT_BEFORE_RUN: ${{ inputs.rollout_before_run }}
           INPUT_AGENT_SOURCE: ${{ inputs.agent_source }}
+          INPUT_CAPTURE_API_CPU_GC: ${{ inputs.capture_api_cpu_gc }}
+          INPUT_SERVER_TIMING: ${{ inputs.server_timing }}
+          INPUT_PRESERVE_PUBLIC_SETTINGS: ${{ inputs.preserve_public_settings }}
           INPUT_OPERATOR_PHASE: ${{ inputs.operator_phase }}
         run: |
           set -euo pipefail
@@ -253,6 +260,10 @@ jobs:
             *) echo "::error::operator_phase must be full, prepare, or run." >&2; exit 1 ;;
           esac
 
+          if [[ "${INPUT_CAPTURE_API_CPU_GC:-false}" == true && ( "${INPUT_SERVER_TIMING}" != true || "${INPUT_PRESERVE_PUBLIC_SETTINGS}" != true || ( "${INPUT_OPERATOR_PHASE}" != run && "${INPUT_ROLLOUT_BEFORE_RUN}" != true ) ) ]]; then
+            echo '::error::CPU/GC capture requires timing and preserving rollout before preparation.' >&2
+            exit 1
+          fi
           resolve_value agent_count "${INPUT_AGENT_COUNT}" "${manifest_agent_count}"
           printf 'source_room_id=%s\n' "${manifest_room_id}" >> "${GITHUB_OUTPUT}"
           resolve_value application_id "${INPUT_APPLICATION_ID}" "${manifest_application_id}"
@@ -410,9 +421,13 @@ jobs:
             "${HETZNER_USER}@${HETZNER_HOST}:/tmp/rallar-distributed-manifest.json"
 
       - name: Render remote run env
+        id: remote_env
         shell: bash
         env:
           RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: ${{ vars.RALLAR_BLACK_BOX_RTC_CAPTURE_MODE }}
+          RALLAR_CAPTURE_API_CPU_GC: ${{ inputs.capture_api_cpu_gc }}
+          RALLAR_CAPTURE_WORKFLOW_RUN_ID: ${{ github.run_id }}
+          RALLAR_CAPTURE_WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
           RALLAR_REPO_REF: ${{ inputs.ref }}
           RALLAR_ROLLOUT_BEFORE_RUN: ${{ inputs.rollout_before_run }}
           RALLAR_API_SERVER_TIMING: ${{ inputs.server_timing }}
@@ -464,6 +479,11 @@ jobs:
             preserve_public_settings=1
           fi
 
+          capture_directory=""
+          if [[ "${RALLAR_CAPTURE_API_CPU_GC:-false}" == true ]]; then
+            capture_directory="$(node scripts/hosted-rallar/controller/rallar-api-cpu-capture.mjs directory)"
+            printf 'capture_directory=%s\n' "${capture_directory}" >> "${GITHUB_OUTPUT}"
+          fi
           credentials_file="${RUNNER_TEMP}/rallar-headless-credentials.env"
           set -a
           # shellcheck disable=SC1090
@@ -474,6 +494,12 @@ jobs:
           {
             if [[ -n "${RALLAR_BLACK_BOX_RTC_CAPTURE_MODE:-}" ]]; then
               printf 'RALLAR_BLACK_BOX_RTC_CAPTURE_MODE=%s\n' "$(quote "${RALLAR_BLACK_BOX_RTC_CAPTURE_MODE}")"
+            fi
+            if [[ "${RALLAR_CAPTURE_API_CPU_GC:-false}" == true ]]; then
+              printf 'RALLAR_CAPTURE_API_CPU_GC=%s\n' "$(quote "${RALLAR_CAPTURE_API_CPU_GC:-false}")"
+              printf 'RALLAR_API_CAPTURE_DIRECTORY=%s\n' "$(quote "${capture_directory}")"
+              printf 'RALLAR_CAPTURE_WORKFLOW_RUN_ID=%s\n' "$(quote "${RALLAR_CAPTURE_WORKFLOW_RUN_ID}")"
+              printf 'RALLAR_CAPTURE_WORKFLOW_RUN_ATTEMPT=%s\n' "$(quote "${RALLAR_CAPTURE_WORKFLOW_RUN_ATTEMPT}")"
             fi
             printf 'RALLAR_REPO_REF=%s\n' "$(quote "${RALLAR_REPO_REF}")"
             printf 'RALLAR_ROLLOUT_BEFORE_RUN=%s\n' "$(quote "${RALLAR_ROLLOUT_BEFORE_RUN}")"
@@ -550,6 +576,18 @@ jobs:
           source /tmp/rallar-distributed-recipe.env
           set +a
           source ./rallar-deployment-readiness.sh
+          capture_prepared=false
+          finish_api_capture() {
+            local recipe_exit="$?" capture_exit=0
+            trap - EXIT
+            if [[ "${RALLAR_CAPTURE_API_CPU_GC:-false}" == true && "${capture_prepared}" != true && -f "${RALLAR_API_CAPTURE_DIRECTORY}/state.json" ]]; then
+              bash "${RALLAR_API_CAPTURE_DIRECTORY}/tooling/rallar-api-cpu-capture.sh" finish "${RALLAR_API_CAPTURE_DIRECTORY}" shell-exit "${recipe_exit}" || capture_exit=$?
+            fi
+            rm -f /tmp/rallar-distributed-recipe.env
+            if [[ "${recipe_exit}" == 0 && "${capture_exit}" != 0 ]]; then exit "${capture_exit}"; fi
+            exit "${recipe_exit}"
+          }
+          if [[ "${RALLAR_CAPTURE_API_CPU_GC:-false}" == true ]]; then trap finish_api_capture EXIT; fi
 
           bool_enabled() {
             local value="${1:-0}"
@@ -672,8 +710,17 @@ jobs:
             fi
           }
 
+          if [[ "${RALLAR_CAPTURE_API_CPU_GC:-false}" == true ]]; then
+            if [[ "${RALLAR_HETZNER_OPERATOR_PHASE}" == run ]]; then
+              bash ./rallar-api-cpu-capture.sh check "${RALLAR_API_CAPTURE_DIRECTORY}"
+            else
+              bash ./rallar-api-cpu-capture.sh begin
+            fi
+          fi
           if [[ "${RALLAR_HETZNER_OPERATOR_PHASE}" == "run" ]]; then
             echo "Run phase skips API/control rollout; prepare phase must already be complete when required."
+          elif [[ "${RALLAR_CAPTURE_API_CPU_GC:-false}" == true ]]; then
+            echo "Capture owner completed preserving rollout and started profiling."
           elif bool_enabled "${RALLAR_ROLLOUT_BEFORE_RUN:-0}"; then
             rollout_controller
           elif [[ "$(applied_api_server_timing)" != "$(requested_api_server_timing)" ]]; then
@@ -683,6 +730,12 @@ jobs:
 
           if [[ "${RALLAR_HETZNER_OPERATOR_PHASE}" == "prepare" ]]; then
             write_prepare_marker
+            if [[ "${RALLAR_CAPTURE_API_CPU_GC:-false}" == true ]]; then
+              marker_copy="${RALLAR_DISTRIBUTED_PREPARE_MARKER}.capture"
+              jq --arg capture "${RALLAR_API_CAPTURE_DIRECTORY##*/}" '. + {apiCpuCapture: $capture}' "${RALLAR_DISTRIBUTED_PREPARE_MARKER}" > "${marker_copy}"
+              mv "${marker_copy}" "${RALLAR_DISTRIBUTED_PREPARE_MARKER}"
+              capture_prepared=true
+            fi
             echo "RALLAR_OPERATION_STAGE=prepare-complete"
             echo "Hetzner prepare phase complete; skipping agent wait and distributed run."
             exit 0
@@ -695,7 +748,11 @@ jobs:
               --output-dir "/tmp/rallar-distributed-operations/${RALLAR_DISTRIBUTED_RUN_ID}" ||
               echo "Run journal export failed with code $?." >&2
           }
-          trap 'export_run_journals; rm -f /tmp/rallar-distributed-recipe.env' EXIT
+          if [[ "${RALLAR_CAPTURE_API_CPU_GC:-false}" != true ]]; then
+            trap 'export_run_journals; rm -f /tmp/rallar-distributed-recipe.env' EXIT
+          elif [[ "${RALLAR_HETZNER_OPERATOR_PHASE}" == run ]]; then
+            jq -e --arg capture "${RALLAR_API_CAPTURE_DIRECTORY##*/}" '.apiCpuCapture == $capture' "${RALLAR_DISTRIBUTED_PREPARE_MARKER}" >/dev/null
+          fi
 
           if [[ "${RALLAR_HETZNER_OPERATOR_PHASE}" == "run" &&
             "${RALLAR_BLACK_BOX_AGENT_SOURCE}" != "external" ]]; then
@@ -744,10 +801,25 @@ jobs:
           printf 'started_at=%s\n' "${operation_started_at}" >> "${GITHUB_OUTPUT}"
           printf 'finished_at=%s\n' "${operation_finished_at}" >> "${GITHUB_OUTPUT}"
 
-      - name: Copy run journals
-        if: always() && inputs.operator_phase != 'prepare' && steps.manifest_materialization.outcome == 'success'
+      - name: Finish API capture fallback
+        if: always() && inputs.capture_api_cpu_gc && steps.remote_env.outputs.capture_directory != '' && (inputs.operator_phase != 'prepare' || steps.run_recipe.outputs.exit_code != '0')
         shell: bash
         env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          CAPTURE_DIRECTORY: ${{ steps.remote_env.outputs.capture_directory }}
+          RECIPE_EXIT: ${{ steps.run_recipe.outputs.exit_code || '1' }}
+        run: |
+          set -euo pipefail
+          printf -v remote_command 'if test -f %q; then bash %q finish %q workflow-fallback %q; fi' \
+            "${CAPTURE_DIRECTORY}/state.json" "${CAPTURE_DIRECTORY}/tooling/rallar-api-cpu-capture.sh" "${CAPTURE_DIRECTORY}" "${RECIPE_EXIT}"
+          ssh -i ~/.ssh/hetzner "${HETZNER_USER}@${HETZNER_HOST}" "${remote_command}"
+
+      - name: Copy run journals
+        if: always() && (inputs.operator_phase != 'prepare' || inputs.capture_api_cpu_gc) && steps.manifest_materialization.outcome == 'success'
+        shell: bash
+        env:
+          CAPTURE_API_CPU_GC: ${{ inputs.capture_api_cpu_gc }}
           HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
           HETZNER_USER: ${{ secrets.HETZNER_USER }}
           DISTRIBUTED_RUN_ID: ${{ steps.ids.outputs.distributed_run_id }}
@@ -763,6 +835,11 @@ jobs:
           set -e
           if [[ "${copy_exit_code}" != "0" ]]; then
             echo "Run journal copy exited with code ${copy_exit_code}." | tee -a "${operation_log}"
+            if [[ "${CAPTURE_API_CPU_GC:-false}" == true ]]; then
+              mkdir -p ".artifacts/hetzner-operation/${DISTRIBUTED_RUN_ID}"
+              jq -n --arg code "${copy_exit_code}" '{status:"failed", boundary:"operation-artifact-transport", exitCode:$code}' > ".artifacts/hetzner-operation/${DISTRIBUTED_RUN_ID}/api-capture-transport.json"
+              exit 1
+            fi
           fi
 
       - name: Copy distributed artifacts
@@ -917,7 +994,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: hetzner-operation-${{ steps.ids.outputs.distributed_run_id }}
+          name: hetzner-operation-${{ steps.ids.outputs.distributed_run_id }}${{ inputs.capture_api_cpu_gc && inputs.operator_phase == 'prepare' && '-capture-prepare' || '' }}
           path: .artifacts/hetzner-operation/${{ steps.ids.outputs.distributed_run_id }}
           if-no-files-found: error
 

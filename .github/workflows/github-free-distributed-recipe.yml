@@ -9,6 +9,7 @@ on:
         default: hetzner-control
         options:
           - hetzner-control
+          - hetzner-control-cpu-gc
           - all-local
       capture_setup_timing:
         description: Retain safe existing API setup timing for the all-local diagnostic only
@@ -130,7 +131,7 @@ concurrency:
 
 jobs:
   plan:
-    if: ${{ inputs.execution_mode == 'hetzner-control' }}
+    if: ${{ inputs.execution_mode == 'hetzner-control' || inputs.execution_mode == 'hetzner-control-cpu-gc' }}
     name: Plan GitHub Free headless matrix
     runs-on: ubuntu-latest
     outputs:
@@ -151,6 +152,9 @@ jobs:
         id: plan
         shell: bash
         env:
+          CAPTURE_API_CPU_GC: ${{ inputs.execution_mode == 'hetzner-control-cpu-gc' }}
+          CAPTURE_SERVER_TIMING: ${{ inputs.server_timing }}
+          CAPTURE_ROLLOUT_MODE: ${{ inputs.rollout_control_plane }}
           INPUT_RUN_ID: ${{ inputs.run_id }}
           TARGET_AGENT_COUNT: ${{ inputs.target_agent_count }}
           AGENTS_PER_JOB: ${{ inputs.agents_per_job }}
@@ -165,6 +169,10 @@ jobs:
             tr -c 'A-Za-z0-9_.-' '-' | sed -E 's/-+/-/g; s/^-|-$//g'
           }
 
+          if [[ "${CAPTURE_API_CPU_GC:-false}" == true && ( "${CAPTURE_SERVER_TIMING}" != true || "${CAPTURE_ROLLOUT_MODE}" != preserve-public-settings ) ]]; then
+            echo '::error::CPU/GC capture requires server_timing=true and rollout_control_plane=preserve-public-settings.' >&2
+            exit 1
+          fi
           run_id="${INPUT_RUN_ID}"
           if [[ -z "${run_id}" ]]; then
             run_id="gh-free-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
@@ -285,7 +293,7 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
 
   prepare-hetzner:
-    if: ${{ inputs.execution_mode == 'hetzner-control' }}
+    if: ${{ inputs.execution_mode == 'hetzner-control' || inputs.execution_mode == 'hetzner-control-cpu-gc' }}
     name: Prepare Hetzner control plane
     needs: plan
     uses: ./.github/workflows/hetzner-distributed-recipe-runner.yml
@@ -293,6 +301,7 @@ jobs:
       ref: ${{ github.sha }}
       operator_phase: prepare
       rollout_before_run: ${{ inputs.rollout_control_plane == 'true' || inputs.rollout_control_plane == 'preserve-public-settings' }}
+      capture_api_cpu_gc: ${{ inputs.execution_mode == 'hetzner-control-cpu-gc' }}
       server_timing: ${{ inputs.server_timing }}
       preserve_public_settings: ${{ inputs.rollout_control_plane == 'preserve-public-settings' }}
       agent_source: external
@@ -318,7 +327,7 @@ jobs:
     secrets: inherit
 
   github-agents:
-    if: ${{ inputs.execution_mode == 'hetzner-control' }}
+    if: ${{ inputs.execution_mode == 'hetzner-control' || inputs.execution_mode == 'hetzner-control-cpu-gc' }}
     name: GitHub headless agents
     needs: [plan, prepare-hetzner]
     runs-on: ubuntu-latest
@@ -483,7 +492,7 @@ jobs:
           RALLAR_AGENT_TAGS: github-actions,free-tier,external-agent
 
   operator:
-    if: ${{ inputs.execution_mode == 'hetzner-control' }}
+    if: ${{ inputs.execution_mode == 'hetzner-control' || inputs.execution_mode == 'hetzner-control-cpu-gc' }}
     name: Run Hetzner operator
     needs: [plan, prepare-hetzner]
     uses: ./.github/workflows/hetzner-distributed-recipe-runner.yml
@@ -491,6 +500,7 @@ jobs:
       ref: ${{ github.sha }}
       operator_phase: run
       rollout_before_run: false
+      capture_api_cpu_gc: ${{ inputs.execution_mode == 'hetzner-control-cpu-gc' }}
       server_timing: ${{ inputs.server_timing }}
       preserve_public_settings: ${{ inputs.rollout_control_plane == 'preserve-public-settings' }}
       agent_source: external

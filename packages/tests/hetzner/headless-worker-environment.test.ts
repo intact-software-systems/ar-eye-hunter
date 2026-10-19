@@ -632,6 +632,7 @@ function toSyntheticActionsContext(mode: string | undefined): Readonly<Record<st
         'inputs.agent_prefix': 'actions-agent',
         'inputs.register_before_login': 'true',
         'inputs.server_timing': 'false',
+        'inputs.capture_api_cpu_gc': 'false',
         'inputs.preserve_public_settings': 'false',
         'inputs.browser_log_level': 'debug',
         'inputs.headless_entry': 'headless',
