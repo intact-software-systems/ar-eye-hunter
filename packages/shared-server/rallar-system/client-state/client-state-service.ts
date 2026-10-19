@@ -36,7 +36,8 @@ export function createClientStateService(
                 groupRepository,
                 authSessionRepository,
                 command,
-                audienceObservedAtEpochMs: nowMs()
+                audienceObservedAtEpochMs: nowMs(),
+                timing: { sink: dependencies.timing, serviceId: dependencies.serviceId }
             }),
         write: async (transaction, computed) => await writeClientMutation(transaction, computed),
         readExpiredSessionPage: async (input) => {

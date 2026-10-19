@@ -207,8 +207,13 @@ source do not prove a stable causal regression. Keep the contract fix without a
 speedup claim and retain #682's journal limitation. The focused formation plan
 contains source IDs, linked runs, the component breakdown and negative evidence.
 
-1. Attribute SDK connection and room-join internals at existing owners using TDD
-   for bounded opt-in observations, preserving disabled behavior, authority,
+1. D1 (workflow 39327276505) passes native correctness; its instrumented player
+   formation median is 57.574 s. Current-source timing confirms admission waits
+   (slowest membership 18.842 s HTTP, 0.072 s handler) and authorized-WS client
+   reads (median 0.798 s). Restore the captured controller, then use one bounded
+   D2 to split own-state/receipt/group-audience/client-audience reads. The four
+   new timing cases pass TDD; all 209 affected tests and shared-server types pass.
+   Use TDD for any missing bounded observation, preserving disabled behavior, authority,
    failures and cleanup. Resolve configuration/socket/ICE/state hydration and
    membership/presence/adoption; link delayed signaling to actual inbox due and
    reservation facts before changing retry behavior.

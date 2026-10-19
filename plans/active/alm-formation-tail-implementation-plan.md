@@ -752,6 +752,69 @@ and actual inbox due/reservation facts are the next diagnostic; these waits
 remain material in the matched RTC comparison above. No retry or connect/join
 production change is selected from these observations alone.
 
+## Larger formation waits: current diagnostic
+
+The continuation first reused the retained instrumented run
+[39256812049](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/39256812049).
+This is historical attribution evidence, not the current runtime baseline. Its
+slowest captured membership request took 12.571 s: AppInbox completion wait
+12.399 s, handler 0.052 s. The slowest presence request took 14.235 s:
+completion wait 13.947 s, handler 0.236 s. The slowest ticket request took
+9.113 s with a 0.026 s handler. Request matching uses the command ID in the
+HTTP route, not the independently generated HTTP request ID.
+
+Preceding AppInbox passes include authorized WebSocket connection handlers.
+Their 50 captured handler durations have median 0.843 s and maximum 1.232 s;
+the maximum's same-principal client mutation read is 0.884 s and commit is
+0.294 s. Source tracing reaches `readClientMutation`, principal audience group
+snapshots and co-member client snapshots. That identifies a concrete read-cost
+hypothesis; it does not yet distinguish database execution, waiting, decoding,
+validation or snapshot assembly. NEW `dueAgeMs` may use reservation start in
+ordinary reservation telemetry and cannot establish the original due time.
+Do not shorten retry policy or bypass authority from these observations.
+
+The existing server timing port already captures HTTP, AppInbox and client
+mutation phases, so use it before adding browser diagnostics. One bounded
+current-source diagnostic
+[39327276505](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/39327276505)
+was dispatched at `61660f08ed06547a75de7a37ee61ff4217de43e8` with the unchanged
+50-agent native manifest, server timing enabled, other capture overrides
+unchanged and isolated scope `alm-waits-20261019-d1`. Frozen inputs, manifest
+hash and measurement contract are under `tmp/perf/formation-waits-20261019/`.
+Preflight passes all 19 health/settings/source/database-identity checks;
+restoration to the captured original controller is required after the run.
+D1 completes successfully with 50 recipes, 150 semantic bindings, 231 assertions,
+300 barriers and 50 RTC connections. All 50 native primary pairs are present;
+49-player group-created→layout-accepted median/p95 are 57.574/57.579 s. This is
+an instrumented attribution run, not a timing-disabled comparison or speedup claim.
+Current HTTP medians/p95/max (50 each) are ticket 0.859/15.945/15.988 s,
+membership 7.874/14.569/18.842 s and presence 3.525/12.832/19.397 s.
+The slowest membership spends 18.790 s waiting for completion and 0.072 s in
+its handler; its first NEW attempt reports queue age 18.720 s. The slowest
+presence waits 18.989 s with a 0.513 s handler and first-attempt queue age
+18.464 s. These observations confirm admission waits, without proving their
+underlying scheduling, CPU or database cause.
+
+Authorized WS handlers (50) have median/p95 1.178/1.859 s; their client mutation
+reads (50) are 0.798/1.300 s, compared with compute 0.010/0.021 s, validation
+0.018/0.031 s and write 0.226/0.570 s. Do not add these independent medians.
+The existing aggregate read does not separate own-state, receipt, audience-group
+and co-member-client reads. Add those four phase observations at the current
+client-state timing owner; preserve read order, snapshot revision guards,
+visibility policy and original failures. Timing disabled performs no new clock
+or emission work. TDD first fails the missing phase-boundary and failure tests,
+then passes all four cases, including disabled and throwing sinks. The affected
+client-state/runtime-batch suite passes 209 tests in 32 files; shared-server
+TypeScript checking passes. This change is diagnostic, not an optimization.
+
+One next bounded D2 run may observe that named missing boundary on the same
+50-agent workload after source publication and fresh controller inspection.
+Retain D1 and D2 separately, preserve persistent state, and restore captured
+source/settings after each. Full benefit still requires a matched timing-disabled
+comparison after a measured fix. D1 [restoration](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/39328587708)
+completes; a fresh streamed inspection passes all 19 captured source, settings,
+health, idle-service and database-identity checks. Persistent data is retained.
+
 ## Next two useful slices
 
 The dedicated RTC agent completed the minimum-readiness/cleanup repair with TDD;
@@ -764,8 +827,11 @@ and shared-test code. Use `performance-analysis`, `rallar-code-writing`,
 `publishing-plan-progress`; add the existing Hetzner operations skill before any
 hosted measurement. Do not repeat a broad capture without a named missing boundary.
 
-1. **Attribute connection and join waits at existing owners.** Use semantic TDD
-   for bounded opt-in phase observations around middleware startup and room join:
+1. **Attribute connection and join waits at existing owners.** D1 confirms admission waits
+   and material authorized-WS reads. Complete its exact restoration, then use one
+   D2 capture to separate the four TDD-tested client read phases. Correlate those
+   reads with waiting HTTP commands and the last arriving participant. Add further
+   bounded observations only for a named remaining boundary. Candidate browser boundaries are:
    configuration/ticket/native socket, ICE, complete state refresh/hydration,
    membership/presence mutation and adoption. Reuse existing observer and timing
    ports; prove disabled-path behavior, exact phase meaning, failure preservation
