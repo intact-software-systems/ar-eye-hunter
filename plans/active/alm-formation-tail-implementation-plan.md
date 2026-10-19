@@ -20,6 +20,12 @@ formation-tail target remains open.
   shared-test harness. Keep failures and unresolved bottlenecks visible.
 - Keep generated measurements under `tmp/perf/`. Distinguish controlled-port causal
   evidence from PostgreSQL service measurements and hosted formation acceptance.
+- Bundle limits may increase when measured growth is justified by clear, correct
+  code. Record before/after sizes and the selected headroom; do not distort
+  ownership, instrumentation or behavior merely to fit an old byte threshold.
+  Preserve dependency-boundary checks and disabled-path behavior. If acceptance
+  goals genuinely conflict, explain the concrete conflict and ask the maintainer
+  before pursuing a worse design or repeated speculative restructuring.
 - Label reported metrics with units; use seconds (`s`) for human-facing durations,
   mutations/s for throughput, and explicit event counts and byte sizes. Preserve the
   canonical artifact schema's units and convert only at the reporting boundary.
@@ -596,8 +602,10 @@ measurement remains first.
    elapsed is 0.326100 s. Its cause remains inconclusive, not repaired.
    A preceding 3.093 s page spends 2.502 s in ordered publication effects;
    summed cluster-publish and captured-policy regions are 0.785 / 1.562 s.
-   Task 19 separates the two existing policy reads and validation at their actual
-   owner, with controlled-boundary TDD before another hosted measurement.
+   Task 19 now separates the two existing policy reads and validation at their
+   actual owner with direct scalar timing marks and controlled-boundary TDD.
+   Independent source review and fresh selected CI precede one targeted hosted
+   capture; this instrumentation is not itself a performance repair.
    No query removal, caching or send reordering is earned. Native correctness,
    capture validity and exact restoration pass; the full target remains open.
    Awaited elapsed is not pool, SQL server or off-CPU time. Preserve
@@ -613,10 +621,13 @@ measurement remains first.
    and independently reviewed; the fresh governed comparison uses that corrected
    harness on both roles. Retain every owned drain, failure and phase cost, and
    keep its failed hot-throughput result visible. Investigate the third position’s
-   deeper retries, actual command/kind endpoints and joined pump tail before
-   claiming comparative acceptance. Add one explicit opt-in ordinary-RETRY
-   reservation observation through existing claim and release owners, separating
-   preceding persisted backoff from signed database-observed lateness. Keep
+   deeper retries, command endpoints/derived kind envelopes and joined pump tail
+   before claiming comparative acceptance. The ordinary-RETRY probe now reconciles
+   all 2,280 observations in one reviewed diagnostic. Measured lateness p99/max are
+   0.035220 / 0.279353 s; its hot phases do not reproduce the earlier ten-attempt
+   tail. No further blind rerun or retry-policy repair is selected. If a governed
+   comparison reproduces that tail, correlate exact command-owned pump completion
+   and bounded dequeue/timer spans with these existing reservation facts. Keep
    diagnostics unable to strand claimed work, v6 semantics and retry policy
    unchanged. Retry-depth causation and raw timing-array allocation remain
    unresolved outcomes, not speculative policy changes.
@@ -1664,6 +1675,43 @@ and after, native/test typing passes, scoped review is clean, and the combined
 full-main style gate passes. Fresh publication CI remains required.
 No production SQL, transaction semantics, performance workload or acceptance changed.
 
+**Reviewed hosted reservation diagnostic:** one pinned candidate run completes
+all twelve phases, 8,400 commands (6,300 measured), and 9,600 operation chains.
+All 2,280 ordinary RETRY observations join on phase, command, operation,
+originating stack and attempt; every preceding persisted delay exactly matches
+the prior release. Physical-key equality is validated by the pinned producer
+before redaction, not independently rejoined from the published raw records.
+The native canonical validator reports zero errors, all phase footers reconcile,
+and source/input hashes, original ZIP integrity and owned cleanup pass.
+
+For all 1,654 measured RETRY reservations, signed due-to-RETURNING elapsed
+p50 / p95 / p99 / maximum is 0.006175 / 0.021125 / 0.035220 / 0.279353 s.
+The 1,529 measured hot reservations separately give 0.006423 / 0.021701 /
+0.035521 / 0.279353 s. Warmup is excluded from those denominators. The one
+measured interval above 0.050 s is off its kind's completion path. These facts
+do not exclude longer lateness in a future deep retry tail or measure commit,
+SQL execution, connection wait or handler time.
+
+Measured hot phase walls are 15.024172 / 15.518346 / 15.092184 s; exposed gaps
+outside derived kind envelopes total 0.010428 / 0.007899 / 0.005367 s.
+All nine membership/config/topology last finishers reach eight attempts, with
+2.563–3.468 s of preceding persisted backoff. Eight are not the longest-latency
+command of their kind. Exact command endpoints derive these envelopes; separate
+kind and pump endpoints remain unavailable. The earlier ten-attempt, over-30 s
+B3 tail does not recur. This unpaired instrumented capture does not explain or
+waive the retained −5.103306% failed comparison.
+
+The largest phase uses 32,853,826 bytes and 102,815 timing/release events,
+leaving 700,606 bytes and 7,185 events below unchanged caps. Complete retention
+here does not guarantee a deeper-tail or newly instrumented phase fits. Keep this
+limit explicit alongside #686's distinct raw-memory/reconstruction follow-up;
+no cap increase is selected. If a future governed comparison reproduces the tail
+and leaves a material scheduling residual, the bounded next falsifier is exact
+command-owned pump completion and dequeue/timer spans with pump identity. Existing
+generic hold tests and unrelated SQL counts do not supply those captured facts.
+Add SQL ownership only for a remaining material residual, and preserve every
+failed/missing observation. No new optimization is earned by this diagnostic.
+
 ### Task 18: Attribute one PostgreSQL outbound release by elapsed phase
 
 This continues the primary formation-tail outcome after Task 17's source review.
@@ -1927,3 +1975,25 @@ endpoints. Reuse those markers and its physical key/attempt association.
 The second concrete outcome remains corrected state-write retry attribution;
 the hot-throughput gate and harness memory follow-up stay open. No third active
 slice is created by this measurement step.
+
+Direct owner instrumentation replaces the initial measured-session adapter. The
+adapter and its read-topology bookkeeping were removed: keeping the actual read
+and validation boundaries visible is more important than fitting the old bundle
+limits. The user explicitly authorized proportionate budget increases. The
+browser facade measures 272,567 Brotli bytes against a new strict 267 KiB limit
+(273,408 B), leaving 841 B. Headless measures 363,512 B against 356 KiB
+(364,544 B), leaving 1,032 B. Each budget increases by 1 KiB; dependency-boundary
+checks remain active. Relative to the pinned task base, growth is 248 B for the
+browser facade and 150 B for headless.
+
+The final direct-owner implementation passes 72 focused tests, shared and
+shared-server typing, maintained test typing, API native tests/check, both bundle
+checks, changed-file formatting, structure, reachability and governance. The
+controlled validation fixture assigns 0.011 s to reference validation and
+0.018 s to canonical validation, with 0.029 s total. These are injected owner
+intervals, not database cost or hosted improvement. Source review and fresh CI
+remain required before another capture. The full-repository formatter still
+reports 13 untouched files; the broader direct test-project TypeScript command
+reported dependency declarations and duplicate PGlite identities, without a
+pinned-base replay. Neither failure is represented as resolved by the maintained
+checks.

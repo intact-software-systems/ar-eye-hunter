@@ -347,8 +347,21 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    A later full-main static failure is repaired by consolidating duplicated RETRY
    footer accounting, with 54 tests passing before/after and the review limit
    unchanged. Independent review and the combined full-main style gate pass.
-   No new performance run or retry-policy change is selected,
-   and the existing failed comparison remains failed. Record the phase-local
+   One reviewed pinned-candidate diagnostic now reconciles all 2,280 ordinary
+   RETRY observations with the preceding persisted delays. All 1,654 measured
+   reservations have due-to-RETURNING p99 / maximum of 0.035220 / 0.279353 s.
+   Its measured hot last finishers have eight attempts and 2.563–3.468 s of
+   preceding backoff; the prior over-30 s, ten-attempt B3 tail does not recur.
+   Source/artifact integrity, twelve complete phases, 6,300 measured commands,
+   native canonical validation and owned cleanup pass. Published identities
+   support exact command/operation/stack/attempt joins; physical keys were
+   validated by the pinned producer before redaction. This instrumented single
+   candidate does not explain or waive the failed main comparison. No retry-policy
+   change or blind rerun is selected. A reproduced scheduling residual would earn
+   exact command-owned pump completion and bounded dequeue/timer spans; current
+   exact command endpoints only derive kind envelopes. The largest phase leaves
+   700,606 bytes and 7,185 events below unchanged caps, so deeper-tail retention
+   is not guaranteed. Record the phase-local
    release-reference array with the raw timing-array memory and repeated evidence-scan
    follow-up in [#686](https://github.com/intact-software-systems/ar-eye-hunter/issues/686);
    serialized caps do not bound either collection. Runtime heap/GC cost and causal
