@@ -1797,7 +1797,15 @@ certify the external same-process worker/batch join.
 Independent source review approves specification compliance and code quality with
 no blocking finding. The passing live-PG run includes expected fault-path stderr
 and FAIRNESS stdout; the validation report now states this explicitly. The
-combined full-main style check passes; fresh publication CI remains pending.
+combined full-main style check passes. Fresh CI then reached the separate test-
+structure gate and rejected three absence assertions on concrete timing-helper
+methods. Those obsolete topology assertions were removed while retaining durable
+release, throwing-sink and capability-wiring coverage; no registry waiver or
+production change was needed. The amended real-PostgreSQL family passes sixteen
+tests and native composition passes seven. Full-main coupling, reachability,
+workspace typing, all three deployable builds and all four native checks pass
+locally; build chunk-size warnings remain. Scoped repair review approves the
+fix; fresh CI must pass before hosted capture.
 Two additional unchanged benchmark fixtures fail broader typing because presence
 session literals omit `connectionGenerationId`; unchanged direct files/types
 support an inferred pre-existing classification, without a baseline replay.

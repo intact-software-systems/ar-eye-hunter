@@ -272,8 +272,13 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    tests and seven native API composition tests, including real COMMIT failure
    rollback and optional diagnostic faults. The owned database is removed.
    Independent source review approves the probe and combined full-main style
-   validation passes; fresh CI remains before the next hosted capture. The live-PG pass includes
-   expected fault-path diagnostic output. Label all awaited spans as elapsed; pool wait, SQL server time
+   validation passes. Fresh CI then rejected three private-helper absence
+   assertions. Removing obsolete coupling preserves semantic durable/sink/wiring
+   coverage: sixteen PostgreSQL and seven native composition tests pass, along
+   with full-main coupling, reachability, workspace typing, three builds and four
+   native checks. Scoped repair review approves the fix; fresh CI remains before
+   hosted capture. The live-PG pass includes expected fault-path diagnostic output.
+   Label all awaited spans as elapsed; pool wait, SQL server time
    and off-CPU time need independent evidence. Preserve rollback and full-row
    release fences, and prove the missing boundary before another capture.
    This local result and capture success cannot establish the full target. Existing
