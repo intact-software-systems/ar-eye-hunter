@@ -595,19 +595,27 @@ measurement remains first.
 
 ## Next two useful slices
 
-1. **Remaining formation-tail delivery.** The reviewed release-phase capture
-   places 6.376 s of the first fully corroborated promotion's 6.380 s preclaim
-   wait inside same-worker batch envelopes; server send follows after 6.875 s.
-   The earlier 3.759 s release does not recur: maximum observed release owner
-   elapsed is 0.326100 s. Its cause remains inconclusive, not repaired.
-   A preceding 3.093 s page spends 2.502 s in ordered publication effects;
-   summed cluster-publish and captured-policy regions are 0.785 / 1.562 s.
-   Task 19 now separates the two existing policy reads and validation at their
-   actual owner with direct scalar timing marks and controlled-boundary TDD.
-   Independent source review and fresh selected CI precede one targeted hosted
-   capture; this instrumentation is not itself a performance repair.
-   No query removal, caching or send reordering is earned. Native correctness,
-   capture validity and exact restoration pass; the full target remains open.
+1. **Remaining formation-tail delivery.** Task 19's direct policy-owner timing
+   is implemented, independently reviewed and passes selected CI. The latest
+   hosted capture has 647 uniquely joined observations: the two read/decoding
+   regions account for 9.141666 s of 9.338936 s summed owner elapsed (97.89%).
+   The first layout accepted by all 50 agents has its own promotion reserved
+   after 0.881 s and sent by the server after 1.378 s. The separate activation
+   still waits 9.460 s before reservation, with 9.455 s inside same-worker batch
+   envelopes. Occupancy does not prove eligibility or a scheduler defect.
+   Policy owners total only 0.034947 / 0.077159 s in the two immediate predecessor
+   pages; the prior long policy region did not recur there. An earlier 4.450 s
+   page spends 1.115543 s in policy owners, split across both reads. Investigate
+   a bounded combined-read opportunity at the existing authority/session owner;
+   do not introduce read overlap without preserving expiry, error precedence and
+   complete settlement. No query removal, cache or send reordering is earned.
+   The bounded overlap candidate awaits a maintainer decision: a final expiry
+   check strengthens decision-time rejection, and joining both reads delays
+   early failures compared with the current sequential path. Do not silently
+   change either behavior under a performance-only claim.
+   These single-run observations are not a matched improvement. Native
+   correctness, capture validity and exact restoration pass; the full target
+   and the old release-stall attribution remain open.
    Awaited elapsed is not pool, SQL server or off-CPU time. Preserve
    same-tuple lease/conflict and observer semantics; the reviewed local snapshot
    savings do not establish hosted formation acceptance.
@@ -1992,7 +2000,7 @@ checks, changed-file formatting, structure, reachability and governance. The
 controlled validation fixture assigns 0.011 s to reference validation and
 0.018 s to canonical validation, with 0.029 s total. These are injected owner
 intervals, not database cost or hosted improvement. Source review and fresh CI
-remain required before another capture. The full-repository formatter still
+subsequently passed before the targeted capture. The full-repository formatter still
 reports 13 untouched files; the broader direct test-project TypeScript command
 reported dependency declarations and duplicate PGlite identities, without a
 pinned-base replay. Neither failure is represented as resolved by the maintained
@@ -2008,4 +2016,36 @@ create/sample no timing owner. The repair passes 27 covering tests, eight native
 API composition tests, affected typing and both bundle checks. Its follow-up
 uses explicit timing-port observations in place of mock call counts and passes
 the two factory tests. Independent review approves both the three original repairs and the test-only
-follow-up. Final-source static gates and CI remain required before capture.
+follow-up. Final-source static gates and release, formation and medium-scale CI
+passed before the targeted capture.
+
+The hosted observation now separates the previously unsplit region. All 647
+retained observations join uniquely to reservations, batches and ordered
+publications, and all six phase sums reconcile. Native results pass 50 recipes,
+150 unique successful results and 231 assertions; independent inspection passes
+all 17 source/settings/database-identity and health restoration checks. Complete
+control-recorder retention remains uncertified under #682.
+
+The first layout accepted by 50 agents has its own promotion output reserved in
+0.881 s and sent in 1.378 s. Its two immediate predecessor pages spend just
+0.034947 / 0.077159 s in policy owners. The separate activation still waits
+9.460 s before reservation, including 9.455 s inside same-worker batches. The
+earlier long policy interval did not recur in the own-promotion chain, so these
+results neither prove a speedup nor select a generic wake/fairness repair.
+An earlier 4.450 s page has 1.115543 s of policy-owner elapsed: 0.635979 s stored
+read plus decoding and 0.465963 s identity read. Across all observations the two
+read regions comprise 97.89% of policy-owner elapsed. SQL, pool and isolated CPU
+cost remain uncaptured. A simple concurrent-read shortcut is unsafe unless it
+preserves late expiry checks, original error precedence and settlement of every
+started read. Evaluate that boundary before writing an optimization; do not
+weaken authority, invent a cache or reorder sends to obtain a lower duration.
+
+Independent measurement review reproduces the key timings, integrity checks and
+all 647 associations. A separate source assessment rejects naive overlap:
+identity expiry is observed earlier, error precedence can change, and a fail-fast
+join can close an IndexedDB session while a read is still pending. Adjacent code
+has a late-expiry pattern, but applying it here would deliberately strengthen
+decision-time rejection and joining both reads changes early-failure latency.
+The maintainer has been asked whether to pursue that bounded semantic change
+with TDD and a paired PostgreSQL comparison or preserve the exact sequential
+semantics. No production change is authorized by this assessment alone.
