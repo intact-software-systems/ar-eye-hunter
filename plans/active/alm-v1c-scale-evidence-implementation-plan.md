@@ -276,8 +276,21 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    assertions. Removing obsolete coupling preserves semantic durable/sink/wiring
    coverage: sixteen PostgreSQL and seven native composition tests pass, along
    with full-main coupling, reachability, workspace typing, three builds and four
-   native checks. Scoped repair review approves the fix; fresh CI remains before
-   hosted capture. The live-PG pass includes expected fault-path diagnostic output.
+   native checks. Scoped repair review and fresh release/formation/medium-scale CI
+   pass. The earned hosted capture completes and exact source/settings restoration
+   is independently verified. Reviewed analysis finds a maximum 0.326100 s
+   release owner, so the earlier 3.759 s stall does not recur. The first fully
+   corroborated layout's own promotion still takes 6.380 s to reservation return
+   and 6.875 s to server send; one preceding 3.093 s page spends 3.027 s running
+   claimed work and 0.047 s releasing it. Its sixteen uniquely joined attempts
+   occupy 2.502 s of ordered publication, including summed cluster-publish awaits
+   of 0.785 s and captured-policy regions of 1.562 s. The next controlled TDD
+   falsifier separates the two existing reads and validation at the policy owner,
+   preserving fail-closed authority and ordering. No redundant read, safe cache
+   or send reordering is established. Full details and constraints are Task 19
+   in the focused formation plan. Native 150-result/231-assertion reconciliation
+   passes; complete recorder retention remains unproved under #682.
+   Neither non-recurrence nor passing native predicates waives either performance gate. The live-PG pass includes expected fault-path diagnostic output.
    Label all awaited spans as elapsed; pool wait, SQL server time
    and off-CPU time need independent evidence. Preserve rollback and full-row
    release fences, and prove the missing boundary before another capture.

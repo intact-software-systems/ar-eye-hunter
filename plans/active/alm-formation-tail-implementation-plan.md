@@ -589,16 +589,18 @@ measurement remains first.
 
 ## Next two useful slices
 
-1. **Remaining formation-tail delivery.** The reviewed snapshot-repair capture
-   places 7.961 s of the first fully corroborated promotion's 7.964 s preclaim
-   wait inside same-worker batch envelopes. Its own output reaches server send
-   after 8.403 s; the separate activation takes 5.723 s. A prior sixteen-entry
-   batch includes a 3.759 s release await overlapping timer-lag maxima of
-   1.185/0.775 s. Native correctness, capture validity and exact restoration pass,
-   but neither SQL/GC causation nor a hosted speed improvement is established.
-   Task 18 tests and measures the existing outbound PostgreSQL release owner's
-   preparation, transaction admission, conditional-write awaits and completion
-   boundaries. Awaited elapsed is not pool, SQL server or off-CPU time. Preserve
+1. **Remaining formation-tail delivery.** The reviewed release-phase capture
+   places 6.376 s of the first fully corroborated promotion's 6.380 s preclaim
+   wait inside same-worker batch envelopes; server send follows after 6.875 s.
+   The earlier 3.759 s release does not recur: maximum observed release owner
+   elapsed is 0.326100 s. Its cause remains inconclusive, not repaired.
+   A preceding 3.093 s page spends 2.502 s in ordered publication effects;
+   summed cluster-publish and captured-policy regions are 0.785 / 1.562 s.
+   Task 19 separates the two existing policy reads and validation at their actual
+   owner, with controlled-boundary TDD before another hosted measurement.
+   No query removal, caching or send reordering is earned. Native correctness,
+   capture validity and exact restoration pass; the full target remains open.
+   Awaited elapsed is not pool, SQL server or off-CPU time. Preserve
    same-tuple lease/conflict and observer semantics; the reviewed local snapshot
    savings do not establish hosted formation acceptance.
    Existing progress fixtures already cover the proposed generic hold test.
@@ -1768,7 +1770,6 @@ files modified by that remediation enter closure recursively; independent
 untouched code remains outside closure. Direct release behavior tests and the
 shared-server typecheck/API native check are separate acceptance evidence.
 
-
 **Implementation and current validation:** optional observation now reaches the
 actual outbound PostgreSQL queue only when outbox-stage timing is enabled.
 The existing release loop, conditional SQL, persistence clock, retry/fallback
@@ -1805,10 +1806,124 @@ production change was needed. The amended real-PostgreSQL family passes sixteen
 tests and native composition passes seven. Full-main coupling, reachability,
 workspace typing, all three deployable builds and all four native checks pass
 locally; build chunk-size warnings remain. Scoped repair review approves the
-fix; fresh CI must pass before hosted capture.
+fix. Fresh release, formation and medium-scale CI pass. The earned hosted
+capture completes with valid profile/export and independently verified restoration
+of exact prior source/settings, database identity and healthy idle state.
 Two additional unchanged benchmark fixtures fail broader typing because presence
 session literals omit `connectionGenerationId`; unchanged direct files/types
 support an inferred pre-existing classification, without a baseline replay.
 Affected consumers pass. This is not a clean-whole-repository or performance
-acceptance claim. The next earned capture must preserve exact identity joins,
+acceptance claim. Any next earned capture must preserve exact identity joins,
 clock uncertainty, unmeasured remainders and complete restoration evidence.
+
+The new capture passes fifty recipes, 150 unique successful command results and
+231 assertions. Its 90.860 s overall duration includes the workload and is not
+formation latency. Independently reviewed exact-identity analysis finds 125 successful
+release observations, 51 locally eligible sixteen-member records and 24 complete
+worker/batch joins. The longest release owner takes 0.326100 s; the earlier
+3.759 s release stall does not recur, leaving its cause inconclusive. Do not
+interpret this as a before/after improvement or select a SQL optimization merely
+because member awaits dominate a short release.
+
+The first fully corroborated layout's own promotion takes 6.380 s from committed
+output to the reservation-return marker and 6.875 s to server direct-send.
+Reservation start is a distinct identity timestamp, 6.367 s after output.
+Overlapping same-worker pages cover 6.376 s of the marker interval. A preceding
+3.093 s batch includes 3.027 s of claimed-work run elapsed and only 0.047 s of
+release. All sixteen predecessor attempts uniquely join twelve admission stages
+and four publication markers each. Ordered publication occupies 2.502 s; summed
+per-attempt dispatch spans are 2.493 s. Cluster publish awaits sum to 0.785 s,
+publish return to captured-policy end to 1.562 s, and policy end to direct-send
+to 0.142 s. The remaining 0.004 s inside effects and 0.009 s between them are
+millisecond-resolution remainders, not assigned CPU or SQL time.
+
+The source path reads the stored message, validates its reference, reads queue
+identity, then decodes, compares and validates canonical scope authority. These
+are two source read calls, not measured SQL statement counts. No redundant check
+or safe bypass is established. Next measure those existing owner boundaries,
+preserving fail-closed validation and ordered sends.
+
+Profile uncertainty is 0.253472 s. The dispatch interval has 1,706 definite /
+2,039 possible whole-process samples; ancestry categories overlap and do not
+partition CPU time. Four overlapping lag windows have maxima of 0.031 / 0.168 /
+0.197 / 0.014 s; the last overlaps only 0.013 s of dispatch and its maximum need
+not fall within that overlap. GC exclusion and SQL/pool attribution remain
+unmeasured. For the longest release, process-time-origin mapping gives 53 / 462
+samples; the fresh epoch anchor gives 52 / 461, with a 0.0005842 s endpoint shift.
+State the mapping rather than treating these as exact equivalent projections.
+
+All four artifact ZIPs, 62 extracted members and 21 capture hashes verify.
+Twenty-seven locally eligible releases lack complete reservation joins (24 lack
+all sixteen markers; the others lack one, ten or thirteen). Retain them as
+inconclusive. Native reconciliation does not certify complete control-recorder
+retention: the canonical-node bound recurs under #682. Preserve the earlier
+release outlier and the failed main comparison; neither performance gate passes.
+
+### Task 19: Attribute captured-policy reads without changing publication
+
+**Outcome:** distinguish the two existing reads and validation inside the
+1.562 s summed captured-policy region. This is the next bounded falsifier within
+formation-tail delivery, not a new performance acceptance or optimization claim.
+
+**Existing owners:** `ALOutboundAdmissionReads.readCapturedPolicy`, its
+`ProviderBackedALOutboundAdmissionStore.readCapturedPolicy` session boundary,
+the PostgreSQL outbound-store factory, existing server timing translation and
+API composition. The bridge already records cluster publish and policy-return
+endpoints. Reuse those markers and its physical key/attempt association.
+
+**Implementation constraints:**
+
+- Add an optional owner-local timing capability. Keep the business path singular:
+  stored-message read, reference validation, queue-identity read, canonical
+  decoding/equality/scope validation, unchanged return or original failure.
+  Do not cache, prefetch, reorder, add reads or writes, change statement grouping,
+  alter admission concurrency, or move any authority check.
+- Use one monotonic clock for actual boundaries. Name the first span for the
+  method boundary if `readStoredMessage` includes decoding; do not call it SQL
+  time. Retain both validation regions and owner/session-return remainders.
+  Reconcile nonnegative finite phase elapsed with the enclosing owner duration.
+- Retain one bounded aggregate per invocation, with no growing event arrays.
+  Include physical key, message identity, available durable row/reservation
+  identity, namespace, per-owner invocation sequence, outcome, process provenance
+  and a bounded epoch/monotonic anchor. Existing marker joins must remain unique;
+  local eligibility never certifies a later external join. Omit message payloads
+  and secrets. Unavailable identity or timing must remain explicit.
+- Emit after `backend.readWithin` returns or fails, outside its callback and the
+  measured regions. Optional clock, projection and sink failures cannot change
+  returned policy, replace original errors or permit a send after corruption.
+  Disabled capability performs no new sampling, evidence formatting or arrays.
+- Wire only through the existing timing-enabled API outbound composition.
+  Browser/default/inbound paths remain disabled. Keep domain observations in
+  shared ownership and server logging/provenance translation in shared-server;
+  do not introduce a general tracing framework or parallel legacy constructor.
+  Use named input if an internal positional capability list becomes unclear,
+  migrating verified callers together. Public compatibility remains governed by
+  the current standard, not blanket legacy retention or silent export deletion.
+
+**TDD and validation:**
+
+1. At the actual policy-store owner, gate each real injected read independently.
+   First prove successful policy behavior with missing observations (RED), then
+   show each held interval lands in its corresponding phase (GREEN). Do not
+   substitute a fabricated completed observation or private-helper spy.
+2. Cover missing/mismatched stored reference, identity/canonical corruption,
+   failure in either read, and optional clock/sink failure. Preserve the original
+   failure, subsequent healthy progress and existing ordered-send behavior.
+   Existing bridge coverage must prove no successful direct send after corruption.
+3. Verify real API enabled/disabled outbound wiring and no inbound evidence;
+   controlled timing tests do not establish PostgreSQL server cost. Reuse existing
+   authority/provenance fixtures before adding support abstractions.
+4. Run focused affected tests, shared/shared-server/maintained-test typing,
+   actual API native checks and composition tests. Select public-surface/bundle
+   checks if the changed exports require them. Run affected governance, style,
+   test-coupling and reachability checks before publication; review all changed
+   human-authored files fully, including recursively modified support files.
+   Independent untouched code stays outside closure.
+5. Independent task review and fresh selected CI precede any hosted capture.
+   A future capture retains exact identities, scope, clock limitations and
+   independently verified restoration. Only an owner-specific reproduced cost
+   can select a repair. Preserve the old release hypothesis as inconclusive.
+
+The second concrete outcome remains corrected state-write retry attribution;
+the hot-throughput gate and harness memory follow-up stay open. No third active
+slice is created by this measurement step.
