@@ -1,4 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { toUnavailableReservationObservation } from '@shared/queuebox/resource-inbox/resource-inbox-reservation-observation.ts';
+import { toPSqlReservationObservations } from './to-p-sql-reservation-observations.ts';
 
 import type { PersistenceSetItemOptions } from '@shared/persistence/PersistenceProvider.ts';
 import {
@@ -20,6 +22,9 @@ import {
     type ResourceInboxFinalizationSelection,
     type ResourceInboxRelease,
     type ResourceInboxReleaseDisposition,
+    type ResourceInboxReservationObservationRequest,
+    type ResourceInboxReservationObservationResult,
+    type ResourceInboxReservationOptions,
     type ResourceInboxReservationRequest,
     type ResourceInboxTimeoutReservationRequest,
     type ResourceInboxWorkAdvertisementOptions,
@@ -29,7 +34,7 @@ import {
     captureResourceEntryObservations,
     resolveResourceEntryObservation
 } from '@shared/queuebox/resource-entry-observations.ts';
-import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { EntityStatus, Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { TurnBatchedReads } from '@shared/resilience/turn-batched-reads.ts';
@@ -47,6 +52,13 @@ import { computeResourceInboxEntryInsertValues } from './resource-inbox-entry-in
 interface PSqlQueueReleaseCandidate {
     readonly disposition: ResourceInboxReleaseDisposition;
     readonly replacement: ResourceInboxObservedReplacement;
+}
+
+interface PSqlObservedReservation {
+    readonly typeIds: ReadonlySet<string>;
+    readonly statusIds: ReadonlySet<EntityStatus>;
+    readonly options: ResourceInboxReservationOptions;
+    readonly observations: ReadonlyMap<string, ResourceEntry>;
 }
 
 export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
@@ -120,9 +132,14 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
      * A plain claim is one statement in a transaction that only a corrupt selected row rolls back; an
      * observed claim locks the observed rows and compares them with their observations first.
      */
+    reserveEntries(
+        request: ResourceInboxReservationObservationRequest
+    ): Promise<ResourceInboxReservationObservationResult>;
+    reserveEntries(request: ResourceInboxReservationRequest): Promise<Map<Key, ResourceEntry>>;
     async reserveEntries(
-        { typeIds, statusIds, reservationInput, observedEntries, contextClaim }: ResourceInboxReservationRequest
-    ): Promise<Map<Key, ResourceEntry>> {
+        request: ResourceInboxReservationRequest | ResourceInboxReservationObservationRequest
+    ): Promise<Map<Key, ResourceEntry> | ResourceInboxReservationObservationResult> {
+        const { typeIds, statusIds, reservationInput, observedEntries, contextClaim } = request;
         if (observedEntries !== undefined && contextClaim !== undefined) {
             throw new TypeError('An observed claim names its rows; it cannot also claim context heads.');
         }
@@ -132,16 +149,38 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
         );
         const observations = captureResourceEntryObservations(observedEntries);
         if (observations === undefined) {
-            const claimed = await this.resourceInbox.transaction(async (txRepo) =>
-                await txRepo.reservations.reserveEntriesSkipLocked({
-                    typeIds,
-                    statusIds,
-                    reservationInput: options,
-                    contextClaim
-                })
+            const claim = { typeIds, statusIds, reservationInput: options, contextClaim };
+            if ('reservationObservation' in request) {
+                const claimed = await this.resourceInbox.transaction(async (transaction) =>
+                    await transaction.reservations.reserveEntriesSkipLocked({
+                        ...claim,
+                        reservationObservation: request.reservationObservation
+                    })
+                );
+                return {
+                    entries: new Map([...claimed.entries.values()].map((entry) => [entry.key, entry])),
+                    observations: toPSqlReservationObservations(claimed.observations)
+                };
+            }
+            const claimed = await this.resourceInbox.transaction(async (transaction) =>
+                await transaction.reservations.reserveEntriesSkipLocked(claim)
             );
             return new Map([...claimed.values()].map((entry) => [entry.key, entry]));
         }
+        const entries = await this.reserveObservedEntries({ typeIds, statusIds, options, observations });
+        return 'reservationObservation' in request
+            ? {
+                entries,
+                observations: [...entries.values()].map((entry) =>
+                    toUnavailableReservationObservation(entry, 'observed-claim-not-captured')
+                )
+            }
+            : entries;
+    }
+
+    private async reserveObservedEntries(
+        { typeIds, statusIds, options, observations }: PSqlObservedReservation
+    ): Promise<Map<Key, ResourceEntry>> {
         const observedRowIds = [...observations.values()].flatMap((entry) =>
             entry.db === undefined ? [] : [entry.db.id]
         );

@@ -5,6 +5,54 @@ import { reviewedBrowserDispositions } from './reviewed-browser-dispositions.mjs
 import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // Task17 whole-file self-review: this fixed local module is admitted as an
+    // object with the one named callable before invocation. Import errors remain
+    // visible; the assertion narrows the validated entry, never production options.
+    Object.freeze({
+        path: 'apps/api-v1/scripts/perf/api-v1-state-write-concurrency-bench.ts',
+        rule: 'boundary.unknown',
+        symbol: 'runStateWriteBenchmarkMode',
+        maximumMagnitude: 1
+    }),
+    // Optional driver fields stay raw in the private transaction result. The
+    // post-return decoder admits bounded signed integer text only; malformed
+    // evidence becomes unavailable without changing authoritative row handling.
+    Object.freeze({
+        path: 'packages/shared-server/queuebox/postgres/p-sql-resource-inbox-reservation-repository.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 2
+    }),
+    Object.freeze({
+        path: 'packages/shared-server/queuebox/postgres/to-p-sql-reservation-observations.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 2
+    }),
+    Object.freeze({
+        path: 'packages/shared-server/queuebox/postgres/to-p-sql-reservation-observations.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSignedSafeMicroseconds',
+        maximumMagnitude: 1
+    }),
+    // One pure phase projection owns record admission, redaction, shared budgets
+    // and completeness. Keeping those decisions together exposes how a rejected
+    // or truncated release affects the same footer; no second lifecycle exists.
+    Object.freeze({
+        path: 'apps/api-v1/scripts/perf/state-write/state-write-diagnostic-projection.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 66
+    }),
+    // One dequeue composition owns lane selection and mandatory release. Optional
+    // observation association stays at the existing claimed-attempt translation;
+    // splitting that conditional would hide the point where claimed work proceeds.
+    Object.freeze({
+        path: 'packages/shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 54
+    }),
     // Independent whole-owner review: parsed recorder JSON stays unknown until
     // number normalization and the object guard admit ApiJsonObject. The exact
     // parse boundary has one occurrence; no raw value reaches admission policy.

@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import type { PSqlReservationObservationRow } from './to-p-sql-reservation-observations.ts';
 
 import {
     toResourceInboxReservationOptions,
@@ -40,6 +41,8 @@ export interface StartProcessingEntitySkipped {
 
 /** The row after the claim plus the lifecycle it was selected with, which must have been valid to claim. */
 interface ClaimedResourceInboxRow extends ResourceInboxRow {
+    readonly previous_persisted_retry_delay_us?: unknown;
+    readonly due_to_reservation_observation_us?: unknown;
     readonly selected_status: string;
     readonly selected_attempts: bigint | null;
     readonly selected_start_ts: string | null;
@@ -56,6 +59,13 @@ export namespace PSqlResourceInboxReservationRepository {
     export interface ReservationClaim extends ReservationSelection {
         /** Undefined claims in queue order. */
         readonly contextClaim: ResourceInboxContextClaim | undefined;
+    }
+    export interface ReservationObservationClaim extends ReservationClaim {
+        readonly reservationObservation: 'postgres-ordinary-retry-v1';
+    }
+    export interface ReservationObservationResult {
+        readonly entries: Map<string, ResourceEntry>;
+        readonly observations: readonly PSqlReservationObservationRow[];
     }
     export interface ReservationRead extends ReservationSelection {
         readonly observedRowIds: readonly string[];
@@ -129,52 +139,47 @@ export class PSqlResourceInboxReservationRepository {
      * throws, so the caller's transaction rolls the claim back instead of repairing the row.
      * `RETURNING` keeps no order, so the selection order is restored from the selected due time.
      */
+    reserveEntriesSkipLocked(
+        claim: PSqlResourceInboxReservationRepository.ReservationObservationClaim
+    ): Promise<PSqlResourceInboxReservationRepository.ReservationObservationResult>;
+    reserveEntriesSkipLocked(
+        claim: PSqlResourceInboxReservationRepository.ReservationClaim
+    ): Promise<Map<string, ResourceEntry>>;
     async reserveEntriesSkipLocked(
-        { typeIds, statusIds, reservationInput, contextClaim }: PSqlResourceInboxReservationRepository.ReservationClaim
-    ): Promise<Map<string, ResourceEntry>> {
+        claim:
+            | PSqlResourceInboxReservationRepository.ReservationClaim
+            | PSqlResourceInboxReservationRepository.ReservationObservationClaim
+    ): Promise<Map<string, ResourceEntry> | PSqlResourceInboxReservationRepository.ReservationObservationResult> {
+        const { typeIds, statusIds, reservationInput, contextClaim } = claim;
+        const capture = 'reservationObservation' in claim;
         const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
         if (typeIds.size === 0 || statusIds.size === 0 || maxToReserve === 0) {
-            return new Map();
+            return capture ? { entries: new Map(), observations: [] } : new Map();
         }
         const eligibility = { typeIds: this.sql([...typeIds]), statusIds: this.sql([...statusIds]), maxAttempts };
-        const statement = PSqlFragment.of`
-            update resource_inbox
-            set ri_status   = ${EntityStatus.RESERVED},
-                ri_attempts = ri_attempts + 1,
-                start_ts    = now() at time zone 'UTC',
-                end_ts      = null,
-                next_ts     = null
-            from (
-                select candidate.ri_row_id,
-                       candidate.ri_status as selected_status,
-                       candidate.ri_attempts as selected_attempts,
-                       candidate.start_ts as selected_start_ts,
-                       candidate.end_ts as selected_end_ts,
-                       candidate.next_ts as selected_next_ts
-                from resource_inbox candidate
-                where ${toEligibleRowPredicate('candidate', eligibility)}
-                  ${contextClaim === undefined ? PSqlFragment.of`` : toContextHeadPredicate(eligibility, contextClaim)}
-                order by candidate.next_ts asc nulls first, candidate.ri_row_id asc
-                    for update of candidate skip locked
-                limit ${maxToReserve}
-            ) as selected
-            where resource_inbox.ri_row_id = selected.ri_row_id
-            returning resource_inbox.*,
-                      selected.selected_status,
-                      selected.selected_attempts,
-                      selected.selected_start_ts,
-                      selected.selected_end_ts,
-                      selected.selected_next_ts
-        `;
+        const statement = toReservationStatement({ eligibility, contextClaim, maxToReserve, capture });
         const rows = await this.sql<ClaimedResourceInboxRow[]>(...statement.toStatement());
         for (const row of rows) {
             toDomain(toSelectedResourceInboxRow(row));
         }
 
-        return rowsToMap([...rows].sort(compareClaimedRows));
+        const entries = rowsToMap([...rows].sort(compareClaimedRows));
+        return capture
+            ? {
+                entries,
+                observations: rows.map((row) => ({
+                    entry: entries.get(row.ri_row_id.toString())!,
+                    selectedStatus: row.selected_status,
+                    selectedEndTs: row.selected_end_ts,
+                    selectedNextTs: row.selected_next_ts,
+                    previousPersistedRetryDelayUs: row.previous_persisted_retry_delay_us,
+                    dueToReservationObservationUs: row.due_to_reservation_observation_us
+                }))
+            }
+            : entries;
     }
 
     /** The observed rows a claim may still start, locked for the transaction that validates their observations. */
@@ -412,6 +417,58 @@ interface ResourceInboxEligibility {
     readonly typeIds: object;
     readonly statusIds: object;
     readonly maxAttempts: number;
+}
+
+interface ResourceInboxReservationStatement {
+    readonly eligibility: ResourceInboxEligibility;
+    readonly contextClaim: ResourceInboxContextClaim | undefined;
+    readonly maxToReserve: number;
+    readonly capture: boolean;
+}
+
+function toReservationStatement(
+    { eligibility, contextClaim, maxToReserve, capture }: ResourceInboxReservationStatement
+): PSqlFragment {
+    return PSqlFragment.of`
+            update resource_inbox
+            set ri_status   = ${EntityStatus.RESERVED},
+                ri_attempts = ri_attempts + 1,
+                start_ts    = now() at time zone 'UTC',
+                end_ts      = null,
+                next_ts     = null
+            from (
+                select candidate.ri_row_id,
+                       candidate.ri_status as selected_status,
+                       candidate.ri_attempts as selected_attempts,
+                       candidate.start_ts as selected_start_ts,
+                       candidate.end_ts as selected_end_ts,
+                       candidate.next_ts as selected_next_ts
+                from resource_inbox candidate
+                where ${toEligibleRowPredicate('candidate', eligibility)}
+                  ${contextClaim === undefined ? PSqlFragment.of`` : toContextHeadPredicate(eligibility, contextClaim)}
+                order by candidate.next_ts asc nulls first, candidate.ri_row_id asc
+                    for update of candidate skip locked
+                limit ${maxToReserve}
+            ) as selected
+            where resource_inbox.ri_row_id = selected.ri_row_id
+            returning resource_inbox.*,
+                      selected.selected_status,
+                      selected.selected_attempts,
+                      selected.selected_start_ts,
+                      selected.selected_end_ts,
+                      selected.selected_next_ts
+                      ${
+        capture
+            ? PSqlFragment.of`,
+                          case when selected.selected_status = 'RETRY' then
+                              trunc(extract(epoch from (selected.selected_next_ts - selected.selected_end_ts)) * 1000000)::text
+                          end as previous_persisted_retry_delay_us,
+                          case when selected.selected_status = 'RETRY' then
+                              trunc(extract(epoch from ((clock_timestamp() at time zone 'UTC') - selected.selected_next_ts)) * 1000000)::text
+                          end as due_to_reservation_observation_us`
+            : PSqlFragment.of``
+    }
+        `;
 }
 
 /** A row a NEW or RETRY claim may start now: its type and status, alive, attempts left, and due. */

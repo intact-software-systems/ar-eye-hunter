@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { toUnavailableReservationObservation } from './resource-inbox/resource-inbox-reservation-observation.ts';
 
 import { EnqueuedType } from '../api/api-config.ts';
 import type { Unsubscribe } from '../cache/RepositoryInterfaces.ts';
@@ -27,6 +28,8 @@ import {
     toResourceInboxFinalizationReservationOptions,
     toResourceInboxReservationOptions,
     toResourceInboxWorkAdvertisementOptions,
+    type ResourceInboxReservationObservationRequest,
+    type ResourceInboxReservationObservationResult,
     type ResourceInboxReservationRequest,
     type ResourceInboxTimeoutReservationRequest
 } from './queue-box-types.ts';
@@ -373,9 +376,14 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         return timedOut;
     }
 
+    reserveEntries(
+        request: ResourceInboxReservationObservationRequest
+    ): Promise<ResourceInboxReservationObservationResult>;
+    reserveEntries(request: ResourceInboxReservationRequest): Promise<Map<Key, ResourceEntry>>;
     async reserveEntries(
-        { typeIds, statusIds, reservationInput, observedEntries, contextClaim }: ResourceInboxReservationRequest
-    ): Promise<Map<Key, ResourceEntry>> {
+        request: ResourceInboxReservationRequest | ResourceInboxReservationObservationRequest
+    ): Promise<Map<Key, ResourceEntry> | ResourceInboxReservationObservationResult> {
+        const { typeIds, statusIds, reservationInput, observedEntries, contextClaim } = request;
         const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
@@ -407,7 +415,14 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             reserved.set(toResourceEntryKey(key), toResourceEntrySnapshot(updated));
         }
 
-        return reserved;
+        return 'reservationObservation' in request
+            ? {
+                entries: reserved,
+                observations: [...reserved.values()].map((entry) =>
+                    toUnavailableReservationObservation(entry, 'unsupported-backend')
+                )
+            }
+            : reserved;
     }
 
     async reserveOverdueRetryEntries(

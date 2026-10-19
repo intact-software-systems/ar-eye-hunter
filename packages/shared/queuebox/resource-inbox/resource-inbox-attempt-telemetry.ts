@@ -4,8 +4,10 @@ import {
     type Key,
     type ResourceEntry
 } from '../ResourceEntry.ts';
+import type { ResourceInboxReservationObservation } from './resource-inbox-reservation-observation.ts';
 
 export interface ResourceInboxAttemptTelemetry {
+    readonly reservationObservation?: ResourceInboxReservationObservation;
     readonly selectedLane: Reservator;
     readonly queueAgeMs: number;
     readonly dueAgeMs: number;
@@ -18,6 +20,7 @@ export interface ResourceInboxAttemptTelemetry {
 }
 
 export interface ResourceInboxAttemptReleaseTelemetry {
+    readonly reservationObservation?: ResourceInboxReservationObservation;
     readonly key: Key;
     readonly type: string;
     readonly resource: string;
@@ -49,6 +52,7 @@ export interface ResourceInboxAttempt {
 }
 
 interface ResourceInboxAttemptInput {
+    readonly reservationObservation?: ResourceInboxReservationObservation;
     readonly entry: ResourceEntry;
     readonly selectedLane: Reservator;
     readonly selectedAtEpochMs: number;
@@ -73,6 +77,9 @@ export function computeResourceInboxAttempt(input: ResourceInboxAttemptInput): R
     return {
         entry,
         telemetry: {
+            ...(input.reservationObservation === undefined
+                ? {}
+                : { reservationObservation: input.reservationObservation }),
             selectedLane,
             queueAgeMs: Math.max(0, selectedAtEpochMs - createdAtEpochMs),
             dueAgeMs: Math.max(0, selectedAtEpochMs - dueAtEpochMs),
@@ -115,6 +122,9 @@ function computeResourceInboxAttemptRelease(
         throw new Error('Persisted resource inbox retry delay is invalid');
     }
     return {
+        ...(selection.reservationObservation === undefined
+            ? {}
+            : { reservationObservation: selection.reservationObservation }),
         key: reserved.key,
         type: reserved.typeId,
         resource: reserved.resource,

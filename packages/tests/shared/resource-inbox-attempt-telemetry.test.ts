@@ -14,6 +14,7 @@ import {
     it,
     vi
 } from 'vitest';
+import { reserveNoResourceEntries } from './reserve-no-resource-entries.ts';
 
 describe('ResourceInbox attempt release telemetry', () => {
     it('preserves selection facts when a handler receives an equivalent copied reservation', async () => {
@@ -157,7 +158,7 @@ function entry(resourceId: string, status: EntityStatus, attempts: number): Reso
 function createQueueRepository(overrides: Partial<DequeueResourceEntryRepository>): DequeueResourceEntryRepository {
     return {
         isAnyEntryToLock: async () => false,
-        reserveEntries: async () => new Map(),
+        reserveEntries: reserveNoResourceEntries,
         reserveOverdueRetryEntries: async () => new Map(),
         reserveTimeoutEntries: async () => new Map(),
         reserveRetryExhaustionFinalizations: async () => new Map(),

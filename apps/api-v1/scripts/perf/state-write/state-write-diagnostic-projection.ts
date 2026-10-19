@@ -1,8 +1,10 @@
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
-import type { StateScope } from '@shared/api/state-types.ts';
 import type { ResourceInboxAttemptReleaseTelemetry } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
+import { validateResourceInboxReservationObservation } from '@shared/queuebox/resource-inbox/resource-inbox-reservation-observation.ts';
+import { isKeysEqual } from '@shared/queuebox/ResourceEntry.ts';
 
 import { isOptimisticConflictFailure } from '../api-v1-state-write-attempt-evidence.ts';
+import type { StateWriteBenchmarkPhaseFacts } from './state-write-benchmark-diagnostics.ts';
 import {
     createStateWriteDiagnosticAssociationIndex,
     isStateWriteCommandBoundaryValid,
@@ -10,23 +12,10 @@ import {
     toStateWriteTimingAssociation,
     type StateWriteDiagnosticAssociationIndex
 } from './state-write-diagnostic-association.ts';
-import type { StateWriteCommandBoundary, StateWriteDiagnosticCommand } from './state-write-workload.ts';
+import type { StateWriteCommandBoundary } from './state-write-workload.ts';
 
-export interface StateWriteDiagnosticPhase {
-    readonly workload: 'uncontended' | 'shared' | 'hot';
-    readonly phase: 'warmup' | 'measured';
-    readonly runIndex: number;
-    readonly scope: StateScope;
-    readonly groupCount: number;
-    readonly serviceIds: readonly string[];
-    readonly performanceTimeOriginEpochMs: number;
-    readonly startedAtMonotonicMs: number;
-    readonly endedAtMonotonicMs: number | 'unavailable';
-    readonly commands: readonly StateWriteDiagnosticCommand[];
-    readonly boundaries: readonly StateWriteCommandBoundary[];
-    readonly timingEvents: readonly RallarTimingEvent[];
+export interface StateWriteDiagnosticPhase extends StateWriteBenchmarkPhaseFacts {
     readonly releases: readonly ResourceInboxAttemptReleaseTelemetry[];
-    readonly outcome: 'completed' | 'operation-failed';
 }
 
 export interface StateWriteDiagnosticBudget {
@@ -59,6 +48,10 @@ type DiagnosticValue = string | number | boolean | DiagnosticRecord | readonly D
 interface DiagnosticRecord {
     readonly [key: string]: DiagnosticValue;
 }
+interface DiagnosticReleaseRecord extends DiagnosticRecord {
+    readonly reservationObservation: DiagnosticRecord;
+}
+
 interface DiagnosticKindEnvelope {
     readonly startMs: number;
     readonly endMs: number;
@@ -71,6 +64,7 @@ interface DiagnosticProjectionState {
     readonly timing: DiagnosticCounts;
     readonly releases: DiagnosticCounts;
     readonly boundaries: DiagnosticCounts;
+    readonly reservationObservations: { expected: number; available: number; unavailable: number; };
 }
 
 const FOOTER_RESERVE_BYTES = 768;
@@ -87,18 +81,13 @@ export function computeStateWriteDiagnosticPhase(
         limit: Math.max(0, limit - FOOTER_RESERVE_BYTES),
         timing: createCounts(phase.timingEvents.length),
         releases: createCounts(phase.releases.length),
-        boundaries: createCounts(1 + phase.commands.length)
+        boundaries: createCounts(1 + phase.commands.length),
+        reservationObservations: { expected: 0, available: 0, unavailable: 0 }
     };
     const index = createStateWriteDiagnosticAssociationIndex(phase);
     appendDiagnosticRecord(state, toPhaseRecord(phase), state.boundaries);
     appendCommandBoundaries(state, phase);
-    for (const release of phase.releases) {
-        if (state.releases.retained >= budget.eventsPerPhase) {
-            state.releases.truncated += 1;
-            continue;
-        }
-        appendDiagnosticRecord(state, toReleaseRecord(release, index), state.releases);
-    }
+    appendReleaseRecords(state, { releases: phase.releases, index, eventsPerPhase: budget.eventsPerPhase });
     for (const event of phase.timingEvents) {
         if (state.timing.retained + state.releases.retained >= budget.eventsPerPhase) {
             state.timing.truncated += 1;
@@ -107,20 +96,55 @@ export function computeStateWriteDiagnosticPhase(
         const record = toTimingRecord(event, index, phase);
         appendDiagnosticRecord(state, record, state.timing);
     }
-    const complete = phase.outcome === 'completed' && [state.timing, state.releases, state.boundaries]
-        .every((counts) => counts.rejected === 0 && counts.truncated === 0);
+    const complete = state.reservationObservations.unavailable === 0 && phase.outcome === 'completed' &&
+        [state.timing, state.releases, state.boundaries]
+            .every((counts) => counts.rejected === 0 && counts.truncated === 0);
     const footer = JSON.stringify({
         record: 'completeness',
         complete,
         timing: state.timing,
         releases: state.releases,
-        boundaries: state.boundaries
+        boundaries: state.boundaries,
+        reservationObservations: state.reservationObservations
     }) + '\n';
     const footerBytes = new TextEncoder().encode(footer).length;
     if (state.bytes + footerBytes > limit) {
         return { serialized: '', bytes: 0, complete: false };
     }
     return { serialized: state.lines.join('') + footer, bytes: state.bytes + footerBytes, complete };
+}
+
+interface DiagnosticReleaseProjection {
+    readonly releases: readonly ResourceInboxAttemptReleaseTelemetry[];
+    readonly index: StateWriteDiagnosticAssociationIndex;
+    readonly eventsPerPhase: number;
+}
+
+function appendReleaseRecords(
+    state: DiagnosticProjectionState,
+    { releases, index, eventsPerPhase }: DiagnosticReleaseProjection
+): void {
+    for (const release of releases) {
+        if (state.releases.retained >= eventsPerPhase) {
+            state.releases.truncated += 1;
+            if (release.selectedLane === 'RETRY') {
+                state.reservationObservations.expected += 1;
+                state.reservationObservations.unavailable += 1;
+            }
+            continue;
+        }
+        const record = toReleaseRecord(release, index);
+        if (release.selectedLane === 'RETRY') {
+            state.reservationObservations.expected += 1;
+            if (record?.reservationObservation.availability === 'available') {
+                state.reservationObservations.available += 1;
+            }
+            else {
+                state.reservationObservations.unavailable += 1;
+            }
+        }
+        appendDiagnosticRecord(state, record, state.releases);
+    }
 }
 
 function createCounts(total: number): DiagnosticCounts {
@@ -139,7 +163,7 @@ function toPhaseRecord(phase: StateWriteDiagnosticPhase): DiagnosticRecord | und
     }
     return {
         record: 'phase',
-        schema: 'rallar.state-write.diagnostic.v2',
+        schema: 'rallar.state-write.diagnostic.v3',
         workload: phase.workload,
         phase: phase.phase,
         runIndex: phase.runIndex,
@@ -150,6 +174,16 @@ function toPhaseRecord(phase: StateWriteDiagnosticPhase): DiagnosticRecord | und
         eventStart: 'approximate-completion-minus-rounded-duration',
         exactKindEndpoints: 'unavailable',
         selectedDueTimestamp: 'unavailable',
+        reservationObservationBoundary: 'postgres-update-returning',
+        reservationObservationLimits: [
+            'ordinary-unobserved-postgres-retry-only',
+            'pre-commit-not-lock-or-handler-time',
+            'microsecond-quantization',
+            'database-wall-clock-adjustments',
+            'FAIRNESS',
+            'TIMEOUT',
+            'FINALIZATION'
+        ],
         outcome: phase.outcome
     };
 }
@@ -235,7 +269,7 @@ function toTimingRecord(
 function toReleaseRecord(
     release: ResourceInboxAttemptReleaseTelemetry,
     index: StateWriteDiagnosticAssociationIndex
-): DiagnosticRecord | undefined {
+): DiagnosticReleaseRecord | undefined {
     const operation = resolveStateWriteReleaseOperation(release, index);
     if (
         !operation ||
@@ -244,8 +278,13 @@ function toReleaseRecord(
     ) {
         return undefined;
     }
+    const reservationObservation = toReservationObservationRecord(release);
+    if (!reservationObservation) {
+        return undefined;
+    }
     return {
         record: 'release',
+        reservationObservation,
         commandOrdinal: operation.commandOrdinal,
         operation: operation.expectation.operationId,
         originatingStack: operation.originatingStack,
@@ -298,4 +337,38 @@ function appendDiagnosticRecord(
 
 function isNonnegative(value: string | number | boolean | undefined): value is number {
     return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function toReservationObservationRecord(release: ResourceInboxAttemptReleaseTelemetry): DiagnosticRecord | undefined {
+    const reservationAttempt = release.attempt + (release.classification === 'not-ready' ? 1 : 0);
+    const unavailable = {
+        availability: 'unavailable',
+        boundary: 'unavailable',
+        association: 'unavailable',
+        reservationAttempt
+    };
+    if (release.selectedLane !== 'RETRY') {
+        if (release.reservationObservation !== undefined) {
+            return undefined;
+        }
+        return { ...unavailable, reason: release.selectedLane === 'NEW' ? 'not-applicable' : 'lane-not-captured' };
+    }
+    const observation = release.reservationObservation;
+    if (
+        !observation || validateResourceInboxReservationObservation(observation).length > 0 ||
+        !isKeysEqual(release.key, observation.key) || observation.reservationAttempt !== reservationAttempt
+    ) {
+        return { ...unavailable, reason: 'invalid-observation' };
+    }
+    if (observation.availability === 'unavailable') {
+        return { ...unavailable, reason: observation.reason };
+    }
+    return {
+        availability: observation.availability,
+        boundary: observation.boundary,
+        association: observation.association,
+        reservationAttempt,
+        previousPersistedRetryDelayUs: observation.previousPersistedRetryDelayUs,
+        dueToReservationObservationUs: observation.dueToReservationObservationUs
+    };
 }

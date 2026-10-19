@@ -1,4 +1,10 @@
 import { Temporal } from '@js-temporal/polyfill';
+import type {
+    ResourceInboxReservationObservationRequest,
+    ResourceInboxReservationObservationResult,
+    ResourceInboxReservationRequest
+} from '@shared/queuebox/queue-box-types.ts';
+import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import {
     afterEach,
     describe,
@@ -84,14 +90,16 @@ class ProbedQueueBox extends InMemoryQueueBox {
         return await super.readWorkAdvertisement(...input);
     }
 
+    override reserveEntries(request: ResourceInboxReservationObservationRequest): Promise<ResourceInboxReservationObservationResult>;
+    override reserveEntries(request: ResourceInboxReservationRequest): Promise<Map<Key, ResourceEntry>>;
     override async reserveEntries(
-        ...input: Parameters<InMemoryQueueBox['reserveEntries']>
-    ): ReturnType<InMemoryQueueBox['reserveEntries']> {
+        request: ResourceInboxReservationRequest | ResourceInboxReservationObservationRequest
+    ): Promise<Map<Key, ResourceEntry> | ResourceInboxReservationObservationResult> {
         if (this.failNextReservation) {
             this.failNextReservation = false;
             throw new Error('Reservation transport unavailable');
         }
-        return await super.reserveEntries(...input);
+        return 'reservationObservation' in request ? await super.reserveEntries(request) : await super.reserveEntries(request);
     }
 }
 

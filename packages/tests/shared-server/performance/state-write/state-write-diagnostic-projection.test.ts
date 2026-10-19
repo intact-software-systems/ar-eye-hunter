@@ -136,6 +136,84 @@ function createRelease(): ResourceInboxAttemptReleaseTelemetry {
 }
 
 describe('state-write diagnostic projection', () => {
+    it.each([-Number.MAX_SAFE_INTEGER, -1, 0, 1, Number.MAX_SAFE_INTEGER])('retains signed observation %s with redacted not-ready identity', (duration) => {
+        const release: ResourceInboxAttemptReleaseTelemetry = {
+            ...createRelease(),
+            selectedLane: Reservator.RETRY,
+            classification: 'not-ready',
+            status: EntityStatus.RETRY,
+            reservationObservation: {
+                key: { ...profile.physicalKey },
+                reservationAttempt: 2,
+                availability: 'available',
+                boundary: 'postgres-update-returning',
+                association: 'physical-key-and-reservation-attempt',
+                previousPersistedRetryDelayUs: duration,
+                dueToReservationObservationUs: duration
+            }
+        };
+        const result = computeStateWriteDiagnosticPhase({ ...createPhase(), releases: [release] }, budget, 65_536);
+        expect(result.complete).toBe(true);
+        expect(readRecords(result.serialized).find((record) => record.record === 'release')).toMatchObject({
+            attempt: 1,
+            reservationObservation: { reservationAttempt: 2, previousPersistedRetryDelayUs: duration, dueToReservationObservationUs: duration }
+        });
+        expect(readRecords(result.serialized).at(-1)).toMatchObject({ reservationObservations: { expected: 1, available: 1, unavailable: 0 } });
+        expect(result.serialized).not.toContain('PRIVATE');
+    });
+
+    it('marks expected missing retry evidence incomplete and discloses uncaptured lanes', () => {
+        const retry = computeStateWriteDiagnosticPhase(
+            { ...createPhase(), releases: [{ ...createRelease(), selectedLane: Reservator.RETRY }] },
+            budget,
+            65_536
+        );
+        expect(retry.complete).toBe(false);
+        expect(readRecords(retry.serialized).at(-1)).toMatchObject({ reservationObservations: { expected: 1, available: 0, unavailable: 1 } });
+        for (const selectedLane of [Reservator.FAIRNESS, Reservator.TIMEOUT, Reservator.FINALIZATION]) {
+            const result = computeStateWriteDiagnosticPhase({ ...createPhase(), releases: [{ ...createRelease(), selectedLane }] }, budget, 65_536);
+            expect(result.complete).toBe(true);
+            expect(readRecords(result.serialized).find((record) => record.record === 'release')).toMatchObject({
+                reservationObservation: { availability: 'unavailable', reason: 'lane-not-captured' }
+            });
+        }
+    });
+
+    it.each(['lane', 'boundary', 'attempt', 'range', 'fraction'])('rejects contradictory observation %s', (fault) => {
+        const release: ResourceInboxAttemptReleaseTelemetry = {
+            ...createRelease(),
+            selectedLane: fault === 'lane' ? Reservator.NEW : Reservator.RETRY,
+            reservationObservation: {
+                key: profile.physicalKey,
+                reservationAttempt: fault === 'attempt' ? 2 : 1,
+                availability: 'available',
+                boundary: 'postgres-update-returning',
+                association: 'physical-key-and-reservation-attempt',
+                previousPersistedRetryDelayUs: fault === 'range' ? Number.MAX_SAFE_INTEGER + 1 : 1,
+                dueToReservationObservationUs: fault === 'fraction' ? 0.5 : 1
+            }
+        };
+        if (fault === 'boundary') {
+            Object.assign(release.reservationObservation!, { boundary: 'handler' });
+        }
+        const result = computeStateWriteDiagnosticPhase({ ...createPhase(), releases: [release] }, budget, 65_536);
+        expect(result.complete).toBe(false);
+        expect(result.serialized).not.toContain('PRIVATE');
+    });
+
+    it('counts truncated ordinary retries as expected unavailable observations', () => {
+        const result = computeStateWriteDiagnosticPhase(
+            { ...createPhase(), releases: [{ ...createRelease(), selectedLane: Reservator.RETRY }] },
+            { ...budget, eventsPerPhase: 0 },
+            65_536
+        );
+        expect(result.complete).toBe(false);
+        expect(readRecords(result.serialized).at(-1)).toMatchObject({
+            releases: { total: 1, retained: 0, truncated: 1 },
+            reservationObservations: { expected: 1, available: 0, unavailable: 1 }
+        });
+    });
+
     it('retains the complete SQL-heavy stream and late command facts where redundant timing rows overflow', () => {
         const sql = createSqlEvent();
         const events: RallarTimingEvent[] = [
@@ -149,7 +227,7 @@ describe('state-write diagnostic projection', () => {
         const records = readRecords(result.serialized);
         const timings = records.filter((record) => record.record === 'timing');
         expect(result.complete).toBe(true);
-        expect(records[0]).toMatchObject({ schema: 'rallar.state-write.diagnostic.v2', eventStart: 'approximate-completion-minus-rounded-duration' });
+        expect(records[0]).toMatchObject({ schema: 'rallar.state-write.diagnostic.v3', eventStart: 'approximate-completion-minus-rounded-duration' });
         expect(timings).toHaveLength(1_002);
         expect(timings.slice(0, 1_000)).toEqual(Array.from({ length: 1_000 }, () => ({
             record: 'timing',
@@ -190,6 +268,7 @@ describe('state-write diagnostic projection', () => {
         expect(result.bytes).toBeLessThanOrEqual(320_000);
         expect(records.at(-1)).toEqual({
             record: 'completeness',
+            reservationObservations: { expected: 0, available: 0, unavailable: 0 },
             complete: true,
             timing: { total: 1_002, retained: 1_002, rejected: 0, truncated: 0, unassociated: 1_001 },
             releases: { total: 1, retained: 1, rejected: 0, truncated: 0, unassociated: 0 },
@@ -217,6 +296,7 @@ describe('state-write diagnostic projection', () => {
         expect(result.complete).toBe(truncated === 0);
         expect(readRecords(result.serialized).at(-1)).toEqual({
             record: 'completeness',
+            reservationObservations: { expected: 0, available: 0, unavailable: 0 },
             complete: truncated === 0,
             timing: { total: timings, retained, truncated, rejected: 0, unassociated: retained },
             releases: { total: 1_382, retained: 1_382, rejected: 0, truncated: 0, unassociated: 0 },
@@ -499,6 +579,13 @@ describe('state-write diagnostic projection', () => {
         expect(records.filter((record) => record.record === 'release')).toEqual([
             {
                 record: 'release',
+                reservationObservation: {
+                    availability: 'unavailable',
+                    boundary: 'unavailable',
+                    association: 'unavailable',
+                    reservationAttempt: 2,
+                    reason: 'not-applicable'
+                },
                 commandOrdinal: 0,
                 operation: 'instance',
                 originatingStack: 0,
@@ -515,6 +602,13 @@ describe('state-write diagnostic projection', () => {
             },
             {
                 record: 'release',
+                reservationObservation: {
+                    availability: 'unavailable',
+                    boundary: 'unavailable',
+                    association: 'unavailable',
+                    reservationAttempt: 1,
+                    reason: 'not-applicable'
+                },
                 commandOrdinal: 0,
                 operation: 'profile',
                 originatingStack: 0,
@@ -531,6 +625,13 @@ describe('state-write diagnostic projection', () => {
             },
             {
                 record: 'release',
+                reservationObservation: {
+                    availability: 'unavailable',
+                    boundary: 'unavailable',
+                    association: 'unavailable',
+                    reservationAttempt: 1,
+                    reason: 'not-applicable'
+                },
                 commandOrdinal: 1,
                 operation: 'command',
                 originatingStack: 1,

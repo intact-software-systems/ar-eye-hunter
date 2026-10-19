@@ -216,8 +216,8 @@ function writeDiagnosticPhase(directory, ordinal) {
         schema: failure === 'old-schema'
             ? 'rallar.state-write.diagnostic.v1'
             : failure === 'unknown-schema'
-            ? 'rallar.state-write.diagnostic.v3'
-            : 'rallar.state-write.diagnostic.v2',
+            ? 'rallar.state-write.diagnostic.v4'
+            : 'rallar.state-write.diagnostic.v3',
         workload: ['uncontended', 'shared', 'hot'][Math.floor(ordinal / 4)],
         phase: ordinal % 4 === 0 ? 'warmup' : 'measured',
         runIndex: ordinal % 4 === 0 ? 0 : ordinal % 4 - 1,
@@ -232,7 +232,8 @@ function writeDiagnosticPhase(directory, ordinal) {
         complete: failure !== 'incomplete',
         timing: { ...counts, total: timings.length, retained: timings.length, unassociated: timings.length },
         releases: { ...counts, total: releases.length, retained: releases.length },
-        boundaries: { ...counts, total: 701, retained: 701 }
+        boundaries: { ...counts, total: 701, retained: 701 },
+        reservationObservations: { expected: 0, available: 0, unavailable: 0 }
     };
     if (failure === 'total-mismatch') {
         footer.timing.total += 1;
@@ -244,10 +245,54 @@ function writeDiagnosticPhase(directory, ordinal) {
     if (failure === 'unassociated-mismatch' && ordinal === 0) {
         footer.timing.unassociated -= 1;
     }
+    if (failure.startsWith('observation-')) {
+        addReservationObservationFixture(releases, footer);
+    }
     const extra = failure === 'unknown-record' ? [{ record: 'unexpected' }] : [];
     const text = [header, ...commands, ...releases, ...timings, ...extra, footer].map((value) => JSON.stringify(value)).join('\n') + '\n';
     writeFileSync(path.join(directory, 'phase-' + ordinal + '.ndjson'), text);
     return Buffer.byteLength(text);
+}
+
+function addReservationObservationFixture(releases, footer) {
+    const release = createDiagnosticEvents(1382).releases[0];
+    release.selectedLane = 'RETRY';
+    release.reservationObservation = {
+        availability: 'available',
+        boundary: 'postgres-update-returning',
+        association: 'physical-key-and-reservation-attempt',
+        reservationAttempt: 1,
+        previousPersistedRetryDelayUs: 5000000,
+        dueToReservationObservationUs: -1
+    };
+    releases.push(release);
+    footer.releases.total += 1;
+    footer.releases.retained += 1;
+    footer.reservationObservations = { expected: 1, available: 1, unavailable: 0 };
+    if (failure === 'observation-missing') {
+        delete release.reservationObservation;
+    }
+    if (failure === 'observation-fraction') {
+        release.reservationObservation.dueToReservationObservationUs = 0.5;
+    }
+    if (failure === 'observation-range') {
+        release.reservationObservation.dueToReservationObservationUs = 9007199254740992;
+    }
+    if (failure === 'observation-boundary') {
+        release.reservationObservation.boundary = 'commit';
+    }
+    if (failure === 'observation-lane') {
+        release.selectedLane = 'NEW';
+    }
+    if (failure === 'observation-attempt') {
+        release.reservationObservation.reservationAttempt = 2;
+    }
+    if (failure === 'observation-count') {
+        footer.reservationObservations.expected = 2;
+    }
+    if (failure === 'observation-redaction') {
+        release.reservationObservation.key = 'private';
+    }
 }
 
 function createDiagnosticEvents(total) {
@@ -265,6 +310,13 @@ function createDiagnosticEvents(total) {
     }));
     const releases = Array.from({ length: releaseCount }, () => ({
         record: 'release',
+        reservationObservation: {
+            availability: 'unavailable',
+            boundary: 'unavailable',
+            association: 'unavailable',
+            reservationAttempt: 1,
+            reason: 'not-applicable'
+        },
         commandOrdinal: 0,
         operation: 'profile',
         originatingStack: 0,

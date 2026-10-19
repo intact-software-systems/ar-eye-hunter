@@ -186,12 +186,15 @@ describe('selected hosted measurement lifecycle', { timeout: 20000 }, () => {
         });
     });
 
-    it.for(['observed-capacity', 'exact-capacity'])('accepts complete current-schema %s output above the former event ceiling', async (capacity, context) => {
-        const fixture = createFixture(context, 'diagnostic', capacity);
-        await runShell(context, fixture, lifecycleShell());
-        expect(readJson(path.join(fixture.output, 'terminal.json'))).toMatchObject({ status: 'complete', primary: null });
-        expect(readJson(path.join(fixture.output, 'diagnostic-validity.json'))).toMatchObject({ status: 'complete', phases: 12, totalCommands: 8400 });
-    });
+    it.for(['observed-capacity', 'exact-capacity', 'observation-valid'])(
+        'accepts complete current-schema %s output above the former event ceiling',
+        async (capacity, context) => {
+            const fixture = createFixture(context, 'diagnostic', capacity);
+            await runShell(context, fixture, lifecycleShell());
+            expect(readJson(path.join(fixture.output, 'terminal.json'))).toMatchObject({ status: 'complete', primary: null });
+            expect(readJson(path.join(fixture.output, 'diagnostic-validity.json'))).toMatchObject({ status: 'complete', phases: 12, totalCommands: 8400 });
+        }
+    );
 
     it.for(['cpu', 'cpu-invalid', 'overlap', 'preflight', 'source-change'])('refuses %s before any benchmark', async (failure, context) => {
         const fixture = createFixture(context, 'diagnostic', failure);
@@ -299,7 +302,15 @@ describe('selected hosted measurement lifecycle', { timeout: 20000 }, () => {
         'total-mismatch',
         'record-mismatch',
         'unassociated-mismatch',
-        'unknown-record'
+        'unknown-record',
+        'observation-missing',
+        'observation-fraction',
+        'observation-range',
+        'observation-boundary',
+        'observation-lane',
+        'observation-attempt',
+        'observation-count',
+        'observation-redaction'
     ])(
         'keeps %s evidence failed even with a complete-looking receipt',
         async (failure, context) => {

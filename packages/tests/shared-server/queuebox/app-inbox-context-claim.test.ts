@@ -3,7 +3,8 @@ import {
     afterEach,
     describe,
     expect,
-    it
+    it,
+    vi
 } from 'vitest';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -96,14 +97,14 @@ describe.each(['memory', 'pglite'] as const)('AppInbox context claim on %s stora
         }
         const rounds: Array<Readonly<{ reserved: readonly string[]; excluded: readonly string[]; }>> = [];
         const reserveEntries = queue.reserveEntries.bind(queue);
-        queue.reserveEntries = async (claim) => {
+        vi.spyOn(queue, 'reserveEntries').mockImplementation(async (claim) => {
             const excluded = [...(claim.contextClaim?.excludedContextIds ?? [])];
             const reserved = await reserveEntries(claim);
             if (claim.statusIds.has(EntityStatus.NEW)) {
                 rounds.push({ reserved: [...reserved.values()].map((entry) => entry.key.resourceId), excluded });
             }
             return reserved;
-        };
+        });
         reader.onInboxMessageDo('test.context-claim', { onMessage: async () => {} });
 
         await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createQueueResilience());

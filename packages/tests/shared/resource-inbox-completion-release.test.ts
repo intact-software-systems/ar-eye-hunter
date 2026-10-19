@@ -40,7 +40,7 @@ describe('ResourceInbox post-release completion hints', () => {
         const controller = createDefaultResourceInboxDequeuer({
             repository: {
                 isAnyEntryToLock: async () => true,
-                reserveEntries: async (request) => request.statusIds.has('NEW') ? await queue.reserveEntries(request) : new Map(),
+                reserveEntries: queue.reserveEntries.bind(queue),
                 reserveTimeoutEntries: async () => new Map(),
                 reserveOverdueRetryEntries: async () => new Map(),
                 reserveRetryExhaustionFinalizations: async () => new Map(),
@@ -95,7 +95,7 @@ describe('ResourceInbox post-release completion hints', () => {
             const controller = createDefaultResourceInboxDequeuer({
                 repository: {
                     isAnyEntryToLock: async () => true,
-                    reserveEntries: async (request) => request.statusIds.has('NEW') ? await queue.reserveEntries(request) : new Map(),
+                    reserveEntries: queue.reserveEntries.bind(queue),
                     reserveTimeoutEntries: async () => new Map(),
                     reserveOverdueRetryEntries: async () => new Map(),
                     reserveRetryExhaustionFinalizations: async () => new Map(),
@@ -142,7 +142,7 @@ describe('ResourceInbox post-release completion hints', () => {
         const controller = createDefaultResourceInboxDequeuer({
             repository: {
                 isAnyEntryToLock: async () => true,
-                reserveEntries: async (request) => request.statusIds.has('NEW') ? await queue.reserveEntries(request) : new Map(),
+                reserveEntries: queue.reserveEntries.bind(queue),
                 reserveTimeoutEntries: async () => new Map(),
                 reserveOverdueRetryEntries: async () => new Map(),
                 reserveRetryExhaustionFinalizations: async () => new Map(),

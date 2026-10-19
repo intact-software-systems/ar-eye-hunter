@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { Sql } from 'postgres';
+import type { StateWriteBenchmarkDiagnosticPhase } from './state-write/state-write-benchmark-diagnostics.ts';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -55,6 +56,7 @@ export interface StateWriteServiceRuntime {
 }
 
 export interface CreateStateWriteServiceRuntimeInput {
+    readonly diagnosticPhase?: StateWriteBenchmarkDiagnosticPhase;
     readonly sql: Sql;
     readonly serviceId: string;
     readonly context: StateWriteServiceRuntimeContext;
@@ -62,6 +64,7 @@ export interface CreateStateWriteServiceRuntimeInput {
 }
 
 interface CreateStateWriteInboxRuntimeInput {
+    readonly diagnosticPhase?: StateWriteBenchmarkDiagnosticPhase;
     readonly database: PSqlSql;
     readonly nowEpochMs: () => number;
     readonly context: StateWriteServiceRuntimeContext;
@@ -110,7 +113,12 @@ export function createStateWriteServiceRuntime(input: CreateStateWriteServiceRun
         serviceId,
         timing
     });
-    const appInboxDependencies = createStateWriteInboxRuntime({ database: instrumentedSql, nowEpochMs, context });
+    const appInboxDependencies = createStateWriteInboxRuntime({
+        database: instrumentedSql,
+        nowEpochMs,
+        context,
+        diagnosticPhase: input.diagnosticPhase
+    });
     const inbox = appInboxDependencies.inboxQueueReader;
     const client = new AppClientInboxService(
         {
@@ -149,14 +157,19 @@ export function createStateWriteServiceRuntime(input: CreateStateWriteServiceRun
 }
 
 function createStateWriteInboxRuntime(
-    { database, nowEpochMs, context }: CreateStateWriteInboxRuntimeInput
+    { database, nowEpochMs, context, diagnosticPhase }: CreateStateWriteInboxRuntimeInput
 ): StateWriteInboxRuntime {
     const resourceInbox = createPSqlResourceInboxRepository(database, () => new Date(nowEpochMs()));
-    const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
+    const queue = new PSqlQueueBox(resourceInbox, Temporal.Now.instant);
+    const ordinaryOptions: InboxQueueReader.Options = {
         laneBudgetPolicy: 'fixed-retry-two',
         newLaneConcurrency: 1,
         onAttemptReleaseTelemetry: (event) => context.attemptReleases.push(event)
-    });
+    };
+    const inboxQueueReader = diagnosticPhase === undefined
+        ? new InboxQueueReader(queue, ordinaryOptions)
+        : diagnosticPhase.createInboxQueueReader(queue, ordinaryOptions);
+
     return {
         database,
         inboxQueueReader,

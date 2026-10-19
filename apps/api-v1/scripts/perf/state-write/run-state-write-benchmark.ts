@@ -1,0 +1,485 @@
+import { normalize } from 'node:path';
+import process from 'node:process';
+import type { Sql } from 'postgres';
+import type {
+    StateWriteBenchmarkDiagnosticPhase,
+    StateWriteBenchmarkDiagnostics,
+    StateWriteBenchmarkPhaseFacts
+} from './state-write-benchmark-diagnostics.ts';
+
+import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
+
+import { queryStateWriteDurableEvidence } from '../api-v1-state-write-durable-evidence.ts';
+import { createStateWriteBenchmarkSql } from '../create-state-write-benchmark-sql.ts';
+import {
+    createStateWriteServiceRuntime,
+    type StateWriteServiceRuntime,
+    type StateWriteServiceRuntimeContext
+} from '../create-state-write-service-runtime.ts';
+import { parseGroupTopologyRegressionReasons } from '../pool-group-topology-state-write-position-balanced-results.mjs';
+import {
+    assertStateWriteSchemaReady,
+    readStateWritePostgresCounters,
+    readStateWriteWalDifference,
+    startStateWriteLockWaitSampler,
+    type StateWritePostgresCounters
+} from '../read-state-write-postgres-counters.ts';
+import {
+    createStateWriteBenchmarkArtifact,
+    readBenchmarkGitIdentity,
+    type BenchmarkGitIdentity,
+    type StateWriteBenchmarkRegressionReason
+} from './api-v1-state-write-benchmark-artifact.ts';
+import {
+    STATE_WRITE_REQUIRED_CONCURRENCY,
+    type StateWriteBenchmarkOptions
+} from './api-v1-state-write-benchmark-options.ts';
+import { selectStateWriteRegressionReasons } from './api-v1-state-write-regression-reasons.ts';
+import { seedCompleteState } from './seed-complete-state.ts';
+import { writeStateWriteBenchmarkOutput } from './state-write-benchmark-output.ts';
+import {
+    computeRunSample,
+    newRunContext,
+    summarizeSamples,
+    type RunSample,
+    type WorkloadEvidence
+} from './state-write-measurement.ts';
+import type {
+    MutationCommand,
+    StateWriteBenchmarkCommand,
+    StateWriteDiagnosticCommand
+} from './state-write-workload.ts';
+import {
+    createCommands,
+    executeMeasuredWorkload,
+    MUTATION_MIX,
+    StateWriteCommandCapture,
+    WORKLOADS
+} from './state-write-workload.ts';
+
+const DEFAULT_DATABASE_URL = 'postgres://app:app@localhost:5432/appdb';
+
+function validateBenchmarkRunOptions(
+    options: StateWriteBenchmarkOptions
+): readonly Error[] {
+    const issues: Error[] = [];
+    if (options.backend !== 'postgres') {
+        issues.push(
+            new Error(
+                `State-write benchmark requires --backend=postgres; received ${options.backend}`
+            )
+        );
+    }
+    if (options.warmup !== 1) {
+        issues.push(
+            new Error(
+                `State-write benchmark requires --warmup=1; received ${options.warmup}`
+            )
+        );
+    }
+    if (options.runs < 3) {
+        issues.push(
+            new Error(
+                `State-write benchmark requires --runs>=3; received ${options.runs}`
+            )
+        );
+    }
+    if (options.concurrency !== STATE_WRITE_REQUIRED_CONCURRENCY) {
+        issues.push(
+            new Error(
+                `State-write benchmark requires --concurrency=${STATE_WRITE_REQUIRED_CONCURRENCY}; ` +
+                    `received ${options.concurrency}`
+            )
+        );
+    }
+    return issues;
+}
+
+interface BenchmarkConfiguration {
+    readonly options: StateWriteBenchmarkOptions;
+    readonly gitIdentity: BenchmarkGitIdentity;
+    readonly regressionReasons: readonly StateWriteBenchmarkRegressionReason[];
+    readonly databaseUrl: string;
+    readonly runId: string;
+}
+
+async function readBenchmarkConfiguration(options: StateWriteBenchmarkOptions): Promise<BenchmarkConfiguration> {
+    const issues = validateBenchmarkRunOptions(options);
+    if (issues.length > 0) {
+        throw issues[0];
+    }
+    const outputIssues = validatePerfOutputPath(options.out);
+    if (outputIssues.length > 0) {
+        throw new Error(outputIssues.join('; '));
+    }
+    const gitIdentity = await readBenchmarkGitIdentity();
+    const reasonsText = options.regressionReasonsFile === undefined
+        ? undefined
+        : await Deno.readTextFile(options.regressionReasonsFile);
+    const precommittedReasons = parseGroupTopologyRegressionReasons(
+        reasonsText,
+        gitIdentity
+    );
+    const regressionReasons = selectStateWriteRegressionReasons(
+        options.regressionReasonProfile,
+        precommittedReasons
+    );
+
+    const databaseUrl = Deno.env.get('DATABASE_URL')?.trim() ||
+        DEFAULT_DATABASE_URL;
+    const runId = `state-write-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+    return { options, gitIdentity, regressionReasons, databaseUrl, runId };
+}
+
+export async function runStateWriteBenchmark(
+    options: StateWriteBenchmarkOptions,
+    diagnostics?: StateWriteBenchmarkDiagnostics
+): Promise<void> {
+    const { gitIdentity, regressionReasons, databaseUrl, runId } = await readBenchmarkConfiguration(options);
+    const adminSql = createStateWriteBenchmarkSql({
+        databaseUrl,
+        maxConnections: 10,
+        applicationName: `${runId}-admin`
+    });
+    const serviceSql = [0, 1].map((index) =>
+        createStateWriteBenchmarkSql({
+            databaseUrl,
+            maxConnections: options.concurrency,
+            applicationName: `${runId}-service-${index}`
+        })
+    );
+
+    const performanceTimeOriginEpochMs = options.diagnostics.kind === 'enabled' ? performance.timeOrigin : undefined;
+    let completed = false;
+    try {
+        await diagnostics?.start(options.out);
+        await assertStateWriteSchemaReady(adminSql);
+        const workloads = await runBenchmarkWorkloads({
+            adminSql,
+            serviceSql,
+            runId,
+            options,
+            diagnostics,
+            performanceTimeOriginEpochMs
+        });
+
+        const artifact = createStateWriteBenchmarkArtifact({
+            generatedAt: new Date().toISOString(),
+            gitIdentity,
+            options,
+            regressionReasons,
+            workloads
+        });
+
+        await writeStateWriteBenchmarkOutput({ artifact, destination: options.out, diagnostics });
+        completed = true;
+        console.log(`Wrote ${options.out}`);
+    }
+    finally {
+        const diagnosticStatus = await diagnostics?.finish(completed);
+        if (diagnosticStatus && diagnosticStatus.kind !== 'disabled') {
+            console.log(JSON.stringify({ diagnostic: diagnosticStatus }));
+            if (diagnosticStatus.kind === 'incomplete' && completed) {
+                process.exitCode = 1;
+            }
+        }
+        await Promise.allSettled([
+            adminSql.end({ timeout: 5 }),
+            ...serviceSql.map((sql) => sql.end({ timeout: 5 }))
+        ]);
+    }
+}
+
+interface BenchmarkWorkloadsInput {
+    readonly adminSql: Sql;
+    readonly serviceSql: readonly Sql[];
+    readonly runId: string;
+    readonly options: StateWriteBenchmarkOptions;
+    readonly diagnostics: StateWriteBenchmarkDiagnostics | undefined;
+    readonly performanceTimeOriginEpochMs: number | undefined;
+}
+
+interface BenchmarkWorkloadScale {
+    readonly clients: number;
+    readonly groups: number;
+    readonly concurrency: number;
+}
+
+interface BenchmarkWorkloadResult {
+    readonly name: (typeof WORKLOADS)[number]['name'];
+    readonly scale: BenchmarkWorkloadScale;
+    readonly mutationMix: readonly (typeof MUTATION_MIX)[number][];
+    readonly warmupRuns: number;
+    readonly measuredRuns: number;
+    readonly samples: readonly RunSample[];
+    readonly summary: ReturnType<typeof summarizeSamples>;
+}
+
+async function runBenchmarkWorkloads(
+    { adminSql, serviceSql, runId, options, diagnostics, performanceTimeOriginEpochMs }: BenchmarkWorkloadsInput
+): Promise<readonly BenchmarkWorkloadResult[]> {
+    const workloads: BenchmarkWorkloadResult[] = [];
+    for (const workload of WORKLOADS) {
+        console.log(
+            `Running ${workload.name}: warmup=${options.warmup}, measured=${options.runs}`
+        );
+        for (let warmup = 0; warmup < options.warmup; warmup += 1) {
+            await runWorkloadPhase({
+                adminSql,
+                serviceSql,
+                runId,
+                workload,
+                phaseLabel: `warmup-${warmup}`,
+                runIndex: warmup,
+                concurrency: options.concurrency,
+                diagnostics,
+                performanceTimeOriginEpochMs,
+                phase: 'warmup'
+            });
+        }
+        const samples: RunSample[] = [];
+        for (let runIndex = 0; runIndex < options.runs; runIndex += 1) {
+            samples.push(
+                await runWorkloadPhase({
+                    adminSql,
+                    serviceSql,
+                    runId,
+                    workload,
+                    phaseLabel: `measured-${runIndex}`,
+                    runIndex,
+                    concurrency: options.concurrency,
+                    diagnostics,
+                    performanceTimeOriginEpochMs,
+                    phase: 'measured'
+                })
+            );
+        }
+        const summary = summarizeSamples(samples);
+        workloads.push({
+            name: workload.name,
+            scale: {
+                clients: workload.clients,
+                groups: workload.groups,
+                concurrency: options.concurrency
+            },
+            mutationMix: [...MUTATION_MIX],
+            warmupRuns: options.warmup,
+            measuredRuns: options.runs,
+            samples,
+            summary
+        });
+        console.log(JSON.stringify({ workload: workload.name, ...summary }));
+    }
+    return workloads;
+}
+
+interface BenchmarkPhaseInput {
+    readonly adminSql: Sql;
+    readonly serviceSql: readonly Sql[];
+    readonly runId: string;
+    readonly workload: (typeof WORKLOADS)[number];
+    readonly phaseLabel: string;
+    readonly phase: 'warmup' | 'measured';
+    readonly diagnostics: StateWriteBenchmarkDiagnostics | undefined;
+    readonly performanceTimeOriginEpochMs: number | undefined;
+    readonly runIndex: number;
+    readonly concurrency: number;
+}
+
+async function runWorkloadPhase(
+    input: BenchmarkPhaseInput
+): Promise<RunSample> {
+    const diagnosticPhase = input.diagnostics?.createPhase();
+    const measurement = await prepareWorkloadMeasurement(input, diagnosticPhase);
+    const { scope, context, runtimes, commands, lockSampler } = measurement;
+    let rawCommands: StateWriteBenchmarkCommand[];
+    const capture = input.performanceTimeOriginEpochMs === undefined ? undefined : new StateWriteCommandCapture();
+    const diagnosticFacts = capture && diagnosticPhase
+        ? { input, scope, context, capture, diagnosticPhase }
+        : undefined;
+    const startedAt = performance.now();
+
+    try {
+        rawCommands = await executeMeasuredWorkload({
+            commands,
+            runtimes,
+            scope,
+            concurrency: input.concurrency,
+            capture
+        });
+    }
+    catch (error) {
+        await stopSamplerAfterCommandFailure(lockSampler);
+        if (diagnosticFacts) {
+            await writePhaseDiagnostic({
+                ...diagnosticFacts,
+                rawCommands: diagnosticFacts.capture.getCommands(),
+                startedAt,
+                endedAt: 'unavailable',
+                outcome: 'operation-failed'
+            });
+        }
+        throw error;
+    }
+
+    const endedAt = performance.now();
+    const sample = await readCompletedWorkloadSample(input, measurement, { rawCommands, startedAt, endedAt });
+    if (diagnosticFacts) {
+        await writePhaseDiagnostic({ ...diagnosticFacts, rawCommands, startedAt, endedAt, outcome: 'completed' });
+    }
+    return sample;
+}
+
+interface CompletedWorkload {
+    readonly rawCommands: StateWriteBenchmarkCommand[];
+    readonly startedAt: number;
+    readonly endedAt: number;
+}
+
+async function readCompletedWorkloadSample(
+    input: BenchmarkPhaseInput,
+    { scope, context, postgresBefore, cpuBefore, lockSampler }: WorkloadMeasurement,
+    { rawCommands, startedAt, endedAt }: CompletedWorkload
+): Promise<RunSample> {
+    const durationMs = endedAt - startedAt;
+    const lockWaitMs = await lockSampler.stop();
+    const cpu = process.cpuUsage(cpuBefore);
+    const evidence = await readWorkloadEvidence({
+        sql: input.adminSql,
+        scope,
+        rawCommands,
+        groupCount: input.workload.groups,
+        timingEvents: context.timingEvents,
+        postgresBefore
+    });
+    return computeRunSample({
+        runIndex: input.runIndex,
+        rawCommands,
+        context,
+        durationMs,
+        lockWaitMs,
+        cpuTimeMs: (cpu.user + cpu.system) / 1_000,
+        postgresBefore,
+        evidence
+    });
+}
+
+async function stopSamplerAfterCommandFailure(
+    sampler: ReturnType<typeof startStateWriteLockWaitSampler>
+): Promise<void> {
+    try {
+        await sampler.stop();
+    }
+    catch {
+        console.error('State-write benchmark cleanup failed after command failure');
+    }
+}
+
+interface PhaseDiagnosticFacts {
+    readonly diagnosticPhase: StateWriteBenchmarkDiagnosticPhase;
+    readonly input: BenchmarkPhaseInput;
+    readonly scope: StateScope;
+    readonly context: StateWriteServiceRuntimeContext;
+    readonly capture: StateWriteCommandCapture;
+    readonly rawCommands: readonly StateWriteDiagnosticCommand[];
+    readonly startedAt: number;
+    readonly endedAt: number | 'unavailable';
+    readonly outcome: StateWriteBenchmarkPhaseFacts['outcome'];
+}
+
+async function writePhaseDiagnostic(facts: PhaseDiagnosticFacts): Promise<void> {
+    const { input, context, capture } = facts;
+    await facts.diagnosticPhase.writePhase({
+        workload: input.workload.name,
+        phase: input.phase,
+        runIndex: input.runIndex,
+        scope: facts.scope,
+        groupCount: input.workload.groups,
+        serviceIds: input.serviceSql.map((_, index) => `state-write-bench-${index}`),
+        performanceTimeOriginEpochMs: input.performanceTimeOriginEpochMs!,
+        startedAtMonotonicMs: facts.startedAt,
+        endedAtMonotonicMs: facts.endedAt,
+        commands: facts.rawCommands,
+        boundaries: capture.getBoundaries(),
+        timingEvents: context.timingEvents,
+        outcome: facts.outcome
+    });
+}
+
+interface WorkloadMeasurement {
+    readonly scope: StateScope;
+    readonly context: StateWriteServiceRuntimeContext;
+    readonly runtimes: readonly StateWriteServiceRuntime[];
+    readonly commands: readonly MutationCommand[];
+    readonly postgresBefore: StateWritePostgresCounters;
+    readonly cpuBefore: ReturnType<typeof process.cpuUsage>;
+    readonly lockSampler: ReturnType<typeof startStateWriteLockWaitSampler>;
+}
+
+async function prepareWorkloadMeasurement(
+    input: BenchmarkPhaseInput,
+    diagnosticPhase: StateWriteBenchmarkDiagnosticPhase | undefined
+): Promise<WorkloadMeasurement> {
+    const scope: StateScope = {
+        applicationId: `${input.runId}-${input.workload.name}-${input.phaseLabel}`,
+        workspaceId: 'state-write-bench'
+    };
+    await seedCompleteState(input.adminSql, scope, input.workload);
+
+    const context = newRunContext();
+    const timing: RallarTimingSink = (event) => context.timingEvents.push(event);
+    const runtimes = input.serviceSql.map((sql, index) =>
+        createStateWriteServiceRuntime({
+            sql,
+            serviceId: `state-write-bench-${index}`,
+            context,
+            timing,
+            diagnosticPhase
+        })
+    );
+    const commands = createCommands(input.workload);
+    const postgresBefore = await readStateWritePostgresCounters(input.adminSql);
+    const cpuBefore = process.cpuUsage();
+    const lockSampler = startStateWriteLockWaitSampler(
+        input.adminSql,
+        `${input.runId}-service-`
+    );
+    return { scope, context, runtimes, commands, postgresBefore, cpuBefore, lockSampler };
+}
+
+interface WorkloadEvidenceInput {
+    readonly sql: Sql;
+    readonly scope: StateScope;
+    readonly rawCommands: readonly StateWriteBenchmarkCommand[];
+    readonly groupCount: number;
+    readonly timingEvents: StateWriteServiceRuntimeContext['timingEvents'];
+    readonly postgresBefore: StateWritePostgresCounters;
+}
+
+async function readWorkloadEvidence(
+    { sql, scope, rawCommands, groupCount, timingEvents, postgresBefore }: WorkloadEvidenceInput
+): Promise<WorkloadEvidence> {
+    const postgresAfter = await readStateWritePostgresCounters(sql);
+    const walBytes = await readStateWriteWalDifference({
+        sql: sql,
+        before: postgresBefore.walLsn,
+        after: postgresAfter.walLsn
+    });
+    const durable = await queryStateWriteDurableEvidence({
+        sql: sql,
+        scope,
+        commands: rawCommands,
+        groupCount: groupCount,
+        timingEvents: timingEvents
+    });
+    return { postgresAfter, walBytes, durable };
+}
+
+function validatePerfOutputPath(path: string): readonly string[] {
+    const normalized = normalize(path).replaceAll('\\', '/');
+    if (!normalized.startsWith('tmp/perf/') || normalized.includes('/../')) {
+        return [`Benchmark output must remain under tmp/perf/: ${path}`];
+    }
+    return [];
+}

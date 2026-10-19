@@ -7,7 +7,10 @@ import {
     type DequeueResourceEntryRepository,
     type ResourceInboxFairnessReservationInput,
     type ResourceInboxRelease,
-    type ResourceInboxReservationInput
+    type ResourceInboxReservationInput,
+    type ResourceInboxReservationObservationRequest,
+    type ResourceInboxReservationObservationResult,
+    type ResourceInboxReservationRequest
 } from '@shared/queuebox/queue-box-types.ts';
 import { createDefaultResourceInboxDequeuer } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { NotReadyException } from '@shared/queuebox/resource-inbox/not-ready-exception.ts';
@@ -30,6 +33,7 @@ import {
     it,
     vi
 } from 'vitest';
+import { reserveNoResourceEntries } from './reserve-no-resource-entries.ts';
 
 afterEach(() => {
     vi.useRealTimers();
@@ -241,9 +245,7 @@ describe('enqueue and dequeue', () => {
             .dequeueForCompute(
                 async (_, attempt) => {
                     const entry = attempt.entry;
-                    const testData: TestData = await JSON.parse(entry.resource);
-
-                    expect(testData.name).toEqual(helloWorld);
+                    expect(JSON.parse(entry.resource)).toEqual({ name: helloWorld });
 
                     return helloWorld;
                 }
@@ -402,11 +404,20 @@ describe('resource inbox retry and fairness lanes', () => {
 
     it('threads a custom attempt budget through every reservation lane', async () => {
         const optionsSeen: Array<ResourceInboxReservationInput | ResourceInboxFairnessReservationInput> = [];
+        function reserveEntries(request: ResourceInboxReservationObservationRequest): Promise<ResourceInboxReservationObservationResult>;
+        function reserveEntries(request: ResourceInboxReservationRequest): Promise<Map<Key, ResourceEntry>>;
+        async function reserveEntries(
+            request: ResourceInboxReservationRequest | ResourceInboxReservationObservationRequest
+        ): Promise<Map<Key, ResourceEntry> | ResourceInboxReservationObservationResult> {
+            if ('reservationObservation' in request) {
+                throw new Error('This fixture exercises ordinary reservations only');
+            }
+            const { reservationInput: options } = request;
+            optionsSeen.push(options);
+            return new Map();
+        }
         const repository = createDequeueRepository({
-            reserveEntries: async ({ reservationInput: options }) => {
-                optionsSeen.push(options);
-                return new Map();
-            },
+            reserveEntries,
             reserveOverdueRetryEntries: async (_types, _cutoff, options) => {
                 optionsSeen.push(options);
                 return new Map();
@@ -471,21 +482,30 @@ describe('resource inbox retry and fairness lanes', () => {
         const entry = createQueueEntry('first-failure', EntityStatus.NEW, 0);
         const releaseCalls: Array<{ status: EntityStatus; delayMs: number | null; }> = [];
         let newReserved = false;
+        function reserveEntries(request: ResourceInboxReservationObservationRequest): Promise<ResourceInboxReservationObservationResult>;
+        function reserveEntries(request: ResourceInboxReservationRequest): Promise<Map<Key, ResourceEntry>>;
+        async function reserveEntries(
+            request: ResourceInboxReservationRequest | ResourceInboxReservationObservationRequest
+        ): Promise<Map<Key, ResourceEntry> | ResourceInboxReservationObservationResult> {
+            if ('reservationObservation' in request) {
+                throw new Error('This fixture exercises ordinary reservations only');
+            }
+            const { statusIds: statuses } = request;
+            if (statuses.has(EntityStatus.NEW) && !newReserved) {
+                newReserved = true;
+                return new Map([[entry.key, {
+                    ...entry,
+                    status: EntityStatus.RESERVED,
+                    dequeueAudit: {
+                        attempts: 1,
+                        startTs: Temporal.Now.instant()
+                    }
+                }]]);
+            }
+            return new Map();
+        }
         const repository = createDequeueRepository({
-            reserveEntries: async ({ statusIds: statuses }) => {
-                if (statuses.has(EntityStatus.NEW) && !newReserved) {
-                    newReserved = true;
-                    return new Map([[entry.key, {
-                        ...entry,
-                        status: EntityStatus.RESERVED,
-                        dequeueAudit: {
-                            attempts: 1,
-                            startTs: Temporal.Now.instant()
-                        }
-                    }]]);
-                }
-                return new Map();
-            },
+            reserveEntries,
             releaseEntries: async (releases) => {
                 releaseCalls.push(...releases.map((release) => release.disposition));
                 return new Map(releases.map((release) => [release.entry.key, {
@@ -521,22 +541,31 @@ describe('resource inbox retry and fairness lanes', () => {
         const reservedStatuses: EntityStatus[][] = [];
         let retryReserved = false;
         let computeCalls = 0;
-        const repository = createDequeueRepository({
-            reserveEntries: async ({ statusIds: statuses }) => {
-                reservedStatuses.push([...statuses]);
-                if (statuses.has(EntityStatus.RETRY) && !retryReserved) {
-                    retryReserved = true;
-                    return new Map([[entry.key, {
-                        ...entry,
-                        status: EntityStatus.RESERVED,
-                        dequeueAudit: {
-                            attempts: 20,
-                            startTs: Temporal.Now.instant()
-                        }
-                    }]]);
-                }
-                return new Map();
+        function reserveEntries(request: ResourceInboxReservationObservationRequest): Promise<ResourceInboxReservationObservationResult>;
+        function reserveEntries(request: ResourceInboxReservationRequest): Promise<Map<Key, ResourceEntry>>;
+        async function reserveEntries(
+            request: ResourceInboxReservationRequest | ResourceInboxReservationObservationRequest
+        ): Promise<Map<Key, ResourceEntry> | ResourceInboxReservationObservationResult> {
+            if ('reservationObservation' in request) {
+                throw new Error('This fixture exercises ordinary reservations only');
             }
+            const { statusIds: statuses } = request;
+            reservedStatuses.push([...statuses]);
+            if (statuses.has(EntityStatus.RETRY) && !retryReserved) {
+                retryReserved = true;
+                return new Map([[entry.key, {
+                    ...entry,
+                    status: EntityStatus.RESERVED,
+                    dequeueAudit: {
+                        attempts: 20,
+                        startTs: Temporal.Now.instant()
+                    }
+                }]]);
+            }
+            return new Map();
+        }
+        const repository = createDequeueRepository({
+            reserveEntries
         });
 
         await createDefaultResourceInboxDequeuer<string>({
@@ -645,7 +674,7 @@ function createDequeueRepository(
 ): DequeueResourceEntryRepository {
     return {
         isAnyEntryToLock: async () => false,
-        reserveEntries: async () => new Map(),
+        reserveEntries: reserveNoResourceEntries,
         reserveOverdueRetryEntries: async () => new Map(),
         reserveTimeoutEntries: async () => new Map(),
         reserveRetryExhaustionFinalizations: async () => new Map(),

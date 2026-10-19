@@ -51,6 +51,8 @@ import {
     toResourceInboxFinalizationReservationOptions,
     toResourceInboxReservationOptions,
     toResourceInboxWorkAdvertisementOptions,
+    type ResourceInboxReservationObservationRequest,
+    type ResourceInboxReservationObservationResult,
     type ResourceInboxReservationRequest,
     type ResourceInboxTimeoutReservationRequest
 } from './queue-box-types.ts';
@@ -60,6 +62,7 @@ import {
     resolveResourceEntryObservation,
     resolveResourceInboxWorkPageRequest
 } from './resource-entry-observations.ts';
+import { toUnavailableReservationObservation } from './resource-inbox/resource-inbox-reservation-observation.ts';
 import { ResourceInboxResilience } from './resource-inbox/resource-inbox-resilience.ts';
 import {
     COMPLETED_STATUSES,
@@ -441,9 +444,14 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         }
     }
 
+    reserveEntries(
+        request: ResourceInboxReservationObservationRequest
+    ): Promise<ResourceInboxReservationObservationResult>;
+    reserveEntries(request: ResourceInboxReservationRequest): Promise<Map<Key, ResourceEntry>>;
     async reserveEntries(
-        { typeIds, statusIds, reservationInput, observedEntries, contextClaim }: ResourceInboxReservationRequest
-    ): Promise<Map<Key, ResourceEntry>> {
+        request: ResourceInboxReservationRequest | ResourceInboxReservationObservationRequest
+    ): Promise<Map<Key, ResourceEntry> | ResourceInboxReservationObservationResult> {
+        const { typeIds, statusIds, reservationInput, observedEntries, contextClaim } = request;
         if (contextClaim !== undefined) {
             throw new TypeError('An IndexedDB queue box claims in queue order only.');
         }
@@ -455,7 +463,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             );
             const observations = captureResourceEntryObservations(observedEntries);
             if (observations?.size === 0 || maxToReserve === 0) {
-                return new Map();
+                return 'reservationObservation' in request ? { entries: new Map(), observations: [] } : new Map();
             }
             const db = await operation.open();
             const now = this.#now();
@@ -484,7 +492,14 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             }
             const reserved = await this.#write(db, { mutations, result: selection.reserved });
             this.#addReservationExpiredDeletes(expired);
-            return reserved;
+            return 'reservationObservation' in request
+                ? {
+                    entries: reserved,
+                    observations: [...reserved.values()].map((entry) =>
+                        toUnavailableReservationObservation(entry, 'unsupported-backend')
+                    )
+                }
+                : reserved;
         }
         finally {
             operation.release();

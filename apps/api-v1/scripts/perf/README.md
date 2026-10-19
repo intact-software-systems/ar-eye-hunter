@@ -263,7 +263,7 @@ truncated. The phase footer reports total, retained, unassociated, rejected and
 truncated counts. Expected process-level SQL or unavailable attempt/worker facts
 are disclosed; invalid joins and capacity loss make the projection incomplete.
 
-Current captures use `rallar.state-write.diagnostic.v2`: readable named JSON records
+Current captures use `rallar.state-write.diagnostic.v3`: readable named JSON records
 retain every independent timing field, event order and multiplicity. Only the two
 exactly derived timing-row properties are omitted: `approximateStartedAtEpochMs`
 is `completedAtEpochMs - roundedDurationMs`; `statusMeaning` is
@@ -298,12 +298,39 @@ reports incomplete status without source error text. An otherwise successful
 benchmark still writes v6 and exits nonzero for incomplete diagnostics; an
 original operation failure remains the original failure.
 
-Scalar stores and allocations in the mapper are diagnostic overhead. Post-phase
+Ordinary, unobserved PostgreSQL RETRY claims optionally retain the previous persisted
+retry delay and due-to-reservation observation interval as signed safe-integer
+microseconds. Both intervals are subtracted in PostgreSQL before truncation toward
+zero; negative values remain visible. The observation occurs in UPDATE RETURNING,
+after update and before commit, and does not measure lock, commit or handler time.
+Microsecond quantization and database wall-clock adjustments limit interpretation.
+Human reports convert these values to seconds with explicit units.
+
+Each release carries availability, boundary, association and reservation attempt.
+The attempt stays distinct from a not-ready release's decremented attempt. Missing
+or malformed expected RETRY observations make the projection incomplete; NEW is
+not applicable, and FAIRNESS, TIMEOUT and FINALIZATION remain explicitly uncaptured.
+Observed PostgreSQL claims and non-PostgreSQL stores cannot provide these intervals.
+The footer counts expected, available and unavailable RETRY observations. Physical
+keys and previous timestamps remain private. Existing v2 originals are preserved;
+the current hosted capture validator admits v3 only.
+
+The original CLI dispatches comparison mode through a shared workload runner and
+loads one fixed diagnostic entry only when `--diagnostics-dir` is present. Candidate
+and baseline comparison use the identical perf overlay. Diagnostic composition
+requires the current production observation validator and fails during import on
+unsupported historical production, before database setup. Native checks cover both
+candidate entries and the baseline comparison entry separately.
+
+Scalar stores and allocations in the mapper are diagnostic overhead. Enabled mode
+also retains an additional phase-local array of references to release telemetry;
+the serialization budgets do not bound that array or canonical collection. Post-phase
 projection and I/O can affect later phases. This overlay is not a performance
 improvement claim and does not authorize or replace the governed comparison.
 
-For source navigation, start at `api-v1-state-write-concurrency-bench.ts` for
-SQL/phase/artifact lifecycle. Under `state-write/`, `state-write-workload.ts` owns
+For source navigation, start at `api-v1-state-write-concurrency-bench.ts` for mode selection.
+Under `state-write/`, `run-state-write-benchmark.ts` owns the single SQL/phase/artifact
+lifecycle and `run-state-write-diagnostic.ts` owns diagnostic reader composition; `state-write-workload.ts` owns
 the complete seven-kind command and queue-pump flow, `seed-complete-state.ts` owns
 setup, and `state-write-measurement.ts` owns summaries. Exact command/operation association
 policy lives in `state-write-diagnostic-association.ts`; record projection and caps
@@ -453,9 +480,9 @@ The workflow substitutes the actual GitHub run ID and attempt. Fresh `commands/`
 `diagnostics/` and capture-owned `.acquisition` destinations keep producer originals separate.
 All three workloads, twelve phases, 8,400 total commands and 6,300 measured commands are required.
 The unchanged exported `validateStateWriteArtifact` validates canonical v6 correctness. The hosted
-owner validates only the fresh v2 capture from that same pinned candidate checkout;
+owner validates only the fresh v3 capture from that same pinned candidate checkout;
 unsupported schemas and incomplete or inconsistent row/count evidence fail closed.
-It has no historical-input API. Original v1 artifacts remain unchanged; no historical
+It has no historical-input API. Original v1/v2 artifacts remain unchanged; no historical
 adapter is added. The owner also checks every diagnostic phase, the complete receipt,
 byte accounting and the fixed
 110,000 timing/release records per phase, 33,554,432 bytes per phase and 536,870,912 bytes per run.
