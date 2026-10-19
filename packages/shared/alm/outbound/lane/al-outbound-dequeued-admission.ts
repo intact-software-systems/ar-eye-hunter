@@ -16,9 +16,9 @@ import type {
     ALOutboundSettlementEmitter
 } from '../al-outbound-message-runtime.ts';
 import type { ALOutboundComputedDto } from '../compute-al-outbound-dispatch.ts';
-import { recordALOutboundDequeueTiming } from './al-outbound-dequeue-timing.ts';
 import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observation.ts';
 import { readALOutboundDequeueWait } from './read-al-outbound-dequeue-wait.ts';
+import { recordALOutboundDequeueTiming } from './record-al-outbound-dequeue-timing.ts';
 import {
     recordALOutboundClaimAdmissionVerdict,
     type ALOutboundClaimAttemptSettlement,

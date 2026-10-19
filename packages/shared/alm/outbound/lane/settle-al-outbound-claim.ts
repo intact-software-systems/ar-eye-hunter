@@ -2,9 +2,9 @@ import { isNotReadyException } from '../../../queuebox/resource-inbox/not-ready-
 import type { ALDeliveryAdmissionVerdict } from '../../delivery/al-delivery-lifecycle.ts';
 import type { ALWorkAttemptResult } from '../../work/al-work-handler.ts';
 import type { ALWorkClaim } from '../../work/al-work-queue-port.ts';
-import { recordALOutboundDequeueTiming } from './al-outbound-dequeue-timing.ts';
 import type { ALOutboundDequeuedAdmission } from './al-outbound-dequeued-admission.ts';
 import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observation.ts';
+import { recordALOutboundDequeueTiming } from './record-al-outbound-dequeue-timing.ts';
 
 /** The evidence a claim's attempt publishes once it settles; a claim whose work never decoded has none. */
 export interface ALOutboundClaimObservation {
