@@ -292,8 +292,11 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    layout's own output takes 0.881 s to reservation and 1.378 s to server send;
    its distinct activation waits 9.460 s, with 9.455 s inside worker batches.
    This proves occupancy, not earlier eligibility, a scheduling fault or a paired
-   speedup. Investigate a bounded combined-read opportunity only if expiry,
-   original failures, session settlement and serial sends remain safe. No
+   speedup. The maintainer now authorizes the two policy reads in parallel,
+   reusing the existing delivery expiry guard without adding a reader check.
+   Task 20 in the focused plan owns TDD, full sibling settlement, ordered error
+   precedence, honest overlapping timing and paired PostgreSQL measurement.
+   Delivery deadlines and serial sends remain enforced at their existing owner. No
    redundant read, safe cache or send reordering is established. Full details
    and constraints are Task 19 in the focused formation plan. Native 150-result/231-assertion reconciliation
    passes; complete recorder retention remains unproved under #682.

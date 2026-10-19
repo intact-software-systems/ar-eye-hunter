@@ -609,10 +609,11 @@ measurement remains first.
    a bounded combined-read opportunity at the existing authority/session owner;
    do not introduce read overlap without preserving expiry, error precedence and
    complete settlement. No query removal, cache or send reordering is earned.
-   The bounded overlap candidate awaits a maintainer decision: a final expiry
-   check strengthens decision-time rejection, and joining both reads delays
-   early failures compared with the current sequential path. Do not silently
-   change either behavior under a performance-only claim.
+   The maintainer authorizes parallel reads with the existing delivery expiry
+   guard. Do not add a policy-reader expiry check. Join both reads before
+   returning or failing, preserve ordered validation/error precedence and sends,
+   and verify the benefit with a paired PostgreSQL measurement. Task 20 owns
+   the implementation and its overlapping timing semantics.
    These single-run observations are not a matched improvement. Native
    correctness, capture validity and exact restoration pass; the full target
    and the old release-stall attribution remain open.
@@ -2046,6 +2047,73 @@ identity expiry is observed earlier, error precedence can change, and a fail-fas
 join can close an IndexedDB session while a read is still pending. Adjacent code
 has a late-expiry pattern, but applying it here would deliberately strengthen
 decision-time rejection and joining both reads changes early-failure latency.
-The maintainer has been asked whether to pursue that bounded semantic change
-with TDD and a paired PostgreSQL comparison or preserve the exact sequential
-semantics. No production change is authorized by this assessment alone.
+The subsequent complete delivery trace found existing expiry guards at delivery
+entry and before each recipient send. The maintainer explicitly authorizes
+parallel reads using those guards, with no duplicate expiry check in the policy
+reader. Waiting for both reads before failure is accepted as necessary cleanup.
+Task 20 supersedes the earlier proposal to add a reader-level expiry guard.
+
+### Task 20: Parallel captured-policy reads with existing delivery expiry
+
+**Outcome:** reduce captured-policy waiting by starting its two independent
+reads together, retaining authority checks and serial publication. The user
+explicitly authorizes this change, existing delivery expiry enforcement, TDD,
+performance verification, and plan/PR publication. No extra expiry check belongs
+in `readCapturedPolicy`.
+
+**Constraints and design:**
+
+- Reuse the current admission owner and shared settlement patterns. Start only
+  the stored-admission and canonical-identity reads for one message; both keys
+  are available before reading. Join both settlements before callback/session
+  return. Do not parallelize message publication or add a scheduler/cache/query.
+- Preserve result/error precedence: stored-read failure, stored-reference
+  validation, identity-read failure, canonical/scope validation. A fast identity
+  failure must not mask a slower stored failure or corruption. A failed stored
+  read may wait for its already-started sibling; do not detach it or invent a
+  timeout/cancellation policy. Failure paths now perform at most one extra
+  speculative identity read; retain that tradeoff in the report.
+- Reuse the existing live-delivery deadline checks, including per-recipient
+  protection. Expiry during the read pair must produce no late socket send.
+  The policy owner can return validated facts observed before expiry; this does
+  not authorize delivery after the deadline. Existing read-time storage filtering
+  remains unchanged. Do not turn expected late delivery into a new corruption
+  rule or add a duplicate clock check to rescue old read ordering.
+- Update optional owner timing truthfully for overlap. Record the combined-read
+  wall interval as a disjoint part of owner elapsed; individual read spans may
+  overlap and must not be added as disjoint cost. Preserve post-session emission,
+  exact identities, optional-failure isolation, and zero new timing work when
+  disabled. Replace affected serial-only diagnostic assumptions coherently;
+  no legacy adapter or second algorithm. Historical artifacts retain their old
+  meaning and are not silently reinterpreted.
+- Review and remediate every changed human-authored file in full. Support files
+  modified by that remediation enter closure recursively; independent untouched
+  code remains outside closure. Keep direct ownership and existing patterns.
+  Bundle budgets may grow proportionately if needed for clear, correct code.
+
+**TDD and evidence:**
+
+1. Reuse real store/held-backend fixtures. Demonstrate RED for two reads entering
+   before either is released, then GREEN with policy and identity validation
+   unchanged. Test both completion orders, bounded cleanup, both-read failure
+   precedence, reference corruption beside identity failure, healthy follow-up,
+   and genuine IndexedDB session settlement where applicable.
+2. Exercise the real publication/delivery path with expiry crossing during the
+   pair. Verify no expired socket send using the existing send guard, and retain
+   ordered successful sends and corruption rejection. Do not substitute a mock
+   policy result or add a private call-count ratchet.
+3. Prove overlapping diagnostic spans reconcile using their combined wall
+   interval, plus disabled/faulting timing behavior. Run focused owner, bridge,
+   browser backend and factory tests; shared/shared-server/maintained-test typing,
+   API native checks, affected bundle/format/style/coupling/structure checks.
+4. Measure baseline and candidate through the same real PostgreSQL owner and
+   existing dequeue/publication harness, identical payloads, pool/page settings,
+   fresh fixture state, warmup and repeated balanced order. Keep instrumentation
+   off for primary timing; retain returned policy, ordered sends and failures.
+   Report seconds, distributions and all runs. Controlled held/delayed-read tests
+   prove the mechanism, not PostgreSQL or hosted benefit. No unpaired claim.
+5. Independent source review and measured benefit precede acceptance. The parent
+   selects required medium-scale and comparative state-write gates from the
+   concurrency change; the existing failed hot-throughput comparison and full
+   hosted formation target remain open until independently satisfied. Do not
+   hide a negative or inconclusive result or launch another blind host capture.
