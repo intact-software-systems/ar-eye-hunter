@@ -761,6 +761,9 @@ export class ApiCpuCapture {
             mkdirSync(output, { recursive: true });
             copyEvidence(this.evidence, output, true);
             this.state.exportStatus = this.state.exportStatus === 'failed' ? 'failed' : 'copied-to-operation-directory';
+            if (['complete', 'failed'].includes(this.state.status)) {
+                this.state.status = this.success() ? 'complete' : 'failed';
+            }
             this.writeState();
             copyFileSync(this.stateFile, path.join(output, 'capture.json'));
             const hashes = hashEvidence(output);
@@ -770,6 +773,7 @@ export class ApiCpuCapture {
         catch (error) {
             this.state.exportStatus = 'failed';
             this.state.errors.push(`Artifact export failed: ${error.message}`);
+            this.state.status = 'failed';
             this.writeState();
             throw error;
         }

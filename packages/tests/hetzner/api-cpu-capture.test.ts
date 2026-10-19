@@ -1,3 +1,4 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
 import {
     mkdir,
     mkdtemp,
@@ -288,7 +289,7 @@ it('retries operation export after successful restoration and releases capture o
     await rm(fixture.configuration.operationRoot, { recursive: true });
     await writeFile(fixture.configuration.operationRoot, 'blocked transport');
     expect(() => fixture.capture.finish('shell-exit', 0)).toThrow();
-    expect(fixture.readState()).toMatchObject({ recipeExitCode: 0, restoreStatus: 'restored', exportStatus: 'failed' });
+    expect(fixture.readState()).toMatchObject({ status: 'failed', recipeExitCode: 0, restoreStatus: 'restored', exportStatus: 'failed' });
     await rm(fixture.configuration.operationRoot);
     fixture.capture.finish('retry-export', 1);
     await expect(readFile(path.join(root, 'active'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
@@ -571,9 +572,49 @@ it('restages preserved bytes after a completed restoration without overwriting a
     await writeFile(path.join(owned, 'sha256.json'), 'foreign bytes');
     expect(resumed.finish('repeat', 0)).toBe(false);
     expect(await readFile(path.join(owned, 'sha256.json'), 'utf8')).toBe('foreign bytes');
-    expect(fixture.readState()).toMatchObject({ restoreStatus: 'restored', exportStatus: 'failed' });
+    expect(fixture.readState()).toMatchObject({ status: 'failed', restoreStatus: 'restored', exportStatus: 'failed' });
     const exported = path.join(fixture.configuration.operationRoot, 'dist-owned', 'api-cpu-capture', fixture.configuration.id, 'capture.json');
-    expect(JSON.parse(await readFile(exported, 'utf8')).errors).toContainEqual(expect.stringMatching(/refusing overwrite/));
+    const published = JSON.parse(await readFile(exported, 'utf8'));
+    expect(published).toMatchObject({ status: 'failed', recipeExitCode: 0, profileStatus: 'valid', restoreStatus: 'restored', exportStatus: 'failed' });
+    expect(published.errors).toContainEqual(expect.stringMatching(/refusing overwrite/));
+});
+
+it('publishes failed terminal status when first-finish native staging fails after restoration', async (context) => {
+    const { ApiCpuCaptureFixture } = await import('./api-cpu-capture-fixture.mjs');
+    const root = await mkdtemp(path.join(tmpdir(), 'rallar-capture-first-staging-'));
+    context.onTestFinished(() => rm(root, { recursive: true, force: true }));
+    const fixture = new ApiCpuCaptureFixture(root);
+    context.onTestFinished(() => fixture.dispose());
+    const owned = path.join(fixture.configuration.environment.RALLAR_DISTRIBUTED_ARTIFACT_DIR, 'dist-owned');
+    const commands = {
+        run(program: string, args: string[], execution: { environment: NodeJS.ProcessEnv; capabilityDirectory?: string; }) {
+            const output = fixture.run(program, args, execution);
+            if (program === 'bash' && args[0].endsWith('08-rollout-controller.sh') && execution.environment.RALLAR_API_RESTORE_CONFIGURATION) {
+                mkdirSync(owned, { recursive: true });
+                writeFileSync(path.join(owned, 'results.jsonl'), 'foreign destination bytes');
+            }
+            return output;
+        }
+    };
+    const capture = new ApiCpuCapture(fixture.configuration, commands);
+    capture.begin();
+    await mkdir(owned, { recursive: true });
+    await writeFile(path.join(owned, 'results.jsonl'), 'original native bytes');
+    expect(capture.finish('shell-exit', 0)).toBe(false);
+    expect(fixture.artifactsDeletedDuringRestore).toBe(true);
+    expect(fixture.readState()).toMatchObject({
+        status: 'failed',
+        recipeExitCode: 0,
+        profileStatus: 'valid',
+        restoreStatus: 'restored',
+        exportStatus: 'failed'
+    });
+    const exported = path.join(fixture.configuration.operationRoot, 'dist-owned', 'api-cpu-capture', fixture.configuration.id, 'capture.json');
+    const published = JSON.parse(await readFile(exported, 'utf8'));
+    expect(published).toMatchObject({ status: 'failed', recipeExitCode: 0, profileStatus: 'valid', restoreStatus: 'restored', exportStatus: 'failed' });
+    expect(published.errors).toContainEqual(expect.stringMatching(/refusing overwrite/));
+    expect(await readFile(path.join(capture.directory, 'distributed-artifacts', 'results.jsonl'), 'utf8')).toBe('original native bytes');
+    expect(await readFile(path.join(owned, 'results.jsonl'), 'utf8')).toBe('foreign destination bytes');
 });
 
 it.for([0, 17, 143])('finishes from a real shell EXIT trap after recipe exit %i and transports retained bytes', async (recipeExit, context) => {
