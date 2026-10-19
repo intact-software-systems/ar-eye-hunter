@@ -156,10 +156,37 @@ but no FIFO violation or hosted selection cause is established. Row IDs and lock
 state were not captured. Reuse existing batch/readiness diagnostics to split
 owner occupancy, readiness, selection and claim before changing queue policy.
 
+Clipped unions of same-process API timestamps further localize these waits.
+Prior reservation-to-settlement batch envelopes overlap 9.909 s of the version 4
+gap (84.6%) and 6.211 s of version 5 (91.3%). Read, grouped-commit and ordered
+dispatch-to-settlement envelopes account for 1.652 / 4.988 / 3.233 s and
+0.838 / 3.210 / 2.134 s respectively. These categories partition observed batch
+envelopes, not CPU or SQL work; version 4 also includes 0.001 s of its own batch
+onset. Outside all envelopes remain 1.801 / 0.593 s. Settlement still precedes
+durable release, and overlap does not establish target eligibility or continuous
+owner occupancy. This evidence changes the next measurement priority: split
+earlier batches' grouped commit and local-send cost, retaining existing batch
+claim/release facts for the residual. A generic wake trace alone cannot explain
+the majority already localized to previous batch stages.
+
+The optional owner observations now retain one completed batch record, one
+actual grouped decision/bundle record and one captured-policy-read endpoint per
+publication. Claim duration ends before per-row logging. Batch source timestamps
+are time facts, not unique IDs; joins also require actual owner identity and
+ordered source boundaries. Summed claim-work duration is not elapsed batch
+occupancy. The group bundle interval is not a transaction receipt, and sender
+queue/lock wait before the group operation remains outside that window. These
+boundaries preserve all existing scheduling, admission and send outcomes.
+Controlled held-boundary tests establish semantics, not hosted cost. The final
+source adds 241 Brotli bytes to each browser/headless bundle versus the preceding
+source, within unchanged 266 / 355 KiB budgets. Matched timing-off comparison
+must use common browser/native measures because timing-off removes the optional
+server promotion anchor too; it cannot supply a paired server-stage measurement.
+
 The API journal retains 19,623 lines below its 50,000-line cap, with no malformed
 timing rows or suppression notices. All 569 observed attempts have complete
 stage chains, but the control journal again reports a 100,000-node artifact
-append/certification failure. Matching exported counts and passing native
+append/certification failure, tracked independently in [#682](https://github.com/intact-software-systems/ar-eye-hunter/issues/682). Matching exported counts and passing native
 assertions do not certify full durable export or queue release. Timing-off
 restoration and fresh inspection pass on the exact source: settings fingerprint,
 topology, database identities, migrations and healthy idle state match; auth
@@ -293,8 +320,10 @@ These associations do not establish causation or waive the failed gate.
 1. **Remaining formation-tail delivery.** The new stage capture identifies an
    11.711 s output-to-reservation gap on an earlier partial-cohort promotion;
    the first all-cohort layout's own output takes 2.559 s to local send, including
-   a 1.426 s grouped admission commit. Trace existing queue wake/scheduling/claim
-   boundaries first, use the narrowest missing measurement only if required,
+   a 1.426 s grouped admission commit. Prior batch processing envelopes overlap
+   84.6% / 91.3% of the two largest pre-reservation waits. Split existing grouped
+   commit and local-send diagnostics first; retain batch claim/release facts for
+   the uncovered remainder. Use the narrowest missing measurement only if required,
    then choose the focused TDD repair from that evidence. Preserve immutable
    events/audiences, causal fences, retries, deadlines and fault outcomes. Keep
    timing overhead, physical commit, queue-ready and browser-causality limits
@@ -722,3 +751,82 @@ shared/shared-server/API typecheck as selected by rallar-testing. Run the exact
 main-to-head changed-style gate before publication, plus meaningful full-file
 human review. Keep all existing protocol, immutable audience, causal-fence,
 ordering, claim, retry, deadline and fault-tolerance contracts intact.
+
+### Task 11: Attribute prior outbound batch execution cost
+
+The requested outcome remains faster formation delivery with scalable, responsive,
+fault-tolerant queue handling. The retained same-process interval unions localize
+84.6% and 91.3% of the two long pre-reservation gaps to earlier batch processing
+envelopes. Grouped commit accounts for 4.988 / 3.210 s, and ordered dispatch through
+settlement for 3.233 / 2.134 s. These are observed envelopes, not continuous CPU,
+SQL or causal queue-blocking proof. The occupied-owner wake test passes unchanged
+production. A further generic wake trace alone would not explain the majority.
+
+Use one coherent opt-in observation slice at existing outbound owners. Reuse
+existing diagnostics, source-facts ports, timing sinks and tests. Do not introduce
+a generic observer, scheduler, public batch identifier, retained per-row collection,
+SQL tracing framework, queue policy change or new dependency.
+
+- Retain one completed-work-batch observation from the existing work-handler
+  diagnostic through the optional server timing path. Preserve measured selection,
+  claim, execution, release and queue-wait durations, actual counts and existing
+  owner identity. Recover exact semantics before naming fields. Snapshot claim
+  duration immediately after the claim returns, before optional per-row logging;
+  logging must not masquerade as storage claim duration. A failed claim must not
+  emit a successful completed batch; empty claims must remain truthful. Join
+  batches to existing attempt observations unambiguously using existing owner and
+  source-time facts, with a focused concurrent-owner fixture if required. Do not
+  subtract database claim stamps from API-process clocks. Do not add row-ID or
+  lock instrumentation: selection fairness is not the selected hypothesis.
+- Split the already-observed grouped admission window at its actual owner into
+  decision-read work and bundle commit work, using existing commit-phase/store
+  diagnostics. Observe each actual grouped operation once; never sum repeated
+  per-member group durations or overlapping global read counters. If the existing
+  store boundary can distinguish bundle observations from its transaction without
+  another callback framework, retain that distinction. Otherwise name the bundle
+  window honestly and keep transaction/pool/lock cost explicitly uncaptured.
+  Preserve fallback, sender ordering and all joined reads. Use existing keys or
+  owner context to associate the group with the claimed batch; no synthetic
+  post-call evidence may be called a transaction receipt.
+- At the existing server publication bridge, separate captured-publication-policy
+  read from synchronous local send/deferred-target bookkeeping within the already
+  measured publish-return-to-direct-send interval. Prefer one bounded additional
+  source observation or existing diagnostic per actual publication. Reuse the
+  actual physical/publication identity and captured audience. A policy refusal,
+  expiry or failure must remain its real outcome; timing cannot turn it into
+  success. Do not change send order, audience, retry, deadline or cancellation.
+
+This scope deliberately covers the already measured major stages in one slice;
+repeating the hosted workload merely to reconfirm that prior batch execution
+consumes time would not answer the remaining attribution question. Existing
+readiness and generic wake observations remain deferred unless the uncovered
+remainder becomes the dominant measured cost. No performance optimization is
+selected until these owner observations support it.
+
+Use TDD at existing fixtures: independently held claim and run boundaries;
+held group decision read and bundle transaction with multi-member one-group
+accounting and fallback; held captured-policy read versus local send; empty,
+failed and cancelled paths relevant to each changed boundary. Prove disabled
+actual API composition omits new sinks/detail construction/read work, and throwing
+enabled diagnostics cannot change a batch result, strand a claim or skip cleanup.
+Retain the passing occupied-owner regression rather than duplicating it. No
+per-member log multiplication or eager allocation is acceptable when timing is off.
+
+Before source edits, recover nearby code/tests/examples and load code-standard,
+platform, realtime, testing and performance skills plus required references.
+Review and remediate each changed human-authored file completely. Any support
+file modified by remediation enters closure recursively; independent untouched
+code remains outside closure. Keep direct ownership and remove affected unneeded
+legacy. Focused diagnostic/owner behavior tests are the direct validation;
+affected shared/shared-server/API typechecks are the integration validation.
+Run formatting, the exact main-to-head changed-style gate, and browser/headless
+bundle checks without silently raising the existing 266 / 355 KiB budgets.
+Report estimated event cardinality from real fixture observations, actual bundle
+delta, RED/GREEN evidence and every uncaptured metric. Generated artifacts stay
+under tmp/perf; source implementation performs no hosted operation.
+
+After source review and selected CI, the parent runs the unchanged native workload
+with fresh read-only baseline and exact timing-off/settings restoration. Retain a
+matched timing-disabled workload before attributing diagnostic-stage cost to
+production or claiming improvement. Preserve all failed comparisons and their
+original gates; no favorable rerun, workload reduction or threshold waiver.

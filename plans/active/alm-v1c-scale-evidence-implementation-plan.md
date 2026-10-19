@@ -220,6 +220,11 @@ final evidence reconciliation must preserve workload provenance and the unwaived
    queue's due-time/row-ID order is distinct from commit order and skips locks;
    this is not evidence of a FIFO violation. Split existing owner occupancy,
    readiness, selection and claim observations before selecting a policy repair.
+   Further same-process interval unions place 84.6% / 91.3% of the two waits
+   inside earlier batch processing envelopes; grouped commit and local-send
+   stages are the next attribution priority. These overlaps do not prove
+   continuous occupancy, target eligibility or durable release. Use existing
+   batch claim/release diagnostics for the uncovered 1.801 / 0.593 s remainder.
    Grouped commit remains secondary. Select a TDD repair only from measured
    ownership; do not change concurrency, retries, workload, deadlines or
    predicates based on an unsplit interval. Keep immutable events, frozen
