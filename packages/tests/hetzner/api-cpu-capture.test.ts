@@ -496,3 +496,154 @@ it('preserves the real preflight stage when stdout is discarded and keeps direct
     })).rejects.toMatchObject({ code: 1, stdout: '', stderr: expect.stringContaining('RALLAR_OPERATION_STAGE=api-capture-preflight\n') });
     await expect(readFile(path.join(root, 'active'))).rejects.toMatchObject({ code: 'ENOENT' });
 });
+
+it.for(['complete', 'recipe', 'invalid-profile', 'interrupted', 'partial', 'absent'])(
+    'retains owned native bytes through destructive restore and transport staging for %s',
+    async (scenario, context) => {
+        const { ApiCpuCaptureFixture } = await import('./api-cpu-capture-fixture.mjs');
+        const root = await mkdtemp(path.join(tmpdir(), 'rallar-capture-native-'));
+        context.onTestFinished(() => rm(root, { recursive: true, force: true }));
+        const fixture = new ApiCpuCaptureFixture(root);
+        context.onTestFinished(() => fixture.dispose());
+        if (scenario === 'invalid-profile') {
+            fixture.failAt = scenario;
+        }
+        fixture.capture.begin();
+        const artifactRoot = fixture.configuration.environment.RALLAR_DISTRIBUTED_ARTIFACT_DIR;
+        const owned = path.join(artifactRoot, 'dist-owned');
+        const foreign = path.join(artifactRoot, 'dist-foreign');
+        const nativeBytes = Buffer.from(' {"actual":{"native":[0,1,2]},"status":"failed"}\n');
+        if (scenario !== 'absent') {
+            await mkdir(owned, { recursive: true });
+            await writeFile(path.join(owned, 'results.jsonl'), nativeBytes);
+            if (scenario !== 'partial') {
+                await writeFile(path.join(owned, 'runner-summary.json'), '{"state":"passed"}\n');
+            }
+        }
+        await mkdir(foreign, { recursive: true });
+        await writeFile(path.join(foreign, 'foreign.json'), 'not owned');
+        const exitCode = scenario === 'recipe' ? 17 : scenario === 'interrupted' ? 143 : 0;
+        fixture.capture.finish('shell-exit', exitCode);
+        expect(fixture.artifactsDeletedDuringRestore).toBe(true);
+        expect(fixture.readState()).toMatchObject({ restoreStatus: 'restored', recipeExitCode: exitCode });
+        expect(fixture.replayedConfiguration).toEqual(fixture.original.configuration);
+        if (scenario === 'invalid-profile') {
+            expect(fixture.readState().profileStatus).toBe('failed');
+        }
+        if (scenario === 'absent') {
+            await expect(readFile(path.join(owned, 'results.jsonl'))).rejects.toMatchObject({ code: 'ENOENT' });
+            expect(fixture.readState().distributedArtifactStatus).toBe('absent');
+        }
+        else {
+            expect(await readFile(path.join(owned, 'results.jsonl'))).toEqual(nativeBytes);
+            const transport = path.join(root, 'transport');
+            await runOwnedTestProcess(context, { executable: 'cp', args: ['-R', owned, transport], options: {} });
+            expect(await readFile(path.join(transport, 'results.jsonl'))).toEqual(nativeBytes);
+            if (scenario === 'partial') {
+                await expect(readFile(path.join(transport, 'runner-summary.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+            }
+            fixture.capture.finish('repeat', 999);
+            expect(await readFile(path.join(owned, 'results.jsonl'))).toEqual(nativeBytes);
+        }
+        await expect(readFile(path.join(foreign, 'foreign.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+    }
+);
+
+it('restages preserved bytes after a completed restoration without overwriting a changed transport destination', async (context) => {
+    const { ApiCpuCaptureFixture } = await import('./api-cpu-capture-fixture.mjs');
+    const root = await mkdtemp(path.join(tmpdir(), 'rallar-capture-restage-'));
+    context.onTestFinished(() => rm(root, { recursive: true, force: true }));
+    const fixture = new ApiCpuCaptureFixture(root);
+    context.onTestFinished(() => fixture.dispose());
+    fixture.capture.begin();
+    const owned = path.join(fixture.configuration.environment.RALLAR_DISTRIBUTED_ARTIFACT_DIR, 'dist-owned');
+    await mkdir(owned, { recursive: true });
+    await writeFile(path.join(owned, 'sha256.json'), 'original bytes');
+    await writeFile(path.join(owned, 'results.jsonl'), 'retained result bytes');
+    fixture.capture.finish('shell-exit', 0);
+    await rm(owned, { recursive: true });
+    const resumed = new ApiCpuCapture(fixture.configuration, fixture);
+    expect(resumed.finish('repeat', 0)).toBe(true);
+    expect(await readFile(path.join(owned, 'sha256.json'), 'utf8')).toBe('original bytes');
+    await rm(path.join(owned, 'results.jsonl'));
+    expect(resumed.finish('repeat-partial-staging', 0)).toBe(true);
+    expect(await readFile(path.join(owned, 'results.jsonl'), 'utf8')).toBe('retained result bytes');
+    await writeFile(path.join(owned, 'sha256.json'), 'foreign bytes');
+    expect(resumed.finish('repeat', 0)).toBe(false);
+    expect(await readFile(path.join(owned, 'sha256.json'), 'utf8')).toBe('foreign bytes');
+    expect(fixture.readState()).toMatchObject({ restoreStatus: 'restored', exportStatus: 'failed' });
+    const exported = path.join(fixture.configuration.operationRoot, 'dist-owned', 'api-cpu-capture', fixture.configuration.id, 'capture.json');
+    expect(JSON.parse(await readFile(exported, 'utf8')).errors).toContainEqual(expect.stringMatching(/refusing overwrite/));
+});
+
+it.for([0, 17, 143])('finishes from a real shell EXIT trap after recipe exit %i and transports retained bytes', async (recipeExit, context) => {
+    const root = await mkdtemp(path.join(tmpdir(), 'rallar-capture-exit-'));
+    context.onTestFinished(() => rm(root, { recursive: true, force: true }));
+    const harness = path.join(root, 'lifecycle.mjs');
+    await writeFile(
+        harness,
+        String.raw`
+import { ApiCpuCaptureFixture } from ${JSON.stringify(new URL('./api-cpu-capture-fixture.mjs', import.meta.url).href)};
+import { writeFileSync, mkdirSync } from 'node:fs';
+import path from 'node:path';
+const fixture = new ApiCpuCaptureFixture(process.env.CAPTURE_TEST_ROOT);
+const owned = path.join(fixture.configuration.environment.RALLAR_DISTRIBUTED_ARTIFACT_DIR, 'dist-owned');
+if (process.argv[2] === 'begin') {
+    fixture.capture.begin();
+    mkdirSync(owned, { recursive: true });
+    writeFileSync(path.join(owned, 'results.jsonl'), '{"native":"unchanged"}\n');
+    writeFileSync(path.join(fixture.root, 'ready'), '');
+} else {
+    const state = fixture.readState();
+    fixture.source = state.identity.source;
+    fixture.pid = state.api.pid;
+    fixture.inspectorDirectory = state.segment;
+    fixture.capture.finish('shell-exit', Number(process.argv[3]));
+    writeFileSync(path.join(fixture.root, 'deleted'), String(fixture.artifactsDeletedDuringRestore));
+}
+`
+    );
+    const shell = `
+set -eu
+"$CAPTURE_TEST_NODE" "$CAPTURE_TEST_HARNESS" begin & setup=$!
+finish() {
+    result=$?
+    trap - EXIT
+    "$CAPTURE_TEST_NODE" "$CAPTURE_TEST_HARNESS" finish "$result"
+    wait "$setup"
+    exit "$result"
+}
+trap finish EXIT
+for attempt in {1..500}; do
+    if [[ -f "$CAPTURE_TEST_ROOT/ready" ]]; then
+        if [[ "$CAPTURE_TEST_EXIT" == 143 ]]; then trap 'exit 143' TERM; kill -TERM $$; fi
+        exit "$CAPTURE_TEST_EXIT"
+    fi
+    sleep 0.01
+done
+exit 99
+`;
+    const invocation = runOwnedTestProcess(context, {
+        executable: 'bash',
+        args: ['-c', shell],
+        options: {
+            env: {
+                ...process.env,
+                CAPTURE_TEST_ROOT: root,
+                CAPTURE_TEST_NODE: process.execPath,
+                CAPTURE_TEST_HARNESS: harness,
+                CAPTURE_TEST_EXIT: String(recipeExit)
+            }
+        }
+    });
+    if (recipeExit === 0) {
+        await invocation;
+    }
+    else {
+        await expect(invocation).rejects.toMatchObject({ code: recipeExit });
+    }
+    expect(await readFile(path.join(root, 'deleted'), 'utf8')).toBe('true');
+    const transport = path.join(root, 'transport');
+    await runOwnedTestProcess(context, { executable: 'cp', args: ['-R', path.join(root, 'distributed', 'dist-owned'), transport], options: {} });
+    expect(await readFile(path.join(transport, 'results.jsonl'), 'utf8')).toBe('{"native":"unchanged"}\n');
+});

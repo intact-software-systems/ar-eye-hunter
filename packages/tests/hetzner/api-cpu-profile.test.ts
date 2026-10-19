@@ -1,4 +1,9 @@
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import {
+    mkdir,
+    mkdtemp,
+    readFile,
+    rm
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -26,6 +31,9 @@ it('returns a valid same-binary inspector profile before terminating and reaping
     expect(result.clocks.start.before.api.pid).toBe(probe.pid);
     expect(result.clocks.stop.after.api.pid).toBe(probe.pid);
     expect(result.profileSavedBeforeClose).toBe(true);
+    expect(result.sampleTiming.issues).toEqual([]);
+    expect(result.sampleTiming.timestampReversals).toBeGreaterThanOrEqual(0);
+    expect(result.sampleTiming.unrepresentedTailSeconds).toBeGreaterThanOrEqual(0);
     expect(probe.reaped).toBe(true);
     expect(probe.gcEvents).toBe('not-established');
     expect(() => process.kill(probe.pid, 0)).toThrow();
@@ -109,4 +117,48 @@ it('reaps a probe that exits during capture while preserving the original inspec
     expect(probe.error).toMatch(/Inspector.*(connection|transport)/i);
     expect(probe.error).not.toContain('already terminated');
     expect(() => process.kill(pid, 0)).toThrow();
+});
+
+it('preserves paired samples with bounded signed timestamp reversals and reports the unrepresented tail', async () => {
+    const { validateApiCpuProfile, computeApiProfileSampleTiming } = await import('../../../scripts/hosted-rallar/controller/rallar-api-inspector.mjs');
+    const profile = {
+        nodes: [{ id: 1, callFrame: {} }, { id: 2, callFrame: {} }],
+        samples: [1, 2, 1, 2, 1],
+        timeDeltas: [100, -3, 10, -7, 5],
+        startTime: 1000,
+        endTime: 1200
+    };
+    const original = JSON.stringify(profile);
+    expect(validateApiCpuProfile(profile)).toEqual([]);
+    expect(computeApiProfileSampleTiming(profile)).toEqual({
+        issues: [],
+        timestampReversals: 2,
+        largestTimestampReversalSeconds: 0.000007,
+        unrepresentedTailSeconds: 0.000093
+    });
+    expect(JSON.stringify(profile)).toBe(original);
+});
+
+it.for([
+    { timeDeltas: [0.5] },
+    { timeDeltas: [NaN] },
+    { timeDeltas: [Infinity] },
+    { timeDeltas: [Number.MAX_SAFE_INTEGER + 1] },
+    { timeDeltas: [2147483648], endTime: 4_000_000_000 },
+    { timeDeltas: [2147483647, 2147483647, -2147483649], samples: [1, 1, 1], endTime: 5_000_000_000 },
+    { timeDeltas: [100, -101], samples: [1, 1] },
+    { timeDeltas: [1001, -1], samples: [1, 1] },
+    { startTime: 1000.1 },
+    { endTime: Number.MAX_SAFE_INTEGER + 1 },
+    { startTime: Number.MAX_SAFE_INTEGER - 10, endTime: Number.MAX_SAFE_INTEGER, timeDeltas: [20] },
+    { samples: [] },
+    { timeDeltas: [] },
+    { samples: [2] },
+    { nodes: [{ id: 1, callFrame: {} }, { id: 1, callFrame: {} }] },
+    { nodes: [null] },
+    { nodes: [{ id: 1, callFrame: {}, children: 2 }] }
+])('rejects malformed native sample identity or arithmetic: %j', async (change) => {
+    const { validateApiCpuProfile } = await import('../../../scripts/hosted-rallar/controller/rallar-api-inspector.mjs');
+    const profile = { nodes: [{ id: 1, callFrame: {} }], samples: [1], timeDeltas: [100], startTime: 1000, endTime: 2000 };
+    expect(validateApiCpuProfile({ ...profile, ...change })).not.toEqual([]);
 });

@@ -94,14 +94,21 @@ export function validateApiCpuProfile(profile) {
     if (profile.samples.length >= 6_000_000) {
         return ['Profile sample limit exceeded'];
     }
-    const ids = new Set(profile.nodes.map((node) => node.id));
+    const ids = new Set(profile.nodes.map((node) => node?.id));
     if (
         ids.size !== profile.nodes.length ||
-        !profile.nodes.every((node) => Number.isSafeInteger(node.id) && node.id > 0 && node.callFrame)
+        !profile.nodes.every((node) =>
+            Number.isSafeInteger(node?.id) && node.id > 0 && node.callFrame && typeof node.callFrame === 'object'
+        )
     ) {
         issues.push('Invalid or duplicated profile nodes');
     }
-    if (!profile.nodes.every((node) => (node.children ?? []).every((id) => ids.has(id)))) {
+    if (
+        !profile.nodes.every((node) =>
+            node && (node.children === undefined ||
+                (Array.isArray(node.children) && node.children.every((id) => ids.has(id))))
+        )
+    ) {
         issues.push('Unknown child node');
     }
     if (
@@ -110,17 +117,45 @@ export function validateApiCpuProfile(profile) {
     ) {
         issues.push('Invalid profile samples');
     }
-    if (!profile.timeDeltas.every((delta) => Number.isFinite(delta) && delta >= 0)) {
-        issues.push('Invalid profile time deltas');
-    }
+    issues.push(...computeApiProfileSampleTiming(profile).issues);
+    return issues;
+}
+
+export function computeApiProfileSampleTiming(profile) {
+    const issues = [];
     const span = profile.endTime - profile.startTime;
-    if (!Number.isFinite(span) || !Number.isFinite(profile.startTime) || profile.startTime < 0 || span <= 0) {
+    if (
+        !Number.isSafeInteger(profile.startTime) || profile.startTime < 0 ||
+        !Number.isSafeInteger(profile.endTime) || !Number.isSafeInteger(span) || span <= 0
+    ) {
         issues.push('Invalid profile span');
     }
-    if (profile.timeDeltas.reduce((total, delta) => total + delta, 0) > span + 1000) {
-        issues.push('Sample time exceeds profile span');
+    let timestamp = profile.startTime;
+    let latestTimestamp = profile.startTime;
+    let timestampReversals = 0;
+    let largestReversal = 0;
+    for (const delta of profile.timeDeltas) {
+        if (!Number.isSafeInteger(delta) || delta < -2147483648 || delta > 2147483647) {
+            issues.push('Invalid profile time deltas');
+            break;
+        }
+        timestamp += delta;
+        if (!Number.isSafeInteger(timestamp) || timestamp < profile.startTime || timestamp > profile.endTime) {
+            issues.push('Sample timestamp outside profile bounds');
+            break;
+        }
+        if (delta < 0) {
+            timestampReversals += 1;
+            largestReversal = Math.max(largestReversal, -delta);
+        }
+        latestTimestamp = Math.max(latestTimestamp, timestamp);
     }
-    return issues;
+    return {
+        issues,
+        timestampReversals,
+        largestTimestampReversalSeconds: largestReversal / 1_000_000,
+        unrepresentedTailSeconds: issues.length ? null : (profile.endTime - latestTimestamp) / 1_000_000
+    };
 }
 
 export function computeApiProfileClockBounds(profile, clocks) {
@@ -180,6 +215,7 @@ async function captureApiProfile(directory, target) {
             pid: target.pid,
             clocks,
             mapping,
+            sampleTiming: computeApiProfileSampleTiming(stopped.profile),
             gcOriginEpochBounds,
             gcOriginUncertaintyMs: gcOriginEpochBounds[1] - gcOriginEpochBounds[0],
             gcAttribution: 'inconclusive-until-runtime-trace-semantics-and-log-coverage-verified',
@@ -269,28 +305,14 @@ async function probeApiInspector(directory) {
     listener.close();
     const launch = readHostClock();
     let child;
-    let stdout;
-    let stderr;
     let streams;
     let stopTimer;
     let outcome = null;
     let failure;
     try {
-        // Output setup must succeed before creating the process this probe owns.
-        stdout = await Deno.open(`${directory}/stdout.log`, { create: true, write: true });
-        stderr = await Deno.open(`${directory}/stderr.log`, { create: true, write: true });
-        child = new Deno.Command(Deno.execPath(), {
-            args: [
-                'eval',
-                '--no-config',
-                `--inspect=127.0.0.1:${port}`,
-                '--v8-flags=--trace-gc-nvp',
-                'setInterval(() => {}, 20)'
-            ],
-            stdout: 'piped',
-            stderr: 'piped'
-        }).spawn();
-        streams = Promise.allSettled([child.stdout.pipeTo(stdout.writable), child.stderr.pipeTo(stderr.writable)]);
+        const started = await startProbeProcess(directory, port);
+        child = started.child;
+        streams = started.streams;
         stopTimer = setTimeout(() => Deno.writeTextFile(`${directory}/stop`, '').catch(() => {}), 500);
         await captureApiProfile(directory, {
             pid: child.pid,
@@ -305,33 +327,9 @@ async function probeApiInspector(directory) {
     finally {
         clearTimeout(stopTimer);
         if (child) {
-            const kill = (signal) => {
-                try {
-                    child.kill(signal);
-                }
-                catch (error) {
-                    if (!(error instanceof Deno.errors.NotFound)) {
-                        failure ??= error;
-                    }
-                }
-            };
-            kill('SIGTERM');
-            const forceStop = setTimeout(() => kill('SIGKILL'), 1000);
-            try {
-                outcome = await child.status;
-                for (const result of await streams) {
-                    if (result.status === 'rejected') {
-                        failure ??= result.reason;
-                    }
-                }
-            }
-            finally {
-                clearTimeout(forceStop);
-            }
-        }
-        else {
-            stdout?.close();
-            stderr?.close();
+            const stopped = await stopProbeProcess(child, streams);
+            outcome = stopped.outcome;
+            failure ??= stopped.failure;
         }
         try {
             await writeJson(`${directory}/probe.json`, {
@@ -350,6 +348,65 @@ async function probeApiInspector(directory) {
     }
     if (failure) {
         throw failure;
+    }
+}
+
+async function startProbeProcess(directory, port) {
+    let stdout;
+    let stderr;
+    try {
+        // Output setup must succeed before creating the process this probe owns.
+        stdout = await Deno.open(`${directory}/stdout.log`, { create: true, write: true });
+        stderr = await Deno.open(`${directory}/stderr.log`, { create: true, write: true });
+        const child = new Deno.Command(Deno.execPath(), {
+            args: [
+                'eval',
+                '--no-config',
+                `--inspect=127.0.0.1:${port}`,
+                '--v8-flags=--trace-gc-nvp',
+                'setInterval(() => {}, 20)'
+            ],
+            stdout: 'piped',
+            stderr: 'piped'
+        }).spawn();
+        const streams = Promise.allSettled([
+            child.stdout.pipeTo(stdout.writable),
+            child.stderr.pipeTo(stderr.writable)
+        ]);
+        return { child, streams };
+    }
+    catch (error) {
+        stdout?.close();
+        stderr?.close();
+        throw error;
+    }
+}
+
+async function stopProbeProcess(child, streams) {
+    let failure;
+    const kill = (signal) => {
+        try {
+            child.kill(signal);
+        }
+        catch (error) {
+            if (!(error instanceof Deno.errors.NotFound)) {
+                failure ??= error;
+            }
+        }
+    };
+    kill('SIGTERM');
+    const forceStop = setTimeout(() => kill('SIGKILL'), 1000);
+    try {
+        const outcome = await child.status;
+        for (const result of await streams) {
+            if (result.status === 'rejected') {
+                failure ??= result.reason;
+            }
+        }
+        return { outcome, failure };
+    }
+    finally {
+        clearTimeout(forceStop);
     }
 }
 

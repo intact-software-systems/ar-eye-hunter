@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+    constants,
     copyFileSync,
     existsSync,
     lstatSync,
@@ -9,7 +10,6 @@ import {
     readFileSync,
     renameSync,
     rmSync,
-    statSync,
     writeFileSync
 } from 'node:fs';
 import path from 'node:path';
@@ -89,6 +89,7 @@ export function toApiCaptureConfiguration(environment) {
         checkout: environment.RALLAR_CHECKOUT_DIR ?? '/opt/rallar/ar-eye-hunter',
         controllerDirectory,
         operationRoot: environment.RALLAR_OPERATION_ARTIFACT_ROOT ?? '/tmp/rallar-distributed-operations',
+        distributedArtifactRoot: environment.RALLAR_DISTRIBUTED_ARTIFACT_DIR ?? '/tmp/rallar-distributed-runs',
         remainingSeconds: 75 * 60 + ready * 2 + terminal + 120 + 300,
         deadlineBudgets: {
             preparationSeconds: 360 * 60,
@@ -129,6 +130,7 @@ export class ApiCpuCapture {
             recipeExitCode: null,
             profileStatus: 'not-started',
             exportStatus: 'pending',
+            distributedArtifactStatus: 'pending',
             restoreStatus: 'not-required',
             deadlineExpired: false,
             startedEpochMs: Date.now(),
@@ -411,6 +413,7 @@ export class ApiCpuCapture {
             }
             this.stopProfile();
         }
+        this.preserveDistributedArtifacts();
         if (this.state.mutationStarted) {
             try {
                 this.restore();
@@ -430,6 +433,61 @@ export class ApiCpuCapture {
             rmSync(path.join(this.configuration.root, 'active'), { force: true });
         }
         return this.success();
+    }
+
+    preserveDistributedArtifacts() {
+        if (this.state.distributedArtifactStatus !== 'pending') {
+            return;
+        }
+        const source = path.join(this.configuration.distributedArtifactRoot, this.configuration.identity.operation);
+        const preserved = path.join(this.directory, 'distributed-artifacts');
+        try {
+            const entry = lstatSync(source, { throwIfNoEntry: false });
+            if (!entry) {
+                this.state.distributedArtifactStatus = 'absent';
+            }
+            else {
+                if (!entry.isDirectory()) {
+                    throw new Error('Owned distributed artifact path is not a directory');
+                }
+                mkdirSync(preserved, { recursive: true });
+                copyEvidence(source, preserved, true);
+                this.state.distributedArtifactStatus = 'preserved-unverified';
+            }
+        }
+        catch (error) {
+            this.state.distributedArtifactStatus = 'failed';
+            this.state.exportStatus = 'failed';
+            this.state.errors.push(`Distributed artifact preservation failed: ${error.message}`);
+        }
+        this.writeState();
+    }
+
+    stageDistributedArtifacts() {
+        const preserved = path.join(this.directory, 'distributed-artifacts');
+        if (!existsSync(preserved)) {
+            return;
+        }
+        const destination = path.join(
+            this.configuration.distributedArtifactRoot,
+            this.configuration.identity.operation
+        );
+        const entry = lstatSync(destination, { throwIfNoEntry: false });
+        const preservedHashes = hashEvidence(preserved);
+        if (entry) {
+            if (!entry.isDirectory()) {
+                throw new Error('Distributed transport destination changed; refusing overwrite');
+            }
+            const destinationHashes = hashEvidence(destination);
+            if (Object.entries(destinationHashes).some(([file, hash]) => preservedHashes[file] !== hash)) {
+                throw new Error('Distributed transport destination changed; refusing overwrite');
+            }
+        }
+        mkdirSync(destination, { recursive: true });
+        copyEvidence(preserved, destination, false);
+        if (JSON.stringify(hashEvidence(destination)) !== JSON.stringify(preservedHashes)) {
+            throw new Error('Distributed transport staging changed during copy');
+        }
     }
 
     stopProfile() {
@@ -687,6 +745,13 @@ export class ApiCpuCapture {
 
     exportEvidence() {
         try {
+            this.stageDistributedArtifacts();
+        }
+        catch (error) {
+            this.state.exportStatus = 'failed';
+            this.state.errors.push(`Distributed artifact staging failed: ${error.message}`);
+        }
+        try {
             const output = path.join(
                 this.configuration.operationRoot,
                 this.configuration.identity.operation,
@@ -694,11 +759,13 @@ export class ApiCpuCapture {
                 this.configuration.id
             );
             mkdirSync(output, { recursive: true });
-            copyEvidence(this.evidence, output);
+            copyEvidence(this.evidence, output, true);
             this.state.exportStatus = this.state.exportStatus === 'failed' ? 'failed' : 'copied-to-operation-directory';
             this.writeState();
             copyFileSync(this.stateFile, path.join(output, 'capture.json'));
-            writeJson(path.join(output, 'sha256.json'), hashEvidence(output));
+            const hashes = hashEvidence(output);
+            delete hashes['sha256.json'];
+            writeJson(path.join(output, 'sha256.json'), hashes);
         }
         catch (error) {
             this.state.exportStatus = 'failed';
@@ -765,15 +832,21 @@ function writeJson(file, value) {
     writeFileSync(`${file}.tmp`, `${JSON.stringify(value, null, 2)}\n`);
     renameSync(`${file}.tmp`, file);
 }
-function copyEvidence(source, destination) {
+function copyEvidence(source, destination, overwrite) {
     for (const entry of readdirSync(source, { withFileTypes: true })) {
         const target = path.join(destination, entry.name);
+        const existing = lstatSync(target, { throwIfNoEntry: false });
+        if (existing && !(entry.isDirectory() && existing.isDirectory()) && !(entry.isFile() && existing.isFile())) {
+            throw new Error('Unexpected evidence destination type');
+        }
         if (entry.isDirectory()) {
             mkdirSync(target, { recursive: true });
-            copyEvidence(path.join(source, entry.name), target);
+            copyEvidence(path.join(source, entry.name), target, overwrite);
         }
         else if (entry.isFile()) {
-            copyFileSync(path.join(source, entry.name), target);
+            if (overwrite || !existing) {
+                copyFileSync(path.join(source, entry.name), target, overwrite ? 0 : constants.COPYFILE_EXCL);
+            }
         }
         else {
             throw new Error('Unexpected evidence symlink');
@@ -782,9 +855,13 @@ function copyEvidence(source, destination) {
 }
 function hashEvidence(directory) {
     const hashes = {};
-    for (const file of readdirSync(directory, { recursive: true })) {
+    for (const file of readdirSync(directory, { recursive: true }).sort()) {
         const full = path.join(directory, file);
-        if (statSync(full).isFile() && file !== 'sha256.json') {
+        const entry = lstatSync(full);
+        if (entry.isSymbolicLink() || (!entry.isFile() && !entry.isDirectory())) {
+            throw new Error('Unexpected evidence file type');
+        }
+        if (entry.isFile()) {
             hashes[file] = createHash('sha256').update(readFileSync(full)).digest('hex');
         }
     }

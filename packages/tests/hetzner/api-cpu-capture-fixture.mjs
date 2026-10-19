@@ -6,7 +6,11 @@ import {
 } from 'node:fs';
 import path from 'node:path';
 
-import { ApiCpuCapture, toApiCaptureConfiguration } from '../../../scripts/hosted-rallar/controller/rallar-api-cpu-capture.mjs';
+import {
+    ApiCpuCapture,
+    runControllerCommand,
+    toApiCaptureConfiguration
+} from '../../../scripts/hosted-rallar/controller/rallar-api-cpu-capture.mjs';
 
 export class ApiCpuCaptureFixture {
     constructor(root) {
@@ -24,6 +28,7 @@ export class ApiCpuCaptureFixture {
             RALLAR_API_CAPTURE_ROOT: root,
             RALLAR_API_CAPTURE_OVERRIDE: path.join(root, 'unit', 'override.conf'),
             RALLAR_OPERATION_ARTIFACT_ROOT: path.join(root, 'operations'),
+            RALLAR_DISTRIBUTED_ARTIFACT_DIR: path.join(root, 'distributed'),
             RALLAR_API_SERVER_TIMING: 'true',
             RALLAR_PRESERVE_PUBLIC_SETTINGS: '1',
             RALLAR_ROLLOUT_BEFORE_RUN: 'true',
@@ -112,6 +117,7 @@ export class ApiCpuCaptureFixture {
                 throw new Error('Store migration fence');
             }
             if (environment.RALLAR_API_RESTORE_CONFIGURATION) {
+                this.cleanupRolloutArtifacts(args[0]);
                 this.replayedConfiguration = JSON.parse(readFileSync(environment.RALLAR_API_RESTORE_CONFIGURATION, 'utf8'));
             }
             this.source = environment.RALLAR_REPO_REF;
@@ -126,6 +132,21 @@ export class ApiCpuCaptureFixture {
             return this.captureJournal ?? `2026-10-19 deno[${this.pid}]: [${this.pid}:0xabc:0] 40 ms: GC: {"pause":1.0,"gc":"s"}\n`;
         }
         return '';
+    }
+
+    cleanupRolloutArtifacts(script) {
+        runControllerCommand('bash', [script], {
+            environment: {
+                RALLAR_ROLLOUT_SCRIPT_SELF_TEST: 'cleanup-disk-pressure',
+                RALLAR_CHECKOUT_DIR: path.join(this.root, 'checkout'),
+                RALLAR_DISTRIBUTED_ARTIFACT_DIR: this.configuration.environment.RALLAR_DISTRIBUTED_ARTIFACT_DIR,
+                RALLAR_ROLLOUT_CONTROL_STATE_DIR: path.join(this.root, 'control'),
+                RALLAR_ROLLOUT_TMP_DIR: path.join(this.root, 'tmp'),
+                RALLAR_ROLLOUT_NPM_CACHE_DIR: path.join(this.root, 'npm-cache'),
+                RALLAR_ROLLOUT_NPM_LOG_DIR: path.join(this.root, 'npm-log')
+            }
+        });
+        this.artifactsDeletedDuringRestore = !existsSync(path.join(this.configuration.environment.RALLAR_DISTRIBUTED_ARTIFACT_DIR, 'dist-owned'));
     }
 
     readSystemd(args) {
