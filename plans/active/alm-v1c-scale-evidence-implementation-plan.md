@@ -200,21 +200,31 @@ final evidence reconciliation must preserve workload provenance and the unwaived
 1. **Remaining formation-tail delivery:** bounded group-admission reads preserve
    ordered commit/fallback and pass native scale acceptance. Local marker-to-adoption
    maxima are 0.039 / 0.359 / 0.386 s at 15 / 30 / 50 agents, but those memory-backend
-   observations do not establish hosted latency. The corrected unchanged hosted
-   fifty-agent diagnostic passes all registrations, 150 commands and 231 group
-   assertions. Its first retained all-cohort layout takes 5.428 s from promotion
-   marker to positive send to all fifty recipients; a later layout takes 0.134 s.
-   The slow singleton summary-write return precedes publish by 5.260 s, with no
-   exact-entry claim/admission markers. The optional identity-only timing slice
-   observes each committed output after transaction return, each claimed attempt,
-   admission, ordered publication and actual publish calls. Retain both claim and
-   publication keys, and distinguish cancelled, expired, malformed and refused
-   attempts. Attempt settlement is not durable release; physical commit and
-   queue-ready time remain unmeasured. Production timing-off omits the new sinks.
-   Use the next hosted capture to select a measured TDD repair. Do not change
-   concurrency, retries, workload, deadlines or predicates based on this unsplit
-   interval. Keep immutable events,
-   frozen audiences, causal fences and recovery intact.
+   observations do not establish hosted latency. The latest unchanged hosted
+   fifty-agent stage diagnostic passes all registrations, 150 commands and 231
+   group assertions in 76.772 s. Exact own-output chains expose an 11.711 s
+   committed-output-to-reservation gap for an earlier 28-recipient layout, and
+   6.804 s for a 48-recipient layout. The first retained all-cohort layout's own
+   output takes 2.559 s to local send, including 1.016 s before reservation and
+   a shared 1.426 s admission-commit window. Its 57/45 output is distinct from
+   the 58/45 activation output matching all fifty browser states; neither match
+   proves notification-to-adoption causality. Preserve all earlier outputs in
+   the breakdown instead of selecting only the faster all-cohort sample.
+   Trace existing queue wake/scheduling/claim owners first; use the minimum
+   missing observation only if retained evidence cannot split the long gap.
+   The occupied-owner wake fixture passes unchanged production: the waiting row
+   completes within 0.010 simulated seconds after a controlled 10 s hold ends.
+   Six warmed local PostgreSQL samples per occupancy measure ten/sixteen-row
+   admission medians of 0.042929 / 0.066707 s; these do not reproduce or attribute
+   the hosted window. Newer outputs overtake both long-waiting targets, but the
+   queue's due-time/row-ID order is distinct from commit order and skips locks;
+   this is not evidence of a FIFO violation. Split existing owner occupancy,
+   readiness, selection and claim observations before selecting a policy repair.
+   Grouped commit remains secondary. Select a TDD repair only from measured
+   ownership; do not change concurrency, retries, workload, deadlines or
+   predicates based on an unsplit interval. Keep immutable events, frozen
+   audiences, causal fences and recovery intact. The new timing is opt-in;
+   timing overhead, physical commit and queue-ready time remain unmeasured.
    Preserving rollout, strict read-only preflight and exact timing/topology/public
    settings restoration now pass local tests, independent review and live checks.
    Registration reuses the shared canonical decoder; the earlier failed attempts

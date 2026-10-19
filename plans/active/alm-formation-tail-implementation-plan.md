@@ -2,9 +2,10 @@
 
 ## Goal
 
-Reduce the serial read cost on the current WS outbox delivery path without changing
-its event protocol. This is one measured repair toward the parent V1c plan's ≤2 s
-formation-tail target, not evidence that the whole target is already met.
+Reduce measured WS outbox formation-tail delay without changing its event protocol.
+Bounded admission reads are the first implemented repair; the current focus is the
+long committed-output-to-reservation gap. The parent V1c plan's full ≤2 s
+formation-tail target remains open.
 
 ## Global constraints
 
@@ -99,7 +100,72 @@ Canonical correctness, postflight and owned cleanup pass. The earlier incomplete
 capture remains evidence of the repaired defects, not a discarded run.
 Instrumented timings are attribution evidence, not performance acceptance.
 
-## Current hosted formation evidence
+## Hosted formation evidence
+
+### Latest stage-attributed diagnostic
+
+The unchanged timing-enabled fifty-agent workload passes all seventeen shards,
+150 commands and 231 group assertions in 76.772 s, with no reconnects or failed,
+missing, stale or flaky agents. All seven successful promotion-owned output
+chains have unique same-process claim/publication identities. The largest measured
+gaps are committed-output observation to reservation return: 11.711 s for version
+4 (12.058 s to local send, 28 recipients), 6.804 s for version 5 (7.044 s total,
+48 recipients), and 3.644 s for version 2 (5.938 s total, two recipients). These
+are earlier partial-cohort outputs; they must not be hidden by selecting only
+the later layout accepted by all fifty browsers.
+
+The first retained all-cohort layout is version 6. Its promotion-owned output
+57/45 takes 2.559 s from committed-output observation to local send: 1.016 s
+before reservation return and 1.426 s in the grouped admission-commit window.
+A separate activation output 58/45 takes 1.610 s and shares the commit window;
+its causal tuple matches all fifty retained browser states. This correspondence
+does not prove which notification caused adoption. Both outputs send live to
+50/50 recipients. Across 55 claim-stamp batch windows, commit-window median /
+p95 / maximum are 0.212 / 1.224 / 1.427 s; per-member markers must not be counted
+as independent transactions.
+
+Prioritize the output-to-reservation gap. Trace existing wake, scheduling and
+claim owners and reuse existing evidence before adding any missing observation.
+Do not assign this unsplit interval to SQL, queue fairness or a lost wake without
+evidence. Admission commit remains a secondary measured cost. This run is not a
+matched comparison against main or the prior diagnostic, and instrumentation
+overhead has not been isolated. Preserve all outputs, audiences, fences, deadlines
+and retry outcomes when selecting the next focused TDD repair.
+
+The occupied-owner middleware test now covers an external WS_OUTBOX write and
+wake during a controlled 10 s hold. After capacity returns, the second row
+completes within 0.010 simulated seconds on unchanged production, without a
+second wake or manual pass. This refutes a lost post-capacity wake for that
+fixture; the intentional occupied interval is not a runtime measurement.
+
+An isolated real PostgreSQL probe reuses the existing grouped outbound owner.
+Six warmed samples per occupancy give outer admission medians of 0.042929 s
+for ten rows and 0.066707 s for sixteen; one admission transaction medians are
+0.023485 s and 0.033455 s. Actual application statements outside / inside
+transactions are 47 / 74 and 74 / 116. Cold pool initialization is retained
+separately. These local synthetic-send results do not attribute the hosted
+1.426 s window, establish a speedup, or split its pre-reservation wait.
+
+The long-waiting version 4 and 5 targets appear in the eighth and seventh
+claim batches after their output markers. Respectively 25 and five newer
+committed group-state outputs were claimed first. The reservation contract
+orders eligible rows by due time and sequence-assigned row ID, with locked rows
+skipped. Sequence caching and transaction completion can separate row-ID order
+from commit-marker order. Thus a strictly older-output-only backlog is refuted,
+but no FIFO violation or hosted selection cause is established. Row IDs and lock
+state were not captured. Reuse existing batch/readiness diagnostics to split
+owner occupancy, readiness, selection and claim before changing queue policy.
+
+The API journal retains 19,623 lines below its 50,000-line cap, with no malformed
+timing rows or suppression notices. All 569 observed attempts have complete
+stage chains, but the control journal again reports a 100,000-node artifact
+append/certification failure. Matching exported counts and passing native
+assertions do not certify full durable export or queue release. Timing-off
+restoration and fresh inspection pass on the exact source: settings fingerprint,
+topology, database identities, migrations and healthy idle state match; auth
+count remains fifty and the new scope adds one group.
+
+### Earlier diagnostic motivating stage attribution
 
 The corrected timing-enabled fifty-agent workload passes registration in all
 seventeen shards and all 150 commands across fifty agents, with no reconnects,
@@ -125,7 +191,7 @@ stages using existing evidence before selecting a repair. Add only the minimum
 missing timing at the current owner if those stages cannot be distinguished.
 The passing workload does not establish the complete ≤2 s target.
 
-The next diagnostic uses optional timing at the existing summary, claim,
+The implemented diagnostic uses optional timing at the existing summary, claim,
 admission and publication owners. Each committed summary output has its own
 post-transaction-return observation and physical key. Claimed attempts retain
 their own key and attempt identity; ordered dispatch also retains the actual
@@ -224,15 +290,16 @@ These associations do not establish causation or waive the failed gate.
 
 ## Next two useful slices
 
-1. **Remaining formation-tail delivery.** The current hosted fifty-agent run
-   passes unchanged native correctness but locates a 5.428 s promotion-to-send
-   interval. Its singleton summary-write return leaves 5.260 s before publish;
-   the exact entry has no claim/admission timing. Task 9 adds the minimum missing
-   identity-only boundaries at existing owners, then measures one unchanged
-   hosted workload to select a TDD repair. Preserve every immutable event/audience,
-   causal fence, retry and fault outcome. Store/settings preservation and exact
-   timing-off restoration are tested and live-verified prerequisites for each
-   diagnostic; cross-host browser clocks and physical commit limits stay explicit.
+1. **Remaining formation-tail delivery.** The new stage capture identifies an
+   11.711 s output-to-reservation gap on an earlier partial-cohort promotion;
+   the first all-cohort layout's own output takes 2.559 s to local send, including
+   a 1.426 s grouped admission commit. Trace existing queue wake/scheduling/claim
+   boundaries first, use the narrowest missing measurement only if required,
+   then choose the focused TDD repair from that evidence. Preserve immutable
+   events/audiences, causal fences, retries, deadlines and fault outcomes. Keep
+   timing overhead, physical commit, queue-ready and browser-causality limits
+   explicit. Each diagnostic retains fresh preflight and exact timing-off
+   restoration with settings verification.
 2. **State-write command completion.** The demonstrated harness wait is repaired
    and independently reviewed; the fresh governed comparison uses that corrected
    harness on both roles. Retain every owned drain, failure and phase cost, and
@@ -603,3 +670,55 @@ exports its evidence, restores timing off on that exact source and verifies the
 baseline. Report the new stage intervals in seconds and choose a TDD repair only
 for the measured dominant interval. The failed hot-throughput comparison and
 full ≤2 s formation target remain open.
+
+### Task 10: Reproduce outbound progress and split grouped admission cost
+
+The outcome remains a quicker, responsive and fault-tolerant formation path.
+The latest stage capture exposes committed-output-to-reservation gaps up to
+11.711 s and a separate 1.426 s grouped admission window. The current observations
+cannot assign the first gap to wake, owner occupancy, readiness, claim storage,
+or diagnostic overhead. Preserve this uncertainty rather than changing queue
+policy from a symptom.
+
+Use the existing real middleware queue-wake fixture and AL work-handler external
+wake coverage first. Recover their actual behavior and reuse or extend the
+smallest missing scenario. Put a matching externally committed WS_OUTBOX row
+behind a controlled in-flight batch. Waiting while the configured single owner
+is occupied is intended. Verify that after the batch settles, the remembered
+wake invalidates readiness and permits the due row to progress without stale
+idle backoff. Test cancellation/failure only where those boundaries are affected.
+Do not create duplicate coverage or assert immediate claim while capacity is full.
+A passing test refutes that failure hypothesis; it does not justify a scheduler
+change. If a failure reproduces, retain RED, repair the existing owner with the
+smallest behavior-preserving change, and prove GREEN and failure recovery.
+
+Then reuse the existing grouped outbound production owner and commit-phase
+observations against an isolated local real PostgreSQL database. Read the shared
+performance-harness guidance before creating any probe. The existing statement
+fixture uses PGlite and proves 47 autocommit / 74 transactional statements for ten
+rows; those counts are not a real-PostgreSQL latency baseline. Prefer existing
+fixtures, SQL/activity samplers and diagnostic ports over a new retained harness.
+Measure representative page occupancy, actual statement counts, decision reads,
+transaction wall time and claim/batch timing where already available. Use repeated
+runs and explicitly label injected waits and unmeasured pool/lock/CPU costs.
+Generated evidence belongs under tmp/perf; do not use or reset the hosted store.
+
+The first measurement question is whether a post-capacity wake is lost or late;
+the second is which existing admission phase accounts for the observed local
+cost. Keep admission cost secondary to the long pre-reservation gap. Local
+results do not assign a hosted cause or establish the full formation target.
+If neither path reproduces a repairable problem, report the falsified hypotheses
+and specify the minimum existing owner observation needed for a next capture;
+do not implement speculative concurrency, page-size, retry, deadline, SQL or
+pool changes. Any subsequently selected optimization needs direct correctness
+validation and a repeated before/after measurement at its actual owner.
+
+Review and remediate every changed human-authored file in full. Any support file
+modified by remediation enters closure recursively; independent untouched code
+remains outside closure. Reuse existing patterns and remove affected unneeded
+legacy without creating compatibility adapters. Direct validation is the focused
+wake/progress or admission-owner tests; affected validation is the changed
+shared/shared-server/API typecheck as selected by rallar-testing. Run the exact
+main-to-head changed-style gate before publication, plus meaningful full-file
+human review. Keep all existing protocol, immutable audience, causal-fence,
+ordering, claim, retry, deadline and fault-tolerance contracts intact.
