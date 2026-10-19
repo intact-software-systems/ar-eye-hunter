@@ -1,19 +1,26 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    afterAll,
+    beforeAll,
+    beforeEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
+
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import type {
     ResourceInboxReservationObservationRequest,
     ResourceInboxReservationObservationResult,
     ResourceInboxReservationRequest
 } from '@shared/queuebox/queue-box-types.ts';
-import { NotReadyException } from '@shared/queuebox/resource-inbox/not-ready-exception.ts';
-import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-
-import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
-import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { createDefaultResourceInboxDequeuer } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import { NotReadyException } from '@shared/queuebox/resource-inbox/not-ready-exception.ts';
 import type { ResourceInboxAttemptReleaseTelemetry } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
+import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 

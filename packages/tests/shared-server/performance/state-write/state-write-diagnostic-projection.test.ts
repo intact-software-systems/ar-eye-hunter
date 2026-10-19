@@ -214,6 +214,36 @@ describe('state-write diagnostic projection', () => {
         });
     });
 
+    it.each(['phase', 'remaining-run'])('counts a RETRY omitted by the %s byte limit as unavailable', (limit) => {
+        const release: ResourceInboxAttemptReleaseTelemetry = {
+            ...createRelease(),
+            selectedLane: Reservator.RETRY,
+            reservationObservation: {
+                key: profile.physicalKey,
+                reservationAttempt: 1,
+                availability: 'available',
+                boundary: 'postgres-update-returning',
+                association: 'physical-key-and-reservation-attempt',
+                previousPersistedRetryDelayUs: 5_000_000,
+                dueToReservationObservationUs: 3_000_000
+            }
+        };
+        const phase = { ...createPhase(), releases: [release] };
+        expect(computeStateWriteDiagnosticPhase(phase, budget, 65_536).complete).toBe(true);
+        const result = computeStateWriteDiagnosticPhase(
+            phase,
+            { ...budget, bytesPerPhase: limit === 'phase' ? 2_048 : budget.bytesPerPhase },
+            limit === 'remaining-run' ? 2_048 : 65_536
+        );
+        const records = readRecords(result.serialized);
+        expect(result.complete).toBe(false);
+        expect(records.filter((record) => record.record === 'release')).toHaveLength(0);
+        expect(records.at(-1)).toMatchObject({
+            releases: { total: 1, retained: 0, truncated: 1 },
+            reservationObservations: { expected: 1, available: 0, unavailable: 1 }
+        });
+    });
+
     it('retains the complete SQL-heavy stream and late command facts where redundant timing rows overflow', () => {
         const sql = createSqlEvent();
         const events: RallarTimingEvent[] = [

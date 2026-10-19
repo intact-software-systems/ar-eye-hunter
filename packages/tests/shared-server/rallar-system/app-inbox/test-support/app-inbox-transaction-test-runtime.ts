@@ -1,9 +1,4 @@
 import { Temporal } from '@js-temporal/polyfill';
-import type {
-    ResourceInboxReservationObservationRequest,
-    ResourceInboxReservationObservationResult,
-    ResourceInboxReservationRequest
-} from '@shared/queuebox/queue-box-types.ts';
 
 import type {
     PSqlParameter,
@@ -34,6 +29,11 @@ import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-cont
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
+import type {
+    ResourceInboxReservationObservationRequest,
+    ResourceInboxReservationObservationResult,
+    ResourceInboxReservationRequest
+} from '@shared/queuebox/queue-box-types.ts';
 import {
     createDefaultResourceInboxDequeuer,
     type DequeueResourceEntryOptions,

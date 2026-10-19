@@ -1,8 +1,16 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import {
+    mkdtemp,
+    rm,
+    writeFile
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { runOwnedTestProcess } from '../../../hetzner/owned-test-process.ts';
 

@@ -1,5 +1,4 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { toUnavailableReservationObservation } from './resource-inbox/resource-inbox-reservation-observation.ts';
 
 import { EnqueuedType } from '../api/api-config.ts';
 import type { Unsubscribe } from '../cache/RepositoryInterfaces.ts';
@@ -41,6 +40,7 @@ import {
     toResourceEntrySnapshot
 } from './resource-entry-observations.ts';
 import { ResourceInboxClaimedContexts } from './resource-inbox/resource-inbox-claimed-contexts.ts';
+import { toUnavailableReservationObservation } from './resource-inbox/resource-inbox-reservation-observation.ts';
 import { ResourceInboxResilience } from './resource-inbox/resource-inbox-resilience.ts';
 import {
     COMPLETED_STATUSES,

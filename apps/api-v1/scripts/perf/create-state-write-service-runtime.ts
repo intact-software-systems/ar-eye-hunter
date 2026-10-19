@@ -1,6 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { Sql } from 'postgres';
-import type { StateWriteBenchmarkDiagnosticPhase } from './state-write/state-write-benchmark-diagnostics.ts';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -39,6 +38,7 @@ import {
 } from './create-instrumented-state-write-sql.ts';
 import { STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS } from './state-write-wait-options.ts';
 import { STATE_WRITE_REQUIRED_CONCURRENCY } from './state-write/api-v1-state-write-benchmark-options.ts';
+import type { StateWriteBenchmarkDiagnosticPhase } from './state-write/state-write-benchmark-diagnostics.ts';
 
 export interface StateWriteServiceRuntimeContext {
     sql: StateWriteSqlMetrics;

@@ -1,6 +1,4 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { toUnavailableReservationObservation } from '@shared/queuebox/resource-inbox/resource-inbox-reservation-observation.ts';
-import { toPSqlReservationObservations } from './to-p-sql-reservation-observations.ts';
 
 import type { PersistenceSetItemOptions } from '@shared/persistence/PersistenceProvider.ts';
 import {
@@ -34,7 +32,12 @@ import {
     captureResourceEntryObservations,
     resolveResourceEntryObservation
 } from '@shared/queuebox/resource-entry-observations.ts';
-import type { EntityStatus, Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { toUnavailableReservationObservation } from '@shared/queuebox/resource-inbox/resource-inbox-reservation-observation.ts';
+import type {
+    EntityStatus,
+    Key,
+    ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { TurnBatchedReads } from '@shared/resilience/turn-batched-reads.ts';
@@ -48,6 +51,7 @@ import type {
 } from './read-resource-inbox-work-presences.ts';
 import type { ResourceInboxObservedReplacement } from './replace-observed-resource-inbox-entry.ts';
 import { computeResourceInboxEntryInsertValues } from './resource-inbox-entry-insert-values.ts';
+import { toPSqlReservationObservations } from './to-p-sql-reservation-observations.ts';
 
 interface PSqlQueueReleaseCandidate {
     readonly disposition: ResourceInboxReleaseDisposition;

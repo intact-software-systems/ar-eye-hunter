@@ -1,3 +1,9 @@
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import { AppInboxReservationConflictError, AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { createAppInboxRetryFinalizer } from '@shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
@@ -18,11 +24,6 @@ import {
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
-import {
-    describe,
-    expect,
-    it
-} from 'vitest';
 
 import {
     createAtomicHarness,

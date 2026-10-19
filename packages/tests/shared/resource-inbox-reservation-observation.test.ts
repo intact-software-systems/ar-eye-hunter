@@ -1,9 +1,11 @@
 // @vitest-environment happy-dom
 
-import '../setup-browser-indexeddb.ts';
-
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { toPSqlReservationObservations } from '@shared-server/queuebox/postgres/to-p-sql-reservation-observations.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
@@ -16,6 +18,8 @@ import {
     type ResourceInboxReservationObservation
 } from '@shared/queuebox/resource-inbox/resource-inbox-reservation-observation.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+
+import '../setup-browser-indexeddb.ts';
 
 const entry: ResourceEntry = {
     key: { topicId: 'topic', resourceId: 'resource', contextId: 'context' },

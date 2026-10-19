@@ -1,4 +1,12 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { inspect } from 'node:util';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import type { DequeueResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { createDefaultResourceInboxDequeuer, ResourceInboxHandlerEntryError } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
@@ -7,13 +15,7 @@ import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resourc
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
-import { inspect } from 'node:util';
-import {
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+
 import { reserveNoResourceEntries } from './reserve-no-resource-entries.ts';
 
 describe('ResourceInbox attempt release telemetry', () => {

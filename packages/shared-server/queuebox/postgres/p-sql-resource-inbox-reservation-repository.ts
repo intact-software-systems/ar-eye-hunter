@@ -1,5 +1,4 @@
 import { Temporal } from '@js-temporal/polyfill';
-import type { PSqlReservationObservationRow } from './to-p-sql-reservation-observations.ts';
 
 import {
     toResourceInboxReservationOptions,
@@ -33,6 +32,7 @@ import {
     toInstant,
     type ResourceInboxRow
 } from './resource-inbox-row-codec.ts';
+import type { PSqlReservationObservationRow } from './to-p-sql-reservation-observations.ts';
 
 export interface StartProcessingEntitySkipped {
     readonly kind: 'expired-or-missing';

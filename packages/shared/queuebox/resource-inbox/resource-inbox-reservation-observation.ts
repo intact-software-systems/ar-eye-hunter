@@ -1,4 +1,8 @@
-import { isKeysEqual, type Key, type ResourceEntry } from '../ResourceEntry.ts';
+import {
+    isKeysEqual,
+    type Key,
+    type ResourceEntry
+} from '../ResourceEntry.ts';
 
 /** Invocation-local evidence; key and attempt are not globally unique across not-ready redelivery. */
 export type ResourceInboxReservationObservation =

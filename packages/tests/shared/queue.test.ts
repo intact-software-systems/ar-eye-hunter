@@ -1,4 +1,12 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import {
@@ -26,13 +34,7 @@ import {
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, type ResourceInboxFairnessTelemetry } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { EitherCollectors } from '@shared/resilience/Either.ts';
-import {
-    afterEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+
 import { reserveNoResourceEntries } from './reserve-no-resource-entries.ts';
 
 afterEach(() => {

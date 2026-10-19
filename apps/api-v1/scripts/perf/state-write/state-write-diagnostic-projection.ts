@@ -134,16 +134,16 @@ function appendReleaseRecords(
             continue;
         }
         const record = toReleaseRecord(release, index);
+        const retained = appendDiagnosticRecord(state, record, state.releases);
         if (release.selectedLane === 'RETRY') {
             state.reservationObservations.expected += 1;
-            if (record?.reservationObservation.availability === 'available') {
+            if (retained && record?.reservationObservation.availability === 'available') {
                 state.reservationObservations.available += 1;
             }
             else {
                 state.reservationObservations.unavailable += 1;
             }
         }
-        appendDiagnosticRecord(state, record, state.releases);
     }
 }
 
@@ -311,17 +311,17 @@ function appendDiagnosticRecord(
     state: DiagnosticProjectionState,
     record: DiagnosticRecord | undefined,
     counts: DiagnosticCounts
-): void {
+): boolean {
     if (!record) {
         counts.rejected += 1;
         counts.unassociated += 1;
-        return;
+        return false;
     }
     const line = JSON.stringify(record) + '\n';
     const bytes = new TextEncoder().encode(line).length;
     if (state.bytes + bytes > state.limit) {
         counts.truncated += 1;
-        return;
+        return false;
     }
     state.lines.push(line);
     state.bytes += bytes;
@@ -333,6 +333,7 @@ function appendDiagnosticRecord(
     ) {
         counts.unassociated += 1;
     }
+    return true;
 }
 
 function isNonnegative(value: string | number | boolean | undefined): value is number {

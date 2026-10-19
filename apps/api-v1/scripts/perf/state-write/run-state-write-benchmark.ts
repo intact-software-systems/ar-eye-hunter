@@ -1,11 +1,6 @@
 import { normalize } from 'node:path';
 import process from 'node:process';
 import type { Sql } from 'postgres';
-import type {
-    StateWriteBenchmarkDiagnosticPhase,
-    StateWriteBenchmarkDiagnostics,
-    StateWriteBenchmarkPhaseFacts
-} from './state-write-benchmark-diagnostics.ts';
 
 import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -37,6 +32,11 @@ import {
 } from './api-v1-state-write-benchmark-options.ts';
 import { selectStateWriteRegressionReasons } from './api-v1-state-write-regression-reasons.ts';
 import { seedCompleteState } from './seed-complete-state.ts';
+import type {
+    StateWriteBenchmarkDiagnosticPhase,
+    StateWriteBenchmarkDiagnostics,
+    StateWriteBenchmarkPhaseFacts
+} from './state-write-benchmark-diagnostics.ts';
 import { writeStateWriteBenchmarkOutput } from './state-write-benchmark-output.ts';
 import {
     computeRunSample,
