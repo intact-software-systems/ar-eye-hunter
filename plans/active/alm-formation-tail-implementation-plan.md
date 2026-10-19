@@ -192,6 +192,50 @@ restoration and fresh inspection pass on the exact source: settings fingerprint,
 topology, database identities, migrations and healthy idle state match; auth
 count remains fifty and the new scope adds one group.
 
+### Matched timing-mode owner findings
+
+The unchanged native-fifty workload now has a predeclared OFF–ON–ON–OFF sequence
+on one reviewed source, each in a fresh group without resetting persistent state.
+Each run passes fifty recipes, 231 group assertions and 150 matching successful
+command IDs. Whole-run durations in declared order are 72.858 / 74.364 / 75.354 /
+75.681 s. ON1 minus OFF1 is +1.506 s, whereas ON2 minus OFF2 is -0.327 s; this
+small sequence does not establish timing overhead amid run-order and persistent
+state drift. Browser planned-to-accepted denominators are 46 / 35 / 17 / 29 of
+fifty, so missing starts must remain missing rather than be pooled or imputed.
+The two timing-on captures locate the
+first fully accepted layout's own promotion output at 4.343 / 5.963 s before
+reservation and 4.418 / 6.239 s before local send. Same-worker completed batch
+envelopes overlap 4.341 / 5.962 s of those pre-reservation gaps. Earlier partial
+layouts still have longer waits; retain every promotion and the distinct activation
+outputs rather than substituting a shorter later chain. Browser causal matches
+remain observations, not notification-delivery causality.
+
+Different stages dominate the two captures. One preceding sixteen-claim batch has
+a 1.134 s union of authority reads; another has a 2.660 s release-call interval.
+Existing same-process event-loop samples cover that release interval and include
+a 1.650 s late tick, with only one tick observed in its 1.700 s sampler window.
+An inbound three-claim pass overlaps too. This proves a process-wide timer delay
+was observed, not that release SQL, inbound work, CPU, garbage collection or any
+particular owner caused it. The authority-read wave has smaller recorded maximum
+lags of 0.016 / 0.193 s. Do not optimize one SQL loop from a wall-time envelope.
+
+Source inspection finds serial per-row compare-and-replace updates inside the
+existing PostgreSQL release transaction, plus conditional finalization reads and
+lost-reservation retries. Those are concrete costs to characterize only after
+checking the shared-process stall. The generic local owner probe omits the WS
+authority callback, so its fast admission result cannot rule out that production
+wave. Prefer existing CPU/GC profiling and real-owner fixtures over another
+production observation framework; retain claim fences, exact dispositions,
+atomic rollback, healthy-neighbor recovery, bounded reads and ordered sends.
+
+Timing off removes all optional API timing, including promotion anchors. The mode
+comparison therefore uses per-run native/browser measures and their denominators,
+not paired server-stage costs or an isolated incremental cost for the latest
+instrumentation. The controller artifact append limit recurs in both modes;
+[#682](https://github.com/intact-software-systems/ar-eye-hunter/issues/682) retains
+that evidence. Neither passed recipes nor retained accepted events certify full
+recorder retention or satisfy the full formation-tail target.
+
 ### Earlier diagnostic motivating stage attribution
 
 The corrected timing-enabled fifty-agent workload passes registration in all
@@ -315,20 +359,29 @@ the due timestamp before the handler computes it, so the handler can fall back t
 the new claim time. Do not interpret that value as actual retry scheduling lateness.
 These associations do not establish causation or waive the failed gate.
 
+The follow-up design review locates the loss at the reservation result boundary;
+existing downstream observers cannot reconstruct it. Any later opt-in capture
+must preserve the actual old due time and incremented attempt without changing
+claim order, retry policy or existing diagnostic meanings. A nested transaction
+return is not proof of outer commit, and optional diagnostic association failures
+must never strand successfully reserved work. Require explicit root-transaction
+ownership, signed same-database timing with documented precision/timezone, and
+honest unavailable values for backends without that observation before selecting
+this repair. Keep this a bounded attribution follow-up while formation-tail
+measurement remains first.
+
 ## Next two useful slices
 
-1. **Remaining formation-tail delivery.** The new stage capture identifies an
-   11.711 s output-to-reservation gap on an earlier partial-cohort promotion;
-   the first all-cohort layout's own output takes 2.559 s to local send, including
-   a 1.426 s grouped admission commit. Prior batch processing envelopes overlap
-   84.6% / 91.3% of the two largest pre-reservation waits. Split existing grouped
-   commit and local-send diagnostics first; retain batch claim/release facts for
-   the uncovered remainder. Use the narrowest missing measurement only if required,
-   then choose the focused TDD repair from that evidence. Preserve immutable
-   events/audiences, causal fences, retries, deadlines and fault outcomes. Keep
-   timing overhead, physical commit, queue-ready and browser-causality limits
-   explicit. Each diagnostic retains fresh preflight and exact timing-off
-   restoration with settings verification.
+1. **Remaining formation-tail delivery.** Same-source captures show nearly all
+   of the 4.343 / 5.963 s pre-reservation waits overlapping active owner batches.
+   The slow stages vary: authority reads in one capture, release processing with
+   a 1.650 s process-wide timer delay in the other. Use existing CPU/GC profiling
+   and real-owner fixtures to distinguish shared-process stalls from repeated
+   database work before selecting the focused TDD repair. Preserve immutable
+   events/audiences, causal fences, retries, deadlines, release recovery and
+   ordered sends. Keep timing overhead, physical commit, queue eligibility and
+   browser-causality limits explicit; every hosted diagnostic retains fresh
+   preflight and exact timing-off restoration with settings verification.
 2. **State-write command completion.** The demonstrated harness wait is repaired
    and independently reviewed; the fresh governed comparison uses that corrected
    harness on both roles. Retain every owned drain, failure and phase cost, and
@@ -830,3 +883,59 @@ with fresh read-only baseline and exact timing-off/settings restoration. Retain 
 matched timing-disabled workload before attributing diagnostic-stage cost to
 production or claiming improvement. Preserve all failed comparisons and their
 original gates; no favorable rerun, workload reduction or threshold waiver.
+
+### Task 12: Profile the actual API formation workload
+
+The intended outcome remains a measured, test-first formation-tail repair. The
+new same-process evidence records a 1.650 s timer delay inside the 2.660 s release
+window; it does not isolate release SQL. First use existing runtime profilers to
+locate CPU/GC-heavy work in a real API workload, without adding a production
+observer or changing scheduling, concurrency, retry, audience or release policy.
+
+Run one bounded local actual-API + isolated real-PostgreSQL + native-fifty capture,
+using the unchanged canonical fifty-agent, thirty-second manifest and mesh minimum
+fifty-one. Preserve all fifty independently registered browser agents, one director
+and forty-nine players, all 231 native assertions, existing deadlines and complete
+terminal/export handling. Reuse the existing PostgreSQL API launch semantics,
+control server, headless worker, no-spawn distributed runner and artifact analyzer.
+The existing native-fifty Playwright fixture requires memory mode and its timing
+wrapper discards raw stderr; do not relabel it as a PostgreSQL profiling run.
+Use a task-owned generated launch composition under tmp/perf, not a new checked-in
+framework. Do not touch shared/hosted stores or run remote operations for this task.
+
+Before the real workload, verify the local Deno version/flags, profile directory,
+raw stdout/stderr retention and the chosen termination's ability to flush a
+parseable nonempty CPU profile. Use native CPU profiling and bounded GC tracing
+where supported, retaining actual process identity, command/config shape, time
+bounds, source, manifests, resource environment and cleanup results without
+printing credentials or environment-file contents. A failed flush is a failed
+capture, not successful performance evidence. Preserve original artifacts and
+failed attempts. Use an existing supported capture alternative only if the native
+exit contract cannot be made reliable, explaining its overhead and limits.
+
+The direct validation is the unchanged native workload, result-ID/correctness
+reconciliation and profile-integrity check. The affected application validation
+is the real API's PostgreSQL startup/health and actual browser/control integration;
+if reusable source or test support must change, use focused TDD plus its concrete
+package typecheck before accepting that change. This measurement task need not
+invent a RED test or make an empty commit when no behavior changes. Any generated
+human-authored support file follows the code standard: review and remediate every
+changed file completely, recursively include support files changed by remediation,
+and keep independent untouched code outside closure.
+
+Report dominant sampled stacks, measured GC pauses, event-loop observations and
+where their clocks can or cannot be aligned. Separate startup from workload when
+actual boundaries permit it. Sampling counts are not wall-time proof, a CPU profile
+can miss off-CPU contention, and local OS/runtime/browser colocation/store state
+are not the hosted environment. If the first valid profile has a concrete hotspot,
+repeat once with a fresh group only when needed to test its stability. If no pause
+reproduces, report that honestly and select a concrete remaining measurement;
+do not optimize a static SQL loop or continue blind reruns. Do not claim hosted
+attribution, a speedup, full event retention or the formation target from a local
+profile. Leave the failed state-write comparison unchanged.
+
+Retain generated profiles, logs and raw artifacts under tmp/perf and remove only
+task-owned processes/containers/volumes after evidence export. Produce a concise
+finding with code locations, measured versus suspected claims, falsifying signals,
+exact commands, passed/failed/skipped checks, and the next focused TDD repair or
+measurement. No production source change or hosted profiling is selected here.

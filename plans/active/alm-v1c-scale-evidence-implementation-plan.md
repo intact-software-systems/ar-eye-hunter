@@ -197,47 +197,34 @@ final evidence reconciliation must preserve workload provenance and the unwaived
 
 ## Next two useful slices
 
-1. **Remaining formation-tail delivery:** bounded group-admission reads preserve
-   ordered commit/fallback and pass native scale acceptance. Local marker-to-adoption
-   maxima are 0.039 / 0.359 / 0.386 s at 15 / 30 / 50 agents, but those memory-backend
-   observations do not establish hosted latency. The latest unchanged hosted
-   fifty-agent stage diagnostic passes all registrations, 150 commands and 231
-   group assertions in 76.772 s. Exact own-output chains expose an 11.711 s
-   committed-output-to-reservation gap for an earlier 28-recipient layout, and
-   6.804 s for a 48-recipient layout. The first retained all-cohort layout's own
-   output takes 2.559 s to local send, including 1.016 s before reservation and
-   a shared 1.426 s admission-commit window. Its 57/45 output is distinct from
-   the 58/45 activation output matching all fifty browser states; neither match
-   proves notification-to-adoption causality. Preserve all earlier outputs in
-   the breakdown instead of selecting only the faster all-cohort sample.
-   Trace existing queue wake/scheduling/claim owners first; use the minimum
-   missing observation only if retained evidence cannot split the long gap.
-   The occupied-owner wake fixture passes unchanged production: the waiting row
-   completes within 0.010 simulated seconds after a controlled 10 s hold ends.
-   Six warmed local PostgreSQL samples per occupancy measure ten/sixteen-row
-   admission medians of 0.042929 / 0.066707 s; these do not reproduce or attribute
-   the hosted window. Newer outputs overtake both long-waiting targets, but the
-   queue's due-time/row-ID order is distinct from commit order and skips locks;
-   this is not evidence of a FIFO violation. Split existing owner occupancy,
-   readiness, selection and claim observations before selecting a policy repair.
-   Further same-process interval unions place 84.6% / 91.3% of the two waits
-   inside earlier batch processing envelopes; grouped commit and local-send
-   stages are the next attribution priority. These overlaps do not prove
-   continuous occupancy, target eligibility or durable release. Use existing
-   batch claim/release diagnostics for the uncovered 1.801 / 0.593 s remainder.
-   Grouped commit remains secondary. Select a TDD repair only from measured
-   ownership; do not change concurrency, retries, workload, deadlines or
-   predicates based on an unsplit interval. Keep immutable events, frozen
-   audiences, causal fences and recovery intact. The new timing is opt-in;
-   timing overhead, physical commit and queue-ready time remain unmeasured.
-   Preserving rollout, strict read-only preflight and exact timing/topology/public
-   settings restoration now pass local tests, independent review and live checks.
-   Registration reuses the shared canonical decoder; the earlier failed attempts
-   remain retained. Every diagnostic still requires fresh preflight, exact-source
-   timing-off restoration and verification. Keep physical-commit and browser-clock
-   uncertainty explicit; the full ≤2 s target remains open. Retain the post-terminal
-   100,000-node certification limit and measured snapshot serialization/write costs
-   as distinct harness follow-ups, without asserting ALM causation.
+1. **Remaining formation-tail delivery:** bounded admission reads and native scale
+   acceptance remain passing, but the full ≤2 s target is open. The occupied-owner
+   wake fixture passes unchanged production, and the warmed local PostgreSQL owner
+   probe does not reproduce hosted cost. Preserve the earlier 11.711 / 6.804 s
+   pre-reservation observations and their limits in the focused formation plan.
+   The latest fixed-source OFF–ON–ON–OFF native-fifty sequence passes all four
+   workflows. Its timing-on captures place 4.341 / 5.962 s of the all-cohort
+   promotion's 4.343 / 5.963 s pre-reservation waits inside active same-worker
+   batch envelopes; own-output-to-local-send is 4.418 / 6.239 s. Retain all earlier
+   promotions and distinct activation outputs; browser causal matches do not
+   prove notification-to-adoption causality.
+   Different stages dominate: a 1.134 s authority-read union in one preceding
+   batch, and a 2.660 s release interval in another. Existing API samples expose
+   a 1.650 s process-wide timer delay during that release. Profile the actual
+   process with existing CPU/GC facilities before attributing this to sequential
+   PostgreSQL release statements or selecting the focused TDD repair. The generic
+   local probe omits the WS authority callback and cannot rule out that wave.
+   Preserve bounded reads, ordered sends, immutable events/audiences, causal fences,
+   retries, deadlines, full-row release fences, rollback and healthy-neighbor
+   recovery. Do not detach owned cleanup or infer queue eligibility from overlap.
+   Timing-off removes all API stage anchors, so compare common per-run native and
+   browser measures with explicit missing counts, not server-stage or incremental
+   instrumentation cost. Persistent state is preserved; host/store/network drift
+   remains a limit. The canonical-node artifact append failure recurs with timing
+   off and on; [#682](https://github.com/intact-software-systems/ar-eye-hunter/issues/682)
+   retains its evidence. Passed recipes do not certify full recorder retention.
+   Continue strict read-only preflight and exact-source timing-off/topology/public
+   settings restoration for every hosted diagnostic.
 2. **Validate corrected state-write command completion:** logical enqueue association, bounded
    capture and the demonstrated harness wait for dequeue/timer cleanup are repaired with TDD.
    The actual service-sequence endpoint is recorded while one command-owned pump remains joined
