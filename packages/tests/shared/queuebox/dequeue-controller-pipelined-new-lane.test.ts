@@ -6,8 +6,8 @@ interface PipelinedLaneInput {
     readonly maxConcurrentComputes: number;
     readonly maxToReserve: number;
     readonly maxNumToDequeue: number;
-    /** The rows each reservation call returns, in call order; a call past the script returns none. */
-    readonly reservations: readonly (readonly string[])[];
+    /** The rows each reservation call returns, or the error it rejects with, in call order; past the script, none. */
+    readonly reservations: readonly (readonly string[] | Error)[];
     readonly exclusionKeys?: Readonly<Record<string, string>>;
     readonly failRelease?: (key: string) => Error | undefined;
 }
@@ -130,6 +130,38 @@ describe('DequeueController pipelined lane', () => {
         expect(lane.asked).toEqual([2]);
     });
 
+    it.each(['reservation', 'preprocessing'] as const)(
+        'stops reserving after a %s error, still finishes and releases the rows in flight and rethrows the error',
+        async (failingPhase) => {
+            const failure = new Error(`${failingPhase} unavailable`);
+            const lane = createPipelinedLane({
+                maxConcurrentComputes: 2,
+                maxToReserve: 2,
+                maxNumToDequeue: 8,
+                reservations: [['a', 'b'], failingPhase === 'reservation' ? failure : ['c'], ['d']]
+            });
+            lane.controller.onPreProcessingReservedEntries(async (entries) => {
+                if (entries.has('c')) {
+                    throw failure;
+                }
+                return entries;
+            });
+            const dequeued = lane.controller.dequeueForCompute(lane.compute);
+
+            await vi.waitFor(() => expect(lane.events).toContain('start:b'));
+            lane.finish('b');
+            await vi.waitFor(() => expect(lane.asked).toEqual([2, 1]));
+            await vi.waitFor(() => expect(lane.events).toContain('release:b'));
+            expect(lane.events).not.toContain('end:a');
+            lane.finish('a');
+
+            await expect(dequeued).rejects.toBe(failure);
+            expect(lane.releaseCalls).toEqual([['b'], ['a']]);
+            expect(lane.events).not.toContain('start:c');
+            expect(lane.asked).toEqual([2, 1]);
+        }
+    );
+
     it('computes the rows of one reservation in order, one at a time, on a serial lane', async () => {
         const lane = createPipelinedLane({
             maxConcurrentComputes: 1,
@@ -174,11 +206,7 @@ function createPipelinedLane(input: PipelinedLaneInput): PipelinedLane {
         .withWorkAdvertisement({ FINALIZATION: false, NEW: true, RETRY: false, FAIRNESS: false, TIMEOUT: false })
         .withLaneBudgets(() => ({ FINALIZATION: budget, NEW: budget, FAIRNESS: budget, RETRY: budget, TIMEOUT: budget }))
         .withComputeExclusion((key) => input.exclusionKeys?.[key])
-        .onNewEntriesReserveDo(async (_types, numToReserve) => {
-            const rows = input.reservations[asked.length] ?? [];
-            asked.push(numToReserve);
-            return new Map(rows.map((key) => [key, key]));
-        })
+        .onNewEntriesReserveDo((_types, numToReserve) => reserveScripted(input.reservations, asked, numToReserve))
         .onReleaseEntriesDo(async (successes) => {
             const keys = [...successes.keys()];
             releaseCalls.push(keys);
@@ -197,6 +225,19 @@ function createPipelinedLane(input: PipelinedLaneInput): PipelinedLane {
         compute: (key) => computeGated(key, { events, finishes }),
         finish: (key) => finishes.get(key)!()
     };
+}
+
+async function reserveScripted(
+    reservations: PipelinedLaneInput['reservations'],
+    asked: number[],
+    numToReserve: number
+): Promise<Map<string, string>> {
+    const rows = reservations[asked.length] ?? [];
+    asked.push(numToReserve);
+    if (rows instanceof Error) {
+        throw rows;
+    }
+    return new Map(rows.map((key) => [key, key]));
 }
 
 async function computeGated(key: string, gates: ComputeGates): Promise<string> {

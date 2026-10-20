@@ -1,6 +1,6 @@
 import type { Either } from '../../resilience/Either.ts';
 import { toError } from '../../resilience/to-error.ts';
-import { computeDequeueEntry, DequeueBatch } from './dequeue-batch.ts';
+import { computeDequeueEntry, DequeueLaneFlight } from './dequeue-lane-flight.ts';
 
 export const Reservator = {
     FINALIZATION: 'FINALIZATION',
@@ -53,7 +53,7 @@ export class DequeueController<K, V, T> {
 
     private maxNumToReserve: () => number = () => DequeueController.DEFAULT_MAX_NUM_TO_RESERVE;
     private typesToDequeue: () => Set<string> = () => new Set<string>();
-    private admitsRound: (types: Set<string>) => boolean = () => true;
+    private admitsReservation: (types: Set<string>) => boolean = () => true;
     private toExclusionKey: ((key: K, value: V) => string | undefined) | undefined;
 
     private newReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>;
@@ -123,8 +123,8 @@ export class DequeueController<K, V, T> {
     }
 
     /** Asked before every reservation of a lane; false ends the lane, and the rows already reserved still finish. */
-    onRoundAdmissionDo(admitsRound: (types: Set<string>) => boolean): this {
-        this.admitsRound = requireNonNull(admitsRound);
+    onReservationAdmissionDo(admitsReservation: (types: Set<string>) => boolean): this {
+        this.admitsReservation = requireNonNull(admitsReservation);
         return this;
     }
 
@@ -283,7 +283,7 @@ export class DequeueController<K, V, T> {
         computer: (key: K, value: V) => Promise<T>,
         budget: DequeueController.LaneBudget | undefined
     ): Promise<Map<K, Either<DequeueController.Failure<K, V>, DequeueController.Success<K, V, T>>>> {
-        const batch = new DequeueBatch<K, V, T>({
+        const flight = new DequeueLaneFlight<K, V, T>({
             maxConcurrentComputes: budget?.maxConcurrentComputes ?? 1,
             computer,
             toExclusionKey: this.toExclusionKey,
@@ -296,12 +296,12 @@ export class DequeueController<K, V, T> {
             log: this.log
         });
         try {
-            await this.reserveIntoBatch(reservator, batch, budget);
+            await this.reserveIntoFlight(reservator, flight, budget);
         }
         catch (error) {
-            batch.stop(toError(error));
+            flight.stop(toError(error));
         }
-        const released = await batch.drain();
+        const released = await flight.drain();
         return this.returnDequeuedEntries ? released : new Map();
     }
 
@@ -310,22 +310,22 @@ export class DequeueController<K, V, T> {
      * rows that arrive meanwhile wait for the next pass. The lane holds at most its reservation size or its compute
      * bound of unreleased rows, whichever is larger, so a serial lane still claims a whole reservation at once.
      */
-    private async reserveIntoBatch(
+    private async reserveIntoFlight(
         reservator: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>,
-        batch: DequeueBatch<K, V, T>,
+        flight: DequeueLaneFlight<K, V, T>,
         budget: DequeueController.LaneBudget | undefined
     ): Promise<void> {
         const maxNumDequeue = budget?.maxNumToDequeue ?? this.maxNumDequeue;
-        const maxConcurrentComputes = budget?.maxConcurrentComputes ?? 1;
         let claimedCount = 0;
         while (
-            await batch.waitForFreeSlot() && this.admitsRound(this.typesToDequeue()) && claimedCount < maxNumDequeue
+            await flight.waitForFreeSlot() && this.admitsReservation(this.typesToDequeue()) &&
+            claimedCount < maxNumDequeue
         ) {
             const maxToReserve = budget?.maxToReserve ?? this.maxNumToReserve();
-            const maxUnreleased = Math.max(maxToReserve, maxConcurrentComputes);
+            const maxUnreleased = Math.max(maxToReserve, flight.getMaxConcurrentComputes());
             const numToReserve = Math.min(
                 maxToReserve,
-                maxUnreleased - batch.getUnreleasedCount(),
+                maxUnreleased - flight.getUnreleasedCount(),
                 maxNumDequeue - claimedCount
             );
             if (numToReserve <= 0) {
@@ -337,7 +337,7 @@ export class DequeueController<K, V, T> {
             const reserved = await reservator(this.typesToDequeue(), numToReserve) ?? new Map<K, V>();
             claimedCount += reserved.size;
             const entries = this.onPreProcessingReserved ? await this.onPreProcessingReserved(reserved) : reserved;
-            batch.add(entries);
+            flight.add(entries);
             if (entries.size === 0 || reserved.size < numToReserve) {
                 return;
             }

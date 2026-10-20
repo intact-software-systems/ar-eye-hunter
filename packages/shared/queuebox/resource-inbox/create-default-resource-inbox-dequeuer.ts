@@ -2,8 +2,8 @@ import { Temporal } from '@js-temporal/polyfill';
 
 import { RateLimiter } from '../../resilience/Resilience.ts';
 import { toErrorSummaryLine } from '../../resilience/to-error.ts';
-import { toDequeuedKeyText } from '../dequeue/dequeue-batch.ts';
 import { DequeueController, Reservator } from '../dequeue/dequeue-controller.ts';
+import { toDequeuedKeyText } from '../dequeue/dequeue-lane-flight.ts';
 import {
     toSaturatedResourceInboxFairnessScanBudget,
     type DequeueResourceEntryRepository,
@@ -242,7 +242,7 @@ function createResourceInboxFinalizationController<V>(
     return DequeueController.create<Resource.Key, ResourceInboxAttempt, V>()
         .withInboxTypesToDequeue(input.typesToDequeue)
         // A released row that tripped the breaker ends the lane's claims; the rows it already claimed still finish.
-        .onRoundAdmissionDo(() => !dependencies.resilience.isNotAllowedThroughToDequeue())
+        .onReservationAdmissionDo(() => !dependencies.resilience.isNotAllowedThroughToDequeue())
         .withComputeExclusion(dependencies.options.toComputeExclusionKey)
         .withMaxNumToDequeue(input.maxNumToDequeue)
         .withLaneBudgets(input.readLaneBudgets)

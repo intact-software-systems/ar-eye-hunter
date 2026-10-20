@@ -4,7 +4,7 @@ import { toError } from '../../resilience/to-error.ts';
 import { isNotReadyException } from '../resource-inbox/not-ready-exception.ts';
 import type { DequeueController } from './dequeue-controller.ts';
 
-export namespace DequeueBatch {
+export namespace DequeueLaneFlight {
     export type EntryResult<K, V, T> = Either<DequeueController.Failure<K, V>, DequeueController.Success<K, V, T>>;
 
     export interface Release<K, V, T> {
@@ -37,25 +37,26 @@ interface DequeueEntryInput<K, V, T> {
     readonly purpose: 'processing' | 'finalization-recovery';
 }
 
-interface DequeueBatchSettlement<K, V, T> {
+interface DequeueLaneFlightSettlement<K, V, T> {
     readonly key: K;
-    /** Absent when the entry's release failed: the batch then rejects with the first such error. */
-    readonly released: DequeueBatch.EntryResult<K, V, T> | undefined;
+    /** Absent when the entry's release failed: draining then rejects with the first such error. */
+    readonly released: DequeueLaneFlight.EntryResult<K, V, T> | undefined;
 }
 
 /**
- * The entries one lane invocation claimed and has not yet released. Each entry computes once admitted and is released
- * on its own as soon as it settles, so its slot frees without waiting for the batch's slowest entry. A release error is
- * kept, not thrown: the other entries still compute and release, and draining rethrows the first one.
+ * The entries one lane invocation claimed and has not yet released, across all of its reservations. Each entry computes
+ * once admitted and is released on its own as soon as it settles, so its slot frees without waiting for the lane's
+ * slowest entry. A release error is kept, not thrown: the other entries still compute and release, and draining
+ * rethrows the first one.
  */
-export class DequeueBatch<K, V, T> {
-    private readonly input: DequeueBatch.Input<K, V, T>;
+export class DequeueLaneFlight<K, V, T> {
+    private readonly input: DequeueLaneFlight.Input<K, V, T>;
     private readonly admission: ExclusionKeyedAdmission;
-    private readonly unreleased = new Set<Promise<DequeueBatchSettlement<K, V, T>>>();
-    private readonly settlements: Promise<DequeueBatchSettlement<K, V, T>>[] = [];
+    private readonly unreleased = new Set<Promise<DequeueLaneFlightSettlement<K, V, T>>>();
+    private readonly settlements: Promise<DequeueLaneFlightSettlement<K, V, T>>[] = [];
     private firstError: Error | undefined;
 
-    constructor(input: DequeueBatch.Input<K, V, T>) {
+    constructor(input: DequeueLaneFlight.Input<K, V, T>) {
         this.input = input;
         this.admission = new ExclusionKeyedAdmission({ maxConcurrent: input.maxConcurrentComputes });
     }
@@ -89,12 +90,16 @@ export class DequeueBatch<K, V, T> {
         return this.unreleased.size;
     }
 
+    getMaxConcurrentComputes(): number {
+        return this.input.maxConcurrentComputes;
+    }
+
     /** A reservation or preprocessing error ends the lane like a release error; only the first error is rethrown. */
     stop(error: Error): void {
         this.firstError ??= error;
     }
 
-    /** Resolves once fewer than the compute bound are unreleased; false once an error stopped the batch. */
+    /** Resolves once fewer than the compute bound are unreleased; false once an error stopped the lane. */
     async waitForFreeSlot(): Promise<boolean> {
         while (this.firstError === undefined && this.unreleased.size >= this.input.maxConcurrentComputes) {
             await Promise.race(this.unreleased);
@@ -103,7 +108,7 @@ export class DequeueBatch<K, V, T> {
     }
 
     /** Waits for every entry to compute and release, then rethrows the first error or returns them in claim order. */
-    async drain(): Promise<Map<K, DequeueBatch.EntryResult<K, V, T>>> {
+    async drain(): Promise<Map<K, DequeueLaneFlight.EntryResult<K, V, T>>> {
         const settled = await Promise.all(this.settlements);
         if (this.firstError !== undefined) {
             throw this.firstError;
@@ -114,7 +119,7 @@ export class DequeueBatch<K, V, T> {
 
 export async function computeDequeueEntry<K, V, T>(
     { key, value, computer, log, purpose }: DequeueEntryInput<K, V, T>
-): Promise<DequeueBatch.EntryResult<K, V, T>> {
+): Promise<DequeueLaneFlight.EntryResult<K, V, T>> {
     try {
         return Either.ofRight({ key, value, computedValue: await computer(key, value) });
     }
@@ -130,10 +135,10 @@ export async function computeDequeueEntry<K, V, T>(
 
 /** A releaser that resolves without the entry leaves it as computed. */
 async function releaseDequeueEntry<K, V, T>(
-    computed: DequeueBatch.EntryResult<K, V, T>,
-    release: DequeueBatch.Release<K, V, T>
-): Promise<DequeueBatch.EntryResult<K, V, T>> {
-    return await computed.fold<Promise<DequeueBatch.EntryResult<K, V, T>>>(
+    computed: DequeueLaneFlight.EntryResult<K, V, T>,
+    release: DequeueLaneFlight.Release<K, V, T>
+): Promise<DequeueLaneFlight.EntryResult<K, V, T>> {
+    return await computed.fold<Promise<DequeueLaneFlight.EntryResult<K, V, T>>>(
         async (failure) => {
             const [released = failure] = (await release.failureReleaser(new Map([[failure.key, failure]]))).values();
             release.onFailed?.(new Map([[failure.key, released]]));
