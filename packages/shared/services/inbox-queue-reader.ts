@@ -118,6 +118,7 @@ export class InboxQueueReader {
         this.newLaneHeldRows = dequeueOptions.newLaneHeldRows === undefined
             ? undefined
             : requireNewLaneHeldRows(dequeueOptions.newLaneHeldRows, this.newLaneConcurrency);
+        this.nowEpochMs = dequeueOptions.nowEpochMs ?? Date.now;
         this.flight = this.newLaneHeldRows === undefined
             ? undefined
             : new DequeueLaneFlight({
@@ -125,10 +126,9 @@ export class InboxQueueReader {
                 maxUnreleased: this.newLaneHeldRows,
                 keyedRunsFirst: true,
                 toExclusionKey: dequeueOptions.toComputeExclusionKey,
-                log: console,
+                releaseFailureClock: this.nowEpochMs,
                 retainSettlement: (settlement) => this.retainFlightSettlement(settlement)
             });
-        this.nowEpochMs = dequeueOptions.nowEpochMs ?? Date.now;
         this.pressureRefreshLimiter = RateLimiter.initWithTs(
             InboxQueueReader.PRESSURE_WINDOW_MS,
             1,
@@ -173,6 +173,14 @@ export class InboxQueueReader {
     isAwaitingFlightSettlement(): boolean {
         return this.flight !== undefined &&
             (this.flight.getFreePlaceCount() === 0 || this.flightAwaitsSettlement);
+    }
+
+    /**
+     * A writer this reader does not own may have queued a row of a context with nothing in flight, so the next pass is
+     * worth its probe again; a full flight still waits for a settlement.
+     */
+    resetFlightSettlementWait(): void {
+        this.flightAwaitsSettlement = false;
     }
 
     /** One storage read naming the lanes the next pass may claim from; the engine's work probe for this queue. */

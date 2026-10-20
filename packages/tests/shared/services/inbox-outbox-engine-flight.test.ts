@@ -49,6 +49,25 @@ describe('InboxOutboxEngine work a runnable leaves settling', () => {
         expect(stopped).toBe(true);
     });
 
+    it('runs no pass for a row that settles while stop waits for it or after stop resolved', async () => {
+        vi.useFakeTimers({ now: 10_000 });
+        const engine = createEngine();
+        const task = includeFlightTask(engine);
+        task.waitingRows = 1;
+        engine.start();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(task.ranAtMs).toEqual([10_000]);
+        task.waitingRows = 2;
+
+        const stopping = engine.stop();
+        task.rows[0]!.resolve();
+        await stopping;
+        engine.retainSettlingWork('inbox', Promise.resolve());
+        await vi.advanceTimersByTimeAsync(10_000);
+
+        expect(task.ranAtMs).toEqual([10_000]);
+    });
+
     it('also joins work a runnable retains while stop already waits for that runnable', async () => {
         const engine = createEngine();
         const runnableGate = Promise.withResolvers<void>();

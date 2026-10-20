@@ -14,7 +14,10 @@ export interface RegisterRallarMiddlewareQueueTasksInput {
 }
 
 export interface RegisterApplicationQueueReaderTasksInput {
-    readonly engine: Pick<InboxOutboxEngine, 'includeTask' | 'wake' | 'wakeAt' | 'retainSettlingWork'>;
+    readonly engine: Pick<
+        InboxOutboxEngine,
+        'includeTask' | 'includeWakeListener' | 'wake' | 'wakeAt' | 'retainSettlingWork'
+    >;
     readonly nowEpochMs: () => number;
     readonly inboxQueueReader: InboxQueueReader;
     readonly outboxQueueReader: OutboxQueueReader;
@@ -104,13 +107,19 @@ export function createRallarMiddlewareQueueRegistration(
 
 /**
  * The AppInbox reader's flight rows outlive the pass that claimed them: the engine joins each on stop, and each
- * settlement wakes it, so the next pass tops the flight up at once instead of probing while it is full.
+ * settlement wakes it, so the next pass tops the flight up at once instead of probing while it is full. Another
+ * writer's AppInbox rows end a wait on the flight's own contexts, since they may belong to a context it does not hold.
  */
 export function registerApplicationQueueReaderTasks(
     input: RegisterApplicationQueueReaderTasksInput
 ): void {
     input.inboxQueueReader.onFlightEntryDo((settlement) =>
         input.engine.retainSettlingWork(InboxQueueReader.INBOX_ENQUEUE_TYPE, settlement)
+    );
+    input.engine.includeWakeListener(
+        `${InboxQueueReader.INBOX_ENQUEUE_TYPE}:flight`,
+        InboxQueueReader.INBOX_DEQUEUE_TYPES,
+        () => input.inboxQueueReader.resetFlightSettlementWait()
     );
     includeQueueReaderTask(input, {
         taskId: InboxQueueReader.INBOX_ENQUEUE_TYPE,

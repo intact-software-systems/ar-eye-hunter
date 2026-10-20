@@ -3,7 +3,11 @@ import { BoundedConcurrencyAdmission } from './bounded-concurrency-admission.ts'
 export namespace ExclusionKeyedAdmission {
     export interface Config {
         readonly maxConcurrent: number;
-        /** Whether a keyed run takes a freed slot ahead of every waiting keyless run; otherwise all wait in turn. */
+        /**
+         * Whether a keyed run takes a freed slot ahead of every waiting keyless run; otherwise all wait in turn. Each key
+         * admits one run at a time, so keyless runs wait at most while every distinct waiting key takes a slot in turn,
+         * for as long as new keyed runs keep arriving.
+         */
         readonly keyedRunsFirst: boolean;
     }
 }

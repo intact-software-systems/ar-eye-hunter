@@ -140,8 +140,9 @@ export class DequeueController<K, V, T> {
      * The flight every processing lane adds its claims to instead of one of its own, kept by the owner across passes.
      * A pass then tops it up to its hold bound and returns without waiting for what it claimed: those rows compute and
      * release after the pass, and the flight's own exclusion and compute bound order them with the rows of earlier
-     * passes. The recovery lanes top up before NEW, so a NEW backlog never leaves them without a place. Absent, each
-     * lane computes its claims in a flight of its own that the pass drains before it returns.
+     * passes. The recovery lanes top up before NEW, so a NEW backlog never leaves them without a place. A pass then
+     * returns no dequeued entries, whatever `withReturnDequeuedEntries` says. Absent, each lane computes its claims in a
+     * flight of its own that the pass drains before it returns.
      */
     withStandingFlight(standingFlight: DequeueLaneFlight<K, V, T> | undefined): this {
         this.standingFlight = standingFlight;
@@ -336,7 +337,7 @@ export class DequeueController<K, V, T> {
         computer: (key: K, value: V) => Promise<T>,
         budget: DequeueController.LaneBudget | undefined
     ): Promise<Map<K, Either<DequeueController.Failure<K, V>, DequeueController.Success<K, V, T>>>> {
-        const work = { computer, release: this.toRelease() };
+        const work = { computer, release: this.toRelease(), log: this.log };
         if (this.standingFlight) {
             await this.reserveIntoFlight({
                 reservator,
@@ -354,7 +355,7 @@ export class DequeueController<K, V, T> {
             maxUnreleased: Math.max(budget?.maxToReserve ?? this.maxNumToReserve(), maxConcurrentComputes),
             keyedRunsFirst: false,
             toExclusionKey: this.toExclusionKey,
-            log: this.log,
+            releaseFailureClock: undefined,
             retainSettlement: undefined
         });
         const settlements: Promise<DequeueLaneFlight.Settlement<K, V, T>>[] = [];

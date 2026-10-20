@@ -71,6 +71,32 @@ describe('registered AppInbox queue task with a standing flight', () => {
         expect(harness.started.map(({ rowId }) => rowId)).toEqual(['row-0', 'row-1', 'row-2', 'row-3']);
     });
 
+    it('claims a row another writer announced while the flight waits on its in-flight contexts, before any row settles', async () => {
+        vi.useFakeTimers({ now: 10_000 });
+        const harness = createQueueFlightHarness({ newLaneConcurrency: 2, newLaneHeldRows: 4, keyedPrefix: 'keyed-' });
+        await enqueueRow(harness.reader, 'context-a', 'keyed-1');
+        await enqueueRow(harness.reader, 'context-b', 'keyed-2');
+        await enqueueRow(harness.reader, 'context-a', 'row-a2');
+
+        harness.engine.start();
+        await vi.advanceTimersByTimeAsync(1_000);
+        // The chain's head computes and its successor waits; context-a's next row is not claimable while its head runs.
+        expect(harness.started.map(({ rowId }) => rowId)).toEqual(['keyed-1']);
+        expect(harness.reader.isAwaitingFlightSettlement()).toBe(true);
+
+        await enqueueRow(harness.reader, 'context-c', 'row-c');
+        harness.engine.wakeAfterExternalWrite(new Set(['APP_INBOX']));
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(harness.started.map(({ rowId }) => rowId)).toEqual(['keyed-1', 'row-c']);
+        for (const rowId of ['keyed-1', 'keyed-2', 'row-c', 'row-a2']) {
+            await vi.waitFor(() => expect(harness.started.map((started) => started.rowId)).toContain(rowId));
+            harness.finish(rowId);
+            await vi.advanceTimersByTimeAsync(0);
+        }
+        await stopEngine(harness.engine);
+    });
+
     it('stops only after the rows its passes left in flight have settled', async () => {
         vi.useFakeTimers({ now: 10_000 });
         const harness = createQueueFlightHarness({ newLaneConcurrency: 2, newLaneHeldRows: 2 });
@@ -107,14 +133,17 @@ describe('registered AppInbox queue task with a standing flight', () => {
     });
 });
 
-function createQueueFlightHarness(input: Readonly<{ newLaneConcurrency: number; newLaneHeldRows: number; }>): QueueFlightHarness {
+function createQueueFlightHarness(
+    input: Readonly<{ newLaneConcurrency: number; newLaneHeldRows: number; keyedPrefix?: string; }>
+): QueueFlightHarness {
     const queue = new ProbeCountingQueueBox();
     const engine = new InboxOutboxEngine({ nowEpochMs: () => Date.now(), random: () => 0.5, reportTaskFailure: () => undefined });
     const reader = new InboxQueueReader(queue, {
         laneBudgetPolicy: 'fixed-retry-two',
         newLaneConcurrency: input.newLaneConcurrency,
         newLaneHeldRows: input.newLaneHeldRows,
-        nowEpochMs: () => Date.now()
+        nowEpochMs: () => Date.now(),
+        toComputeExclusionKey: (key) => input.keyedPrefix !== undefined && key.resourceId.startsWith(input.keyedPrefix) ? 'app:group' : undefined
     });
     const started: QueueFlightHarness['started'] = [];
     const gates = new Map<string, () => void>();
@@ -137,14 +166,18 @@ function createQueueFlightHarness(input: Readonly<{ newLaneConcurrency: number; 
 
 async function enqueue(reader: InboxQueueReader, count: number): Promise<void> {
     for (let index = 0; index < count; index += 1) {
-        await reader.enqueueIfAbsent(newALUntargetedMessage(
-            'api-v1',
-            newALRoute('app-inbox.queue-flight', `context-${index}`, `row-${index}`),
-            TYPE,
-            { index },
-            { ttlMs: 300_000 }
-        ));
+        await enqueueRow(reader, `context-${index}`, `row-${index}`);
     }
+}
+
+async function enqueueRow(reader: InboxQueueReader, contextId: string, rowId: string): Promise<void> {
+    await reader.enqueueIfAbsent(newALUntargetedMessage(
+        'api-v1',
+        newALRoute('app-inbox.queue-flight', contextId, rowId),
+        TYPE,
+        { rowId },
+        { ttlMs: 300_000 }
+    ));
 }
 
 async function stopEngine(engine: InboxOutboxEngine): Promise<void> {

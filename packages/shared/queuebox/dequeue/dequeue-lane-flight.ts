@@ -18,10 +18,11 @@ export namespace DequeueLaneFlight {
         readonly onFailed: ((entries: Map<K, DequeueController.Failure<K, V>>) => void) | undefined;
     }
 
-    /** How the entries of one reservation compute and release: the pass that claimed them decides both. */
+    /** How the entries of one reservation compute, release and log: the pass that claimed them decides all three. */
     export interface Work<K, V, T> {
         readonly computer: (key: K, value: V) => Promise<T>;
         readonly release: Release<K, V, T>;
+        readonly log: Pick<Console, 'error'>;
     }
 
     export interface Settlement<K, V, T> {
@@ -39,7 +40,11 @@ export namespace DequeueLaneFlight {
         readonly keyedRunsFirst: boolean;
         /** An entry computes after every earlier unsettled entry whose exclusion key overlaps its own. */
         readonly toExclusionKey: ((key: K, value: V) => string | undefined) | undefined;
-        readonly log: Pick<Console, 'error'>;
+        /**
+         * Stamps the key of each entry whose release failed: that row may still be reserved, so its owner keeps the key
+         * among the held ones until it forgets the failure. Absent, a failed release is not remembered.
+         */
+        readonly releaseFailureClock: (() => number) | undefined;
         /**
          * Told of each added entry with a promise that settles once the entry is released, rejecting with its release
          * error. Absent, nothing outside the flight waits for its entries.
@@ -66,6 +71,7 @@ export class DequeueLaneFlight<K, V, T> {
     private readonly input: DequeueLaneFlight.Input<K, V>;
     private readonly admission: ExclusionKeyedAdmission;
     private readonly unreleased = new Map<Promise<DequeueLaneFlight.Settlement<K, V, T>>, K>();
+    private readonly releaseFailedAtMs = new Map<K, number>();
     private firstError: Error | undefined;
 
     constructor(input: DequeueLaneFlight.Input<K, V>) {
@@ -87,6 +93,19 @@ export class DequeueLaneFlight<K, V, T> {
 
     getUnreleasedKeys(): K[] {
         return [...this.unreleased.values()];
+    }
+
+    /** The keys of entries whose release failed and whose failure the owner has not forgotten yet. */
+    getReleaseFailedKeys(): K[] {
+        return [...this.releaseFailedAtMs.keys()];
+    }
+
+    forgetReleaseFailuresBefore(atMs: number): void {
+        for (const [key, failedAtMs] of this.releaseFailedAtMs) {
+            if (failedAtMs < atMs) {
+                this.releaseFailedAtMs.delete(key);
+            }
+        }
     }
 
     getFreePlaceCount(): number {
@@ -142,7 +161,7 @@ export class DequeueLaneFlight<K, V, T> {
                         key,
                         value,
                         computer: work.computer,
-                        log: this.input.log,
+                        log: work.log,
                         purpose: 'processing'
                     })
             )
@@ -150,6 +169,10 @@ export class DequeueLaneFlight<K, V, T> {
         const settlement: Promise<DequeueLaneFlight.Settlement<K, V, T>> = released
             .then((entry) => ({ key, released: entry }), (error) => {
                 this.firstError ??= toError(error);
+                const failedAtMs = this.input.releaseFailureClock?.();
+                if (failedAtMs !== undefined) {
+                    this.releaseFailedAtMs.set(key, failedAtMs);
+                }
                 return { key, released: undefined };
             })
             .finally(() => this.unreleased.delete(settlement));

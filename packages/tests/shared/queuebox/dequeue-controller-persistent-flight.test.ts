@@ -13,6 +13,7 @@ interface StandingLaneInput {
     readonly reservations: Readonly<Partial<Record<ScriptedLane, readonly (readonly string[] | Error)[]>>>;
     readonly exclusionKeys?: Readonly<Record<string, string>>;
     readonly failRelease?: (key: string) => Error | undefined;
+    readonly releaseFailureClock?: () => number;
 }
 
 interface StandingLane {
@@ -182,6 +183,31 @@ describe('DequeueController standing flight', () => {
         await Promise.all(lane.retained.slice(2));
     });
 
+    it('holds the key of a row whose release failed until the caller forgets failures older than its hold', async () => {
+        const failure = new Error('release lost its reservation');
+        let nowMs = 1_000;
+        const lane = createStandingLane({
+            maxConcurrentComputes: 1,
+            maxUnreleased: 1,
+            reservations: { NEW: [['a']] },
+            failRelease: (key) => key === 'a' ? failure : undefined,
+            releaseFailureClock: () => nowMs
+        });
+
+        await lane.pass();
+        await vi.waitFor(() => expect(lane.events).toEqual(['start:a']));
+        lane.finish('a');
+        await expect(lane.retained[0]).rejects.toBe(failure);
+
+        expect(lane.flight.getUnreleasedKeys()).toEqual([]);
+        expect(lane.flight.getReleaseFailedKeys()).toEqual(['a']);
+        nowMs = 2_000;
+        lane.flight.forgetReleaseFailuresBefore(1_000);
+        expect(lane.flight.getReleaseFailedKeys()).toEqual(['a']);
+        lane.flight.forgetReleaseFailuresBefore(1_001);
+        expect(lane.flight.getReleaseFailedKeys()).toEqual([]);
+    });
+
     it('rejects the pass whose reservation failed while the rows already in flight still compute and release', async () => {
         const failure = new Error('reservation unavailable');
         const lane = createStandingLane({
@@ -253,7 +279,7 @@ function createStandingLane(input: StandingLaneInput, admitsReservation: () => b
         maxUnreleased: input.maxUnreleased,
         keyedRunsFirst: input.keyedRunsFirst ?? true,
         toExclusionKey: (key) => input.exclusionKeys?.[key],
-        log: createSilentLog(),
+        releaseFailureClock: input.releaseFailureClock,
         retainSettlement: (settlement) => {
             void settlement.catch(() => undefined);
             retained.push(settlement);

@@ -9,7 +9,9 @@ export namespace BoundedConcurrencyAdmission {
 
 /**
  * Admits runs with at most the bound in flight; a run keeps its slot until it settles. Waiting runs of one priority
- * are admitted in arrival order, and a waiting preferred run goes before every waiting in-turn run.
+ * are admitted in arrival order, and a waiting preferred run goes before every waiting in-turn run. Nothing ages an
+ * in-turn run: while preferred runs keep arriving faster than slots free, in-turn runs wait, so a caller that prefers
+ * runs bounds their supply.
  */
 export class BoundedConcurrencyAdmission {
     private readonly maxConcurrent: number;

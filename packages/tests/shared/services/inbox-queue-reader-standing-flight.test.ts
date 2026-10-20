@@ -24,7 +24,8 @@ afterEach(() => {
 interface GatedHandlers {
     /** The row ids whose handler started, in start order. */
     readonly started: string[];
-    readonly inFlightByContext: Map<string, number>;
+    /** The most rows of one context that ran at once. */
+    maxInFlightPerContext: number;
     finish(rowId: string, error?: Error): void;
 }
 
@@ -42,6 +43,19 @@ class ClaimRecordingQueueBox extends InMemoryQueueBox {
     readonly excludedByClaim: { status: string; excluded: string[]; }[] = [];
     /** Runs before the next context-head claim reaches the store, once. */
     beforeNextClaim: (() => Promise<void>) | undefined;
+    /** The row whose next release rejects, as a release that lost its reservation does. */
+    failReleaseOf: string | undefined;
+
+    override async releaseEntries(
+        ...input: Parameters<InMemoryQueueBox['releaseEntries']>
+    ): ReturnType<InMemoryQueueBox['releaseEntries']> {
+        const [releases] = input;
+        if (releases.some((release) => release.entry.key.resourceId === this.failReleaseOf)) {
+            this.failReleaseOf = undefined;
+            throw new Error('release lost its reservation');
+        }
+        return await super.releaseEntries(...input);
+    }
 
     override reserveEntries(request: ResourceInboxReservationObservationRequest): Promise<ResourceInboxReservationObservationResult>;
     override reserveEntries(request: ResourceInboxReservationRequest): Promise<Map<Key, ResourceEntry>>;
@@ -83,6 +97,7 @@ describe('the AppInbox NEW lane with a standing flight', () => {
         flight.handlers.finish('row-5');
         await Promise.all(flight.settlements);
         expect(await readStatuses(flight.queue)).toEqual(Array(6).fill(EntityStatus.COMPLETED));
+        expect(flight.handlers.maxInFlightPerContext).toBe(1);
     });
 
     it('claims a context\'s next row once its head is released, not when the pass that claimed the head ends', async () => {
@@ -107,6 +122,7 @@ describe('the AppInbox NEW lane with a standing flight', () => {
         }
         await Promise.all(flight.settlements);
         expect(await readStatuses(flight.queue)).toEqual(Array(4).fill(EntityStatus.COMPLETED));
+        expect(flight.handlers.maxInFlightPerContext).toBe(1);
     });
 
     it('claims due retries as context heads beside the flight, excluding every context with a row in flight', async () => {
@@ -130,6 +146,7 @@ describe('the AppInbox NEW lane with a standing flight', () => {
         flight.handlers.finish('row-1');
         await Promise.all(flight.settlements);
         expect(await readStatuses(flight.queue)).toEqual([EntityStatus.COMPLETED, EntityStatus.COMPLETED]);
+        expect(flight.handlers.maxInFlightPerContext).toBe(1);
     });
 
     it('counts each row that fails after its pass returned toward the breaker, which then stops the next top-up', async () => {
@@ -170,6 +187,26 @@ describe('the AppInbox NEW lane with a standing flight', () => {
         expect(flight.reader.isAwaitingFlightSettlement()).toBe(true);
         flight.handlers.finish('row-1');
         await Promise.all(flight.settlements);
+    });
+
+    it('keeps excluding a context whose row failed to release until that row\'s lease could have expired', async () => {
+        vi.useFakeTimers({ now: 10_000 });
+        const flight = createStandingFlightReader({ newLaneConcurrency: 2, newLaneHeldRows: 4, fakeClock: true });
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        await enqueue(flight.reader, ['shared', 'shared']);
+        expect(await flight.pass()).toBe(1);
+        await vi.waitFor(() => expect(flight.handlers.started).toEqual(['row-0']));
+
+        flight.queue.failReleaseOf = 'row-0';
+        flight.handlers.finish('row-0');
+        await expect(flight.settlements[0]).rejects.toThrow('release lost its reservation');
+        await expect(flight.pass()).rejects.toThrow('release lost its reservation');
+
+        // The failed row may still be RESERVED, so its context's next row must not run ahead of it.
+        expect(await flight.pass()).toBe(0);
+        expect(flight.queue.excludedByClaim.filter(({ status }) => status === EntityStatus.NEW).at(-1))
+            .toEqual({ status: EntityStatus.NEW, excluded: ['shared'] });
+        expect(flight.handlers.started).toEqual(['row-0']);
     });
 
     it('rejects a held-row bound below the lane\'s concurrency or above the largest flight', () => {
@@ -214,9 +251,10 @@ function createStandingFlightReader(
 
 function holdHandlers(reader: InboxQueueReader): GatedHandlers {
     const gates = new Map<string, PromiseWithResolvers<void>>();
+    const inFlightByContext = new Map<string, number>();
     const handlers: GatedHandlers = {
         started: [],
-        inFlightByContext: new Map(),
+        maxInFlightPerContext: 0,
         finish: (rowId, error) => error === undefined ? gates.get(rowId)!.resolve() : gates.get(rowId)!.reject(error)
     };
     reader.onInboxMessageDo(TYPE, {
@@ -225,13 +263,13 @@ function holdHandlers(reader: InboxQueueReader): GatedHandlers {
             const gate = Promise.withResolvers<void>();
             gates.set(entry.key.resourceId, gate);
             handlers.started.push(entry.key.resourceId);
-            handlers.inFlightByContext.set(context, (handlers.inFlightByContext.get(context) ?? 0) + 1);
-            expect(handlers.inFlightByContext.get(context)).toBe(1);
+            inFlightByContext.set(context, (inFlightByContext.get(context) ?? 0) + 1);
+            handlers.maxInFlightPerContext = Math.max(handlers.maxInFlightPerContext, inFlightByContext.get(context)!);
             try {
                 await gate.promise;
             }
             finally {
-                handlers.inFlightByContext.set(context, handlers.inFlightByContext.get(context)! - 1);
+                inFlightByContext.set(context, inFlightByContext.get(context)! - 1);
             }
         }
     });

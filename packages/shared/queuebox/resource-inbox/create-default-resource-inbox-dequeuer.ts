@@ -203,7 +203,7 @@ export function createDefaultResourceInboxDequeuer<V>(
         jitterUnit: options.jitterUnit ?? Math.random,
         recordReservationTelemetry: options.onReservationTelemetry ?? recordResourceInboxReservation
     };
-    const contextClaims = createResourceInboxContextClaims(input);
+    const contextClaims = createResourceInboxContextClaims(dependencies, input);
     return createResourceInboxFinalizationController<V>(dependencies, input)
         .withStandingFlight(input.standingFlight)
         .onNewEntriesReserveDo(async (types, maxToReserve) => {
@@ -244,15 +244,21 @@ interface ResourceInboxContextClaims {
 
 /**
  * A standing flight excludes the contexts it holds a row of, so a context's next row is claimed once its head is
- * released, in whichever pass that is. Without one, a pass serves a context's head at most once: its next row waits
- * for the next pass, and RETRY claims in queue order.
+ * released, in whichever pass that is. A row whose release failed may still be reserved, so its context stays excluded
+ * until that row's lease could have expired and the TIMEOUT lane can reclaim it. Without a flight, a pass serves a
+ * context's head at most once: its next row waits for the next pass, and RETRY claims in queue order.
  */
-function createResourceInboxContextClaims<V>(input: ResourceInboxDequeuerInput<V>): ResourceInboxContextClaims {
+function createResourceInboxContextClaims<V>(
+    dependencies: ResourceInboxDequeueDependencies,
+    input: ResourceInboxDequeuerInput<V>
+): ResourceInboxContextClaims {
     const flight = input.standingFlight;
     if (flight !== undefined) {
-        const getInFlightClaim = () => ({
-            excludedContextIds: new Set(flight.getUnreleasedKeys().map((key) => key.contextId))
-        });
+        flight.forgetReleaseFailuresBefore(dependencies.nowEpochMs() - dependencies.resilience.reservationLeaseMs);
+        const getInFlightClaim = () => {
+            const heldKeys = [...flight.getUnreleasedKeys(), ...flight.getReleaseFailedKeys()];
+            return { excludedContextIds: new Set(heldKeys.map((key) => key.contextId)) };
+        };
         return {
             getNewContextClaim: getInFlightClaim,
             getRetryContextClaim: getInFlightClaim,
