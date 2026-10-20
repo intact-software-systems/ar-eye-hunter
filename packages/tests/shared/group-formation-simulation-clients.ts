@@ -76,7 +76,8 @@ export function createSimulatedClient(
         {
             maxPeerConnections: options.maxPeerConnections,
             overlayTransitionGraceMs: options.overlayTransitionGraceMs,
-            now: options.now
+            now: options.now,
+            onOverlayAdopted: async () => {}
         }
     );
 

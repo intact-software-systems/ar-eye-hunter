@@ -90,7 +90,13 @@ describe('native observation handoff cleanup', () => {
             dataChannelName: 'test',
             rtcSignalingTopicId: 'rtc',
             iceCandidates: { iceServers: [], expiresAtEpochMs: 1000 }
-        }, { nowEpochMs: () => 1, createOfferId: () => 'offer', faultPort: createPassThroughTransportFaultPort(), signalingDiagnostics: capture.diagnostics });
+        }, {
+            nowEpochMs: () => 1,
+            createOfferId: () => 'offer',
+            faultPort: createPassThroughTransportFaultPort(),
+            signalingDiagnostics: capture.diagnostics,
+            writeRetainedSignalsDueNow: async () => {}
+        });
         onTestFinished(() => service.disposeNativeObservations());
         const middleware = createDefaultApiMiddlewareTestDouble({
             middleware: { rtcRxStreamer: { onRttMeasurementDo: () => {}, setRttReportingPeerIds: () => {} } }
@@ -266,7 +272,8 @@ function createConnectionService(): WebRtcConnectionService {
     }, {
         faultPort: createPassThroughTransportFaultPort(),
         createOfferId: new DeterministicRtcOfferIds().createOfferId,
-        nowEpochMs: () => Date.now()
+        nowEpochMs: () => Date.now(),
+        writeRetainedSignalsDueNow: async () => {}
     });
 }
 

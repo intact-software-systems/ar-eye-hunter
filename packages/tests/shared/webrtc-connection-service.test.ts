@@ -1017,7 +1017,8 @@ async function withClockService(
     const dependencies = {
         nowEpochMs,
         faultPort: createPassThroughTransportFaultPort(),
-        createOfferId: new DeterministicRtcOfferIds().createOfferId
+        createOfferId: new DeterministicRtcOfferIds().createOfferId,
+        writeRetainedSignalsDueNow: async () => {}
     };
     const service = new WebRtcConnectionService(signaler, input, dependencies);
     try {

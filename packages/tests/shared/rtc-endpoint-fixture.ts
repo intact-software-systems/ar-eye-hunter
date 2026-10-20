@@ -87,7 +87,12 @@ export class RtcEndpointFixture {
             dataChannelName: 'test',
 
             rtcSignalingTopicId: 'rtc'
-        }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId, nowEpochMs: () => Date.now() });
+        }, {
+            faultPort: createPassThroughTransportFaultPort(),
+            createOfferId: new DeterministicRtcOfferIds().createOfferId,
+            nowEpochMs: () => Date.now(),
+            writeRetainedSignalsDueNow: async () => {}
+        });
         this.createPeers(peerIds);
         this.peer = [...this.peers.values()][0];
         vi.spyOn(service, 'readPeer').mockImplementation((id) => this.peers.get(id));

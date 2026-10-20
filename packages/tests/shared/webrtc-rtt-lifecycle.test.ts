@@ -236,7 +236,12 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         dataChannelName: 'rtc-test',
 
         rtcSignalingTopicId: 'rtc-signaling'
-    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId, nowEpochMs: () => Date.now() });
+    }, {
+        faultPort: createPassThroughTransportFaultPort(),
+        createOfferId: new DeterministicRtcOfferIds().createOfferId,
+        nowEpochMs: () => Date.now(),
+        writeRetainedSignalsDueNow: async () => {}
+    });
     const multicast = new WebRtcOverlayMulticastManager({
         quotaNow: Date.now,
         creationNow: Temporal.Now.instant,

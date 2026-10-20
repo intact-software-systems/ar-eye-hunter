@@ -227,6 +227,9 @@ export function createBrowserRttHeartbeatMessage(
     );
 }
 
+/** Why a peer is refused until this browser adopts the layout that names it; adoption releases its held offers. */
+export const BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON = 'stage-layout-mismatch';
+
 export function configureBrowserRtcPeerCreationPolicies(
     webRtcConnectionService: WebRtcConnectionService,
     webRtcGroupManager: WebRtcGroupManager
@@ -234,12 +237,12 @@ export function configureBrowserRtcPeerCreationPolicies(
     webRtcConnectionService.setInboundPeerCreationPolicy(({ peerId }) =>
         webRtcGroupManager.isPeerDialAllowedByAnyGroup(peerId)
             ? { decision: 'allow' }
-            : { decision: 'retry', reason: 'stage-layout-mismatch' }
+            : { decision: 'retry', reason: BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON }
     );
     webRtcConnectionService.setOutboundDialPolicy(({ peerId }) =>
         webRtcGroupManager.isPeerDialAllowedByAnyGroup(peerId)
             ? { decision: 'allow' }
-            : { decision: 'deny', reason: 'stage-layout-mismatch' }
+            : { decision: 'deny', reason: BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON }
     );
 }
 
@@ -732,7 +735,9 @@ function createBrowserRtcGroupManager(
             maxPeerConnections: input.options.maxPeerConnections,
             rttReportingDegreeLimit: input.options.rttReportingDegreeLimit,
             onDesiredPeerIdsChanged: ({ rttReportingPeerIds }) =>
-                rtcRxStreamer.setRttReportingPeerIds(rttReportingPeerIds)
+                rtcRxStreamer.setRttReportingPeerIds(rttReportingPeerIds),
+            onOverlayAdopted: () =>
+                webRtcConnectionService.writeHeldInboundSignalsDueNow(BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON)
         }
     );
     webRtcGroupManager.startReconcileWakes();

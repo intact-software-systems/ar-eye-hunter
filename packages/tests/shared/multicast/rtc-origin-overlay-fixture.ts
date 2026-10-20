@@ -265,7 +265,12 @@ function createConnectionService(
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         dataChannelName: 'test',
         rtcSignalingTopicId: 'rtc-signaling'
-    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: crypto.randomUUID.bind(crypto), nowEpochMs: () => Date.now() });
+    }, {
+        faultPort: createPassThroughTransportFaultPort(),
+        createOfferId: crypto.randomUUID.bind(crypto),
+        nowEpochMs: () => Date.now(),
+        writeRetainedSignalsDueNow: async () => {}
+    });
     vi.spyOn(connection, 'readyPeerIdsForLane').mockImplementation(() => ready.peerIds);
     vi.spyOn(connection, 'readPeer').mockImplementation((peerId) => {
         const channel = ready.peerIds.includes(peerId) ? channels[peerId]?.channel : undefined;

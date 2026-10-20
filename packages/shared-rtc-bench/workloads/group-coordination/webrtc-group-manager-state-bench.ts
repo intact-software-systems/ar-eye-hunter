@@ -175,7 +175,8 @@ async function seedGroupManagerState(
     const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
     const manager = new WebRtcGroupManager(
         connectionService,
-        { groupCache, clientCache, acceptedOverlayCache }
+        { groupCache, clientCache, acceptedOverlayCache },
+        { onOverlayAdopted: async () => {} }
     );
 
     for (let index = 0; index < input.clients; index += 1) {
@@ -293,7 +294,8 @@ function createSimulatedConnections(sessionId: string): SimulatedConnections {
     }, {
         faultPort: createPassThroughTransportFaultPort(),
         createOfferId: () => crypto.randomUUID(),
-        nowEpochMs: () => Date.now()
+        nowEpochMs: () => Date.now(),
+        writeRetainedSignalsDueNow: async () => {}
     });
     return {
         service,

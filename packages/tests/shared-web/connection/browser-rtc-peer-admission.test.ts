@@ -252,7 +252,7 @@ async function createAdmissionRuntime(scenario: AdmissionScenario): Promise<Admi
         clientCache: new LatestRepository<string, ClientInfo>(),
         plannedOverlayCache: plannedOverlays,
         acceptedOverlayCache: acceptedOverlays
-    });
+    }, { onOverlayAdopted: async () => {} });
     configureBrowserRtcPeerCreationPolicies(connection.service, manager);
     // Hydrate the real group owner without starting automatic reconciliation;
     // outbound and inbound tests must each attempt creation from an empty service.

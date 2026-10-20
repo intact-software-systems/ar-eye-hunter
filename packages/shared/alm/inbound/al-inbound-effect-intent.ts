@@ -119,6 +119,11 @@ export function toALInboundReleaseEffectId(trackKey: string, seq: number): strin
     return toEffectId(['release', trackKey, seq]);
 }
 
+/** The one row that delivers `msg` to this peer's own consumers; a retained delivery is found by it. */
+export function toALInboundLocalDeliveryEffectId(msg: ALMessage): string {
+    return toEffectId(['dispatch', msg.id.senderId, msg.id.msgId]);
+}
+
 export function toALInboundLocalDeliveryEffects(
     input: ALInboundLocalDeliveryInput
 ): readonly ALInboundEffectIntent[] {
@@ -126,7 +131,7 @@ export function toALInboundLocalDeliveryEffects(
         return [];
     }
     return [{
-        effectId: toEffectId(['dispatch', input.msg.id.senderId, input.msg.id.msgId]),
+        effectId: toALInboundLocalDeliveryEffectId(input.msg),
         expireAtTimestamp: resolveALMessageExpireAtMs(input.msg, input.plan.effective),
         carrier: input.carrier,
         payload: {

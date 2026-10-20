@@ -261,7 +261,7 @@ class RtcRecoveryOwner {
             iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
             dataChannelName: 'alm',
             rtcSignalingTopicId: 'rtc'
-        }, { faultPort: this.faults, createOfferId: crypto.randomUUID.bind(crypto), nowEpochMs: () => Date.now() });
+        }, { faultPort: this.faults, createOfferId: crypto.randomUUID.bind(crypto), nowEpochMs: () => Date.now(), writeRetainedSignalsDueNow: async () => {} });
         this.observe(['receiver']);
         this.manager = new WebRtcOverlayMulticastManager({
             quotaNow: Date.now,

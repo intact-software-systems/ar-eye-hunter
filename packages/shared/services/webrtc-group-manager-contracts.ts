@@ -16,6 +16,8 @@ export interface WebRtcGroupManagerOptions {
     readonly now?: () => number;
     readonly rttReportingDegreeLimit?: number;
     readonly onDesiredPeerIdsChanged?: (selection: WebRtcGroupPeerSelection) => void;
+    /** Runs on every overlay adoption beside the reconcile it starts: what the adopted layout releases. */
+    readonly onOverlayAdopted: () => Promise<void>;
 }
 
 export interface WebRtcGroupPeerSelection {

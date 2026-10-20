@@ -33,7 +33,7 @@ describe('WebRtcGroupManager reconcile wakes', () => {
         const manager = new WebRtcGroupManager(
             rtcQBox.service,
             { groupCache, clientCache, acceptedOverlayCache },
-            { overlayTransitionGraceMs: 0 }
+            { overlayTransitionGraceMs: 0, onOverlayAdopted: async () => {} }
         );
         manager.startReconcileWakes();
         const peerIds = ['peer-a', 'peer-b', 'peer-c', 'peer-d', 'peer-e'];
@@ -78,7 +78,7 @@ describe('WebRtcGroupManager reconcile wakes', () => {
         const manager = new WebRtcGroupManager(
             rtcQBox.service,
             { groupCache, clientCache, acceptedOverlayCache },
-            { overlayTransitionGraceMs: 0 }
+            { overlayTransitionGraceMs: 0, onOverlayAdopted: async () => {} }
         );
         manager.startReconcileWakes();
         for (const peerId of ['peer-a', 'peer-b']) {
@@ -123,7 +123,7 @@ describe('WebRtcGroupManager reconcile wakes', () => {
         const manager = new WebRtcGroupManager(
             rtcQBox.service,
             { groupCache, clientCache, acceptedOverlayCache },
-            { overlayTransitionGraceMs: 0 }
+            { overlayTransitionGraceMs: 0, onOverlayAdopted: async () => {} }
         );
         manager.startReconcileWakes();
         clientCache.set('peer-a', createClientInfo('peer-a', true));
@@ -161,7 +161,7 @@ describe('WebRtcGroupManager reconcile wakes', () => {
         const manager = new WebRtcGroupManager(
             rtcQBox.service,
             { groupCache, clientCache, acceptedOverlayCache },
-            { overlayTransitionGraceMs: 0 }
+            { overlayTransitionGraceMs: 0, onOverlayAdopted: async () => {} }
         );
         manager.startReconcileWakes();
         for (const peerId of ['peer-a', 'peer-b']) {
@@ -200,7 +200,7 @@ describe('WebRtcGroupManager reconcile wakes', () => {
         const manager = new WebRtcGroupManager(
             rtcQBox.service,
             { groupCache, clientCache, acceptedOverlayCache },
-            { overlayTransitionGraceMs: 0 }
+            { overlayTransitionGraceMs: 0, onOverlayAdopted: async () => {} }
         );
         manager.startReconcileWakes();
         for (const peerId of ['peer-a', 'peer-b', 'peer-c']) {
@@ -237,7 +237,7 @@ describe('WebRtcGroupManager reconcile wakes', () => {
         const manager = new WebRtcGroupManager(
             rtcQBox.service,
             { groupCache, clientCache, acceptedOverlayCache },
-            { overlayTransitionGraceMs: 0 }
+            { overlayTransitionGraceMs: 0, onOverlayAdopted: async () => {} }
         );
         manager.startReconcileWakes();
         for (const peerId of ['peer-a', 'peer-b']) {
@@ -277,7 +277,7 @@ describe('WebRtcGroupManager reconcile wakes', () => {
         const manager = new WebRtcGroupManager(
             rtcQBox.service,
             { groupCache, clientCache, acceptedOverlayCache },
-            { overlayTransitionGraceMs: 0 }
+            { overlayTransitionGraceMs: 0, onOverlayAdopted: async () => {} }
         );
         manager.startReconcileWakes();
         for (const peerId of ['peer-a', 'peer-shared', 'peer-b']) {
@@ -433,7 +433,7 @@ async function retireLayoutOverPeers(
         groupCache: new LatestRepository<string, GroupSnapshot>(),
         clientCache: new LatestRepository<string, ClientInfo>(),
         acceptedOverlayCache
-    });
+    }, { onOverlayAdopted: async () => {} });
     if (options.startReconcileWakes !== false) {
         manager.startReconcileWakes();
     }

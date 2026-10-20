@@ -418,7 +418,8 @@ function createObservedService(record: RtcSignalingDiagnostics['record']): Obser
         faultPort: createPassThroughTransportFaultPort(),
         createOfferId: new DeterministicRtcOfferIds().createOfferId,
         nowEpochMs,
-        signalingDiagnostics: { nowEpochMs, record }
+        signalingDiagnostics: { nowEpochMs, record },
+        writeRetainedSignalsDueNow: async () => {}
     };
     const service = new WebRtcConnectionService({
         connect: async (input) => {

@@ -44,20 +44,24 @@ afterEach(() => {
 });
 
 async function createConnectedGroup(): Promise<ConnectedGroup> {
-    const connection = createNativeRtcConnectionFixture({
-        sessionId: 'z-self',
-        token: 'test-token',
-        iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
-        dataChannelName: 'reliable',
-        dataChannelLanes: [{ id: 'realtime', label: 'realtime' }],
-        rtcSignalingTopicId: 'rtc'
-    }, runtime, createPassThroughTransportFaultPort());
+    const connection = createNativeRtcConnectionFixture(
+        {
+            sessionId: 'z-self',
+            token: 'test-token',
+            iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
+            dataChannelName: 'reliable',
+            dataChannelLanes: [{ id: 'realtime', label: 'realtime' }],
+            rtcSignalingTopicId: 'rtc'
+        },
+        runtime,
+        createPassThroughTransportFaultPort()
+    );
     const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
     const manager = new WebRtcGroupManager(connection.service, {
         groupCache: new LatestRepository<string, GroupSnapshot>(),
         clientCache: new LatestRepository<string, ClientInfo>(),
         acceptedOverlayCache
-    });
+    }, { onOverlayAdopted: async () => {} });
     fixtures.push({ connection, manager });
     manager.startReconcileWakes();
     const snapshot = createGroupSnapshot({

@@ -277,6 +277,25 @@ export class ALInboundMessageRuntime {
         return retained;
     }
 
+    /**
+     * Brings the retained local delivery of each message due now, in the lane its envelope names, where it
+     * waits out a retry delay; nothing else about the row changes. Answers how many rows it brought due.
+     */
+    async writeRetainedDeliveriesDueNow(msgs: readonly ALMessage[]): Promise<number> {
+        if (this.disposed) {
+            return 0;
+        }
+        const msgsByLane = new Map<ALInboundStoreLane, ALMessage[]>();
+        for (const msg of msgs) {
+            const lane = this.resolveDataLane(msg);
+            msgsByLane.set(lane, [...msgsByLane.get(lane) ?? [], msg]);
+        }
+        const broughtDue = await Promise.all(
+            [...msgsByLane].map(([lane, laneMsgs]) => lane.writeRetainedDeliveriesDueNow(laneMsgs))
+        );
+        return broughtDue.reduce((total, count) => total + count, 0);
+    }
+
     /** A value that never decoded has no identity to record; this observation is optional. */
     private recordAdmissionOutcome(
         msg: ALMessage,
