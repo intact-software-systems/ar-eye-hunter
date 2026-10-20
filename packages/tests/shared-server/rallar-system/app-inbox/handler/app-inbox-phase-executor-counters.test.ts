@@ -64,9 +64,11 @@ describe('AppInbox phase timing executor counters', () => {
             selectedLane: harness.context.attemptTelemetry.selectedLane,
             attempt: harness.entry.dequeueAudit.attempts,
             statements: 2,
-            executorWaitMs: expect.any(Number)
+            executorWaitMs: expect.any(Number),
+            beginWaitMs: expect.any(Number)
         });
         expect(handlerAction?.details).toMatchObject({ resourceId: harness.entry.key.resourceId, statements: 3, executorWaitMs: 3 });
+        expect(handlerAction?.details).not.toHaveProperty('beginWaitMs');
         expect(database.counters.statements).toBe(4);
     });
 
@@ -108,6 +110,7 @@ describe('AppInbox phase timing executor counters', () => {
         const transaction = timing.find((event) => event.operation === 'transaction');
         expect(transaction?.details).toMatchObject({ resourceId: harness.entry.key.resourceId });
         expect(transaction?.details).not.toHaveProperty('statements');
+        expect(transaction?.details).not.toHaveProperty('beginWaitMs');
     });
 });
 

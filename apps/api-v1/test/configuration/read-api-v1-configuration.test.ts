@@ -300,6 +300,8 @@ Deno.test('configuration startup summary is useful and contains no secret-derive
             apiQueue: 'enabled',
             rtcTopologyReplay: 'enabled'
         },
+        applicationPool: { maxConnections: 5 },
+        appInbox: { newLaneConcurrency: 4 },
         appliedEnvironmentOverrideNames: [
             'AUTH_ADMIN_CLIENT_IDS',
             'METERED_APP_NAME',
@@ -393,6 +395,14 @@ Deno.test('every committed profile serves due retries at the fixed two per pass 
         RALLAR_APP_INBOX_LANE_BUDGET_POLICY: 'adaptive-retry'
     }));
     assert.equal(selected.appInbox.laneBudgetPolicy, 'adaptive-retry');
+});
+
+Deno.test('every committed profile gives the application pool five connections and the listener one', async () => {
+    for (const profile of ['dev', 'prod', 'prod-hardened', 'prod-in-memory'] as const) {
+        const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));
+        assert.equal(configuration.database.applicationPool.maxConnections, 5, profile);
+        assert.equal(configuration.database.listenerPool.maxConnections, 1, profile);
+    }
 });
 
 Deno.test('every committed profile runs four AppInbox context heads together unless the environment selects another bound (D296)', async () => {

@@ -3,6 +3,7 @@ import type { PSqlExecutorCounters, PSqlParameter, PSqlSql, PSqlTransactionWrite
 interface PSqlCounterScopeState {
     statements: number;
     executorWaitMs: number;
+    beginWaitMs: number;
 }
 
 type PSqlSavepointSql = PSqlSql & {
@@ -13,10 +14,11 @@ type PSqlSavepointSql = PSqlSql & {
  * A handle that counts the statements issued through it and through the transactions and savepoints it opens,
  * and hands every call to `database`: a transaction it opens is `database.begin` itself, so whatever that
  * handle does at begin, commit or rollback applies unchanged. The wait is each statement's call-to-completion
- * time, as `PSqlExecutorCounters` defines it; statements other callers issue never credit the scope.
+ * time, as `PSqlExecutorCounters` defines it; statements other callers issue never credit the scope. It also
+ * sums the time each `begin` waits before its transaction callback is entered.
  */
 export function createPSqlCounterScope(database: PSqlSql): PSqlSql {
-    return toCountedSql(database, { statements: 0, executorWaitMs: 0 });
+    return toCountedSql(database, { statements: 0, executorWaitMs: 0, beginWaitMs: 0 });
 }
 
 function toCountedSql(source: PSqlSql, scope: PSqlCounterScopeState): PSqlSql {
@@ -36,8 +38,13 @@ function toCountedSql(source: PSqlSql, scope: PSqlCounterScopeState): PSqlSql {
         });
     }
     const counted: PSqlSql = Object.assign(sql, {
-        begin: async <T>(write: PSqlTransactionWrite<T>): Promise<T> =>
-            await source.begin(async (transaction) => await write(toCountedSql(transaction, scope))),
+        begin: async <T>(write: PSqlTransactionWrite<T>): Promise<T> => {
+            const calledAt = performance.now();
+            return await source.begin(async (transaction) => {
+                scope.beginWaitMs += performance.now() - calledAt;
+                return await write(toCountedSql(transaction, scope));
+            });
+        },
         getExecutorCounters: (): PSqlExecutorCounters => ({ ...scope })
     });
     if (!hasSavepoint(source)) {

@@ -2,7 +2,7 @@ import { PGlite } from '@electric-sql/pglite';
 import assert from 'node:assert/strict';
 
 import { createPSqlCounterScope } from '@shared-server/postgres/create-p-sql-counter-scope.ts';
-import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 
 import { createPGliteSqlClient } from '../../src/db/pglite-sql-adapter.ts';
 
@@ -56,7 +56,11 @@ Deno.test('a counter scope over PGlite credits only the statements issued throug
         assert.equal(scopedCounters?.statements, 3, 'the scope: two transaction statements and one outside');
         assert.ok(scopedCounters !== undefined && scopedCounters.executorWaitMs >= 5, `wait ${scopedCounters?.executorWaitMs}`);
         assert.equal(root.getExecutorCounters?.()?.statements, 6, 'the executor: every statement of every handle');
-        assert.deepEqual(createPSqlCounterScope(root).getExecutorCounters?.(), { statements: 0, executorWaitMs: 0 }, 'a new scope starts empty');
+        assert.deepEqual(
+            createPSqlCounterScope(root).getExecutorCounters?.(),
+            { statements: 0, executorWaitMs: 0, beginWaitMs: 0 },
+            'a new scope starts empty'
+        );
         assert.deepEqual(
             ['close', 'exec', 'notify', 'listen', 'raw'].filter((name) => name in scoped),
             [],
@@ -129,3 +133,45 @@ Deno.test('a counter scope keeps the PGlite transaction savepoint and counts its
         await root.close();
     }
 });
+
+Deno.test('a counter scope credits the time from its begin call to the transaction callback entry, and none to the transaction body', async () => {
+    const holdMs = 30;
+    const bodyMs = 200;
+    const slowToOpen = createSlowToOpenSql(holdMs);
+    const scoped = createPSqlCounterScope(slowToOpen);
+
+    await scoped.begin(async () => {
+        await new Promise((resolve) => setTimeout(resolve, bodyMs));
+    });
+
+    const beginWaitMs = scoped.getExecutorCounters?.()?.beginWaitMs;
+    assert.ok(beginWaitMs !== undefined && beginWaitMs >= holdMs - 2, `begin wait ${beginWaitMs}`);
+    assert.ok(beginWaitMs < holdMs + bodyMs, `begin wait excludes the body: ${beginWaitMs}`);
+});
+
+Deno.test('a handle that is not a counter scope reports no begin wait', async () => {
+    const root = createPGliteSqlClient(new PGlite('memory://'));
+    try {
+        await root.begin(async (transaction) => {
+            await transaction`select 1 as one`;
+        });
+
+        assert.equal(root.getExecutorCounters?.()?.beginWaitMs, undefined);
+    }
+    finally {
+        await root.close();
+    }
+});
+
+function createSlowToOpenSql(holdMs: number): PSqlSql {
+    function sql(stringsOrValues: TemplateStringsArray | readonly PSqlParameter[], ..._values: readonly PSqlParameter[]): object {
+        return Array.isArray(stringsOrValues) && 'raw' in stringsOrValues ? Promise.resolve([]) : {};
+    }
+    const database: PSqlSql = Object.assign(sql, {
+        begin: async <T>(write: (transaction: PSqlSql) => Promise<T>): Promise<T> => {
+            await new Promise((resolve) => setTimeout(resolve, holdMs));
+            return await write(database);
+        }
+    }) as PSqlSql;
+    return database;
+}

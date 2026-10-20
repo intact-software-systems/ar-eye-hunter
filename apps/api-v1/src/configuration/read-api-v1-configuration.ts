@@ -32,6 +32,12 @@ export interface ApiV1ConfigurationStartupSummary {
         readonly apiQueue: ApiV1Configuration['topology']['replay']['queueWorkers'];
         readonly rtcTopologyReplay: ApiV1Configuration['topology']['replay']['mode'];
     };
+    readonly applicationPool: {
+        readonly maxConnections: ApiV1Configuration['database']['applicationPool']['maxConnections'];
+    };
+    readonly appInbox: {
+        readonly newLaneConcurrency: ApiV1Configuration['appInbox']['newLaneConcurrency'];
+    };
     readonly appliedEnvironmentOverrideNames: readonly string[];
 }
 
@@ -39,7 +45,8 @@ interface ApiV1ConfigurationStartupSummaryInput {
     readonly profile: ApiV1Configuration['profile'];
     readonly http: Pick<ApiV1Configuration['http'], 'corsOrigins'>;
     readonly publicApi: ApiV1Configuration['publicApi'];
-    readonly database: Pick<ApiV1Configuration['database'], 'mode' | 'pubSub'>;
+    readonly database: Pick<ApiV1Configuration['database'], 'mode' | 'pubSub' | 'applicationPool'>;
+    readonly appInbox: Pick<ApiV1Configuration['appInbox'], 'newLaneConcurrency'>;
     readonly topology: {
         readonly replay: ApiV1Configuration['topology']['replay'];
     };
@@ -91,6 +98,8 @@ export function toApiV1ConfigurationStartupSummary(
             apiQueue: configuration.topology.replay.queueWorkers,
             rtcTopologyReplay: configuration.topology.replay.mode
         },
+        applicationPool: { maxConnections: configuration.database.applicationPool.maxConnections },
+        appInbox: { newLaneConcurrency: configuration.appInbox.newLaneConcurrency },
         appliedEnvironmentOverrideNames: [
             ...configuration.profile.appliedEnvironmentOverrideNames
         ]

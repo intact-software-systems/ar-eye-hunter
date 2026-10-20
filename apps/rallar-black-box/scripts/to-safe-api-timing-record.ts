@@ -8,6 +8,7 @@ import {
     API_TIMING_DEQUEUE_LANES,
     decodeSafeApiDequeuePassDetails
 } from './decode-safe-api-dequeue-pass-details.ts';
+import { decodeSafeApiTransactionDetails } from './decode-safe-api-transaction-details.ts';
 import {
     isAllowedApiTimingString,
     isApiTimingRecord,
@@ -188,7 +189,8 @@ function toSafeTimingContext(record: Readonly<Record<string, unknown>>): Readonl
         safe.details = record.component === 'app-inbox-phase' && typeof record.operation === 'string'
             ? {
                 ...toSafeTimingDetails(record.details),
-                ...decodeSafeApiDequeuePassDetails(record.operation, record.details)
+                ...decodeSafeApiDequeuePassDetails(record.operation, record.details),
+                ...decodeSafeApiTransactionDetails(record.operation, record.details)
             }
             : toSafeTimingDetails(record.details);
     }
