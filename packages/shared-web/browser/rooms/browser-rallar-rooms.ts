@@ -25,10 +25,12 @@ import {
 } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
 import { readStateGroupSnapshot, type StateGroupSnapshotRead } from '@shared-web/browser/state-read/point-read.ts';
 import { refreshStateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
+import { listStateGroupDirectory } from '@shared-web/browser/state-read/state-snapshot-http-api.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import type { SpaStatisticsSafeGroupSummary } from '@shared/api/spa-statistics-types.ts';
 import { Command, CommandCancelledError } from '@shared/cache/Command.ts';
 import {
     findGroupStateSnapshotByRef,
@@ -106,6 +108,7 @@ export interface BrowserRallarRooms {
     state(): RallarRoomState;
     list(): readonly RallarRoomSummary[];
     refresh(input?: StateScope | RallarScopedOperationOptions): Promise<RallarRoomState>;
+    directory(input?: StateScope | RallarScopedOperationOptions): Promise<readonly SpaStatisticsSafeGroupSummary[]>;
     listEvents(input: RallarListRoomEventsInput): Promise<readonly GroupEvent[]>;
     listEventPage(input: RallarListRoomEventsInput): Promise<StateEventPage<GroupEvent>>;
     replayEvents(
@@ -246,6 +249,7 @@ function createRoomReadOperations(
     | 'state'
     | 'list'
     | 'refresh'
+    | 'directory'
     | 'listEvents'
     | 'listEventPage'
     | 'replayEvents'
@@ -257,6 +261,7 @@ function createRoomReadOperations(
         state: () => input.stateStore.state(),
         list: () => input.stateStore.state().rooms,
         refresh,
+        directory: async (directoryInput) => await readRoomDirectory(input, directoryInput),
         listEvents: async (eventInput) => await input.roomEvents.list(eventInput),
         listEventPage: async (eventInput) => await input.roomEvents.listPage(eventInput),
         replayEvents: async (eventInput, listener) => await input.roomEvents.replay(eventInput, listener),
@@ -382,6 +387,21 @@ async function refreshRooms(
         );
         await input.acceptSnapshots({ context, clients, groups, scope });
         return input.stateStore.state();
+    });
+}
+
+async function readRoomDirectory(
+    input: CreateBrowserRallarRoomsInput,
+    directoryInput?: StateScope | RallarScopedOperationOptions
+): Promise<readonly SpaStatisticsSafeGroupSummary[]> {
+    return await input.runAuthAwareOperation(async () => {
+        const options = toRallarScopedOperationOptions(directoryInput);
+        const operationOptions = input.resolveOperationOptions(options);
+        await input.connect(operationOptions);
+        return await listStateGroupDirectory(
+            input.resolveOperationScope(options.scope),
+            { signal: operationOptions.signal }
+        );
     });
 }
 

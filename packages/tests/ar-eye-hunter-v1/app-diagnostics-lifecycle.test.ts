@@ -222,6 +222,7 @@ function createArenaRoomSnapshot(): GroupSnapshot {
 }
 
 const arenaConnectionDefaults: Omit<ArenaConnection, 'session' | 'rooms' | 'connectionState' | 'error' | 'roomId'> = {
+    openRooms: [],
     directorStatus: {
         role: 'none',
         state: 'none',

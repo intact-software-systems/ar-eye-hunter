@@ -40,6 +40,10 @@ export function canReadGroupSnapshot(
         );
 }
 
+export function isGroupDirectoryVisible(input: CanReadGroupSnapshotInput): boolean {
+    return readGroupVisibility(input) === 'directory';
+}
+
 export function readGroupVisibility(
     input: CanReadGroupSnapshotInput
 ): GroupReadVisibility {

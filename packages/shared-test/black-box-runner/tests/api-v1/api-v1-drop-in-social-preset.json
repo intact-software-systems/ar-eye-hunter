@@ -179,6 +179,31 @@
       }
     },
     {
+      "name": "nonMemberFindsOpenGroupInDirectory",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": [
+          {
+            "groupRef": {
+              "groupId": "{groupId}"
+            },
+            "joinMode": "open",
+            "memberCount": 1
+          }
+        ]
+      }
+    },
+    {
       "name": "joinIsInstant",
       "type": "http",
       "connection": "primary",

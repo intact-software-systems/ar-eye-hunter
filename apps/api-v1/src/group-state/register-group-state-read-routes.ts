@@ -1,5 +1,6 @@
 import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
 
+import { toSafeGroupSummary } from '@shared-server/rallar-system/admin-support/statistics/spa-statistics-projections.ts';
 import {
     readStateEventListQuery,
     type StateEventListQuery
@@ -9,6 +10,7 @@ import type { GroupEvent, GroupRef, GroupSnapshot } from '@shared/api/group-type
 import { readGroupSnapshotPointQuery } from '../routes/state-snapshot-read/state-snapshot-read-query.ts';
 import { writeGroupSnapshotHeaders } from '../routes/state-snapshot-read/state-snapshot-read-response.ts';
 import {
+    isGroupStateRouteSnapshotDirectoryListed,
     isGroupStateRouteSnapshotReadable,
     type GroupStateRouteAuthorization
 } from './group-state-route-authorization.ts';
@@ -20,6 +22,7 @@ import {
 import { toGroupStateErrorResponse } from './group-state-route-errors.ts';
 
 const GROUPS_PATH = '/api/state/apps/:applicationId/workspaces/:workspaceId/groups';
+const GROUP_DIRECTORY_PATH = '/api/state/apps/:applicationId/workspaces/:workspaceId/group-directory';
 const GROUP_PATH = `${GROUPS_PATH}/:groupId`;
 
 export function registerGroupStateReadRoutes(
@@ -28,6 +31,7 @@ export function registerGroupStateReadRoutes(
     authorization: GroupStateRouteAuthorization
 ): void {
     app.get(GROUPS_PATH, (context) => readGroupSnapshotList(context, dependencies, authorization));
+    app.get(GROUP_DIRECTORY_PATH, (context) => readGroupDirectory(context, dependencies, authorization));
     app.get(GROUP_PATH, (context) => readGroupSnapshot(context, dependencies, authorization));
     app.get(
         `${GROUP_PATH}/events`,
@@ -55,6 +59,28 @@ async function readGroupSnapshotList(
         hydrateGroupSnapshots(dependencies, snapshots);
 
         return context.json(snapshots);
+    }
+    catch (error) {
+        return toGroupStateErrorResponse(context, error);
+    }
+}
+
+async function readGroupDirectory(
+    context: Context,
+    dependencies: GroupStateRouteDependencies,
+    authorization: GroupStateRouteAuthorization
+): Promise<Response> {
+    try {
+        const authSession = await authorization.readStrictAuthSession(context.req);
+        const snapshots = await dependencies.groupStateService.listSnapshots(
+            toGroupStateRouteScope(context)
+        );
+
+        return context.json(
+            snapshots
+                .filter((snapshot) => isGroupStateRouteSnapshotDirectoryListed(snapshot, authSession?.clientId))
+                .map(toSafeGroupSummary)
+        );
     }
     catch (error) {
         return toGroupStateErrorResponse(context, error);

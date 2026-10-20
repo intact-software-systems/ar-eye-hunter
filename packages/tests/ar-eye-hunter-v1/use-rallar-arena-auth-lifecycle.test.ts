@@ -433,6 +433,30 @@ describe('useRallarArena auth lifecycle', () => {
         expect(mockRallar.realtime.sendJson).not.toHaveBeenCalled();
     });
 
+    it('lists open arenas from the room directory when rooms refresh', async () => {
+        const openArena = {
+            groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'arena-9' },
+            displayName: 'AR Eye Hunter Arena: Glass Comet',
+            kind: 'room',
+            status: 'active',
+            joinMode: 'open',
+            memberCount: 1,
+            onlineMemberCount: 1,
+            activeSessionCount: 1,
+            snapshotVersion: 1,
+            presenceVersion: 1
+        };
+        mockRallar.rooms.directory.mockResolvedValue([openArena]);
+
+        await arena.render();
+        await waitForState(() => arena.current?.connectionState === 'connected');
+        await act(async () => {
+            await arena.current?.refreshRooms();
+        });
+
+        expect(arena.current?.openRooms).toEqual([openArena]);
+    });
+
     it('creates a new arena by switching rooms and clearing stale remote players', async () => {
         mockRallar.rooms.createAndSwitch.mockResolvedValue({
             group: {
@@ -486,7 +510,8 @@ describe('useRallarArena auth lifecycle', () => {
         });
 
         expect(mockRallar.rooms.createAndSwitch).toHaveBeenCalledWith({
-            displayName: expect.stringContaining('AR Eye Hunter Arena:')
+            displayName: expect.stringContaining('AR Eye Hunter Arena:'),
+            joinMode: 'open'
         });
         expect(mockRallar.rooms.create).not.toHaveBeenCalled();
         expect(arena.current?.roomId).toBe('arena-2');

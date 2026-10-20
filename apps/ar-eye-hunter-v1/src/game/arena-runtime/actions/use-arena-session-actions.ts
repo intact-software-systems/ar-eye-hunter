@@ -4,6 +4,7 @@ import type { Dispatch, RefObject, SetStateAction } from 'react';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { RallarDirectorStatus, RallarRoomSummary } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { SpaStatisticsSafeGroupSummary } from '@shared/api/spa-statistics-types.ts';
 import { createRallarAiFunnyRoomName, createRallarAiRoomNameSeed } from '@shared/rallar-ai/mod.ts';
 
 import { GAME_ROOM_NAME } from '../../types.ts';
@@ -30,6 +31,7 @@ interface ArenaSessionActionsInput {
     readonly setConnectionState: Dispatch<SetStateAction<ArenaConnectionState>>;
     readonly setError: Dispatch<SetStateAction<string | undefined>>;
     readonly setRoomId: Dispatch<SetStateAction<string | undefined>>;
+    readonly setOpenRooms: Dispatch<SetStateAction<readonly SpaStatisticsSafeGroupSummary[]>>;
     readonly setRooms: Dispatch<SetStateAction<readonly RallarRoomSummary[]>>;
     readonly setSession: Dispatch<SetStateAction<AuthSession | undefined>>;
 }
@@ -109,7 +111,7 @@ async function authenticateArena(input: ArenaSessionActionsInput, authentication
 function useArenaRoomActions(
     input: ArenaSessionActionsInput
 ): Pick<ArenaConnection, 'refreshRooms' | 'createArenaRoom' | 'joinRoom'> {
-    const { sessionRef, setRooms, setRoomId, clearRoomScopedArenaState, rooms } = input;
+    const { sessionRef, setRooms, setOpenRooms, setRoomId, clearRoomScopedArenaState, rooms } = input;
     const refreshRooms = useCallback(async () => {
         if (!sessionRef.current) {
             return;
@@ -120,6 +122,11 @@ function useArenaRoomActions(
         }
         setRooms(state.rooms);
         setRoomId(state.currentRoomId);
+        const openRooms = await rallar.rooms.directory().catch(() => []);
+        if (!sessionRef.current) {
+            return;
+        }
+        setOpenRooms(openRooms);
     }, []);
 
     const createArenaRoom = useCallback(async () => {
@@ -133,7 +140,8 @@ function useArenaRoomActions(
             existingNames: rooms.map((room) => room.name)
         });
         const snapshot = await rallar.rooms.createAndSwitch({
-            displayName
+            displayName,
+            joinMode: 'open'
         });
         if (!sessionRef.current) {
             return;
