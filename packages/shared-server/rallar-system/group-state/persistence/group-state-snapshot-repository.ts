@@ -289,7 +289,7 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
         return fallback === undefined ? undefined : { snapshot: fallback.snapshot, version: null };
     }
 
-    private toStableAuthoritativeSnapshot(
+    protected toStableAuthoritativeSnapshot(
         ref: GroupRef,
         batch: Extract<GroupStateAuthorityBatchRead, { status: 'stable'; }>,
         observedAtEpochMs: number

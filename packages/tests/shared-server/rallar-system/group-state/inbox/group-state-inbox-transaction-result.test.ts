@@ -184,7 +184,10 @@ describe('group-state AppInbox transaction result boundary', () => {
             },
             mutationService: {
                 read: async () => {
-                    throw new Error('Inactive presence must not read group mutation state');
+                    throw new Error('Inactive presence discards its group mutation read');
+                },
+                readWithSnapshot: async () => {
+                    throw new Error('Presence connect must not read a group snapshot');
                 },
                 compute: () => {
                     throw new Error('Inactive presence must not compute a group mutation');
@@ -217,9 +220,6 @@ describe('group-state AppInbox transaction result boundary', () => {
                 }
             },
             resultReader: {
-                readSnapshot: async () => {
-                    throw new Error('Inactive presence must not read a snapshot');
-                },
                 readEvent: async () => {
                     throw new Error('Inactive presence must not read an event');
                 }

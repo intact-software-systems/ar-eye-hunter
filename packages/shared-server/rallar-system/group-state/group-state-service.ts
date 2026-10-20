@@ -24,11 +24,12 @@ import { assertGroupMutationCommand } from './mutation/command-validation/assert
 import type {
     GroupMutationCommand,
     GroupMutationFacts,
-    GroupMutationRead
+    GroupMutationRead,
+    GroupMutationSnapshotRead
 } from './mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from './mutation/orchestration/compute-group-mutation.ts';
 import { readsAcceptedLayoutRow, readsGroupLayoutRows } from './mutation/read/group-mutation-read-scope.ts';
-import { readGroupMutation } from './mutation/read/read-group-mutation.ts';
+import { readGroupMutation, readGroupMutationWithSnapshot } from './mutation/read/read-group-mutation.ts';
 import { validateGroupMutation } from './mutation/state-validation/validate-group-mutation.ts';
 import { writeGroupMutation } from './mutation/write/write-group-mutation.ts';
 import { GroupConnectTriggerLatchRepository } from './persistence/group-connect-trigger-latch-repository.ts';
@@ -246,9 +247,10 @@ function createQueryOperations(
 
 function createMutationOperations(
     owners: GroupStateRuntimeOwners
-): Pick<GroupStateService, 'read' | 'compute' | 'validate' | 'write'> {
+): Pick<GroupStateService, 'read' | 'readWithSnapshot' | 'compute' | 'validate' | 'write'> {
     return {
         read: async (ingress) => await readGroupMutationAttempt(owners, ingress),
+        readWithSnapshot: async (ingress) => await readGroupMutationAttemptWithSnapshot(owners, ingress),
         compute: (ingress, read) => computeGroupMutation({ command: ingress.command, read, facts: ingress.facts }),
         validate: (ingress, read, computed) =>
             validateGroupMutation({
@@ -271,23 +273,49 @@ async function readGroupMutationAttempt(
     owners: GroupStateRuntimeOwners,
     ingress: GroupStateMutationCommand
 ): Promise<GroupMutationRead> {
-    const { dependencies, repositoryFor, authorityDependencies } = owners;
+    await readAndVerifyGroupMutationAuthority(owners, ingress);
+    const read = await readGroupMutation(owners.repositoryFor(owners.dependencies.runtimeRepository), ingress.command);
+    return await readGroupMutationFences(owners, ingress, read);
+}
+
+async function readGroupMutationAttemptWithSnapshot(
+    owners: GroupStateRuntimeOwners,
+    ingress: GroupStateMutationCommand
+): Promise<GroupMutationSnapshotRead> {
+    await readAndVerifyGroupMutationAuthority(owners, ingress);
+    const { read, currentSnapshot } = await readGroupMutationWithSnapshot(
+        owners.repositoryFor(owners.dependencies.runtimeRepository),
+        ingress.command
+    );
+    return { read: await readGroupMutationFences(owners, ingress, read), currentSnapshot };
+}
+
+async function readAndVerifyGroupMutationAuthority(
+    owners: GroupStateRuntimeOwners,
+    ingress: GroupStateMutationCommand
+): Promise<void> {
+    if (ingress.facts.internalAuthority === 'none') {
+        await readAndVerifyLiveGroupMutationSession(owners.authorityDependencies, ingress);
+        return;
+    }
+    if (
+        ingress.authorityProof !== null ||
+        ingress.descriptor !== null ||
+        ingress.facts.authenticatedAuthority !== null
+    ) {
+        throw new GroupMutationAuthorizationError(
+            'Internal group mutation authority is malformed.'
+        );
+    }
+}
+
+async function readGroupMutationFences(
+    owners: GroupStateRuntimeOwners,
+    ingress: GroupStateMutationCommand,
+    initialRead: GroupMutationRead
+): Promise<GroupMutationRead> {
+    const { dependencies } = owners;
     const runtime = dependencies.runtimeRepository;
-    if (ingress.facts.internalAuthority !== 'none') {
-        if (
-            ingress.authorityProof !== null ||
-            ingress.descriptor !== null ||
-            ingress.facts.authenticatedAuthority !== null
-        ) {
-            throw new GroupMutationAuthorizationError(
-                'Internal group mutation authority is malformed.'
-            );
-        }
-    }
-    else {
-        await readAndVerifyLiveGroupMutationSession(authorityDependencies, ingress);
-    }
-    const initialRead = await readGroupMutation(repositoryFor(runtime), ingress.command);
     const command = ingress.command;
     const connectTriggerLatch = command.operation === 'connectGroup' && command.input.connectTriggerGeneration !== null
         ? await new GroupConnectTriggerLatchRepository(runtime).read({

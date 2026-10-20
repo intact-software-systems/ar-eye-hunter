@@ -2,25 +2,35 @@ import { readRallarGroupDirectorAppointment } from '@shared/api/group-director.t
 
 import type { RuntimeStateEntry } from '../../../../runtime-state/runtime-state-repository.ts';
 import { GroupStateRepository } from '../../persistence/group-state-repository.ts';
-import type { GroupStateMutationExactReadResult } from '../../persistence/read-exact-group-state-mutation.ts';
+import type {
+    GroupStateMutationExactEntries,
+    GroupStateMutationExactSnapshot
+} from '../../persistence/read-exact-group-state-mutation.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
 import { groupMutationIdempotencyKey } from '../group-mutation-idempotency-key.ts';
 import {
     resolveGroupMutationTargetPrincipalId,
     resolveGroupMutationTargetSessionId
 } from '../orchestration/resolve-group-mutation-target-identity.ts';
+import { readsGroupLifecyclePolicy } from './group-mutation-read-scope.ts';
 
 interface ReadExactGroupMutationInput {
     readonly repository: GroupStateRepository;
     readonly command: GroupMutationCommand;
-    readonly lifecyclePolicy: GroupMutationRead['lifecyclePolicy'];
+    readonly includeGroupSnapshot: boolean;
+}
+
+/** An exact mutation read and the group snapshot assembled from the same statement, when asked for. */
+export interface ExactGroupMutationRead {
+    readonly read: GroupMutationRead;
+    readonly groupSnapshot: GroupStateMutationExactSnapshot;
 }
 
 export async function readExactGroupMutation({
     repository,
     command,
-    lifecyclePolicy
-}: ReadExactGroupMutationInput): Promise<GroupMutationRead | null> {
+    includeGroupSnapshot
+}: ReadExactGroupMutationInput): Promise<ExactGroupMutationRead | null> {
     const actorPrincipalId = command.input.actorPrincipalId;
     const targetPrincipalId = resolveGroupMutationTargetPrincipalId(command);
     const targetSessionId = resolveGroupMutationTargetSessionId(command);
@@ -29,20 +39,21 @@ export async function readExactGroupMutation({
         aggregateRef: command.aggregateRef,
         includeGroup: true,
         includePresenceSummary: true,
+        includeLifecyclePolicy: readsGroupLifecyclePolicy(command.operation),
+        includeGroupSnapshot,
         requestIds: idempotencyKey === null ? [] : [idempotencyKey],
         memberPrincipalIds: uniqueDefined([actorPrincipalId, targetPrincipalId]),
         presenceSessionIds: uniqueDefined([targetSessionId]),
         admissionPrincipalIds: uniqueDefined([targetPrincipalId])
     });
     return read.status === 'stable'
-        ? assembleExactGroupMutationRead(command, read, lifecyclePolicy)
+        ? { read: assembleExactGroupMutationRead(command, read), groupSnapshot: read.groupSnapshot }
         : null;
 }
 
 function assembleExactGroupMutationRead(
     command: GroupMutationCommand,
-    read: Extract<GroupStateMutationExactReadResult, { status: 'stable'; }>,
-    lifecyclePolicy: GroupMutationRead['lifecyclePolicy']
+    read: GroupStateMutationExactEntries
 ): GroupMutationRead {
     const actorPrincipalId = command.input.actorPrincipalId;
     const targetPrincipalId = resolveGroupMutationTargetPrincipalId(command);
@@ -87,7 +98,7 @@ function assembleExactGroupMutationRead(
         authorityPresenceSessions: [],
         authorityPresenceSessionEntries: [],
         presenceSummary: read.presenceSummaries[0] ?? null,
-        lifecyclePolicy,
+        lifecyclePolicy: read.lifecyclePolicy,
         activeMemberPrincipalIds: null,
         connectTriggerLatch: null,
         plannedLayoutRow: null,

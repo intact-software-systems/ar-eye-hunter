@@ -29,7 +29,8 @@ export const TIMED_ASYNC_OPERATIONS = [
     'listRecentEvents',
     'listEventPage',
     'observeSnapshot',
-    'read'
+    'read',
+    'readWithSnapshot'
 ] as const satisfies readonly PromiseReturningTimedGroupStateServiceKey[];
 
 export type TimedAsyncOperation = (typeof TIMED_ASYNC_OPERATIONS)[number];
@@ -204,9 +205,10 @@ function createMutationFake(
     record: RecordTimedOperation,
     calls: string[],
     computeSentinel: TimingSentinel<'compute'>
-): Pick<GroupStateService, 'read' | 'compute' | 'validate' | 'write'> {
+): Pick<GroupStateService, 'read' | 'readWithSnapshot' | 'compute' | 'validate' | 'write'> {
     return {
         read: async (...arguments_) => (await record({ operation: 'read', arguments: arguments_ })) as never,
+        readWithSnapshot: async (...arguments_) => (await record({ operation: 'readWithSnapshot', arguments: arguments_ })) as never,
         compute: () => {
             calls.push('compute');
             return computeSentinel as never;
@@ -320,7 +322,8 @@ export const TIMED_OPERATION_ARGUMENTS: TimedOperationArgumentsByOperation = {
     listRecentEvents: [timingGroupRef, timingRecentEventsQuery],
     listEventPage: [timingGroupRef, timingEventPageQuery],
     observeSnapshot: [timingSnapshot],
-    read: [timingCommand]
+    read: [timingCommand],
+    readWithSnapshot: [timingCommand]
 };
 
 export const UNTIMED_WRITE_ARGUMENTS: Parameters<GroupStateService['write']> = [
@@ -374,7 +377,8 @@ const TIMED_OPERATION_INVOCATIONS: TimedOperationInvocations = {
     listRecentEvents: async (service) => await service.listRecentEvents!(...TIMED_OPERATION_ARGUMENTS.listRecentEvents),
     listEventPage: async (service) => await service.listEventPage(...TIMED_OPERATION_ARGUMENTS.listEventPage),
     observeSnapshot: async (service) => await service.observeSnapshot(...TIMED_OPERATION_ARGUMENTS.observeSnapshot),
-    read: async (service) => await service.read(...TIMED_OPERATION_ARGUMENTS.read)
+    read: async (service) => await service.read(...TIMED_OPERATION_ARGUMENTS.read),
+    readWithSnapshot: async (service) => await service.readWithSnapshot(...TIMED_OPERATION_ARGUMENTS.readWithSnapshot)
 };
 
 export async function invokeUntimedGroupStateWrite(

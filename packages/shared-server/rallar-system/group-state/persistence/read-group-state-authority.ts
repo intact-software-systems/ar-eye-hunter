@@ -109,7 +109,8 @@ export function toGroupPresenceSummarySelectors(ref: GroupRef): readonly Runtime
     ];
 }
 
-function toGroupStateAuthoritySelectors(ref: GroupRef): readonly RuntimeStateReadBatchSelector[] {
+/** The group, its roster, its presence summary and its sessions: the rows a group snapshot is assembled from. */
+export function toGroupStateAuthoritySelectors(ref: GroupRef): readonly RuntimeStateReadBatchSelector[] {
     const groupKey = groupStateGroupStorageKey(ref);
     const childPrefix = `${groupKey}:`;
     return [

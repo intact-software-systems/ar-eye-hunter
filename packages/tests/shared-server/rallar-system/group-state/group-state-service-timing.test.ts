@@ -333,7 +333,7 @@ function expectedTimingIdentity(operation: TimedAsyncOperation) {
         principalId: undefined,
         sessionId: undefined
     };
-    if (operation === 'read') {
+    if (operation === 'read' || operation === 'readWithSnapshot') {
         return {
             ...empty,
             requestId: 'timing-read-request',

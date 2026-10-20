@@ -56,6 +56,7 @@ export function createCachedGroupStateService(
         captureActivationStatusMutationIngress: async (command, atEpochMs) =>
             await options.durable.captureActivationStatusMutationIngress(command, atEpochMs),
         read: async (command) => await options.durable.read(command),
+        readWithSnapshot: async (command) => await options.durable.readWithSnapshot(command),
         compute: (command, read) => options.durable.compute(command, read),
         validate: (command, read, computed) => options.durable.validate(command, read, computed),
         write: async (transaction, computed) => await options.durable.write(transaction, computed),

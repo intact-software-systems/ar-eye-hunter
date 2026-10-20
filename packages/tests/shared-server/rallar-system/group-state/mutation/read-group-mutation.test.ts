@@ -1,5 +1,8 @@
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
-import { readGroupMutation } from '@shared-server/rallar-system/group-state/mutation/read/read-group-mutation.ts';
+import {
+    readGroupMutation,
+    readGroupMutationWithSnapshot
+} from '@shared-server/rallar-system/group-state/mutation/read/read-group-mutation.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state/persistence/idempotency/group-idempotency-storage-key.ts';
@@ -49,6 +52,12 @@ describe('GroupStateService mutation exact reads', () => {
                     key: groupStateGroupStorageKey(ref)
                 },
                 {
+                    selectorId: 'lifecycle-policy',
+                    kind: 'key',
+                    namespace: 'group-state:lifecycle-policies',
+                    key: groupStateGroupStorageKey(ref)
+                },
+                {
                     selectorId: 'idempotency:0',
                     kind: 'key',
                     namespace: 'group-state:idempotent',
@@ -77,6 +86,35 @@ describe('GroupStateService mutation exact reads', () => {
                 }
             ]
         ]);
+    });
+
+    it('reads a join\'s policy, decision rows and result snapshot in one batch', async () => {
+        const { runtime } = await createSeededService('join');
+        const ref = { ...SCOPE, groupId: 'join' };
+        const repository = createTestGroupStateRepository(runtime);
+        runtime.readBatchCalls.length = 0;
+
+        const { read, currentSnapshot } = await readGroupMutationWithSnapshot(repository, joinCommand(ref, 'bob'));
+
+        expect(mutationReadCalls(runtime).map((selectors) => selectors.map((selector) => selector.selectorId)))
+            .toEqual([[
+                'group',
+                'members',
+                'presence-summary',
+                'presence-sessions',
+                'lifecycle-policy',
+                'idempotency:0',
+                'member:0',
+                'admission:0'
+            ]]);
+        expect(runtime.readBatchCalls).toHaveLength(1);
+        expect(read.lifecyclePolicy?.status).toBe('present');
+        expect(currentSnapshot?.group).toEqual((await repository.readSnapshot(ref))?.group);
+        expect(currentSnapshot?.members.map((member) => member.principalId)).toEqual(['owner']);
+        expect(currentSnapshot?.causalRevision).toEqual({
+            groupRevision: read.group?.value.snapshotVersion,
+            presenceRevision: read.presenceSummary?.value.causalRevision.presenceRevision ?? 0
+        });
     });
 
     it('batches the known group-config mutation read slots', async () => {
@@ -272,6 +310,27 @@ async function createSeededService(groupId: string): Promise<SeededGroupStateSer
         requestId: `seed-${groupId}`
     });
     return { runtime, service };
+}
+
+function joinCommand(
+    aggregateRef: Readonly<StateScope & { groupId: string; }>,
+    principalId: string
+): GroupMutationCommand {
+    return {
+        operation: 'joinGroup',
+        aggregateRef,
+        commandId: `join-${principalId}`,
+        requestId: `join-${principalId}`,
+        targetPrincipalId: principalId,
+        input: {
+            inviteToken: null,
+            joinCode: null,
+            actorPrincipalId: principalId,
+            actorSessionId: null,
+            reason: null,
+            traceId: null
+        }
+    };
 }
 
 function updateCommand(

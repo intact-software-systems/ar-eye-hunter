@@ -173,7 +173,6 @@ function createAuthorityAppInboxService(
             database: input.database,
             groupStateService: input.groupStateService,
             resultReader: {
-                readSnapshot: (ref) => input.groupStateService.readSnapshot(ref),
                 readEvent: (ref, eventId) => input.database.groupEventStore.readGroupEvent(ref, eventId)
             }
         },

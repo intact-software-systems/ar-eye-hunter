@@ -244,7 +244,6 @@ describe('AppInbox expired row replacement', () => {
                     database: database,
                     groupStateService: groupState,
                     resultReader: {
-                        readSnapshot: (ref) => groupState.readSnapshot(ref),
                         readEvent: (ref, eventId) => database.groupEventStore.readGroupEvent(ref, eventId)
                     }
                 },

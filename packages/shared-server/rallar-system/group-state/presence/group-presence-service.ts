@@ -96,7 +96,12 @@ export async function readAndComputeGroupPresenceConnect(
         sessionId: operation.sessionId
     });
     const lifecycle = input.sessionGenerationLifecycle;
-    const lifecycleRead = await lifecycle.read(identity);
+    // Settled rather than all: a closed session is inactive whatever its discarded mutation read did.
+    const [lifecycleReading, mutationReading] = await Promise.allSettled([
+        lifecycle.read(identity),
+        input.mutationService.read(input.command)
+    ]);
+    const lifecycleRead = toSettledValue(lifecycleReading);
     if (lifecycle.isObservedAtClosed(identity, observedAtEpochMs, lifecycleRead)) {
         return {
             status: 'inactive',
@@ -104,7 +109,7 @@ export async function readAndComputeGroupPresenceConnect(
             generationId: operation.input.generationId
         };
     }
-    const read = await input.mutationService.read(input.command);
+    const read = toSettledValue(mutationReading);
     const computed = input.mutationService.compute(input.command, read);
     const lifecycleGuardFacts = {
         ...identity,
@@ -114,6 +119,13 @@ export async function readAndComputeGroupPresenceConnect(
     };
     const lifecycleGuard = lifecycle.computeConnectGuard(lifecycleGuardFacts, lifecycleRead);
     return { status: 'ready-to-commit', computed, read, lifecycleGuardFacts, lifecycleRead, lifecycleGuard };
+}
+
+function toSettledValue<Value>(result: PromiseSettledResult<Value>): Value {
+    if (result.status === 'rejected') {
+        throw result.reason;
+    }
+    return result.value;
 }
 
 export async function processGroupSessionCleanup(

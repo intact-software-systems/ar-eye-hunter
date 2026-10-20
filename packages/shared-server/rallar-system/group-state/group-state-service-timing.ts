@@ -231,7 +231,7 @@ function createTimedObservationOperations(
 function createTimedMutationOperations(
     service: GroupStateService,
     input: TimedGroupStateServiceInput
-): Pick<GroupStateService, 'read' | 'compute' | 'validate' | 'write'> {
+): Pick<GroupStateService, 'read' | 'readWithSnapshot' | 'compute' | 'validate' | 'write'> {
     return {
         read: async (command) =>
             await timeGroupStateOperation({
@@ -239,6 +239,13 @@ function createTimedMutationOperations(
                 operation: 'read',
                 details: toMutationTimingDetails(command),
                 action: async () => await service.read(command)
+            }),
+        readWithSnapshot: async (command) =>
+            await timeGroupStateOperation({
+                ...input,
+                operation: 'readWithSnapshot',
+                details: toMutationTimingDetails(command),
+                action: async () => await service.readWithSnapshot(command)
             }),
         compute: service.compute,
         validate: service.validate,
