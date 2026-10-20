@@ -2,10 +2,13 @@
 
 RALLAR_API_PROD_PROFILE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${RALLAR_API_PROD_PROFILE_DIR}/rallar-apt-sources.sh"
+source "${RALLAR_API_PROD_PROFILE_DIR}/rallar-api-effective-env.sh"
 
 RALLAR_API_DATABASE_ROLE="rallar"
 RALLAR_API_DATABASE_NAME="rallar_api_v1"
 RALLAR_API_STORE_FAILURE_FILE="${RALLAR_API_STORE_FAILURE_FILE:-/etc/rallar/api-v1.store-failure}"
+RALLAR_API_SECRET_FILE="${RALLAR_API_SECRET_FILE:-/etc/rallar/api-v1.secrets.env}"
+RALLAR_CONTROL_ENV_FILE="${RALLAR_CONTROL_ENV_FILE:-/etc/rallar/control-server.env}"
 RALLAR_API_DATABASE_URL_PATTERN="^postgres://${RALLAR_API_DATABASE_ROLE}:([0-9a-f]{64})@127\.0\.0\.1:5432/${RALLAR_API_DATABASE_NAME}$"
 
 install_rallar_api_postgres_server() {
@@ -22,38 +25,90 @@ install_rallar_api_postgres_server() {
 }
 
 read_rallar_api_database_url() {
-	local env_file="$1"
-	local value=""
-
-	if [[ -r "${env_file}" ]]; then
-		value="$(grep -E '^DATABASE_URL=' "${env_file}" | tail -n 1 | cut -d= -f2- || true)"
+	local database_url
+	database_url="$(read_rallar_api_effective_env_value "$1" DATABASE_URL)" || return 1
+	if ! [[ "${database_url}" =~ ${RALLAR_API_DATABASE_URL_PATTERN} ]]; then
+		echo "Invalid controller DATABASE_URL for ${RALLAR_API_DATABASE_NAME}." >&2
+		return 1
 	fi
-	if [[ "${value}" =~ ${RALLAR_API_DATABASE_URL_PATTERN} ]]; then
-		printf '%s' "${value}"
-	fi
+	printf '%s' "${database_url}"
 }
 
 resolve_rallar_api_database_url() {
-	local database_url
-	database_url="$(read_rallar_api_database_url "$1")"
-	if [[ -z "${database_url}" ]]; then
-		database_url="postgres://${RALLAR_API_DATABASE_ROLE}:$(openssl rand -hex 32)@127.0.0.1:5432/${RALLAR_API_DATABASE_NAME}"
+	if [[ -e "$1" || -L "$1" ]]; then
+		read_rallar_api_database_url "$1"
+		return
 	fi
-	printf '%s' "${database_url}"
+	if [[ -e "${RALLAR_API_SECRET_FILE}" || -L "${RALLAR_API_SECRET_FILE}" ]]; then
+		local key value
+		for key in DATABASE_URL RALLAR_AUTH_CREDENTIAL_SECRET RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET; do
+			if value="$(read_rallar_api_file_value "${RALLAR_API_SECRET_FILE}" "${key}")"; then
+				echo "Existing API store credentials have no controller environment; refusing to provision a new store." >&2
+				return 1
+			else
+				[[ "$?" == "3" ]] || return 1
+			fi
+		done
+	fi
+	printf 'postgres://%s:%s@127.0.0.1:5432/%s' \
+		"${RALLAR_API_DATABASE_ROLE}" "$(openssl rand -hex 32)" "${RALLAR_API_DATABASE_NAME}"
+}
+
+validate_rallar_api_existing_store_configuration() {
+	local env_file="$1"
+	local auth_secret operator_secret operator_client_ids control_operator_secret
+	[[ -f "${env_file}" && -r "${env_file}" ]] || { echo "Missing readable controller API environment." >&2; return 1; }
+	read_rallar_api_database_url "${env_file}" >/dev/null || return 1
+	auth_secret="$(read_rallar_api_effective_env_value "${env_file}" RALLAR_AUTH_CREDENTIAL_SECRET)" || return 1
+	operator_secret="$(read_rallar_api_effective_env_value "${env_file}" RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET)" || return 1
+	operator_client_ids="$(read_rallar_api_effective_env_value "${env_file}" RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS)" || return 1
+	if ((${#auth_secret} < 32)) || [[ -z "${operator_secret}" ]]; then
+		echo "Missing existing API auth or operator secret; refusing to replace credentials." >&2
+		return 1
+	fi
+	if [[ -z "${operator_client_ids}" ]]; then
+		echo "Missing existing operator allowlist; refusing to replace configuration." >&2
+		return 1
+	fi
+	if [[ -e "${RALLAR_CONTROL_ENV_FILE}" || -L "${RALLAR_CONTROL_ENV_FILE}" ]]; then
+		if [[ ! -f "${RALLAR_CONTROL_ENV_FILE}" || ! -r "${RALLAR_CONTROL_ENV_FILE}" ]]; then
+			echo "Cannot read the control-server environment." >&2
+			return 1
+		fi
+		if control_operator_secret="$(read_rallar_api_file_value "${RALLAR_CONTROL_ENV_FILE}" RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET)"; then
+			:
+		else
+			[[ "$?" == "3" ]] || return 1
+		fi
+		if [[ "${control_operator_secret}" != "${operator_secret}" ]]; then
+			echo "The control-server operator secret differs from the effective API secret; refusing replacement." >&2
+			return 1
+		fi
+	fi
+	if [[ -n "${RALLAR_AUTH_CREDENTIAL_SECRET:-}" && "${RALLAR_AUTH_CREDENTIAL_SECRET}" != "${auth_secret}" ]] ||
+		[[ -n "${RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET:-}" && "${RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET}" != "${operator_secret}" ]]; then
+		echo "Requested API secret differs from the active secret; refusing credential rotation during rollout." >&2
+		return 1
+	fi
 }
 
 # The prod profile refuses an empty operator allowlist and bundled demo identities.
 resolve_rallar_api_operator_client_ids() {
 	local env_file="$1"
 	local requested="$2"
-	local current=""
+	local current="" status
 
 	if [[ -n "${requested}" ]]; then
 		printf '%s' "${requested}"
 		return 0
 	fi
-	if [[ -r "${env_file}" ]]; then
-		current="$(grep -E '^RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS=' "${env_file}" | tail -n 1 | cut -d= -f2- || true)"
+	if [[ -e "${env_file}" ]]; then
+		if current="$(read_rallar_api_effective_env_value "${env_file}" RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS)"; then
+			:
+		else
+			status=$?
+			[[ "${status}" == 3 ]] || return "${status}"
+		fi
 	fi
 	if [[ -n "${current}" ]]; then
 		printf '%s' "${current}"
@@ -63,10 +118,10 @@ resolve_rallar_api_operator_client_ids() {
 }
 
 write_rallar_api_postgres_sql() {
-	(cd / && runuser -u postgres -- psql --no-psqlrc --quiet -v ON_ERROR_STOP=1 -d postgres)
+	(cd / && runuser -u postgres -- psql --no-psqlrc --quiet -At -v ON_ERROR_STOP=1 -d postgres)
 }
 
-# The mark outlives a killed rollout, so the API never starts on a dropped or half-migrated store.
+# The mark outlives a killed rollout, so the API never starts on an unverified migration.
 write_rallar_api_store_failure() {
 	local stage="$1"
 	local message="The ${stage} of the API-v1 Postgres store ${RALLAR_API_DATABASE_NAME} failed at $(date -u +%Y-%m-%dT%H:%M:%SZ); rallar-api-v1 stays stopped until 08-rollout-controller.sh succeeds."
@@ -74,26 +129,21 @@ write_rallar_api_store_failure() {
 	echo "::error::${message}" >&2
 }
 
-reset_rallar_api_postgres_store() {
+migrate_rallar_api_postgres_store() {
 	local checkout_dir="$1"
 	local database_url="$2"
 
 	if ! [[ "${database_url}" =~ ${RALLAR_API_DATABASE_URL_PATTERN} ]]; then
-		echo "Missing the controller DATABASE_URL for ${RALLAR_API_DATABASE_NAME}; refusing to wipe the API store." >&2
+		echo "Invalid controller DATABASE_URL for ${RALLAR_API_DATABASE_NAME}; refusing to migrate." >&2
 		return 1
 	fi
 	local password="${BASH_REMATCH[1]}"
 
-	echo "==> Wiping the API-v1 Postgres store ${RALLAR_API_DATABASE_NAME}"
-	printf 'The wipe of the API-v1 Postgres store %s has not finished.\n' "${RALLAR_API_DATABASE_NAME}" >"${RALLAR_API_STORE_FAILURE_FILE}"
-	if ! write_rallar_api_postgres_sql <<EOF_SQL
-SELECT 'CREATE ROLE ${RALLAR_API_DATABASE_ROLE} LOGIN' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${RALLAR_API_DATABASE_ROLE}')\gexec
-ALTER ROLE ${RALLAR_API_DATABASE_ROLE} WITH LOGIN PASSWORD '${password}';
-DROP DATABASE IF EXISTS ${RALLAR_API_DATABASE_NAME} WITH (FORCE);
-CREATE DATABASE ${RALLAR_API_DATABASE_NAME} OWNER ${RALLAR_API_DATABASE_ROLE};
-EOF_SQL
-	then
-		write_rallar_api_store_failure wipe
+	echo "==> Checking the existing API-v1 Postgres store ${RALLAR_API_DATABASE_NAME}"
+	printf 'The migration of the API-v1 Postgres store %s has not finished.\n' "${RALLAR_API_DATABASE_NAME}" >"${RALLAR_API_STORE_FAILURE_FILE}"
+	if ! (cd / && PGPASSWORD="${password}" runuser -u rallar -- psql --no-psqlrc --quiet -v ON_ERROR_STOP=1 \
+		-h 127.0.0.1 -p 5432 -U "${RALLAR_API_DATABASE_ROLE}" -d "${RALLAR_API_DATABASE_NAME}" -Atqc 'SELECT 1' >/dev/null); then
+		write_rallar_api_store_failure connection
 		return 1
 	fi
 
@@ -109,17 +159,65 @@ EOF_SQL
 	rm -f -- "${RALLAR_API_STORE_FAILURE_FILE}"
 }
 
+provision_rallar_api_postgres_store() {
+	local checkout_dir="$1"
+	local database_url="$2"
+	if ! [[ "${database_url}" =~ ${RALLAR_API_DATABASE_URL_PATTERN} ]]; then
+		echo "Invalid controller DATABASE_URL for initial provisioning." >&2
+		return 1
+	fi
+	local password="${BASH_REMATCH[1]}"
+	require_rallar_api_absent_store || return 1
+	printf 'Initial provisioning of the API-v1 Postgres store %s has not finished.\n' "${RALLAR_API_DATABASE_NAME}" >"${RALLAR_API_STORE_FAILURE_FILE}"
+	if ! write_rallar_api_postgres_sql <<EOF_SQL
+CREATE ROLE ${RALLAR_API_DATABASE_ROLE} LOGIN PASSWORD '${password}';
+CREATE DATABASE ${RALLAR_API_DATABASE_NAME} OWNER ${RALLAR_API_DATABASE_ROLE};
+EOF_SQL
+	then
+		write_rallar_api_store_failure provisioning
+		return 1
+	fi
+	migrate_rallar_api_postgres_store "${checkout_dir}" "${database_url}"
+}
+
+require_rallar_api_absent_store() {
+	local existing
+	existing="$(write_rallar_api_postgres_sql <<EOF_SQL
+SELECT (SELECT count(*) FROM pg_roles WHERE rolname = '${RALLAR_API_DATABASE_ROLE}') || '|' ||
+       (SELECT count(*) FROM pg_database WHERE datname = '${RALLAR_API_DATABASE_NAME}');
+EOF_SQL
+)" || return 1
+	if [[ "${existing}" != "0|0" ]]; then
+		echo "Controller database or role already exists; refusing initial provisioning." >&2
+		return 1
+	fi
+}
+
 rallar_api_prod_profile_self_test() {
 	case "${RALLAR_API_PROD_PROFILE_SELF_TEST:-}" in
 	install-server)
 		install_rallar_api_postgres_server
 		echo "installedApiPostgresServer=true"
 		;;
-	reset-store)
-		reset_rallar_api_postgres_store \
+	resolve-initial-database-url)
+		resolve_rallar_api_database_url "${RALLAR_API_ENV_FILE:?RALLAR_API_ENV_FILE is required}"
+		echo
+		;;
+	validate-existing)
+		validate_rallar_api_existing_store_configuration "${RALLAR_API_ENV_FILE:?RALLAR_API_ENV_FILE is required}"
+		echo "validatedExistingApiStore=true"
+		;;
+	migrate-store)
+		migrate_rallar_api_postgres_store \
 			"${RALLAR_CHECKOUT_DIR:?RALLAR_CHECKOUT_DIR is required}" \
 			"$(read_rallar_api_database_url "${RALLAR_API_ENV_FILE:?RALLAR_API_ENV_FILE is required}")"
-		echo "resetApiPostgresStore=true"
+		echo "migratedApiPostgresStore=true"
+		;;
+	provision-store)
+		provision_rallar_api_postgres_store \
+			"${RALLAR_CHECKOUT_DIR:?RALLAR_CHECKOUT_DIR is required}" \
+			"$(read_rallar_api_database_url "${RALLAR_API_ENV_FILE:?RALLAR_API_ENV_FILE is required}")"
+		echo "provisionedApiPostgresStore=true"
 		;;
 	*)
 		echo "Unknown RALLAR_API_PROD_PROFILE_SELF_TEST: ${RALLAR_API_PROD_PROFILE_SELF_TEST:-}" >&2

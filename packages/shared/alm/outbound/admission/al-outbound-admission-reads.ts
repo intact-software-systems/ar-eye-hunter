@@ -4,12 +4,10 @@ import type {
     ALNackPayload,
     ALRepairPayload
 } from '../../../al-contracts/al-control.ts';
-import { isALFreezeOfMessage } from '../../../al-contracts/al-frozen-multicast-audience.ts';
 import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
 import type { ALSupersedenceInput } from '../../../al-contracts/al-runtime.ts';
 import { toALOrderingTrackKey, toALSequenceMintTrackKey } from '../../../al-contracts/al-runtime.ts';
 import { EnqueuedType } from '../../../api/api-config.ts';
-import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import {
     isKeysEqual,
     type Key,
@@ -44,7 +42,6 @@ import { toALOutboundWorkKey } from '../al-outbound-work-entry.ts';
 import { toALOutboundSendEffectId } from '../to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from '../to-al-outbound-prepared-fingerprint.ts';
 import { isALOutboundReceiptComplete } from '../transition-al-outbound-pending-ack.ts';
-import { validateALOutboundPlannedMessage } from '../validate-al-outbound-dispatch.ts';
 import {
     toALOutboundControlHistoryKey,
     toALOutboundOrderingHeadKey,
@@ -73,7 +70,9 @@ import {
     type ALOutboundCapturedPolicy,
     type ALStoredOutboundMessage
 } from './al-outbound-admission-validation.ts';
+import type { ALOutboundCapturedPolicyTimingInvocation } from './al-outbound-captured-policy-timing.ts';
 import { resolveALOutboundScopeAuthority } from './al-outbound-scope-authority.ts';
+import { computeALOutboundDispatchPlan, requireALOutboundPlannedMessage } from './compute-al-outbound-dispatch-plan.ts';
 import { decodeALOutboundOrderingHead } from './decode-al-outbound-ordering-head.ts';
 
 export type ALOutboundControlHistoryKind = 'acks' | 'nacks' | 'repairs';
@@ -84,6 +83,13 @@ export interface CreateALOutboundAdmissionReadsInput {
     readonly canonicalScope: string;
     readonly backend: ALAdmissionWorkBackend;
     readonly supersedenceTrackTtlMs: number;
+}
+
+export interface ReadALOutboundCapturedPolicyInput {
+    readonly session: ALAdmissionReadSession;
+    readonly message: ALMessage;
+    readonly entry: ResourceEntry;
+    readonly timing?: ALOutboundCapturedPolicyTimingInvocation;
 }
 
 /** One supersedence read: the key's pointer, the message's own row, and a named predecessor's row. */
@@ -149,7 +155,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
         });
         const { plan, orderingHead } = await this.readSequenceMint(
             session,
-            this.readDispatchPlan(input, canonical, stored),
+            computeALOutboundDispatchPlan(input, canonical, stored),
             stored === undefined
         );
         const fences = await this.readAdmissionFences({ session, outgoing: input, plan, nowMs });
@@ -166,7 +172,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
             clientRecord,
             plan,
             orderingHead,
-            sentSnapshot: this.toLiveSentSnapshot(stored, canonical),
+            sentSnapshot: stored && canonical ? this.toLiveSentSnapshot(stored, canonical, this.nowMs()) : undefined,
             ...control,
             repairs,
             ...fences
@@ -246,12 +252,11 @@ export class ALOutboundAdmissionReads<TPrepared> {
         return stored !== undefined;
     }
 
-    async readCapturedPolicy(
-        session: ALAdmissionReadSession,
-        message: ALMessage,
-        entry: ResourceEntry
-    ): Promise<ALOutboundCapturedPolicy> {
+    async readCapturedPolicy(input: ReadALOutboundCapturedPolicyInput): Promise<ALOutboundCapturedPolicy> {
+        const { session, message, entry, timing } = input;
+        timing?.markStoredReadStart();
         const stored = await this.readStoredMessage(session, message.id.msgId);
+        timing?.markStoredReadEnd();
         const expiresAtMs = resolveALMessageExpireAtMs(message);
         const admissionKey = toALOutboundSentMessageKey(this.namespace, message.id.msgId);
         if (
@@ -268,7 +273,10 @@ export class ALOutboundAdmissionReads<TPrepared> {
                 new TypeError('Durable WS outbox row differs from captured outbound admission')
             );
         }
-        const identity = await this.readQueueItem(session, toALOutboundIdentityKey(entry.key));
+        const identityKey = toALOutboundIdentityKey(entry.key);
+        timing?.markIdentityReadStart();
+        const identity = await this.readQueueItem(session, identityKey);
+        timing?.markIdentityReadEnd();
         const canonical = decodeALOutboundCanonicalMessage(stored.reference, entry, identity);
         if (!jsonEquals(canonical, message)) {
             throw new ALAdmissionCorruptionError(
@@ -280,6 +288,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
         if (authority.left) {
             throw new ALAdmissionCorruptionError(admissionKey, new TypeError(authority.left.join('; ')));
         }
+        timing?.markMethodEnd();
         return stored.policy;
     }
 
@@ -398,32 +407,6 @@ export class ALOutboundAdmissionReads<TPrepared> {
             toALOutboundSupersedenceReplacementKey(this.namespace, msgId),
             (value) => decodeALAdmissionSupersedenceValue(value, 'replacement')
         );
-    }
-
-    private readDispatchPlan(
-        input: ALOutboundOutgoingReadInput<TPrepared>,
-        canonical: ALMessage | undefined,
-        stored: ALStoredOutboundMessage | undefined
-    ): ALOutboundDispatchPlan<TPrepared> {
-        const { msg, planner, intent } = input;
-        const authority = stored?.policy ?? input.dequeueAuthority;
-        const selected = planner(
-            canonical ?? msg,
-            authority === undefined ? undefined : {
-                admittedAudience: authority.admittedAudience,
-                recipientScope: authority.recipientScope,
-                principalTargetId: authority.principalTargetId,
-                sessionInvalidation: authority.sessionInvalidation,
-                referenceKey: stored ? stored.reference.key : input.observedCanonicalEntry?.key
-            }
-        );
-        requireALOutboundPlannedMessage(canonical ?? msg, selected.msg);
-        const planned = canonical && !isALFreezeOfMessage(canonical, selected.msg)
-            ? { ...selected, msg: canonical }
-            : selected;
-        const plan = stored && intent !== 'repair' ? applyALOutboundCapturedPolicy(planned, stored.policy) : planned;
-        requireALOutboundPlannedMessage(msg, plan.msg);
-        return plan;
     }
 
     /**
@@ -572,14 +555,15 @@ export class ALOutboundAdmissionReads<TPrepared> {
             return undefined;
         }
         const msg = decodeALOutboundCanonicalMessage(stored.reference, canonical, identity);
-        return this.toLiveSentSnapshot(stored, msg);
+        return this.toLiveSentSnapshot(stored, msg, this.nowMs());
     }
 
     private toLiveSentSnapshot(
-        stored: ALStoredOutboundMessage | undefined,
-        message: ALMessage | undefined
+        stored: ALStoredOutboundMessage,
+        message: ALMessage,
+        observedAtMs: number
     ): ALOutboundSentMessageSnapshot | undefined {
-        return stored && message && stored.reference.expiresAtMs > this.nowMs()
+        return stored.reference.expiresAtMs > observedAtMs
             ? {
                 msgId: stored.msgId,
                 msg: message,
@@ -587,13 +571,6 @@ export class ALOutboundAdmissionReads<TPrepared> {
                 supersedenceKey: stored.supersedenceKey ?? null
             }
             : undefined;
-    }
-}
-
-function requireALOutboundPlannedMessage(source: ALMessage, planned: ALMessage): void {
-    const issues = validateALOutboundPlannedMessage(source, planned);
-    if (issues.length > 0) {
-        throw new NonRetryableException(issues.map((issue) => issue.message).join('; '));
     }
 }
 

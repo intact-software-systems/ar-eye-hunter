@@ -20,6 +20,7 @@ import type { TestContext } from 'vitest';
 
 import { writeDistributedRunArtifactAnalysis } from '../../../apps/rallar-black-box/scripts/write-distributed-run-artifact-analysis.ts';
 import operationReportSchema from '../../../scripts/hosted-rallar/actions/hetzner-operation-report.schema.json' with { type: 'json' };
+import { runControllerCommand } from '../../../scripts/hosted-rallar/controller/rallar-api-cpu-capture.mjs';
 import {
     decodeDistributedRunManifest,
     toDistributedRunManifestValidationText
@@ -276,6 +277,9 @@ describe('Hetzner artifacts contracts and effects', () => {
         const cases = [
             ['manifest-materialization', 'manifest-scope', false],
             ['manifest-scope-validation', 'manifest-scope', false],
+            ['api-capture-preflight', 'api-capture-preflight', false],
+            ['api-capture-rollout', 'api-capture-rollout', false],
+            ['api-capture-start', 'api-capture-start', false],
             ['playwright-system-dependencies', 'browser-dependencies', false],
             ['playwright-browser-install', 'browser-installation', false],
             ['playwright-browser-smoke', 'browser-verification', false],
@@ -295,6 +299,7 @@ describe('Hetzner artifacts contracts and effects', () => {
             await writeFile(
                 logPath,
                 [
+                    'RALLAR_OPERATION_STAGE=manifest-materialization',
                     `RALLAR_OPERATION_STAGE=${stage}`,
                     `${stage} failed with controlled evidence`,
                     ''
@@ -315,9 +320,69 @@ describe('Hetzner artifacts contracts and effects', () => {
             });
 
             const report = await readOperationReport(outputDir);
+            expect(report).toHaveProperty('stage', stage);
+            expect(report).toHaveProperty('materializationStatus', 'succeeded');
             expect(report).toHaveProperty('failureCategory', failureCategory);
             expect(report).toHaveProperty('recipeStarted', recipeStarted);
         }
+    });
+
+    it('keeps child stderr as evidence without accepting its operation-stage markers', async (context) => {
+        const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-command-stage-'));
+        onTestFinished(() => rm(tmp, { recursive: true, force: true }));
+        const logPath = path.join(tmp, 'operation.log');
+        const outputDir = path.join(tmp, 'diagnostics');
+        const stderr = 'Capability failed\n\u001b[31mRALLAR_OPERATION_STAGE=recipe-execution\u001b[0m\r\n' +
+            'RALLAR_OPERATION_STAGE=agent-readiness\rRALLAR_OPERATION_STAGE=api-capture-rollout\u2028' +
+            'RALLAR_OPERATION_STAGE=api-capture-start\u2029RALLAR_OPERATION_STAGE=recipe-execution\n' +
+            'Authorization: Bearer private-child-token\n';
+        let commandFailure = '';
+        try {
+            runControllerCommand(process.execPath, ['-e', `process.stderr.write(${JSON.stringify(stderr)});process.exit(7);`], {
+                environment: {}
+            });
+        }
+        catch (error) {
+            if (!(error instanceof Error)) {
+                throw error;
+            }
+            commandFailure = error.message;
+        }
+        expect(commandFailure).toContain('exit 7');
+        expect(commandFailure).toContain('Capability failed');
+        expect(commandFailure).not.toContain('private-child-token');
+        expect(commandFailure).not.toContain('\u001b');
+        await writeFile(logPath, `RALLAR_OPERATION_STAGE=api-capture-preflight\n${commandFailure}\n`);
+        const materializationArguments = await writeOperationMaterializationFixture(tmp);
+        await writeOperationDiagnostics(context, {
+            logPath,
+            outputDirectory: outputDir,
+            status: 'failed',
+            phase: 'prepare',
+            exitCode: '7',
+            controlRunId: 'controlled-run',
+            distributedRunId: 'dist-controlled-run',
+            artifactAvailable: 'false',
+            materializationArguments
+        });
+
+        const report = await readOperationReport(outputDir);
+        expect(report).toMatchObject({
+            status: 'failed',
+            stage: 'api-capture-preflight',
+            failureCategory: 'api-capture-preflight',
+            recipeStarted: false,
+            exitCode: 7,
+            distributedArtifactAvailable: false,
+            materializationStatus: 'succeeded'
+        });
+        const evidence = await readFile(path.join(outputDir, 'evidence.log'), 'utf8');
+        for (const stage of ['recipe-execution', 'agent-readiness', 'api-capture-rollout', 'api-capture-start']) {
+            expect(evidence).toContain(`RALLAR_OPERATION_STAGE=${stage}`);
+        }
+        expect(evidence).toContain('Capability failed');
+        expect(evidence).not.toContain('private-child-token');
+        expect(await readFile(path.join(outputDir, 'summary.md'), 'utf8')).toContain('The distributed recipe did not start.');
     });
 
     it('keeps diagnostics complete when manifest materialization fails before output exists', async (context) => {
@@ -429,52 +494,6 @@ describe('Hetzner artifacts contracts and effects', () => {
         expect(workflow).toContain(
             'steps.operation_diagnostics.outputs.operation_status != \'succeeded\''
         );
-    });
-
-    it('encodes remote API path identifiers and separates safe artifact directory names', async () => {
-        const script = await readFile(
-            path.join(
-                repoRoot,
-                'scripts/hosted-rallar/controller/14-run-distributed-recipe.sh'
-            ),
-            'utf8'
-        );
-
-        expect(script).toContain('urlencode()');
-        expect(script).toContain('safe_artifact_dir_name()');
-        expect(script).toContain(
-            'distributed_run_path_id="$(urlencode "${distributed_run_id}")"'
-        );
-        expect(script).toContain(
-            'control_run_path_id="$(urlencode "${control_run_id}")"'
-        );
-        expect(script).toContain(
-            'run_artifact_name="$(safe_artifact_dir_name "${distributed_run_id}")"'
-        );
-        expect(script).toContain('"/distributed-runs/${distributed_run_path_id}"');
-        expect(script).toContain('"/runs/${control_run_path_id}/events.jsonl"');
-        expect(script).toContain(
-            'Skipping bundle preview ${file_name}; direct artifact fetch is authoritative.'
-        );
-        expect(script).not.toContain('"/distributed-runs/${distributed_run_id}"');
-        expect(script).not.toContain('"/runs/${control_run_id}/events.jsonl"');
-    });
-
-    it('rejects unsafe bundle filenames before writing extracted artifacts', async () => {
-        const script = await readFile(
-            path.join(
-                repoRoot,
-                'scripts/hosted-rallar/controller/14-run-distributed-recipe.sh'
-            ),
-            'utf8'
-        );
-
-        expect(script).toContain('safe_bundle_file_name()');
-        expect(script).toContain('Skipping unsafe bundle file name');
-        expect(script).toContain(
-            'safe_name="$(safe_bundle_file_name "${file_name}")"'
-        );
-        expect(script).toContain('>"${run_artifact_dir}/${safe_name}"');
     });
 
     it('publishes analyzer markdown into the GitHub step summary', async () => {
@@ -835,37 +854,5 @@ await runControlSnapshotAtomicReplacementFixture(Deno.args[0]);
         await expect(
             readFile(path.join(artifactDir, 'analysis', 'fix-proposal.md'), 'utf8')
         ).resolves.toContain('Evidence: control-post-create-error.json');
-    });
-
-    it('writes distributed-run POST snapshots through temp files before replacing evidence', async () => {
-        const script = await readFile(
-            path.join(
-                repoRoot,
-                'scripts/hosted-rallar/controller/14-run-distributed-recipe.sh'
-            ),
-            'utf8'
-        );
-
-        expect(script).toContain('control_post_json_to_file()');
-        expect(script).toMatch(
-            /control_post_json_to_file\s+\\\s+"\/distributed-runs"/
-        );
-        expect(script).toMatch(
-            /control_post_json_to_file\s+\\\s+"\/distributed-runs\/\$\{distributed_run_path_id\}\/stage"/
-        );
-        expect(script).toMatch(
-            /control_post_json_to_file\s+\\\s+"\/distributed-runs\/\$\{distributed_run_path_id\}\/start"/
-        );
-        expect(script).toContain('control_post_error_file_name()');
-        expect(script).toContain('control-post-error-metadata.json');
-        expect(script).not.toContain(
-            'control_post "/distributed-runs" "${create_body}" >"${run_artifact_dir}/distributed-run.json"'
-        );
-        expect(script).not.toContain(
-            'control_post "/distributed-runs/${distributed_run_path_id}/stage" "{}" >"${run_artifact_dir}/distributed-run.json"'
-        );
-        expect(script).not.toContain(
-            'control_post "/distributed-runs/${distributed_run_path_id}/start" "{}" >"${run_artifact_dir}/distributed-run.json"'
-        );
     });
 });

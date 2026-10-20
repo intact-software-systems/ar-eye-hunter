@@ -41,6 +41,10 @@ import {
     toHandlerFinalizedResourceInboxRelease,
     toReleasedResourceInboxSuccess
 } from './resource-inbox-handler-outcome.ts';
+import {
+    resolveResourceInboxReservationObservation,
+    type ResourceInboxReservationObservation
+} from './resource-inbox-reservation-observation.ts';
 import { ResourceInboxResilience } from './resource-inbox-resilience.ts';
 
 const RESOURCE_INBOX_COMPLETION_STATUSES: ReadonlySet<EntityStatus> = new Set([
@@ -137,6 +141,7 @@ export interface ResourceInboxDequeuerInput {
 }
 
 export interface DequeueResourceEntryOptions {
+    readonly reservationObservation?: 'postgres-ordinary-retry-v1';
     readonly completionNotifications?: ResourceInboxCompletionNotifications;
     /** Whether a caller can wait for a released entry's completion; absent, every completion is awaitable. */
     readonly toCompletionAwaitability?: (entry: ResourceEntry) => ResourceInboxCompletionNotifications.Awaitability;
@@ -263,7 +268,7 @@ async function reserveResourceInboxAttempts(
     dependencies: ResourceInboxDequeueDependencies,
     selection: ResourceInboxReservationSelection
 ): Promise<Map<Resource.Key, ResourceInboxAttempt>> {
-    const entries = await dependencies.repository.reserveEntries({
+    const request = {
         typeIds: selection.types,
         statusIds: new Set([selection.lane === Reservator.NEW ? EntityStatus.NEW : EntityStatus.RETRY]),
         reservationInput: {
@@ -271,8 +276,20 @@ async function reserveResourceInboxAttempts(
             maxAttempts: dependencies.resilience.retryPolicy.maxAttempts
         },
         contextClaim: selection.contextClaim
-    });
-    return toResourceInboxAttempts(dependencies, entries, selection.lane);
+    };
+    if (selection.lane === Reservator.RETRY && dependencies.options.reservationObservation !== undefined) {
+        const result = await dependencies.repository.reserveEntries({
+            ...request,
+            reservationObservation: dependencies.options.reservationObservation
+        });
+        return toResourceInboxAttempts(dependencies, {
+            entries: result.entries,
+            selectedLane: selection.lane,
+            observations: result.observations ?? []
+        });
+    }
+    const entries = await dependencies.repository.reserveEntries(request);
+    return toResourceInboxAttempts(dependencies, { entries, selectedLane: selection.lane });
 }
 
 async function reserveResourceInboxTimeouts(
@@ -295,7 +312,7 @@ async function reserveResourceInboxTimeouts(
     if (entries.size > 0) {
         console.info('Reserved timed-out resource inbox entries', [...entries.keys()]);
     }
-    return toResourceInboxAttempts(dependencies, entries, Reservator.TIMEOUT);
+    return toResourceInboxAttempts(dependencies, { entries, selectedLane: Reservator.TIMEOUT });
 }
 
 /** An overdue row is claimed on this pass, ahead of RETRY; the probe answered whether one exists. */
@@ -562,16 +579,30 @@ function toConflictRetryDelayMs(backoffDelayMs: number, retryDelayMs: number | n
     return retryDelayMs === null ? backoffDelayMs : Math.min(backoffDelayMs, retryDelayMs);
 }
 
+interface ResourceInboxClaimedAttempts {
+    readonly entries: Map<Resource.Key, ResourceEntry>;
+    readonly selectedLane: Reservator;
+    readonly observations?: readonly ResourceInboxReservationObservation[];
+}
+
 function toResourceInboxAttempts(
     dependencies: ResourceInboxDequeueDependencies,
-    entries: Map<Resource.Key, ResourceEntry>,
-    selectedLane: Reservator
+    { entries, selectedLane, observations }: ResourceInboxClaimedAttempts
 ): Map<Resource.Key, ResourceInboxAttempt> {
     const selectedAtEpochMs = dependencies.nowEpochMs();
     return new Map([...entries].map(([key, entry]) => [
         key,
         computeResourceInboxAttempt({
             entry,
+            ...(observations === undefined
+                ? {}
+                : {
+                    reservationObservation: resolveResourceInboxReservationObservation(
+                        entry,
+                        observations,
+                        entries.size
+                    )
+                }),
             selectedLane,
             selectedAtEpochMs,
             selectedDueAtEpochMs: undefined,

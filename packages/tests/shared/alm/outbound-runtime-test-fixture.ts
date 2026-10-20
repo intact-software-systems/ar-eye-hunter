@@ -96,6 +96,8 @@ interface OutboundTestRuntimeInput<TPrepared> {
     /** The hops the composition sends every frame through; absent, as for every carrier but the WS client. */
     readonly hopPeerIds?: ALOutboundMessageRuntime.Dependencies<TPrepared>['hopPeerIds'];
     readonly afterDequeueAdmission?: ALOutboundMessageRuntime.Dependencies<TPrepared>['afterDequeueAdmission'];
+    readonly readDequeueAuthority?: ALOutboundMessageRuntime.Dependencies<TPrepared>['readDequeueAuthority'];
+    readonly dequeueTiming?: ALOutboundMessageRuntime.Dependencies<TPrepared>['dequeueTiming'];
     readonly sendPreparedMessage: ALOutboundMessageRuntime.Dependencies<TPrepared>['sendPreparedMessage'];
 }
 
@@ -112,8 +114,7 @@ export async function drainEngine(engine: InboxOutboxEngine): Promise<void> {
 
 /**
  * Spies on a caller-supplied, not-yet-constructed engine and returns a function that invokes the
- * outbound runtime's own registered task exactly once, direct, the way the deleted `dequeueOutbox`/
- * `dequeue` methods did. `InboxOutboxEngine.executeOnce` instead loops a task's `runnable` while its
+ * outbound runtime's own registered task exactly once. `InboxOutboxEngine.executeOnce` instead loops a task's `runnable` while its
  * own `isWork()` stays true, which can drive extra attempts a single-attempt assertion does not
  * expect; call this before constructing the runtime so the `includeTask` registration is observed.
  */
@@ -208,6 +209,8 @@ export function createOutboundTestRuntimeFor<TPrepared>(
             planRepairMessage: options.planRepairMessage,
             hopPeerIds: options.hopPeerIds,
             afterDequeueAdmission: options.afterDequeueAdmission,
+            readDequeueAuthority: options.readDequeueAuthority,
+            dequeueTiming: options.dequeueTiming,
             sendPreparedMessage: options.sendPreparedMessage
         })
     );

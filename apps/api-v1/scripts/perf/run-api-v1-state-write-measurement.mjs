@@ -709,7 +709,7 @@ async function readDiagnosticPhase(path, ordinal) {
     const commands = records.filter((record) => record.record === 'command');
     if (
         Buffer.byteLength(text) > 33554432 || phase.record !== 'phase' ||
-        phase.schema !== 'rallar.state-write.diagnostic.v1' ||
+        phase.schema !== 'rallar.state-write.diagnostic.v3' ||
         phase.workload !== WORKLOADS[Math.floor(ordinal / 4)] ||
         phase.phase !== (ordinal % 4 === 0 ? 'warmup' : 'measured') ||
         phase.runIndex !== (ordinal % 4 === 0 ? 0 : ordinal % 4 - 1) || phase.outcome !== 'completed' ||
@@ -722,7 +722,10 @@ async function readDiagnosticPhase(path, ordinal) {
         const counts = toObject(footer[name]);
         if (
             counts.rejected !== 0 || counts.truncated !== 0 || !Number.isSafeInteger(counts.retained) ||
-            counts.retained < 0 || name !== 'boundaries' && counts.retained > 100000
+            counts.retained < 0 || counts.total !== counts.retained ||
+            !Number.isSafeInteger(counts.unassociated) || counts.unassociated < 0 ||
+            counts.unassociated > counts.retained ||
+            name !== 'boundaries' && counts.retained > 110000
         ) {
             throw new Error('diagnostic-capacity');
         }
@@ -730,7 +733,13 @@ async function readDiagnosticPhase(path, ordinal) {
     const timing = toObject(footer.timing);
     const releases = toObject(footer.releases);
     if (
-        timing.retained + releases.retained > 100000 ||
+        timing.retained + releases.retained > 110000 ||
+        timing.unassociated !==
+            records.filter((record) =>
+                record.record === 'timing' && toObject(record.association).kind === 'process-unassociated'
+            ).length ||
+        releases.unassociated !== 0 || toObject(footer.boundaries).unassociated !== 0 ||
+        records.length !== timing.retained + releases.retained + toObject(footer.boundaries).retained + 1 ||
         timing.retained !== records.filter((record) => record.record === 'timing').length ||
         releases.retained !== records.filter((record) => record.record === 'release').length ||
         toObject(footer.boundaries).retained !==
@@ -738,6 +747,7 @@ async function readDiagnosticPhase(path, ordinal) {
     ) {
         throw new Error('diagnostic-record-accounting');
     }
+    requireValidReservationObservations(records, footer);
     return { bytes: Buffer.byteLength(text), commands: commands.length, measured: phase.phase === 'measured' };
 }
 
@@ -795,6 +805,59 @@ function toStrings(value) {
         throw new Error('invalid-strings');
     }
     return value;
+}
+
+function requireValidReservationObservations(records, footer) {
+    const releases = records.filter((record) => record.record === 'release');
+    let expected = 0;
+    let available = 0;
+    for (const release of releases) {
+        const observation = toObject(release.reservationObservation);
+        const reservationAttempt = release.attempt + (release.classification === 'not-ready' ? 1 : 0);
+        if (
+            !Number.isSafeInteger(reservationAttempt) || reservationAttempt < 1 ||
+            observation.reservationAttempt !== reservationAttempt
+        ) {
+            throw new Error('diagnostic-reservation-identity');
+        }
+        if (release.selectedLane === 'RETRY') {
+            expected += 1;
+            if (
+                observation.availability !== 'available' || observation.boundary !== 'postgres-update-returning' ||
+                observation.association !== 'physical-key-and-reservation-attempt' ||
+                !Number.isSafeInteger(observation.previousPersistedRetryDelayUs) ||
+                !Number.isSafeInteger(observation.dueToReservationObservationUs) ||
+                Object.keys(observation).some((key) =>
+                    ![
+                        'availability',
+                        'boundary',
+                        'association',
+                        'reservationAttempt',
+                        'previousPersistedRetryDelayUs',
+                        'dueToReservationObservationUs'
+                    ].includes(key)
+                )
+            ) {
+                throw new Error('diagnostic-reservation-observation');
+            }
+            available += 1;
+        }
+        else if (
+            !['NEW', 'FAIRNESS', 'TIMEOUT', 'FINALIZATION'].includes(release.selectedLane) ||
+            observation.availability !== 'unavailable' || observation.boundary !== 'unavailable' ||
+            observation.association !== 'unavailable' ||
+            observation.reason !== (release.selectedLane === 'NEW' ? 'not-applicable' : 'lane-not-captured') ||
+            Object.keys(observation).some((key) =>
+                !['availability', 'boundary', 'association', 'reservationAttempt', 'reason'].includes(key)
+            )
+        ) {
+            throw new Error('diagnostic-reservation-lane');
+        }
+    }
+    const counts = toObject(footer.reservationObservations);
+    if (counts.expected !== expected || counts.available !== available || counts.unavailable !== 0) {
+        throw new Error('diagnostic-reservation-completeness');
+    }
 }
 
 await new StateWriteMeasurement(readConfiguration()).start();

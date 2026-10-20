@@ -46,7 +46,7 @@ describe('PSql admission optimistic retry', () => {
         const store = createALInboundAdmissionStore({
             nowMs: Date.now,
             namespace,
-            backend: new PSqlAdmissionWorkBackend(sql, namespace, Date.now),
+            backend: new PSqlAdmissionWorkBackend({ sql, namespace, nowMs: Date.now }),
             orderingTrackTtlMs: 60_000,
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention(),
@@ -78,7 +78,7 @@ describe('PSql admission optimistic retry', () => {
         const store = createALInboundAdmissionStore({
             nowMs: Date.now,
             namespace,
-            backend: new PSqlAdmissionWorkBackend(sql, namespace, Date.now),
+            backend: new PSqlAdmissionWorkBackend({ sql, namespace, nowMs: Date.now }),
             orderingTrackTtlMs: 60_000,
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention(),
@@ -160,7 +160,7 @@ describe('PSql admission optimistic retry', () => {
         const storage = await createPSqlAdmissionTestStorage();
         const { sql } = storage;
         const namespace = 'psql-test:outbound:apply-conflict';
-        const backend = new PSqlAdmissionWorkBackend(sql, namespace, Date.now);
+        const backend = new PSqlAdmissionWorkBackend({ sql, namespace, nowMs: Date.now });
         const store = createALOutboundAdmissionStore({
             decodePrepared: decodeALOutboundTransportMessage,
             nowMs: Date.now,
@@ -188,7 +188,7 @@ describe('PSql admission optimistic retry', () => {
         const storage = await createPSqlAdmissionTestStorage();
         const { sql } = storage;
         const namespace = 'psql-test:outbound:retry-apply-conflict';
-        const backend = new PSqlAdmissionWorkBackend(sql, namespace, Date.now);
+        const backend = new PSqlAdmissionWorkBackend({ sql, namespace, nowMs: Date.now });
         const store = createALOutboundAdmissionStore({
             decodePrepared: decodeALOutboundTransportMessage,
             nowMs: Date.now,
@@ -226,7 +226,7 @@ describe('PSql admission optimistic retry', () => {
             nowMs: Date.now,
             namespace,
             canonicalScope: namespace,
-            backend: new PSqlAdmissionWorkBackend(sql, namespace, Date.now),
+            backend: new PSqlAdmissionWorkBackend({ sql, namespace, nowMs: Date.now }),
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention()
         });

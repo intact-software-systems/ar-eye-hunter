@@ -1,6 +1,17 @@
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import { AppInboxReservationConflictError, AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { createAppInboxRetryFinalizer } from '@shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
+import type {
+    ResourceInboxReservationObservationRequest,
+    ResourceInboxReservationObservationResult,
+    ResourceInboxReservationRequest
+} from '@shared/queuebox/queue-box-types.ts';
 import {
     createDefaultResourceInboxDequeuer,
     type ResourceInboxRetryExhaustion
@@ -9,16 +20,10 @@ import { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-
 import {
     EntityStatus,
     toKeyAsString,
-    type Key
+    type Key,
+    type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
-import {
-    describe,
-    expect,
-    it
-} from 'vitest';
-
-const NOW_EPOCH_MS = Date.parse('2026-07-22T12:00:00.000Z');
 
 import {
     createAtomicHarness,
@@ -29,6 +34,8 @@ import {
     toRecovery
 } from './test-support/app-inbox-transaction-test-runtime.ts';
 
+const NOW_EPOCH_MS = Date.parse('2026-07-22T12:00:00.000Z');
+
 describe('AppInbox retry exhaustion', () => {
     it('persists attempt-20 diagnostics and FAILED completion in one transaction', async () => {
         const harness = createAtomicHarness({ attempts: 20 });
@@ -38,16 +45,26 @@ describe('AppInbox retry exhaustion', () => {
             database: harness.database.sql
         });
         let reserved = false;
+        function reserveEntries(request: ResourceInboxReservationObservationRequest): Promise<ResourceInboxReservationObservationResult>;
+        function reserveEntries(request: ResourceInboxReservationRequest): Promise<Map<Key, ResourceEntry>>;
+        async function reserveEntries(
+            request: ResourceInboxReservationRequest | ResourceInboxReservationObservationRequest
+        ): Promise<Map<Key, ResourceEntry> | ResourceInboxReservationObservationResult> {
+            if ('reservationObservation' in request) {
+                throw new Error('This fixture exercises ordinary reservations only');
+            }
+
+            if (reserved) {
+                return new Map();
+            }
+            reserved = true;
+            return new Map([[harness.entry.key, harness.entry]]);
+        }
         const controller = createDefaultResourceInboxDequeuer<Key>({
             repository: {
                 isAnyEntryToLock: async () => true,
-                reserveEntries: async () => {
-                    if (reserved) {
-                        return new Map();
-                    }
-                    reserved = true;
-                    return new Map([[harness.entry.key, harness.entry]]);
-                },
+                reserveEntries,
+
                 reserveTimeoutEntries: async () => new Map(),
                 reserveOverdueRetryEntries: async () => new Map(),
                 reserveRetryExhaustionFinalizations: async () => new Map(),
@@ -66,8 +83,8 @@ describe('AppInbox retry exhaustion', () => {
                 jitterUnit: () => 0.5,
                 onRetryExhausted,
                 onRetryExhaustionTelemetry: (event) => {
-                    if (event.failure.source === 'processing') {
-                        telemetry.push(event as ResourceInboxRetryExhaustion);
+                    if ('exhaustedAtEpochMs' in event) {
+                        telemetry.push(event);
                     }
                 }
             }

@@ -17,10 +17,12 @@ import {
     createALOutboundAdmissionStore,
     type ALOutboundPreparedMessageDecoder
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import type { ALOutboundCapturedPolicyTiming } from '@shared/alm/outbound/admission/al-outbound-captured-policy-timing.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 
+import type { PSqlQueueReleaseTiming } from '../../queuebox/postgres/p-sql-queue-release-timing.ts';
 import type { PSqlRuntimeStateRepository } from '../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { PSqlAdmissionWorkBackend } from './p-sql-admission-work-backend.ts';
 
@@ -34,10 +36,14 @@ export interface CreatePSqlALRuntimeStoresInput {
 }
 
 export interface CreatePSqlALOutboundRuntimeStoresInput<TPrepared> extends CreatePSqlALRuntimeStoresInput {
+    readonly outboundReleaseTiming?: PSqlQueueReleaseTiming.Port;
+    readonly capturedPolicyTiming?: ALOutboundCapturedPolicyTiming.Capability;
     readonly decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>;
 }
 
 export interface CreateDefaultPSqlALRuntimeStoresInput {
+    readonly outboundReleaseTiming?: PSqlQueueReleaseTiming.Port;
+    readonly capturedPolicyTiming?: ALOutboundCapturedPolicyTiming.Capability;
     readonly repository: PSqlRuntimeStateRepository;
     readonly namespace?: string;
     readonly orderingTrackTtlMs?: number;
@@ -77,7 +83,7 @@ export function createPSqlALInboundRuntimeStores(
     input: CreatePSqlALRuntimeStoresInput
 ): ALInboundRuntimeStores {
     const namespace = `${input.namespace}:inbound:admission`;
-    const backend = new PSqlAdmissionWorkBackend(input.repository.sql, namespace, input.nowMs);
+    const backend = new PSqlAdmissionWorkBackend({ sql: input.repository.sql, namespace, nowMs: input.nowMs });
     return {
         admissionStore: createALInboundAdmissionStore({
             nowMs: input.nowMs,
@@ -97,7 +103,12 @@ export function createPSqlALOutboundRuntimeStores<TPrepared>(
     input: CreatePSqlALOutboundRuntimeStoresInput<TPrepared>
 ): ALOutboundRuntimeStores<TPrepared> {
     const namespace = `${input.namespace}:outbound:admission`;
-    const backend = new PSqlAdmissionWorkBackend(input.repository.sql, namespace, input.nowMs);
+    const backend = new PSqlAdmissionWorkBackend({
+        sql: input.repository.sql,
+        namespace,
+        nowMs: input.nowMs,
+        releaseTiming: input.outboundReleaseTiming
+    });
     return {
         admissionStore: createALOutboundAdmissionStore({
             nowMs: input.nowMs,
@@ -106,7 +117,8 @@ export function createPSqlALOutboundRuntimeStores<TPrepared>(
             backend,
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
             retention: normalizeALRuntimeStoreRetention(input.retention),
-            decodePrepared: input.decodePrepared
+            decodePrepared: input.decodePrepared,
+            capturedPolicyTiming: input.capturedPolicyTiming
         }),
         workQueue: backend.workQueue
     };
@@ -123,7 +135,9 @@ export function createDefaultPSqlALOutboundRuntimeStores<TPrepared>(
 ): ALOutboundRuntimeStores<TPrepared> {
     return createPSqlALOutboundRuntimeStores({
         ...toDefaultPSqlALRuntimeStoresInput(options, Date.now),
-        decodePrepared: options.decodePrepared
+        decodePrepared: options.decodePrepared,
+        outboundReleaseTiming: options.outboundReleaseTiming,
+        capturedPolicyTiming: options.capturedPolicyTiming
     });
 }
 

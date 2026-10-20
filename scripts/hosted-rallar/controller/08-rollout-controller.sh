@@ -10,7 +10,6 @@ RALLAR_INCLUDE_CADDY="${RALLAR_INCLUDE_CADDY:-0}"
 RALLAR_INSTALL_PLAYWRIGHT="${RALLAR_INSTALL_PLAYWRIGHT:-0}"
 RALLAR_BLACK_BOX_BROWSER_ENGINE="${RALLAR_BLACK_BOX_BROWSER_ENGINE:-chromium}"
 RALLAR_ACME_EMAIL="${RALLAR_ACME_EMAIL:-}"
-RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS="${RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS:-86400000}"
 RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS="${RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS:-}"
 RALLAR_DISTRIBUTED_ARTIFACT_DIR="${RALLAR_DISTRIBUTED_ARTIFACT_DIR:-/tmp/rallar-distributed-runs}"
 RALLAR_ROLLOUT_CONTROL_STATE_DIR="${RALLAR_ROLLOUT_CONTROL_STATE_DIR:-/var/lib/rallar-black-box-control}"
@@ -268,10 +267,11 @@ write_api_timing_environment() {
 }
 
 write_api_prod_profile_environment() {
-	update_env_value "${RALLAR_API_ENV_FILE}" "DATABASE_URL" \
-		"$(resolve_rallar_api_database_url "${RALLAR_API_ENV_FILE}")"
-	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS" \
-		"$(resolve_rallar_api_operator_client_ids "${RALLAR_API_ENV_FILE}" "${RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS}")"
+	local database_url operator_client_ids
+	database_url="$(read_rallar_api_database_url "${RALLAR_API_ENV_FILE}")" || return 1
+	operator_client_ids="$(resolve_rallar_api_operator_client_ids "${RALLAR_API_ENV_FILE}" "${RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS}")" || return 1
+	update_env_value "${RALLAR_API_ENV_FILE}" "DATABASE_URL" "${database_url}"
+	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS" "${operator_client_ids}"
 }
 
 stopped_services=0
@@ -296,8 +296,85 @@ restart_stopped_services_on_error() {
 	exit "${exit_code}"
 }
 
+update_api_rtc_topology_env() {
+	local key
+	local keys=(
+		RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT
+		RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE
+		RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE
+		RALLAR_RTC_TOPOLOGY_MESH_PARAM_K
+	)
+
+	for key in "${keys[@]}"; do
+		if [[ "${!key+x}" == "x" ]]; then
+			update_env_value "${RALLAR_API_ENV_FILE}" "${key}" "${!key}"
+		fi
+	done
+}
+
+require_writable_api_diagnostic_configuration() {
+	local key status server_timing requested=0
+	server_timing="$(printf '%s' "${RALLAR_API_SERVER_TIMING}" | tr '[:upper:]' '[:lower:]')"
+	case "${server_timing}" in 1 | true | yes | on) requested=1 ;; esac
+	for key in RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE \
+		RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE RALLAR_RTC_TOPOLOGY_MESH_PARAM_K; do
+		if [[ "${!key+x}" == x ]]; then requested=1; fi
+	done
+	[[ "${requested}" == 1 ]] || return 0
+	[[ -e "${RALLAR_API_SECRET_FILE}" || -L "${RALLAR_API_SECRET_FILE}" ]] || return 0
+	for key in RALLAR_TIMING_LOGS RALLAR_APP_INBOX_PHASE_TIMING \
+		RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE \
+		RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE RALLAR_RTC_TOPOLOGY_MESH_PARAM_K; do
+		if read_rallar_api_file_value "${RALLAR_API_SECRET_FILE}" "${key}" >/dev/null; then
+			echo "Secret-file override for ${key} cannot be changed by rollout." >&2
+			return 1
+		else
+			status=$?
+			[[ "${status}" == 3 ]] || return "${status}"
+		fi
+	done
+}
+
+resolve_operator_token_ttl_ms() {
+	local ttl status
+	if [[ "${RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS+x}" == x ]]; then
+		ttl="${RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS}"
+	elif ttl="$(read_rallar_api_effective_env_value "${RALLAR_API_ENV_FILE}" RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS)"; then
+		:
+	else
+		status=$?
+		[[ "${status}" == 3 ]] || return "${status}"
+		ttl=86400000
+	fi
+	[[ "${ttl}" =~ ^[1-9][0-9]*$ ]] || {
+		echo "RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS must be a positive integer." >&2
+		return 1
+	}
+	printf '%s' "${ttl}"
+}
+
+restore_api_diagnostic_configuration() {
+	local key value
+	[[ "${RALLAR_API_CAPTURE_OWNER:-}" == api-* ]] || return 1
+	jq -e '
+	  keys == (["RALLAR_TIMING_LOGS", "RALLAR_APP_INBOX_PHASE_TIMING", "RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT",
+	    "RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE", "RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE", "RALLAR_RTC_TOPOLOGY_MESH_PARAM_K"] | sort) and
+	  all(to_entries[]; .key as $key | .value |
+	    if .present == false then .value == null and .source == null
+	    else .present == true and .source == "environment" and
+	      (if $key == "RALLAR_TIMING_LOGS" then .value == "0" or .value == "1"
+	       elif $key == "RALLAR_APP_INBOX_PHASE_TIMING" then .value == "true" or .value == "false"
+	       else .value | test("^[1-9][0-9]*$") end) end)' "${RALLAR_API_RESTORE_CONFIGURATION}" >/dev/null
+	while IFS=$'\t' read -r key value; do
+		update_env_value "${RALLAR_API_ENV_FILE}" "${key}" "${value}"
+	done < <(jq -r 'to_entries[] | [.key, (.value.value // "")] | @tsv' "${RALLAR_API_RESTORE_CONFIGURATION}")
+}
+
 run_rollout_self_test() {
 	case "${RALLAR_ROLLOUT_SCRIPT_SELF_TEST:-}" in
+	restore-api-diagnostics)
+		restore_api_diagnostic_configuration
+		;;
 	checkout-ref)
 		update_rollout_checkout "${RALLAR_CHECKOUT_DIR}" "${RALLAR_REPO_REF}"
 		printf 'checkoutHead=%s\n' "$(git -C "${RALLAR_CHECKOUT_DIR}" rev-parse HEAD)"
@@ -332,17 +409,12 @@ run_rollout_self_test() {
 		echo "wroteApiProdEnvironment=true"
 		;;
 	write-api-optional-environment)
-		local name
-		local names=(
-			RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT
-			RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE
-			RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE
-			RALLAR_RTC_TOPOLOGY_MESH_PARAM_K
-		)
-		for name in "${names[@]}"; do
-			update_env_value "${RALLAR_API_ENV_FILE}" "${name}" "${!name:-}"
-		done
+		update_api_rtc_topology_env
 		echo "wroteApiOptionalEnvironment=true"
+		;;
+	preflight-api-overrides)
+		require_writable_api_diagnostic_configuration
+		echo "writableApiDiagnosticConfiguration=true"
 		;;
 	*)
 		echo "Unknown RALLAR_ROLLOUT_SCRIPT_SELF_TEST: ${RALLAR_ROLLOUT_SCRIPT_SELF_TEST}" >&2
@@ -361,10 +433,23 @@ if [[ "$(id -u)" != "0" ]]; then
 	exit 1
 fi
 
+source "${SCRIPT_DIR}/rallar-controller-lock.sh"
+rallar_lock_controller
 source "${SCRIPT_DIR}/rallar-deno-runtime.sh"
 source "${SCRIPT_DIR}/rallar-public-spa-env.sh"
 source "${SCRIPT_DIR}/rallar-playwright-install.sh"
 source "${SCRIPT_DIR}/rallar-deployment-readiness.sh"
+if [[ "${RALLAR_PRESERVE_PUBLIC_SETTINGS:-0}" == 1 ]]; then
+	public_settings="$(read_rallar_public_spa_settings)"
+	while IFS='=' read -r key value; do
+		case "${key}" in
+		VITE_RALLAR_APPLICATION_ID) key=RALLAR_BLACK_BOX_APPLICATION_ID ;;
+		VITE_RALLAR_WORKSPACE_ID) key=RALLAR_BLACK_BOX_WORKSPACE_ID ;;
+		esac
+		printf -v "${key}" '%s' "${value}"
+	done <<<"${public_settings}"
+	unset public_settings key value
+fi
 apply_rallar_public_spa_defaults
 apply_rallar_public_cors_defaults
 
@@ -438,46 +523,18 @@ normalize_api_environment_allowlist() {
 	chown root:root "${RALLAR_API_ENV_FILE}"
 }
 
-read_env_value() {
-	local env_file="$1"
-	local key="$2"
-
-	if [[ ! -r "${env_file}" ]]; then
-		return 0
-	fi
-
-	grep -E "^${key}=" "${env_file}" |
-		tail -n 1 |
-		cut -d= -f2- || true
-}
-
 ensure_operator_token_secret() {
-	local secret="${RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET:-}"
-
-	if [[ -z "${secret}" ]]; then
-		secret="$(read_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET")"
-	fi
-	if [[ -z "${secret}" ]]; then
-		secret="$(read_env_value "/etc/rallar/control-server.env" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET")"
-	fi
-	if [[ -z "${secret}" ]]; then
-		secret="$(openssl rand -hex 32)"
-	fi
+	local ttl="$1" secret
+	secret="$(read_rallar_api_effective_env_value "${RALLAR_API_ENV_FILE}" RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET)"
 
 	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET" "${secret}"
-	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS" "${RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS}"
-	update_env_value "/etc/rallar/control-server.env" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET" "${secret}"
+	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS" "${ttl}"
+	update_env_value "${RALLAR_CONTROL_ENV_FILE}" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET" "${secret}"
 }
 
 ensure_api_auth_credential_secret() {
-	local secret="${RALLAR_AUTH_CREDENTIAL_SECRET:-}"
-
-	if [[ -z "${secret}" ]]; then
-		secret="$(read_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_AUTH_CREDENTIAL_SECRET")"
-	fi
-	if [[ -z "${secret}" ]]; then
-		secret="$(openssl rand -hex 32)"
-	fi
+	local secret
+	secret="$(read_rallar_api_effective_env_value "${RALLAR_API_ENV_FILE}" RALLAR_AUTH_CREDENTIAL_SECRET)"
 	if ((${#secret} < 32)); then
 		echo "RALLAR_AUTH_CREDENTIAL_SECRET must contain at least 32 characters." >&2
 		exit 1
@@ -491,25 +548,9 @@ update_api_cors_origins() {
 	update_env_value "${RALLAR_API_ENV_FILE}" "CORS_ORIGINS" "${RALLAR_API_CORS_ORIGINS}"
 }
 
-update_api_rtc_topology_env() {
-	local key
-	local keys=(
-		RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT
-		RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE
-		RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE
-		RALLAR_RTC_TOPOLOGY_MESH_PARAM_K
-	)
-
-	for key in "${keys[@]}"; do
-		if [[ "${!key+x}" == "x" ]]; then
-			update_env_value "/etc/rallar/api-v1.env" "${key}" "${!key}"
-		fi
-	done
-}
-
 update_control_allowed_origins() {
 	apply_rallar_public_cors_defaults
-	update_env_value "/etc/rallar/control-server.env" "RALLAR_BLACK_BOX_ALLOWED_ORIGINS" "${RALLAR_BLACK_BOX_ALLOWED_ORIGINS}"
+	update_env_value "${RALLAR_CONTROL_ENV_FILE}" "RALLAR_BLACK_BOX_ALLOWED_ORIGINS" "${RALLAR_BLACK_BOX_ALLOWED_ORIGINS}"
 }
 
 require_command git
@@ -526,6 +567,10 @@ if [[ ! -d "${RALLAR_CHECKOUT_DIR}/.git" ]]; then
 	exit 1
 fi
 
+validate_rallar_api_existing_store_configuration "${RALLAR_API_ENV_FILE}"
+require_writable_api_diagnostic_configuration
+operator_token_ttl_ms="$(resolve_operator_token_ttl_ms)"
+
 repair_known_rollout_generated_checkout_changes "${RALLAR_CHECKOUT_DIR}"
 
 if [[ -n "$(git -C "${RALLAR_CHECKOUT_DIR}" status --porcelain)" ]]; then
@@ -541,7 +586,7 @@ echo "Checkout: ${RALLAR_CHECKOUT_DIR}"
 echo "Services:"
 printf "  %s\n" "${services[@]}"
 echo
-echo "Note: the rollout wipes the API-v1 Postgres store ${RALLAR_API_DATABASE_NAME} and applies the migrations before the API starts."
+echo "Note: the rollout preserves the API-v1 Postgres store ${RALLAR_API_DATABASE_NAME} and applies migrations before the API starts."
 
 trap restart_stopped_services_on_error ERR
 
@@ -616,12 +661,15 @@ update_api_rtc_topology_env
 
 echo "==> Writing API timing env"
 write_api_timing_environment
+if [[ -n "${RALLAR_API_RESTORE_CONFIGURATION:-}" ]]; then
+	restore_api_diagnostic_configuration
+fi
 
 echo "==> Updating control-server browser origins"
 update_control_allowed_origins
 
 echo "==> Ensuring black-box operator token broker secret"
-ensure_operator_token_secret
+ensure_operator_token_secret "${operator_token_ttl_ms}"
 
 echo "==> Ensuring stable API auth credential secret"
 ensure_api_auth_credential_secret
@@ -630,7 +678,7 @@ echo "==> Writing API prod profile env"
 write_api_prod_profile_environment
 
 rallar_playwright_operation_stage "rollout-postgres-store"
-reset_rallar_api_postgres_store "${RALLAR_CHECKOUT_DIR}" "$(read_env_value "${RALLAR_API_ENV_FILE}" "DATABASE_URL")"
+migrate_rallar_api_postgres_store "${RALLAR_CHECKOUT_DIR}" "$(read_rallar_api_database_url "${RALLAR_API_ENV_FILE}")"
 
 echo "==> Writing Caddyfile"
 write_rallar_controller_caddyfile
@@ -653,7 +701,14 @@ rallar_playwright_operation_stage "rollout-service-health"
 wait_for_url "API-v1 config" "http://127.0.0.1:8080/api/config"
 wait_for_url "API-v1 docs" "http://127.0.0.1:8080/api/docs"
 wait_for_url "control health" "http://127.0.0.1:5180/health" -H "x-forwarded-proto: https"
-verify_rallar_control_public_cors
+if [[ "${RALLAR_PRESERVE_PUBLIC_SETTINGS:-0}" == 1 ]]; then
+	verify_rallar_control_public_cors >/dev/null 2>&1 || {
+		echo 'Public control CORS verification failed for preserved settings.' >&2
+		exit 1
+	}
+else
+	verify_rallar_control_public_cors
+fi
 
 deployment_browser_status="not-verified"
 if verify_rallar_playwright_browser \

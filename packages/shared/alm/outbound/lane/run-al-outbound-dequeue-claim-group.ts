@@ -3,7 +3,10 @@ import type { ALWorkClaim } from '../../work/al-work-queue-port.ts';
 import type { ALOutboundEffectSnapshot } from '../admission/al-outbound-admission-store.ts';
 import type { ALOutboundDequeuedAdmission } from './al-outbound-dequeued-admission.ts';
 import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observation.ts';
-import type { ALOutboundClaimObservation } from './settle-al-outbound-claim.ts';
+import type {
+    ALOutboundClaimAttemptSettlement,
+    ALOutboundClaimObservation
+} from './settle-al-outbound-claim.ts';
 
 export namespace ALOutboundDequeueClaimGroup {
     export interface Input<TPrepared> {
@@ -11,21 +14,19 @@ export namespace ALOutboundDequeueClaimGroup {
         readonly claims: readonly ALWorkClaim[];
         /** What `runOutboundClaim` runs before a dequeued row's admission, here for every row at once. */
         readonly readWork: (claim: ALWorkClaim) => ALOutboundEffectSnapshot<TPrepared>;
+        readonly timing: ALOutboundDequeuedAdmission.TimingSink | undefined;
         readonly hasReachedDeadline: (claim: ALWorkClaim) => boolean;
         readonly createEvidence: (
             work: ALOutboundEffectSnapshot<TPrepared>
         ) => ALOutboundReceiptWorkEvidence | undefined;
         readonly readSettledBeforeEffect: (
             work: ALOutboundEffectSnapshot<TPrepared>,
-            evidence: ALOutboundReceiptWorkEvidence | undefined
+            observed: ALOutboundClaimObservation
         ) => ALWorkAttemptResult | undefined;
         readonly admit: (
             members: readonly ALOutboundDequeuedAdmission.Member<TPrepared>[]
         ) => readonly Promise<ALWorkAttemptResult>[];
-        readonly settle: (
-            attempt: Promise<ALWorkAttemptResult>,
-            observed: ALOutboundClaimObservation
-        ) => Promise<ALWorkAttemptResult>;
+        readonly settle: (settlement: ALOutboundClaimAttemptSettlement) => Promise<ALWorkAttemptResult>;
     }
 }
 
@@ -40,44 +41,63 @@ export function runALOutboundDequeueClaimGroup<TPrepared>(
     if (input.claims.length < 2) {
         return attempts;
     }
-    const starts = input.claims.map((claim) => startDequeueClaim(input, claim));
+    const starts = input.claims.map((claim, index) => startDequeueClaim(input, claim, index));
     const admitted = input.admit(starts.flatMap((start) => start.kind === 'admit' ? [start.member] : []));
     let admittedIndex = 0;
     input.claims.forEach((claim, index) => {
         const start = starts[index]!;
         const attempt = start.kind === 'admit' ? admitted[admittedIndex++]! : start.attempt;
-        attempts.set(claim, input.settle(attempt, { evidence: start.member?.evidence }));
+        attempts.set(claim, input.settle({ attempt, observed: start.observation, claim, batchIndex: index }));
     });
     return attempts;
 }
 
 /** A dequeued row of a group: admitted with the group, or already settled before its admission. */
 type ALOutboundDequeueStart<TPrepared> =
-    | Readonly<{ kind: 'admit'; member: ALOutboundDequeuedAdmission.Member<TPrepared>; }>
+    | Readonly<{
+        kind: 'admit';
+        member: ALOutboundDequeuedAdmission.Member<TPrepared>;
+        observation: ALOutboundClaimObservation;
+    }>
     | Readonly<{
         kind: 'settled';
-        member: ALOutboundDequeuedAdmission.Member<TPrepared> | undefined;
+        observation: ALOutboundClaimObservation;
         attempt: Promise<ALWorkAttemptResult>;
     }>;
 
 /** A row whose work cannot be read is dropped once its deadline passed, and rejected before. */
 function startDequeueClaim<TPrepared>(
     input: ALOutboundDequeueClaimGroup.Input<TPrepared>,
-    claim: ALWorkClaim
+    claim: ALWorkClaim,
+    batchIndex: number
 ): ALOutboundDequeueStart<TPrepared> {
+    const observation: ALOutboundClaimObservation = { evidence: undefined };
+    if (input.timing !== undefined) {
+        observation.timing = input.timing;
+    }
     let work: ALOutboundEffectSnapshot<TPrepared>;
     try {
         work = input.readWork(claim);
     }
     catch (error) {
-        const attempt: Promise<ALWorkAttemptResult> = input.hasReachedDeadline(claim)
+        const expired = input.hasReachedDeadline(claim);
+        if (observation.timing !== undefined) {
+            observation.terminalReason = expired ? 'expired' : 'decode-failed';
+        }
+        const attempt: Promise<ALWorkAttemptResult> = expired
             ? Promise.resolve({ status: 'completed' })
             : Promise.reject(error);
-        return { kind: 'settled', member: undefined, attempt };
+        return { kind: 'settled', observation, attempt };
     }
-    const member = { effect: work, evidence: input.createEvidence(work) };
-    const settled = input.readSettledBeforeEffect(work, member.evidence);
+    observation.evidence = input.createEvidence(work);
+    const member = {
+        effect: work,
+        evidence: observation.evidence,
+        observation,
+        batchIndex
+    };
+    const settled = input.readSettledBeforeEffect(work, observation);
     return settled === undefined
-        ? { kind: 'admit', member }
-        : { kind: 'settled', member, attempt: Promise.resolve(settled) };
+        ? { kind: 'admit', member, observation }
+        : { kind: 'settled', observation, attempt: Promise.resolve(settled) };
 }

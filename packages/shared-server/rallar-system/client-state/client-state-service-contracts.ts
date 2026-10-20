@@ -8,9 +8,11 @@ import type {
     ClientSnapshot
 } from '@shared/api/client-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
+
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../runtime-state/runtime-state-repository.ts';
 import type { PersistedAuthSession } from '../auth/persistence/persisted-auth-session.ts';
+import type { GroupStateCurrentSnapshotCache } from '../group-state/snapshot/group-state-current-snapshot-cache.ts';
 import type { ClientSessionExpiryCandidate } from '../presence/session-expiry.ts';
 import type { ClientStateEventStore } from '../state-events/client-state-event-store.ts';
 import type { StateEventListQuery } from '../state-events/state-event-listing.ts';
@@ -92,6 +94,8 @@ export type ClientStateServiceDependencies = Readonly<{
     serviceId: string;
     timing?: import('../observability/timing.ts').RallarTimingSink;
     nowMs?: () => number;
+    /** A backend-owned row-version-probed reader; absence uses batched durable group reads. */
+    currentGroupSnapshots?: Pick<GroupStateCurrentSnapshotCache, 'readSnapshot'>;
 }>;
 
 export function requiresClientWrite(

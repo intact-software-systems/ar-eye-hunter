@@ -12,6 +12,7 @@ import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.t
 import {
     createALOutboundAdmissionStore,
     type ALOutboundAdmissionStore,
+    type ALOutboundCommitBundle,
     type ALOutboundPlanner
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { toALOutboundCanonicalKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
@@ -125,8 +126,8 @@ async function createStores(): Promise<readonly [ALOutboundAdmissionStore<Outbou
         retention: normalizeALRuntimeStoreRetention()
     };
     return [
-        createALOutboundAdmissionStore({ ...configuration, backend: new PSqlAdmissionWorkBackend(first, namespace, Date.now) }),
-        createALOutboundAdmissionStore({ ...configuration, backend: new PSqlAdmissionWorkBackend(second, namespace, Date.now) })
+        createALOutboundAdmissionStore({ ...configuration, backend: new PSqlAdmissionWorkBackend({ sql: first, namespace, nowMs: Date.now }) }),
+        createALOutboundAdmissionStore({ ...configuration, backend: new PSqlAdmissionWorkBackend({ sql: second, namespace, nowMs: Date.now }) })
     ];
 }
 
@@ -176,7 +177,10 @@ async function readSupersedingDecision(
     });
 }
 
-async function readSupersedingBundle(store: ALOutboundAdmissionStore<OutboundTestPayload>, message: ALMessage) {
+async function readSupersedingBundle(
+    store: ALOutboundAdmissionStore<OutboundTestPayload>,
+    message: ALMessage
+): Promise<ALOutboundCommitBundle<OutboundTestPayload>> {
     const decision = await readSupersedingDecision(store, message);
     if (decision.bundle === undefined) {
         throw new Error(`Expected an outbound admission, received ${decision.verdict.kind}`);

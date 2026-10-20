@@ -13,8 +13,10 @@ import {
     validateStateWriteOutputDestinations,
     type StateWriteDiagnosticConfiguration
 } from './api-v1-state-write-benchmark-options.ts';
+import type { StateWriteDiagnosticStatus } from './state-write-benchmark-output.ts';
 import { computeStateWriteDiagnosticPhase } from './state-write-diagnostic-projection.ts';
-import type { StateWriteDiagnosticBudget, StateWriteDiagnosticPhase } from './state-write-diagnostic-projection.ts';
+import type { StateWriteDiagnosticBudget } from './state-write-diagnostic-projection.ts';
+import type { StateWriteDiagnosticPhase } from './state-write-diagnostic-projection.ts';
 
 export interface StateWriteDiagnosticFilePort {
     readonly mkdir: typeof files.mkdir;
@@ -22,13 +24,6 @@ export interface StateWriteDiagnosticFilePort {
     readonly rename: typeof files.rename;
     readonly realpath: typeof files.realpath;
     readonly lstat: typeof files.lstat;
-}
-
-export interface StateWriteDiagnosticStatus {
-    readonly kind: 'disabled' | 'complete' | 'incomplete';
-    readonly stage: 'none' | 'reservation' | 'projection' | 'phase-write' | 'operation' | 'receipt' | 'capacity';
-    readonly phases: number;
-    readonly bytes: number;
 }
 
 const RECEIPT_RESERVE_BYTES = 1024;

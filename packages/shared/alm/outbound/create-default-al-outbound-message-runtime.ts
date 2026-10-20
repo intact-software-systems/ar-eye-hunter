@@ -52,6 +52,8 @@ export interface CreateDefaultALOutboundMessageRuntimeDependencies<TPrepared>
                 | 'planRepairMessage'
                 | 'hopPeerIds'
                 | 'diagnostics'
+                | 'dequeueTiming'
+                | 'readDequeueAuthority'
                 | 'settlements'
             >
         > {
@@ -96,6 +98,8 @@ export function createDefaultALOutboundMessageRuntime<TPrepared>(
         planRepairMessage: dependencies.planRepairMessage,
         hopPeerIds: dependencies.hopPeerIds,
         diagnostics: dependencies.diagnostics,
+        dequeueTiming: dependencies.dequeueTiming,
+        readDequeueAuthority: dependencies.readDequeueAuthority,
         settlements: dependencies.settlements
     });
 }

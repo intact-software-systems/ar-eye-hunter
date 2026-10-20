@@ -14,7 +14,7 @@ import type {
 } from '@shared/api/state-types.ts';
 import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { toError } from '@shared/resilience/to-error.ts';
+import { settleAll } from '@shared/resilience/settle-all.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { mapWithConcurrency } from '../map-with-concurrency.ts';
 import {
@@ -124,6 +124,14 @@ interface MeasuredWorkloadInput {
     readonly concurrency: number;
 }
 
+interface MeasureCommandInput {
+    readonly runtime: StateWriteWorkloadRuntime;
+    readonly scope: StateScope;
+    readonly command: MutationCommand;
+    readonly stackIndex: number;
+    readonly capture: StateWriteCommandCapture | undefined;
+}
+
 export async function executeMeasuredWorkload(
     { commands, runtimes, scope, concurrency, capture }: MeasuredWorkloadInput
 ): Promise<StateWriteBenchmarkCommand[]> {
@@ -139,38 +147,51 @@ export async function executeMeasuredWorkload(
                 if (!runtime) {
                     throw new Error(`Missing service runtime at stack ${stackIndex}`);
                 }
-                const commandId = commandIdentifier(scope, command);
-                const commandStartedAt = performance.now();
-                try {
-                    await executeMeasuredCommand({ runtime, scope, command, requestId: commandId });
-                }
-                catch (error) {
-                    capture?.retain({ commandId, kind, stackIndex, status: 'operation-failed' }, {
-                        commandId,
-                        startedAtMonotonicMs: commandStartedAt,
-                        endedAtMonotonicMs: 'unavailable'
-                    });
-                    throw error;
-                }
-                const commandEndedAt = performance.now();
-                const result: StateWriteBenchmarkCommand = {
-                    commandId,
-                    kind,
-                    latencyMs: commandEndedAt - commandStartedAt,
-                    stackIndex,
-                    status: 'accepted'
-                };
-                capture?.retain(result, {
-                    commandId,
-                    startedAtMonotonicMs: commandStartedAt,
-                    endedAtMonotonicMs: commandEndedAt
-                });
-                return result;
+                return await measureCommandWithOwnedPump({ runtime, scope, command, stackIndex, capture });
             }
         );
         rawCommands.push(...phaseResults);
     }
     return rawCommands;
+}
+
+async function measureCommandWithOwnedPump({
+    runtime,
+    scope,
+    command,
+    stackIndex,
+    capture
+}: MeasureCommandInput): Promise<StateWriteBenchmarkCommand> {
+    const commandId = commandIdentifier(scope, command);
+    const commandStartedAt = performance.now();
+    const operation = executeMeasuredCommand({ runtime, scope, command, requestId: commandId }).then(
+        () => {
+            const commandEndedAt = performance.now();
+            const result: StateWriteBenchmarkCommand = {
+                commandId,
+                kind: command.kind,
+                latencyMs: commandEndedAt - commandStartedAt,
+                stackIndex,
+                status: 'accepted'
+            };
+            capture?.retain(result, {
+                commandId,
+                startedAtMonotonicMs: commandStartedAt,
+                endedAtMonotonicMs: commandEndedAt
+            });
+            return result;
+        },
+        (error) => {
+            capture?.retain({ commandId, kind: command.kind, stackIndex, status: 'operation-failed' }, {
+                commandId,
+                startedAtMonotonicMs: commandStartedAt,
+                endedAtMonotonicMs: 'unavailable'
+            });
+            throw error;
+        }
+    );
+    await runAppInboxPumpUntilCompletion(runtime, operation);
+    return await operation;
 }
 
 interface ExecuteMeasuredCommandInput {
@@ -282,9 +303,8 @@ async function runMeasuredProfileMutation(
     input: RoutedBenchmarkMutation
 ): Promise<void> {
     const { runtime, scope, command, clientContextId } = input;
-    await runAppInboxMutation(
-        runtime,
-        runtime.client.processAuthenticatedEntryUntilCompletion(
+    requireAppInboxSuccess(
+        await runtime.client.processAuthenticatedEntryUntilCompletion(
             {
                 type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
                 topicId: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
@@ -312,9 +332,8 @@ async function runMeasuredInstanceMutation(
     input: RoutedBenchmarkMutation
 ): Promise<void> {
     const { runtime, scope, command, clientContextId } = input;
-    await runAppInboxMutation(
-        runtime,
-        runtime.client.processAuthenticatedEntryUntilCompletion(
+    requireAppInboxSuccess(
+        await runtime.client.processAuthenticatedEntryUntilCompletion(
             {
                 type: AppInboxType.CLIENT_INSTANCE_UPSERT,
                 topicId: AppInboxType.CLIENT_INSTANCE_UPSERT,
@@ -344,9 +363,8 @@ async function runMeasuredMembershipMutation(
     input: RoutedBenchmarkMutation
 ): Promise<void> {
     const { runtime, scope, command, groupContextId } = input;
-    await runAppInboxMutation(
-        runtime,
-        runtime.group.processAuthenticatedGroupEntryUntilCompletion(
+    requireAppInboxSuccess(
+        await runtime.group.processAuthenticatedGroupEntryUntilCompletion(
             {
                 type: AppInboxType.GROUP_MEMBER_UPSERT,
                 topicId: AppInboxType.GROUP_MEMBER_UPSERT,
@@ -442,9 +460,8 @@ async function runMeasuredConfigMutation(
     input: RoutedBenchmarkMutation
 ): Promise<void> {
     const { runtime, scope, command, groupContextId } = input;
-    await runAppInboxMutation(
-        runtime,
-        runtime.group.processAuthenticatedGroupEntryUntilCompletion(
+    requireAppInboxSuccess(
+        await runtime.group.processAuthenticatedGroupEntryUntilCompletion(
             {
                 type: AppInboxType.GROUP_UPDATE,
                 topicId: AppInboxType.GROUP_UPDATE,
@@ -489,9 +506,8 @@ async function runMeasuredTopologyMutation(
             }
         }
     });
-    await runAppInboxMutation(
-        runtime,
-        runtime.topology.processAuthenticatedEntryUntilCompletion(
+    requireAppInboxSuccess(
+        await runtime.topology.processAuthenticatedEntryUntilCompletion(
             {
                 type: AppInboxType.TOPOLOGY_CONFIG_PUT,
                 topicId: AppInboxType.TOPOLOGY_CONFIG_PUT,
@@ -532,9 +548,8 @@ type RunGroupPresenceMutationInput =
 async function runGroupPresenceMutation(
     input: RunGroupPresenceMutationInput
 ): Promise<void> {
-    await runAppInboxMutation(
-        input.runtime,
-        input.runtime.group.processAuthenticatedGroupEntryUntilCompletion(
+    requireAppInboxSuccess(
+        await input.runtime.group.processAuthenticatedGroupEntryUntilCompletion(
             toGroupPresenceEnqueue(input),
             input.command.clientAuthority
         )
@@ -579,33 +594,33 @@ function toGroupPresenceEnqueue(
     }
 }
 
-export async function runAppInboxMutation<Failure extends string | Readonly<{ message: string; }>, Result>(
+export async function runAppInboxPumpUntilCompletion<Result>(
     runtime: StateWriteWorkloadRuntime,
-    operation: Promise<Either<Failure, Result>>
+    operation: Promise<Result>
 ): Promise<void> {
     let settled = false;
-    const pending = operation.then(
-        (value) => {
-            settled = true;
-            return { status: 'fulfilled' as const, value };
-        },
-        (reason) => {
-            settled = true;
-            return { status: 'rejected' as const, reason: toError(reason) };
+    const observedOperation = operation.finally(() => {
+        settled = true;
+    }).then(() => undefined);
+    const pump = (async () => {
+        while (!settled) {
+            await runtime.inbox.dequeueInbox(
+                InboxQueueReader.INBOX_DEQUEUE_TYPES,
+                runtime.resilience
+            );
+            if (settled) {
+                break;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 0));
         }
-    );
-    while (!settled) {
-        await runtime.inbox.dequeueInbox(
-            InboxQueueReader.INBOX_DEQUEUE_TYPES,
-            runtime.resilience
-        );
-        await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-    const completion = await pending;
-    if (completion.status === 'rejected') {
-        throw completion.reason;
-    }
-    completion.value.fold(
+    })();
+    await settleAll([observedOperation, pump]);
+}
+
+export function requireAppInboxSuccess<Failure extends string | Readonly<{ message: string; }>, Result>(
+    completion: Either<Failure, Result>
+): void {
+    completion.fold(
         (error) => {
             throw new Error(typeof error === 'string' ? error : error.message);
         },

@@ -7,19 +7,24 @@ import {
 } from 'vitest';
 
 import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { createAppInboxResourceEntry } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
+import { toPhysicalAppInboxQueueKey } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
 import { AppInboxCommandClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-command-client.ts';
+import { AppInboxQueueEntryWriter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-queue-entry-writer.ts';
 import type { AppInboxResultWaiter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-result-waiter.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { decodeJsonWireText, type JsonWireObject } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
+import type { ResourceInboxAttemptReleaseTelemetry } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import { EntityStatus, type Key } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import {
     computeStateWriteDiagnosticPhase,
+    STATE_WRITE_DIAGNOSTIC_BUDGET,
     type StateWriteDiagnosticPhase
 } from '../../../../../apps/api-v1/scripts/perf/state-write/state-write-diagnostic-projection.ts';
+import { TestResourceInbox } from '../../rallar-system/app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxQueueMessageFixture } from '../../rallar-system/app-inbox/test-support/create-app-inbox-queue-message-fixture.ts';
 
 const profile = {
@@ -102,24 +107,318 @@ function readRecords(serialized: string): readonly JsonWireObject[] {
     });
 }
 
+function createSqlEvent(): RallarTimingEvent {
+    return {
+        type: 'rallar.timing',
+        component: 'state-write-benchmark-sql',
+        operation: 'read',
+        status: 'ok',
+        durationMs: 12.34,
+        atEpochMs: 1_700_000_000_000,
+        details: { sql: 'PRIVATE-æøå-🧪', parameters: 'PRIVATE-payload' }
+    };
+}
+
+function createRelease(): ResourceInboxAttemptReleaseTelemetry {
+    return {
+        key: profile.physicalKey,
+        type: 'APP_INBOX',
+        resource: 'PRIVATE-æøå-🧪',
+        attempt: 1,
+        selectedLane: Reservator.NEW,
+        queueAgeMs: 40,
+        dueAgeMs: 3,
+        classification: 'accepted' as const,
+        status: EntityStatus.COMPLETED,
+        retryDelayMs: 0,
+        failure: { kind: 'none' as const }
+    };
+}
+
 describe('state-write diagnostic projection', () => {
-    it('retains real originating profile and instance AppInbox completions with phase timing disabled', async () => {
+    it.each([-Number.MAX_SAFE_INTEGER, -1, 0, 1, Number.MAX_SAFE_INTEGER])('retains signed observation %s with redacted not-ready identity', (duration) => {
+        const release: ResourceInboxAttemptReleaseTelemetry = {
+            ...createRelease(),
+            selectedLane: Reservator.RETRY,
+            classification: 'not-ready',
+            status: EntityStatus.RETRY,
+            reservationObservation: {
+                key: { ...profile.physicalKey },
+                reservationAttempt: 2,
+                availability: 'available',
+                boundary: 'postgres-update-returning',
+                association: 'physical-key-and-reservation-attempt',
+                previousPersistedRetryDelayUs: duration,
+                dueToReservationObservationUs: duration
+            }
+        };
+        const result = computeStateWriteDiagnosticPhase({ ...createPhase(), releases: [release] }, budget, 65_536);
+        expect(result.complete).toBe(true);
+        expect(readRecords(result.serialized).find((record) => record.record === 'release')).toMatchObject({
+            attempt: 1,
+            reservationObservation: { reservationAttempt: 2, previousPersistedRetryDelayUs: duration, dueToReservationObservationUs: duration }
+        });
+        expect(readRecords(result.serialized).at(-1)).toMatchObject({ reservationObservations: { expected: 1, available: 1, unavailable: 0 } });
+        expect(result.serialized).not.toContain('PRIVATE');
+    });
+
+    it('marks expected missing retry evidence incomplete and discloses uncaptured lanes', () => {
+        const retry = computeStateWriteDiagnosticPhase(
+            { ...createPhase(), releases: [{ ...createRelease(), selectedLane: Reservator.RETRY }] },
+            budget,
+            65_536
+        );
+        expect(retry.complete).toBe(false);
+        expect(readRecords(retry.serialized).at(-1)).toMatchObject({ reservationObservations: { expected: 1, available: 0, unavailable: 1 } });
+        for (const selectedLane of [Reservator.FAIRNESS, Reservator.TIMEOUT, Reservator.FINALIZATION]) {
+            const result = computeStateWriteDiagnosticPhase({ ...createPhase(), releases: [{ ...createRelease(), selectedLane }] }, budget, 65_536);
+            expect(result.complete).toBe(true);
+            expect(readRecords(result.serialized).find((record) => record.record === 'release')).toMatchObject({
+                reservationObservation: { availability: 'unavailable', reason: 'lane-not-captured' }
+            });
+        }
+    });
+
+    it.each(['lane', 'boundary', 'attempt', 'range', 'fraction'])('rejects contradictory observation %s', (fault) => {
+        const release: ResourceInboxAttemptReleaseTelemetry = {
+            ...createRelease(),
+            selectedLane: fault === 'lane' ? Reservator.NEW : Reservator.RETRY,
+            reservationObservation: {
+                key: profile.physicalKey,
+                reservationAttempt: fault === 'attempt' ? 2 : 1,
+                availability: 'available',
+                boundary: 'postgres-update-returning',
+                association: 'physical-key-and-reservation-attempt',
+                previousPersistedRetryDelayUs: fault === 'range' ? Number.MAX_SAFE_INTEGER + 1 : 1,
+                dueToReservationObservationUs: fault === 'fraction' ? 0.5 : 1
+            }
+        };
+        if (fault === 'boundary') {
+            Object.assign(release.reservationObservation!, { boundary: 'handler' });
+        }
+        const result = computeStateWriteDiagnosticPhase({ ...createPhase(), releases: [release] }, budget, 65_536);
+        expect(result.complete).toBe(false);
+        expect(result.serialized).not.toContain('PRIVATE');
+    });
+
+    it('counts truncated ordinary retries as expected unavailable observations', () => {
+        const result = computeStateWriteDiagnosticPhase(
+            { ...createPhase(), releases: [{ ...createRelease(), selectedLane: Reservator.RETRY }] },
+            { ...budget, eventsPerPhase: 0 },
+            65_536
+        );
+        expect(result.complete).toBe(false);
+        expect(readRecords(result.serialized).at(-1)).toMatchObject({
+            releases: { total: 1, retained: 0, truncated: 1 },
+            reservationObservations: { expected: 1, available: 0, unavailable: 1 }
+        });
+    });
+
+    it.each(['phase', 'remaining-run'])('counts a RETRY omitted by the %s byte limit as unavailable', (limit) => {
+        const release: ResourceInboxAttemptReleaseTelemetry = {
+            ...createRelease(),
+            selectedLane: Reservator.RETRY,
+            reservationObservation: {
+                key: profile.physicalKey,
+                reservationAttempt: 1,
+                availability: 'available',
+                boundary: 'postgres-update-returning',
+                association: 'physical-key-and-reservation-attempt',
+                previousPersistedRetryDelayUs: 5_000_000,
+                dueToReservationObservationUs: 3_000_000
+            }
+        };
+        const phase = { ...createPhase(), releases: [release] };
+        expect(computeStateWriteDiagnosticPhase(phase, budget, 65_536).complete).toBe(true);
+        const result = computeStateWriteDiagnosticPhase(
+            phase,
+            { ...budget, bytesPerPhase: limit === 'phase' ? 2_048 : budget.bytesPerPhase },
+            limit === 'remaining-run' ? 2_048 : 65_536
+        );
+        const records = readRecords(result.serialized);
+        expect(result.complete).toBe(false);
+        expect(records.filter((record) => record.record === 'release')).toHaveLength(0);
+        expect(records.at(-1)).toMatchObject({
+            releases: { total: 1, retained: 0, truncated: 1 },
+            reservationObservations: { expected: 1, available: 0, unavailable: 1 }
+        });
+    });
+
+    it('retains the complete SQL-heavy stream and late command facts where redundant timing rows overflow', () => {
+        const sql = createSqlEvent();
+        const events: RallarTimingEvent[] = [
+            ...Array.from({ length: 1_000 }, () => sql),
+            { ...sql, component: 'state-write-benchmark-phase', operation: 'transaction', status: 'error' },
+            createEvent(profile.logicalResourceId, { ...profile.physicalKey, attempt: 2, queueAgeMs: 42.5, dueAgeMs: 3.25 })
+        ];
+        const input = { ...createPhase(), timingEvents: events, releases: [createRelease()] };
+        const original = JSON.stringify(input);
+        const result = computeStateWriteDiagnosticPhase(input, { ...budget, eventsPerPhase: 1_003, bytesPerPhase: 320_000 }, 320_000);
+        const records = readRecords(result.serialized);
+        const timings = records.filter((record) => record.record === 'timing');
+        expect(result.complete).toBe(true);
+        expect(records[0]).toMatchObject({ schema: 'rallar.state-write.diagnostic.v3', eventStart: 'approximate-completion-minus-rounded-duration' });
+        expect(timings).toHaveLength(1_002);
+        expect(timings.slice(0, 1_000)).toEqual(Array.from({ length: 1_000 }, () => ({
+            record: 'timing',
+            component: 'state-write-benchmark-sql',
+            operation: 'read',
+            status: 'ok',
+            completedAtEpochMs: 1_700_000_000_000,
+            roundedDurationMs: 12.34,
+            association: { kind: 'process-unassociated', reason: 'sql-process-scope', observingStack: 'unavailable' },
+            queueAgeMs: 'unavailable',
+            dueAgeMs: 'unavailable'
+        })));
+        expect(timings.at(-2)).toMatchObject({ component: 'state-write-benchmark-phase', operation: 'transaction', status: 'error' });
+        expect(timings.at(-1)).toEqual({
+            record: 'timing',
+            component: 'app-inbox-phase',
+            operation: 'transaction',
+            status: 'ok',
+            completedAtEpochMs: 99_999,
+            roundedDurationMs: 12.34,
+            association: { kind: 'command-operation', commandOrdinal: 0, operation: 'profile', originatingStack: 0, observingStack: 1, attempt: 2 },
+            queueAgeMs: 42.5,
+            dueAgeMs: 3.25
+        });
+        expect(Number(timings[0]!.completedAtEpochMs) - Number(timings[0]!.roundedDurationMs)).toBe(1_699_999_999_987.66);
+        expect(Number(timings.at(-1)!.completedAtEpochMs) - Number(timings.at(-1)!.roundedDurationMs)).toBe(99_986.66);
+        const redundant = records.map((record) =>
+            record.record === 'timing'
+                ? {
+                    ...record,
+                    approximateStartedAtEpochMs: Number(record.completedAtEpochMs) - Number(record.roundedDurationMs),
+                    statusMeaning: record.component === 'state-write-benchmark-phase' ? 'wrapper-finally-not-commit' : 'timed-operation-status'
+                }
+                : record
+        ).map((record) => JSON.stringify(record) + '\n').join('');
+        expect(new TextEncoder().encode(redundant).length).toBeGreaterThan(320_000);
+        expect(result.bytes).toBe(new TextEncoder().encode(result.serialized).length);
+        expect(result.bytes).toBeLessThanOrEqual(320_000);
+        expect(records.at(-1)).toEqual({
+            record: 'completeness',
+            reservationObservations: { expected: 0, available: 0, unavailable: 0 },
+            complete: true,
+            timing: { total: 1_002, retained: 1_002, rejected: 0, truncated: 0, unassociated: 1_001 },
+            releases: { total: 1, retained: 1, rejected: 0, truncated: 0, unassociated: 0 },
+            boundaries: { total: 5, retained: 5, rejected: 0, truncated: 0, unassociated: 0 }
+        });
+        expect(JSON.stringify(input)).toBe(original);
+        expect(result.serialized).not.toContain('PRIVATE');
+    });
+
+    it.each([
+        { timings: 99_803, ceiling: 100_000, retained: 98_618, truncated: 1_185 },
+        { timings: 99_803, ceiling: undefined, retained: 99_803, truncated: 0 },
+        { timings: 108_618, ceiling: undefined, retained: 108_618, truncated: 0 },
+        { timings: 108_619, ceiling: undefined, retained: 108_618, truncated: 1 }
+    ])('accounts for $timings timing events and 1,382 releases at ceiling $ceiling', ({ timings, ceiling, retained, truncated }) => {
+        const result = computeStateWriteDiagnosticPhase(
+            {
+                ...createPhase(),
+                timingEvents: Array.from({ length: timings }, () => ({ ...createSqlEvent(), atEpochMs: 100, durationMs: 1 })),
+                releases: Array.from({ length: 1_382 }, createRelease)
+            },
+            { ...STATE_WRITE_DIAGNOSTIC_BUDGET, eventsPerPhase: ceiling ?? STATE_WRITE_DIAGNOSTIC_BUDGET.eventsPerPhase },
+            536_869_888
+        );
+        expect(result.complete).toBe(truncated === 0);
+        expect(readRecords(result.serialized).at(-1)).toEqual({
+            record: 'completeness',
+            reservationObservations: { expected: 0, available: 0, unavailable: 0 },
+            complete: truncated === 0,
+            timing: { total: timings, retained, truncated, rejected: 0, unassociated: retained },
+            releases: { total: 1_382, retained: 1_382, rejected: 0, truncated: 0, unassociated: 0 },
+            boundaries: { total: 5, retained: 5, rejected: 0, truncated: 0, unassociated: 0 }
+        });
+        expect(result.bytes).toBe(new TextEncoder().encode(result.serialized).length);
+        expect(result.bytes).toBeLessThanOrEqual(33_554_432);
+    });
+
+    it('keeps rejected associations distinct from truncation in mixed incomplete output', () => {
+        const result = computeStateWriteDiagnosticPhase(
+            {
+                ...createPhase(),
+                releases: [{ ...createRelease(), key: { ...profile.physicalKey, resourceId: 'PRIVATE-invalid' } }, createRelease()],
+                timingEvents: [createEvent('PRIVATE-unknown', {}), createSqlEvent(), createSqlEvent()]
+            },
+            { ...budget, eventsPerPhase: 2 },
+            65_536
+        );
+        expect(result.complete).toBe(false);
+        expect(readRecords(result.serialized).at(-1)).toMatchObject({
+            timing: { total: 3, retained: 1, rejected: 1, truncated: 1, unassociated: 2 },
+            releases: { total: 2, retained: 1, rejected: 1, truncated: 0, unassociated: 1 }
+        });
+    });
+
+    it('retains real logical profile, instance and group completions beyond queue key bounds', async () => {
+        const phase = createPhase();
+        const applicationId = `PRIVATE-${'application'.repeat(20)}`;
+        const workspaceId = `PRIVATE-${'workspace'.repeat(20)}`;
+        const profileCommandId = `PRIVATE-${'profile'.repeat(25)}:profile-instance:0`;
+        const groupCommandId = `PRIVATE-${'group'.repeat(30)}:config:1`;
+        const sessionId = `${applicationId}:${workspaceId}:client-0:client-session-0`;
+        const clientContextId = `application=${applicationId}:workspace=${workspaceId}:principal=client-0:caller=client-0:session=${
+            encodeURIComponent(sessionId)
+        }`;
+        const enqueues: readonly AppInboxEnqueueInput[] = [
+            {
+                type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+                topicId: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+                resourceId: `${profileCommandId}-profile`,
+                contextId: clientContextId
+            },
+            {
+                type: AppInboxType.CLIENT_INSTANCE_UPSERT,
+                topicId: AppInboxType.CLIENT_INSTANCE_UPSERT,
+                resourceId: `${profileCommandId}-instance`,
+                contextId: clientContextId
+            },
+            {
+                type: AppInboxType.GROUP_UPDATE,
+                topicId: AppInboxType.GROUP_UPDATE,
+                resourceId: groupCommandId,
+                contextId: `${applicationId}:${workspaceId}:group-1`,
+                authority: {
+                    descriptor: {
+                        operation: 'updateGroup',
+                        scope: { applicationId, workspaceId },
+                        groupId: 'group-1',
+                        targetPrincipalId: null,
+                        sessionId: null,
+                        request: {
+                            requestId: groupCommandId,
+                            actorPrincipalId: 'PRIVATE-principal',
+                            actorSessionId: 'PRIVATE-session',
+                            metadata: { secret: 'PRIVATE-payload' }
+                        }
+                    }
+                }
+            }
+        ].map((enqueue) => ({ ...enqueue, senderId: 'PRIVATE-principal', data: { secret: 'PRIVATE-payload' } }));
         const events: RallarTimingEvent[] = [];
+        const persistedKeys: Key[] = [];
         const client = new AppInboxCommandClient(
             {
-                queueEntryWriter: {
-                    enqueue: async (enqueue) =>
-                        createAppInboxResourceEntry(enqueue, 'PRIVATE-worker-a', {
-                            creationNow: Temporal.Now.instant,
-                            createMessage: createAppInboxQueueMessageFixture
-                        })
-                },
+                queueEntryWriter: new AppInboxQueueEntryWriter({
+                    inboxQueueReader: new InboxQueueReader(new TestResourceInbox(new Map()), {
+                        laneBudgetPolicy: 'fixed-retry-two',
+                        newLaneConcurrency: 1
+                    }, Temporal.Now.instant),
+                    newResourceId: () => 'PRIVATE-generated',
+                    createMessage: createAppInboxQueueMessageFixture
+                }, { serviceId: 'PRIVATE-worker-a', defaultTopicId: 'app-inbox.client-state' }),
                 resultWaiter: {
                     waitForResult: async <Result>(
                         _enqueue: AppInboxEnqueueInput,
-                        _key: Key,
+                        key: Key,
                         decodeResult: AppInboxResultWaiter.ResultDecoder<Result>
-                    ) => Either.ofRight(decodeResult({ status: 'stored', detail: 'PRIVATE-payload' }))
+                    ) => {
+                        persistedKeys.push(key);
+                        return Either.ofRight(decodeResult({ status: 'stored', detail: 'PRIVATE-payload' }));
+                    }
                 }
             },
             {
@@ -136,81 +435,126 @@ describe('state-write diagnostic projection', () => {
         );
         const clock = vi.spyOn(performance, 'now')
             .mockReturnValueOnce(20).mockReturnValueOnce(32.34)
-            .mockReturnValueOnce(40).mockReturnValueOnce(46.78);
+            .mockReturnValueOnce(40).mockReturnValueOnce(46.78)
+            .mockReturnValueOnce(50).mockReturnValueOnce(55);
         const epoch = vi.spyOn(Date, 'now').mockReturnValue(99_999);
         try {
-            const profileResult = await client.enqueueAndWaitForResult({
-                type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
-                ...profile.physicalKey,
-                senderId: 'PRIVATE-principal',
-                data: { secret: 'PRIVATE-profile-payload' }
-            }, (value) => value);
-            const instanceResult = await client.enqueueAndWaitForResult({
-                type: AppInboxType.CLIENT_INSTANCE_UPSERT,
-                ...instance.physicalKey,
-                senderId: 'PRIVATE-principal',
-                data: { secret: 'PRIVATE-instance-payload' }
-            }, (value) => value);
-            expect(profileResult).toEqual(Either.ofRight({ status: 'stored', detail: 'PRIVATE-payload' }));
-            expect(instanceResult).toEqual(Either.ofRight({ status: 'stored', detail: 'PRIVATE-payload' }));
+            for (const enqueue of enqueues) {
+                const result = await client.enqueueAndWaitForResult(enqueue, (value) => value);
+                expect(result).toEqual(Either.ofRight({ status: 'stored', detail: 'PRIVATE-payload' }));
+            }
         }
         finally {
             clock.mockRestore();
             epoch.mockRestore();
         }
-
+        for (const [ordinal, enqueue] of enqueues.entries()) {
+            expect(persistedKeys[ordinal]!.resourceId).not.toBe(enqueue.resourceId);
+            expect(persistedKeys[ordinal]!.contextId).not.toBe(enqueue.contextId);
+        }
         const originalEvents = JSON.stringify(events);
-        const result = computeStateWriteDiagnosticPhase({ ...createPhase(), timingEvents: events }, budget, 65_536);
+        const logicalPhase: StateWriteDiagnosticPhase = {
+            ...phase,
+            scope: { applicationId, workspaceId },
+            commands: [
+                { ...phase.commands[0]!, commandId: profileCommandId },
+                { ...phase.commands[1]!, commandId: groupCommandId, stackIndex: 0 }
+            ],
+            boundaries: [
+                { ...phase.boundaries[1]!, commandId: profileCommandId },
+                { ...phase.boundaries[0]!, commandId: groupCommandId }
+            ],
+            timingEvents: events
+        };
+        const result = computeStateWriteDiagnosticPhase(logicalPhase, budget, 65_536);
         const records = readRecords(result.serialized);
         expect.soft(result.complete).toBe(true);
         expect.soft(records.at(-1)).toMatchObject({
-            timing: { total: 2, retained: 2, rejected: 0, truncated: 0, unassociated: 0 }
+            timing: { total: 3, retained: 3, rejected: 0, truncated: 0, unassociated: 0 }
         });
-        expect(records.filter((record) => record.record === 'timing')).toEqual([
+        expect.soft(records.filter((record) => record.record === 'timing')).toMatchObject([
             {
-                record: 'timing',
                 component: 'app-inbox',
                 operation: 'enqueueAndWaitForResult',
                 status: 'ok',
-                completedAtEpochMs: 99_999,
                 roundedDurationMs: 12.34,
-                approximateStartedAtEpochMs: 99_986.66,
-                association: {
-                    kind: 'command-operation',
-                    commandOrdinal: 0,
-                    operation: 'profile',
-                    originatingStack: 0,
-                    observingStack: 0,
-                    attempt: 'unavailable'
-                },
-                queueAgeMs: 'unavailable',
-                dueAgeMs: 'unavailable',
-                statusMeaning: 'timed-operation-status'
+                association: { commandOrdinal: 0, operation: 'profile', originatingStack: 0, observingStack: 0 }
             },
             {
-                record: 'timing',
                 component: 'app-inbox',
                 operation: 'enqueueAndWaitForResult',
                 status: 'ok',
-                completedAtEpochMs: 99_999,
                 roundedDurationMs: 6.78,
-                approximateStartedAtEpochMs: 99_992.22,
-                association: {
-                    kind: 'command-operation',
-                    commandOrdinal: 0,
-                    operation: 'instance',
-                    originatingStack: 0,
-                    observingStack: 0,
-                    attempt: 'unavailable'
-                },
-                queueAgeMs: 'unavailable',
-                dueAgeMs: 'unavailable',
-                statusMeaning: 'timed-operation-status'
+                association: { commandOrdinal: 0, operation: 'instance', originatingStack: 0, observingStack: 0 }
+            },
+            {
+                component: 'app-inbox',
+                operation: 'enqueueAndWaitForResult',
+                status: 'ok',
+                roundedDurationMs: 5,
+                association: { commandOrdinal: 1, operation: 'command', originatingStack: 0, observingStack: 0 }
             }
         ]);
         expect(result.bytes).toBeLessThanOrEqual(32_768);
         expect(JSON.stringify(events)).toBe(originalEvents);
         expect(result.serialized).not.toContain('PRIVATE');
+
+        for (const [ordinal, event] of events.entries()) {
+            const enqueue = enqueues[ordinal]!;
+            const physicalKey = toPhysicalAppInboxQueueKey({ ...enqueue, resourceId: enqueue.resourceId! });
+            const contradictions: readonly RallarTimingEvent[] = [
+                { ...event, details: { ...event.details, resourceId: 'PRIVATE-wrong' } },
+                { ...event, details: { ...event.details, contextId: 'PRIVATE-wrong' } },
+                { ...event, details: { ...event.details, topicId: 'PRIVATE-wrong' } },
+                { ...event, details: { ...event.details, type: 'PRIVATE-wrong' } },
+                { ...event, serviceId: 'PRIVATE-worker-b' },
+                { ...event, details: { ...event.details, resourceId: undefined } },
+                { ...event, details: { ...event.details, contextId: undefined } },
+                { ...event, details: { ...event.details, topicId: undefined } },
+                { ...event, details: { ...event.details, type: undefined } },
+                { ...event, serviceId: undefined },
+                { ...event, component: 'app-inbox-phase', operation: 'transaction' },
+                {
+                    ...event,
+                    component: 'app-inbox-phase',
+                    operation: 'transaction',
+                    details: { ...event.details, ...physicalKey, resourceId: enqueue.resourceId }
+                },
+                { ...event, details: { ...event.details, contextId: physicalKey.contextId } },
+                { ...event, details: { ...event.details, resourceId: physicalKey.resourceId } },
+                { ...event, details: { ...event.details, ...physicalKey } },
+                { ...event, requestId: physicalKey.resourceId, details: { ...event.details, ...physicalKey } }
+            ];
+            const rejected = computeStateWriteDiagnosticPhase({ ...logicalPhase, timingEvents: contradictions }, budget, 65_536);
+            expect.soft(readRecords(rejected.serialized).at(-1)).toMatchObject({
+                complete: false,
+                timing: { total: 16, retained: 0, rejected: 16, truncated: 0 }
+            });
+            expect(rejected.serialized).not.toContain('PRIVATE');
+        }
+        for (
+            const ambiguous of [
+                { ...logicalPhase, commands: [...logicalPhase.commands, logicalPhase.commands[0]!] },
+                { ...logicalPhase, serviceIds: ['PRIVATE-worker-a', 'PRIVATE-worker-a'] }
+            ]
+        ) {
+            const rejected = computeStateWriteDiagnosticPhase({ ...ambiguous, timingEvents: [events[0]!] }, budget, 65_536);
+            expect(readRecords(rejected.serialized).at(-1)).toMatchObject({
+                complete: false,
+                timing: { total: 1, retained: 0, rejected: 1, truncated: 0 }
+            });
+        }
+        const physicalEvents = events.map((event, ordinal) => ({
+            ...event,
+            component: 'app-inbox-phase',
+            operation: 'transaction',
+            details: { ...event.details, ...persistedKeys[ordinal]! }
+        }));
+        const physical = computeStateWriteDiagnosticPhase({ ...logicalPhase, timingEvents: physicalEvents }, budget, 65_536);
+        expect(physical.complete).toBe(true);
+        expect(readRecords(physical.serialized).at(-1)).toMatchObject({
+            timing: { total: 3, retained: 3, rejected: 0, truncated: 0 }
+        });
     });
 
     it('joins interleaved physical and logical operations while separating origin, observer and clocks', () => {
@@ -249,8 +593,7 @@ describe('state-write diagnostic projection', () => {
         ]);
         expect(records.find((record) => record.record === 'timing')).toMatchObject({
             completedAtEpochMs: 99_999,
-            roundedDurationMs: 12.34,
-            approximateStartedAtEpochMs: 99_986.66
+            roundedDurationMs: 12.34
         });
         expect(records.find((record) => record.record === 'phase')).toMatchObject({
             startedAtMonotonicMs: 10,
@@ -266,6 +609,13 @@ describe('state-write diagnostic projection', () => {
         expect(records.filter((record) => record.record === 'release')).toEqual([
             {
                 record: 'release',
+                reservationObservation: {
+                    availability: 'unavailable',
+                    boundary: 'unavailable',
+                    association: 'unavailable',
+                    reservationAttempt: 2,
+                    reason: 'not-applicable'
+                },
                 commandOrdinal: 0,
                 operation: 'instance',
                 originatingStack: 0,
@@ -282,6 +632,13 @@ describe('state-write diagnostic projection', () => {
             },
             {
                 record: 'release',
+                reservationObservation: {
+                    availability: 'unavailable',
+                    boundary: 'unavailable',
+                    association: 'unavailable',
+                    reservationAttempt: 1,
+                    reason: 'not-applicable'
+                },
                 commandOrdinal: 0,
                 operation: 'profile',
                 originatingStack: 0,
@@ -298,6 +655,13 @@ describe('state-write diagnostic projection', () => {
             },
             {
                 record: 'release',
+                reservationObservation: {
+                    availability: 'unavailable',
+                    boundary: 'unavailable',
+                    association: 'unavailable',
+                    reservationAttempt: 1,
+                    reason: 'not-applicable'
+                },
                 commandOrdinal: 1,
                 operation: 'command',
                 originatingStack: 1,
@@ -398,8 +762,9 @@ describe('state-write diagnostic projection', () => {
         };
         const result = computeStateWriteDiagnosticPhase({ ...phase, timingEvents: [event] }, budget, 65_536);
         expect(readRecords(result.serialized).find((record) => record.record === 'timing')).toMatchObject({
-            association: { kind: 'process-unassociated', reason: 'sql-process-scope' },
-            statusMeaning: 'wrapper-finally-not-commit'
+            component: 'state-write-benchmark-phase',
+            status: 'ok',
+            association: { kind: 'process-unassociated', reason: 'sql-process-scope' }
         });
         expect(result.complete).toBe(true);
     });

@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'node:child_process';
-import { appendFileSync, copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+    appendFileSync,
+    copyFileSync,
+    mkdirSync,
+    readFileSync,
+    writeFileSync
+} from 'node:fs';
 import path from 'node:path';
 
 const command = process.argv[2];
@@ -207,44 +213,137 @@ function writeDiagnosticFiles(directory) {
 function writeDiagnosticPhase(directory, ordinal) {
     const header = {
         record: 'phase',
-        schema: 'rallar.state-write.diagnostic.v1',
+        schema: failure === 'old-schema'
+            ? 'rallar.state-write.diagnostic.v1'
+            : failure === 'unknown-schema'
+            ? 'rallar.state-write.diagnostic.v4'
+            : 'rallar.state-write.diagnostic.v3',
         workload: ['uncontended', 'shared', 'hot'][Math.floor(ordinal / 4)],
         phase: ordinal % 4 === 0 ? 'warmup' : 'measured',
         runIndex: ordinal % 4 === 0 ? 0 : ordinal % 4 - 1,
         outcome: 'completed'
     };
     const commands = Array.from({ length: 700 }, (_, commandOrdinal) => ({ record: 'command', commandOrdinal, status: 'accepted' }));
+    const eventCounts = { 'observed-capacity': 101185, 'exact-capacity': 110000, capacity: 110001, 'unassociated-mismatch': 1384 };
+    const { timings, releases } = createDiagnosticEvents(ordinal === 0 ? eventCounts[failure] ?? 0 : 0);
     const counts = { total: 0, retained: 0, unassociated: 0, rejected: 0, truncated: 0 };
-    if (failure === 'capacity') {
-        counts.total = 60000;
-        counts.retained = 60000;
-    }
     const footer = {
         record: 'completeness',
         complete: failure !== 'incomplete',
-        timing: counts,
-        releases: counts,
-        boundaries: { ...counts, total: 701, retained: 701 }
+        timing: { ...counts, total: timings.length, retained: timings.length, unassociated: timings.length },
+        releases: { ...counts, total: releases.length, retained: releases.length },
+        boundaries: { ...counts, total: 701, retained: 701 },
+        reservationObservations: { expected: 0, available: 0, unavailable: 0 }
     };
-    const text = [header, ...commands, footer].map((value) => JSON.stringify(value)).join('\n') + '\n';
+    if (failure === 'total-mismatch') {
+        footer.timing.total += 1;
+    }
+    if (failure === 'record-mismatch') {
+        footer.timing.total += 1;
+        footer.timing.retained += 1;
+    }
+    if (failure === 'unassociated-mismatch' && ordinal === 0) {
+        footer.timing.unassociated -= 1;
+    }
+    if (failure.startsWith('observation-')) {
+        addReservationObservationFixture(releases, footer);
+    }
+    const extra = failure === 'unknown-record' ? [{ record: 'unexpected' }] : [];
+    const text = [header, ...commands, ...releases, ...timings, ...extra, footer].map((value) => JSON.stringify(value)).join('\n') + '\n';
     writeFileSync(path.join(directory, 'phase-' + ordinal + '.ndjson'), text);
     return Buffer.byteLength(text);
 }
 
+function addReservationObservationFixture(releases, footer) {
+    const release = createDiagnosticEvents(1382).releases[0];
+    release.selectedLane = 'RETRY';
+    release.reservationObservation = {
+        availability: 'available',
+        boundary: 'postgres-update-returning',
+        association: 'physical-key-and-reservation-attempt',
+        reservationAttempt: 1,
+        previousPersistedRetryDelayUs: 5000000,
+        dueToReservationObservationUs: -1
+    };
+    releases.push(release);
+    footer.releases.total += 1;
+    footer.releases.retained += 1;
+    footer.reservationObservations = { expected: 1, available: 1, unavailable: 0 };
+    if (failure === 'observation-missing') {
+        delete release.reservationObservation;
+    }
+    if (failure === 'observation-fraction') {
+        release.reservationObservation.dueToReservationObservationUs = 0.5;
+    }
+    if (failure === 'observation-range') {
+        release.reservationObservation.dueToReservationObservationUs = 9007199254740992;
+    }
+    if (failure === 'observation-boundary') {
+        release.reservationObservation.boundary = 'commit';
+    }
+    if (failure === 'observation-lane') {
+        release.selectedLane = 'NEW';
+    }
+    if (failure === 'observation-attempt') {
+        release.reservationObservation.reservationAttempt = 2;
+    }
+    if (failure === 'observation-count') {
+        footer.reservationObservations.expected = 2;
+    }
+    if (failure === 'observation-redaction') {
+        release.reservationObservation.key = 'private';
+    }
+}
+
+function createDiagnosticEvents(total) {
+    const releaseCount = total === 0 ? 0 : 1382;
+    const timings = Array.from({ length: total - releaseCount }, () => ({
+        record: 'timing',
+        component: 'state-write-benchmark-sql',
+        operation: 'read',
+        status: 'ok',
+        completedAtEpochMs: 100,
+        roundedDurationMs: 1,
+        association: { kind: 'process-unassociated', reason: 'sql-process-scope', observingStack: 'unavailable' },
+        queueAgeMs: 'unavailable',
+        dueAgeMs: 'unavailable'
+    }));
+    const releases = Array.from({ length: releaseCount }, () => ({
+        record: 'release',
+        reservationObservation: {
+            availability: 'unavailable',
+            boundary: 'unavailable',
+            association: 'unavailable',
+            reservationAttempt: 1,
+            reason: 'not-applicable'
+        },
+        commandOrdinal: 0,
+        operation: 'profile',
+        originatingStack: 0,
+        observingStack: 'unavailable',
+        endpoint: 'unavailable',
+        attempt: 1,
+        classification: 'accepted',
+        status: 'COMPLETED',
+        selectedLane: 'NEW',
+        queueAgeMs: 1,
+        dueAgeMs: 0,
+        retryDelayMs: 0,
+        failure: 'none'
+    }));
+    return { timings, releases };
+}
+
 function docker() {
     if (args[0] === 'ps') {
-        console.log(
-            args.includes('-aq') && (() => {
-                    try {
-                        return readFileSync(path.join(root, 'provisioned'), 'utf8') === 'true';
-                    }
-                    catch {
-                        return false;
-                    }
-                })()
-                ? failure === 'replacement' && args.includes('--no-trunc') ? 'replacement-fixture' : 'container-fixture'
-                : ''
-        );
+        let provisioned = false;
+        if (args.includes('-aq')) {
+            try {
+                provisioned = readFileSync(path.join(root, 'provisioned'), 'utf8') === 'true';
+            }
+            catch {}
+        }
+        console.log(provisioned ? failure === 'replacement' && args.includes('--no-trunc') ? 'replacement-fixture' : 'container-fixture' : '');
     }
     else if (args[0] === 'inspect') {
         const container = JSON.parse(readFileSync(path.join(root, 'container.json'), 'utf8'));

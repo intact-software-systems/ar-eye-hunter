@@ -1,5 +1,10 @@
 import type { ApiJsonValue } from '../../../packages/shared/api/api-json-value.ts';
 import {
+    GROUP_LAYOUT_IDENTITY_STATES,
+    isGroupLayoutIdentity,
+    type GroupLayoutIdentity
+} from '../../../packages/shared/api/group-lifecycle/group-layout-identity.ts';
+import {
     isAllowedApiTimingString,
     isApiTimingRecord,
     isNonNegativeApiTimingNumber,
@@ -39,7 +44,23 @@ const DETAIL_NUMBERS = [
     'elapsedMsecs',
     'waitMaxElapsedMsecs'
 ];
-const COMPONENTS = ['http', 'app-inbox', 'app-inbox-phase', 'app-inbox-handler', 'group-state-service', 'ws-receipt'];
+const COMPONENTS = [
+    'http',
+    'app-inbox',
+    'app-inbox-phase',
+    'app-inbox-handler',
+    'group-state-service',
+    'ws-receipt',
+    'group-topology-publication'
+];
+const PROMOTION_OUTCOMES = [
+    'promoted',
+    'promoted-newer',
+    'already-applied',
+    'replay',
+    'idempotency-conflict',
+    'rejected'
+];
 
 export function toSafeApiTimingRecord(
     line: string
@@ -58,6 +79,9 @@ export function toSafeApiTimingRecord(
         !isNonNegativeApiTimingNumber(record.durationMs) || !isNonNegativeApiTimingNumber(record.atEpochMs)
     ) {
         return undefined;
+    }
+    if (record.component === 'group-topology-publication') {
+        return toSafeTopologyPromotionRecord(record);
     }
     const wsReceipt = record.component === 'ws-receipt' ? toSafeApiWsReceiptObservation(record.wsReceipt) : undefined;
     if (record.component === 'ws-receipt' && (wsReceipt === undefined || record.operation !== wsReceipt.kind)) {
@@ -79,6 +103,62 @@ export function toSafeApiTimingRecord(
         }
     }
     return safe;
+}
+
+function toSafeTopologyPromotionRecord(record: Readonly<Record<string, unknown>>): SafeApiTimingRecordDto | undefined {
+    if (
+        record.operation !== 'promote' || record.status !== 'ok' ||
+        !isSafeApiTimingIdentity(record.applicationId) ||
+        !isSafeApiTimingIdentity(record.workspaceId) ||
+        !isSafeApiTimingIdentity(record.groupId) ||
+        !isApiTimingRecord(record.details) ||
+        !isAllowedApiTimingString(record.details.outcome, PROMOTION_OUTCOMES) ||
+        !isValidLayoutIdentityLabel(record.details.expected) ||
+        !isValidLayoutIdentityLabel(record.details.planned) ||
+        ((record.details.outcome === 'promoted' || record.details.outcome === 'promoted-newer') &&
+            record.details.planned === 'none')
+    ) {
+        return undefined;
+    }
+
+    return {
+        type: 'rallar.timing',
+        component: 'group-topology-publication',
+        operation: 'promote',
+        status: 'ok',
+        durationMs: record.durationMs as number,
+        atEpochMs: record.atEpochMs as number,
+        ...(isSafeApiTimingIdentity(record.serviceId) ? { serviceId: record.serviceId } : {}),
+        applicationId: record.applicationId,
+        workspaceId: record.workspaceId,
+        groupId: record.groupId,
+        details: {
+            expected: record.details.expected,
+            planned: record.details.planned,
+            outcome: record.details.outcome
+        }
+    };
+}
+
+function isValidLayoutIdentityLabel(value: unknown): value is string {
+    if (value === 'none') {
+        return true;
+    }
+    if (typeof value !== 'string') {
+        return false;
+    }
+    const match = /^group=(0|[1-9]\d*);presence=(0|[1-9]\d*);version=(0|[1-9]\d*);state=([a-z]+)$/.exec(value);
+    const state = GROUP_LAYOUT_IDENTITY_STATES.find((candidate) => candidate === match?.[4]);
+    if (match === null || state === undefined) {
+        return false;
+    }
+    const identity: GroupLayoutIdentity = {
+        groupRevision: Number(match[1]),
+        presenceRevision: Number(match[2]),
+        version: Number(match[3]),
+        state
+    };
+    return isGroupLayoutIdentity(identity);
 }
 
 function toSafeTimingContext(record: Readonly<Record<string, unknown>>): Readonly<Record<string, ApiJsonValue>> {

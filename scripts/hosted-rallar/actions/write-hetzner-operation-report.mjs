@@ -4,6 +4,8 @@ import { createHash } from 'node:crypto';
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
+import { sanitizeOperationLog } from '../controller/rallar-operation-diagnostics.mjs';
+
 const argumentNames = [
     'log',
     'output-dir',
@@ -56,13 +58,6 @@ function readBoolean(value, name) {
         return false;
     }
     throw new Error(`${name} must be true or false; received ${value}`);
-}
-
-function sanitizeOperationLog(value) {
-    return value
-        .replace(/(authorization\s*:\s*bearer)\s+[^\s]+/gi, '$1 [REDACTED]')
-        .replace(/((?:password|token|secret)[a-z0-9_]*\s*=)\s*[^\s]*/gi, '$1[REDACTED]')
-        .replace(/([?&](?:token|password|secret)=)[^&\s]*/gi, '$1[REDACTED]');
 }
 
 function readOperationStage(log) {
@@ -163,6 +158,22 @@ function classifyFailure({ status, stage, log, missingArtifacts }) {
     }
 
     const classifications = {
+        'api-capture-preflight': {
+            failureCategory: 'api-capture-preflight',
+            component: 'API CPU/GC capability preflight',
+            nextAction:
+                'Inspect capture.json capability context and its sanitized error before retrying; the API was not mutated.'
+        },
+        'api-capture-rollout': {
+            failureCategory: 'api-capture-rollout',
+            component: 'API CPU/GC preserving rollout',
+            nextAction: 'Inspect capture.json rollout errors and restoration status before retrying.'
+        },
+        'api-capture-start': {
+            failureCategory: 'api-capture-start',
+            component: 'API CPU/GC inspector startup',
+            nextAction: 'Inspect capture.json and inspector evidence, including restoration status, before retrying.'
+        },
         'manifest-materialization': {
             failureCategory: 'manifest-scope',
             component: 'Hetzner run manifest materialization',

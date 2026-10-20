@@ -67,10 +67,14 @@ import { ALOutboundDequeuedAdmission } from './al-outbound-dequeued-admission.ts
 import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observation.ts';
 import type { ALOutboundSendControls } from './al-outbound-send-controls.ts';
 import { computeALOutboundSettledCommittedRows } from './compute-al-outbound-committed-rows.ts';
+import { recordALOutboundDequeueTiming } from './record-al-outbound-dequeue-timing.ts';
 import { runALOutboundDequeueClaimGroup } from './run-al-outbound-dequeue-claim-group.ts';
 import {
     createALOutboundClaimEvidence,
+    createALOutboundClaimObservation,
+    recordALOutboundClaimTerminalReason,
     settleALOutboundClaim,
+    type ALOutboundClaimAttemptSettlement,
     type ALOutboundClaimObservation
 } from './settle-al-outbound-claim.ts';
 
@@ -158,7 +162,8 @@ export class ALOutboundStoreLane<TPrepared> {
             admissionStore: stores.admissionStore,
             commitDispatchPlans: (dispatches) => this.commitAllSettled(dispatches),
             sendSignal: input.sendControls.signal,
-            settlements
+            settlements,
+            timing: runtime.dequeueTiming
         });
         const { canonicalHandoff } = input;
         this.removeStorageResetListener = canonicalHandoff === undefined
@@ -328,16 +333,28 @@ export class ALOutboundStoreLane<TPrepared> {
     /** The outbound owner reserves straight from the queue, so it reads no page and observes no row's wait. */
     private async selectOutboundWork(
         port: ALWorkQueuePort,
-        pageSize: number
+        pageSize: number,
+        batchStartedAtMs: number
     ): Promise<ALWorkReadySelection> {
         this.evictWhenDue();
         const startedAtMs = this.readNowMs();
         const claims = await port.claim({ maxCount: pageSize, observedEntries: undefined });
+        const claimDurationMs = Math.max(0, this.readNowMs() - startedAtMs);
+        if (this.input.runtime.dequeueTiming !== undefined) {
+            recordALOutboundDequeueTiming(this.input.runtime.dequeueTiming, {
+                kind: 'reservation-returns',
+                lane: this.input.lane,
+                workerId: this.input.workerId,
+                batchStartedAtMs,
+                claims,
+                dequeueTypes: this.input.dequeueTypes
+            });
+        }
         return {
             claims,
             nextReadyAtMs: undefined,
             selectionDurationMs: 0,
-            claimDurationMs: Math.max(0, this.readNowMs() - startedAtMs),
+            claimDurationMs,
             earliestDueAtMs: undefined
         };
     }
@@ -380,19 +397,24 @@ export class ALOutboundStoreLane<TPrepared> {
         batchStartedAtMs: number,
         deferObservation?: ALWorkObservationDeferral
     ): Promise<ALWorkAttemptResult> {
-        const observed: ALOutboundClaimObservation = { evidence: undefined };
+        const observed = createALOutboundClaimObservation(
+            claim,
+            this.input.runtime.dequeueTiming,
+            this.input.dequeueTypes
+        );
         const attempt = (async (): Promise<ALWorkAttemptResult> => {
-            const work = await this.readExpirableOutboundWork(claim.entry);
+            const work = await this.readExpirableOutboundWork(claim.entry, observed);
             if (work === undefined) {
+                recordALOutboundClaimTerminalReason(observed, 'expired');
                 return { status: 'completed' };
             }
             observed.evidence = this.createClaimEvidence(work, batchStartedAtMs, deferObservation);
             if (commitsALOutboundWorkOutsideLane(work.payload.kind)) {
                 this.work.claimCommitted();
             }
-            return await this.runDurableEffect(work, observed.evidence, deferObservation);
+            return await this.runDurableEffect(work, observed, deferObservation);
         })();
-        return await this.settleOutboundClaim(attempt, observed);
+        return await this.settleOutboundClaim({ attempt, observed, claim, batchIndex: 0 });
     }
 
     /** A selection's dequeued rows admit as one group; every other claim runs alone through `runOutboundClaim`. */
@@ -404,11 +426,12 @@ export class ALOutboundStoreLane<TPrepared> {
         return runALOutboundDequeueClaimGroup<TPrepared>({
             claims: claims.filter((claim) => this.input.dequeueTypes.has(claim.entry.typeId)),
             readWork: (claim) => toALOutboundDequeueWork(claim.entry, this.input.runtime.readMessageFromEntry),
+            timing: this.input.runtime.dequeueTiming,
             hasReachedDeadline: (claim) => this.hasReachedDeadline(claim.entry),
             createEvidence: (work) => this.createClaimEvidence(work, batchStartedAtMs, deferObservation),
-            readSettledBeforeEffect: (work, evidence) => this.readSettledBeforeEffect(work, evidence),
+            readSettledBeforeEffect: (work, observed) => this.readSettledBeforeEffect(work, observed),
             admit: (members) => this.dequeuedAdmission.admitDequeuedMessages(members),
-            settle: (attempt, observed) => this.settleOutboundClaim(attempt, observed)
+            settle: (settlement) => this.settleOutboundClaim(settlement)
         });
     }
 
@@ -425,13 +448,9 @@ export class ALOutboundStoreLane<TPrepared> {
         });
     }
 
-    private async settleOutboundClaim(
-        attempt: Promise<ALWorkAttemptResult>,
-        observed: ALOutboundClaimObservation
-    ): Promise<ALWorkAttemptResult> {
+    private async settleOutboundClaim(settlement: ALOutboundClaimAttemptSettlement): Promise<ALWorkAttemptResult> {
         return await settleALOutboundClaim({
-            attempt,
-            observed,
+            ...settlement,
             capture: this.input.runtime.receiptWorkCapture,
             readNowMs: () => this.readNowMs()
         });
@@ -439,7 +458,8 @@ export class ALOutboundStoreLane<TPrepared> {
 
     /** A deadline crossed during the read is expiry, not a defect: the work is dropped, not rejected. */
     private async readExpirableOutboundWork(
-        entry: ResourceEntry
+        entry: ResourceEntry,
+        observed: ALOutboundClaimObservation
     ): Promise<ALOutboundEffectSnapshot<TPrepared> | undefined> {
         try {
             return await this.readOutboundWork(entry);
@@ -448,6 +468,7 @@ export class ALOutboundStoreLane<TPrepared> {
             if (this.hasReachedDeadline(entry)) {
                 return undefined;
             }
+            recordALOutboundClaimTerminalReason(observed, 'decode-failed');
             throw error;
         }
     }
@@ -467,14 +488,15 @@ export class ALOutboundStoreLane<TPrepared> {
 
     private async runDurableEffect(
         effect: ALOutboundEffectSnapshot<TPrepared>,
-        evidence: ALOutboundReceiptWorkEvidence | undefined,
+        observed: ALOutboundClaimObservation,
         deferObservation: ALWorkObservationDeferral | undefined
     ): Promise<ALWorkAttemptResult> {
+        const evidence = observed.evidence;
         // Before anything else: a cancelled or handed-over message's remaining work completes silently, of any kind --
         // no `attempt-started`, no `expired`, no repair. A live attempt already past `attempt-started`
         // still terminates its own `attempt-settled cancelled` -- stated by the effects layer if the
         // abort lands before the carrier runs, or by the carrier's own settlement if it lands during it.
-        const settled = this.readSettledBeforeEffect(effect, evidence);
+        const settled = this.readSettledBeforeEffect(effect, observed);
         if (settled !== undefined) {
             return settled;
         }
@@ -482,7 +504,7 @@ export class ALOutboundStoreLane<TPrepared> {
             case 'admit-message':
                 return await this.effects.admitPendingMessage(effect, evidence);
             case 'dequeue-message':
-                return await this.dequeuedAdmission.admitDequeuedMessage(effect, evidence);
+                return await this.dequeuedAdmission.admitDequeuedMessage(effect, evidence, observed);
             case 'admit-control':
                 return effect.payload.msg.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID
                     ? await this.receiptAdmission.replay(effect.payload)
@@ -510,23 +532,22 @@ export class ALOutboundStoreLane<TPrepared> {
 
     private readSettledBeforeEffect(
         effect: ALOutboundEffectSnapshot<TPrepared>,
-        evidence: ALOutboundReceiptWorkEvidence | undefined
+        observed: ALOutboundClaimObservation
     ): ALWorkAttemptResult | undefined {
-        if (this.isEndedEffect(effect)) {
-            evidence?.recordStage('ended');
+        const msgId = resolveALOutboundEffectMsgId(effect);
+        const endedReason = msgId === undefined ? undefined : this.input.sendControls.readEndedReason(msgId);
+        if (endedReason !== undefined) {
+            recordALOutboundClaimTerminalReason(observed, endedReason);
+            observed.evidence?.recordStage('ended');
             return { status: 'completed' };
         }
         if (effect.expireAtTimestamp <= this.readNowMs()) {
-            evidence?.recordStage('expired');
+            recordALOutboundClaimTerminalReason(observed, 'expired');
+            observed.evidence?.recordStage('expired');
             this.emitWorkExpiry(effect);
             return { status: 'completed' };
         }
         return undefined;
-    }
-
-    private isEndedEffect(effect: ALOutboundEffectSnapshot<TPrepared>): boolean {
-        const msgId = resolveALOutboundEffectMsgId(effect);
-        return msgId !== undefined && this.input.sendControls.isEnded(msgId);
     }
 
     /** One attempt on one prepared copy: the attempt is stated before its carrier can settle it. */
@@ -595,9 +616,6 @@ export class ALOutboundStoreLane<TPrepared> {
      */
     private recordWorkDiagnostics(event: ALWorkDiagnostics): void {
         const { diagnostics } = this.input.runtime;
-        if (event.kind === 'work-batch') {
-            this.input.stores.storageRecovery?.reportFirstBatch(event.claimedCount);
-        }
         if (event.kind === 'readiness-probe') {
             diagnostics?.({
                 kind: 'readiness-probe',
@@ -608,6 +626,14 @@ export class ALOutboundStoreLane<TPrepared> {
                 durationMs: event.durationMs
             });
             return;
+        }
+        this.input.stores.storageRecovery?.reportFirstBatch(event.claimedCount);
+        if (this.input.runtime.dequeueTiming !== undefined) {
+            recordALOutboundDequeueTiming(this.input.runtime.dequeueTiming, {
+                kind: 'work-batch',
+                lane: this.input.lane,
+                batch: event
+            });
         }
         diagnostics?.({
             kind: 'effect-drain',
@@ -632,7 +658,8 @@ export class ALOutboundStoreLane<TPrepared> {
             pageSize: AL_OUTBOUND_WORK_PAGE_SIZE,
             readNextReadyAtMs: (port) => this.readiness.readOpenedStore(() => this.readNextReadyAtMs(port), undefined),
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
-            selectReady: (port, pageSize) => this.selectOutboundWork(port, pageSize),
+            selectReady: (port, pageSize, batchStartedAtMs) =>
+                this.selectOutboundWork(port, pageSize, batchStartedAtMs),
             claimSuccessor: undefined,
             batchObservations: runtime.receiptWorkCapture?.batchObservations,
             runClaim: (claim, batchStartedAtMs, deferObservation) =>
@@ -692,6 +719,7 @@ function createALOutboundLaneAdmissions<TPrepared>(
         clock: runtime.clock,
         browserLocks: input.browserLocks,
         diagnostics: runtime.diagnostics,
+        dequeueTiming: runtime.dequeueTiming,
         settlements
     });
     const controlAdmission = stores.admissionStore.createControlAdmission({

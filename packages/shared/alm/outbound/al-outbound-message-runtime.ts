@@ -51,6 +51,7 @@ import {
     AL_OUTBOUND_CANONICAL_HANDOFF_LIMIT,
     ALOutboundCanonicalHandoff
 } from './lane/al-outbound-canonical-handoff.ts';
+import type { ALOutboundDequeuedAdmission } from './lane/al-outbound-dequeued-admission.ts';
 import type { ALOutboundReceiptWorkEvidence } from './lane/al-outbound-receipt-observation.ts';
 import { ALOutboundSendControls, type ALOutboundCancelOutcome } from './lane/al-outbound-send-controls.ts';
 import { ALOutboundStoreLane } from './lane/al-outbound-store-lane.ts';
@@ -480,6 +481,8 @@ export namespace ALOutboundMessageRuntime {
     export interface Dependencies<TPrepared> extends Resources<TPrepared> {
         /** Absent outside explicitly enabled private server receipt capture. */
         readonly receiptWorkCapture?: ALOutboundReceiptWorkEvidence.Capture<TPrepared>;
+        /** Optional per-entry dequeue stages; the server wires it only while timing capture is enabled. */
+        readonly dequeueTiming?: ALOutboundDequeuedAdmission.TimingSink;
         /** Which transport this owner drives; every settlement it states is stamped with it. */
         readonly carrier: ALDeliveryCarrier;
         readonly dequeue: DequeueSource;

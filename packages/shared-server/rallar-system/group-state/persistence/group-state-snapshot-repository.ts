@@ -7,6 +7,7 @@ import type {
     GroupScope,
     GroupSnapshot
 } from '@shared/api/group-types.ts';
+
 import type {
     RuntimeStateReadBatchVersion,
     RuntimeStateReadBatchVersionReader
@@ -16,6 +17,7 @@ import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../run
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { readStableStateSnapshot } from '../../state-events/state-snapshot-read.ts';
 import type { GroupSnapshotPage, GroupSnapshotPageOptions } from '../group-state-service-contracts.ts';
+import type { GroupStateCurrentSnapshotCache } from '../snapshot/group-state-current-snapshot-cache.ts';
 import { canonicalStoredGroup, toGroupStateAuthorityGuard } from './aggregate/group-aggregate-repository.ts';
 import {
     decodeGroupStateGroupStorageKey,
@@ -103,14 +105,16 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
 
     async listSnapshotsForPrincipal(
         scope: GroupScope,
-        principalId: string
+        principalId: string,
+        currentSnapshots?: Pick<GroupStateCurrentSnapshotCache, 'readSnapshot'>
     ): Promise<readonly GroupSnapshot[]> {
         return await readGroupStateSnapshotsForPrincipal({
             repository: this.repository,
             scope,
             principalId,
             observedAtEpochMs: Date.now(),
-            readSnapshot: async (ref) => await this.readSnapshot(ref)
+            readSnapshot: async (ref) => await this.readSnapshot(ref),
+            currentSnapshots
         });
     }
 

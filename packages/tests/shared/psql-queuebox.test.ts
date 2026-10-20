@@ -193,8 +193,8 @@ describe('PSqlQueueBox', () => {
     });
 
     it('uses a custom two-attempt PostgreSQL reservation budget', async () => {
-        const reserveEntriesSkipLocked = vi.fn(async () => new Map<string, ResourceEntry>());
-        const repo = createQueueBoxRepositoryFixture({ reserveEntriesSkipLocked });
+        const repo = createQueueBoxRepositoryFixture({});
+        const reserveEntriesSkipLocked = vi.spyOn(repo.reservations, 'reserveEntriesSkipLocked');
         const queue = new PSqlQueueBox(repo, Temporal.Now.instant);
 
         const reserved = await queue.reserveEntries({
@@ -528,7 +528,7 @@ function createQueueBoxRepositoryFixture(overrides: PSqlQueueBoxTestRepositoryOv
                     staleExhaustedReservation: false
                 }))
             ),
-            reserveEntriesSkipLocked: overrides.reserveEntriesSkipLocked ?? vi.fn(async () => new Map<string, ResourceEntry>()),
+            reserveEntriesSkipLocked: overrides.reserveEntriesSkipLocked ?? reserveNoPSqlEntries,
             findEntriesSkipLocked: overrides.findEntriesSkipLocked ?? vi.fn(async () => new Map<string, ResourceEntry>()),
             findTimedOutReservedEntriesSkipLocked: overrides.findTimedOutReservedEntriesSkipLocked ?? vi.fn(async () => new Map<string, ResourceEntry>()),
             findOverdueRetryEntriesSkipLocked: overrides.findOverdueRetryEntriesSkipLocked ?? vi.fn(async () => new Map<string, ResourceEntry>()),
@@ -587,4 +587,14 @@ function createEntry(
             : { attempts: 1, startTs: now },
         db: { id: '1' }
     };
+}
+
+function reserveNoPSqlEntries(
+    claim: PSqlResourceInboxReservationRepository.ReservationObservationClaim
+): Promise<PSqlResourceInboxReservationRepository.ReservationObservationResult>;
+function reserveNoPSqlEntries(claim: PSqlResourceInboxReservationRepository.ReservationClaim): Promise<Map<string, ResourceEntry>>;
+async function reserveNoPSqlEntries(
+    claim: PSqlResourceInboxReservationRepository.ReservationClaim | PSqlResourceInboxReservationRepository.ReservationObservationClaim
+): Promise<Map<string, ResourceEntry> | PSqlResourceInboxReservationRepository.ReservationObservationResult> {
+    return 'reservationObservation' in claim ? { entries: new Map(), observations: [] } : new Map();
 }

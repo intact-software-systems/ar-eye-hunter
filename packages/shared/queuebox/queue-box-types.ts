@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+
 import { EnqueuedType } from '../api/api-config.ts';
 import type { PersistenceProvider } from '../persistence/PersistenceProvider.ts';
 import {
@@ -10,6 +11,7 @@ import {
     hasSameGroupPresenceSummaryImmutableEntry,
     isCanonicalGroupPresenceSummaryEntry
 } from './GroupPresenceSummaryEntryContract.ts';
+import type { ResourceInboxReservationObservation } from './resource-inbox/resource-inbox-reservation-observation.ts';
 import * as Resource from './ResourceEntry.ts';
 import { ResourceEntry, type Key } from './ResourceEntry.ts';
 import { isCanonicalRtcTopologyWorkEntry } from './rtc-topology-work-entry-contract.ts';
@@ -321,6 +323,10 @@ export interface DequeueResourceEntryRepository {
         workOptions: ResourceInboxWorkAdvertisementOptions
     ): Promise<boolean>;
 
+    reserveEntries(
+        request: ResourceInboxReservationObservationRequest
+    ): Promise<ResourceInboxReservationObservationResult>;
+
     /** If supplied, claim only unchanged observations; [] claims nothing. Skipped work consumes no attempts. */
     reserveEntries(
         request: ResourceInboxReservationRequest
@@ -365,6 +371,16 @@ export interface ResourceInboxReservationRequest {
     readonly observedEntries?: readonly ResourceEntry[];
     /** Absent claims in queue order; an observed claim names its rows and never claims context heads. */
     readonly contextClaim?: ResourceInboxContextClaim;
+}
+
+/** Capture is optional; only ordinary PostgreSQL RETRY supports this observation boundary. */
+export interface ResourceInboxReservationObservationRequest extends ResourceInboxReservationRequest {
+    readonly reservationObservation: 'postgres-ordinary-retry-v1';
+}
+
+export interface ResourceInboxReservationObservationResult {
+    readonly entries: Map<Resource.Key, Resource.ResourceEntry>;
+    readonly observations: readonly ResourceInboxReservationObservation[];
 }
 
 export interface ResourceInboxTimeoutReservationRequest {

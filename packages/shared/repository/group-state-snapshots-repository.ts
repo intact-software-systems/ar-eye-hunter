@@ -62,6 +62,13 @@ export const groupStateSnapshotRepositoryToken = newObservableLatestRepositoryTo
 const groupSessionIndexes = new WeakMap<ObservableLatestRepository<string, GroupSnapshot>, Map<string, Set<string>>>();
 const observedGroupSnapshotKeys = new WeakMap<ObservableLatestRepository<string, GroupSnapshot>, Set<string>>();
 
+interface GroupSnapshotIndexReplacement {
+    readonly repository: ObservableLatestRepository<string, GroupSnapshot>;
+    readonly key: string;
+    readonly previous: GroupSnapshot | undefined;
+    readonly next: GroupSnapshot;
+}
+
 export function configureGroupStateSnapshotRepository(
     options: GroupStateSnapshotRepositoryOptions,
     manager?: RepositoryManager
@@ -70,7 +77,10 @@ export function configureGroupStateSnapshotRepository(
         groupStateSnapshotRepositoryToken,
         {
             ...options,
-            equals: jsonEquals
+            equals: (left, right) =>
+                left.causalRevision.groupRevision === right.causalRevision.groupRevision &&
+                left.causalRevision.presenceRevision === right.causalRevision.presenceRevision &&
+                jsonEquals(left, right)
         },
         manager
     );
@@ -331,13 +341,6 @@ export function getAllGroupStateSnapshots(
     return readAllObservableLatestRepository(groupStateSnapshotRepositoryToken, manager);
 }
 
-export function findLatestGroupSnapshotById(groupId: string) {
-    return getAllGroupStateSnapshots()
-        .filter((snapshot) => snapshot.group.groupId === groupId)
-        .sort((left, right) => readGroupVersion(right) - readGroupVersion(left))
-        .at(0);
-}
-
 function groupSessionIndexForRepository(
     repository: ObservableLatestRepository<string, GroupSnapshot>
 ): Map<string, Set<string>> {
@@ -371,13 +374,6 @@ function readGroupSessionIndex(
         }
     }
     return index;
-}
-
-interface GroupSnapshotIndexReplacement {
-    readonly repository: ObservableLatestRepository<string, GroupSnapshot>;
-    readonly key: string;
-    readonly previous: GroupSnapshot | undefined;
-    readonly next: GroupSnapshot;
 }
 
 function replaceGroupSnapshotInSessionIndex(input: GroupSnapshotIndexReplacement): void {
@@ -463,11 +459,7 @@ function toGroupStateSnapshotChange(
         groupRef: snapshot.group,
         snapshot: event.value,
         previous: event.previous,
-        version: event.value
-            ? readGroupVersion(event.value)
-            : event.previous
-            ? readGroupVersion(event.previous)
-            : 0,
+        version: readGroupVersion(snapshot),
         previousVersion: event.previous
             ? readGroupVersion(event.previous)
             : undefined,

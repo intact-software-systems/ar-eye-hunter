@@ -21,12 +21,19 @@ import {
     it
 } from 'vitest';
 
+import {
+    createApiMutationFailure,
+    toApiMutationFailureResponse,
+    toApiMutationRouteFailure
+} from '../../../apps/api-v1/src/routes/api-mutation-route-failure.ts';
 import { admitAllLocalAlmManifest } from '../../../apps/rallar-black-box/scripts/select-all-local-alm-manifest.mjs';
 import {
     formatJsonSchemaValidationErrors,
     validateJsonSchema,
     type JsonSchema
 } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { createAuthInboxTestHarness, runAuthInboxCommand } from '../shared-server/rallar-system/auth/auth-app-inbox-test-runtime.ts';
+import { FakeRuntimeStateRepository } from '../shared-server/runtime-state/test-support/fake-runtime-state-repository.ts';
 
 interface GitHubFreeMatrixOutput {
     readonly runId: string;
@@ -198,6 +205,43 @@ function resolveManualModeJobs(jobs: Readonly<Record<string, WorkflowJob>>, exec
     }).map(([name]) => name).toSorted();
 }
 
+async function existingUsernameRegistrationResponse(): Promise<string> {
+    const auth = createAuthInboxTestHarness(new FakeRuntimeStateRepository());
+    const request = { username: 'controller-05', password: 'test-password' };
+    const registered = await runAuthInboxCommand({
+        pending: auth.service.registerUser({ requestId: 'RegistrationFirst_01', request }),
+        queue: auth.queue,
+        reader: auth.reader
+    });
+    expect(registered.right?.username).toBe(request.username);
+    const repeated = await runAuthInboxCommand({
+        pending: auth.service.registerUser({ requestId: 'RegistrationSecond_02', request }),
+        queue: auth.queue,
+        reader: auth.reader,
+        minimumEntries: 2
+    });
+    if (repeated.left === undefined) {
+        throw new Error('Expected the canonical persisted-username registration conflict.');
+    }
+    const response = toApiMutationFailureResponse(
+        { json: (value, status) => Response.json(value, { status }) },
+        toApiMutationRouteFailure(repeated.left)
+    );
+    expect(response.status).toBe(409);
+    const body = await response.text();
+    expect(JSON.parse(body)).toEqual({
+        type: 'api-mutation-failure',
+        version: 'canonical.v2',
+        code: 'auth-mutation-rejected',
+        status: 409,
+        message: 'Auth username already exists',
+        issues: null,
+        denial: null,
+        retry: null
+    });
+    return body;
+}
+
 describe('GitHub Free distributed recipe workflow', () => {
     it('WS observation selection is false by default and belongs only to the local observation caller', async () => {
         const workflow = await readWorkflow();
@@ -274,7 +318,8 @@ node -e 'console.log(JSON.stringify({wsCapture: process.env.RALLAR_BLACK_BOX_CAP
 
     it.each([
         { executionMode: 'all-local', selectedJobs: ['all-local'] },
-        { executionMode: 'hetzner-control', selectedJobs: ['github-agents', 'operator', 'plan', 'prepare-hetzner'] }
+        { executionMode: 'hetzner-control', selectedJobs: ['github-agents', 'operator', 'plan', 'prepare-hetzner'] },
+        { executionMode: 'hetzner-control-cpu-gc', selectedJobs: ['github-agents', 'operator', 'plan', 'prepare-hetzner'] }
     ])('routes $executionMode exclusively to its selected job family', async ({ executionMode, selectedJobs }) => {
         const jobs = required((await readWorkflow()).jobs, 'jobs');
         expect(resolveManualModeJobs(jobs, executionMode)).toEqual(selectedJobs);
@@ -286,7 +331,7 @@ node -e 'console.log(JSON.stringify({wsCapture: process.env.RALLAR_BLACK_BOX_CAP
         expect(mode).toMatchObject({
             type: 'choice',
             default: 'hetzner-control',
-            options: ['hetzner-control', 'all-local']
+            options: ['hetzner-control', 'hetzner-control-cpu-gc', 'all-local']
         });
         const local = required(workflow.jobs?.['all-local'], 'all-local job');
         expect(local['runs-on']).toBe('ubuntu-latest');
@@ -689,16 +734,13 @@ node -e 'console.log(JSON.stringify({capture: process.env.INPUT_RTC_CAPTURE_MODE
 
         expect(dispatchInputs).not.toHaveProperty('ref');
         expect(dispatchInputs.register_before_login?.default).toBe(true);
-        expect(dispatchInputs.rollout_control_plane?.default).toBe(true);
+        expect(dispatchInputs.rollout_control_plane?.default).toBe('true');
         expect(githubAgents.environment).toBe('production');
         expect(githubAgents.needs).toEqual(['plan', 'prepare-hetzner']);
         expect(operator.needs).toEqual(['plan', 'prepare-hetzner']);
         expect(planCheckout.uses).toBe('actions/checkout@v7');
         expect(planCheckout.with?.ref).toBe('${{ github.sha }}');
         expect(prepare.with?.ref).toBe('${{ github.sha }}');
-        expect(prepare.with?.rollout_before_run).toBe(
-            '${{ inputs.rollout_control_plane }}'
-        );
         expect(agentCheckout.uses).toBe('actions/checkout@v7');
         expect(agentCheckout.with?.ref).toBe('${{ github.sha }}');
         expect(operator.with?.ref).toBe('${{ github.sha }}');
@@ -771,6 +813,8 @@ node -e 'console.log(JSON.stringify({capture: process.env.INPUT_RTC_CAPTURE_MODE
 
         const directory = await mkdtemp(path.join(tmpdir(), 'rallar-github-free-register-'));
         try {
+            const existingUsernameResponse = await existingUsernameRegistrationResponse();
+            await writeFile(path.join(directory, 'existing-user.json'), existingUsernameResponse);
             await writeFile(
                 path.join(directory, 'curl'),
                 `#!/bin/sh
@@ -778,7 +822,7 @@ out=''; url=''
 while [ $# -gt 0 ]; do case "$1" in -o) out="$2"; shift 2;; http*) url="$1"; shift;; *) shift;; esac; done
 printf '%s %s\\n' "$url" "$(cat)" >> "$CURL_LOG"
 case "$url" in
-  *controller-05-*) printf '{"code":"auth-user-exists"}' > "$out"; printf 409;;
+  *controller-05-*) cp "$RUNNER_TEMP/existing-user.json" "$out"; printf 409;;
   *controller-06-*) printf '{"code":"internal"}' > "$out"; printf 500;;
   *controller-07-*) echo 'curl: (7) Failed to connect' >&2; exit 7;;
   *) printf '{}' > "$out"; printf 201;;
@@ -786,7 +830,7 @@ esac
 `
             );
             await chmod(path.join(directory, 'curl'), 0o700);
-            const runRegistration = (agentCount: string) =>
+            const runRegistration = (agentCount: string, startIndex = '4') =>
                 spawnSync('bash', ['-c', required(register.run, 'register command')], {
                     cwd: repoRoot,
                     encoding: 'utf8',
@@ -799,7 +843,7 @@ esac
                         RALLAR_BLACK_BOX_RUN_ID: 'gh-free-7.1',
                         RALLAR_BLACK_BOX_AGENT_PREFIX: 'controller',
                         RALLAR_BLACK_BOX_AGENT_COUNT: agentCount,
-                        RALLAR_BLACK_BOX_AGENT_START_INDEX: '4',
+                        RALLAR_BLACK_BOX_AGENT_START_INDEX: startIndex,
                         RALLAR_BLACK_BOX_PASSWORD: 'test-password'
                     }
                 });
@@ -815,27 +859,39 @@ esac
             // A registration response can carry a session, so none is left behind on the runner.
             expect((await readdir(directory)).filter((name) => name.startsWith('rallar-register-'))).toEqual([]);
 
+            const staticUserConflict = createApiMutationFailure({ code: 'auth-user-exists', status: 409, message: 'Auth user already exists: controller-05' });
+            await writeFile(path.join(directory, 'existing-user.json'), JSON.stringify(staticUserConflict));
+            expect(runRegistration('1', '5').status).toBe(0);
+
+            const otherConflict = createApiMutationFailure({ code: 'auth-mutation-rejected', status: 409, message: 'Auth client identity already exists' });
+            for (
+                const body of [
+                    JSON.stringify(otherConflict),
+                    JSON.stringify({ ...otherConflict, code: 'app-inbox-request-id-conflict' }),
+                    JSON.stringify({ ...staticUserConflict, status: 500 }),
+                    JSON.stringify({ ...staticUserConflict, version: 'unrecognized' }),
+                    JSON.stringify({ ...staticUserConflict, retry: 'invalid' }),
+                    '{"code":"auth-user-exists"}',
+                    '{"code":"auth-user-exists", "password":"test-password"',
+                    'test-password'
+                ]
+            ) {
+                await writeFile(path.join(directory, 'existing-user.json'), body);
+                const invalid = runRegistration('1', '5');
+                expect(invalid.status).toBe(1);
+                expect(invalid.stderr).toContain('Registering controller-05 returned HTTP 409.');
+                expect(`${invalid.stdout}${invalid.stderr}`).not.toContain('test-password');
+                expect((await readdir(directory)).filter((name) => name.startsWith('rallar-register-'))).toEqual([]);
+            }
+
+            await writeFile(path.join(directory, 'existing-user.json'), existingUsernameResponse);
+
             const refused = runRegistration('3');
             expect(refused.status).toBe(1);
             expect(refused.stderr).toContain('Registering controller-06 returned HTTP 500.');
             expect(`${refused.stdout}${refused.stderr}`).not.toContain('test-password');
 
-            const unreachable = spawnSync('bash', ['-c', required(register.run, 'register command')], {
-                cwd: repoRoot,
-                encoding: 'utf8',
-                env: {
-                    ...osEnvironment,
-                    PATH: `${directory}:${osEnvironment.PATH}`,
-                    RUNNER_TEMP: directory,
-                    CURL_LOG: path.join(directory, 'curl.log'),
-                    RALLAR_API_BASE_URL: 'https://api.example.test',
-                    RALLAR_BLACK_BOX_RUN_ID: 'gh-free-7.1',
-                    RALLAR_BLACK_BOX_AGENT_PREFIX: 'controller',
-                    RALLAR_BLACK_BOX_AGENT_COUNT: '1',
-                    RALLAR_BLACK_BOX_AGENT_START_INDEX: '7',
-                    RALLAR_BLACK_BOX_PASSWORD: 'test-password'
-                }
-            });
+            const unreachable = runRegistration('1', '7');
             expect(unreachable.status).toBe(1);
             expect(unreachable.stderr).toContain('::error::Registering controller-07 failed before an HTTP response.');
         }

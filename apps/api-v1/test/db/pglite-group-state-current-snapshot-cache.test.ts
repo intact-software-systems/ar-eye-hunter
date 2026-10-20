@@ -4,6 +4,7 @@ import { GroupStateRepository } from '@shared-server/rallar-system/group-state/p
 import { GroupStateCurrentSnapshotCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-current-snapshot-cache.ts';
 import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-group-state-event-store.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import type { RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { GroupMember, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 
 import { createApiV1TestPGliteDatabaseLifecycle } from './api-v1-test-pglite-database.ts';
@@ -16,11 +17,154 @@ interface SeededCache {
     readonly repository: GroupStateRepository;
     readonly cache: GroupStateCurrentSnapshotCache;
     readonly fullReads: () => number;
+    readonly takeValueRows: () => number;
     /** Database statements issued since the previous call. */
     readonly takeStatements: () => number;
     readonly setNow: (epochMs: number) => void;
     readonly close: () => Promise<void>;
 }
+
+class AudienceReadRuntime extends PSqlRuntimeStateRepository {
+    valueRows = 0;
+
+    override async readRuntimeStateBatch(selectors: readonly RuntimeStateReadBatchSelector[]) {
+        const selections = await super.readRuntimeStateBatch(selectors);
+        this.valueRows += selections.reduce((count, selection) => count + selection.entries.length, 0);
+        return selections;
+    }
+
+    override async readRuntimeStateBatchWithVersion(selectors: readonly RuntimeStateReadBatchSelector[]) {
+        const batch = await super.readRuntimeStateBatchWithVersion(selectors);
+        this.valueRows += batch.selections.reduce((count, selection) => count + selection.entries.length, 0);
+        return batch;
+    }
+}
+
+Deno.test('five principal audiences share unchanged group values while retaining durable membership reads', async () => {
+    const seeded = await seedCache();
+    try {
+        const group = await seeded.repository.findGroup(REF);
+        assert.ok(group);
+        for (let index = 0; index < 49; index += 1) {
+            await seeded.repository.putMember(createMember(`member-${index}`, 'member'));
+        }
+        await seeded.repository.putGroup({ ...group, activeMemberCount: 50 });
+        seeded.takeValueRows();
+
+        for (const principalId of ['alice', 'member-0', 'member-1', 'member-2', 'member-3']) {
+            const snapshots = await seeded.repository.listSnapshotsForPrincipal(REF, principalId, seeded.cache);
+            assert.equal(snapshots.length, 1);
+            assert.equal(snapshots[0].members.length, 50);
+        }
+
+        assert.ok(seeded.takeValueRows() <= 80, 'unchanged roster values must not transfer again for each principal');
+        assert.equal(seeded.fullReads(), 1);
+    }
+    finally {
+        await seeded.close();
+    }
+});
+
+Deno.test('a principal audience observes revoked membership and expired presence despite a warm group cache', async () => {
+    const seeded = await seedCache();
+    try {
+        const group = await seeded.repository.findGroup(REF);
+        assert.ok(group);
+        await seeded.repository.putMember(createMember('bob', 'member'));
+        await seeded.repository.putGroup({ ...group, activeMemberCount: 2 });
+        const first = await seeded.repository.listSnapshotsForPrincipal(REF, 'alice', seeded.cache);
+        assert.equal(first[0].activeSessions.length, 1);
+        seeded.setNow(SESSION_EXPIRES_AT_EPOCH_MS);
+        const expired = await seeded.repository.listSnapshotsForPrincipal(REF, 'alice', seeded.cache);
+        assert.equal(expired[0].activeSessions.length, 0);
+        assert.equal(seeded.fullReads(), 2);
+
+        const member = createMember('alice', 'owner');
+        await seeded.repository.putMember({ ...member, status: 'left', left: canonicalAuditStamp(2) });
+        await seeded.repository.putGroup({ ...group, activeMemberCount: 1 });
+        assert.deepEqual(await seeded.repository.listSnapshotsForPrincipal(REF, 'alice', seeded.cache), []);
+    }
+    finally {
+        await seeded.close();
+    }
+});
+
+Deno.test('a group changed during its cached audience read falls back to current authority', async () => {
+    const seeded = await seedCache();
+    try {
+        const snapshots = await seeded.repository.listSnapshotsForPrincipal(REF, 'alice', {
+            readSnapshot: async (ref) => {
+                const before = await seeded.cache.readSnapshot(ref);
+                assert.ok(before);
+                await seeded.repository.putMember(createMember('bob', 'member'));
+                await seeded.repository.putGroup({ ...before.group, activeMemberCount: 2 });
+                return before;
+            }
+        });
+
+        assert.deepEqual(snapshots[0].members.map((member) => member.principalId), ['alice', 'bob']);
+    }
+    finally {
+        await seeded.close();
+    }
+});
+
+Deno.test('revocation during a cached audience read is excluded by the second membership selection', async () => {
+    const seeded = await seedCache();
+    try {
+        const snapshots = await seeded.repository.listSnapshotsForPrincipal(REF, 'alice', {
+            readSnapshot: async (ref) => {
+                const before = await seeded.cache.readSnapshot(ref);
+                await seeded.repository.removeMember({ ...ref, principalId: 'alice' });
+                return before;
+            }
+        });
+
+        assert.deepEqual(snapshots, []);
+    }
+    finally {
+        await seeded.close();
+    }
+});
+
+Deno.test('a failed current group read preserves the failure and allows a later fresh read', async () => {
+    const seeded = await seedCache();
+    try {
+        const failure = new Error('version reader unavailable');
+        await assert.rejects(
+            seeded.repository.listSnapshotsForPrincipal(REF, 'alice', {
+                readSnapshot: async () => {
+                    throw failure;
+                }
+            }),
+            (error) => error === failure
+        );
+        const snapshots = await seeded.repository.listSnapshotsForPrincipal(REF, 'alice', seeded.cache);
+        assert.equal(snapshots[0].group.groupId, REF.groupId);
+    }
+    finally {
+        await seeded.close();
+    }
+});
+
+Deno.test('principal audience cache entries remain isolated by workspace', async () => {
+    const seeded = await seedCache();
+    try {
+        const other = { ...REF, workspaceId: 'other-workspace' };
+        await seeded.repository.putGroup(groupFixture(other, 'Other workspace'));
+        await seeded.repository.putMember({ ...createMember('alice', 'owner'), ...other });
+
+        const first = await seeded.repository.listSnapshotsForPrincipal(REF, 'alice', seeded.cache);
+        const second = await seeded.repository.listSnapshotsForPrincipal(other, 'alice', seeded.cache);
+        assert.equal(first[0].group.workspaceId, REF.workspaceId);
+        assert.equal(second[0].group.workspaceId, other.workspaceId);
+        assert.equal(second[0].group.displayName, 'Other workspace');
+        assert.equal(seeded.fullReads(), 2);
+    }
+    finally {
+        await seeded.close();
+    }
+});
 
 Deno.test('a first read is one statement and a read of the unchanged group one revision probe (D289)', async () => {
     const seeded = await seedCache();
@@ -103,7 +247,7 @@ Deno.test('a cached snapshot is read again, without the session, once a presence
 
 async function seedCache(): Promise<SeededCache> {
     const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
-    const runtime = new PSqlRuntimeStateRepository(lifecycle.database);
+    const runtime = new AudienceReadRuntime(lifecycle.database);
     const repository = new GroupStateRepository(runtime, new InMemoryGroupStateEventStore());
     await repository.putGroup(groupFixture(REF, 'Cached room'));
     await repository.putMember(createMember('alice', 'owner'));
@@ -136,6 +280,11 @@ async function seedCache(): Promise<SeededCache> {
         repository,
         cache,
         fullReads: () => fullReads,
+        takeValueRows: () => {
+            const rows = runtime.valueRows;
+            runtime.valueRows = 0;
+            return rows;
+        },
         takeStatements: () => {
             const statements = lifecycle.database.getExecutorCounters?.()?.statements ?? 0;
             const taken = statements - statementsSeen;
@@ -149,7 +298,10 @@ async function seedCache(): Promise<SeededCache> {
     };
 }
 
-function createMember(principalId: string, role: GroupMember['role']): GroupMember {
+function createMember(
+    principalId: string,
+    role: GroupMember['role']
+): Extract<GroupMember, { status: 'active'; }> {
     const audit = canonicalAuditStamp(1);
     return {
         ...REF,

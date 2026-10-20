@@ -164,19 +164,19 @@ export class BrowserRtcRoomRuntime {
         options: RallarRtcRoomTransportOptions & Readonly<{ connect: boolean; }>
     ): Promise<BrowserRtcRoomRuntime.Readiness> {
         if (!this.input.isConnected()) {
-            return { lane: await this.input.waitForRoomLane(room, laneId, options) };
+            return await this.waitForConnectedRoomReadiness(room, laneId, options);
         }
 
         const timeoutMs = normalizeWaitTimeoutMs(
             this.input.resolveWaitTimeoutMs(options.timeoutMs)
         );
         if (options.connect === false) {
-            return await this.waitForObservedRoomReadiness(room, laneId, options, timeoutMs);
+            return await this.waitForObservedRoomReadiness(room, laneId, { ...options, timeoutMs });
         }
 
         const target = this.input.resolveRoomTransportTarget(room);
         if (isRoomTransportConnectTargetSettled(target, options.minReadyPeers)) {
-            return { lane: await this.input.waitForRoomLane(room, laneId, options) };
+            return await this.waitForConnectedRoomReadiness(room, laneId, options);
         }
 
         const startedAtMs = Date.now();
@@ -209,19 +209,48 @@ export class BrowserRtcRoomRuntime {
             };
         }
 
-        return {
-            lane: await this.input.waitForRoomLane(room, laneId, {
-                ...options,
-                timeoutMs: Math.max(0, timeoutMs - (Date.now() - startedAtMs))
-            })
-        };
+        return await this.waitForConnectedRoomReadiness(room, laneId, {
+            ...options,
+            timeoutMs: Math.max(0, timeoutMs - (Date.now() - startedAtMs))
+        });
+    }
+
+    private async waitForConnectedRoomReadiness(
+        room: string | GroupRef,
+        laneId: string,
+        options: RallarRtcRoomTransportOptions
+    ): Promise<BrowserRtcRoomRuntime.Readiness> {
+        if (!this.input.isConnected() || !(options.minReadyPeers && options.minReadyPeers > 0)) {
+            return { lane: await this.input.waitForRoomLane(room, laneId, options) };
+        }
+        if (options.signal?.aborted) {
+            return { waitStatus: 'aborted' };
+        }
+        const controller = new AbortController();
+        const abort = (): void => controller.abort(options.signal?.reason);
+        options.signal?.addEventListener('abort', abort, { once: true });
+        const waiting = { ...options, signal: controller.signal, expect: { min: options.minReadyPeers } };
+        const lanes = this.input.waitForRoomLane(room, laneId, waiting)
+            .then((lane): BrowserRtcRoomRuntime.Readiness =>
+                lane.status === 'aborted' || lane.status === 'timeout'
+                    ? { waitStatus: lane.status }
+                    : { lane }
+            );
+        const readiness = this.waitForObservedRoomReadiness(room, laneId, waiting);
+        try {
+            return await Promise.race([readiness, lanes]);
+        }
+        finally {
+            controller.abort();
+            options.signal?.removeEventListener('abort', abort);
+            await Promise.allSettled([readiness, lanes]);
+        }
     }
 
     private async waitForObservedRoomReadiness(
         room: string | GroupRef,
         laneId: string,
-        options: RallarRtcRoomTransportOptions & Readonly<{ connect: boolean; }>,
-        timeoutMs: number
+        options: RallarRtcRoomTransportOptions
     ): Promise<BrowserRtcRoomRuntime.Readiness> {
         const minReadyPeers = options.minReadyPeers;
         const readReadiness = (
@@ -232,7 +261,7 @@ export class BrowserRtcRoomRuntime {
             isSettled: (current) => isRoomTransportReadinessSettled(current, minReadyPeers),
             subscribe: (listener) => this.subscribeReadiness(room, laneId, listener),
             signal: options.signal,
-            timeoutMs,
+            timeoutMs: normalizeWaitTimeoutMs(this.input.resolveWaitTimeoutMs(options.timeoutMs)),
             toTimedOut: () => readReadiness('timeout'),
             toAborted: () => readReadiness('aborted')
         });

@@ -3,7 +3,8 @@ import {
     describe,
     expect,
     it,
-    onTestFinished
+    onTestFinished,
+    vi
 } from 'vitest';
 
 import { createRallarMiddlewareInfrastructure } from '@shared-server/rallar-system/middleware/create-rallar-middleware-infrastructure.ts';
@@ -24,6 +25,55 @@ import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts
 import { createRallarMiddlewareTestRuntime } from './rallar-middleware-test-runtime.ts';
 
 describe('Rallar middleware queue wake', () => {
+    it('progresses an external WS_OUTBOX write after an occupied batch settles without idle backoff', async () => {
+        vi.useFakeTimers();
+        const releaseAuthority = Promise.withResolvers<void>();
+        const firstMessage = createOutboundMessage();
+        const resilience = createResilience();
+        const fixture = createRallarMiddlewareTestRuntime({ resilience: { inbox: resilience, outbox: resilience, appOutbox: resilience } });
+        const queueEngine = new InboxOutboxEngine();
+        const infrastructure = createRallarMiddlewareInfrastructure(
+            {
+                ...fixture.options,
+                webSocketServer: new JsonWebSocketServer(),
+                readWsOutboxProducerProvenance: async (message) => {
+                    if (message.id.msgId === firstMessage.id.msgId) {
+                        await releaseAuthority.promise;
+                    }
+                    return { admittedAudience: [], recipientScope: { applicationId: 'app', workspaceId: 'workspace' } };
+                }
+            },
+            queueEngine
+        );
+        onTestFinished(async () => {
+            releaseAuthority.resolve();
+            await infrastructure.wsQBoxServerService.dispose();
+            await queueEngine.stop();
+            vi.useRealTimers();
+        });
+        queueEngine.start();
+        await vi.advanceTimersByTimeAsync(10_000);
+
+        const first = QueueBoxUtilities.toResourceEntryFromMsg(firstMessage, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
+        await fixture.outbox.enqueueIfAbsent(first);
+        infrastructure.wakeQueueEngine();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(await readOutboxEntry(fixture.outbox, first)).toMatchObject({ status: EntityStatus.RESERVED });
+
+        const next = QueueBoxUtilities.toResourceEntryFromMsg(createOutboundMessage(), EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
+        await fixture.outbox.enqueueIfAbsent(next);
+        infrastructure.wakeQueueEngine();
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(await readOutboxEntry(fixture.outbox, next)).toMatchObject({ status: EntityStatus.NEW, dequeueAudit: { attempts: 0 } });
+
+        releaseAuthority.resolve();
+        await vi.advanceTimersByTimeAsync(10);
+        expect(await readOutboxEntry(fixture.outbox, next)).toMatchObject({
+            status: EntityStatus.COMPLETED,
+            dequeueAudit: { attempts: 1 }
+        });
+    });
+
     it.each([true, false])('drives the registered outbound owner (producer proof available: %s)', async (proofAvailable) => {
         const resilience = createResilience();
         const fixture = createRallarMiddlewareTestRuntime({ resilience: { inbox: resilience, outbox: resilience, appOutbox: resilience } });

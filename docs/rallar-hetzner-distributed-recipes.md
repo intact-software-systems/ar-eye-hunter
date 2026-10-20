@@ -139,11 +139,11 @@ scripts/hosted-rallar/dispatch-distributed-recipe.sh \
 ```
 
 The workflow input and the dispatch helper both default
-`register_before_login=true` because a full rollout wipes the Hetzner
-controller API's Postgres store and with it its users; a direct
+`register_before_login=true` so first-run disposable users are created; a direct
 `gh workflow run` that left the input at its former `false` default failed with
-a 401 at the first login. Override with `--register-before-login false` (or
-`-f register_before_login=false`) only when the target API already has
+a 401 at the first login. Controller rollouts now preserve those users. Override
+with `--register-before-login false` (or
+`-f register_before_login=false`) when the target API already has
 persistent pre-provisioned users; those runs keep signing every agent in as the
 shared `RALLAR_BLACK_BOX_USERNAME`. With registration on, each hosted agent
 registers and signs in as its own user named after its agent id

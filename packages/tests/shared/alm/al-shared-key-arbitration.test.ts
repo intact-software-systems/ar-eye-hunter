@@ -338,7 +338,7 @@ async function createPGliteArbitrationFixture(namespace: string): Promise<Arbitr
     const { sql, repository } = await createPSqlAdmissionTestStorage();
     return {
         namespace,
-        backend: new PSqlAdmissionWorkBackend(sql, namespace, Date.now),
+        backend: new PSqlAdmissionWorkBackend({ sql, namespace, nowMs: Date.now }),
         readRow: async (key) => toRowWitness(await repository.findEntry(namespace, key))
     };
 }

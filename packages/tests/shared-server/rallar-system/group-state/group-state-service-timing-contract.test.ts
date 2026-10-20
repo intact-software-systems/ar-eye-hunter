@@ -222,11 +222,25 @@ describe('group presence summary phase timing', () => {
             durationMs: expect.any(Number),
             atEpochMs: expect.any(Number)
         };
-        expect(timingEvents.filter((event) => event.component === 'group-presence-summary')).toEqual([
+        const summaryTiming = timingEvents.filter((event) => event.component === 'group-presence-summary');
+        expect(summaryTiming).toEqual([
             { ...identity, operation: 'claim', details: { coalescedWorkCount: 1 } },
             { ...identity, operation: 'read', details: { coalescedWorkCount: 1 } },
             { ...identity, operation: 'compute', details: { coalescedWorkCount: 1, recipientCount: 1, deltaCount: 1 } },
-            { ...identity, operation: 'write', details: { coalescedWorkCount: 1, recipientCount: 1, deltaCount: 1 } }
+            { ...identity, operation: 'write', details: { coalescedWorkCount: 1, recipientCount: 1, deltaCount: 1 } },
+            {
+                ...identity,
+                operation: 'committed-output-observed',
+                durationMs: 0,
+                details: {
+                    outcome: 'written',
+                    acceptedGroupRevision: 1,
+                    acceptedPresenceRevision: 0,
+                    topicId: 'group-state.event',
+                    resourceId: expect.any(String),
+                    contextId: expect.any(String)
+                }
+            }
         ]);
     });
 });

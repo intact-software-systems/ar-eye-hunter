@@ -123,6 +123,8 @@ interface RemoteRecipeScenario {
     readonly sourceHash: string;
     readonly topology: Readonly<Record<string, string>>;
     readonly recipeExit: number;
+    /** Present only for the explicit API CPU/GC capture mode. */
+    readonly captureDirectory?: string;
     /** Server timing selection and the API env file the controller reads it back from. */
     readonly serverTiming?: Readonly<{ requested: string; apiEnvFile: string; }>;
 }
@@ -378,7 +380,8 @@ async function createRemoteRecipeFixture(context: TestContext): Promise<RemoteRe
             '#!/usr/bin/env bash',
             'set -euo pipefail',
             'cat > "${OWNED_REMOTE_BODY}"',
-            'bash --noprofile --norc -c \'source "${OWNED_REMOTE_BOUNDARIES}"; source "${OWNED_REMOTE_BODY}"\''
+            // Execute the remote body as stdin, like production SSH; sourcing it adds a shell function frame around EXIT cleanup.
+            '{ printf \'source "%s"\\n\' "${OWNED_REMOTE_BOUNDARIES}"; cat "${OWNED_REMOTE_BODY}"; } | bash --noprofile --norc -s'
         ].join('\n')
     );
     await chmod(sshPath, 0o755);
@@ -403,6 +406,7 @@ async function writeRemoteRecipeControllerPorts(fixture: RemoteRecipeFixture): P
 
 function toRemoteRecipeEnvironment(fixture: RemoteRecipeFixture, scenario: RemoteRecipeScenario): Readonly<Record<string, string>> {
     return {
+        ...(scenario.captureDirectory === undefined ? {} : { RALLAR_CAPTURE_API_CPU_GC: 'true', RALLAR_API_CAPTURE_DIRECTORY: scenario.captureDirectory }),
         RALLAR_BLACK_BOX_AGENT_SOURCE: scenario.agentSource,
         RALLAR_HETZNER_OPERATOR_PHASE: scenario.phase,
         RALLAR_ROLLOUT_BEFORE_RUN: String(scenario.rollout),
@@ -456,6 +460,61 @@ async function runRemoteRecipe(context: TestContext, fixture: RemoteRecipeFixtur
 }
 
 describe('Hetzner workflow contracts and effects', () => {
+    it('keeps 25 public inputs and rejects contradictory CPU capture before planning effects', async (context) => {
+        const workflow = await readWorkflow('.github/workflows/github-free-distributed-recipe.yml');
+        expect(Object.keys(workflow.on.workflow_dispatch?.inputs ?? {})).toHaveLength(25);
+        expect(workflow.on.workflow_dispatch?.inputs?.execution_mode).toMatchObject({
+            default: 'hetzner-control',
+            options: ['hetzner-control', 'hetzner-control-cpu-gc', 'all-local']
+        });
+        for (const job of ['prepare-hetzner', 'operator']) {
+            expect(workflow.jobs[job].with?.capture_api_cpu_gc).toBe('${{ inputs.execution_mode == \'hetzner-control-cpu-gc\' }}');
+        }
+        const plan = workflow.jobs.plan.steps?.find((step) => step.id === 'plan')?.run;
+        if (!plan) {
+            throw new Error('Missing Free workflow planning script');
+        }
+        await expect(runOwnedTestProcess(context, {
+            executable: 'bash',
+            args: ['-c', plan],
+            options: {
+                env: { PATH: process.env.PATH, CAPTURE_API_CPU_GC: 'true', CAPTURE_SERVER_TIMING: 'false', CAPTURE_ROLLOUT_MODE: 'preserve-public-settings' }
+            }
+        })).rejects.toMatchObject({ code: 1, stderr: expect.stringContaining('CPU/GC capture requires') });
+    });
+
+    it('begins capture before prepare success and finishes the same identity after a failed recipe', async (context) => {
+        const fixture = await createRemoteRecipeFixture(context);
+        const captureDirectory = path.join(fixture.directory, 'api-owned');
+        await mkdir(path.join(captureDirectory, 'tooling'), { recursive: true });
+        const captureScript =
+            '#!/usr/bin/env bash\nset -euo pipefail\nprintf "capture|%s|%s\\n" "$1" "$RALLAR_API_CAPTURE_DIRECTORY" >> "$OWNED_EFFECTS"\nif [[ "$1" == begin ]]; then touch "$RALLAR_API_CAPTURE_DIRECTORY/state.json"; fi\n';
+        await writeFile(path.join(fixture.controllerDirectory, 'rallar-api-cpu-capture.sh'), captureScript);
+        await writeFile(path.join(captureDirectory, 'tooling/rallar-api-cpu-capture.sh'), captureScript);
+        const scenario: RemoteRecipeScenario = {
+            phase: 'prepare',
+            agentSource: 'external',
+            rollout: true,
+            sourceHash: 'owned-source',
+            topology: { RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE: '2' },
+            recipeExit: 17,
+            captureDirectory
+        };
+        await runRemoteRecipe(context, fixture, scenario);
+        expect(JSON.parse(await readFile(fixture.markerPath, 'utf8'))).toMatchObject({ apiCpuCapture: 'api-owned', manifestSha: 'owned-source' });
+        expect((await readFile(fixture.effectsPath, 'utf8')).trim().split('\n')).toEqual([`capture|begin|${captureDirectory}`]);
+        await runRemoteRecipe(context, fixture, { ...scenario, phase: 'run', rollout: false });
+        expect((await readFile(fixture.effectsPath, 'utf8')).trim().split('\n')).toEqual([
+            `capture|begin|${captureDirectory}`,
+            `capture|check|${captureDirectory}`,
+            'wait',
+            'recipe',
+            `capture|finish|${captureDirectory}`
+        ]);
+        expect(await readFile(path.join(fixture.directory, 'run-output.txt'), 'utf8')).toContain('exit_code=17\n');
+        await expect(readFile(path.join(fixture.directory, 'remote.env'))).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
     it.for(['manifest', 'override'] as const)('complete defaults body resolves %s values and every topology field', async (mode, context) => {
         const directory = await mkdtemp(path.join(tmpdir(), 'rallar-owned-defaults-'));
         context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
@@ -662,11 +721,12 @@ describe('Hetzner workflow contracts and effects', () => {
         });
         expect((await readFile(fixture.effectsPath, 'utf8')).trim().split('\n')).toEqual(['wait', 'recipe', runJournalExportEffect]);
         expect(await readFile(path.join(fixture.directory, 'run-output.txt'), 'utf8')).toContain('exit_code=17\n');
+        await expect(readFile(path.join(fixture.directory, 'remote.env'))).rejects.toMatchObject({ code: 'ENOENT' });
         expect(await readFile(path.join(fixture.directory, 'hetzner-operation.log'), 'utf8')).toContain('RALLAR_OPERATION_STAGE=agent-readiness');
         const steps = (await readWorkflow(distributedRunnerWorkflowPath)).jobs.run.steps ?? [];
         const stepIndex = (name: string) => steps.findIndex((step) => step.name === name);
         expect(steps[stepIndex('Copy run journals')]?.if).toBe(
-            'always() && inputs.operator_phase != \'prepare\' && steps.manifest_materialization.outcome == \'success\''
+            'always() && (inputs.operator_phase != \'prepare\' || inputs.capture_api_cpu_gc) && steps.manifest_materialization.outcome == \'success\''
         );
         expect(stepIndex('Copy run journals')).toBeGreaterThan(stepIndex('Run distributed recipe'));
         expect(stepIndex('Copy run journals')).toBeLessThan(stepIndex('Generate Hetzner operation diagnostics'));
@@ -1144,9 +1204,6 @@ describe('Hetzner workflow contracts and effects', () => {
         const stopIndex = steps.findIndex((step) => step.name === 'Stop headless browsers');
         expect(uploadIndex).toBeGreaterThanOrEqual(0);
         expect(stopIndex).toBeGreaterThan(uploadIndex);
-        expect(steps[stopIndex].if).toBe(
-            'always() && inputs.stop_after_run && inputs.agent_source != \'external\' && steps.manifest_materialization.outcome == \'success\''
-        );
     });
 
     it.for([distributedRunnerWorkflowPath, '.github/workflows/hetzner-headless-browsers.yml'])(

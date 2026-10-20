@@ -1,17 +1,63 @@
 import { isNotReadyException } from '../../../queuebox/resource-inbox/not-ready-exception.ts';
+import type { ALDeliveryAdmissionVerdict } from '../../delivery/al-delivery-lifecycle.ts';
 import type { ALWorkAttemptResult } from '../../work/al-work-handler.ts';
+import type { ALWorkClaim } from '../../work/al-work-queue-port.ts';
+import type { ALOutboundDequeuedAdmission } from './al-outbound-dequeued-admission.ts';
 import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observation.ts';
+import { recordALOutboundDequeueTiming } from './record-al-outbound-dequeue-timing.ts';
 
 /** The evidence a claim's attempt publishes once it settles; a claim whose work never decoded has none. */
 export interface ALOutboundClaimObservation {
     evidence: ALOutboundReceiptWorkEvidence | undefined;
+    timing?: ALOutboundDequeuedAdmission.TimingSink;
+    terminalReason?: string;
+    verdict?: ALDeliveryAdmissionVerdict['kind'];
 }
 
-export interface ALOutboundClaimSettlement<TPrepared> {
+/** The work attempt and physical claim identity handed from the lane or group to settlement. */
+export interface ALOutboundClaimAttemptSettlement {
     readonly attempt: Promise<ALWorkAttemptResult>;
     readonly observed: ALOutboundClaimObservation;
+    readonly claim: ALWorkClaim;
+    readonly batchIndex: number;
+}
+
+export interface ALOutboundClaimSettlement<TPrepared> extends ALOutboundClaimAttemptSettlement {
     readonly capture: ALOutboundReceiptWorkEvidence.Capture<TPrepared> | undefined;
     readonly readNowMs: () => number;
+}
+
+/** A claim keeps stage details only when it is a timed foreign outbox row. */
+export function createALOutboundClaimObservation(
+    claim: ALWorkClaim,
+    timing: ALOutboundDequeuedAdmission.TimingSink | undefined,
+    dequeueTypes: ReadonlySet<string>
+): ALOutboundClaimObservation {
+    const observed: ALOutboundClaimObservation = { evidence: undefined };
+    if (timing !== undefined && dequeueTypes.has(claim.entry.typeId)) {
+        observed.timing = timing;
+    }
+    return observed;
+}
+
+export function recordALOutboundClaimTerminalReason(
+    observed: ALOutboundClaimObservation,
+    reason: string
+): void {
+    if (observed.timing !== undefined) {
+        observed.terminalReason = reason;
+    }
+}
+
+/** Retains the already-computed admission decision for this claim's terminal marker. */
+export function recordALOutboundClaimAdmissionVerdict(
+    observed: ALOutboundClaimObservation,
+    verdict: ALDeliveryAdmissionVerdict
+): void {
+    if (observed.timing !== undefined) {
+        observed.verdict = verdict.kind;
+        observed.terminalReason = 'reason' in verdict ? verdict.reason : undefined;
+    }
 }
 
 export function createALOutboundClaimEvidence<TPrepared>(
@@ -46,8 +92,19 @@ export async function settleALOutboundClaim<TPrepared>(
         throw error;
     }
     finally {
-        if (capture !== undefined) {
-            observed.evidence?.publish(capture.observer, result);
+        try {
+            if (capture !== undefined) {
+                observed.evidence?.publish(capture.observer, result);
+            }
+        }
+        finally {
+            if (observed.timing !== undefined) {
+                recordALOutboundDequeueTiming(observed.timing, {
+                    kind: 'attempt-settled',
+                    settlement,
+                    outcome: result?.status ?? 'error'
+                });
+            }
         }
     }
 }

@@ -6,6 +6,7 @@ import type {
 import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALOutboundDequeuedAdmission } from '@shared/alm/outbound/lane/al-outbound-dequeued-admission.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -115,6 +116,7 @@ export interface CreateRallarMiddlewareOptions {
     readonly wsOutboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
     readonly wsInboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
     readonly wsReceiptObserver?: WsQueueBoxServerReceiptObserver;
+    readonly wsDequeueTiming?: ALOutboundDequeuedAdmission.TimingSink;
     /** The WS server's settlement sink; absent, the server's own receipts are settled but observed by nobody. */
     readonly wsOutboundSettlements?: ALDeliverySettlementSink;
     readonly createGroupStateInboxService: (

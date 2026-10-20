@@ -29,6 +29,11 @@ import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-cont
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
+import type {
+    ResourceInboxReservationObservationRequest,
+    ResourceInboxReservationObservationResult,
+    ResourceInboxReservationRequest
+} from '@shared/queuebox/queue-box-types.ts';
 import {
     createDefaultResourceInboxDequeuer,
     type DequeueResourceEntryOptions,
@@ -803,10 +808,20 @@ export async function dequeueExhaustedAtomicEntry(input: DequeueExhaustedAtomicE
         reserved = true;
         return new Map([[harness.entry.key, value]]);
     };
+    function reserveEntries(request: ResourceInboxReservationObservationRequest): Promise<ResourceInboxReservationObservationResult>;
+    function reserveEntries(request: ResourceInboxReservationRequest): Promise<Map<Key, ResourceEntry>>;
+    async function reserveEntries(
+        request: ResourceInboxReservationRequest | ResourceInboxReservationObservationRequest
+    ): Promise<Map<Key, ResourceEntry> | ResourceInboxReservationObservationResult> {
+        if ('reservationObservation' in request) {
+            throw new Error('This fixture exercises ordinary reservations only');
+        }
+        return lane === 'initial' ? reserveOnce(harness.entry) : new Map();
+    }
     const controller = createDefaultResourceInboxDequeuer<Key>({
         repository: {
             isAnyEntryToLock: async () => true,
-            reserveEntries: async () => lane === 'initial' ? reserveOnce(harness.entry) : new Map(),
+            reserveEntries,
             reserveTimeoutEntries: async () => new Map(),
             reserveOverdueRetryEntries: async () => new Map(),
             reserveRetryExhaustionFinalizations: async () =>
