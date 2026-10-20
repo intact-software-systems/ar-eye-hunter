@@ -173,7 +173,7 @@ describe('rallar-black-box full-stack API server mode', () => {
              const api = config.webServer[0];
              process.stdout.write(JSON.stringify({
                  retainsLoginOverride: api.command.includes('RALLAR_LOGIN_USER_RATE_LIMIT=123 CORS_ORIGINS='),
-                 postgresInvocation: api.command.includes('deno run --env-file=apps/api-v1/.env.local'),
+                 postgresInvocation: api.command.includes('RALLAR_SQL_BACKEND=postgres'),
                  wrapper: api.command.includes('run-full-stack-api-with-timing'),
                  url: api.url, reuseExistingServer: api.reuseExistingServer, timeout: api.timeout,
                  gracefulShutdown: api.gracefulShutdown?.signal ?? null
@@ -257,7 +257,7 @@ describe('rallar-black-box full-stack API server mode', () => {
 
         expect(server.url).toBe('http://localhost:8080/api/config');
         expect(server.command).toContain('CORS_ORIGINS=http://localhost:5178,http://127.0.0.1:5178');
-        expect(server.command).toContain('--env-file=apps/api-v1/.env.local');
+        expect(server.command).not.toContain('--env-file=');
         expect(server.command).toContain('RALLAR_API_BASE_URL=http://localhost:8080');
         expect(server.command).toContain('RALLAR_WS_BASE_URL=ws://localhost:8080');
         expect(server.command).toContain('RALLAR_SQL_BACKEND=postgres');
