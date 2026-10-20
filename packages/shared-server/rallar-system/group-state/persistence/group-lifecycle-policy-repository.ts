@@ -26,7 +26,6 @@ export type GroupLifecyclePolicyRead =
     | Readonly<{ status: 'present'; policy: GroupLifecyclePolicy; }>
     | Readonly<{ status: 'corrupt'; reason: string; }>;
 
-/** The read of one stored policy value, wherever it was read from. */
 export function toGroupLifecyclePolicyRead(
     stored: JsonWireValue | undefined,
     ref: GroupRef

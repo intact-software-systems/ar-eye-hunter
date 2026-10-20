@@ -29,7 +29,10 @@ export async function readGroupMutationWithSnapshot(
     const exact = readsExactGroupMutation(command)
         ? await readExactGroupMutation({ repository, command, includeGroupSnapshot: true })
         : null;
-    if (exact?.groupSnapshot.status === 'read') {
+    if (exact !== null) {
+        if (exact.groupSnapshot.status !== 'read') {
+            throw new TypeError('An exact read that includes the group snapshot returns it');
+        }
         return { read: exact.read, currentSnapshot: exact.groupSnapshot.snapshot };
     }
     const [read, currentSnapshot] = await Promise.all([

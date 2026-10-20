@@ -41,7 +41,6 @@ export type GroupStateMutationExactReadInput = Readonly<{
     aggregateRef: GroupRef;
     includeGroup: boolean;
     includePresenceSummary: boolean;
-    /** The group's stored lifecycle policy, read in the same statement. */
     includeLifecyclePolicy: boolean;
     /** The whole roster and every session as well, so the group's snapshot comes from the same statement. */
     includeGroupSnapshot: boolean;
@@ -72,7 +71,6 @@ export interface GroupStateMutationExactEntries {
     readonly members: readonly ExactEntry<string, GroupMember>[];
     readonly presenceSessions: readonly ExactEntry<string, GroupPresenceSession>[];
     readonly admissions: readonly ExactEntry<string, GroupPresenceAdmission>[];
-    /** Null when the input did not ask for it. */
     readonly lifecyclePolicy: GroupLifecyclePolicyRead | null;
     readonly groupSnapshot: GroupStateMutationExactSnapshot;
 }

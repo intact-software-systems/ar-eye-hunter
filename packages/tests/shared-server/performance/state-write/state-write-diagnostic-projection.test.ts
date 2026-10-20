@@ -750,6 +750,21 @@ describe('state-write diagnostic projection', () => {
         expect(readRecords(ambiguousWorker.serialized).at(-1)).toMatchObject({ timing: { total: 1, rejected: 1, retained: 0 } });
     });
 
+    it.each(['read', 'readWithSnapshot'])('associates a group-state-service %s line with its command', (operation) => {
+        const events = [{
+            ...createEvent(config.physicalKey.resourceId, { ...config.physicalKey }),
+            component: 'group-state-service',
+            operation
+        }];
+
+        const result = computeStateWriteDiagnosticPhase({ ...createPhase(), timingEvents: events }, budget, 65_536);
+
+        expect(readRecords(result.serialized).filter((record) => record.record === 'timing').map((record) => record.association))
+            .toEqual([
+                { kind: 'command-operation', commandOrdinal: 1, operation: 'command', originatingStack: 1, observingStack: 1, attempt: 'unavailable' }
+            ]);
+    });
+
     it('keeps SQL process-level and discloses that begin status is not commit evidence', () => {
         const phase = createPhase();
         const event: RallarTimingEvent = {
