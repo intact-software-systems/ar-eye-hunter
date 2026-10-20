@@ -1,9 +1,12 @@
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+
 import { GroupStateRepositoryReads } from '../../group-state/persistence/group-state-repository-reads.ts';
 import { readGroupVisibility } from '../../group-state/policy/group-snapshot-visibility-policy.ts';
+import type { GroupStateCurrentSnapshotCache } from '../../group-state/snapshot/group-state-current-snapshot-cache.ts';
 import { StateSnapshotReadConflictError } from '../../state-events/state-snapshot-read.ts';
+import { timeClientStateReadPhase, type ClientStateMutationTiming } from '../client-state-service-timing.ts';
 import { ClientStateRepository } from '../persistence/client-state-repository.ts';
 import { ClientMutationRejectedError } from '../validation/client-mutation-rejection.ts';
 import type { ClientMutationCommand, ClientMutationRead } from './client-mutation-contracts.ts';
@@ -36,7 +39,14 @@ export interface ReadClientMutationInput {
     readonly authSessionRepository: Pick<AuthSessionRepository, 'findBySessionId'>;
     readonly command: ClientMutationCommand;
     readonly audienceObservedAtEpochMs: number;
+    readonly timing?: ClientStateMutationTiming;
+    readonly currentGroupSnapshots?: Pick<GroupStateCurrentSnapshotCache, 'readSnapshot'>;
 }
+
+type ClientMutationStateRead = Pick<
+    ClientMutationRead,
+    'authoritySession' | 'idempotency' | 'principal' | 'instance' | 'session' | 'expiredSessionEntry' | 'snapshot'
+>;
 
 const EMPTY_AUDIENCE_READ: ClientMutationAudienceRead = {
     audienceGroupSnapshots: [],
@@ -46,8 +56,27 @@ const EMPTY_AUDIENCE_READ: ClientMutationAudienceRead = {
 export async function readClientMutation(
     input: ReadClientMutationInput
 ): Promise<ClientMutationRead> {
-    const { repository, groupRepository, authSessionRepository, command } = input;
-    const audienceObservedAtEpochMs = input.audienceObservedAtEpochMs;
+    const { repository, command, audienceObservedAtEpochMs, timing } = input;
+    const state = await timeClientStateReadPhase(
+        { timing, command, operation: 'mutation.read-state' },
+        () => readClientMutationState(input)
+    );
+    const receiptEvent = await timeClientStateReadPhase(
+        { timing, command, operation: 'mutation.read-receipt' },
+        () => readReceiptEvent(repository, command, state.idempotency ?? undefined)
+    );
+    const audienceScope = resolveClientMutationAudienceReadScope(command, state);
+    const audience = audienceScope === 'principal-audience'
+        ? await readPrincipalAudience(input)
+        : EMPTY_AUDIENCE_READ;
+
+    return { ...state, receiptEvent, audienceObservedAtEpochMs, ...audience };
+}
+
+async function readClientMutationState(
+    input: ReadClientMutationInput
+): Promise<ClientMutationStateRead> {
+    const { repository, authSessionRepository, command } = input;
     const targets = toClientMutationTargetRefs(command);
     const [authoritySession, idempotency, principalSnapshot, instance, sessionRead] = await Promise.all([
         readAuthoritySession(authSessionRepository, command),
@@ -60,41 +89,33 @@ export async function readClientMutation(
     ]);
 
     assertPrincipalSnapshotRevision(principalSnapshot);
-    const receiptEvent = await readReceiptEvent(repository, command, idempotency);
-    const session = sessionRead.value ?? null;
-    const audienceScope = resolveClientMutationAudienceReadScope(command, {
-        idempotency: idempotency ?? null,
-        session
-    });
-    const audience = audienceScope === 'principal-audience'
-        ? await readPrincipalAudience({ repository, groupRepository, command, audienceObservedAtEpochMs })
-        : EMPTY_AUDIENCE_READ;
-
     return {
         authoritySession: authoritySession ?? null,
         idempotency: idempotency ?? null,
         principal: principalSnapshot?.principal ?? null,
         instance: instance ?? null,
-        session,
+        session: sessionRead.value ?? null,
         expiredSessionEntry: sessionRead.expiredEntry ?? null,
-        snapshot: principalSnapshot?.snapshot ?? null,
-        receiptEvent,
-        audienceObservedAtEpochMs,
-        ...audience
+        snapshot: principalSnapshot?.snapshot ?? null
     };
 }
 
 async function readPrincipalAudience(
     input: Omit<ReadClientMutationInput, 'authSessionRepository'>
 ): Promise<ClientMutationAudienceRead> {
-    const { repository, groupRepository, command, audienceObservedAtEpochMs } = input;
+    const { repository, groupRepository, command, audienceObservedAtEpochMs, timing } = input;
     const scope = {
         applicationId: command.aggregateRef.applicationId,
         workspaceId: command.aggregateRef.workspaceId
     };
-    const audienceGroupSnapshots = await groupRepository.listSnapshotsForPrincipal(
-        scope,
-        command.aggregateRef.principalId
+    const audienceGroupSnapshots = await timeClientStateReadPhase(
+        { timing, command, operation: 'mutation.read-audience-groups' },
+        () =>
+            groupRepository.listSnapshotsForPrincipal(
+                scope,
+                command.aggregateRef.principalId,
+                input.currentGroupSnapshots
+            )
     );
     const coGroupPrincipalIds = new Set<string>();
     for (const snapshot of audienceGroupSnapshots) {
@@ -120,8 +141,12 @@ async function readPrincipalAudience(
             }
         }
     }
-    const audienceClientSnapshots = await repository.readSnapshotsForPrincipals(
-        [...coGroupPrincipalIds].map((principalId) => ({ ...scope, principalId }))
+    const audienceClientSnapshots = await timeClientStateReadPhase(
+        { timing, command, operation: 'mutation.read-audience-clients' },
+        () =>
+            repository.readSnapshotsForPrincipals(
+                [...coGroupPrincipalIds].map((principalId) => ({ ...scope, principalId }))
+            )
     );
     return { audienceGroupSnapshots, audienceClientSnapshots };
 }

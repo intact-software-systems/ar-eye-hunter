@@ -34,6 +34,8 @@ import { WsQueueBoxServerService } from '../../shared/services/ws-queue-box-serv
 import { ConnectionContext, JsonWebSocketServer } from '../../shared/websocket/json-web-socket-server.ts';
 import { SimulatedWebSocket } from '../shared/native-websocket-fixture.ts';
 
+import { reserveNoResourceEntries } from '../shared/reserve-no-resource-entries.ts';
+
 export type ReceiptOwnerScenario = 'native-return' | 'later-throw' | 'closed' | 'native-throw' | 'publish-return' | 'publish-throw' | 'direct-failure';
 
 export type ReceiptOwnerSink = 'collecting' | 'mutating' | 'throwing' | 'disabled' | 'unsafe' | 'unsafe-transport' | 'unsafe-publication' | 'clock-mutating';
@@ -234,7 +236,7 @@ class ReceiptOwnerFixture {
     }
 
     private holdClaims(): void {
-        this.backend.workQueue.reserveEntries = async () => new Map();
+        this.backend.workQueue.reserveEntries = reserveNoResourceEntries;
         this.backend.workQueue.reserveTimeoutEntries = async () => new Map();
         const release = this.backend.workQueue.releaseEntries.bind(this.backend.workQueue);
         this.backend.workQueue.releaseEntries = async (releases) => {

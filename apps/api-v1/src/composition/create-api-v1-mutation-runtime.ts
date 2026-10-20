@@ -99,6 +99,7 @@ export interface CreateApiV1MutationRuntimeInput {
     readonly maxConcurrentPasswordDerivations: number;
     readonly nowEpochMs: () => number;
     readonly timing: RallarTimingSink;
+    readonly outboxStageTiming?: RallarTimingSink;
     readonly appInboxOptions: AppInboxOptions;
     readonly appInboxLaneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
     readonly appInboxNewLaneConcurrency: number;
@@ -144,6 +145,7 @@ interface ApiV1StateMutationDependencies {
     readonly serviceId: string;
     readonly nowEpochMs: () => number;
     readonly timing: RallarTimingSink;
+    readonly outboxStageTiming?: RallarTimingSink;
     readonly appInboxOptions: AppInboxOptions;
     readonly resourceInboxRepository: PSqlResourceInboxRepository;
     readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
@@ -152,6 +154,7 @@ interface ApiV1StateMutationDependencies {
     readonly clientStateEventStore: PSqlClientStateEventRepository;
     readonly clientSnapshotCache: ClientStateSnapshotReadThroughCache;
     readonly groupSnapshotCache: GroupStateSnapshotReadThroughCache;
+    readonly groupCurrentSnapshotCache: GroupStateCurrentSnapshotCache;
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
 }
 
@@ -317,6 +320,7 @@ function createApiV1StateMutationDependencies(
         serviceId: input.serviceId,
         nowEpochMs: input.nowEpochMs,
         timing: input.timing,
+        outboxStageTiming: input.outboxStageTiming,
         appInboxOptions: input.appInboxOptions,
         resourceInboxRepository: resources.resourceInboxRepository,
         resourceInboxResultsRepository: resources.resourceInboxResultsRepository,
@@ -325,6 +329,7 @@ function createApiV1StateMutationDependencies(
         clientStateEventStore: resources.clientStateEventStore,
         clientSnapshotCache: resources.clientSnapshotCache,
         groupSnapshotCache: resources.groupSnapshotCache,
+        groupCurrentSnapshotCache: resources.groupCurrentSnapshotCache,
         groupFormationMetrics: resources.groupFormationMetrics
     };
 }
@@ -378,7 +383,7 @@ function createGroupStateInboxServiceFactory(
             wakeQueue: wakeQueueEngine,
             now: input.nowEpochMs,
             formationMetrics: input.groupFormationMetrics.presenceSummary,
-            timing: input.timing
+            timing: input.outboxStageTiming
         });
         outboxQueueReader.onOutboxMessageDo(AppOutboxType.GROUP_PRESENCE_SUMMARY, {
             onMessage: async (message, entry) => await presenceSummary.processReservedEntry(message, entry)
@@ -413,7 +418,8 @@ function createAppClientInboxServiceFactory(
                 runtimeRepository: input.runtimeStateRepository,
                 clientStateEventStore: input.clientStateEventStore,
                 serviceId: input.serviceId,
-                timing: input.timing
+                timing: input.timing,
+                currentGroupSnapshots: input.groupCurrentSnapshotCache
             }),
             cache: input.clientSnapshotCache
         });

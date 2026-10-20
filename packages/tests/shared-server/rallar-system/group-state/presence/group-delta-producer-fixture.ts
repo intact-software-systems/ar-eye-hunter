@@ -12,6 +12,7 @@ import {
 } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import * as GroupNamespaces from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
+import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -43,7 +44,7 @@ export interface GroupDeltaProducerFixture {
     readonly message: ALMessage;
 }
 
-export async function createGroupDeltaProducer(sql?: PSqlSql): Promise<GroupDeltaProducerFixture> {
+export async function createGroupDeltaProducer(sql?: PSqlSql, timing?: RallarTimingSink): Promise<GroupDeltaProducerFixture> {
     const database = sql ?? (await createPSqlAdmissionTestStorage()).sql;
     const repository = new PSqlRuntimeStateRepository(database);
     const now = Date.now();
@@ -63,7 +64,8 @@ export async function createGroupDeltaProducer(sql?: PSqlSql): Promise<GroupDelt
         recomputeDebounceMs: 0,
         recomputeMaxWaitMs: 0,
         serviceId: 'producer-api',
-        now: () => now
+        now: () => now,
+        timing
     });
     const event = runtime.groupStateEventStore.events.find((candidate) => candidate.eventType === 'session-connected')!;
     const queued = computeGroupPresenceSummaryEntry({

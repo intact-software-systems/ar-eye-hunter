@@ -276,7 +276,7 @@ async function createFenceFixture(storage: FenceStorage): Promise<FenceFixture> 
 async function createPGliteFenceBackend(namespace: string): Promise<Omit<FenceFixture, 'store'>> {
     const { sql, repository } = await createPSqlAdmissionTestStorage();
     return {
-        backend: new PSqlAdmissionWorkBackend(sql, namespace, Date.now),
+        backend: new PSqlAdmissionWorkBackend({ sql, namespace, nowMs: Date.now }),
         readAdmissionState: async () => toAdmissionStateFingerprint(await repository.findAllEntries(namespace))
     };
 }

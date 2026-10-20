@@ -1,5 +1,10 @@
 import { Project } from 'ts-morph';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import {
     analyzeTransactionWrites,
     isBlockingTransactionWriteFinding
@@ -372,6 +377,61 @@ describe('transaction write boundaries', () => {
             path: 'packages/shared/queuebox/write-computed-indexed-db-queue-mutations.ts',
             operation: 'JSON.stringify'
         });
+    });
+
+    it('keeps observed QueueBox row refinement specialized while adjacent methods remain strict', () => {
+        const project = new Project({ useInMemoryFileSystem: true });
+        const source = project.createSourceFile(
+            '/packages/shared-server/queuebox/postgres/p-sql-queue-box.ts',
+            `interface Repository {
+                 transaction<T>(write: (transaction: Repository) => Promise<T>): Promise<T>;
+                 read(): Promise<{ readonly key: string }>;
+             }
+             declare const repository: Repository;
+             export class PSqlQueueBox {
+                 private async reserveObservedEntries(): Promise<string> {
+                     return await repository.transaction(async (transaction) => {
+                         const current = await transaction.read();
+                         return JSON.stringify([current.key]);
+                     });
+                 }
+                 async unreviewedWrite(value: string): Promise<string> {
+                     return await repository.transaction(async () => JSON.stringify([value]));
+                 }
+             }`
+        );
+
+        const findings = analyzeTransactionWrites(project, [source]);
+
+        expect(findings.filter(isBlockingTransactionWriteFinding)).toEqual([
+            expect.objectContaining({
+                operation: 'JSON.stringify',
+                boundary: 'packages/shared-server/queuebox/postgres/p-sql-queue-box.ts:14'
+            })
+        ]);
+    });
+
+    it('keeps domain-owned transactions strict even when named for observed reservations', () => {
+        const findings = analyzeFixture(`
+            interface PSqlSql {
+                begin<T>(write: (transaction: PSqlSql) => Promise<T>): Promise<T>;
+                read(): Promise<{ readonly key: string }>;
+            }
+            declare const database: PSqlSql;
+            export class DomainWriter {
+                async reserveObservedEntries(): Promise<string> {
+                    return await database.begin(async (transaction) => {
+                        const current = await transaction.read();
+                        return JSON.stringify([current.key]);
+                    });
+                }
+            }
+        `);
+
+        expect(findings.filter(isBlockingTransactionWriteFinding)).toMatchObject([{
+            operation: 'JSON.stringify',
+            path: 'packages/domain/mutation.ts'
+        }]);
     });
 
     it('allows for-of batches that open one transaction per prepared value', () => {

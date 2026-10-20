@@ -74,9 +74,16 @@ export class ALOutboundSendControls {
 
     /** A cancelled or handed-over message: every later effect of it completes without sending. */
     isEnded(msgId: string): boolean {
+        return this.readEndedReason(msgId) !== undefined;
+    }
+
+    /** Names why later work is skipped without changing the retained control state. */
+    readEndedReason(msgId: string): 'cancelled' | 'handed-over' | undefined {
         const nowMs = this.input.nowMs();
-        return this.cancelledMsgIds.readAt(msgId, nowMs) !== undefined ||
-            this.handedOverMsgIds.readAt(msgId, nowMs) !== undefined;
+        if (this.cancelledMsgIds.readAt(msgId, nowMs) !== undefined) {
+            return 'cancelled';
+        }
+        return this.handedOverMsgIds.readAt(msgId, nowMs) === undefined ? undefined : 'handed-over';
     }
 
     /**

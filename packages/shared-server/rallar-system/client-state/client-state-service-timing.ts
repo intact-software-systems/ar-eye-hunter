@@ -14,6 +14,19 @@ import type {
 
 type ClientStatePurePhase = 'mutation.compute' | 'mutation.validate';
 
+type ClientStateReadPhase =
+    | 'mutation.read'
+    | 'mutation.read-state'
+    | 'mutation.read-receipt'
+    | 'mutation.read-audience-groups'
+    | 'mutation.read-audience-clients';
+
+interface ClientStateReadPhaseInput {
+    readonly timing: ClientStateMutationTiming | undefined;
+    readonly command: ClientMutationCommand;
+    readonly operation: ClientStateReadPhase;
+}
+
 export interface ClientStateMutationTiming {
     readonly sink: RallarTimingSink | undefined;
     readonly serviceId: string;
@@ -50,25 +63,32 @@ export function createTimedClientStateService(
     }
     return {
         ...input.service,
-        read: (command) => timeClientMutationRead(input, command, () => input.service.read(command))
+        read: (command) =>
+            timeClientStateReadPhase({
+                timing: { sink: input.timing, serviceId: input.serviceId },
+                command,
+                operation: 'mutation.read'
+            }, () => input.service.read(command))
     };
 }
 
 export type ClientStateServiceTimingFactory = typeof createTimedClientStateService;
 
-function timeClientMutationRead<T>(
-    input: CreateTimedClientStateServiceInput,
-    command: ClientMutationCommand,
+export function timeClientStateReadPhase<T>(
+    input: ClientStateReadPhaseInput,
     action: () => Promise<T>
 ): Promise<T> {
+    if (!input.timing?.sink) {
+        return action();
+    }
     return timeRallarAsync(
-        input.timing,
+        input.timing.sink,
         {
             component: 'client-state-service',
-            operation: 'mutation.read',
-            serviceId: input.serviceId,
-            requestId: command.requestId ?? undefined,
-            ...command.aggregateRef
+            operation: input.operation,
+            serviceId: input.timing.serviceId,
+            requestId: input.command.requestId ?? undefined,
+            ...input.command.aggregateRef
         },
         action
     );

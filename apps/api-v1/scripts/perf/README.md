@@ -136,10 +136,26 @@ attempts per accepted mutation are derived from these histories. Coherent hot
 baseline exhaustion is representable; comparison permits candidate hot
 exhaustion only up to that baseline while requiring zero in uncontended/shared.
 
-The timed command ends with AppInbox completion. After the measured phase, the
-harness queries completed `APP_INBOX` rows/results, production idempotency
-receipts, and final `APP_OUTBOX`/`WS_OUTBOX` rows from `resource_inbox` through
-an uninstrumented admin SQL stack.
+The timed command ends when its actual service sequence returns a validated
+AppInbox result. Profile-instance waits for a successful profile result before
+submitting the instance update, and its command ends after the instance result.
+Each command keeps one owned queue pump through that sequence. A dequeue pass or
+timer already in progress is joined after the command endpoint and before the
+command's concurrency slot is released. The measured phase, SQL and CPU counters,
+and diagnostic release events remain open through this cleanup. A pump failure
+after a successful command still fails the workload; it does not rewrite the
+observed command boundary.
+
+This completion behavior is a harness revision. A fresh main-versus-candidate
+comparison must run both roles with the same candidate perf-directory overlay
+and native-check both checkouts. Historical samples from the earlier completion
+behavior cannot be mixed with corrected-harness samples, even though both use
+schema `rallar.api-v1.state-write.v6`. The repaired boundary does not establish
+a production speedup or waive a failed comparison.
+
+After the measured phase, the harness queries completed `APP_INBOX` rows/results,
+production idempotency receipts, and final `APP_OUTBOX`/`WS_OUTBOX` rows from
+`resource_inbox` through an uninstrumented admin SQL stack.
 Profile-instance counts as received only when both profile and instance
 subcommand receipts are present and complete; a group command uses its exact
 request-ID receipt. Each operation projects its validated receipt's command and
@@ -234,14 +250,28 @@ These checks cover existing path identities; they do not lock parent directories
 against concurrent external filesystem changes.
 
 Each warmup or measured phase writes `phase-<ordinal>.ndjson` after its duration,
-CPU and PostgreSQL counters have been captured. Fixed ceilings are 100,000 retained
+CPU and PostgreSQL counters have been captured. Fixed ceilings are 110,000 retained
 timing plus release records per phase, 33,554,432 serialized bytes per phase and
 536,870,912 serialized bytes per run. Boundary records are counted separately;
 command/kind boundaries and release facts have priority over timing events.
+The logical event ceiling is an explicit 10% resource-budget increase from
+100,000, leaving 8,815 events above the observed 101,185-event maximum. The byte
+ceilings are unchanged. This does not change correctness or performance acceptance,
+guarantee future captures fit, or bound the pre-existing raw timing array collection.
 These limits are safeguards, not measured event maxima. No canonical arrays are
 truncated. The phase footer reports total, retained, unassociated, rejected and
 truncated counts. Expected process-level SQL or unavailable attempt/worker facts
 are disclosed; invalid joins and capacity loss make the projection incomplete.
+
+Current captures use `rallar.state-write.diagnostic.v3`: readable named JSON records
+retain every independent timing field, event order and multiplicity. Only the two
+exactly derived timing-row properties are omitted: `approximateStartedAtEpochMs`
+is `completedAtEpochMs - roundedDurationMs`; `statusMeaning` is
+`wrapper-finally-not-commit` for component `state-write-benchmark-phase` and
+`timed-operation-status` otherwise. Wrapper-finally status never proves commit.
+Existing timing fields retain millisecond units; reservation intervals use microseconds.
+Human reports use seconds. The schema
+version identifies this derivation contract without repeating it in every timing row.
 
 The sidecar exports fixed labels and phase-local command ordinals. Private exact
 logical/physical AppInbox expectations associate profile and instance separately.
@@ -269,12 +299,39 @@ reports incomplete status without source error text. An otherwise successful
 benchmark still writes v6 and exits nonzero for incomplete diagnostics; an
 original operation failure remains the original failure.
 
-Scalar stores and allocations in the mapper are diagnostic overhead. Post-phase
+Ordinary, unobserved PostgreSQL RETRY claims optionally retain the previous persisted
+retry delay and due-to-reservation observation interval as signed safe-integer
+microseconds. Both intervals are subtracted in PostgreSQL before truncation toward
+zero; negative values remain visible. The observation occurs in UPDATE RETURNING,
+after update and before commit, and does not measure lock, commit or handler time.
+Microsecond quantization and database wall-clock adjustments limit interpretation.
+Human reports convert these values to seconds with explicit units.
+
+Each release carries availability, boundary, association and reservation attempt.
+The attempt stays distinct from a not-ready release's decremented attempt. Missing
+or malformed expected RETRY observations make the projection incomplete; NEW is
+not applicable, and FAIRNESS, TIMEOUT and FINALIZATION remain explicitly uncaptured.
+Observed PostgreSQL claims and non-PostgreSQL stores cannot provide these intervals.
+The footer counts expected, available and unavailable RETRY observations. Physical
+keys and previous timestamps remain private. Existing v2 originals are preserved;
+the current hosted capture validator admits v3 only.
+
+The original CLI dispatches comparison mode through a shared workload runner and
+loads one fixed diagnostic entry only when `--diagnostics-dir` is present. Candidate
+and baseline comparison use the identical perf overlay. Diagnostic composition
+requires the current production observation validator and fails during import on
+unsupported historical production, before database setup. Native checks cover both
+candidate entries and the baseline comparison entry separately.
+
+Scalar stores and allocations in the mapper are diagnostic overhead. Enabled mode
+also retains an additional phase-local array of references to release telemetry;
+the serialization budgets do not bound that array or canonical collection. Post-phase
 projection and I/O can affect later phases. This overlay is not a performance
 improvement claim and does not authorize or replace the governed comparison.
 
-For source navigation, start at `api-v1-state-write-concurrency-bench.ts` for
-SQL/phase/artifact lifecycle. Under `state-write/`, `state-write-workload.ts` owns
+For source navigation, start at `api-v1-state-write-concurrency-bench.ts` for mode selection.
+Under `state-write/`, `run-state-write-benchmark.ts` owns the single SQL/phase/artifact
+lifecycle and `run-state-write-diagnostic.ts` owns diagnostic reader composition; `state-write-workload.ts` owns
 the complete seven-kind command and queue-pump flow, `seed-complete-state.ts` owns
 setup, and `state-write-measurement.ts` owns summaries. Exact command/operation association
 policy lives in `state-write-diagnostic-association.ts`; record projection and caps
@@ -424,8 +481,12 @@ The workflow substitutes the actual GitHub run ID and attempt. Fresh `commands/`
 `diagnostics/` and capture-owned `.acquisition` destinations keep producer originals separate.
 All three workloads, twelve phases, 8,400 total commands and 6,300 measured commands are required.
 The unchanged exported `validateStateWriteArtifact` validates canonical v6 correctness. The hosted
-owner also checks every diagnostic phase, the complete receipt, byte accounting and the fixed
-100,000 timing/release records per phase, 33,554,432 bytes per phase and 536,870,912 bytes per run.
+owner validates only the fresh v3 capture from that same pinned candidate checkout;
+unsupported schemas and incomplete or inconsistent row/count evidence fail closed.
+It has no historical-input API. Original v1/v2 artifacts remain unchanged; no historical
+adapter is added. The owner also checks every diagnostic phase, the complete receipt,
+byte accounting and the fixed
+110,000 timing/release records per phase, 33,554,432 bytes per phase and 536,870,912 bytes per run.
 A successful workflow is diagnostic evidence; it does not repair a failed comparison or satisfy
 frozen scale acceptance.
 

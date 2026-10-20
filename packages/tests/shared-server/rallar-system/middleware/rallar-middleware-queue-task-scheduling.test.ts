@@ -9,7 +9,13 @@ import {
 
 import { registerApplicationQueueReaderTasks } from '@shared-server/rallar-system/middleware/rallar-middleware-queue-registration.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import type {
+    ResourceInboxReservationObservationRequest,
+    ResourceInboxReservationObservationResult,
+    ResourceInboxReservationRequest
+} from '@shared/queuebox/queue-box-types.ts';
 import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
+import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
@@ -84,14 +90,16 @@ class ProbedQueueBox extends InMemoryQueueBox {
         return await super.readWorkAdvertisement(...input);
     }
 
+    override reserveEntries(request: ResourceInboxReservationObservationRequest): Promise<ResourceInboxReservationObservationResult>;
+    override reserveEntries(request: ResourceInboxReservationRequest): Promise<Map<Key, ResourceEntry>>;
     override async reserveEntries(
-        ...input: Parameters<InMemoryQueueBox['reserveEntries']>
-    ): ReturnType<InMemoryQueueBox['reserveEntries']> {
+        request: ResourceInboxReservationRequest | ResourceInboxReservationObservationRequest
+    ): Promise<Map<Key, ResourceEntry> | ResourceInboxReservationObservationResult> {
         if (this.failNextReservation) {
             this.failNextReservation = false;
             throw new Error('Reservation transport unavailable');
         }
-        return await super.reserveEntries(...input);
+        return 'reservationObservation' in request ? await super.reserveEntries(request) : await super.reserveEntries(request);
     }
 }
 

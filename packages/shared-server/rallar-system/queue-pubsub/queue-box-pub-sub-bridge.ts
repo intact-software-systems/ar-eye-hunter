@@ -138,6 +138,17 @@ interface SendToCapturedLocalTargetsInput {
     readonly policy: ALOutboundCapturedPolicy | undefined;
 }
 
+interface QueueBoxOutboxPublication {
+    readonly message: ALMessage;
+    readonly entry: ResourceEntry;
+    readonly deferObservation: ALWorkObservationDeferral | undefined;
+}
+
+interface ObserveCapturedLocalSendInput extends SendToCapturedLocalTargetsInput {
+    readonly result: WsServerLiveSendResult;
+    readonly envelope: QueueBoxPubSubMessage;
+}
+
 interface ResolveResourceEntryFromPubSubMessageDependencies {
     readonly clock: ALOutboundMessageRuntime.Clock;
     readonly loadByKey: (
@@ -209,11 +220,7 @@ function registerQueueBoxOutboxPublisher(
 }
 
 async function writeQueueBoxOutboxPublication(
-    publication: {
-        readonly message: ALMessage;
-        readonly entry: ResourceEntry;
-        readonly deferObservation: ALWorkObservationDeferral | undefined;
-    },
+    publication: QueueBoxOutboxPublication,
     options: RegisterQueueBoxOutboxPublisherInput
 ): Promise<void> {
     const { message, entry, deferObservation } = publication;
@@ -226,28 +233,15 @@ async function writeQueueBoxOutboxPublication(
     try {
         const envelope = toPubSubMessage({ channel: options.channel, publisherId: options.publisherId, entry });
         publishCall = 'invoked';
-        await options.bridge.publish(options.channel, envelope);
+        await publishOutboxClusterNotice(envelope, options);
         publishCall = 'returned';
-        recordPubSubTiming({ timing: options.timing, operation: 'outbox-cluster-publish', message: envelope });
-        const policy = await readCapturedPublicationPolicy(options.wsQBoxServerService, message, entry);
+        const policy = options.timing === undefined
+            ? await readCapturedPublicationPolicy(options.wsQBoxServerService, message, entry)
+            : await readLocalPublicationPolicy(publication, envelope, options);
         directCall = 'invoked';
         result = sendToCapturedLocalTargets({ message, entry, policy }, options);
         directCall = 'returned';
-        const awaited = deferAwaitedCapturedRecipients({ message, entry, policy }, result, options);
-        recordPubSubTiming({
-            timing: options.timing,
-            operation: 'outbox-direct-send',
-            message: envelope,
-            details: {
-                localPublisherId: options.publisherId,
-                deliveryStatus: result.status,
-                recipientCount: result.recipientCount,
-                sentCount: result.sentCount,
-                failedCount: result.failedCount,
-                deferredCount: awaited.heldCount,
-                deferEvictedCount: awaited.evictedCount
-            }
-        });
+        observeCapturedLocalSend({ message, entry, policy, result, envelope }, options);
         if (result.failedCount > 0) {
             throw new Error(`Failed ${result.failedCount} local WS outbox sends`);
         }
@@ -270,6 +264,82 @@ async function writeQueueBoxOutboxPublication(
             }, deferObservation);
         }
     }
+}
+
+/** One endpoint separates the captured-policy read from synchronous send and deferred-audience bookkeeping. */
+async function readLocalPublicationPolicy(
+    publication: QueueBoxOutboxPublication,
+    envelope: QueueBoxPubSubMessage,
+    options: RegisterQueueBoxOutboxPublisherInput
+): Promise<ALOutboundCapturedPolicy | undefined> {
+    let status: 'ok' | 'error' = 'error';
+    try {
+        const policy = await readCapturedPublicationPolicy(
+            options.wsQBoxServerService,
+            publication.message,
+            publication.entry
+        );
+        status = 'ok';
+        return policy;
+    }
+    finally {
+        if (options.timing !== undefined) {
+            recordPubSubTiming({
+                timing: options.timing,
+                operation: 'outbox-captured-policy-read',
+                message: envelope,
+                status
+            });
+        }
+    }
+}
+
+/** Holds awaited local recipients and records the completed direct-send boundary. */
+function observeCapturedLocalSend(
+    input: ObserveCapturedLocalSendInput,
+    options: RegisterQueueBoxOutboxPublisherInput
+): void {
+    const { message, entry, policy, result, envelope } = input;
+    const awaited = deferAwaitedCapturedRecipients({ message, entry, policy }, result, options);
+    recordPubSubTiming({
+        timing: options.timing,
+        operation: 'outbox-direct-send',
+        message: envelope,
+        details: {
+            localPublisherId: options.publisherId,
+            deliveryStatus: result.status,
+            recipientCount: result.recipientCount,
+            sentCount: result.sentCount,
+            failedCount: result.failedCount,
+            deferredCount: awaited.heldCount,
+            deferEvictedCount: awaited.evictedCount
+        }
+    });
+}
+
+/** The actual cluster publish call and its existing return endpoint share one side-effect boundary. */
+async function publishOutboxClusterNotice(
+    envelope: QueueBoxPubSubMessage,
+    options: RegisterQueueBoxOutboxPublisherInput
+): Promise<void> {
+    if (options.timing !== undefined) {
+        recordPubSubTiming({ timing: options.timing, operation: 'outbox-cluster-publish-start', message: envelope });
+    }
+    try {
+        await options.bridge.publish(options.channel, envelope);
+    }
+    catch (error) {
+        if (options.timing !== undefined) {
+            recordPubSubTiming({
+                timing: options.timing,
+                operation: 'outbox-cluster-publish-error',
+                message: envelope,
+                status: 'error'
+            });
+        }
+        throw error;
+    }
+    recordPubSubTiming({ timing: options.timing, operation: 'outbox-cluster-publish', message: envelope });
 }
 
 async function receiveQueueBoxPubSubMessage(
@@ -584,13 +654,24 @@ async function readLiveCanonicalIdentityForNotice(
 
 interface RecordPubSubTimingInput {
     readonly timing: RallarTimingSink | undefined;
-    readonly operation: string;
+    readonly operation:
+        | 'outbox-cluster-publish-start'
+        | 'outbox-cluster-publish-error'
+        | 'outbox-cluster-publish'
+        | 'outbox-captured-policy-read'
+        | 'outbox-direct-send'
+        | 'drop-malformed'
+        | 'outbox-remote-send-failed'
+        | 'key-load-miss'
+        | 'key-load-mismatch'
+        | 'outbox-key-loaded';
     readonly message: Partial<QueueBoxPubSubMessage> | undefined;
     readonly details?: RallarTimingDetails;
+    readonly status?: 'ok' | 'error';
 }
 
 function recordPubSubTiming(input: RecordPubSubTimingInput): void {
-    const { timing, operation, message, details = {} } = input;
+    const { timing, operation, message, details = {}, status = 'ok' } = input;
     recordRallarTiming({
         sink: timing,
         event: {
@@ -599,7 +680,7 @@ function recordPubSubTiming(input: RecordPubSubTimingInput): void {
             serviceId: message?.publisherId,
             details: { ...toPubSubTimingDetails(message), ...details }
         },
-        status: 'ok',
+        status,
         durationMs: 0
     });
 }

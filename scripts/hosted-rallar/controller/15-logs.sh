@@ -25,7 +25,7 @@ Usage: rallar-logs [options]
 
 Options:
   -f, --follow              Follow new log lines.
-  -n, --lines <count>       Number of recent lines to show. Default: 120.
+  -n, --lines <count>       Number of recent entries; +count starts at the oldest. Default: 120.
       --since <time>        Pass a journalctl --since value, e.g. "30 min ago".
       --services <list>     Comma-separated aliases: api,control,headless,browser,caddy,app,all.
       --browser             Show headless browser page logs.
@@ -105,8 +105,8 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
-if ! [[ "${lines}" =~ ^[0-9]+$ ]]; then
-	echo "--lines must be a non-negative integer. Received: ${lines}" >&2
+if ! [[ "${lines}" =~ ^([0-9]+|\+[1-9][0-9]*)$ ]]; then
+	echo "--lines must be a non-negative integer or +count for oldest entries. Received: ${lines}" >&2
 	exit 2
 fi
 
@@ -232,7 +232,11 @@ if [[ "${follow}" == "1" ]]; then
 fi
 
 redact_stream() {
-	sed -E \
+	local buffer_flag=-u
+	if [[ "$(uname -s)" == "Darwin" ]]; then
+		buffer_flag=-l
+	fi
+	sed "${buffer_flag}" -E \
 		-e 's/Bearer[[:space:]]+[A-Za-z0-9._~+\/=-]+/Bearer [REDACTED]/g' \
 		-e 's/([?&]?(adminToken|controlToken|token|password|secret)=)[^&[:space:]]+/\1[REDACTED]/Ig' \
 		-e 's/RALLAR_[A-Z0-9_]*(TOKEN|PASSWORD|SECRET)[A-Z0-9_]*=[^[:space:]]+/RALLAR_SECRET=[REDACTED]/g'

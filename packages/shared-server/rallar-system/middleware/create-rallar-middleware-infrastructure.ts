@@ -175,6 +175,7 @@ function createMiddlewareWsQueueBoxServer(
         outboundSettlements: options.wsOutboundSettlements,
         inboundDiagnostics: options.wsInboundDiagnostics,
         receiptObserver: options.wsReceiptObserver,
+        dequeueTiming: options.wsDequeueTiming,
         authorizeInboundMessage: authorizeMiddlewareALIngress,
         publishRelayedAck: options.relayedAckNotices
             ? createRelayedAckPublisher(options.relayedAckNotices)

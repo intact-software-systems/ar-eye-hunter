@@ -6,14 +6,13 @@ import {
     it,
     vi
 } from 'vitest';
-import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 import { newALMulticastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import {
     createPassThroughTransportFaultPort,
     createScriptedTransportFaultPort
 } from '@shared/transport-faults/transport-fault-port.ts';
-import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
+import { QRtcDataChannel, type RtcDataChannelPayload } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
 import {
@@ -21,6 +20,7 @@ import {
     NativeRtcRuntime,
     SimulatedNativeRtcPeerConnection
 } from './native-rtc-connection-fixture.ts';
+import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 let runtime: NativeRtcRuntime;
 const peers: QRtcPeerConnection[] = [];
@@ -114,14 +114,17 @@ describe('QRtcDataChannel', () => {
             dataChannelName: 'room'
         });
         const rejected: string[] = [];
-        const raw: unknown[] = [];
-        const decoded: unknown[] = [];
+        const raw: RtcDataChannelPayload[] = [];
+        const decoded: string[] = [];
         channel.onRtcMessageDo('alm', {
             maxMessageBytes: 4,
             onRejected: async (reason) => {
                 rejected.push(reason.code);
             },
             onMessage: async (value) => {
+                if (typeof value !== 'string') {
+                    throw new Error('Expected decoded text at the bounded subscription');
+                }
                 decoded.push(value);
             }
         });
@@ -333,6 +336,33 @@ describe('QRtcDataChannel', () => {
 
         await expect(wait).resolves.toBe(true);
         expect(dataChannel.isOpen()).toBe(true);
+    });
+
+    it('cancels only the owned open waiter and leaves the channel available to other callers', async () => {
+        vi.useFakeTimers();
+        try {
+            const fixture = createNativeDataChannelFixture();
+            const channel = new QRtcDataChannel(fixture.peerConnection, {
+                faultPort: createPassThroughTransportFaultPort(),
+                peerId: 'peer-1',
+                dataChannelName: 'room'
+            });
+            channel.connect(true);
+            const controller = new AbortController();
+            const cancelled = channel.waitUntilOpen(1_000, controller.signal);
+            const surviving = channel.waitUntilOpen(1_000);
+            const timerCount = vi.getTimerCount();
+            controller.abort();
+            expect(vi.getTimerCount()).toBe(timerCount - 1);
+            await expect(cancelled).resolves.toBe(false);
+            await fixture.native.channels[0].open();
+            await expect(surviving).resolves.toBe(true);
+            expect(channel.isOpen()).toBe(true);
+            expect(vi.getTimerCount()).toBe(timerCount - 2);
+        }
+        finally {
+            vi.useRealTimers();
+        }
     });
 
     it('returns false when a channel open wait times out', async () => {

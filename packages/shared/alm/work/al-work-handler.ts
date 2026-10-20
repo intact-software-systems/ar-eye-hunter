@@ -70,7 +70,8 @@ export interface ALWorkHandlerDependencies {
     /** Reads eligible work; the port owns reservation. */
     readonly selectReady: (
         port: ALWorkQueuePort,
-        pageSize: number
+        pageSize: number,
+        batchStartedAtMs: number
     ) => Promise<ALWorkReadySelection>;
     /**
      * Reserves the claim a completed one hands its place in the batch to, which the batch then runs
@@ -127,6 +128,8 @@ export type ALWorkDiagnostics = ALWorkBatchDiagnostics | ALWorkReadinessProbeDia
  */
 export interface ALWorkBatchDiagnostics {
     readonly kind: 'work-batch';
+    /** Source-process start before exhaustion, selection and claim. */
+    readonly batchStartedAtMs: number;
     readonly workerId: string;
     readonly durationMs: number;
     readonly claimedCount: number;
@@ -199,6 +202,14 @@ interface ALWorkClaimTurn extends ALWorkClaimedRun {
 interface ALWorkBatchProgress extends ALWorkCounts {
     runDurationMs: number;
     releaseDurationMs: number;
+}
+
+/** The mutable batch records and source start used while selecting and running its claims. */
+interface ALWorkClaimedRunInput {
+    readonly releases: ALWorkRelease[];
+    readonly progress: ALWorkBatchProgress;
+    readonly deferObservation: ALWorkObservationDeferral | undefined;
+    readonly batchStartedAtMs: number;
 }
 
 /** A batch that flushed its releases: what it counted, and its run unless disposal cut the claims short. */
@@ -461,7 +472,12 @@ export class ALWorkHandler {
         let run: ALWorkClaimedRun | undefined;
         try {
             if (!this.shutdown.signal.aborted) {
-                run = await this.runClaimedWork(releases, progress, deferObservation);
+                run = await this.runClaimedWork({
+                    releases,
+                    progress,
+                    deferObservation,
+                    batchStartedAtMs: startedAtMs
+                });
             }
         }
         finally {
@@ -480,13 +496,10 @@ export class ALWorkHandler {
      * disposal ended the batch mid-claim, which leaves the wake and the diagnostics to whichever batch
      * resumes.
      */
-    private async runClaimedWork(
-        releases: ALWorkRelease[],
-        progress: ALWorkBatchProgress,
-        deferObservation: ALWorkObservationDeferral | undefined
-    ): Promise<ALWorkClaimedRun | undefined> {
+    private async runClaimedWork(input: ALWorkClaimedRunInput): Promise<ALWorkClaimedRun | undefined> {
+        const { releases, progress, deferObservation, batchStartedAtMs } = input;
         const { clock, port, pageSize, selectReady } = this.dependencies;
-        const selection = await selectReady(port, pageSize);
+        const selection = await selectReady(port, pageSize, batchStartedAtMs);
         const queued = [...selection.claims];
         progress.claimedCount = queued.length;
         const runStartedAtMs = clock.nowMs();
@@ -539,6 +552,7 @@ export class ALWorkHandler {
         const { clock, workerId, diagnostics } = this.dependencies;
         diagnostics?.({
             kind: 'work-batch',
+            batchStartedAtMs: startedAtMs,
             workerId,
             durationMs: computeElapsedMs(startedAtMs, clock.nowMs()),
             ...progress,

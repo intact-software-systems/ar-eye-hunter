@@ -119,22 +119,17 @@ export function toStateWriteTimingAssociation(
         return undefined;
     }
     if (event.requestId === undefined) {
-        if (
-            event.component === 'app-inbox' || event.component === 'app-inbox-phase' ||
-            event.component === 'app-inbox-handler' ||
-            event.component === 'client-state-service'
-        ) {
-            return undefined;
-        }
-        return {
-            kind: 'process-unassociated',
-            reason: event.component.startsWith('state-write-benchmark-') ? 'sql-process-scope' : 'request-unavailable',
-            observingStack
-        };
+        return toUnassociatedTimingAssociation(event, observingStack);
     }
     const matches = index.requests.get(event.requestId);
     const operation = matches?.length === 1 ? matches[0] : undefined;
-    if (!operation || !matchesPhysicalDetails(event, operation.expectation)) {
+    if (!operation) {
+        return undefined;
+    }
+    const matchesIdentity = event.component === 'app-inbox'
+        ? matchesLogicalEnqueueDetails(event, operation.expectation)
+        : matchesPhysicalDetails(event, operation.expectation);
+    if (!matchesIdentity) {
         return undefined;
     }
     if (event.component === 'app-inbox' && observingStack !== operation.originatingStack) {
@@ -201,6 +196,31 @@ export function isStateWriteCommandBoundaryValid(
         isDiagnosticClock(boundary.startedAtMonotonicMs) &&
         boundary.startedAtMonotonicMs >= phase.startedAtMonotonicMs &&
         endValid;
+}
+
+function toUnassociatedTimingAssociation(
+    event: RallarTimingEvent,
+    observingStack: number | 'unavailable'
+): StateWriteDiagnosticAssociation | undefined {
+    if (
+        event.component === 'app-inbox' || event.component === 'app-inbox-phase' ||
+        event.component === 'app-inbox-handler' || event.component === 'client-state-service'
+    ) {
+        return undefined;
+    }
+    return {
+        kind: 'process-unassociated',
+        reason: event.component.startsWith('state-write-benchmark-') ? 'sql-process-scope' : 'request-unavailable',
+        observingStack
+    };
+}
+
+function matchesLogicalEnqueueDetails(event: RallarTimingEvent, expectation: StateWriteAppInboxExpectation): boolean {
+    return event.requestId === expectation.logicalResourceId &&
+        event.details?.resourceId === expectation.logicalResourceId &&
+        event.details?.contextId === expectation.logicalContextId &&
+        event.details?.topicId === expectation.topicId &&
+        event.details?.type === expectation.topicId;
 }
 
 function matchesPhysicalDetails(event: RallarTimingEvent, expectation: StateWriteAppInboxExpectation): boolean {

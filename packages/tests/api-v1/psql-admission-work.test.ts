@@ -54,7 +54,7 @@ describe('PostgreSQL inbound admission', () => {
     it('lists prefix rows through runtime-state pages when available', async () => {
         const { sql, repository } = await createPSqlAdmissionTestStorage();
         const namespace = 'psql-test:inbound:paged-list';
-        const backend = new PSqlAdmissionWorkBackend(sql, namespace, Date.now);
+        const backend = new PSqlAdmissionWorkBackend({ sql, namespace, nowMs: Date.now });
         const prefix = 'effect:';
         const total = RUNTIME_STATE_PREFIX_READ_PAGE_SIZE + 2;
 
@@ -88,7 +88,7 @@ describe('PostgreSQL inbound admission', () => {
 
     it('returns a read-only admission result without opening a SQL transaction', async () => {
         const { sql } = await createPSqlAdmissionTestStorage();
-        const backend = new PSqlAdmissionWorkBackend(sql, 'psql-test:read-only', Date.now);
+        const backend = new PSqlAdmissionWorkBackend({ sql, namespace: 'psql-test:read-only', nowMs: Date.now });
         vi.spyOn(sql, 'begin').mockRejectedValue(new Error('A read-only result must not begin a write'));
 
         await expect(backend.write((read) => read.read('missing', decodeIndexedRecord))).resolves.toBeUndefined();
@@ -100,7 +100,7 @@ describe('PostgreSQL inbound admission', () => {
         const store = createALInboundAdmissionStore({
             nowMs: Date.now,
             namespace,
-            backend: new PSqlAdmissionWorkBackend(sql, namespace, Date.now),
+            backend: new PSqlAdmissionWorkBackend({ sql, namespace, nowMs: Date.now }),
             orderingTrackTtlMs: 5 * 60_000,
             supersedenceTrackTtlMs: 5 * 60_000,
             retention: normalizeALRuntimeStoreRetention(),
@@ -134,7 +134,7 @@ describe('PostgreSQL inbound admission', () => {
     it('records inbound receipt progress while retaining message provenance', async () => {
         const { sql, repository } = await createPSqlAdmissionTestStorage();
         const namespace = 'psql-test:inbound:admission';
-        const backend = new PSqlAdmissionWorkBackend(sql, namespace, Date.now);
+        const backend = new PSqlAdmissionWorkBackend({ sql, namespace, nowMs: Date.now });
         const store = createALInboundAdmissionStore({
             nowMs: Date.now,
             namespace,
@@ -223,7 +223,7 @@ describe('PostgreSQL outbound admission', () => {
     it('conditionally advances sender version and persists durable effects in one commit', async () => {
         const { sql, repository } = await createPSqlAdmissionTestStorage();
         const namespace = 'psql-test:outbound:admission';
-        const backend = new PSqlAdmissionWorkBackend(sql, namespace, Date.now);
+        const backend = new PSqlAdmissionWorkBackend({ sql, namespace, nowMs: Date.now });
         const store = createALOutboundAdmissionStore({
             decodePrepared: decodePreparedOutboundSend,
             nowMs: Date.now,
@@ -304,7 +304,7 @@ describe('PostgreSQL outbound admission', () => {
     it('bumps the owning sender version when accepting outbound control messages', async () => {
         const { sql, repository } = await createPSqlAdmissionTestStorage();
         const namespace = 'psql-test:outbound:admission';
-        const backend = new PSqlAdmissionWorkBackend(sql, namespace, Date.now);
+        const backend = new PSqlAdmissionWorkBackend({ sql, namespace, nowMs: Date.now });
         const store = createALOutboundAdmissionStore({
             decodePrepared: decodePreparedOutboundSend,
             nowMs: Date.now,

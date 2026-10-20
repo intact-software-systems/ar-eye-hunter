@@ -5,6 +5,54 @@ import { reviewedBrowserDispositions } from './reviewed-browser-dispositions.mjs
 import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // Task17 whole-file self-review: this fixed local module is admitted as an
+    // object with the one named callable before invocation. Import errors remain
+    // visible; the assertion narrows the validated entry, never production options.
+    Object.freeze({
+        path: 'apps/api-v1/scripts/perf/api-v1-state-write-concurrency-bench.ts',
+        rule: 'boundary.unknown',
+        symbol: 'runStateWriteBenchmarkMode',
+        maximumMagnitude: 1
+    }),
+    // Optional driver fields stay raw in the private transaction result. The
+    // post-return decoder admits bounded signed integer text only; malformed
+    // evidence becomes unavailable without changing authoritative row handling.
+    Object.freeze({
+        path: 'packages/shared-server/queuebox/postgres/p-sql-resource-inbox-reservation-repository.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 2
+    }),
+    Object.freeze({
+        path: 'packages/shared-server/queuebox/postgres/to-p-sql-reservation-observations.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 2
+    }),
+    Object.freeze({
+        path: 'packages/shared-server/queuebox/postgres/to-p-sql-reservation-observations.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSignedSafeMicroseconds',
+        maximumMagnitude: 1
+    }),
+    // One pure phase projection owns record admission, redaction, shared budgets
+    // and completeness. Keeping those decisions together exposes how a rejected
+    // or truncated release affects the same footer; no second lifecycle exists.
+    Object.freeze({
+        path: 'apps/api-v1/scripts/perf/state-write/state-write-diagnostic-projection.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 66
+    }),
+    // One dequeue composition owns lane selection and mandatory release. Optional
+    // observation association stays at the existing claimed-attempt translation;
+    // splitting that conditional would hide the point where claimed work proceeds.
+    Object.freeze({
+        path: 'packages/shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 54
+    }),
     // Independent whole-owner review: parsed recorder JSON stays unknown until
     // number normalization and the object guard admit ApiJsonObject. The exact
     // parse boundary has one occurrence; no raw value reaches admission policy.
@@ -290,6 +338,37 @@ export const reviewedDispositions = Object.freeze([
         path: 'packages/tests/hetzner/headless-worker-environment.test.ts',
         rule: 'boundary.unknown',
         symbol: 'readHeadlessEnvironmentStep'
+    }),
+    // These exact Actions YAML boundaries validate every consumed field with
+    // the shared schema validator before narrowing. No raw YAML reaches the
+    // executable workflow assertions; one occurrence per named read owner.
+    Object.freeze({
+        path: 'packages/tests/hetzner/hosted-operator-inspect.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readControllerWorkflow',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/tests/hetzner/public-settings-workflow.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readWorkflow',
+        maximumMagnitude: 1
+    }),
+    // The owned Actions expression result is untrusted until typeof proves
+    // boolean; only that boolean selects the real cleanup port in this test.
+    Object.freeze({
+        path: 'packages/tests/hetzner/public-settings-workflow.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'applyWorkflowCleanup',
+        maximumMagnitude: 1
+    }),
+    // The exact rollout-binding expression result is admitted only as a
+    // boolean or environment string; tests assert actual reusable booleans.
+    Object.freeze({
+        path: 'packages/tests/hetzner/public-settings-workflow.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'resolveRolloutBinding',
+        maximumMagnitude: 1
     }),
     // Owned process recorder JSON validates every consumed argument/env field
     // before typed assertion evidence leaves the read boundary.
@@ -1704,6 +1783,15 @@ export const reviewedDispositions = Object.freeze([
         path: 'apps/rallar-black-box/scripts/to-safe-api-timing-record.ts',
         rule: 'boundary.unknown',
         symbol: 'toSafeApiTimingRecord'
+    }),
+    // The promotion log record remains raw until its exact operation, scope,
+    // timing, outcome and layout labels validate. Only those safe fields leave
+    // this private projection; one reviewed occurrence permits no growth.
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-timing-record.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeTopologyPromotionRecord',
+        maximumMagnitude: 1
     }),
     Object.freeze({
         path: 'apps/rallar-black-box/scripts/to-safe-api-timing-record.ts',

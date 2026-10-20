@@ -3,10 +3,12 @@ import {
     describe,
     expect,
     it,
-    onTestFinished
+    onTestFinished,
+    vi
 } from 'vitest';
 
 import type { RallarFacade } from '@shared-web/browser/rallar-facade-contract.ts';
+import type { StateCacheChangeListener } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
@@ -39,6 +41,231 @@ installFakeBroadcastChannelPerTest();
 
 describe('room RTC authority and native progress', () => {
     beforeEach(resetRtcWaitTestRuntime);
+
+    it.each(['before', 'after'] as const)('returns the minimum with a lane opened %s waiting and releases only its own waits', async (openedAt) => {
+        const room = createGroupSnapshot('room-1', ['session-1', 'peer-a', 'peer-b']);
+        const fixture = await createNativeRoomFixture([room]);
+        fixture.service.ensurePeerConnectionStarted('peer-b', true);
+        const otherLane = fixture.nativePeer('peer-b').channels.find((channel) => channel.label === 'reliable');
+        if (!otherLane) {
+            throw new Error('Second native reliable lane was not created');
+        }
+        vi.useFakeTimers();
+        try {
+            if (openedAt === 'before') {
+                await fixture.lane.open();
+            }
+            const timersBefore = vi.getTimerCount();
+            const callbackCountsBefore = fixture.service.knownPeerIds().map((peerId) =>
+                fixture.service.readPeer(peerId)?.channels.get('reliable')?.readHealth().lifecycleCallbackCount
+            );
+            const pending = fixture.facade.rtc.waitForRoom(room.group, { minReadyPeers: 1, timeoutMs: 1_000 });
+            let settled = false;
+            void pending.then(() => {
+                settled = true;
+            });
+            if (openedAt === 'after') {
+                await fixture.lane.open();
+            }
+            await vi.advanceTimersByTimeAsync(0);
+            expect(settled).toBe(true);
+            await expect(pending).resolves.toMatchObject({
+                rtc: { state: 'partial', desiredPeerIds: ['peer-a', 'peer-b'], readyPeerIds: ['peer-a'] }
+            });
+            expect(vi.getTimerCount()).toBe(timersBefore);
+            expect(
+                fixture.service.knownPeerIds().map((peerId) => fixture.service.readPeer(peerId)?.channels.get('reliable')?.readHealth().lifecycleCallbackCount)
+            ).toEqual(callbackCountsBefore);
+            expect(otherLane.readyState).toBe('connecting');
+            expect(fixture.service.knownPeerIds()).toEqual(['peer-a', 'peer-b']);
+            await otherLane.open();
+            await expect(fixture.facade.rtc.waitForRoom(room.group, { timeoutMs: 1_000 })).resolves.toMatchObject({
+                rtc: { state: 'open', readyPeerIds: ['peer-a', 'peer-b'] }
+            });
+        }
+        finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it.each([undefined, 2])('waits for all lanes when the minimum is %s', async (minReadyPeers) => {
+        const room = createGroupSnapshot('room-1', ['session-1', 'peer-a', 'peer-b']);
+        const fixture = await createNativeRoomFixture([room]);
+        fixture.service.ensurePeerConnectionStarted('peer-b', true);
+        const otherLane = fixture.nativePeer('peer-b').channels.find((channel) => channel.label === 'reliable');
+        if (!otherLane) {
+            throw new Error('Second native reliable lane was not created');
+        }
+        let settled = false;
+        const pending = fixture.facade.rtc.waitForRoom(room.group, { minReadyPeers, timeoutMs: 1_000 });
+        void pending.then(() => {
+            settled = true;
+        });
+        await fixture.lane.open();
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        expect(settled).toBe(false);
+        await otherLane.open();
+        await expect(pending).resolves.toMatchObject({ rtc: { state: 'open', readyPeerIds: ['peer-a', 'peer-b'] } });
+    });
+
+    it.each(['abort', 'timeout'] as const)('releases real minimum-readiness waiters after %s and permits recovery', async (termination) => {
+        const room = createGroupSnapshot('room-1', ['session-1', 'peer-a']);
+        const fixture = await createNativeRoomFixture([room]);
+        const controller = new AbortController();
+        vi.useFakeTimers();
+        try {
+            const timersBefore = vi.getTimerCount();
+            const pending = fixture.facade.rtc.waitForRoom(room.group, {
+                minReadyPeers: 1,
+                timeoutMs: 100,
+                signal: controller.signal
+            });
+            await Promise.resolve();
+            if (termination === 'abort') {
+                controller.abort();
+            }
+            else {
+                await vi.advanceTimersByTimeAsync(100);
+            }
+            await expect(pending).resolves.toMatchObject({ rtc: { reason: `Room RTC wait ended with ${termination === 'abort' ? 'aborted' : 'timeout'}.` } });
+            expect(vi.getTimerCount()).toBe(timersBefore);
+            expect(fixture.lane.readyState).toBe('connecting');
+            await fixture.lane.open();
+            await expect(fixture.facade.rtc.waitForRoom(room.group, { minReadyPeers: 1, timeoutMs: 100 })).resolves.toMatchObject({
+                rtc: { state: 'open', readyPeerIds: ['peer-a'] }
+            });
+        }
+        finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it.each(['halt', 'local-departure', 'peer-departure', 'replacement'] as const)(
+        'rechecks current authority after minimum readiness settles during %s cleanup',
+        async (change) => {
+            const room = createGroupSnapshot('room-1', ['session-1', 'peer-a', 'peer-b']);
+            const fixture = await createNativeRoomFixture([room]);
+            readRtcWaitMocks().onCacheChange.mockImplementation(() => () => changeRoomAuthority(room, change));
+            const pending = fixture.facade.rtc.waitForRoom(room.group, { minReadyPeers: 1, timeoutMs: 1_000 });
+            await fixture.lane.open();
+            const result = await pending;
+            expect(result.rtc.readyPeerIds).toEqual(change === 'halt' ? ['peer-a'] : []);
+            expect(['open', 'partial']).not.toContain(result.rtc.state);
+            expect(fixture.service.knownPeerIds()).toContain('peer-a');
+        }
+    );
+
+    it.each(['abort', 'timeout'] as const)('keeps %s terminal if a native lane opens during observation cleanup', async (termination) => {
+        const room = createGroupSnapshot('room-1', ['session-1', 'peer-a']);
+        const fixture = await createNativeRoomFixture([room]);
+        readRtcWaitMocks().onCacheChange.mockImplementation(() => () => {
+            void fixture.lane.open();
+        });
+        const controller = new AbortController();
+        vi.useFakeTimers();
+        try {
+            const pending = fixture.facade.rtc.waitForRoom(room.group, {
+                minReadyPeers: 1,
+                signal: controller.signal,
+                timeoutMs: 100
+            });
+            if (termination === 'abort') {
+                controller.abort();
+            }
+            else {
+                await vi.advanceTimersByTimeAsync(100);
+            }
+            await expect(pending).resolves.toMatchObject({
+                rtc: { state: 'idle', readyPeerIds: ['peer-a'], reason: `Room RTC wait ended with ${termination === 'abort' ? 'aborted' : 'timeout'}.` }
+            });
+        }
+        finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('does not start peer work for a pre-aborted minimum wait even if one lane is ready', async () => {
+        const room = createGroupSnapshot('room-1', ['session-1', 'peer-a', 'peer-b']);
+        const fixture = await createNativeRoomFixture([room]);
+        await fixture.lane.open();
+        const controller = new AbortController();
+        controller.abort();
+        await expect(fixture.facade.rtc.waitForRoom(room.group, {
+            minReadyPeers: 1,
+            signal: controller.signal,
+            timeoutMs: 100
+        })).resolves.toMatchObject({ rtc: { state: 'idle', reason: 'Room RTC wait ended with aborted.' } });
+        expect(fixture.service.knownPeerIds()).toEqual(['peer-a']);
+    });
+
+    it.each(['close', 'fail'] as const)('rechecks a formerly ready lane that %ss during minimum-wait cleanup', async (change) => {
+        const room = createGroupSnapshot('room-1', ['session-1', 'peer-a', 'peer-b']);
+        const fixture = await createNativeRoomFixture([room]);
+        readRtcWaitMocks().onCacheChange.mockImplementation(() => () => {
+            void fixture.lane[change]();
+        });
+        const pending = fixture.facade.rtc.waitForRoom(room.group, { minReadyPeers: 1, timeoutMs: 100 });
+        await fixture.lane.open();
+        const result = await pending;
+        expect(result.rtc.readyPeerIds).toEqual([]);
+        expect(['open', 'partial']).not.toContain(result.rtc.state);
+    });
+
+    it('cleans up when the parent aborts during synchronous observation registration', async () => {
+        const room = createGroupSnapshot('room-1', ['session-1', 'peer-a']);
+        const fixture = await createNativeRoomFixture([room]);
+        const controller = new AbortController();
+        readRtcWaitMocks().onCacheChange.mockImplementation(() => {
+            controller.abort();
+            return () => {};
+        });
+        vi.useFakeTimers();
+        try {
+            const timersBefore = vi.getTimerCount();
+            await expect(fixture.facade.rtc.waitForRoom(room.group, {
+                minReadyPeers: 1,
+                signal: controller.signal,
+                timeoutMs: 100
+            })).resolves.toMatchObject({ rtc: { state: 'idle', reason: 'Room RTC wait ended with aborted.' } });
+            expect(vi.getTimerCount()).toBe(timersBefore);
+            expect(fixture.lane.readyState).toBe('connecting');
+        }
+        finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('shares one deadline between accepted-authority arrival and minimum lane readiness', async () => {
+        const room = createGroupSnapshot('room-1', ['session-1', 'peer-a']);
+        const fixture = await createNativeRoomFixture([room]);
+        mockGroupSnapshots([room], []);
+        const listeners = new Set<StateCacheChangeListener>();
+        readRtcWaitMocks().onCacheChange.mockImplementation((listener) => {
+            listeners.add(listener);
+            return () => listeners.delete(listener);
+        });
+        vi.useFakeTimers();
+        try {
+            const pending = fixture.facade.rtc.waitForRoom(room.group, { minReadyPeers: 1, timeoutMs: 100 });
+            let settled = false;
+            void pending.then(() => {
+                settled = true;
+            });
+            await vi.advanceTimersByTimeAsync(60);
+            mockAcceptedOverlay(room, ['session-1', 'peer-a']);
+            for (const listener of listeners) {
+                await listener({ clients: [], groups: [room] });
+            }
+            await vi.advanceTimersByTimeAsync(39);
+            expect(settled).toBe(false);
+            await vi.advanceTimersByTimeAsync(1);
+            await expect(pending).resolves.toMatchObject({ rtc: { reason: 'Room RTC wait ended with timeout.' } });
+            expect(listeners.size).toBe(0);
+        }
+        finally {
+            vi.useRealTimers();
+        }
+    });
 
     it('keeps connecting and open lanes out of failed peers, and reports actual lane failure', async () => {
         const room = createGroupSnapshot('room-1', ['session-1', 'peer-a']);

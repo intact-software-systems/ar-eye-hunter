@@ -192,7 +192,8 @@ target_agent_count=50   agents_per_job=3   max_parallel_jobs=17
 ```
 
 All three set `metadata.rtcTopologyEnv` (mesh min size N + 1), so
-`rollout_control_plane=true` is required, and `register_before_login=true`.
+`rollout_control_plane=true` or `rollout_control_plane=preserve-public-settings`
+is required, and `register_before_login=true`.
 Hosted Hetzner agents now also sign in as one user per agent (`controller-NN`),
 matching the all-local lifecycle and these shards, because one shared principal
 fans every connect out to a full snapshot for each of its sessions and stalls
@@ -237,9 +238,23 @@ agents and `metadata.recommendedTerminalTimeoutSeconds` for 60-minute manifests.
 The `prepare-hetzner` job runs before any GitHub agent job starts. It invokes
 the reusable Hetzner runner with `operator_phase=prepare`,
 `agent_source=external`, and `rollout_before_run` taken from the workflow's
-`rollout_control_plane` input (default `true`). The `plan` job rejects
-`rollout_control_plane=false` for a manifest that sets
+`rollout_control_plane` choice (default `true`). Existing `true` and `false`
+invocation values retain their behavior. The explicit
+`preserve-public-settings` choice enables rollout while preserving the ten
+validated public controller settings, so masked inspect values do not need to
+be supplied again:
+
+```text
+rollout_control_plane=preserve-public-settings
+```
+
+The planner and prepare caller derive a rollout boolean from `true` or
+`preserve-public-settings`; both prepare and run calls derive preservation only
+from `preserve-public-settings`. The run phase still skips rollout. The `plan`
+job rejects `rollout_control_plane=false` for a manifest that sets
 `metadata.rtcTopologyEnv`, because those values are applied during rollout.
+Using the existing choice keeps all 25 operational dispatch inputs available.
+All-local jobs retain their existing local stack lifecycle.
 
 This phase applies `metadata.rtcTopologyEnv` to the Hetzner API/control
 environment and writes a remote prepare marker. The later operator run uses

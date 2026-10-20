@@ -28,7 +28,6 @@ import {
     recordRallarTiming,
     timeRallarAsync,
     type RallarTimingDetails,
-    type RallarTimingEventInput,
     type RallarTimingSink
 } from '../../observability/timing.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../../topology/mutation/rtc-topology-outbox-entry.ts';
@@ -68,6 +67,11 @@ import {
     type GroupPresenceSummaryReservationRead,
     type GroupPresenceSummaryWorkRead
 } from './group-presence-summary-effects.ts';
+import {
+    recordGroupPresenceSummaryCommittedOutputs,
+    toGroupPresenceSummaryTimingEvent,
+    type GroupPresenceSummaryTiming
+} from './group-presence-summary-timing.ts';
 
 export interface GroupPresenceSummaryWorkOptions {
     readonly runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
@@ -94,7 +98,19 @@ interface GroupPresenceSummaryExpansion {
     readonly computed: GroupPresenceSummaryComputedWork;
 }
 
-type GroupPresenceSummaryPhase = 'claim' | 'read' | 'compute' | 'write';
+interface ReadTopologyReplanPolicyFactsInput {
+    readonly work: GroupPresenceSummaryWorkData;
+    readonly group: GroupPresenceSummaryWorkRead['presence']['group']['value'];
+    readonly coalescedTopologyEntry: ResourceEntry | null;
+    readonly nowEpochMs: number;
+}
+
+interface RecordGroupPresenceSummaryPhaseInput {
+    readonly work: GroupPresenceSummaryWorkData;
+    readonly operation: GroupPresenceSummaryTiming.Phase;
+    readonly details: RallarTimingDetails;
+    readonly startedAtMs: number;
+}
 
 type GroupPresenceSummaryWriteOutcome = 'written' | 'summary-changed';
 
@@ -154,12 +170,12 @@ export class GroupPresenceSummaryWork {
             return Either.ofLeft(inconsistency);
         }
         const coalescedEvents = items.map((item) => item.work.event);
-        const topologyReplanPolicyFacts = await this.readTopologyReplanPolicyFacts(
-            first.work,
-            presence.group.value,
+        const topologyReplanPolicyFacts = await this.readTopologyReplanPolicyFacts({
+            work: first.work,
+            group: presence.group.value,
             coalescedTopologyEntry,
             nowEpochMs
-        );
+        });
         return Either.ofRight(items.map((item) => ({
             nowEpochMs,
             reservation: {
@@ -174,11 +190,9 @@ export class GroupPresenceSummaryWork {
     }
 
     private async readTopologyReplanPolicyFacts(
-        work: GroupPresenceSummaryWorkData,
-        group: GroupPresenceSummaryWorkRead['presence']['group']['value'],
-        coalescedTopologyEntry: ResourceEntry | null,
-        nowEpochMs: number
+        input: ReadTopologyReplanPolicyFactsInput
     ): Promise<TopologyReplanPolicyFacts> {
+        const { work, group, coalescedTopologyEntry, nowEpochMs } = input;
         const facts = toTopologyReplanEnqueueFacts(work, group, { coalescedTopologyEntry, nowEpochMs });
         if (!consultsTopologyReplanPolicy(facts)) {
             return { consulted: false };
@@ -269,7 +283,12 @@ export class GroupPresenceSummaryWork {
         const primary = decodeCanonicalGroupPresenceSummaryWork(message, entry);
         const claimStartedAtMs = nowMs();
         const claimed = await this.claimPendingSummaryWork(entry);
-        this.recordPhase(primary, 'claim', { coalescedWorkCount: claimed.length + 1 }, claimStartedAtMs);
+        this.recordPhase({
+            work: primary,
+            operation: 'claim',
+            details: { coalescedWorkCount: claimed.length + 1 },
+            startedAtMs: claimStartedAtMs
+        });
         try {
             const items = sortByCausalOrder([
                 { work: primary, reservation: toReservationRead(entry) },
@@ -304,7 +323,12 @@ export class GroupPresenceSummaryWork {
         const workCount = { coalescedWorkCount: items.length };
         const read = await timeRallarAsync(
             this.options.timing,
-            this.toPhaseTimingEvent(primary, 'read', workCount),
+            toGroupPresenceSummaryTimingEvent({
+                work: primary,
+                operation: 'read',
+                serviceId: this.options.serviceId,
+                details: workCount
+            }),
             async () => await this.read(items, this.now())
         );
         const reads = read.fold(
@@ -322,18 +346,43 @@ export class GroupPresenceSummaryWork {
             recipientCount: toRecipientCount(expansions),
             deltaCount: coalesced.downstreamOutboxWrites.length
         };
-        this.recordPhase(primary, 'compute', effectDetails, computeStartedAtMs);
+        this.recordPhase({
+            work: primary,
+            operation: 'compute',
+            details: effectDetails,
+            startedAtMs: computeStartedAtMs
+        });
         const proofs = expansions.flatMap((expansion) => computeGroupDeltaProvenance(expansion.computed));
         const outcome = await timeRallarAsync(
             this.options.timing,
-            this.toPhaseTimingEvent(primary, 'write', effectDetails),
+            toGroupPresenceSummaryTimingEvent({
+                work: primary,
+                operation: 'write',
+                serviceId: this.options.serviceId,
+                details: effectDetails
+            }),
             async () => await this.writeExpansion(database, coalesced, proofs)
         );
         if (outcome === 'written') {
-            this.options.wakeQueue?.();
-            this.recordFormationMetrics(coalesced);
+            this.finishWrittenExpansion(expansions, coalesced);
         }
         return outcome;
+    }
+
+    /** After the transaction returns written, observe each output before waking its queue. */
+    private finishWrittenExpansion(
+        expansions: readonly GroupPresenceSummaryExpansion[],
+        coalesced: GroupPresenceSummaryCoalescedWrite
+    ): void {
+        if (this.options.timing !== undefined) {
+            recordGroupPresenceSummaryCommittedOutputs({
+                timing: this.options.timing,
+                serviceId: this.options.serviceId,
+                expansions
+            });
+        }
+        this.options.wakeQueue?.();
+        this.recordFormationMetrics(coalesced);
     }
 
     /** One transaction for the summary, its deltas, their proofs and every reservation finish; a lost summary write rolls all back. */
@@ -437,35 +486,14 @@ export class GroupPresenceSummaryWork {
         return (await this.options.outboxQueueReader.outbox.getItem(key)) ?? null;
     }
 
-    private recordPhase(
-        work: GroupPresenceSummaryWorkData,
-        operation: GroupPresenceSummaryPhase,
-        details: RallarTimingDetails,
-        startedAtMs: number
-    ): void {
+    private recordPhase(input: RecordGroupPresenceSummaryPhaseInput): void {
+        const { work, operation, details, startedAtMs } = input;
         recordRallarTiming({
             sink: this.options.timing,
-            event: this.toPhaseTimingEvent(work, operation, details),
+            event: toGroupPresenceSummaryTimingEvent({ work, operation, serviceId: this.options.serviceId, details }),
             status: 'ok',
             durationMs: nowMs() - startedAtMs
         });
-    }
-
-    private toPhaseTimingEvent(
-        work: GroupPresenceSummaryWorkData,
-        operation: GroupPresenceSummaryPhase,
-        details: RallarTimingDetails
-    ): RallarTimingEventInput {
-        return {
-            component: 'group-presence-summary',
-            operation,
-            serviceId: this.options.serviceId,
-            requestId: work.commandId,
-            applicationId: work.aggregateRef.applicationId,
-            workspaceId: work.aggregateRef.workspaceId,
-            groupId: work.aggregateRef.groupId,
-            details
-        };
     }
 
     private recordFormationMetrics(coalesced: GroupPresenceSummaryCoalescedWrite): void {

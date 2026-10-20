@@ -54,6 +54,7 @@ const SPECIALIZED_TRANSACTION_OWNERS = new Map([
         'packages/shared-server/queuebox/postgres/p-sql-queue-box.ts',
         new Set([
             'reserveEntries',
+            'reserveObservedEntries',
             'reserveTimeoutEntries',
             'reserveOverdueRetryEntries',
             'reserveRetryExhaustionFinalizations',

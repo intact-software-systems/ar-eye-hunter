@@ -48,6 +48,10 @@ shell history:
 The script prompts for `METERED_APP_NAME` and a silent `METERED_API_KEY`, writes
 `/etc/rallar/api-v1.secrets.env` as a root-only `0600` file, installs a systemd
 drop-in for `rallar-api-v1.service`, reloads systemd, and restarts API-v1.
+When the secret file already exists, it updates only Metered-owned assignments
+and preserves other supported assignments; an unreadable or unsupported file
+blocks synchronization without replacing it. New Metered values must use the
+same simple unquoted assignment format.
 `02-deploy-controller.sh` also references this optional secret file so future
 redeploys keep Metered enabled when the file exists.
 
@@ -104,6 +108,75 @@ Show service status, memory, and recent logs:
 ```sh
 ./07-status-controller.sh
 ```
+
+For a read-only hosted preflight, dispatch the existing **Deploy Hetzner
+Controller** workflow with `action=inspect` and `ref` set to the reviewed full
+40-character commit. This path streams the reviewed effective-env reader, shared public-settings
+validator, and `07-status-controller.sh --inspect` over SSH stdin. It prints one JSON object
+with only source, migration, timing/topology, reviewed public operator settings,
+readiness, service/activity, health, and aggregate store-continuity evidence.
+`operatorSettingsSha256` fingerprints the complete validated ten-setting value
+projection as compact JSON with sorted keys and a trailing newline. Compare this
+opaque SHA-256 before and after operations at the same reviewed source, even
+when GitHub masks public values in logs. It adds no snapshot or retained state.
+The `operatorSettings` object projects ten named public values from the SPA
+environment, checks their expected shapes, and compares duplicate API/control
+CORS and SPA build values. Public health probes use those configured URLs. It does not copy scripts,
+sync secrets, write remote files, or run rollout. A missing required field or
+failed read makes the workflow fail. The normal status command above remains
+verbose and can include journals, so do not use it for this preflight.
+
+Before a timing diagnostic, compare the deployed migration ledger with the
+source migration list in the inspect JSON and review any pending, failed, or
+different migration separately. Require both prior timing keys to be present
+and exactly `RALLAR_TIMING_LOGS=0` and
+`RALLAR_APP_INBOX_PHASE_TIMING=false`. A missing or mixed pair cannot be
+restored by the existing boolean writer, so it blocks the diagnostic. Record
+all four topology keys as present/value pairs and keep the full inspected
+source commit for restoration. Each reported key also names its effective
+environment or secret-file source. A secret-file timing/topology override
+blocks an explicit diagnostic or topology rollout because the ordinary env
+writer cannot change its effective value. Check for other operator activity
+immediately before dispatch; inspect is a point-in-time observation, not a lock.
+
+The same workflow defaults to `action=rollout`, `server_timing=false`, and
+`apply_topology=false`; ordinary rollouts preserve existing topology values.
+For explicit restoration, use the same reviewed full commit with
+`apply_topology=true` and supply every `rtc_topology_*` input. An empty input
+removes that key; a positive integer sets it. The workflow passes the values
+to the existing rollout writer. Set `preserve_public_settings=true` for both
+preparation and restoration, with `ref` set to the reviewed full commit. The
+deploy workflow omits its public input assignments in this mode. On-controller,
+`08-rollout-controller.sh` reads and validates all ten persisted public values,
+their Vite mirrors, effective API/control CORS, and SPA-origin membership before
+applying defaults or changing checkout, builds, configuration, or services.
+Persisted values override conflicting incoming public settings; timing and
+topology still use their explicit writers. Missing, malformed, or inconsistent
+public state blocks the operation. Keep masked log values masked: preservation
+reads the actual values at their existing controller owner without reconstructing
+or transmitting them through workflow inputs. Caddy and
+Playwright choices are transient execution inputs, not persisted settings;
+restoration may leave them false and should verify prior service health/state.
+Run `action=inspect` again after the diagnostic and after restoration. Compare
+source identity, public-settings fingerprint, migrations, timing/topology, database/role/table OIDs, aggregate
+auth/group counts, service state, health, and failure fence before declaring
+restoration complete.
+Restore even if the diagnostic or artifact acquisition fails.
+
+For an intentional public-setting change with preservation disabled, inspect keys map to workflow inputs as follows:
+
+| `operatorSettings` key             | Rollout input          |
+| ---------------------------------- | ---------------------- |
+| `RALLAR_BLACK_BOX_SPA_URL`         | `spa_url`              |
+| `RALLAR_BLACK_BOX_CONTROL_URL`     | `control_url`          |
+| `RALLAR_API_BASE_URL`              | `api_base_url`         |
+| `RALLAR_API_CORS_ORIGINS`          | `api_cors_origins`     |
+| `RALLAR_BLACK_BOX_ALLOWED_ORIGINS` | `control_cors_origins` |
+| `RALLAR_BLACK_BOX_ROOM_ID`         | `room_id`              |
+| `RALLAR_BLACK_BOX_AGENT_PREFIX`    | `runner_agent_prefix`  |
+| `RALLAR_BLACK_BOX_AGENT_COUNT`     | `runner_agent_count`   |
+| `VITE_RALLAR_APPLICATION_ID`       | `application_id`       |
+| `VITE_RALLAR_WORKSPACE_ID`         | `workspace_id`         |
 
 Tail app and headless browser logs from anywhere on the VM:
 
@@ -164,10 +237,10 @@ Important: these scripts stop or start services on the VM. They do not stop
 Hetzner billing. Delete the VM if you want billing to stop.
 
 Also note that API-v1 uses the `prod` profile on a PostgreSQL server on the
-same VM (database `rallar_api_v1`). Stopping or restarting
-`rallar-api-v1.service` keeps the API data; every `02-deploy-controller.sh` and
-`08-rollout-controller.sh` wipes the database and applies the Prisma migrations
-before the API starts, so each rollout starts from an empty store. Control-server
+same VM (database `rallar_api_v1`). Stopping, restarting, deploying, and
+rolling out keep existing API data. `02-deploy-controller.sh` provisions a store
+only when its controller environment, role, and database are all absent. Both
+deploy and rollout apply Prisma migrations before the API starts. Control-server
 snapshots are persisted under `/var/lib/rallar-black-box-control`.
 
 The default controller deployment uses local ICE unless Metered TURN is
@@ -184,8 +257,11 @@ and the checkout.
 It performs:
 
 ```text
-1. Verify root, required commands, and a clean git checkout.
-2. Fetch origin and fast-forward pull RALLAR_REPO_REF, default main.
+1. Verify root, validate persisted public settings when preservation is enabled,
+   then check required commands, effective existing-store configuration,
+   and a clean git checkout before changing the selected ref.
+2. Fetch origin and check out RALLAR_REPO_REF, default main; a full commit SHA is
+   checked out detached, while a branch follows its current remote head.
 3. Run npm ci.
 4. Warm Deno caches for API-v1 and the control server.
 5. Build the rallar-black-box SPA with public `VITE_RALLAR_*` defaults.
@@ -194,26 +270,56 @@ It performs:
 8. Publish static SPA files to /var/www/rallar-black-box.
 9. Write `/etc/rallar/black-box-spa.env` as a non-secret audit file.
 10. Refresh API-v1 and control-server browser origin policy.
-11. Keep the API `DATABASE_URL` and operator allowlist, drop and recreate the
-    `rallar_api_v1` database, and run `deno task prisma migrate deploy` in
+11. Retain the validated database, credentials, and operator allowlist, and run
+    `deno task prisma migrate deploy` in
     `apps/api-v1` as the `rallar` user.
 12. Refresh Caddy reverse-proxy config, start API/control services, reload Caddy,
     and run local/public health checks.
 13. Print service status and recent logs.
 ```
 
-The script uses `git pull --ff-only`; it does not force-reset the checkout. If
-the VM checkout has local changes, it aborts before changing the running
+The script refuses a dirty checkout before selecting the requested remote
+branch or full commit. If the VM checkout has local changes, it aborts before changing the running
 version. If the update, dependency install, cache warmup, or SPA build fails,
 the services remain running on the previous process. If failure happens after
 the services are stopped, the script attempts to start them again, except
-API-v1 after a failed database wipe or migration: the script reports it as an
+API-v1 after a failed database connection check or migration: the script reports it as an
 `::error::`, writes `/etc/rallar/api-v1.store-failure` (shown by
 `07-status-controller.sh`), and leaves `rallar-api-v1.service` stopped until a
 rollout succeeds. The unit that `02-deploy-controller.sh` installs carries
 `ConditionPathExists=!/etc/rallar/api-v1.store-failure`, so systemd skips
 starting API-v1 at boot or by hand while that file exists; `08-rollout-controller.sh`
 does not rewrite the unit, so re-run `02-deploy-controller.sh` once to install it.
+
+The local retention proof uses an owned, disposable PostgreSQL container and
+checks auth, group, and unrelated rows plus database and role identity after two
+migration operations:
+
+```sh
+bash packages/tests/hetzner/api-prod-profile-postgres.sh
+```
+
+It requires Docker and a free loopback port 5432. The test removes only its own
+container and temporary files.
+
+The lifecycle check runs the deploy and rollout scripts inside disposable,
+network-isolated containers with recorded service, database, and health command
+ports. It covers stopped-service ordering, absent-unit provisioning, failed
+stops, migration failure, configuration rejection, nondefault public-setting
+preservation despite conflicting inputs, invalid-state rejection, and return to ordinary explicit mode:
+
+```sh
+bash packages/tests/hetzner/api-prod-profile-lifecycle.sh
+```
+
+Preserve the existing public settings during a local controlled rollout:
+
+```sh
+RALLAR_PRESERVE_PUBLIC_SETTINGS=1 RALLAR_REPO_REF=<reviewed-full-commit> ./08-rollout-controller.sh
+```
+
+This opt-in defaults off. The preservation preflight emits errors containing key
+names only; it does not log the preserved projection.
 
 Override the branch/ref:
 
@@ -384,9 +490,8 @@ appears as connected and the start script times out while printing recent
 service logs.
 
 Use `RALLAR_BLACK_BOX_REGISTER=1`, or the GitHub Actions
-`register_before_login` input, when the target API has just been rolled out
-(every rollout wipes the controller API's database) so the disposable test
-users must be created before login. With
+`register_before_login` input, when disposable test users may not yet exist.
+With
 it enabled, the worker env file gives each agent its own user named after its
 agent id (`<prefix>-NN`) with the shared `RALLAR_BLACK_BOX_PASSWORD`, and
 `RALLAR_BLACK_BOX_USERNAME` stays an operator-only credential. Leave it
@@ -402,9 +507,9 @@ run without `RALLAR_BLACK_BOX_REGISTER`, so a recipe's sign-in logs in only and
 pays one password derivation per agent instead of two.
 
 The `scripts/hosted-rallar/dispatch-distributed-recipe.sh` helper defaults
-`register_before_login=true` for Hetzner runs because every controller rollout
-wipes the API's database. Pass `--register-before-login false` only when running
-against a persistent user database.
+`register_before_login=true` for Hetzner runs so first-run agent identities are
+created. Existing users are accepted and remain across rollouts. Pass
+`--register-before-login false` when using pre-provisioned users.
 
 The GitHub Actions headless browser workflow resolves credentials for
 `action=start` in this order:
@@ -479,7 +584,7 @@ unset keeps any existing VM secret file in place.
 
 ## Controller Configuration Profile
 
-The controller scripts own one disposable deployment shape:
+The controller scripts own one hosted deployment shape:
 
 ```text
 RALLAR_API_CONFIGURATION_PROFILE=prod
@@ -492,18 +597,22 @@ that selector plus only controller-specific URLs, CORS, workload limits,
 topology experiment overrides, and API secrets. `DATABASE_URL` is generated once
 on the VM as a plain loopback URL
 (`postgres://rallar:<generated>@127.0.0.1:5432/rallar_api_v1`, no `schema`
-parameter) and kept across rollouts; the scripts never print it.
-`08-rollout-controller.sh` removes entries outside that subset before updating
-the selected ref. Both keep `/etc/rallar/api-v1.env` root-owned and mode `0600`.
+parameter) for initial provisioning and kept across deploys and rollouts; the
+scripts never print it. An existing configuration with a missing or malformed
+effective URL or missing auth/operator secret fails before replacement. The
+API secret file has systemd precedence over the ordinary environment file.
+`08-rollout-controller.sh` validates the effective configuration before updating
+the selected ref, then removes entries outside that subset after the update.
+Both keep `/etc/rallar/api-v1.env` root-owned and mode `0600`.
 There is no environment-name selector or repeated database/auth baseline.
 
 The `prod` profile requires a non-empty operator-token allowlist without
 bundled demo identities. The scripts take `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS`
 from the deploy or rollout environment, else keep the VM's value, else generate
 `hosted-operator-<random>`. To use the Recipes tab's brokered operator token,
-set your own operator client id once and register that user after each rollout.
+set your own operator client id once and register that user once.
 
-Do not convert this disposable controller into the hardened public API-v1 or
+Do not convert this hosted controller into the hardened public API-v1 or
 Relic deployment by accumulating overrides. Those targets use the platform
 settings in the
 [Production Environment Hardening Checklist](../../../docs/production-env-hardening-checklist.md).
@@ -575,8 +684,26 @@ METERED_API_KEY
 Workflow inputs:
 
 ```text
+action
+  Inspect without changing the VM, or roll out. Default: rollout.
+
 ref
-  Git ref to roll out. Default: main.
+  Git ref to roll out, or reviewed full commit to inspect. Default: main.
+
+preserve_public_settings
+  Read validated persisted public settings on-controller and omit public inputs.
+  Requires a reviewed full commit. Default: false.
+
+server_timing
+  Enable API and AppInbox timing during rollout. Default: false.
+
+apply_topology
+  Apply all four topology input values during rollout. Default: false.
+
+rtc_topology_degree_limit, rtc_topology_tree_min_size,
+rtc_topology_mesh_min_size, rtc_topology_mesh_param_k
+  Positive integers to set, or empty to remove, when apply_topology is true.
+  Ignored by an ordinary rollout. Default: empty.
 
 include_caddy
   Also stop/start Caddy during rollout. Default: false.
@@ -626,7 +753,7 @@ workspace_id
   Default: default
 ```
 
-The deploy action forwards these public inputs to the remote rollout as:
+With preservation disabled, the deploy action forwards public inputs as:
 
 ```text
 RALLAR_BLACK_BOX_SPA_URL
@@ -844,6 +971,26 @@ forwards them to the remote `RALLAR_BLACK_BOX_CONTROL_URL` and
 `RALLAR_CONTROL_HTTP_URL` values used by the headless workers and
 distributed-run admin calls.
 
+The reusable recipe runner also accepts `preserve_public_settings`, default
+`false`. GitHub Free uses its existing `rollout_control_plane` choice to stay
+within the platform's 25 dispatch-input limit: `true` (default) rolls out with
+ordinary inputs, `false` reuses the control plane, and
+`preserve-public-settings` rolls out while preserving validated public settings.
+For the preserving GitHub Free path, dispatch with:
+
+```text
+rollout_control_plane=preserve-public-settings
+```
+
+GitHub Free derives explicit rollout/preservation booleans and forwards
+preservation through both prepare and run calls; the run phase still skips
+rollout. Existing `true` and `false` invocation values remain supported.
+Preservation requires a reviewed full source commit;
+the runner validates the same persisted projection before its existing worker
+stop. Only the `08` child assigns the preserved public values. Per-run worker
+room, prefix, count, application, and workspace remain those selected for the
+recipe. Other callers retain their existing defaults.
+
 Every remote operation writes a **Hetzner operation diagnostics** table to the
 GitHub job summary and uploads
 `hetzner-operation-<distributed-run-id>`. Start there; it contains
@@ -953,8 +1100,9 @@ The deploy and rollout scripts also generate or preserve
 `/etc/rallar/api-v1.env` and `/etc/rallar/control-server.env`. API-v1 uses it
 for `POST /api/black-box/control-token`; the control server uses it to accept
 the signed operator token for distributed-run admin operations. Override
-`RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS` to change the default 24 hour TTL, and
-set `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS` to the authenticated client IDs that
+`RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS` to change the default 24 hour TTL; later
+rollouts preserve the effective persisted TTL when the override is omitted. Set
+`RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS` to the authenticated client IDs that
 may request operator tokens (see Controller Configuration Profile).
 
 The same scripts independently generate or preserve
@@ -1052,9 +1200,11 @@ slices. The journal shows each write and each barrier resolution as a
 and `writeMs`; `barrier.resolution` with the milliseconds from the last arrival
 to the resolution):
 
-````sh
+```sh
 journalctl -u rallar-black-box-control --no-pager | grep '"rallar.timing"' | tail -40
-``` The unit runs without
+```
+
+The unit runs without
 `--v8-flags` or a systemd `MemoryMax`, so V8 sizes its heap from the VM's RAM.
 When the control service stops answering (502 to the operator and to the agents'
 control sockets), confirm whether it ran out of memory before changing code:
@@ -1066,7 +1216,7 @@ systemctl show -p NRestarts rallar-black-box-control
 free -m
 nproc
 ls -l /var/lib/rallar-black-box-control/control-snapshot.json
-````
+```
 
 - `Reached heap limit` or `JavaScript heap out of memory` in the journal: V8's
   own limit stopped the process.

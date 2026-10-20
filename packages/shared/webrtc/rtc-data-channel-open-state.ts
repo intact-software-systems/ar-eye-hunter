@@ -21,34 +21,12 @@ export async function waitForRtcChannelOpenOrAbort(
     timeoutMs: number | undefined,
     signal: AbortSignal | undefined
 ): Promise<boolean> {
-    const waitUntilOpen = timeoutMs === undefined
-        ? channel.waitUntilOpen()
-        : channel.waitUntilOpen(timeoutMs);
-
-    if (!signal) {
-        return await waitUntilOpen;
-    }
-
-    if (signal.aborted) {
+    if (signal?.aborted) {
         throw toError(signal.reason);
     }
-
-    return await new Promise<boolean>((resolve, reject) => {
-        const onAbort = () => {
-            signal.removeEventListener('abort', onAbort);
-            reject(toError(signal.reason));
-        };
-
-        signal.addEventListener('abort', onAbort, { once: true });
-        waitUntilOpen
-            .then((opened) => {
-                signal.removeEventListener('abort', onAbort);
-                resolve(opened);
-            })
-            .catch((caught) => {
-                const error = toError(caught);
-                signal.removeEventListener('abort', onAbort);
-                reject(error);
-            });
-    });
+    const opened = await channel.waitUntilOpen(timeoutMs, signal);
+    if (signal?.aborted) {
+        throw toError(signal.reason);
+    }
+    return opened;
 }

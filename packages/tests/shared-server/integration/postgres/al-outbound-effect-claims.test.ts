@@ -9,8 +9,9 @@ import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgre
 import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
-import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import { createALOutboundAdmissionStore, type ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import { decodeALOutboundTransportMessage, type ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import type { ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 
 import {
     OUTBOUND_LEASE_RECOVERY_BOUND_MS,
@@ -91,8 +92,14 @@ describe('Postgres AL outbound effect claims', () => {
     }, 60_000);
 });
 
-function createAdmission(repository: PSqlRuntimeStateRepository, namespace: string, laneNowMs: () => number) {
-    const backend = new PSqlAdmissionWorkBackend(repository.sql, namespace, Date.now);
+interface AdmissionFixture {
+    readonly admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>;
+    readonly port: ALWorkQueuePort;
+    peek(): Promise<number | undefined>;
+}
+
+function createAdmission(repository: PSqlRuntimeStateRepository, namespace: string, laneNowMs: () => number): AdmissionFixture {
+    const backend = new PSqlAdmissionWorkBackend({ sql: repository.sql, namespace, nowMs: Date.now });
     const admissionStore = createALOutboundAdmissionStore({
         decodePrepared: decodeALOutboundTransportMessage,
         nowMs: Date.now,

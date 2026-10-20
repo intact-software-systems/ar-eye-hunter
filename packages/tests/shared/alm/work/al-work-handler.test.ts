@@ -249,6 +249,7 @@ describe('ALWorkHandler', () => {
         // them both is not.
         expect(diagnosticsEvents.filter((event) => event.kind === 'work-batch')).toEqual([{
             kind: 'work-batch',
+            batchStartedAtMs: PHASE_BATCH_START_MS,
             workerId: 'phase-worker',
             durationMs: PHASE_SELECTION_MS + PHASE_CLAIM_MS + 2 * PHASE_RUN_MS + PHASE_RELEASE_MS,
             claimedCount: 2,
@@ -294,6 +295,7 @@ describe('ALWorkHandler', () => {
         // The sweep runs no claim, so its time is a release and nothing else.
         expect(diagnosticsEvents.filter((event) => event.kind === 'work-batch')).toEqual([{
             kind: 'work-batch',
+            batchStartedAtMs: PHASE_BATCH_START_MS,
             workerId: 'sweep-worker',
             durationMs: PHASE_RELEASE_MS,
             claimedCount: 0,

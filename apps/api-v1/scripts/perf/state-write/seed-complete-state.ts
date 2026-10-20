@@ -19,7 +19,8 @@ import { newRunContext } from './state-write-measurement.ts';
 import {
     CLIENT_COUNT,
     createBenchmarkAuthSession,
-    runAppInboxMutation,
+    requireAppInboxSuccess,
+    runAppInboxPumpUntilCompletion,
     WORKLOADS
 } from './state-write-workload.ts';
 
@@ -76,7 +77,7 @@ async function seedBenchmarkGroup(context: BenchmarkSeedContext, groupIndex: num
     );
     await authSessionRepository.putSession(authority);
     const groupId = `group-${groupIndex}`;
-    await runAppInboxMutation(
+    await runAppInboxPumpUntilCompletion(
         runtime,
         runtime.group.processAuthenticatedGroupEntryUntilCompletion(
             {
@@ -103,7 +104,7 @@ async function seedBenchmarkGroup(context: BenchmarkSeedContext, groupIndex: num
                 }
             },
             authority
-        )
+        ).then(requireAppInboxSuccess)
     );
 }
 
@@ -128,7 +129,7 @@ async function seedBenchmarkClient(context: BenchmarkSeedContext, clientIndex: n
 
 async function seedClientPrincipal(input: BenchmarkSeedClient): Promise<void> {
     const { runtime, scope, authority, principalId, clientIndex, contextId } = input;
-    await runAppInboxMutation(
+    await runAppInboxPumpUntilCompletion(
         runtime,
         runtime.client.processAuthenticatedEntryUntilCompletion(
             {
@@ -150,13 +151,13 @@ async function seedClientPrincipal(input: BenchmarkSeedClient): Promise<void> {
                 }
             },
             authority
-        )
+        ).then(requireAppInboxSuccess)
     );
 }
 
 async function seedClientInstance(input: BenchmarkSeedClient): Promise<void> {
     const { runtime, scope, authority, principalId, clientIndex, contextId } = input;
-    await runAppInboxMutation(
+    await runAppInboxPumpUntilCompletion(
         runtime,
         runtime.client.processAuthenticatedEntryUntilCompletion(
             {
@@ -179,6 +180,6 @@ async function seedClientInstance(input: BenchmarkSeedClient): Promise<void> {
                 }
             },
             authority
-        )
+        ).then(requireAppInboxSuccess)
     );
 }

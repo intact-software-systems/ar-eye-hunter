@@ -7,6 +7,7 @@ import type {
     GroupScope,
     GroupSnapshot
 } from '@shared/api/group-types.ts';
+
 import { resolveRuntimeStateReadBatchLiveValues } from '../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
 import type { RuntimeStateReadBatchSelector } from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
 import { toRuntimeStateReadBatchSelectedKey } from '../../../runtime-state/read-batch/to-runtime-state-read-batch-selected-key.ts';
@@ -14,6 +15,7 @@ import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-stat
 import type { RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { StateSnapshotReadConflictError } from '../../state-events/state-snapshot-read.ts';
+import type { GroupStateCurrentSnapshotCache } from '../snapshot/group-state-current-snapshot-cache.ts';
 import { canonicalStoredGroup } from './aggregate/group-aggregate-repository.ts';
 import {
     groupStateGroupStorageKey,
@@ -48,6 +50,7 @@ export interface ReadGroupStateSnapshotsForPrincipalInput {
     readonly principalId: string;
     readonly observedAtEpochMs: number;
     readonly readSnapshot: (ref: GroupRef) => Promise<GroupSnapshot | undefined>;
+    readonly currentSnapshots?: Pick<GroupStateCurrentSnapshotCache, 'readSnapshot'>;
 }
 
 interface PrincipalGroupSelection {
@@ -61,37 +64,58 @@ interface PrincipalGroupChildren {
     readonly sessions: readonly GroupPresenceSession[];
 }
 
-interface PrincipalGroupRead {
-    readonly selection: PrincipalGroupSelection;
-    readonly children: PrincipalGroupChildren;
-}
+type PrincipalGroupRead =
+    | {
+        readonly kind: 'children';
+        readonly selection: PrincipalGroupSelection;
+        readonly children: PrincipalGroupChildren;
+    }
+    | {
+        readonly kind: 'current-snapshot';
+        readonly selection: PrincipalGroupSelection;
+        readonly snapshot: GroupSnapshot | undefined;
+    };
 
 export async function readGroupStateSnapshotsForPrincipal(
     input: ReadGroupStateSnapshotsForPrincipalInput
 ): Promise<readonly GroupSnapshot[]> {
     const selectedBefore = await readPrincipalGroupSelections(input);
-    const children = await readPrincipalGroupChildren(input.repository, selectedBefore);
+    const reads = await readPrincipalGroups(input, selectedBefore);
     const readByGroupKey = new Map<string, PrincipalGroupRead>(
-        selectedBefore.map((
-            selection,
-            index
-        ) => [selection.group.entry.key, { selection, children: children[index] }])
+        reads.map((read) => [read.selection.group.entry.key, read])
     );
     const selectedAfter = await readPrincipalGroupSelections(input);
     const snapshots = await Promise.all(selectedAfter.map(async (selection) => {
         const read = readByGroupKey.get(selection.group.entry.key);
-        return read === undefined || !isSamePrincipalGroupSelection(read.selection, selection)
-            ? await input.readSnapshot(selection.group.value)
-            : toPrincipalGroupSnapshot(
-                selection.group.value,
-                read.children,
-                input.observedAtEpochMs
-            );
+        if (read === undefined || !isSamePrincipalGroupSelection(read.selection, selection)) {
+            return await input.readSnapshot(selection.group.value);
+        }
+        if (read.kind === 'current-snapshot') {
+            return read.snapshot ?? await input.readSnapshot(selection.group.value);
+        }
+        return toPrincipalGroupSnapshot(selection.group.value, read.children, input.observedAtEpochMs);
     }));
     return snapshots.filter((snapshot): snapshot is GroupSnapshot =>
         snapshot !== undefined &&
         snapshot.members.some((member) => member.principalId === input.principalId && member.status === 'active')
     );
+}
+
+async function readPrincipalGroups(
+    input: ReadGroupStateSnapshotsForPrincipalInput,
+    selections: readonly PrincipalGroupSelection[]
+): Promise<readonly PrincipalGroupRead[]> {
+    const currentSnapshots = input.currentSnapshots;
+    if (currentSnapshots) {
+        const reads: PrincipalGroupRead[] = [];
+        for (const selection of selections) {
+            const snapshot = await currentSnapshots.readSnapshot(selection.group.value);
+            reads.push({ kind: 'current-snapshot', selection, snapshot });
+        }
+        return reads;
+    }
+    const children = await readPrincipalGroupChildren(input.repository, selections);
+    return selections.map((selection, index) => ({ kind: 'children', selection, children: children[index] }));
 }
 
 async function readPrincipalGroupSelections(

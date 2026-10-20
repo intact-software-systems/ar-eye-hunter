@@ -127,7 +127,16 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
                 operation: 'transaction',
                 serviceId: this.config.serviceId,
                 requestId: attempt.entry.key.resourceId,
-                details: { ...attempt.telemetry, classification: 'non-retryable' }
+                details: {
+                    selectedLane: attempt.telemetry.selectedLane,
+                    queueAgeMs: attempt.telemetry.queueAgeMs,
+                    dueAgeMs: attempt.telemetry.dueAgeMs,
+                    attempt: attempt.telemetry.attempt,
+                    selectedDueAtEpochMs: attempt.telemetry.selectedDueAtEpochMs,
+                    reservationLeaseMs: attempt.telemetry.reservationLeaseMs,
+                    selectedAtEpochMs: attempt.telemetry.selectedAtEpochMs,
+                    classification: 'non-retryable'
+                }
             }
         }, async () =>
             await runInPSqlTransaction(transactionScope, async (transaction) => {

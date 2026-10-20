@@ -20,6 +20,7 @@ import { TurnBatchedReads } from '@shared/resilience/turn-batched-reads.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import { createPSqlResourceInboxRepository } from '../../queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '../../queuebox/postgres/p-sql-queue-box.ts';
+import type { PSqlQueueReleaseTiming } from '../../queuebox/postgres/p-sql-queue-release-timing.ts';
 import {
     computeResourceInboxObservation,
     computeResourceInboxObservedReplacement,
@@ -41,6 +42,15 @@ import {
 import type { RuntimeStateEntry } from '../../runtime-state/runtime-state-repository.ts';
 import { PSqlAdmissionMutationCollector } from './p-sql-admission-mutation-collector.ts';
 
+export namespace PSqlAdmissionWorkBackend {
+    export interface Input {
+        readonly sql: PSqlSql;
+        readonly namespace: string;
+        readonly nowMs: () => number;
+        readonly releaseTiming?: PSqlQueueReleaseTiming.Port;
+    }
+}
+
 export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
     readonly workQueue: PSqlQueueBox;
     private readonly sql: PSqlSql;
@@ -50,17 +60,15 @@ export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
     private readonly stateReads: TurnBatchedReads<string, RuntimeStateEntry | undefined>;
     private readonly workReads: TurnBatchedReads<Key, ResourceEntry | undefined>;
 
-    constructor(
-        sql: PSqlSql,
-        namespace: string,
-        nowMs: () => number
-    ) {
+    constructor(input: PSqlAdmissionWorkBackend.Input) {
+        const { sql, namespace, nowMs, releaseTiming } = input;
         this.sql = sql;
         this.nowMs = nowMs;
         this.repository = new PSqlRuntimeStateRepository(sql);
         this.workQueue = new PSqlQueueBox(
             createPSqlResourceInboxRepository(sql, () => new Date(this.nowMs())),
-            () => Temporal.Instant.fromEpochMilliseconds(this.nowMs())
+            () => Temporal.Instant.fromEpochMilliseconds(this.nowMs()),
+            releaseTiming === undefined ? undefined : { namespace, port: releaseTiming }
         );
         this.namespace = namespace;
         this.stateReads = new TurnBatchedReads({
