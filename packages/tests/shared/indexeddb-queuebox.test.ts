@@ -787,6 +787,45 @@ describe('IndexedDbQueueBox', () => {
         expect([...selected.values()].map(({ entry }) => entry.key.resourceId)).toEqual(['other-context']);
     });
 
+    it('reads past IndexedDB fairness rows of excluded contexts without spending the scan budget', async () => {
+        const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
+        const typeId = 'chat.private-text.v1';
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
+        const now = Temporal.Now.instant();
+        for (const [resourceId, seconds] of [['held-1', 90], ['held-2', 60]] as const) {
+            const held = createEntry(typeId, resourceId, { status: EntityStatus.RETRY, attempts: 1, nextTs: now.subtract({ seconds }) });
+            await queue.enqueue({ ...held, key: { ...held.key, contextId: 'ctx-held' } });
+        }
+        await queue.enqueue(createEntry(typeId, 'other-context', { status: EntityStatus.RETRY, attempts: 1, nextTs: now.subtract({ seconds: 31 }) }));
+
+        const selected = await queue.reserveOverdueRetryEntries(
+            new Set([typeId]),
+            Number(now.epochMilliseconds) - 30_000,
+            { maxToReserve: 1, maxAttempts: 20, maxToScan: 1, excludedContextIds: new Set(['ctx-held']) }
+        );
+
+        expect([...selected.values()].map(({ entry }) => entry.key.resourceId)).toEqual(['other-context']);
+    });
+
+    it('reclaims no lapsed IndexedDB reservation of an excluded context, and another context\'s instead', async () => {
+        const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
+        const typeId = 'chat.private-text.v1';
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
+        const startTs = Temporal.Now.instant().subtract({ minutes: 10 });
+        const held = createEntry(typeId, 'held-context', { status: EntityStatus.RESERVED, attempts: 1, startTs });
+        await queue.enqueue({ ...held, key: { ...held.key, contextId: 'ctx-held' } });
+        await queue.enqueue(createEntry(typeId, 'other-context', { status: EntityStatus.RESERVED, attempts: 1, startTs }));
+
+        const reclaimed = await queue.reserveTimeoutEntries({
+            typeIds: new Set([typeId]),
+            reservationInput: { maxToReserve: 2, maxAttempts: 20 },
+            timeSinceStartTs: Temporal.Duration.from({ minutes: 5 }),
+            excludedContextIds: new Set(['ctx-held'])
+        });
+
+        expect([...reclaimed.values()].map((entry) => entry.key.resourceId)).toEqual(['other-context']);
+    });
+
     it('breaks equal IndexedDB fairness due timestamps by canonical key', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'chat.private-text.v1';

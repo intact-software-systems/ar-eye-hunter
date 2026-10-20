@@ -46,7 +46,7 @@ export interface CreatePostgresAppInboxWorkerServicesInput {
     readonly newLaneConcurrency: number;
     /** The rows a standing NEW-lane flight holds across passes, as the API server holds them; undefined drains each pass. */
     readonly newLaneHeldRows: number | undefined;
-    /** Told of every row a standing flight takes; undefined only without one. */
+    /** Told of every row a standing flight takes; undefined without one. */
     readonly flightEntryListener: InboxQueueReader.FlightEntryListener | undefined;
     readonly beforeTopologyConfigRead?: (primitive: TopologyReadBarrierPrimitive) => Promise<void>;
     readonly trace: PostgresAppInboxWorkerTrace;

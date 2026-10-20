@@ -138,6 +138,47 @@ describe('exclusion keyed admission', () => {
         expect(runs.started).toEqual(['presence-a', 'ws-ticket', ...sessionNames]);
     });
 
+    it('lets a keyless run go before the runs a prefix-keyed run released when it settled', async () => {
+        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, releasedKeyedRunsFirst: true });
+        const runs = createGatedRuns();
+        const joinNames = Array.from({ length: 6 }, (_, index) => `join-${index}`);
+
+        const results = [
+            admission.admit('scope', runs.run('cleanup')),
+            admission.admit(undefined, runs.run('ws-ticket')),
+            ...joinNames.map((name, index) => admission.admit(`scope:g${index}:aggregate`, runs.run(name)))
+        ];
+        for (const name of ['cleanup', 'ws-ticket', ...joinNames]) {
+            await vi.waitFor(() => expect(runs.started.at(-1)).toBe(name));
+            runs.finish(name);
+        }
+
+        await Promise.all(results);
+        // A scope-wide settlement releases every run inside the scope; none of them is that run's chain successor.
+        expect(runs.started).toEqual(['cleanup', 'ws-ticket', ...joinNames]);
+    });
+
+    it('runs a keyless run during a storm of scope cleanups and in-scope connects', async () => {
+        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 2, releasedKeyedRunsFirst: true });
+        const runs = createGatedRuns();
+
+        const results = [admission.admit(undefined, runs.run('busy')), admission.admit('scope', runs.run('cleanup-0'))];
+        await vi.waitFor(() => expect(runs.started).toEqual(['busy', 'cleanup-0']));
+        results.push(admission.admit(undefined, runs.run('ws-ticket')));
+        for (let round = 1; round <= 3; round += 1) {
+            results.push(admission.admit(`scope:g:session=${round}`, runs.run(`connect-${round}`)));
+            results.push(admission.admit('scope', runs.run(`cleanup-${round}`)));
+        }
+        runs.finish('cleanup-0');
+
+        await vi.waitFor(() => expect(runs.started).toEqual(['busy', 'cleanup-0', 'ws-ticket']));
+        for (const name of ['busy', 'ws-ticket', 'connect-1', 'cleanup-1', 'connect-2', 'cleanup-2', 'connect-3', 'cleanup-3']) {
+            await vi.waitFor(() => expect(runs.started).toContain(name));
+            runs.finish(name);
+        }
+        await Promise.all(results);
+    });
+
     it('keeps arrival order across keyed and keyless runs when keyed runs do not go first', async () => {
         const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, releasedKeyedRunsFirst: false });
         const runs = createGatedRuns();

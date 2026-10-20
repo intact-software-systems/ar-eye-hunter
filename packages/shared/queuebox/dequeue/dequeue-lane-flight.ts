@@ -37,8 +37,8 @@ export namespace DequeueLaneFlight {
         /** At most this many added entries are unreleased at once, whether computing, waiting to compute or releasing. */
         readonly maxUnreleased: number;
         /**
-         * Whether a keyed entry that its predecessor's settlement released takes a freed compute slot ahead of every other
-         * waiting entry; an entry whose key waits on nothing asks for its slot in turn.
+         * Whether a keyed entry that the settlement of a predecessor with the same key released takes a freed compute slot
+         * ahead of every other waiting entry; any other entry asks for its slot in turn.
          */
         readonly releasedKeyedRunsFirst: boolean;
         /** An entry computes after every earlier unsettled entry whose exclusion key overlaps its own. */

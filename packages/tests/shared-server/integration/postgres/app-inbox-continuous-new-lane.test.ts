@@ -5,6 +5,7 @@ import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
+import type { DequeueController } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
@@ -91,41 +92,96 @@ describe('the AppInbox NEW lane on PostgreSQL', () => {
 
 describe('the AppInbox standing flight\'s recovery lanes on PostgreSQL', () => {
     postgresIt('claims no overdue retry of a context it holds a row of in flight, and claims another context\'s instead', async () => {
-        const storage = await createResourceInboxTestStorage('app_inbox_flight_fairness', 2);
-        onTestFinished(() => storage.close());
-        const queue = new PSqlQueueBox(createPSqlResourceInboxRepository(storage.sql, () => new Date()), Temporal.Now.instant);
-        const gates = new Map<string, () => void>();
-        const settlements: Promise<void>[] = [];
-        const reader = new InboxQueueReader(queue, {
-            laneBudgetPolicy: 'fixed-retry-two',
-            newLaneConcurrency: K,
-            newLaneHeldRows: H,
-            flightEntryListener: (settlement) => settlements.push(settlement)
-        });
-        reader.onInboxMessageDo(TYPE, {
-            onMessage: async (_message, entry) => {
-                await new Promise<void>((resolve) => gates.set(entry.key.resourceId, resolve));
-            }
-        });
-        const resilience = createResilience();
-        await enqueue(reader, 'context-a', 'held');
-        expect(await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, resilience)).toBe(1);
+        const lane = await createRecoveryLane('app_inbox_flight_fairness');
+        await enqueue(lane.reader, 'context-a', 'held');
+        expect(await lane.pass(undefined)).toBe(1);
 
-        await enqueue(reader, 'context-a', 'overdue-a');
-        await enqueue(reader, 'context-b', 'overdue-b');
-        await writeOverdueRetry(storage.sql, 'overdue-a', 120);
-        await writeOverdueRetry(storage.sql, 'overdue-b', 60);
-        expect(await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, resilience)).toBe(1);
+        await enqueue(lane.reader, 'context-a', 'overdue-a');
+        await enqueue(lane.reader, 'context-b', 'overdue-b');
+        await writeOverdueRetry(lane.sql, 'overdue-a', 120);
+        await writeOverdueRetry(lane.sql, 'overdue-b', 60);
+        expect(await lane.pass(undefined)).toBe(1);
 
         // FAIRNESS claims the most overdue row it may: context-a's would be a second RESERVED row beside `held`.
-        expect(await readReservedResourceIds(storage.sql)).toEqual(['held', 'overdue-b']);
-        await vi.waitFor(() => expect([...gates.keys()].sort()).toEqual(['held', 'overdue-b']));
-        for (const release of gates.values()) {
-            release();
-        }
-        await Promise.all(settlements);
+        expect(await readReservedResourceIds(lane.sql)).toEqual(['held', 'overdue-b']);
+        await lane.finishAll(['held', 'overdue-b']);
+    }, 30_000);
+
+    postgresIt('reclaims no timed-out reservation of a context it holds a row of in flight, and reclaims another context\'s instead', async () => {
+        const lane = await createRecoveryLane('app_inbox_flight_timeout');
+        await enqueue(lane.reader, 'context-a', 'peer-held');
+        await enqueue(lane.reader, 'context-a', 'held');
+        await enqueue(lane.reader, 'context-b', 'peer-held-b');
+        // A peer reserved each context's first row and then died; context-a's next NEW row is now its head.
+        await writeReservation(lane.sql, 'peer-held', 0);
+        await writeReservation(lane.sql, 'peer-held-b', 0);
+        expect(await lane.pass(ONLY_NEW)).toBe(1);
+
+        await writeReservation(lane.sql, 'peer-held', LAPSED_LEASE_SECONDS);
+        await writeReservation(lane.sql, 'peer-held-b', LAPSED_LEASE_SECONDS);
+        expect(await lane.pass(ONLY_TIMEOUT)).toBe(1);
+
+        // Reclaiming `peer-held` would run a second row of context-a beside `held` on this instance.
+        await lane.finishAll(['held', 'peer-held-b']);
     }, 30_000);
 });
+
+/** Past the default reservation lease of five minutes, so the TIMEOUT lane may reclaim the row. */
+const LAPSED_LEASE_SECONDS = 400;
+const ONLY_NEW: DequeueController.WorkAdvertisement = { FINALIZATION: false, NEW: true, RETRY: false, FAIRNESS: false, TIMEOUT: false };
+const ONLY_TIMEOUT: DequeueController.WorkAdvertisement = { ...ONLY_NEW, NEW: false, TIMEOUT: true };
+
+interface RecoveryLane {
+    readonly sql: PSqlSql;
+    readonly reader: InboxQueueReader;
+    pass(workAdvertisement: DequeueController.WorkAdvertisement | undefined): Promise<number>;
+    /** Waits until exactly these rows' handlers started, then lets each finish and joins the flight. */
+    finishAll(rowIds: readonly string[]): Promise<void>;
+}
+
+async function createRecoveryLane(schemaPrefix: string): Promise<RecoveryLane> {
+    const storage = await createResourceInboxTestStorage(schemaPrefix, 2);
+    onTestFinished(() => storage.close());
+    const queue = new PSqlQueueBox(createPSqlResourceInboxRepository(storage.sql, () => new Date()), Temporal.Now.instant);
+    const gates = new Map<string, () => void>();
+    const settlements: Promise<void>[] = [];
+    const reader = new InboxQueueReader(queue, {
+        laneBudgetPolicy: 'fixed-retry-two',
+        newLaneConcurrency: K,
+        newLaneHeldRows: H,
+        flightEntryListener: (settlement) => settlements.push(settlement)
+    });
+    reader.onInboxMessageDo(TYPE, {
+        onMessage: async (_message, entry) => {
+            await new Promise<void>((resolve) => gates.set(entry.key.resourceId, resolve));
+        }
+    });
+    const resilience = createResilience();
+    return {
+        sql: storage.sql,
+        reader,
+        pass: (workAdvertisement) => reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, resilience, workAdvertisement),
+        finishAll: async (rowIds) => {
+            await vi.waitFor(() => expect([...gates.keys()].sort()).toEqual([...rowIds].sort()));
+            for (const release of gates.values()) {
+                release();
+            }
+            await Promise.all(settlements);
+        }
+    };
+}
+
+/** Marks a row RESERVED by an attempt that started the given seconds ago. */
+async function writeReservation(sql: PSqlSql, resourceId: string, startedSecondsAgo: number): Promise<void> {
+    await sql`
+        update resource_inbox
+        set ri_status = ${EntityStatus.RESERVED},
+            ri_attempts = 1,
+            start_ts = (now() at time zone 'UTC') - (${startedSecondsAgo} * interval '1 second'),
+            end_ts = null,
+            next_ts = null
+        where ri_resource_id = ${resourceId}`;
+}
 
 /** Turns a NEW row into a RETRY row whose next attempt fell due the given seconds ago. */
 async function writeOverdueRetry(sql: PSqlSql, resourceId: string, overdueSeconds: number): Promise<void> {

@@ -183,7 +183,8 @@ Deno.test(
                     transactionInbox.reservations.findTimedOutReservedEntriesSkipLocked({
                         typeIds: new Set([databaseClockTimeout.typeId]),
                         timeSinceStartMs: 30_000,
-                        reservationInput: { maxToReserve: 1, maxAttempts: 2 }
+                        reservationInput: { maxToReserve: 1, maxAttempts: 2 },
+                        excludedContextIds: new Set()
                     })
                 )).size,
                 0
@@ -200,7 +201,8 @@ Deno.test(
                     transactionInbox.reservations.findTimedOutReservedEntriesSkipLocked({
                         typeIds: new Set([databaseClockTimeout.typeId]),
                         timeSinceStartMs: 30_000,
-                        reservationInput: { maxToReserve: 1, maxAttempts: 2 }
+                        reservationInput: { maxToReserve: 1, maxAttempts: 2 },
+                        excludedContextIds: new Set()
                     })
                 )).size,
                 1

@@ -129,13 +129,15 @@ describe('PostgreSQL resource inbox persistence', () => {
         await repo.reservations.findTimedOutReservedEntriesSkipLocked({
             typeIds: new Set(['APP_INBOX']),
             timeSinceStartMs: 30_000,
-            reservationInput: { maxToReserve: 3, maxAttempts: 2 }
+            reservationInput: { maxToReserve: 3, maxAttempts: 2 },
+            excludedContextIds: new Set()
         });
 
         expect(capture.queries).toHaveLength(1);
         expect(capture.queries[0]?.query).toContain('expire_ts > (now() at time zone \'utc\')');
         expect(capture.queries[0]?.query).toContain('start_ts < (now() -');
         expect(capture.queries[0]?.query).toContain('interval \'1 millisecond\'');
+        expect(capture.queries[0]?.query).toContain('fk_ext_bank_id <> all(');
         expect(capture.queries[0]?.values).toContain(30_000);
         expect(capture.queries[0]?.values).toContain(2);
         expect(capture.queries[0]?.values.some((value) => value instanceof Date)).toBe(false);
@@ -151,7 +153,8 @@ describe('PostgreSQL resource inbox persistence', () => {
                 repo.reservations.findTimedOutReservedEntriesSkipLocked({
                     typeIds: new Set(['APP_INBOX']),
                     timeSinceStartMs: timeSinceStartMs,
-                    reservationInput: 1
+                    reservationInput: 1,
+                    excludedContextIds: new Set()
                 })
             ).rejects.toThrow(/non-negative safe integer/u);
             expect(capture.queries).toHaveLength(0);

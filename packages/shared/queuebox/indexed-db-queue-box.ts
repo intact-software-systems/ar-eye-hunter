@@ -403,7 +403,8 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async reserveTimeoutEntries(
-        { typeIds, reservationInput, timeSinceStartTs, observedEntries }: ResourceInboxTimeoutReservationRequest
+        { typeIds, reservationInput, timeSinceStartTs, observedEntries, excludedContextIds }:
+            ResourceInboxTimeoutReservationRequest
     ): Promise<Map<Key, ResourceEntry>> {
         const operation = this.#connection.beginOperation();
         try {
@@ -432,7 +433,8 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 now,
                 isReservable: (stored) =>
                     stored.dequeueAudit.attempts < maxAttempts &&
-                    isStoredQueueEntryTimedOut({ stored, typeIds, duration: timeSinceStartTs, now })
+                    isStoredQueueEntryTimedOut({ stored, typeIds, duration: timeSinceStartTs, now }) &&
+                    excludedContextIds?.has(stored.key.contextId) !== true
             });
             const decision = this.#observeReservation(selection.mutations);
             if (decision instanceof Promise) {
@@ -552,7 +554,8 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 indexName: INDEXED_DB_QUEUE_FAIRNESS_INDEX_NAME,
                 typeIds: requestedTypes,
                 overdueBeforeEpochMs,
-                maxToScan
+                maxToScan,
+                excludedContextIds: options.excludedContextIds
             });
             const computed = computeIndexedDbFairnessReservation({
                 entriesByType,
@@ -671,7 +674,8 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             indexName: INDEXED_DB_QUEUE_FAIRNESS_INDEX_NAME,
             typeIds: [...typeIds],
             overdueBeforeEpochMs: Number(now.epochMilliseconds),
-            maxToScan: typeIds.size
+            maxToScan: typeIds.size,
+            excludedContextIds: undefined
         });
         return [...dueByType.values()].flat();
     }

@@ -342,7 +342,8 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async reserveTimeoutEntries(
-        { typeIds, reservationInput, timeSinceStartTs, observedEntries }: ResourceInboxTimeoutReservationRequest
+        { typeIds, reservationInput, timeSinceStartTs, observedEntries, excludedContextIds }:
+            ResourceInboxTimeoutReservationRequest
     ): Promise<Map<Key, ResourceEntry>> {
         const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
             reservationInput,
@@ -365,7 +366,8 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             if (
                 entry.dequeueAudit.attempts < maxAttempts && typeIds.has(entry.typeId) &&
                 !isExpiredResourceEntry(entry, now) &&
-                isReservedEntryStartedBefore(entry, now.subtract(timeSinceStartTs))
+                isReservedEntryStartedBefore(entry, now.subtract(timeSinceStartTs)) &&
+                excludedContextIds?.has(entry.key.contextId) !== true
             ) {
                 const updated = computeReservedResourceEntry(entry, now);
                 this.storeEntry(key, updated);

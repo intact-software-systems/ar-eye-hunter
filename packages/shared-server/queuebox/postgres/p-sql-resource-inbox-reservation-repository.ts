@@ -80,6 +80,8 @@ export namespace PSqlResourceInboxReservationRepository {
         readonly timeSinceStartMs: number;
         readonly reservationInput: ResourceInboxReservationInput;
         readonly observedRowIds?: readonly string[];
+        /** Lapsed reservations of these contexts are not reclaimed. */
+        readonly excludedContextIds: ReadonlySet<string>;
     }
 
     export interface WorkPosition {
@@ -243,7 +245,7 @@ export class PSqlResourceInboxReservationRepository {
     }
 
     async findTimedOutReservedEntriesSkipLocked(
-        { typeIds, timeSinceStartMs, reservationInput, observedRowIds }:
+        { typeIds, timeSinceStartMs, reservationInput, observedRowIds, excludedContextIds }:
             PSqlResourceInboxReservationRepository.TimeoutReservationRead
     ): Promise<Map<string, ResourceEntry>> {
         if (!Number.isSafeInteger(timeSinceStartMs) || timeSinceStartMs < 0) {
@@ -270,6 +272,7 @@ export class PSqlResourceInboxReservationRepository {
               and ri_attempts < ${maxAttempts}
               and start_ts is not null
               and start_ts < (now() - (${timeSinceStartMs} * interval '1 millisecond')) at time zone 'UTC'
+              and fk_ext_bank_id <> all(${[...excludedContextIds]}::varchar[])
             order by ri_row_id
                 for update skip locked
             limit ${maxToReserve}
@@ -284,6 +287,7 @@ export class PSqlResourceInboxReservationRepository {
               and ri_attempts < ${maxAttempts}
               and start_ts is not null
               and start_ts < (now() - (${timeSinceStartMs} * interval '1 millisecond')) at time zone 'UTC'
+              and fk_ext_bank_id <> all(${[...excludedContextIds]}::varchar[])
             order by ri_row_id
                 for update skip locked
             limit ${observedRowIds.length}

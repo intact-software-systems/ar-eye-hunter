@@ -394,6 +394,8 @@ export interface ResourceInboxTimeoutReservationRequest {
     readonly reservationInput: ResourceInboxReservationInput;
     readonly timeSinceStartTs: Temporal.Duration;
     readonly observedEntries?: readonly ResourceEntry[];
+    /** Lapsed reservations of these contexts are not reclaimed; absent, one of any context is. */
+    readonly excludedContextIds?: ReadonlySet<string>;
 }
 
 export interface EnqueueResourceEntryController {

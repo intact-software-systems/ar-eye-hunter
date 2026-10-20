@@ -4,9 +4,11 @@ export namespace ExclusionKeyedAdmission {
     export interface Config {
         readonly maxConcurrent: number;
         /**
-         * Whether a keyed run that an earlier run's settlement released takes a freed slot ahead of every run waiting in
-         * turn; otherwise all wait in turn. A keyed run with no unsettled predecessor always waits in turn, so each
-         * preferred run follows a settlement and runs waiting in turn are never passed by fresh keyed arrivals.
+         * Whether a keyed run that the settlement of an earlier run with the same key released takes a freed slot ahead
+         * of every run waiting in turn; otherwise all wait in turn. A keyed run with no unsettled predecessor, or one
+         * whose last predecessor had a prefix or extension of its key, waits in turn, so one settlement prefers at most
+         * the runs of its own key. A continuously fed same-key chain therefore holds one slot for as long as it is fed,
+         * and with as many such chains as slots, runs waiting in turn wait until one chain drains.
          */
         readonly releasedKeyedRunsFirst: boolean;
     }
@@ -25,8 +27,8 @@ interface KeyedRun {
  * until every earlier run whose key equals its own, is a path prefix of it, or has its key as one has settled, and
  * only then waits for a slot, so a run that waits holds none. A scope-wide key thereby orders against every key inside
  * that scope. A run without a key waits only for a slot, and a failed run releases the runs behind it like a settled
- * one. A settling run lines up the runs it released before its slot frees, so a released keyed run can take that slot;
- * a keyed run that waited on no predecessor asks for its slot in turn.
+ * one. A settling run lines up the runs it released before its slot frees, so a released run of the same key can take
+ * that slot; a keyed run that waited on no predecessor, or that a different key released, asks for its slot in turn.
  */
 export class ExclusionKeyedAdmission {
     private readonly slots: BoundedConcurrencyAdmission;
@@ -73,7 +75,9 @@ export class ExclusionKeyedAdmission {
             for (const successor of keyed.successors) {
                 successor.unsettledPredecessors -= 1;
                 if (successor.unsettledPredecessors === 0) {
-                    successor.waitForSlot(this.releasedRunPriority);
+                    successor.waitForSlot(
+                        successor.exclusionKey === keyed.exclusionKey ? this.releasedRunPriority : 'in-turn'
+                    );
                 }
             }
         }
