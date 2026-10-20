@@ -60,9 +60,10 @@ export function isGroupStateRouteSnapshotReadable(
 
 export function isGroupStateRouteSnapshotDirectoryListed(
     snapshot: GroupSnapshot,
-    principalId: string | undefined
+    principalId: string | undefined,
+    nowEpochMs: number
 ): boolean {
-    return isGroupDirectoryVisible({ snapshot, actor: { principalId } });
+    return isGroupDirectoryVisible({ snapshot, actor: { principalId }, nowEpochMs });
 }
 
 export function createGroupStateRouteAuthorization(

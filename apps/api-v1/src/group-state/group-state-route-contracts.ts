@@ -320,6 +320,8 @@ export interface GroupStateRouteDependencies {
     readonly processGroupAppInbox: ProcessGroupAppInbox;
     readonly groupAdmissionQuota: GroupAdmissionQuota;
     readonly strictReadAuthorization: boolean;
+    readonly groupDefaultMaxMembers: number | null;
+    readonly nowEpochMs: () => number;
     readonly hydrateStateSyncSnapshotCaches: (
         input: StateSyncCacheHydrationInput
     ) => Promise<StateSyncCacheHydrationResult>;

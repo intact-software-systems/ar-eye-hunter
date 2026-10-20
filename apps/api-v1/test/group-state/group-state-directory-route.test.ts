@@ -1,6 +1,8 @@
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
+import { authenticationRequired } from '@shared-server/http/request-auth-service.ts';
+
 import type { GroupDirectoryPage } from '@shared/api/group-directory/group-directory-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
@@ -11,6 +13,7 @@ import {
     createDeletedGroupStateRouteSnapshot,
     createGroupStateRouteAuthSession,
     createGroupStateRouteSnapshot,
+    createGroupStateRouteSnapshotWithMember,
     createGroupStateRouteTestDependencies
 } from './group-state-route-test-runtime.ts';
 
@@ -27,7 +30,13 @@ function openSnapshot(
 
 function readDirectory(
     snapshots: readonly GroupSnapshot[],
-    options: { readonly path?: string; readonly headers?: HeadersInit; readonly strict?: boolean; } = {}
+    options: {
+        readonly path?: string;
+        readonly headers?: HeadersInit;
+        readonly strict?: boolean;
+        readonly authenticated?: boolean;
+        readonly groupDefaultMaxMembers?: number | null;
+    } = {}
 ): Promise<Response> | Response {
     const app = new Hono();
     const strict = options.strict ?? true;
@@ -40,7 +49,11 @@ function readDirectory(
             listEvents: () => Promise.resolve([]),
             listEventPage: () => Promise.resolve({ events: [], hasMore: false })
         },
-        requireApiAuthSession: () => Promise.resolve(createGroupStateRouteAuthSession('alice'))
+        groupDefaultMaxMembers: options.groupDefaultMaxMembers ?? null,
+        requireApiAuthSession: () =>
+            options.authenticated === false
+                ? Promise.reject(authenticationRequired('Unauthorized: Missing bearer token'))
+                : Promise.resolve(createGroupStateRouteAuthSession('alice'))
     });
     registerGroupStateReadRoutes(app, dependencies, createGroupStateRouteAuthorization(dependencies));
     return app.request(options.path ?? DIRECTORY_PATH, { headers: options.headers });
@@ -164,4 +177,58 @@ Deno.test('group directory without strict authorization lists open groups to an 
 
     assert.equal(response.status, 200);
     assert.equal((await readPage(response)).entries.length, 1);
+});
+
+Deno.test('group directory cursors survive group ids outside Latin-1', async () => {
+    const snapshots = ['arena-\u623f\u95f4', 'arena-\u{1f3af}', 'arena-z'].map((groupId) => openSnapshot(groupId, ['bob']));
+
+    const first = await readPage(await readDirectory(snapshots, { path: `${DIRECTORY_PATH}?limit=1` }));
+    const second = await readPage(
+        await readDirectory(snapshots, { path: `${DIRECTORY_PATH}?limit=2&cursor=${first.nextCursor}` })
+    );
+
+    assert.equal(first.entries.length, 1);
+    assert.equal(second.entries.length, 2);
+    assert.equal(new Set([...first.entries, ...second.entries].map((entry) => entry.groupRef.groupId)).size, 3);
+});
+
+Deno.test('group directory applies the server default member cap when a group sets none', async () => {
+    const snapshot = openSnapshot('crowded', ['bob', 'carol']);
+    const crowded = { ...snapshot, group: { ...snapshot.group, maxMembers: null, activeMemberCount: 2 } };
+
+    const page = await readPage(await readDirectory([crowded], { groupDefaultMaxMembers: 2 }));
+
+    assert.equal(page.entries[0].maxMembers, 2);
+    assert.equal(page.entries[0].isFull, true);
+});
+
+Deno.test('group directory authenticates before it validates the query', async () => {
+    const response = await readDirectory([], { path: `${DIRECTORY_PATH}?limit=0`, authenticated: false });
+
+    assert.equal(response.status, 401);
+});
+
+Deno.test('group directory lists an open group to a principal whose invitation expired', async () => {
+    const invited = createGroupStateRouteSnapshotWithMember('invited-arena', 'alice', 'invited');
+    const expired = {
+        ...invited,
+        onlineMemberCount: 1,
+        group: { ...invited.group, joinMode: 'open' as const },
+        members: invited.members.map((member) => ({ ...member, invitationExpiresAtEpochMs: 1 }))
+    };
+
+    const page = await readPage(await readDirectory([expired]));
+
+    assert.deepEqual(page.entries.map((entry) => entry.groupRef.groupId), ['invited-arena']);
+});
+
+Deno.test('group directory answers 304 to weak and listed If-None-Match validators', async () => {
+    const snapshots = [openSnapshot('bobs-arena', ['bob'])];
+    const etag = (await readDirectory(snapshots)).headers.get('etag') ?? '';
+
+    const weak = await readDirectory(snapshots, { headers: { 'if-none-match': `W/${etag}` } });
+    const listed = await readDirectory(snapshots, { headers: { 'if-none-match': `"other", ${etag}` } });
+
+    assert.equal(weak.status, 304);
+    assert.equal(listed.status, 304);
 });

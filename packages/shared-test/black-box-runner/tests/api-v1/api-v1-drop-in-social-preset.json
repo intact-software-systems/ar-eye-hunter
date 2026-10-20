@@ -200,7 +200,7 @@
               },
               "joinMode": "open",
               "memberCount": 1,
-              "maxMembers": null,
+              "maxMembers": "integer",
               "isFull": false
             }
           ],

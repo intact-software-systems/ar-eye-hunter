@@ -650,8 +650,12 @@ paths:
         returned by the group snapshot list instead. Rooms with nobody online
         are omitted unless `includeEmpty` is true. Entries are ordered by
         online member count (descending), then group id, and paged with an
-        opaque keyset cursor. The response carries an `ETag`; send it back in
-        `If-None-Match` to receive `304` while the page is unchanged.
+        opaque keyset cursor. Online counts change between requests, so paging
+        is best-effort: a room whose count changes can repeat or be skipped
+        across pages. `maxMembers` is the effective cap admission enforces,
+        including the server default when the group sets none. The response
+        carries an `ETag`; send it back in `If-None-Match` to receive `304`
+        while the page is unchanged.
       security:
         - bearerAuth: []
           clientIdHeader: []

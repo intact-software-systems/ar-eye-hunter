@@ -192,6 +192,7 @@ function createInput(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRunti
             presencePrincipal: 120,
             presenceGroup: 1_200
         },
+        groupDefaultMaxMembers: null,
         strictReadAuthorization: false,
         nowEpochMs: () => 1_000,
         createTokenId: () => 'token-id'

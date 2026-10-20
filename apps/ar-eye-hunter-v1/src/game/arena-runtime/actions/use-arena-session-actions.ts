@@ -8,14 +8,15 @@ import type { GroupDirectoryEntry } from '@shared/api/group-directory/group-dire
 import { createRallarAiFunnyRoomName, createRallarAiRoomNameSeed } from '@shared/rallar-ai/mod.ts';
 
 import { GAME_ROOM_NAME } from '../../types.ts';
-
-const OPEN_ARENA_DIRECTORY_QUERY = 'eye hunter';
 import type {
     ArenaConnection,
     ArenaConnectionState,
     DirectorAttemptSource,
     DirectorAttemptState
 } from '../arena-connection-contracts.ts';
+
+const OPEN_ARENA_DIRECTORY_QUERY = 'eye hunter';
+const OPEN_ARENA_DIRECTORY_PAGE_SIZE = 50;
 
 interface ArenaSessionActionsInput {
     readonly attemptDirectorAppointment: (source: DirectorAttemptSource) => Promise<void>;
@@ -111,6 +112,23 @@ async function authenticateArena(input: ArenaSessionActionsInput, authentication
     }
 }
 
+async function readOpenArenaDirectory(): Promise<readonly GroupDirectoryEntry[]> {
+    const entries = new Map<string, GroupDirectoryEntry>();
+    let cursor: string | null = null;
+    do {
+        const page = await rallar.rooms.directory({
+            kind: 'room',
+            q: OPEN_ARENA_DIRECTORY_QUERY,
+            limit: OPEN_ARENA_DIRECTORY_PAGE_SIZE,
+            ...(cursor === null ? {} : { cursor })
+        });
+        page.entries.forEach((entry) => entries.set(entry.groupRef.groupId, entry));
+        cursor = page.nextCursor;
+    }
+    while (cursor !== null);
+    return [...entries.values()];
+}
+
 function useArenaRoomActions(
     input: ArenaSessionActionsInput
 ): Pick<ArenaConnection, 'refreshRooms' | 'createArenaRoom' | 'joinRoom'> {
@@ -127,11 +145,11 @@ function useArenaRoomActions(
         setRooms(state.rooms);
         setRoomId(state.currentRoomId);
         try {
-            const page = await rallar.rooms.directory({ kind: 'room', q: OPEN_ARENA_DIRECTORY_QUERY, limit: 50 });
+            const openRooms = await readOpenArenaDirectory();
             if (!sessionRef.current) {
                 return;
             }
-            setOpenRooms(page.entries);
+            setOpenRooms(openRooms);
             setOpenRoomsError(undefined);
         }
         catch (error) {

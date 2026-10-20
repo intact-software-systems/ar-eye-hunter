@@ -30,6 +30,8 @@ export const TEST_GROUP_SCOPE: StateScope = {
 
 export interface GroupStateRouteTestRuntimeInput {
     readonly session?: AuthSession & GroupStateRouteAuthSession;
+    readonly groupDefaultMaxMembers?: number | null;
+    readonly nowEpochMs?: () => number;
     readonly groupService?: Partial<GroupStateRouteService>;
     readonly requireApiAuthSession?: GroupStateRouteDependencies[
         'requireApiAuthSession'
@@ -52,7 +54,7 @@ export interface GroupStateRouteTestRuntime {
 }
 
 export interface GroupStateRoutePostRequestWithHeaders {
-    readonly body: Record<string, unknown>;
+    readonly body: object;
     readonly headers: Readonly<Record<string, string>>;
 }
 
@@ -99,6 +101,8 @@ export function createGroupStateRouteTestDependencies(
             presenceGroup: 1_200
         }),
         strictReadAuthorization: input.strictReadAuthorization ?? false,
+        groupDefaultMaxMembers: input.groupDefaultMaxMembers ?? null,
+        nowEpochMs: input.nowEpochMs ?? (() => Date.now()),
         hydrateStateSyncSnapshotCaches: input.hydrateStateSyncSnapshotCaches ??
             (() => Promise.resolve({ clientSnapshotCount: 0, groupSnapshotCount: 0 })),
         readGroupSnapshot: input.readGroupSnapshot ?? (async (ref) => {
@@ -273,7 +277,7 @@ export function captureGroupStateRouteWrite(
 export async function postGroupStateMutation(
     app: Hono,
     path: string,
-    body: Record<string, unknown>
+    body: object
 ): Promise<Response> {
     const mutation = toGroupStateRouteMutationRequest(path, body);
     return await app.request(mutation.path, {
@@ -286,7 +290,7 @@ export async function postGroupStateMutation(
 export async function putGroupStateMutation(
     app: Hono,
     path: string,
-    body: Record<string, unknown>
+    body: object
 ): Promise<Response> {
     const mutation = toGroupStateRouteMutationRequest(path, body);
     return await app.request(mutation.path, {

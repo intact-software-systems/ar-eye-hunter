@@ -26,12 +26,14 @@ import {
 import { readStateGroupSnapshot, type StateGroupSnapshotRead } from '@shared-web/browser/state-read/point-read.ts';
 import { refreshStateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 import { listStateGroupDirectory } from '@shared-web/browser/state-read/state-snapshot-http-api.ts';
+import { requireStateWorkflowResult } from '@shared-web/browser/state-read/state-workflow-support.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupDirectoryPage, GroupDirectoryRequest } from '@shared/api/group-directory/group-directory-types.ts';
 import { Command, CommandCancelledError } from '@shared/cache/Command.ts';
+import { CommandsOrchestrator } from '@shared/cache/CommandsOrchestrator.ts';
 import {
     findGroupStateSnapshotByRef,
     refreshGroupStateSnapshotIfUnchanged,
@@ -398,11 +400,14 @@ async function readRoomDirectory(
     return await input.runAuthAwareOperation(async () => {
         const operationOptions = input.resolveOperationOptions(options);
         await input.connect(operationOptions);
-        return await listStateGroupDirectory(
-            input.resolveOperationScope(options.scope),
-            request,
-            { signal: operationOptions.signal }
+        const scope = input.resolveOperationScope(options.scope);
+        const flow = CommandsOrchestrator.withPolicies<'directory', GroupDirectoryPage>(
+            toRallarWorkflowPolicies(operationOptions)
         );
+        const results = await flow
+            .sequential(flow.commandStep('directory', (signal) => listStateGroupDirectory(scope, request, { signal })))
+            .run();
+        return requireStateWorkflowResult(results, 'directory');
     });
 }
 

@@ -1,11 +1,17 @@
 import type { GroupDirectoryEntry, GroupDirectoryPage } from '@shared/api/group-directory/group-directory-types.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { toCanonicalGroupRef, type GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { encodeGroupDirectoryCursor, type GroupDirectoryQuery } from './decode-group-directory-query.ts';
 
+export interface ComputeGroupDirectoryPageInput {
+    readonly query: GroupDirectoryQuery;
+    /** Admission's cap for groups without their own `maxMembers`; null means uncapped. */
+    readonly defaultMaxMembers: number | null;
+}
+
 export function computeGroupDirectoryPage(
     snapshots: readonly GroupSnapshot[],
-    query: GroupDirectoryQuery
+    { query, defaultMaxMembers }: ComputeGroupDirectoryPageInput
 ): GroupDirectoryPage {
     const ordered = snapshots
         .filter((snapshot) => matchesGroupDirectoryQuery(snapshot, query))
@@ -15,7 +21,7 @@ export function computeGroupDirectoryPage(
     const last = page.at(-1);
 
     return {
-        entries: page.map(toGroupDirectoryEntry),
+        entries: page.map((snapshot) => toGroupDirectoryEntry(snapshot, defaultMaxMembers)),
         nextCursor: last && ordered.length > page.length
             ? encodeGroupDirectoryCursor({
                 onlineMemberCount: last.onlineMemberCount,
@@ -31,6 +37,10 @@ function matchesGroupDirectoryQuery(snapshot: GroupSnapshot, query: GroupDirecto
         (query.includeEmpty || snapshot.onlineMemberCount > 0);
 }
 
+/**
+ * Online counts change between page requests, so a room can move across the cursor and be repeated
+ * or skipped. Pages are a best-effort view of a live lobby, not a consistent snapshot.
+ */
 function compareGroupDirectoryOrder(left: GroupSnapshot, right: GroupSnapshot): number {
     if (left.onlineMemberCount !== right.onlineMemberCount) {
         return right.onlineMemberCount - left.onlineMemberCount;
@@ -47,21 +57,18 @@ function isAfterCursor(snapshot: GroupSnapshot, query: GroupDirectoryQuery): boo
         (snapshot.onlineMemberCount === after.onlineMemberCount && snapshot.group.groupId > after.groupId);
 }
 
-function toGroupDirectoryEntry(snapshot: GroupSnapshot): GroupDirectoryEntry {
+function toGroupDirectoryEntry(snapshot: GroupSnapshot, defaultMaxMembers: number | null): GroupDirectoryEntry {
     const group = snapshot.group;
+    const maxMembers = group.maxMembers ?? defaultMaxMembers;
     return {
-        groupRef: {
-            applicationId: group.applicationId,
-            workspaceId: group.workspaceId,
-            groupId: group.groupId
-        },
+        groupRef: toCanonicalGroupRef(group),
         displayName: group.displayName,
         kind: group.kind,
         joinMode: group.joinMode,
         memberCount: snapshot.memberCount,
         onlineMemberCount: snapshot.onlineMemberCount,
-        maxMembers: group.maxMembers,
-        isFull: group.maxMembers !== null && snapshot.memberCount >= group.maxMembers,
+        maxMembers,
+        isFull: maxMembers !== null && group.activeMemberCount >= maxMembers,
         lifecycleState: group.lifecycleState
     };
 }

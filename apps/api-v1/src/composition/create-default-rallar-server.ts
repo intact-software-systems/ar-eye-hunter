@@ -338,6 +338,7 @@ function createDefaultApiV1RouteInstallers({
         },
         ice: configuration.ice,
         groupAdmission: configuration.group.admission,
+        groupDefaultMaxMembers: configuration.group.defaultMaxMembers,
         strictReadAuthorization: configuration.stateApi.strictReadAuthorization,
         nowEpochMs,
         createTokenId: () => crypto.randomUUID()

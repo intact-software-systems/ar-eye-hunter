@@ -303,7 +303,7 @@
                 "groupId": "{alphaId}"
               },
               "joinMode": "open",
-              "maxMembers": null,
+              "maxMembers": "integer",
               "isFull": false
             },
             {
@@ -311,7 +311,7 @@
                 "groupId": "{betaId}"
               },
               "joinMode": "open",
-              "maxMembers": null,
+              "maxMembers": "integer",
               "isFull": false
             },
             {
@@ -319,7 +319,7 @@
                 "groupId": "{partyId}"
               },
               "joinMode": "open",
-              "maxMembers": null,
+              "maxMembers": "integer",
               "isFull": false
             }
           ],
@@ -349,7 +349,7 @@
                 "groupId": "{alphaId}"
               },
               "joinMode": "open",
-              "maxMembers": null,
+              "maxMembers": "integer",
               "isFull": false
             },
             {
@@ -357,7 +357,7 @@
                 "groupId": "{betaId}"
               },
               "joinMode": "open",
-              "maxMembers": null,
+              "maxMembers": "integer",
               "isFull": false
             }
           ],
@@ -387,7 +387,7 @@
                 "groupId": "{partyId}"
               },
               "joinMode": "open",
-              "maxMembers": null,
+              "maxMembers": "integer",
               "isFull": false
             }
           ],
@@ -420,7 +420,7 @@
                 "groupId": "{alphaId}"
               },
               "joinMode": "open",
-              "maxMembers": null,
+              "maxMembers": "integer",
               "isFull": false
             }
           ],
@@ -453,7 +453,7 @@
                 "groupId": "{betaId}"
               },
               "joinMode": "open",
-              "maxMembers": null,
+              "maxMembers": "integer",
               "isFull": false
             }
           ],
@@ -483,7 +483,7 @@
                 "groupId": "{partyId}"
               },
               "joinMode": "open",
-              "maxMembers": null,
+              "maxMembers": "integer",
               "isFull": false
             }
           ],
@@ -576,7 +576,7 @@
                 "groupId": "{betaId}"
               },
               "joinMode": "open",
-              "maxMembers": null,
+              "maxMembers": "integer",
               "isFull": false
             },
             {
@@ -584,7 +584,7 @@
                 "groupId": "{partyId}"
               },
               "joinMode": "open",
-              "maxMembers": null,
+              "maxMembers": "integer",
               "isFull": false
             }
           ],
@@ -615,7 +615,7 @@
                 "groupId": "{betaId}"
               },
               "joinMode": "open",
-              "maxMembers": null,
+              "maxMembers": "integer",
               "isFull": false
             },
             {
@@ -623,7 +623,7 @@
                 "groupId": "{partyId}"
               },
               "joinMode": "open",
-              "maxMembers": null,
+              "maxMembers": "integer",
               "isFull": false
             }
           ],

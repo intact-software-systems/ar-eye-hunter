@@ -21,7 +21,8 @@ export interface GroupDirectoryQuery {
 const GROUP_KINDS: readonly Group['kind'][] = ['party', 'room', 'team', 'custom'];
 
 export function encodeGroupDirectoryCursor(cursor: GroupDirectoryCursor): string {
-    return btoa(JSON.stringify([cursor.onlineMemberCount, cursor.groupId]))
+    const bytes = new TextEncoder().encode(JSON.stringify([cursor.onlineMemberCount, cursor.groupId]));
+    return btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(''))
         .replaceAll('+', '-')
         .replaceAll('/', '_')
         .replaceAll('=', '');
@@ -94,7 +95,10 @@ function readCursor(searchParams: URLSearchParams, issues: string[]): GroupDirec
 function parseCursor(value: string): GroupDirectoryCursor | null {
     try {
         const padded = value.replaceAll('-', '+').replaceAll('_', '/');
-        return decodeCursorTuple(JSON.parse(atob(padded + '='.repeat((4 - padded.length % 4) % 4))));
+        const binary = atob(padded + '='.repeat((4 - padded.length % 4) % 4));
+        const json = new TextDecoder('utf-8', { fatal: true })
+            .decode(Uint8Array.from(binary, (character) => character.charCodeAt(0)));
+        return decodeCursorTuple(JSON.parse(json));
     }
     catch {
         return null;
