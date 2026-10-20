@@ -1,8 +1,6 @@
 import type { ALMessage } from '../al-contracts/al-contract.ts';
-import { resolveALMessageExpireAtMs } from '../al-contracts/al-policy.ts';
 import { IceConfig, PeerId } from '../api/api-config.ts';
 import { AsyncCommand, type AsyncCommandTimeoutEvent } from '../cache/AsyncCommand.ts';
-import { LatestRepository } from '../cache/LatestRepository.ts';
 import { PullPushCommand } from '../cache/PullPushCommand.ts';
 import { Either } from '../resilience/Either.ts';
 import { toError } from '../resilience/to-error.ts';
@@ -11,6 +9,7 @@ import {
     decodeRtcSignal,
     decodeRtcSignalingEnvelope
 } from '../webrtc/decode-rtc-signaling-message.ts';
+import { HeldInboundRtcSignals } from '../webrtc/held-inbound-rtc-signals.ts';
 import {
     QRtcDataChannel,
     type RtcDataChannelFlowControlPolicy,
@@ -56,8 +55,6 @@ export const DEFAULT_WEB_RTC_PEER_CONNECTION_ATTEMPT_BUDGET_POLICY:
     };
 
 export const DEFAULT_WEB_RTC_MAX_PEER_CONNECTIONS = 10;
-/** Past this many held signals the oldest is forgotten; it still arrives on its own retry schedule. */
-export const WEB_RTC_MAX_HELD_INBOUND_SIGNALS = 256;
 export const RTC_CONNECT_ATTEMPT_BUDGET_EXHAUSTED_REASON = 'rtc-connect-attempt-budget-exhausted';
 
 export interface RtcDataChannelLaneConfig {
@@ -120,13 +117,6 @@ type InboundPeerCreationPolicyAnswer =
     | Readonly<{ kind: 'answered'; admission: PeerCreationAdmission; }>
     | Readonly<{ kind: 'threw'; error: Error; }>;
 
-/** An inbound signal the creation policy answered `retry` for, kept until the transport delivers it again. */
-interface HeldInboundSignal {
-    readonly envelope: ALMessage;
-    readonly signal: QRtcSignalingMessage;
-    readonly reason: string;
-}
-
 export namespace WebRtcConnectionService {
     export interface NativeChannelHandle {
         readonly channel: QRtcDataChannel;
@@ -143,8 +133,8 @@ export namespace WebRtcConnectionService {
     export interface Dependencies extends QRtcPeerConnection.Dependencies {
         readonly faultPort: TransportFaultPort;
         readonly nowEpochMs: () => number;
-        /** Brings the transport's retained delivery of each held signal due now, so it is decided again at once. */
-        readonly writeRetainedSignalsDueNow: (envelopes: readonly ALMessage[]) => Promise<void>;
+        /** Brings the transport's retained delivery of each held signal due now; answers the envelopes it brought due. */
+        readonly writeRetainedSignalsDueNow: (envelopes: readonly ALMessage[]) => Promise<readonly ALMessage[]>;
     }
 
     export interface InputDto {
@@ -370,9 +360,7 @@ export class WebRtcConnectionService {
         new Map();
 
     private readonly peerEntryByPeerId = new Map<PeerId, PeerEntry>();
-    private readonly heldInboundSignals = new LatestRepository<string, HeldInboundSignal>({
-        maxEntries: WEB_RTC_MAX_HELD_INBOUND_SIGNALS
-    });
+    private readonly heldInboundSignals: HeldInboundRtcSignals;
     private readonly peerEstablishmentWatchdog: AsyncCommand<PeerId, WebRtcConnectionService.Peer>;
     private readonly attemptBudget: RtcPeerConnectionAttemptBudget;
 
@@ -392,6 +380,10 @@ export class WebRtcConnectionService {
         this.input = input;
         this.dependencies = dependencies;
         this.peerEstablishmentWatchdog = new AsyncCommand<PeerId, WebRtcConnectionService.Peer>();
+        this.heldInboundSignals = new HeldInboundRtcSignals({
+            nowEpochMs: dependencies.nowEpochMs,
+            writeRetainedSignalsDueNow: dependencies.writeRetainedSignalsDueNow
+        });
         this.attemptBudget = new RtcPeerConnectionAttemptBudget({
             nowEpochMs: this.dependencies.nowEpochMs,
             readPolicy: () => this.peerConnectionAttemptBudgetPolicy(),
@@ -604,7 +596,7 @@ export class WebRtcConnectionService {
                     throw new TypeError(signal.left.message);
                 }
                 if (signal.right) {
-                    this.heldInboundSignals.delete(toHeldInboundSignalKey(message));
+                    this.heldInboundSignals.forget(message);
                     return await this.receiveSignal(signal.right, message);
                 }
             }
@@ -636,11 +628,10 @@ export class WebRtcConnectionService {
         }
         const admission = this.shouldCreatePeerFromInboundSignal(peerId, message);
         if (!admission.allowed) {
-            if (!admission.retryInboundSignal) {
-                return;
+            if (admission.retryInboundSignal && admission.reason !== undefined) {
+                this.heldInboundSignals.hold({ envelope, signal: message, reason: admission.reason });
             }
-            this.holdInboundSignal(envelope, message, admission.reason);
-            return 'retry';
+            return admission.retryInboundSignal ? 'retry' : undefined;
         }
         const accepted = await this.acceptPeerIfAbsent(peerId, message);
         this.observeSignalRoute('accepted-peer-result', message, accepted.left?.kind ?? accepted.right?.outcome);
@@ -649,58 +640,20 @@ export class WebRtcConnectionService {
         }
     }
 
-    private holdInboundSignal(envelope: ALMessage, signal: QRtcSignalingMessage, reason: string | undefined): void {
-        if (reason === undefined) {
-            return;
-        }
-        this.heldInboundSignals.acceptAt({
-            key: toHeldInboundSignalKey(envelope),
-            value: { envelope, signal, reason },
-            nowEpochMs: this.dependencies.nowEpochMs(),
-            expireAtEpochMs: resolveALMessageExpireAtMs(envelope)
-        });
-    }
-
-    /**
-     * Brings the held signals refused for `reason` that the creation policy now admits due at once,
-     * instead of after their retry delay; the policy still decides each one when it is delivered again.
-     * Held signals of another reason, or still refused, wait for their own retry.
-     */
+    /** Brings the signals held for `reason` that a delivery would now admit due at once. */
     async writeHeldInboundSignalsDueNow(reason: string): Promise<void> {
-        const heldKeys = [...this.heldInboundSignals.entriesView()]
-            .filter(([, held]) => held.peek()?.reason === reason)
-            .map(([key]) => key);
-        if (heldKeys.length === 0) {
-            return;
-        }
-        const nowEpochMs = this.dependencies.nowEpochMs();
-        const admitted = heldKeys
-            .map((key) => this.heldInboundSignals.readAt(key, nowEpochMs))
-            .filter((held): held is HeldInboundSignal => held !== undefined && this.isHeldSignalAdmittedNow(held));
-        if (admitted.length === 0) {
-            return;
-        }
-        try {
-            await this.dependencies.writeRetainedSignalsDueNow(admitted.map((held) => held.envelope));
-        }
-        catch (caught) {
-            console.error('Failed to bring held inbound RTC signals due', toError(caught));
-            return;
-        }
-        for (const held of admitted) {
-            const key = toHeldInboundSignalKey(held.envelope);
-            if (this.heldInboundSignals.peek(key) === held) {
-                this.heldInboundSignals.delete(key);
-            }
-        }
+        await this.heldInboundSignals.writeDueNow(reason, (signal) => this.isHeldSignalAdmittedNow(signal));
     }
 
-    // Records no route and skips the peer cap: the delivery this brings due decides and records both.
-    private isHeldSignalAdmittedNow(held: HeldInboundSignal): boolean {
-        if (this.peerEntryByPeerId.has(held.signal.fromId)) {
+    // Decides as a delivery would, reuse first, then the peer cap, then the policy, but records no route.
+    private isHeldSignalAdmittedNow(signal: QRtcSignalingMessage): boolean {
+        if (this.peerEntryByPeerId.has(signal.fromId)) {
             return true;
         }
-        const answer = this.readInboundPeerCreationAdmission(held.signal);
+        if (this.peerEntryByPeerId.size >= this.maxPeerConnections()) {
+            return false;
+        }
+        const answer = this.readInboundPeerCreationAdmission(signal);
         return answer.kind === 'no-policy' || (answer.kind === 'answered' && answer.admission.allowed);
     }
 
@@ -1528,9 +1481,4 @@ function resolveSetupOutcome(
     setup: WebRtcConnectionService.PeerSetup
 ): WebRtcConnectionService.PeerConnectionEnsureOutcome {
     return setup.phase === 'in-flight' ? 'setup-in-flight' : 'setup-established';
-}
-
-/** A message id is unique per sender only, so a hold is keyed by both, as ALM keys its own rows. */
-function toHeldInboundSignalKey(envelope: ALMessage): string {
-    return JSON.stringify([envelope.id.senderId, envelope.id.msgId]);
 }

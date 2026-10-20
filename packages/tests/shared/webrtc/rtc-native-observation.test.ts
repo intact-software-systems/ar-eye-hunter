@@ -1049,7 +1049,7 @@ describe('original native owner evidence', () => {
             dataChannelName: 'test',
             rtcSignalingTopicId: 'rtc',
             iceCandidates: { iceServers: [], expiresAtEpochMs: 1000 }
-        }, { nowEpochMs: () => 1, createOfferId: () => 'offer', faultPort: createPassThroughTransportFaultPort(), writeRetainedSignalsDueNow: async () => {} });
+        }, { nowEpochMs: () => 1, createOfferId: () => 'offer', faultPort: createPassThroughTransportFaultPort(), writeRetainedSignalsDueNow: async () => [] });
         onTestFinished(() => {
             service.disconnectPeer('peer');
         });
@@ -1111,7 +1111,7 @@ function createService(events: RtcSignalingDiagnostics.Event[], diagnostics?: Rt
         faultPort: createPassThroughTransportFaultPort(),
         nowEpochMs: () => 1,
         signalingDiagnostics: diagnostics ?? capture?.diagnostics,
-        writeRetainedSignalsDueNow: async () => {}
+        writeRetainedSignalsDueNow: async () => []
     });
     onTestFinished(() => {
         for (const peerId of service.knownPeerIds()) {

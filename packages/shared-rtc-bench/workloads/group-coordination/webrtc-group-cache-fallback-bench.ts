@@ -178,7 +178,7 @@ export function runWebRtcGroupCacheFallback(
             faultPort: createPassThroughTransportFaultPort(),
             createOfferId: () => crypto.randomUUID(),
             nowEpochMs: () => Date.now(),
-            writeRetainedSignalsDueNow: async () => {}
+            writeRetainedSignalsDueNow: async () => []
         }),
         {
             ...targetScope,

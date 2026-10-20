@@ -269,7 +269,7 @@ function createConnectionService(
         faultPort: createPassThroughTransportFaultPort(),
         createOfferId: crypto.randomUUID.bind(crypto),
         nowEpochMs: () => Date.now(),
-        writeRetainedSignalsDueNow: async () => {}
+        writeRetainedSignalsDueNow: async () => []
     });
     vi.spyOn(connection, 'readyPeerIdsForLane').mockImplementation(() => ready.peerIds);
     vi.spyOn(connection, 'readPeer').mockImplementation((peerId) => {

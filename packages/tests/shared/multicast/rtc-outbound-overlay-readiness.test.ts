@@ -820,7 +820,7 @@ async function createFixture(qosProvider?: ALQosInputProvider): Promise<OverlayF
         faultPort: createPassThroughTransportFaultPort(),
         createOfferId: new DeterministicRtcOfferIds().createOfferId,
         nowEpochMs: () => Date.now(),
-        writeRetainedSignalsDueNow: async () => {}
+        writeRetainedSignalsDueNow: async () => []
     });
     onTestFinished(() => {
         for (const peerId of connection.knownPeerIds()) {

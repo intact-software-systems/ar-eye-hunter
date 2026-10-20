@@ -277,9 +277,9 @@ export class ALInboundMessageRuntime {
         return retained;
     }
 
-    async writeRetainedDeliveriesDueNow(msgs: readonly ALMessage[]): Promise<number> {
+    async writeRetainedDeliveriesDueNow(msgs: readonly ALMessage[]): Promise<readonly ALMessage[]> {
         if (this.disposed) {
-            return 0;
+            return [];
         }
         const msgsByLane = new Map<ALInboundStoreLane, ALMessage[]>();
         for (const msg of msgs) {
@@ -289,7 +289,7 @@ export class ALInboundMessageRuntime {
         const broughtDue = await Promise.all(
             [...msgsByLane].map(([lane, laneMsgs]) => lane.writeRetainedDeliveriesDueNow(laneMsgs))
         );
-        return broughtDue.reduce((total, count) => total + count, 0);
+        return broughtDue.flat();
     }
 
     /** A value that never decoded has no identity to record; this observation is optional. */

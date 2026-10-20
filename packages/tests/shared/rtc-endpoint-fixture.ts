@@ -91,7 +91,7 @@ export class RtcEndpointFixture {
             faultPort: createPassThroughTransportFaultPort(),
             createOfferId: new DeterministicRtcOfferIds().createOfferId,
             nowEpochMs: () => Date.now(),
-            writeRetainedSignalsDueNow: async () => {}
+            writeRetainedSignalsDueNow: async () => []
         });
         this.createPeers(peerIds);
         this.peer = [...this.peers.values()][0];

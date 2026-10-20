@@ -226,27 +226,27 @@ export class ALInboundStoreLane {
     /**
      * Brings each message's local delivery that waits out a retry delay due now. The row keeps its status,
      * attempts and deadline, so the retry schedule and its exhaustion are unchanged; a row claimed, settled
-     * or brought due meanwhile is left as it is. Answers how many rows it brought due.
+     * or brought due meanwhile is left as it is. Answers the messages whose row it brought due.
      */
-    async writeRetainedDeliveriesDueNow(msgs: readonly ALMessage[]): Promise<number> {
+    async writeRetainedDeliveriesDueNow(msgs: readonly ALMessage[]): Promise<readonly ALMessage[]> {
         if (this.disposed) {
-            return 0;
+            return [];
         }
         const broughtDue = await this.readiness.runStoreOperation(
             () => this.writeRetainedDeliveriesDueNowInStore(msgs),
-            () => 0
+            (): readonly ALMessage[] => []
         );
-        if (broughtDue > 0) {
+        if (broughtDue.length > 0) {
             this.work.committed(AL_WORK_UNDESCRIBED_COMMIT);
         }
         return broughtDue;
     }
 
-    private async writeRetainedDeliveriesDueNowInStore(msgs: readonly ALMessage[]): Promise<number> {
+    private async writeRetainedDeliveriesDueNowInStore(msgs: readonly ALMessage[]): Promise<readonly ALMessage[]> {
         const { admissionStore, workQueue } = this.input.stores;
         const workType = toALInboundWorkType(admissionStore.namespace, this.input.runtime.carrier);
         const nowMs = this.readNowMs();
-        let broughtDue = 0;
+        const broughtDue: ALMessage[] = [];
         for (const msg of msgs) {
             const observed = await workQueue.getItem(
                 toALInboundWorkKey(admissionStore.namespace, toALInboundLocalDeliveryEffectId(msg))
@@ -254,8 +254,9 @@ export class ALInboundStoreLane {
             if (observed?.typeId !== workType || !isALInboundRetryDueAfter(observed, nowMs)) {
                 continue;
             }
-            const replaced = await workQueue.replaceIfObserved(observed, toALInboundRetryDueAt(observed, nowMs));
-            broughtDue += replaced === null ? 0 : 1;
+            if (await workQueue.replaceIfObserved(observed, toALInboundRetryDueAt(observed, nowMs)) !== null) {
+                broughtDue.push(msg);
+            }
         }
         return broughtDue;
     }

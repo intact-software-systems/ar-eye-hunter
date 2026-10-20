@@ -30,7 +30,7 @@ afterEach(() => {
 describe.each(['memory', 'indexeddb'] satisfies InboundTestStorage[])('retained local delivery brought due now (%s)', (storage) => {
     it('runs a delivery waiting out its retry again at once, keeping its attempts and deadline', async () => {
         const fixture = await createRetriedDeliveryFixture(storage);
-        expect(await fixture.inbound.runtime.writeRetainedDeliveriesDueNow([fixture.msg])).toBe(1);
+        expect(await fixture.inbound.runtime.writeRetainedDeliveriesDueNow([fixture.msg])).toEqual([fixture.msg]);
 
         await vi.waitFor(() => expect(fixture.inbound.delivered).toHaveLength(2));
         await vi.waitFor(async () =>
@@ -52,7 +52,7 @@ describe.each(['memory', 'indexeddb'] satisfies InboundTestStorage[])('retained 
         };
         expect(await fixture.inbound.stores.workQueue.replaceIfObserved(fixture.retried, dueNow)).not.toBeNull();
 
-        expect(await fixture.inbound.runtime.writeRetainedDeliveriesDueNow([fixture.msg, neverAdmitted])).toBe(0);
+        expect(await fixture.inbound.runtime.writeRetainedDeliveriesDueNow([fixture.msg, neverAdmitted])).toEqual([]);
         expect(fixture.inbound.delivered).toHaveLength(1);
     });
 
@@ -60,7 +60,7 @@ describe.each(['memory', 'indexeddb'] satisfies InboundTestStorage[])('retained 
         const fixture = await createRetriedDeliveryFixture(storage);
         vi.spyOn(fixture.inbound.stores.workQueue, 'replaceIfObserved').mockResolvedValueOnce(null);
 
-        expect(await fixture.inbound.runtime.writeRetainedDeliveriesDueNow([fixture.msg])).toBe(0);
+        expect(await fixture.inbound.runtime.writeRetainedDeliveriesDueNow([fixture.msg])).toEqual([]);
         expect(fixture.inbound.delivered).toHaveLength(1);
         expect((await readDeliveryRow(fixture.inbound, fixture.msg))?.dequeueAudit.nextTs?.epochMilliseconds)
             .toBe(fixture.retried.dequeueAudit.nextTs?.epochMilliseconds);

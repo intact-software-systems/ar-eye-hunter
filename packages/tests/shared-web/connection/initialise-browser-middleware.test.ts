@@ -103,7 +103,7 @@ describe('native observation handoff cleanup', () => {
             createOfferId: () => 'offer',
             faultPort: createPassThroughTransportFaultPort(),
             signalingDiagnostics: capture.diagnostics,
-            writeRetainedSignalsDueNow: async () => {}
+            writeRetainedSignalsDueNow: async () => []
         });
         onTestFinished(() => service.disposeNativeObservations());
         const middleware = createDefaultApiMiddlewareTestDouble({
@@ -366,7 +366,7 @@ function createConnectionService(): WebRtcConnectionService {
         faultPort: createPassThroughTransportFaultPort(),
         createOfferId: new DeterministicRtcOfferIds().createOfferId,
         nowEpochMs: () => Date.now(),
-        writeRetainedSignalsDueNow: async () => {}
+        writeRetainedSignalsDueNow: async () => []
     });
 }
 

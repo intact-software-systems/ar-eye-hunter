@@ -61,7 +61,7 @@ it('settles an answer delayed by admission conflict without applying it to a rep
         faultPort: createPassThroughTransportFaultPort(),
         createOfferId: new DeterministicRtcOfferIds().createOfferId,
         nowEpochMs: () => Date.now(),
-        writeRetainedSignalsDueNow: async () => {}
+        writeRetainedSignalsDueNow: async () => []
     });
     const blockerStarted = Promise.withResolvers<void>();
     const releaseBlocker = Promise.withResolvers<void>();

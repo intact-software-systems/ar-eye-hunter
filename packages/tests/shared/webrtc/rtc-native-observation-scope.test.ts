@@ -457,7 +457,7 @@ function createObservedService(diagnostics: RtcSignalingDiagnostics, timeoutEnab
         nowEpochMs: () => 1,
         faultPort: createPassThroughTransportFaultPort(),
         signalingDiagnostics: diagnostics,
-        writeRetainedSignalsDueNow: async () => {}
+        writeRetainedSignalsDueNow: async () => []
     });
     onTestFinished(() => {
         for (const peerId of service.knownPeerIds()) {

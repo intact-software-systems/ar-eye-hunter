@@ -221,7 +221,7 @@ function createSimulatedConnections(sessionId: string): SimulatedConnections {
         faultPort: createPassThroughTransportFaultPort(),
         createOfferId: () => crypto.randomUUID(),
         nowEpochMs: () => Date.now(),
-        writeRetainedSignalsDueNow: async () => {}
+        writeRetainedSignalsDueNow: async () => []
     });
     return {
         service,

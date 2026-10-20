@@ -133,9 +133,7 @@ async function createHeldOfferRuntime(pair: HeldOfferPair): Promise<HeldOfferRun
             faultPort: createPassThroughTransportFaultPort(),
             createOfferId: new DeterministicRtcOfferIds().createOfferId,
             nowEpochMs: () => Date.now(),
-            writeRetainedSignalsDueNow: async (messages) => {
-                await queueBoxClient.writeRetainedInboxMessagesDueNow(messages);
-            }
+            writeRetainedSignalsDueNow: (messages) => queueBoxClient.writeRetainedInboxMessagesDueNow(messages)
         }
     );
     const group = createActiveGroup();

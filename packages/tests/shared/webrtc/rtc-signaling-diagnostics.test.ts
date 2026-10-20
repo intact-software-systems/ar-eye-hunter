@@ -419,7 +419,7 @@ function createObservedService(record: RtcSignalingDiagnostics['record']): Obser
         createOfferId: new DeterministicRtcOfferIds().createOfferId,
         nowEpochMs,
         signalingDiagnostics: { nowEpochMs, record },
-        writeRetainedSignalsDueNow: async () => {}
+        writeRetainedSignalsDueNow: async () => []
     };
     const service = new WebRtcConnectionService({
         connect: async (input) => {

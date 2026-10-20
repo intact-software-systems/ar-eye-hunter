@@ -192,9 +192,7 @@ export async function initialiseRtcConnectionService(
         createOfferId: () => crypto.randomUUID(),
         nowEpochMs,
         signalingDiagnostics: capture.diagnostics,
-        writeRetainedSignalsDueNow: async (envelopes) => {
-            await input.webSocketQueueBox.writeRetainedInboxMessagesDueNow(envelopes);
-        }
+        writeRetainedSignalsDueNow: (envelopes) => input.webSocketQueueBox.writeRetainedInboxMessagesDueNow(envelopes)
     };
     try {
         const connectionService = new WebRtcConnectionService(
