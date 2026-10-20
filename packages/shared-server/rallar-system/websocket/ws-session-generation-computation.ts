@@ -1,3 +1,7 @@
+import type {
+    RuntimeStateGuardedBatchInsert,
+    RuntimeStateGuardedBatchUpdate
+} from '../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { validateComputedProjection } from '../computed-data-validation.ts';
 import { requireEpoch, requireExactKeys, requireString } from '../protocol/exact-object-decoding.ts';
 import type { JsonWireObject, JsonWireValue } from '../protocol/json-wire-identity.ts';
@@ -63,6 +67,17 @@ export interface WsSessionGenerationLifecycleRead {
     readonly state: WsSessionCloseHighWaterState | null;
 }
 
+export const WS_SESSION_CLOSE_HIGH_WATER_NAMESPACE = 'ws-session-close-high-water';
+
+/**
+ * The lifecycle row's conditional write, the one encoding both write paths execute: a guarded batch takes the
+ * descriptor, and the standalone write binds the descriptor with its expiry already as a timestamp.
+ */
+export interface WsSessionGenerationLifecycleRow {
+    readonly descriptor: RuntimeStateGuardedBatchInsert | RuntimeStateGuardedBatchUpdate;
+    readonly expireAtIsoTimestamp: string;
+}
+
 type WsSessionGenerationLifecycleComputedValue = Readonly<{
     readonly key: string;
     readonly state: WsSessionCloseHighWaterState;
@@ -72,9 +87,9 @@ type WsSessionGenerationLifecycleComputedValue = Readonly<{
 export type WsSessionGenerationLifecycleComputed =
     & WsSessionGenerationLifecycleComputedValue
     & (
-        | Readonly<{ outcome: 'none'; expectedRevision: number | null; }>
-        | Readonly<{ outcome: 'insert'; expectedRevision: null; }>
-        | Readonly<{ outcome: 'update'; expectedRevision: number; }>
+        | Readonly<{ outcome: 'none'; expectedRevision: number | null; row: null; }>
+        | Readonly<{ outcome: 'insert'; expectedRevision: null; row: WsSessionGenerationLifecycleRow; }>
+        | Readonly<{ outcome: 'update'; expectedRevision: number; row: WsSessionGenerationLifecycleRow; }>
     );
 
 export function isWsSessionGenerationClosed(
@@ -328,15 +343,37 @@ function toComputed(
         value: JSON.stringify(state)
     };
     if (outcome === 'insert') {
-        return { ...value, outcome, expectedRevision: null };
+        return { ...value, outcome, expectedRevision: null, row: toLifecycleRow(value, { operation: 'insert' }) };
     }
     if (outcome === 'update') {
         if (read.revision === null) {
             throw new TypeError('WebSocket session close high-water update revision is missing');
         }
-        return { ...value, outcome, expectedRevision: read.revision };
+        const expectedRevision = read.revision;
+        return {
+            ...value,
+            outcome,
+            expectedRevision,
+            row: toLifecycleRow(value, { operation: 'update', expectedRevision })
+        };
     }
-    return { ...value, outcome, expectedRevision: read.revision };
+    return { ...value, outcome, expectedRevision: read.revision, row: null };
+}
+
+function toLifecycleRow(
+    value: WsSessionGenerationLifecycleComputedValue,
+    guard: Readonly<{ operation: 'insert'; }> | Readonly<{ operation: 'update'; expectedRevision: number; }>
+): WsSessionGenerationLifecycleRow {
+    return {
+        descriptor: {
+            ...guard,
+            namespace: WS_SESSION_CLOSE_HIGH_WATER_NAMESPACE,
+            key: value.key,
+            value: value.value,
+            expireAtTimestamp: value.state.expireAtEpochMs
+        },
+        expireAtIsoTimestamp: new Date(value.state.expireAtEpochMs).toISOString()
+    };
 }
 
 function validateWsSessionGenerationLifecycleComputed(

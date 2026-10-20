@@ -1,10 +1,5 @@
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
-import type {
-    RuntimeStateGuardedBatchInsert,
-    RuntimeStateGuardedBatchUpdate
-} from '../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
-import { createTransactionBoundPSqlRuntimeStateRepository } from '../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type {
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike
@@ -17,6 +12,7 @@ import {
     isWsSessionGenerationClosed,
     isWsSessionObservedAtClosed,
     toWsSessionLifecycleKey,
+    WS_SESSION_CLOSE_HIGH_WATER_NAMESPACE,
     type WsSessionCloseHighWaterState,
     type WsSessionGenerationCloseFacts,
     type WsSessionGenerationFacts,
@@ -25,8 +21,6 @@ import {
     type WsSessionGenerationLifecycleRead,
     type WsSessionHighWaterIdentity
 } from './ws-session-generation-computation.ts';
-
-const SESSION_CLOSE_HIGH_WATER_NAMESPACE = 'ws-session-close-high-water';
 
 export interface WsSessionGenerationLifecycleService {
     read(identity: WsSessionHighWaterIdentity): Promise<WsSessionGenerationLifecycleRead>;
@@ -53,36 +47,13 @@ export interface WsSessionGenerationLifecycleService {
     ): Promise<void>;
 }
 
-/**
- * The lifecycle row's conditional write, the one encoding that a guarded batch and the standalone write both execute;
- * null when the row stays as read.
- */
-export function toWsSessionGenerationLifecycleRow(
-    computed: WsSessionGenerationLifecycleComputed
-): RuntimeStateGuardedBatchInsert | RuntimeStateGuardedBatchUpdate | null {
-    const row = {
-        namespace: SESSION_CLOSE_HIGH_WATER_NAMESPACE,
-        key: computed.key,
-        value: computed.value,
-        expireAtTimestamp: computed.state.expireAtEpochMs
-    };
-    switch (computed.outcome) {
-        case 'none':
-            return null;
-        case 'insert':
-            return { ...row, operation: 'insert' };
-        case 'update':
-            return { ...row, operation: 'update', expectedRevision: computed.expectedRevision };
-    }
-}
-
 export function createWsSessionGenerationLifecycleService(
     repository: RuntimeStateOptimisticTransactionalRepositoryLike
 ): WsSessionGenerationLifecycleService {
     return {
         read: async (identity) => {
             const key = toWsSessionLifecycleKey(identity);
-            const entry = await repository.findEntry(SESSION_CLOSE_HIGH_WATER_NAMESPACE, key);
+            const entry = await repository.findEntry(WS_SESSION_CLOSE_HIGH_WATER_NAMESPACE, key);
             const state = entry ? decodeCurrentSessionGenerationRow(entry, identity) : null;
             return {
                 identity,
@@ -97,21 +68,31 @@ export function createWsSessionGenerationLifecycleService(
         computeClosed: computeWsSessionGenerationClosed,
         computeConnectGuard: computeWsSessionConnectGuard,
         write: async (transaction, computed) => {
-            const row = toWsSessionGenerationLifecycleRow(computed);
-            if (row === null) {
+            if (computed.row === null) {
                 return;
             }
-            const store = createTransactionBoundPSqlRuntimeStateRepository(transaction);
-            const written = row.operation === 'insert'
-                ? await store.insertIfAbsent(row.namespace, row.key, row.value, row.expireAtTimestamp)
-                : await store.upsertIfRevision(
-                    row.namespace,
-                    row.key,
-                    row.value,
-                    row.expireAtTimestamp,
-                    row.expectedRevision
-                );
-            if (written.status !== 'applied') {
+            const { descriptor, expireAtIsoTimestamp } = computed.row;
+            const rows = descriptor.operation === 'insert'
+                ? await transaction<Array<{ revision: number | string; }>>`
+                    insert into runtime_state_store (store_namespace, store_key, store_value,
+                                                     expire_at_ts, updated_ts, revision)
+                    values (${descriptor.namespace}, ${descriptor.key},
+                            ${descriptor.value}, ${expireAtIsoTimestamp}, now(), 0)
+                    on conflict (store_namespace, store_key) do nothing
+                    returning revision
+                `
+                : await transaction<Array<{ revision: number | string; }>>`
+                    update runtime_state_store
+                    set store_value = ${descriptor.value},
+                        expire_at_ts = ${expireAtIsoTimestamp},
+                        updated_ts = now(),
+                        revision = revision + 1
+                    where store_namespace = ${descriptor.namespace}
+                      and store_key = ${descriptor.key}
+                      and revision = ${descriptor.expectedRevision}
+                    returning revision
+                `;
+            if (rows.length === 0) {
                 throw new RuntimeStateWriteConflictError();
             }
         }
