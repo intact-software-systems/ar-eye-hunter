@@ -12,10 +12,19 @@ import type {
 import { installNativeRtcRuntime, type NativeRtcRuntime } from '../native-rtc-connection-fixture.ts';
 import { DeterministicRtcOfferIds } from '../webrtc/deterministic-rtc-offer-ids.ts';
 
+/** What the service asked of the clock and the transport, as the transport and the clock saw it. */
+interface HeldSignalTransport {
+    /** One entry per write the transport accepted: the envelopes it brought due. */
+    readonly broughtDue: (readonly ALMessage[])[];
+    clockReads: number;
+    /** Absent, the clock is the wall clock. */
+    nowEpochMs: number | undefined;
+    failNextWrite: boolean;
+}
+
 interface HeldSignalFixture {
     readonly service: WebRtcConnectionService;
-    readonly nowEpochMs: ReturnType<typeof vi.fn<() => number>>;
-    readonly writeRetainedSignalsDueNow: ReturnType<typeof vi.fn<(envelopes: readonly ALMessage[]) => Promise<void>>>;
+    readonly transport: HeldSignalTransport;
     /** The peers the creation policy admits; every other peer is refused for its entry in `refusalReasons`. */
     readonly admittedPeerIds: Set<string>;
     readonly deniedPeerIds: Set<string>;
@@ -48,33 +57,33 @@ it('brings due the held signals the adopted layout now admits, once', async () =
     await fixture.service.writeHeldInboundSignalsDueNow(LAYOUT_REASON);
     await fixture.service.writeHeldInboundSignalsDueNow(LAYOUT_REASON);
 
-    expect(fixture.writeRetainedSignalsDueNow).toHaveBeenCalledTimes(1);
-    expect(fixture.writeRetainedSignalsDueNow).toHaveBeenCalledWith([offer]);
+    expect(fixture.transport.broughtDue).toEqual([[offer]]);
 });
 
 it('leaves a signal held for another reason, or still refused, to its own retry', async () => {
     const fixture = await createHeldSignalFixture();
     fixture.refusalReasons.set('y-peer', INITIALIZING_REASON);
     await fixture.deliver(toSignalEnvelope('y-peer', 'offer-from-y'));
-    await fixture.deliver(toSignalEnvelope('z-peer', 'offer-from-z'));
+    const offer = toSignalEnvelope('z-peer', 'offer-from-z');
+    await fixture.deliver(offer);
     fixture.admittedPeerIds.add('y-peer');
 
     await fixture.service.writeHeldInboundSignalsDueNow(LAYOUT_REASON);
-    expect(fixture.writeRetainedSignalsDueNow).not.toHaveBeenCalled();
+    expect(fixture.transport.broughtDue).toEqual([]);
 
     fixture.admittedPeerIds.add('z-peer');
     await fixture.service.writeHeldInboundSignalsDueNow(LAYOUT_REASON);
-    expect(fixture.writeRetainedSignalsDueNow).toHaveBeenCalledWith([expect.objectContaining({ id: expect.objectContaining({ msgId: 'offer-from-z' }) })]);
+    expect(fixture.transport.broughtDue).toEqual([[offer]]);
 });
 
 it('reads neither the clock nor the transport while nothing is held', async () => {
     const fixture = await createHeldSignalFixture();
-    fixture.nowEpochMs.mockClear();
+    fixture.transport.clockReads = 0;
 
     await fixture.service.writeHeldInboundSignalsDueNow(LAYOUT_REASON);
 
-    expect(fixture.nowEpochMs).not.toHaveBeenCalled();
-    expect(fixture.writeRetainedSignalsDueNow).not.toHaveBeenCalled();
+    expect(fixture.transport.clockReads).toBe(0);
+    expect(fixture.transport.broughtDue).toEqual([]);
 });
 
 it('forgets a held signal once it is delivered again, whether admitted, denied or reused', async () => {
@@ -99,18 +108,31 @@ it('forgets a held signal once it is delivered again, whether admitted, denied o
 
     await fixture.service.writeHeldInboundSignalsDueNow(LAYOUT_REASON);
 
-    expect(fixture.writeRetainedSignalsDueNow).not.toHaveBeenCalled();
+    expect(fixture.transport.broughtDue).toEqual([]);
+});
+
+it('holds one message id from two senders as two signals', async () => {
+    const fixture = await createHeldSignalFixture();
+    const fromZ = toSignalEnvelope('z-peer', 'shared-id');
+    const fromY = toSignalEnvelope('y-peer', 'shared-id');
+    await fixture.deliver(fromZ);
+    await fixture.deliver(fromY);
+    fixture.admittedPeerIds.add('z-peer').add('y-peer');
+
+    await fixture.service.writeHeldInboundSignalsDueNow(LAYOUT_REASON);
+
+    expect(fixture.transport.broughtDue).toEqual([[fromZ, fromY]]);
 });
 
 it('forgets a held signal past its deadline', async () => {
     const fixture = await createHeldSignalFixture();
     await fixture.deliver(toSignalEnvelope('z-peer', 'offer-from-z'));
     fixture.admittedPeerIds.add('z-peer');
-    fixture.nowEpochMs.mockReturnValue(Date.now() + SIGNAL_TTL_MS + 1);
+    fixture.transport.nowEpochMs = Date.now() + SIGNAL_TTL_MS + 1;
 
     await fixture.service.writeHeldInboundSignalsDueNow(LAYOUT_REASON);
 
-    expect(fixture.writeRetainedSignalsDueNow).not.toHaveBeenCalled();
+    expect(fixture.transport.broughtDue).toEqual([]);
 });
 
 it('holds at most its cap, forgetting the oldest', async () => {
@@ -126,22 +148,22 @@ it('holds at most its cap, forgetting the oldest', async () => {
 
     await fixture.service.writeHeldInboundSignalsDueNow(LAYOUT_REASON);
 
-    expect(fixture.writeRetainedSignalsDueNow).toHaveBeenCalledWith(envelopes.slice(1));
+    expect(fixture.transport.broughtDue).toEqual([envelopes.slice(1)]);
 });
 
 it('keeps the held signals when the transport fails to bring them due', async () => {
     const fixture = await createHeldSignalFixture();
-    const reported = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
     const offer = toSignalEnvelope('z-peer', 'offer-from-z');
     await fixture.deliver(offer);
     fixture.admittedPeerIds.add('z-peer');
-    fixture.writeRetainedSignalsDueNow.mockRejectedValueOnce(new Error('storage unavailable'));
+    fixture.transport.failNextWrite = true;
 
     await fixture.service.writeHeldInboundSignalsDueNow(LAYOUT_REASON);
+    expect(fixture.transport.broughtDue).toEqual([]);
     await fixture.service.writeHeldInboundSignalsDueNow(LAYOUT_REASON);
 
-    expect(reported).toHaveBeenCalledTimes(1);
-    expect(fixture.writeRetainedSignalsDueNow).toHaveBeenNthCalledWith(2, [offer]);
+    expect(fixture.transport.broughtDue).toEqual([[offer]]);
 });
 
 async function createHeldSignalFixture(): Promise<HeldSignalFixture> {
@@ -152,8 +174,7 @@ async function createHeldSignalFixture(): Promise<HeldSignalFixture> {
         },
         send: async () => {}
     };
-    const nowEpochMs = vi.fn(() => Date.now());
-    const writeRetainedSignalsDueNow = vi.fn(async (_envelopes: readonly ALMessage[]) => {});
+    const transport: HeldSignalTransport = { broughtDue: [], clockReads: 0, nowEpochMs: undefined, failNextWrite: false };
     const service = new WebRtcConnectionService(signaler, {
         sessionId: SELF,
         token: 'test-token',
@@ -163,8 +184,17 @@ async function createHeldSignalFixture(): Promise<HeldSignalFixture> {
     }, {
         faultPort: createPassThroughTransportFaultPort(),
         createOfferId: new DeterministicRtcOfferIds().createOfferId,
-        nowEpochMs,
-        writeRetainedSignalsDueNow
+        nowEpochMs: () => {
+            transport.clockReads += 1;
+            return transport.nowEpochMs ?? Date.now();
+        },
+        writeRetainedSignalsDueNow: async (envelopes) => {
+            if (transport.failNextWrite) {
+                transport.failNextWrite = false;
+                throw new Error('storage unavailable');
+            }
+            transport.broughtDue.push(envelopes);
+        }
     });
     const admittedPeerIds = new Set<string>();
     const deniedPeerIds = new Set<string>();
@@ -181,8 +211,7 @@ async function createHeldSignalFixture(): Promise<HeldSignalFixture> {
     await service.connectSignaler();
     return {
         service,
-        nowEpochMs,
-        writeRetainedSignalsDueNow,
+        transport,
         admittedPeerIds,
         deniedPeerIds,
         refusalReasons,

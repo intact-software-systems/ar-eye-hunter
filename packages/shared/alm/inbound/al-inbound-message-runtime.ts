@@ -277,10 +277,6 @@ export class ALInboundMessageRuntime {
         return retained;
     }
 
-    /**
-     * Brings the retained local delivery of each message due now, in the lane its envelope names, where it
-     * waits out a retry delay; nothing else about the row changes. Answers how many rows it brought due.
-     */
     async writeRetainedDeliveriesDueNow(msgs: readonly ALMessage[]): Promise<number> {
         if (this.disposed) {
             return 0;

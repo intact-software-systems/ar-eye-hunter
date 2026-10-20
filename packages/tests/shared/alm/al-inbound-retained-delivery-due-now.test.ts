@@ -28,21 +28,19 @@ afterEach(() => {
 });
 
 describe.each(['memory', 'indexeddb'] satisfies InboundTestStorage[])('retained local delivery brought due now (%s)', (storage) => {
-    it('moves only the due time of a delivery waiting out its retry and runs it again at once', async () => {
+    it('runs a delivery waiting out its retry again at once, keeping its attempts and deadline', async () => {
         const fixture = await createRetriedDeliveryFixture(storage);
-        const replacements = vi.spyOn(fixture.inbound.stores.workQueue, 'replaceIfObserved');
-
         expect(await fixture.inbound.runtime.writeRetainedDeliveriesDueNow([fixture.msg])).toBe(1);
 
-        expect(replacements).toHaveBeenCalledTimes(1);
-        const [observed, broughtDue] = replacements.mock.calls[0];
-        expect(observed).toEqual(fixture.retried);
-        expect(broughtDue?.status).toBe(EntityStatus.RETRY);
-        expect(broughtDue?.resource).toBe(fixture.retried.resource);
-        expect(broughtDue?.dequeueAudit.attempts).toBe(fixture.retried.dequeueAudit.attempts);
-        expect(broughtDue?.audit.expiryTs.epochMilliseconds).toBe(fixture.retried.audit.expiryTs.epochMilliseconds);
-        expect(broughtDue?.dequeueAudit.nextTs?.epochMilliseconds).toBeLessThanOrEqual(Date.now());
         await vi.waitFor(() => expect(fixture.inbound.delivered).toHaveLength(2));
+        await vi.waitFor(async () =>
+            expect((await readDeliveryRow(fixture.inbound, fixture.msg))?.dequeueAudit.attempts)
+                .toBe(fixture.retried.dequeueAudit.attempts + 1)
+        );
+        const retriedAgain = await readDeliveryRow(fixture.inbound, fixture.msg);
+        expect(retriedAgain?.status).toBe(EntityStatus.RETRY);
+        expect(retriedAgain?.resource).toBe(fixture.retried.resource);
+        expect(retriedAgain?.audit.expiryTs.epochMilliseconds).toBe(fixture.retried.audit.expiryTs.epochMilliseconds);
     });
 
     it('leaves a delivery already due, and a message it never retained, as they are', async () => {

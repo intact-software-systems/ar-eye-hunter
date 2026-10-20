@@ -489,10 +489,6 @@ export class WsQueueBoxClientService {
         return await this.inboundRuntime.admitIncomingMessage(message, { kind: 'trusted-server' });
     }
 
-    /**
-     * Brings the retained inbox delivery of each message due now, where it waits out a retry delay its
-     * consumer asked for; the consumer decides again when the row is claimed. Answers how many rows moved.
-     */
     async writeRetainedInboxMessagesDueNow(messages: readonly ALMessage[]): Promise<number> {
         if (this.closed || messages.length === 0) {
             return 0;

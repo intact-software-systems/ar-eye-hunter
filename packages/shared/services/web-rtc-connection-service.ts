@@ -115,6 +115,11 @@ interface PeerCreationAdmission {
     readonly retryInboundSignal?: true;
 }
 
+type InboundPeerCreationPolicyAnswer =
+    | Readonly<{ kind: 'no-policy'; }>
+    | Readonly<{ kind: 'answered'; admission: PeerCreationAdmission; }>
+    | Readonly<{ kind: 'threw'; error: Error; }>;
+
 /** An inbound signal the creation policy answered `retry` for, kept until the transport delivers it again. */
 interface HeldInboundSignal {
     readonly envelope: ALMessage;
@@ -599,7 +604,7 @@ export class WebRtcConnectionService {
                     throw new TypeError(signal.left.message);
                 }
                 if (signal.right) {
-                    this.heldInboundSignals.delete(message.id.msgId);
+                    this.heldInboundSignals.delete(toHeldInboundSignalKey(message));
                     return await this.receiveSignal(signal.right, message);
                 }
             }
@@ -649,7 +654,7 @@ export class WebRtcConnectionService {
             return;
         }
         this.heldInboundSignals.acceptAt({
-            key: envelope.id.msgId,
+            key: toHeldInboundSignalKey(envelope),
             value: { envelope, signal, reason },
             nowEpochMs: this.dependencies.nowEpochMs(),
             expireAtEpochMs: resolveALMessageExpireAtMs(envelope)
@@ -683,30 +688,20 @@ export class WebRtcConnectionService {
             return;
         }
         for (const held of admitted) {
-            if (this.heldInboundSignals.peek(held.envelope.id.msgId) === held) {
-                this.heldInboundSignals.delete(held.envelope.id.msgId);
+            const key = toHeldInboundSignalKey(held.envelope);
+            if (this.heldInboundSignals.peek(key) === held) {
+                this.heldInboundSignals.delete(key);
             }
         }
     }
 
+    // Records no route and skips the peer cap: the delivery this brings due decides and records both.
     private isHeldSignalAdmittedNow(held: HeldInboundSignal): boolean {
         if (this.peerEntryByPeerId.has(held.signal.fromId)) {
             return true;
         }
-        if (!this.inboundPeerCreationPolicy) {
-            return true;
-        }
-        try {
-            const decision = this.inboundPeerCreationPolicy({
-                peerId: held.signal.fromId,
-                signalType: held.signal.signalType,
-                message: held.signal
-            });
-            return this.toPeerCreationAdmission(decision).allowed;
-        }
-        catch {
-            return false;
-        }
+        const answer = this.readInboundPeerCreationAdmission(held.signal);
+        return answer.kind === 'no-policy' || (answer.kind === 'answered' && answer.admission.allowed);
     }
 
     private observeSignalRoute(
@@ -740,36 +735,42 @@ export class WebRtcConnectionService {
             this.observeSignalRoute('peer-cap', message, undefined);
             return { allowed: false, reason: 'max-peer-connections' };
         }
-        if (!this.inboundPeerCreationPolicy) {
-            this.observeSignalRoute('allow-without-policy', message, undefined);
-            return { allowed: true };
+        const answer = this.readInboundPeerCreationAdmission(message);
+        switch (answer.kind) {
+            case 'no-policy':
+                this.observeSignalRoute('allow-without-policy', message, undefined);
+                return { allowed: true };
+            case 'threw':
+                this.observeSignalRoute('policy-threw', message, undefined);
+                console.error(`Inbound RTC peer creation policy failed for ${peerId}`, answer.error);
+                return { allowed: false, reason: 'policy-error' };
+            case 'answered': {
+                const { admission } = answer;
+                this.observeSignalRoute(
+                    admission.retryInboundSignal ? 'policy-retry' : admission.allowed ? 'policy-allow' : 'policy-deny',
+                    message,
+                    undefined
+                );
+                return admission;
+            }
         }
+    }
 
+    /** The creation policy's own answer for `signal`; each caller records its own route. */
+    private readInboundPeerCreationAdmission(signal: QRtcSignalingMessage): InboundPeerCreationPolicyAnswer {
+        if (!this.inboundPeerCreationPolicy) {
+            return { kind: 'no-policy' };
+        }
         try {
             const decision = this.inboundPeerCreationPolicy({
-                peerId,
-                signalType: message.signalType,
-                message
+                peerId: signal.fromId,
+                signalType: signal.signalType,
+                message: signal
             });
-            const admission = this.toPeerCreationAdmission(decision);
-            this.observeSignalRoute(
-                admission.retryInboundSignal ? 'policy-retry' : admission.allowed ? 'policy-allow' : 'policy-deny',
-                message,
-                undefined
-            );
-            return admission;
+            return { kind: 'answered', admission: this.toPeerCreationAdmission(decision) };
         }
         catch (caught) {
-            this.observeSignalRoute('policy-threw', message, undefined);
-            const error = toError(caught);
-            console.error(
-                `Inbound RTC peer creation policy failed for ${peerId}`,
-                error
-            );
-            return {
-                allowed: false,
-                reason: 'policy-error'
-            };
+            return { kind: 'threw', error: toError(caught) };
         }
     }
 
@@ -1527,4 +1528,9 @@ function resolveSetupOutcome(
     setup: WebRtcConnectionService.PeerSetup
 ): WebRtcConnectionService.PeerConnectionEnsureOutcome {
     return setup.phase === 'in-flight' ? 'setup-in-flight' : 'setup-established';
+}
+
+/** A message id is unique per sender only, so a hold is keyed by both, as ALM keys its own rows. */
+function toHeldInboundSignalKey(envelope: ALMessage): string {
+    return JSON.stringify([envelope.id.senderId, envelope.id.msgId]);
 }
