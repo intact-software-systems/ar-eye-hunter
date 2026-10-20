@@ -44,18 +44,18 @@ export function toGroupCommandExclusionKey(entry: ResourceEntry): string | undef
     }
     if (command.type === AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP) {
         const connection = isWireRecord(command.data) ? command.data.connection : undefined;
-        return readScopeStorageKey(isWireRecord(connection) ? connection.scope : undefined);
+        return toScopeStorageKey(isWireRecord(connection) ? connection.scope : undefined);
     }
-    const groupKey = readCommandGroupStorageKey(command.data);
+    const groupKey = toCommandGroupStorageKey(command.data);
     if (groupKey === undefined) {
         return undefined;
     }
     return GROUP_PRESENCE_COMMAND_TYPES.has(command.type)
-        ? readPresenceSessionExclusionKey(groupKey, command.data)
+        ? toPresenceSessionExclusionKey(groupKey, command.data)
         : `${groupKey}:aggregate`;
 }
 
-function readPresenceSessionExclusionKey(groupKey: string, data: JsonWireValue): string | undefined {
+function toPresenceSessionExclusionKey(groupKey: string, data: JsonWireValue): string | undefined {
     if (!isWireRecord(data) || typeof data.sessionId !== 'string' || data.sessionId.length === 0) {
         return undefined;
     }
@@ -64,21 +64,21 @@ function readPresenceSessionExclusionKey(groupKey: string, data: JsonWireValue):
     return sessionSuffix === undefined ? undefined : `${groupKey}${sessionSuffix}`;
 }
 
-function readCommandGroupStorageKey(data: JsonWireValue): string | undefined {
+function toCommandGroupStorageKey(data: JsonWireValue): string | undefined {
     if (!isWireRecord(data) || typeof data.groupId !== 'string' || data.groupId.length === 0) {
         return undefined;
     }
-    const scope = readScope(data.scope);
+    const scope = toGroupScope(data.scope);
     const { groupId } = data;
     return scope === undefined ? undefined : toStorageKey(() => groupStateGroupStorageKey({ ...scope, groupId }));
 }
 
-function readScopeStorageKey(value: JsonWireValue | undefined): string | undefined {
-    const scope = readScope(value);
+function toScopeStorageKey(value: JsonWireValue | undefined): string | undefined {
+    const scope = toGroupScope(value);
     return scope === undefined ? undefined : toStorageKey(() => groupStateScopeStorageKey(scope));
 }
 
-function readScope(value: JsonWireValue | undefined): GroupScope | undefined {
+function toGroupScope(value: JsonWireValue | undefined): GroupScope | undefined {
     if (
         !isWireRecord(value) ||
         typeof value.applicationId !== 'string' || value.applicationId.length === 0 ||

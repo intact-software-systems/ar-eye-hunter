@@ -119,6 +119,22 @@ export function toRemoveMemberCommand(input: GroupFormationCommandInput): GroupF
     });
 }
 
+/** The member leaves the group on its own. */
+export function toLeaveCommand(input: GroupFormationCommandInput): GroupFormationCommand {
+    const sessionId = `${input.principalId}-session`;
+    return toCallerCommand({
+        runtime: input.runtime,
+        authority: createPostgresAppInboxTestAuthority(input.principalId, sessionId),
+        type: AppInboxType.GROUP_MEMBER_UPSERT,
+        data: {
+            scope: toScope(input.fixture.groupRef),
+            groupId: input.fixture.groupRef.groupId,
+            principalId: input.principalId,
+            request: { status: 'left', actorPrincipalId: input.principalId, actorSessionId: sessionId, requestId: input.requestId }
+        }
+    });
+}
+
 /** A connect from the member's own presence session, the session the AppInbox keys it by. */
 export function toConnectCommand(input: GroupFormationCommandInput): GroupFormationCommand {
     const sessionId = toPresenceSessionId(input.principalId);
@@ -231,8 +247,8 @@ async function waitForAppInboxRow(sql: PSqlSql, key: Key): Promise<void> {
     throw new Error(`AppInbox row was never queued: ${key.resourceId}`);
 }
 
-/** Removes the AppInbox and AppOutbox rows, and their stored results, of one test-owned application. */
-export async function deleteApplicationQueueRows(sql: PSqlSql, applicationId: string): Promise<void> {
+/** Removes the AppInbox and AppOutbox rows, and their stored results, of one group formation test's own application. */
+export async function deleteGroupFormationQueueRows(sql: PSqlSql, applicationId: string): Promise<void> {
     await sql`
         with deleted as (
             delete from resource_inbox
@@ -248,7 +264,8 @@ export async function deleteApplicationQueueRows(sql: PSqlSql, applicationId: st
     `;
 }
 
-export function requireDefined<T>(value: T | undefined, name: string): T {
+/** A value a group formation read must have produced. */
+export function requireFormationValue<T>(value: T | undefined, name: string): T {
     if (value === undefined) {
         throw new Error(`Expected ${name}`);
     }

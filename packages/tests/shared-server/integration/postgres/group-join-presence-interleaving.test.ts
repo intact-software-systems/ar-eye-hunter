@@ -14,11 +14,11 @@ import { createPostgresTestRequestIdFactory } from './test-support/create-postgr
 import { createPostgresAppInboxWorkerRuntime, createPostgresAppInboxWorkerTrace } from './test-support/postgres-app-inbox-worker-runtime.ts';
 import { unwrapAppInboxResult } from './test-support/postgres-group-app-inbox-mutation.ts';
 import {
-    deleteApplicationQueueRows,
+    deleteGroupFormationQueueRows,
     enqueueGroupFormationCommand,
     readAppInboxRowState,
     readGroupFormationReceipt,
-    requireDefined,
+    requireFormationValue,
     seedGroupFormation,
     toConnectCommand,
     toJoinCommand,
@@ -58,7 +58,7 @@ describe('Postgres group joins and presence in one AppInbox lane', () => {
                 toConnectCommand({ ...commandInput, principalId: 'carol', requestId: requestIdFor('interleaving-connect-carol') })
             ] as const;
             const [firstJoin, secondJoin, bobConnect, carolConnect] = commands;
-            const before = requireDefined(await fixture.repository.readSnapshot(fixture.groupRef), 'seeded group').group;
+            const before = requireFormationValue(await fixture.repository.readSnapshot(fixture.groupRef), 'seeded group').group;
 
             const results: Promise<GroupFormationCommandResult>[] = [];
             for (const command of commands) {
@@ -80,7 +80,7 @@ describe('Postgres group joins and presence in one AppInbox lane', () => {
             await lock.release();
             const outcomes = (await settled).map(unwrapAppInboxResult);
 
-            const after = requireDefined(await fixture.repository.readSnapshot(fixture.groupRef), 'joined group').group;
+            const after = requireFormationValue(await fixture.repository.readSnapshot(fixture.groupRef), 'joined group').group;
             expect(after).toMatchObject({
                 snapshotVersion: before.snapshotVersion + 2,
                 rosterVersion: before.rosterVersion + 2,
@@ -113,7 +113,7 @@ describe('Postgres group joins and presence in one AppInbox lane', () => {
             await lock?.release();
             await settled?.catch(() => undefined);
             await cleanupRuntimeState(setupSql, scope.applicationId);
-            await deleteApplicationQueueRows(setupSql, scope.applicationId);
+            await deleteGroupFormationQueueRows(setupSql, scope.applicationId);
             await Promise.all([setupSql.end(), workerSql.end(), lockSql.end()]);
         }
     }, 60_000);
