@@ -6,12 +6,11 @@ import {
     AL_VOLATILE_SESSION_MAX_AGE_MS,
     AL_VOLATILE_SESSION_MAX_TRACKS
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     createBrowserWebSocketFactory,
     createSpaBrowserRallarRuntime,
-    installSpaBrowserRallarEventBridge,
-    startSpaBrowserRallarRuntimeImport
+    installSpaBrowserRallarEventBridge
 } from '../../shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
 import type {
     RallarBlackBoxBrowserRallarEvent,
@@ -34,7 +33,17 @@ vi.mock('@shared-test/black-box-runner/browser/rallar-browser-runtime.ts', () =>
     return {};
 });
 
+// The bridge keeps one runtime import per page, so a test that imports gets a bridge of its own.
+async function importFreshBridge(): Promise<typeof import('../../shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts')> {
+    vi.resetModules();
+    return await import('../../shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts');
+}
+
 describe('browser Rallar runtime bridge', () => {
+    beforeEach(() => {
+        runtimeModuleLoads.count = 0;
+    });
+
     afterEach(() => {
         vi.unstubAllGlobals();
     });
@@ -258,22 +267,23 @@ describe('browser Rallar runtime bridge', () => {
     });
 
     it('starts no runtime import for a page that already installed the runtime', async () => {
+        const bridge = await importFreshBridge();
         vi.stubGlobal('window', { __blackBoxRallar: { readAlmUsage: async () => undefined } });
 
-        startSpaBrowserRallarRuntimeImport();
+        bridge.startSpaBrowserRallarRuntimeImport();
         await Promise.resolve();
 
         expect(runtimeModuleLoads.count).toBe(0);
     });
 
-    // Runs last: the bridge keeps the one import it starts for the page's lifetime.
     it('starts the runtime import before any command, and the first command awaits that same import', async () => {
+        const bridge = await importFreshBridge();
         vi.stubGlobal('window', {});
 
-        startSpaBrowserRallarRuntimeImport();
+        bridge.startSpaBrowserRallarRuntimeImport();
         await vi.waitFor(() => expect(runtimeModuleLoads.count).toBe(1));
-        startSpaBrowserRallarRuntimeImport();
-        await createSpaBrowserRallarRuntime().close();
+        bridge.startSpaBrowserRallarRuntimeImport();
+        await bridge.createSpaBrowserRallarRuntime().close();
 
         expect(runtimeModuleLoads.count).toBe(1);
     });
