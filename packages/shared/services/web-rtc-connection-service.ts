@@ -1,3 +1,4 @@
+import type { ALMessage } from '../al-contracts/al-contract.ts';
 import { IceConfig, PeerId } from '../api/api-config.ts';
 import { AsyncCommand, type AsyncCommandTimeoutEvent } from '../cache/AsyncCommand.ts';
 import { PullPushCommand } from '../cache/PullPushCommand.ts';
@@ -8,6 +9,7 @@ import {
     decodeRtcSignal,
     decodeRtcSignalingEnvelope
 } from '../webrtc/decode-rtc-signaling-message.ts';
+import { HeldInboundRtcSignals } from '../webrtc/held-inbound-rtc-signals.ts';
 import {
     QRtcDataChannel,
     type RtcDataChannelFlowControlPolicy,
@@ -110,6 +112,11 @@ interface PeerCreationAdmission {
     readonly retryInboundSignal?: true;
 }
 
+type InboundPeerCreationPolicyAnswer =
+    | Readonly<{ kind: 'no-policy'; }>
+    | Readonly<{ kind: 'answered'; admission: PeerCreationAdmission; }>
+    | Readonly<{ kind: 'threw'; error: Error; }>;
+
 export namespace WebRtcConnectionService {
     export interface NativeChannelHandle {
         readonly channel: QRtcDataChannel;
@@ -126,6 +133,8 @@ export namespace WebRtcConnectionService {
     export interface Dependencies extends QRtcPeerConnection.Dependencies {
         readonly faultPort: TransportFaultPort;
         readonly nowEpochMs: () => number;
+        /** Brings the transport's retained delivery of each held signal due now; answers the envelopes it brought due. */
+        readonly writeRetainedSignalsDueNow: (envelopes: readonly ALMessage[]) => Promise<readonly ALMessage[]>;
     }
 
     export interface InputDto {
@@ -351,6 +360,7 @@ export class WebRtcConnectionService {
         new Map();
 
     private readonly peerEntryByPeerId = new Map<PeerId, PeerEntry>();
+    private readonly heldInboundSignals: HeldInboundRtcSignals;
     private readonly peerEstablishmentWatchdog: AsyncCommand<PeerId, WebRtcConnectionService.Peer>;
     private readonly attemptBudget: RtcPeerConnectionAttemptBudget;
 
@@ -370,6 +380,10 @@ export class WebRtcConnectionService {
         this.input = input;
         this.dependencies = dependencies;
         this.peerEstablishmentWatchdog = new AsyncCommand<PeerId, WebRtcConnectionService.Peer>();
+        this.heldInboundSignals = new HeldInboundRtcSignals({
+            nowEpochMs: dependencies.nowEpochMs,
+            writeRetainedSignalsDueNow: dependencies.writeRetainedSignalsDueNow
+        });
         this.attemptBudget = new RtcPeerConnectionAttemptBudget({
             nowEpochMs: this.dependencies.nowEpochMs,
             readPolicy: () => this.peerConnectionAttemptBudgetPolicy(),
@@ -582,13 +596,14 @@ export class WebRtcConnectionService {
                     throw new TypeError(signal.left.message);
                 }
                 if (signal.right) {
-                    return await this.receiveSignal(signal.right);
+                    this.heldInboundSignals.forget(message);
+                    return await this.receiveSignal(signal.right, message);
                 }
             }
         };
     }
 
-    private async receiveSignal(message: QRtcSignalingMessage): Promise<void | 'retry'> {
+    private async receiveSignal(message: QRtcSignalingMessage, envelope: ALMessage): Promise<void | 'retry'> {
         const peerId = message.fromId;
         if (message.toId !== this.input.sessionId) {
             this.observeSignalRoute('wrong-target', message, undefined);
@@ -613,6 +628,9 @@ export class WebRtcConnectionService {
         }
         const admission = this.shouldCreatePeerFromInboundSignal(peerId, message);
         if (!admission.allowed) {
+            if (admission.retryInboundSignal && admission.reason !== undefined) {
+                this.heldInboundSignals.hold({ envelope, signal: message, reason: admission.reason });
+            }
             return admission.retryInboundSignal ? 'retry' : undefined;
         }
         const accepted = await this.acceptPeerIfAbsent(peerId, message);
@@ -620,6 +638,23 @@ export class WebRtcConnectionService {
         if (accepted.left) {
             this.logPeerConnectionLeft(peerId, accepted.left);
         }
+    }
+
+    /** Brings the signals held for `reason` that a delivery would now admit due at once. */
+    async writeHeldInboundSignalsDueNow(reason: string): Promise<void> {
+        await this.heldInboundSignals.writeDueNow(reason, (signal) => this.isHeldSignalAdmittedNow(signal));
+    }
+
+    // Decides as a delivery would, reuse first, then the peer cap, then the policy, but records no route.
+    private isHeldSignalAdmittedNow(signal: QRtcSignalingMessage): boolean {
+        if (this.peerEntryByPeerId.has(signal.fromId)) {
+            return true;
+        }
+        if (this.peerEntryByPeerId.size >= this.maxPeerConnections()) {
+            return false;
+        }
+        const answer = this.readInboundPeerCreationAdmission(signal);
+        return answer.kind === 'no-policy' || (answer.kind === 'answered' && answer.admission.allowed);
     }
 
     private observeSignalRoute(
@@ -653,36 +688,42 @@ export class WebRtcConnectionService {
             this.observeSignalRoute('peer-cap', message, undefined);
             return { allowed: false, reason: 'max-peer-connections' };
         }
-        if (!this.inboundPeerCreationPolicy) {
-            this.observeSignalRoute('allow-without-policy', message, undefined);
-            return { allowed: true };
+        const answer = this.readInboundPeerCreationAdmission(message);
+        switch (answer.kind) {
+            case 'no-policy':
+                this.observeSignalRoute('allow-without-policy', message, undefined);
+                return { allowed: true };
+            case 'threw':
+                this.observeSignalRoute('policy-threw', message, undefined);
+                console.error(`Inbound RTC peer creation policy failed for ${peerId}`, answer.error);
+                return { allowed: false, reason: 'policy-error' };
+            case 'answered': {
+                const { admission } = answer;
+                this.observeSignalRoute(
+                    admission.retryInboundSignal ? 'policy-retry' : admission.allowed ? 'policy-allow' : 'policy-deny',
+                    message,
+                    undefined
+                );
+                return admission;
+            }
         }
+    }
 
+    /** The creation policy's own answer for `signal`; each caller records its own route. */
+    private readInboundPeerCreationAdmission(signal: QRtcSignalingMessage): InboundPeerCreationPolicyAnswer {
+        if (!this.inboundPeerCreationPolicy) {
+            return { kind: 'no-policy' };
+        }
         try {
             const decision = this.inboundPeerCreationPolicy({
-                peerId,
-                signalType: message.signalType,
-                message
+                peerId: signal.fromId,
+                signalType: signal.signalType,
+                message: signal
             });
-            const admission = this.toPeerCreationAdmission(decision);
-            this.observeSignalRoute(
-                admission.retryInboundSignal ? 'policy-retry' : admission.allowed ? 'policy-allow' : 'policy-deny',
-                message,
-                undefined
-            );
-            return admission;
+            return { kind: 'answered', admission: this.toPeerCreationAdmission(decision) };
         }
         catch (caught) {
-            this.observeSignalRoute('policy-threw', message, undefined);
-            const error = toError(caught);
-            console.error(
-                `Inbound RTC peer creation policy failed for ${peerId}`,
-                error
-            );
-            return {
-                allowed: false,
-                reason: 'policy-error'
-            };
+            return { kind: 'threw', error: toError(caught) };
         }
     }
 

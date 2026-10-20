@@ -12,6 +12,7 @@ import {
     isWsSessionGenerationClosed,
     isWsSessionObservedAtClosed,
     toWsSessionLifecycleKey,
+    WS_SESSION_CLOSE_HIGH_WATER_NAMESPACE,
     type WsSessionCloseHighWaterState,
     type WsSessionGenerationCloseFacts,
     type WsSessionGenerationFacts,
@@ -20,8 +21,6 @@ import {
     type WsSessionGenerationLifecycleRead,
     type WsSessionHighWaterIdentity
 } from './ws-session-generation-computation.ts';
-
-const SESSION_CLOSE_HIGH_WATER_NAMESPACE = 'ws-session-close-high-water';
 
 export interface WsSessionGenerationLifecycleService {
     read(identity: WsSessionHighWaterIdentity): Promise<WsSessionGenerationLifecycleRead>;
@@ -54,7 +53,7 @@ export function createWsSessionGenerationLifecycleService(
     return {
         read: async (identity) => {
             const key = toWsSessionLifecycleKey(identity);
-            const entry = await repository.findEntry(SESSION_CLOSE_HIGH_WATER_NAMESPACE, key);
+            const entry = await repository.findEntry(WS_SESSION_CLOSE_HIGH_WATER_NAMESPACE, key);
             const state = entry ? decodeCurrentSessionGenerationRow(entry, identity) : null;
             return {
                 identity,
@@ -69,27 +68,28 @@ export function createWsSessionGenerationLifecycleService(
         computeClosed: computeWsSessionGenerationClosed,
         computeConnectGuard: computeWsSessionConnectGuard,
         write: async (transaction, computed) => {
-            if (computed.outcome === 'none') {
+            if (computed.row === null) {
                 return;
             }
-            const rows = computed.outcome === 'insert'
+            const { descriptor, expireAtIsoTimestamp } = computed.row;
+            const rows = descriptor.operation === 'insert'
                 ? await transaction<Array<{ revision: number | string; }>>`
                     insert into runtime_state_store (store_namespace, store_key, store_value,
                                                      expire_at_ts, updated_ts, revision)
-                    values (${SESSION_CLOSE_HIGH_WATER_NAMESPACE}, ${computed.key},
-                            ${computed.value}, ${computed.expireAtIsoTimestamp}, now(), 0)
+                    values (${descriptor.namespace}, ${descriptor.key},
+                            ${descriptor.value}, ${expireAtIsoTimestamp}, now(), 0)
                     on conflict (store_namespace, store_key) do nothing
                     returning revision
                 `
                 : await transaction<Array<{ revision: number | string; }>>`
                     update runtime_state_store
-                    set store_value = ${computed.value},
-                        expire_at_ts = ${computed.expireAtIsoTimestamp},
+                    set store_value = ${descriptor.value},
+                        expire_at_ts = ${expireAtIsoTimestamp},
                         updated_ts = now(),
                         revision = revision + 1
-                    where store_namespace = ${SESSION_CLOSE_HIGH_WATER_NAMESPACE}
-                      and store_key = ${computed.key}
-                      and revision = ${computed.expectedRevision}
+                    where store_namespace = ${descriptor.namespace}
+                      and store_key = ${descriptor.key}
+                      and revision = ${descriptor.expectedRevision}
                     returning revision
                 `;
             if (rows.length === 0) {

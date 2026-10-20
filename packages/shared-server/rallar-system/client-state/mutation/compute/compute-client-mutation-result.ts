@@ -10,7 +10,10 @@ import {
     computeClientStateSyncEntries,
     type ComputedClientStateSync
 } from '../../../state-sync/state-sync-entry-computation.ts';
-import { computePrincipalStateSyncAudience } from '../../../state-sync/state-sync-principal-audience.ts';
+import {
+    computePrincipalStateSyncAudience,
+    toPrincipalAudienceSessions
+} from '../../../state-sync/state-sync-principal-audience.ts';
 import { compareClientStateInstanceStorageKeys } from '../../persistence/client-state-instance-storage-key.ts';
 import type { ClientMutationReceipt } from '../../persistence/client-state-persistence-contracts.ts';
 import { compareClientStateSessionStorageKeys } from '../../persistence/client-state-session-storage-key.ts';
@@ -54,8 +57,8 @@ export function computeClientMutationResult(
     const stateSync = toClientStateSync(command, snapshot, event);
     const principalAudienceSessionIds = computePrincipalStateSyncAudience({
         principalRef: command.aggregateRef,
-        ownSnapshot: snapshot,
-        clientSnapshots: read.audienceClientSnapshots,
+        ownSessions: toPrincipalAudienceSessions(snapshot.principal, snapshot.activeSessions),
+        coMemberSessions: read.audienceCoMemberSessions,
         groupSnapshots: read.audienceGroupSnapshots,
         nowEpochMs: read.audienceObservedAtEpochMs
     });

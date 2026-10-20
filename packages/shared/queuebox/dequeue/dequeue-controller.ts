@@ -1,5 +1,6 @@
-import { Either } from '../../resilience/Either.ts';
-import { computeDequeueBatch, releaseDequeueBatch } from './dequeue-batch.ts';
+import type { Either } from '../../resilience/Either.ts';
+import { toError } from '../../resilience/to-error.ts';
+import { computeDequeueEntry, DequeueLaneFlight } from './dequeue-lane-flight.ts';
 
 export const Reservator = {
     FINALIZATION: 'FINALIZATION',
@@ -15,7 +16,7 @@ export namespace DequeueController {
     export interface LaneBudget {
         readonly maxToReserve: number;
         readonly maxNumToDequeue: number;
-        /** How many rows of one round's reservation compute together; 1 computes them in turn. */
+        /** How many claimed rows compute together; 1 computes them in turn, in claim order. */
         readonly maxConcurrentComputes: number;
     }
 
@@ -37,12 +38,6 @@ export namespace DequeueController {
     }
 }
 
-/** One reservation round's rows and how many of them compute together. */
-interface DequeueReservedRound<K, V> {
-    readonly reserved: Map<K, V>;
-    readonly maxConcurrentComputes: number;
-}
-
 export class DequeueController<K, V, T> {
     public static readonly DEFAULT_MAX_NUM_TO_DEQUEUE = 1000;
     public static readonly DEFAULT_MAX_NUM_TO_RESERVE = 1;
@@ -58,7 +53,7 @@ export class DequeueController<K, V, T> {
 
     private maxNumToReserve: () => number = () => DequeueController.DEFAULT_MAX_NUM_TO_RESERVE;
     private typesToDequeue: () => Set<string> = () => new Set<string>();
-    private admitsRound: (types: Set<string>) => boolean = () => true;
+    private admitsReservation: (types: Set<string>) => boolean = () => true;
     private toExclusionKey: ((key: K, value: V) => string | undefined) | undefined;
 
     private newReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>;
@@ -121,15 +116,15 @@ export class DequeueController<K, V, T> {
         return this;
     }
 
-    /** Rows of one round with one exclusion key compute one after another; the round's other rows still run together. */
+    /** Claimed rows with overlapping exclusion keys compute one after another; the lane's other rows still run together. */
     withComputeExclusion(toExclusionKey: ((key: K, value: V) => string | undefined) | undefined): this {
         this.toExclusionKey = toExclusionKey;
         return this;
     }
 
-    /** Asked before every reservation round of a lane; false ends the lane, and the rows already reserved still finish. */
-    onRoundAdmissionDo(admitsRound: (types: Set<string>) => boolean): this {
-        this.admitsRound = requireNonNull(admitsRound);
+    /** Asked before every reservation of a lane; false ends the lane, and the rows already reserved still finish. */
+    onReservationAdmissionDo(admitsReservation: (types: Set<string>) => boolean): this {
+        this.admitsReservation = requireNonNull(admitsReservation);
         return this;
     }
 
@@ -264,82 +259,89 @@ export class DequeueController<K, V, T> {
             throw new TypeError('Reservation request requires a positive safe integer');
         }
         const reserved = await this.finalizationReservator(this.typesToDequeue(), maxNumToReserve);
-        const finalized = await computeDequeueBatch({
-            entries: reserved,
-            computer: this.finalizationComputer,
-            log: this.log,
-            purpose: 'finalization-recovery',
-            maxConcurrentComputes: 1,
-            toExclusionKey: undefined
-        });
-        return this.returnDequeuedEntries ? finalized : new Map();
+        for (const [key, value] of reserved) {
+            const finalized = await computeDequeueEntry({
+                key,
+                value,
+                computer: this.finalizationComputer,
+                log: this.log,
+                purpose: 'finalization-recovery'
+            });
+            computed.set(key, finalized);
+        }
+        return this.returnDequeuedEntries ? computed : new Map();
     }
 
     /**
-     * A round that claimed fewer than it asked for found every row it could claim, so the lane ends for this pass;
-     * rows that arrive meanwhile wait for the next pass. A reservation or release error leaves the lane at once:
-     * the caller owns its backoff, never this slot.
+     * Claims rows whenever fewer than the lane's compute bound are unreleased, and releases each row as soon as it settles,
+     * so one slow row holds only its own slot. The pass still joins every row it claimed before it returns. A reservation
+     * or release error claims nothing more and lets the claimed rows finish before it is rethrown: the caller owns its
+     * backoff, never this slot.
      */
     private async dequeueLane(
         reservator: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>,
         computer: (key: K, value: V) => Promise<T>,
         budget: DequeueController.LaneBudget | undefined
     ): Promise<Map<K, Either<DequeueController.Failure<K, V>, DequeueController.Success<K, V, T>>>> {
+        const flight = new DequeueLaneFlight<K, V, T>({
+            maxConcurrentComputes: budget?.maxConcurrentComputes ?? 1,
+            computer,
+            toExclusionKey: this.toExclusionKey,
+            release: {
+                successReleaser: requireNonNull(this.successReleaser),
+                failureReleaser: requireNonNull(this.failureReleaser),
+                onCompleted: this.onCompleted,
+                onFailed: this.onFailed
+            },
+            log: this.log
+        });
+        try {
+            await this.reserveIntoFlight(reservator, flight, budget);
+        }
+        catch (error) {
+            flight.stop(toError(error));
+        }
+        const released = await flight.drain();
+        return this.returnDequeuedEntries ? released : new Map();
+    }
+
+    /**
+     * A reservation that claimed fewer than it asked for found every row it could claim, so the lane ends for this pass;
+     * rows that arrive meanwhile wait for the next pass. The lane holds at most its reservation size or its compute
+     * bound of unreleased rows, whichever is larger, so a serial lane still claims a whole reservation at once.
+     */
+    private async reserveIntoFlight(
+        reservator: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>,
+        flight: DequeueLaneFlight<K, V, T>,
+        budget: DequeueController.LaneBudget | undefined
+    ): Promise<void> {
         const maxNumDequeue = budget?.maxNumToDequeue ?? this.maxNumDequeue;
         let claimedCount = 0;
-        const allComputed = new Map<K, Either<DequeueController.Failure<K, V>, DequeueController.Success<K, V, T>>>();
-        while (this.admitsRound(this.typesToDequeue()) && claimedCount < maxNumDequeue) {
+        while (
+            await flight.waitForFreeSlot() && this.admitsReservation(this.typesToDequeue()) &&
+            claimedCount < maxNumDequeue
+        ) {
+            const maxToReserve = budget?.maxToReserve ?? this.maxNumToReserve();
+            const maxUnreleased = Math.max(maxToReserve, flight.getMaxConcurrentComputes());
             const numToReserve = Math.min(
-                budget?.maxToReserve ?? this.maxNumToReserve(),
+                maxToReserve,
+                maxUnreleased - flight.getUnreleasedCount(),
                 maxNumDequeue - claimedCount
             );
             if (numToReserve <= 0) {
-                return allComputed;
+                return;
             }
             if (!isPositiveSafeInteger(numToReserve)) {
                 throw new TypeError('Reservation request requires a positive safe integer');
             }
             const reserved = await reservator(this.typesToDequeue(), numToReserve) ?? new Map<K, V>();
             claimedCount += reserved.size;
-            const computedCount = await this.computeAndReleaseReserved(
-                { reserved, maxConcurrentComputes: budget?.maxConcurrentComputes ?? 1 },
-                computer,
-                allComputed
-            );
-            if (computedCount === 0 || reserved.size < numToReserve) {
-                return allComputed;
+            const entries = this.onPreProcessingReserved ? await this.onPreProcessingReserved(reserved) : reserved;
+            flight.add(entries);
+            if (entries.size === 0 || reserved.size < numToReserve) {
+                return;
             }
         }
-        return allComputed;
-    }
-
-    private async computeAndReleaseReserved(
-        round: DequeueReservedRound<K, V>,
-        computer: (key: K, value: V) => Promise<T>,
-        retained: Map<K, Either<DequeueController.Failure<K, V>, DequeueController.Success<K, V, T>>>
-    ): Promise<number> {
-        const { reserved, maxConcurrentComputes } = round;
-        const entries = this.onPreProcessingReserved ? await this.onPreProcessingReserved(reserved) : reserved;
-        const computed = await computeDequeueBatch({
-            entries,
-            computer,
-            log: this.log,
-            purpose: 'processing',
-            maxConcurrentComputes,
-            toExclusionKey: this.toExclusionKey
-        });
-        await releaseDequeueBatch(computed, {
-            successReleaser: requireNonNull(this.successReleaser),
-            failureReleaser: requireNonNull(this.failureReleaser),
-            onCompleted: this.onCompleted,
-            onFailed: this.onFailed
-        });
-        if (this.returnDequeuedEntries) {
-            for (const [key, result] of computed) {
-                retained.set(key, result);
-            }
-        }
-        return computed.size;
     }
 }
 

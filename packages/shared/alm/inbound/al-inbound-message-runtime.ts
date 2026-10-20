@@ -277,6 +277,21 @@ export class ALInboundMessageRuntime {
         return retained;
     }
 
+    async writeRetainedDeliveriesDueNow(msgs: readonly ALMessage[]): Promise<readonly ALMessage[]> {
+        if (this.disposed) {
+            return [];
+        }
+        const msgsByLane = new Map<ALInboundStoreLane, ALMessage[]>();
+        for (const msg of msgs) {
+            const lane = this.resolveDataLane(msg);
+            msgsByLane.set(lane, [...msgsByLane.get(lane) ?? [], msg]);
+        }
+        const broughtDue = await Promise.all(
+            [...msgsByLane].map(([lane, laneMsgs]) => lane.writeRetainedDeliveriesDueNow(laneMsgs))
+        );
+        return broughtDue.flat();
+    }
+
     /** A value that never decoded has no identity to record; this observation is optional. */
     private recordAdmissionOutcome(
         msg: ALMessage,

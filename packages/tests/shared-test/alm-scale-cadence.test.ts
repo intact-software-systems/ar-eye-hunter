@@ -333,7 +333,7 @@ class ScaleActor {
         return createDefaultRallarBlackBoxBrowserTestRuntime({
             now: Date.now,
             readSession: () => this.session,
-            fetch: async (url: RequestInfo | URL, init?: RequestInit) => this.cohort.serveHttp(this, url, init),
+            fetch: async (_url: RequestInfo | URL, init?: RequestInit) => this.cohort.serveHttp(this, init),
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: async () => this.joinRoom(),
@@ -565,7 +565,16 @@ class ScaleCohort {
         this.joinedSessionIds.push(actor.session.sessionId);
         this.joinedAtMs.push(Date.now());
         this.presenceRevision += 1;
+        this.publishAudience();
         this.scheduleReplan();
+    }
+
+    /** Each joined page holds the room snapshot, so each forwards the grown audience as a formation change. */
+    private publishAudience(): void {
+        const data = { roomRef: GROUP, activeSessionCount: this.joinedSessionIds.length };
+        for (const actor of this.actors.filter((candidate) => this.joinedSessionIds.includes(candidate.session.sessionId))) {
+            actor.runtime.receiveRallarBrowserEvent({ kind: 'diagnostic', topic: 'rallar.browser.formation.changed', data });
+        }
     }
 
     /** One plan follows the join stream: every presence change pushes the due time out again. */
@@ -625,16 +634,14 @@ class ScaleCohort {
         };
     }
 
-    /** A group write advances the group revision; the room read reports the joined sessions. */
-    serveHttp(actor: ScaleActor, url: RequestInfo | URL, init: RequestInit | undefined): Response {
+    /** A group write advances the group revision. */
+    serveHttp(actor: ScaleActor, init: RequestInit | undefined): Response {
         if (init?.method === 'POST' || init?.method === 'PUT') {
             this.groupWriterAgentIds.push(actor.agentId);
             this.memberSessionIds.add(actor.session.sessionId);
             this.advanceGroupRevision();
         }
-        const room = new URL(String(url)).pathname.endsWith(`/groups/${GROUP.groupId}`);
-        const body = room ? { activeSessions: this.joinedSessionIds.map((sessionId) => ({ sessionId })) } : {};
-        return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+        return new Response(JSON.stringify({}), { status: 200, headers: { 'content-type': 'application/json' } });
     }
 
     private publishLayout(data: RallarBlackBoxTestRecord): void {

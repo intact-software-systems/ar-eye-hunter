@@ -50,6 +50,8 @@ export namespace AppInboxDequeuePassTiming {
 
     export interface Config {
         readonly serviceId: string;
+        /** The queue type of the reader whose passes this observes, which names the pass a boundary line closes. */
+        readonly queueType: string;
         readonly sink: RallarTimingSink;
     }
 }
@@ -59,6 +61,10 @@ export namespace AppInboxDequeuePassTiming {
  * carrying the executor cost of the pass outside the handlers: the probe, the reservations and the
  * releases, with the lanes the probe advertised and the claimed type. The executor is shared, so
  * statements other callers ran meanwhile are counted too.
+ *
+ * Every pass, one that claimed nothing included, closes with one `dequeue-pass-boundary` line: the queue
+ * type of the reader, its wall time as the duration, so it started at `atEpochMs - durationMs`, the
+ * entries it claimed per lane, and how long its probe took and then waited for the pass to start.
  */
 export class AppInboxDequeuePassTiming implements QueueMessageReader.DequeuePassObserver {
     private readonly database: Pick<PSqlSql, 'getExecutorCounters'>;
@@ -109,10 +115,28 @@ export class AppInboxDequeuePassTiming implements QueueMessageReader.DequeuePass
     onPassFinished(): void {
         const pass = this.pass;
         this.pass = undefined;
-        if (pass === undefined || pass.handlers.length === 0) {
+        if (pass === undefined) {
             return;
         }
         const finished = this.sample();
+        this.recordClaimedEntries(pass, finished);
+        recordRallarTiming({
+            sink: this.config.sink,
+            event: {
+                component: 'app-inbox-phase',
+                operation: 'dequeue-pass-boundary',
+                serviceId: this.config.serviceId,
+                details: { queueType: this.config.queueType, ...toPassBoundaryDetails(pass, finished) }
+            },
+            status: 'ok',
+            durationMs: finished.atMs - pass.started.atMs
+        });
+    }
+
+    private recordClaimedEntries(pass: ObservedPass, finished: ExecutorSample): void {
+        if (pass.handlers.length === 0) {
+            return;
+        }
         const cost = computeDequeuePassCost(pass, finished);
         const lanesProbed = pass.probe === undefined ? '' : toLanesProbed(pass.probe.advertisedLanes);
         for (const handler of pass.handlers) {
@@ -205,6 +229,32 @@ function sumExecutorWaitMs(spans: readonly ExecutorSpan[]): number {
         (total, span) => total + (span.finished.counters!.executorWaitMs - span.started.counters!.executorWaitMs),
         0
     );
+}
+
+function toPassBoundaryDetails(pass: ObservedPass, finished: ExecutorSample): RallarTimingDetails {
+    const { probe } = pass;
+    return {
+        passWallMs: toRoundedMs(finished.atMs - pass.started.atMs),
+        lanesProbed: probe === undefined ? '' : toLanesProbed(probe.advertisedLanes),
+        probeMs: probe === undefined ? undefined : toRoundedMs(probe.finished.atMs - probe.started.atMs),
+        probeToPassMs: probe === undefined ? undefined : toRoundedMs(pass.started.atMs - probe.finished.atMs),
+        claimedInPass: pass.handlers.length,
+        ...toClaimedPerLaneDetails(pass.handlers)
+    };
+}
+
+function toClaimedPerLaneDetails(handlers: readonly ObservedHandler[]): RallarTimingDetails {
+    const claimed: Record<Reservator, number> = { FINALIZATION: 0, NEW: 0, RETRY: 0, FAIRNESS: 0, TIMEOUT: 0 };
+    for (const handler of handlers) {
+        claimed[handler.attempt.telemetry.selectedLane] += 1;
+    }
+    return {
+        claimedNew: claimed.NEW,
+        claimedRetry: claimed.RETRY,
+        claimedFairness: claimed.FAIRNESS,
+        claimedTimeout: claimed.TIMEOUT,
+        claimedFinalization: claimed.FINALIZATION
+    };
 }
 
 function toLanesProbed(advertisedLanes: DequeueController.WorkAdvertisement): string {

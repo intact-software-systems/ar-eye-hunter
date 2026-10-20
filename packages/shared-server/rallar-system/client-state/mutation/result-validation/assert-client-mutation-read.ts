@@ -1,6 +1,5 @@
 import {
     validateAuthoritativeClientSnapshot,
-    validateAuthoritativeClientSnapshotList,
     validateAuthoritativeGroupSnapshotList
 } from '@shared/api/authoritative-state-validation.ts';
 
@@ -19,6 +18,7 @@ import {
 import { sameClientPrincipalRef } from '../../client-state-semantic-equality.ts';
 import { ClientMutationRejectedError } from '../../validation/client-mutation-rejection.ts';
 import { decodeClientValidationRecord, requireExactKeys } from '../../validation/client-record-validation.ts';
+import { validateClientPrincipalRef } from '../../validation/validate-client-principal-ref.ts';
 import { assertClientExpiredSessionAuthority } from '../assert-client-expired-session-authority.ts';
 
 import type { ClientMutationCommand, ClientMutationRead } from '../client-mutation-contracts.ts';
@@ -42,7 +42,7 @@ export function assertClientMutationRead(
             'receiptEvent',
             'audienceObservedAtEpochMs',
             'audienceGroupSnapshots',
-            'audienceClientSnapshots'
+            'audienceCoMemberSessions'
         ],
         'Client mutation read'
     );
@@ -66,7 +66,7 @@ export function assertClientMutationRead(
         throw new ClientMutationRejectedError('Client mutation audience observation time is invalid');
     }
     validateAuthoritativeGroupSnapshotList(read.audienceGroupSnapshots, command.aggregateRef);
-    validateAuthoritativeClientSnapshotList(read.audienceClientSnapshots, command.aggregateRef);
+    assertClientMutationAudienceCoMemberSessions(command, read.audienceCoMemberSessions);
     assertClientMutationReadScope(command, read);
     assertClientMutationAudienceReadScope(command, read);
 }
@@ -77,9 +77,38 @@ function assertClientMutationAudienceReadScope(
 ): void {
     if (
         resolveClientMutationAudienceReadScope(command, read) !== 'principal-audience' &&
-        (read.audienceGroupSnapshots.length > 0 || read.audienceClientSnapshots.length > 0)
+        (read.audienceGroupSnapshots.length > 0 || read.audienceCoMemberSessions.length > 0)
     ) {
         throw new ClientMutationRejectedError('Client mutation audience read is out of scope');
+    }
+}
+
+function assertClientMutationAudienceCoMemberSessions(
+    command: ClientMutationCommand,
+    audience: ClientMutationRead['audienceCoMemberSessions']
+): void {
+    if (!Array.isArray(audience)) {
+        throw new ClientMutationRejectedError('Client mutation audience co-member sessions must be a list');
+    }
+    for (const [index, sessions] of audience.entries()) {
+        const label = `Client mutation audience co-member sessions ${index}`;
+        requireExactKeys(decodeClientValidationRecord(sessions, label), ['principalRef', 'activeSessions'], label);
+        const principalRef = validateClientPrincipalRef(sessions.principalRef, `${label}.principalRef`);
+        if (
+            principalRef.applicationId !== command.aggregateRef.applicationId ||
+            principalRef.workspaceId !== command.aggregateRef.workspaceId
+        ) {
+            throw new ClientMutationRejectedError(`${label} is wrongly scoped`);
+        }
+        if (!Array.isArray(sessions.activeSessions)) {
+            throw new ClientMutationRejectedError(`${label}.activeSessions must be a list`);
+        }
+        for (const session of sessions.activeSessions) {
+            validateClientSession(session, `${label}.session`);
+            if (!sameClientPrincipalRef(session, principalRef)) {
+                throw new ClientMutationRejectedError(`${label} carries another principal's session`);
+            }
+        }
     }
 }
 

@@ -50,6 +50,7 @@ import type {
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
+import { CLIENT_STATE_SESSIONS_NAMESPACE } from '@shared-server/rallar-system/client-state/persistence/client-state-runtime-namespaces.ts';
 import type { ClientSessionExpiryCandidate } from '@shared-server/rallar-system/presence/session-expiry.ts';
 import {
     toWsSessionLifecycleKey,
@@ -238,8 +239,6 @@ describe('ClientStateInboxHandler phases', () => {
                     'mutation.compute',
                     'mutation.validate',
                     'transaction',
-                    'lifecycle.write',
-                    'domain.write',
                     'commit',
                     'mutation.write',
                     'observe'
@@ -258,6 +257,9 @@ describe('ClientStateInboxHandler phases', () => {
         // The guarded delete is the transaction's first write for every connect that presented a live ticket.
         expect(await fixture.runtimeRepository.findEntry(WS_AUTH_TICKETS_NAMESPACE, authTicketDigestKey(TICKET_DIGEST)))
             .toBeUndefined();
+        // An active connect writes its lifecycle and client rows in the ticket's guarded batch, not through the ports.
+        expect((await fixture.runtimeRepository.findAllEntries(CLIENT_STATE_SESSIONS_NAMESPACE)).length)
+            .toBe(status === 'ok' ? 1 : 0);
     });
 
     it.each([
@@ -722,7 +724,7 @@ function clientMutationRead(
         receiptEvent: null,
         audienceObservedAtEpochMs: command.facts.nowEpochMs,
         audienceGroupSnapshots: [],
-        audienceClientSnapshots: []
+        audienceCoMemberSessions: []
     };
     if (!sessionPresent || !requiresCurrentSession(command)) {
         return base;

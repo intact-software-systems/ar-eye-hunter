@@ -61,4 +61,8 @@ export interface RuntimeStateReadBatchVersionReader {
     readRuntimeStateBatchWithVersion(
         selectors: readonly RuntimeStateReadBatchSelector[]
     ): Promise<RuntimeStateVersionedReadBatch>;
+    /** The version of each selector group's rows, from one read; undefined for a group that selects no row. */
+    readRuntimeStateBatchVersions(
+        selectorGroups: readonly (readonly RuntimeStateReadBatchSelector[])[]
+    ): Promise<readonly (RuntimeStateReadBatchVersion['version'] | undefined)[]>;
 }

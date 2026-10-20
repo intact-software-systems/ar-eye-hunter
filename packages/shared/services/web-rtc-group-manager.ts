@@ -97,7 +97,7 @@ export class WebRtcGroupManager {
     constructor(
         rtcQBox: WebRtcConnectionService,
         repositories: WebRtcGroupManager.Repositories,
-        options: WebRtcGroupManagerOptions = {}
+        options: WebRtcGroupManagerOptions
     ) {
         this.rtcQBox = rtcQBox;
         this.groupCache = repositories.groupCache;
@@ -591,9 +591,9 @@ export class WebRtcGroupManager {
         return this.reconcileAllGroups();
     }
 
-    notifyOverlayTopologyChanged(): Promise<void> {
+    async notifyOverlayTopologyChanged(): Promise<void> {
         this.invalidatePeerOwners();
-        return this.reconcileAllGroups();
+        await Promise.all([this.reconcileAllGroups(), this.options.onOverlayAdopted()]);
     }
 
     private invalidatePeerOwners(): void {

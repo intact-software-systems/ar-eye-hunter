@@ -106,7 +106,7 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
     async listSnapshotsForPrincipal(
         scope: GroupScope,
         principalId: string,
-        currentSnapshots?: Pick<GroupStateCurrentSnapshotCache, 'readSnapshot'>
+        currentSnapshots?: Pick<GroupStateCurrentSnapshotCache, 'readSnapshots'>
     ): Promise<readonly GroupSnapshot[]> {
         return await readGroupStateSnapshotsForPrincipal({
             repository: this.repository,
@@ -269,7 +269,7 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
 
     /**
      * The snapshot as of the caller's instant with the version of exactly the rows it was assembled from, read in
-     * one statement (D289); a read that had to fall back to several statements carries no version.
+     * one statement; a read that had to fall back to several statements carries no version.
      */
     async readVersionedSnapshot(
         reader: RuntimeStateReadBatchVersionReader,

@@ -1,9 +1,7 @@
 import type {
-    ClientInstanceRef,
     ClientPresenceSnapshot,
     ClientPrincipalRef,
     ClientScope,
-    ClientSessionRef,
     ClientSnapshot
 } from '@shared/api/client-types.ts';
 import { toClientSnapshotLastSeenAtEpochMs } from '@shared/api/group-client-views.ts';
@@ -16,13 +14,16 @@ import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../run
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { ClientStateEventStore } from '../../state-events/client-state-event-store.ts';
 import { readStableStateSnapshot, StateSnapshotReadConflictError } from '../../state-events/state-snapshot-read.ts';
+import {
+    toPrincipalAudienceSessions,
+    type PrincipalAudienceSessions
+} from '../../state-sync/state-sync-principal-audience.ts';
 import { toClientPresenceState } from '../client-presence-state.ts';
 import { assembleClientStateSnapshot, toActiveClientSessions } from './assemble-client-state-snapshot.ts';
 import { toLiveClientStateEntryValue, type ClientPrincipalSnapshotRead } from './client-state-persistence-contracts.ts';
 import { clientStatePrincipalStorageKey } from './client-state-principal-storage-key.ts';
 import { ClientStateRepositoryReads } from './client-state-repository-reads.ts';
 import {
-    CLIENT_STATE_INSTANCES_NAMESPACE,
     CLIENT_STATE_PRINCIPALS_NAMESPACE,
     CLIENT_STATE_SESSIONS_NAMESPACE
 } from './client-state-runtime-namespaces.ts';
@@ -65,9 +66,9 @@ export class ClientStateSnapshotRepository extends ClientStateRepositoryReads {
         return snapshots.filter((snapshot): snapshot is ClientSnapshot => snapshot !== undefined);
     }
 
-    async readSnapshotsForPrincipals(
+    async readAudienceSessionsForPrincipals(
         refs: readonly ClientPrincipalRef[]
-    ): Promise<readonly ClientSnapshot[]> {
+    ): Promise<readonly PrincipalAudienceSessions[]> {
         const uniqueRefs = [...new Map(refs.map((ref) => [clientStatePrincipalStorageKey(ref), ref])).values()];
         if (uniqueRefs.length === 0) {
             return [];
@@ -78,49 +79,49 @@ export class ClientStateSnapshotRepository extends ClientStateRepositoryReads {
             namespace: CLIENT_STATE_PRINCIPALS_NAMESPACE,
             key: clientStatePrincipalStorageKey(ref)
         }));
-        const childSelectors: RuntimeStateReadBatchSelector[] = uniqueRefs.flatMap((ref, index) => {
-            const keyPrefix = this.childKeyPrefix(clientStatePrincipalStorageKey(ref));
-            return [
-                {
-                    selectorId: `instances:${index}`,
-                    kind: 'prefix',
-                    namespace: CLIENT_STATE_INSTANCES_NAMESPACE,
-                    keyPrefix
-                },
-                {
-                    selectorId: `sessions:${index}`,
-                    kind: 'prefix',
-                    namespace: CLIENT_STATE_SESSIONS_NAMESPACE,
-                    keyPrefix
-                }
-            ];
-        });
-        const beforeSelections = await this.readLiveAudienceSelections([...principalSelectors, ...childSelectors]);
+        const sessionSelectors: RuntimeStateReadBatchSelector[] = uniqueRefs.map((ref, index) => ({
+            selectorId: `sessions:${index}`,
+            kind: 'prefix',
+            namespace: CLIENT_STATE_SESSIONS_NAMESPACE,
+            keyPrefix: this.childKeyPrefix(clientStatePrincipalStorageKey(ref))
+        }));
+        const beforeSelections = await this.readLiveAudienceSelections([...principalSelectors, ...sessionSelectors]);
         const afterSelections = await this.readLiveAudienceSelections(principalSelectors);
-        const snapshots = await Promise.all(uniqueRefs.map(async (ref, index) => {
+        const audience = await Promise.all(uniqueRefs.map(async (ref, index) => {
             const after = afterSelections[index][0];
             if (!after) {
                 return undefined;
             }
             const principal = this.findPrincipalEntryValue(after, ref);
             const before = beforeSelections[index][0];
-            if (!before || before.entry.revision !== after.entry.revision) {
-                return await this.readSnapshot(ref);
+            if (!before || before.entry.revision !== principal.entry.revision) {
+                return await this.readStableAudienceSessions(ref);
             }
-            const instances = beforeSelections[uniqueRefs.length + index * 2]
-                .map((entry) => this.toInstanceEntry(entry, ref).value);
-            const activeSessions = toActiveClientSessions(
-                beforeSelections[uniqueRefs.length + index * 2 + 1]
-                    .map((entry) => this.toSessionEntry(entry, ref).value)
+            return toPrincipalAudienceSessions(
+                ref,
+                toActiveClientSessions(
+                    beforeSelections[uniqueRefs.length + index].map((entry) => this.toSessionEntry(entry, ref).value)
+                )
             );
-            return assembleClientStateSnapshot({
-                principal: principal.value,
-                instances,
-                activeSessions,
-                stateRevision: principal.entry.revision + 1
-            });
         }));
-        return snapshots.filter((snapshot): snapshot is ClientSnapshot => snapshot !== undefined);
+        return audience.filter((sessions): sessions is PrincipalAudienceSessions => sessions !== undefined);
+    }
+
+    private async readStableAudienceSessions(
+        ref: ClientPrincipalRef
+    ): Promise<PrincipalAudienceSessions | undefined> {
+        return await readStableStateSnapshot({
+            snapshotKey: clientStatePrincipalStorageKey(ref),
+            readAggregate: async () => await this.findPrincipalEntry(ref),
+            readChildren: async () => {
+                const sessions = await this.listClientSessionEntries(
+                    this.childKeyPrefix(clientStatePrincipalStorageKey(ref)),
+                    ref
+                );
+                return [sessions.map((entry) => entry.value), null] as const;
+            },
+            assemble: (_principal, sessions) => toPrincipalAudienceSessions(ref, toActiveClientSessions(sessions))
+        });
     }
 
     private async readLiveAudienceSelections(

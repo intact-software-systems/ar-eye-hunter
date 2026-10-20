@@ -57,7 +57,12 @@ it('settles an answer delayed by admission conflict without applying it to a rep
 
         rtcSignalingTopicId: 'rtc',
         iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 }
-    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId, nowEpochMs: () => Date.now() });
+    }, {
+        faultPort: createPassThroughTransportFaultPort(),
+        createOfferId: new DeterministicRtcOfferIds().createOfferId,
+        nowEpochMs: () => Date.now(),
+        writeRetainedSignalsDueNow: async () => []
+    });
     const blockerStarted = Promise.withResolvers<void>();
     const releaseBlocker = Promise.withResolvers<void>();
     queueBoxClient.onInboxMessageDo('blocker', {

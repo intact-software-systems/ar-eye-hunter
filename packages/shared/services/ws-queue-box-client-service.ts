@@ -489,6 +489,13 @@ export class WsQueueBoxClientService {
         return await this.inboundRuntime.admitIncomingMessage(message, { kind: 'trusted-server' });
     }
 
+    async writeRetainedInboxMessagesDueNow(messages: readonly ALMessage[]): Promise<readonly ALMessage[]> {
+        if (this.closed || messages.length === 0) {
+            return [];
+        }
+        return await this.inboundRuntime.writeRetainedDeliveriesDueNow(messages);
+    }
+
     cancelOutbox(msgId: string): ALOutboundCancelOutcome {
         return this.outboundRuntime.cancel(msgId);
     }

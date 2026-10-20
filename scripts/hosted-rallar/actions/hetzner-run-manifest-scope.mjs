@@ -6,6 +6,8 @@ const PARALLEL_GROUP_ROLE = 'parallel-group';
 
 const WAIT_MATCH_ROLE = 'wait-match';
 
+const WAIT_PAYLOAD_FIELDS_ROLE = 'wait-payload-fields';
+
 const stateGroupPathPattern = new RegExp(
     String.raw`^/api/state/apps/([^/]+)/workspaces/([^/]+)/groups` +
         String.raw`(?:/(?!requests(?:/|$))([^/]+))?(?=/|$)`
@@ -17,6 +19,11 @@ const stateWorkspaceReadPathPattern = new RegExp(
 );
 
 const identityFieldNames = new Set(['applicationId', 'workspaceId', 'groupId', 'roomId']);
+
+// A wait's payload field is keyed by the payload path it reads, so its identity name is the path's last segment.
+function toIdentityFieldName(key, role) {
+    return role === WAIT_PAYLOAD_FIELDS_ROLE ? key.slice(key.lastIndexOf('.') + 1) : key;
+}
 
 // Match complete JSON string tokens without requiring the surrounding fragment or runtime placeholders to parse.
 const serializedRoomIdPattern =
@@ -171,6 +178,9 @@ function resolveScopeTraversalRole(value, key, currentRole) {
     if (currentRole === WAIT_MATCH_ROLE && key === 'contains') {
         return WAIT_MATCH_ROLE;
     }
+    if (currentRole === WAIT_MATCH_ROLE && key === 'payloadFields') {
+        return WAIT_PAYLOAD_FIELDS_ROLE;
+    }
     if (value.kind === 'parallel' && key === 'groups') {
         return PARALLEL_GROUPS_ROLE;
     }
@@ -200,6 +210,7 @@ function validateManifestScopeValue(value, expectedGroupRef, traversal) {
     for (const [key, entry] of Object.entries(value)) {
         const entryLocation = `${traversal.location}.${key}`;
         const isParallelGroupLabel = traversal.role === PARALLEL_GROUP_ROLE && key === 'groupId';
+        const identityFieldName = toIdentityFieldName(key, traversal.role);
         issues.push(
             ...validateEmbeddedScope({
                 value: entry,
@@ -209,10 +220,10 @@ function validateManifestScopeValue(value, expectedGroupRef, traversal) {
                 location: entryLocation
             })
         );
-        if (!isParallelGroupLabel && identityFieldNames.has(key) && typeof entry === 'string') {
-            const expected = key === 'applicationId'
+        if (!isParallelGroupLabel && identityFieldNames.has(identityFieldName) && typeof entry === 'string') {
+            const expected = identityFieldName === 'applicationId'
                 ? expectedGroupRef.applicationId
-                : key === 'workspaceId'
+                : identityFieldName === 'workspaceId'
                 ? expectedGroupRef.workspaceId
                 : expectedGroupRef.groupId;
             if (entry !== expected) {
@@ -321,13 +332,16 @@ function toEffectiveScopeValue(value, groupRefs, traversal) {
             if (isParallelGroupLabel) {
                 return [entryKey, entry];
             }
-            if (entryKey === 'applicationId' && entry === sourceGroupRef.applicationId) {
+            const identityFieldName = toIdentityFieldName(entryKey, traversal.role);
+            if (identityFieldName === 'applicationId' && entry === sourceGroupRef.applicationId) {
                 return [entryKey, effectiveGroupRef.applicationId];
             }
-            if (entryKey === 'workspaceId' && entry === sourceGroupRef.workspaceId) {
+            if (identityFieldName === 'workspaceId' && entry === sourceGroupRef.workspaceId) {
                 return [entryKey, effectiveGroupRef.workspaceId];
             }
-            if ((entryKey === 'groupId' || entryKey === 'roomId') && entry === sourceGroupRef.groupId) {
+            if (
+                (identityFieldName === 'groupId' || identityFieldName === 'roomId') && entry === sourceGroupRef.groupId
+            ) {
                 return [entryKey, effectiveGroupRef.groupId];
             }
             return [

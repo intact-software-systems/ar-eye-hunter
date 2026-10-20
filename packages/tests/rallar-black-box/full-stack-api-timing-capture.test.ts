@@ -18,6 +18,7 @@ import {
     it
 } from 'vitest';
 
+import { toSafeApiTimingRecord } from '../../../apps/rallar-black-box/scripts/to-safe-api-timing-record.ts';
 import type { ApiJsonObject } from '../../shared/api/api-json-value.ts';
 
 interface TimingCaptureFiles {
@@ -508,4 +509,133 @@ describe('full-stack API timing stdio capture', () => {
             await rm(directory, { recursive: true, force: true });
         }
     }, 12_000);
+});
+
+const passBoundary = {
+    type: 'rallar.timing',
+    component: 'app-inbox-phase',
+    operation: 'dequeue-pass-boundary',
+    status: 'ok',
+    durationMs: 6.5,
+    atEpochMs: 1234,
+    serviceId: 'server-1',
+    details: {
+        queueType: 'APP_INBOX',
+        passWallMs: 6.5,
+        lanesProbed: 'NEW,RETRY',
+        probeMs: 1.25,
+        probeToPassMs: 5,
+        claimedInPass: 3,
+        claimedNew: 2,
+        claimedRetry: 1,
+        claimedFairness: 0,
+        claimedTimeout: 0,
+        claimedFinalization: 0
+    }
+};
+
+describe('safe dequeue-pass boundary projection', () => {
+    it('retains the boundary of a claiming pass with its queue, probe timing and claims per lane', () => {
+        expect(toSafeApiTimingRecord(JSON.stringify(passBoundary))).toEqual(passBoundary);
+    });
+
+    it('retains the boundary of an outbox pass that claimed nothing and followed no probe', () => {
+        const unprobed = {
+            ...passBoundary,
+            details: {
+                queueType: 'APP_OUTBOX',
+                passWallMs: 0.5,
+                lanesProbed: '',
+                claimedInPass: 0,
+                claimedNew: 0,
+                claimedRetry: 0,
+                claimedFairness: 0,
+                claimedTimeout: 0,
+                claimedFinalization: 0
+            }
+        };
+
+        expect(toSafeApiTimingRecord(JSON.stringify(unprobed))).toEqual(unprobed);
+    });
+
+    it('drops a boundary field that is not its closed form, and the boundary fields on any other operation', () => {
+        const malformed = {
+            ...passBoundary,
+            details: {
+                ...passBoundary.details,
+                queueType: 'APP_INBOX_SECRET',
+                lanesProbed: 'NEW,SECRET',
+                probeMs: -1,
+                claimedRetry: 'one'
+            }
+        };
+        const kept = {
+            passWallMs: 6.5,
+            probeToPassMs: 5,
+            claimedInPass: 3,
+            claimedNew: 2,
+            claimedFairness: 0,
+            claimedTimeout: 0,
+            claimedFinalization: 0
+        };
+
+        expect(toSafeApiTimingRecord(JSON.stringify(malformed))).toEqual({ ...passBoundary, details: kept });
+        expect(toSafeApiTimingRecord(JSON.stringify({ ...passBoundary, operation: 'transaction' }))).toEqual({
+            ...passBoundary,
+            operation: 'transaction',
+            details: {}
+        });
+    });
+});
+
+const claimedEntryPass = {
+    type: 'rallar.timing',
+    component: 'app-inbox-phase',
+    operation: 'dequeue-pass',
+    status: 'ok',
+    durationMs: 4,
+    atEpochMs: 1234,
+    serviceId: 'server-1',
+    requestId: 'request-1',
+    details: {
+        type: 'GROUP_CREATE',
+        resourceId: 'request-1',
+        selectedLane: 'NEW',
+        queueAgeMs: 5,
+        statements: 4,
+        executorWaitMs: 3.5,
+        lanesProbed: 'NEW,RETRY,FAIRNESS',
+        claimedInPass: 2,
+        passWallMs: 8,
+        handlersMs: 5
+    }
+};
+
+describe('safe dequeue-pass claimed-entry projection', () => {
+    it('retains the pass cost outside the handlers, the probed lanes and the claims of the pass', () => {
+        expect(toSafeApiTimingRecord(JSON.stringify(claimedEntryPass))).toEqual(claimedEntryPass);
+    });
+
+    it('drops a cost field that is not its closed form, and the cost fields on any other operation', () => {
+        const malformed = {
+            ...claimedEntryPass,
+            details: { ...claimedEntryPass.details, lanesProbed: 'NEW;DROP', statements: -1, handlersMs: '5' }
+        };
+        const kept = {
+            type: 'GROUP_CREATE',
+            resourceId: 'request-1',
+            selectedLane: 'NEW',
+            queueAgeMs: 5,
+            executorWaitMs: 3.5,
+            claimedInPass: 2,
+            passWallMs: 8
+        };
+
+        expect(toSafeApiTimingRecord(JSON.stringify(malformed))).toEqual({ ...claimedEntryPass, details: kept });
+        expect(toSafeApiTimingRecord(JSON.stringify({ ...claimedEntryPass, operation: 'handler-action' }))).toEqual({
+            ...claimedEntryPass,
+            operation: 'handler-action',
+            details: { type: 'GROUP_CREATE', resourceId: 'request-1', selectedLane: 'NEW', queueAgeMs: 5 }
+        });
+    });
 });

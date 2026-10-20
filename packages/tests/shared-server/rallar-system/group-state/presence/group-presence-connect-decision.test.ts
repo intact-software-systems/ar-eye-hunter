@@ -3,9 +3,10 @@ import { describe, expect, it } from 'vitest';
 import type { GroupStateMutationCommand, GroupStateMutationService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import type { GroupMutationComputed, GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { readAndComputeGroupPresenceConnect } from '@shared-server/rallar-system/group-state/presence/group-presence-service.ts';
-import type {
-    WsSessionGenerationLifecycleComputed,
-    WsSessionGenerationLifecycleRead
+import {
+    WS_SESSION_CLOSE_HIGH_WATER_NAMESPACE,
+    type WsSessionGenerationLifecycleComputed,
+    type WsSessionGenerationLifecycleRead
 } from '@shared-server/rallar-system/websocket/ws-session-generation-computation.ts';
 import type { WsSessionGenerationLifecycleService } from '@shared-server/rallar-system/websocket/ws-session-generation-lifecycle.ts';
 
@@ -214,7 +215,16 @@ function lifecycleGuardFixture(lifecycleRead: WsSessionGenerationLifecycleRead):
         expectedRevision: null,
         state,
         value: JSON.stringify(state),
-        expireAtIsoTimestamp: new Date(state.expireAtEpochMs).toISOString()
+        row: {
+            descriptor: {
+                operation: 'insert',
+                namespace: WS_SESSION_CLOSE_HIGH_WATER_NAMESPACE,
+                key: lifecycleRead.key,
+                value: JSON.stringify(state),
+                expireAtTimestamp: state.expireAtEpochMs
+            },
+            expireAtIsoTimestamp: new Date(state.expireAtEpochMs).toISOString()
+        }
     };
 }
 

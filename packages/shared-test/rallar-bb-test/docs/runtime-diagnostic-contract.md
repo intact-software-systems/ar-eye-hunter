@@ -115,7 +115,9 @@ the RTC lifecycle stream, and tears it down with it. A connection that names a
 bare room id resolves no ref and installs nothing.
 
 - `rallar.browser.formation.changed` carries the room formation summary on
-  every change the shipped handle publishes
+  every change the shipped handle publishes; its `activeSessionCount` is the
+  held snapshot's, so a recipe waits on it for the room's audience instead of
+  reading the group over REST
 - `rallar.browser.formation.layout` carries `kind`, `role` and `identity` for
   each planned, accepted or removed layout event
 - `rallar.browser.formation.room-status` carries the room transport block and

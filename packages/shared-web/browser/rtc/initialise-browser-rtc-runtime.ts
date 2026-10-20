@@ -187,11 +187,12 @@ export async function initialiseRtcConnectionService(
         record: input.signalingDiagnostics,
         nowEpochMs
     });
-    const dependencies = {
+    const dependencies: WebRtcConnectionService.Dependencies = {
         faultPort: input.faultPort,
         createOfferId: () => crypto.randomUUID(),
         nowEpochMs,
-        signalingDiagnostics: capture.diagnostics
+        signalingDiagnostics: capture.diagnostics,
+        writeRetainedSignalsDueNow: (envelopes) => input.webSocketQueueBox.writeRetainedInboxMessagesDueNow(envelopes)
     };
     try {
         const connectionService = new WebRtcConnectionService(

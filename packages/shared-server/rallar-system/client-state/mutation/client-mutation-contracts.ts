@@ -18,6 +18,7 @@ import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-rep
 import type { AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import type { JsonWireObject } from '../../protocol/json-wire-identity.ts';
 import type { ComputedClientStateSync } from '../../state-sync/state-sync-entry-computation.ts';
+import type { PrincipalAudienceSessions } from '../../state-sync/state-sync-principal-audience.ts';
 import type {
     ClientMutationIdempotencyRecord,
     ClientMutationReceipt
@@ -223,7 +224,7 @@ export type ClientMutationRead = Readonly<{
     receiptEvent: ClientEvent | null;
     audienceObservedAtEpochMs: number;
     audienceGroupSnapshots: readonly GroupSnapshot[];
-    audienceClientSnapshots: readonly ClientSnapshot[];
+    audienceCoMemberSessions: readonly PrincipalAudienceSessions[];
 }>;
 
 export type ClientMutationFacts = Readonly<{

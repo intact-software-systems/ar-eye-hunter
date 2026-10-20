@@ -78,6 +78,7 @@ describe('runtime-state read batches', () => {
     it.each([
         ['empty prefix-suffix prefix', [{ ...PRINCIPAL_MEMBERS, keyPrefix: '' }]],
         ['empty prefix-suffix suffix', [{ ...PRINCIPAL_MEMBERS, keySuffix: '' }]],
+        ['prefix-suffix suffix that starts outside the BMP', [{ ...PRINCIPAL_MEMBERS, keySuffix: '\u{1F7FF}:member=a' }]],
         ['prefix-suffix without a suffix', [{ ...SELECTORS[1], kind: 'prefix-suffix' }]],
         ['prefix selector carrying a suffix', [{ ...SELECTORS[1], keySuffix: ':member=alice' }]],
         ['prefix-suffix selector carrying an exact key', [{ ...PRINCIPAL_MEMBERS, key: ENTRY.key }]],
@@ -241,7 +242,10 @@ describe('runtime-state read batches', () => {
         expect(query.source).toMatch(/store_key collate "C"\s*>=/iu);
         expect(query.source).toMatch(/store_key collate "C"\s*</iu);
         expect(query.source).toContain(
-            'right(suffix_entry.store_key, char_length(selector.key_suffix)) collate "C" = selector.key_suffix'
+            'reverse(suffix_entry.store_key) collate "C" >= selector.reversed_suffix'
+        );
+        expect(query.source).toContain(
+            'reverse(suffix_entry.store_key) collate "C" < selector.reversed_suffix_end'
         );
         expect(query.source).toContain(
             'char_length(suffix_entry.store_key) >= char_length(selector.key_prefix) + char_length(selector.key_suffix)'
@@ -291,8 +295,8 @@ describe('runtime-state read batches', () => {
                 keyPrefix: 'app=app:ws=workspace:',
                 keySuffix: ':member=alice',
                 prefixEnd: 'app=app:ws=workspace;',
-                reversedSuffix: null,
-                reversedSuffixEnd: null
+                reversedSuffix: 'ecila=rebmem:',
+                reversedSuffixEnd: 'ecila=rebmem;'
             }
         ]);
     });

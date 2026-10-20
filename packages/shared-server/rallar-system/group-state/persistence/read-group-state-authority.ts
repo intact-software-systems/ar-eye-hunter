@@ -52,7 +52,7 @@ export async function readGroupStateAuthorityBatch(
     );
 }
 
-/** The same batch read with the version of exactly the rows it returned, from one statement (D289). */
+/** The same batch read with the version of exactly the rows it returned, from one statement. */
 export async function readVersionedGroupStateAuthorityBatch(
     reader: RuntimeStateReadBatchVersionReader,
     ref: GroupRef,
@@ -85,12 +85,15 @@ async function toGroupStateAuthorityBatchRead(
     };
 }
 
-/** The version of exactly the rows `readGroupStateAuthorityBatch` reads, without their values (D289). */
-export async function readGroupStateAuthorityVersion(
+/**
+ * The version of exactly the rows `readGroupStateAuthorityBatch` reads, for each group, without their values and in
+ * one read.
+ */
+export async function readGroupStateAuthorityVersions(
     reader: RuntimeStateReadBatchVersionReader,
-    ref: GroupRef
-): Promise<RuntimeStateReadBatchVersion | undefined> {
-    return await reader.readRuntimeStateBatchVersion(toGroupStateAuthoritySelectors(ref));
+    refs: readonly GroupRef[]
+): Promise<readonly (RuntimeStateReadBatchVersion['version'] | undefined)[]> {
+    return await reader.readRuntimeStateBatchVersions(refs.map(toGroupStateAuthoritySelectors));
 }
 
 /** The authority selectors and the group's presence admissions, which the presence summary also reads. */

@@ -154,7 +154,12 @@ describe('ALM scale recipes', () => {
                 expect.objectContaining({ kind: 'parallel', maxConcurrency: 2 }),
                 expect.objectContaining({ kind: 'barrier', barrierId: 'alm-scale-shots-complete' }),
                 expect.objectContaining({ kind: 'director.status', refresh: 'when-absent' }),
-                expect.objectContaining({ kind: 'assert', source: expect.stringContaining('body.activeSessions.length'), expected: participantCount })
+                expect.objectContaining({
+                    kind: 'wait',
+                    match: expect.objectContaining({
+                        payloadFields: expect.objectContaining({ 'data.activeSessionCount': participantCount })
+                    })
+                })
             ]));
             for (const send of commands.filter((command) => command.kind === 'messages.send')) {
                 expect(send).toMatchObject({
@@ -219,8 +224,8 @@ describe('ALM scale recipes', () => {
         const groupRequests = flattenCommands(recipe.commands).filter((command) => command.kind === 'http.request').slice(1);
         expect(groupRequests.map((command) => [command.commandId, command.timeoutMs])).toEqual(
             role === 'director'
-                ? [['alm-scale-director-ensure-group', 8_750], ['alm-scale-director-ensure-member', 8_750], ['alm-scale-director-audience', 5_000]]
-                : [['alm-scale-player-audience', 5_000]]
+                ? [['alm-scale-director-ensure-group', 8_750], ['alm-scale-director-ensure-member', 8_750]]
+                : []
         );
     });
 
@@ -289,8 +294,39 @@ describe('ALM scale recipes', () => {
         expect(player.commands[2]).toMatchObject({ roomId: 'scale-room', readiness: { minReadyPeers: 1 } });
     });
 
+    it.each([[15, 'director'], [50, 'player']] as const)(
+        'waits once, after the connected barrier, for the %i-member %s page to hold every cohort session in its WS-fed room snapshot instead of polling the group over REST',
+        (participantCount, role) => {
+            const scale = createAlmScaleRecipes({ participantCount, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
+            const recipe = scale.recipes.find((candidate) => candidate.recipeId === `alm-scale-${role}`)!;
+            const prefix = `alm-scale-${role}`;
+            const connected = recipe.commands.findIndex((command) => command.commandId === `${prefix}-connected`);
+            const groupReads = flattenCommands(recipe.commands).filter((command) =>
+                command.kind === 'http.request' && command.request.method === 'GET' && command.request.path?.includes('/groups/') === true
+            );
+
+            expect(groupReads).toEqual([]);
+            expect(recipe.commands[connected + 1]).toEqual({
+                kind: 'wait',
+                commandId: `${prefix}-audience-ready`,
+                timeoutMs: 45_000,
+                match: {
+                    kind: 'diagnostic',
+                    topic: 'rallar.browser.formation.changed',
+                    payloadFields: {
+                        'data.roomRef.applicationId': GROUP.applicationId,
+                        'data.roomRef.workspaceId': GROUP.workspaceId,
+                        'data.roomRef.groupId': GROUP.groupId,
+                        'data.activeSessionCount': participantCount
+                    }
+                }
+            });
+            expect(recipe.commands[connected + 2]).toMatchObject({ kind: 'barrier', barrierId: 'alm-scale-appointed' });
+        }
+    );
+
     it.each([15, 30, 50] as const)(
-        'allows the %i-member cohort\'s joins, the director\'s group requests and each player\'s room join inside its connect, more than their serial cost at the 4 joins per second measured hosted, and keeps reads at 5 s',
+        'allows the %i-member cohort\'s joins, the director\'s group requests and each player\'s room join inside its connect, more than their serial cost at the 4 joins per second measured hosted',
         (participantCount) => {
             const hostedJoinsPerSecond = 4;
             const serialJoinCostMs = participantCount / hostedJoinsPerSecond * 1_000;
@@ -308,7 +344,6 @@ describe('ALM scale recipes', () => {
                 expect(allowance).toBeGreaterThanOrEqual(5_000);
                 expect(allowance).toBeLessThanOrEqual(45_000);
             }
-            expect(timeoutOf('-audience')).toEqual([5_000, 5_000]);
         }
     );
 

@@ -816,7 +816,12 @@ async function createFixture(qosProvider?: ALQosInputProvider): Promise<OverlayF
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         dataChannelName: 'alm',
         rtcSignalingTopicId: 'rtc'
-    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId, nowEpochMs: () => Date.now() });
+    }, {
+        faultPort: createPassThroughTransportFaultPort(),
+        createOfferId: new DeterministicRtcOfferIds().createOfferId,
+        nowEpochMs: () => Date.now(),
+        writeRetainedSignalsDueNow: async () => []
+    });
     onTestFinished(() => {
         for (const peerId of connection.knownPeerIds()) {
             connection.removePeerIfPresent(peerId);

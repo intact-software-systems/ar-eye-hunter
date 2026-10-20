@@ -5,6 +5,10 @@ import {
     type GroupLayoutIdentity
 } from '../../../packages/shared/api/group-lifecycle/group-layout-identity.ts';
 import {
+    API_TIMING_DEQUEUE_LANES,
+    decodeSafeApiDequeuePassDetails
+} from './decode-safe-api-dequeue-pass-details.ts';
+import {
     isAllowedApiTimingString,
     isApiTimingRecord,
     isNonNegativeApiTimingNumber,
@@ -181,7 +185,12 @@ function toSafeTimingContext(record: Readonly<Record<string, unknown>>): Readonl
         safe.httpStatus = record.httpStatus;
     }
     if (isApiTimingRecord(record.details)) {
-        safe.details = toSafeTimingDetails(record.details);
+        safe.details = record.component === 'app-inbox-phase' && typeof record.operation === 'string'
+            ? {
+                ...toSafeTimingDetails(record.details),
+                ...decodeSafeApiDequeuePassDetails(record.operation, record.details)
+            }
+            : toSafeTimingDetails(record.details);
     }
     return safe;
 }
@@ -215,7 +224,7 @@ function toSafeTimingDetails(
     ) {
         safe.queueObservation = details.queueObservation;
     }
-    if (isAllowedApiTimingString(details.selectedLane, ['NEW', 'RETRY', 'FAIRNESS', 'TIMEOUT', 'FINALIZATION'])) {
+    if (isAllowedApiTimingString(details.selectedLane, API_TIMING_DEQUEUE_LANES)) {
         safe.selectedLane = details.selectedLane;
     }
     if (

@@ -26,9 +26,14 @@ import * as heartbeat from '@shared-web/browser/session/browser-session-heartbea
 import { browserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import * as stateSnapshots from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 import * as websocketFactory from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
+import { newALEventRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
+import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
@@ -39,8 +44,11 @@ import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagn
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import '../../setup-browser-indexeddb.ts';
+import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
+import { installNativeRtcRuntime } from '../../shared/native-rtc-connection-fixture.ts';
 import { DeterministicRtcOfferIds } from '../../shared/webrtc/deterministic-rtc-offer-ids.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
+import { createAcceptedGroupSnapshotFixture, createAcceptedOverlayFixture } from '../authoritative-group-fixtures.ts';
 
 const SESSION: AuthSession = {
     clientId: 'client-1',
@@ -90,7 +98,13 @@ describe('native observation handoff cleanup', () => {
             dataChannelName: 'test',
             rtcSignalingTopicId: 'rtc',
             iceCandidates: { iceServers: [], expiresAtEpochMs: 1000 }
-        }, { nowEpochMs: () => 1, createOfferId: () => 'offer', faultPort: createPassThroughTransportFaultPort(), signalingDiagnostics: capture.diagnostics });
+        }, {
+            nowEpochMs: () => 1,
+            createOfferId: () => 'offer',
+            faultPort: createPassThroughTransportFaultPort(),
+            signalingDiagnostics: capture.diagnostics,
+            writeRetainedSignalsDueNow: async () => []
+        });
         onTestFinished(() => service.disposeNativeObservations());
         const middleware = createDefaultApiMiddlewareTestDouble({
             middleware: { rtcRxStreamer: { onRttMeasurementDo: () => {}, setRttReportingPeerIds: () => {} } }
@@ -116,6 +130,72 @@ describe('native observation handoff cleanup', () => {
         await expect(initialiseMiddleware(SESSION, 'rtc', OPTIONS)).rejects.toBe(failure);
         expect(events).toContainEqual(expect.objectContaining({ kind: 'native-observation-status', stage: 'disposed' }));
         expect(capture.diagnostics?.nativeObservation?.status === 'available' && capture.diagnostics.nativeObservation.scope.getActive()).toBe(false);
+    });
+});
+
+describe('browser RTC layout adoption composition', () => {
+    it('applies an offer the browser held for its layout as soon as the connect adopts that layout', async () => {
+        const nativeRuntime = installNativeRtcRuntime();
+        configureTestCacheRepositories();
+        const inboundEvents: ALInboundRuntimeDiagnosticsEvent[] = [];
+        const options: BrowserConnectOptions = {
+            ...OPTIONS,
+            diagnosticsPorts: toRallarDiagnosticsPorts({ inboundDiagnostics: (event) => inboundEvents.push(event) })
+        };
+        let acquired: { engine: InboxOutboxEngine; close: () => Promise<void>; } | undefined;
+        onTestFinished(async () => {
+            if (acquired) {
+                await Promise.allSettled([acquired.close(), acquired.engine.stop()]);
+            }
+            nativeRuntime.dispose();
+            vi.restoreAllMocks();
+        });
+        const doubles = createDefaultApiMiddlewareTestDouble({
+            middleware: { rtcRxStreamer: { onRttMeasurementDo: () => {}, setRttReportingPeerIds: () => {} } }
+        }).middleware;
+        vi.spyOn(connectionHttp, 'readApiConfig').mockResolvedValue({ apiBaseUrl: 'http://test', wsBaseUrl: 'ws://test', endpoints: { createWs: '/ws' } });
+        vi.spyOn(connectionHttp, 'readIceCandidates').mockResolvedValue({ iceServers: [], expiresAtEpochMs: Date.now() + 600_000 });
+        vi.spyOn(JsonWebSocketClient.prototype, 'connect').mockResolvedValue();
+        vi.spyOn(websocketFactory, 'createBrowserWebSocketQueueBox').mockImplementation(async (input) => {
+            const queueBox = createDefaultWsQueueBoxClientService({
+                sessionId: input.clientData.sessionId,
+                serverPeerId: input.serverPeerId,
+                socket: input.socket,
+                queueEngine: input.qboxEngine,
+                outbox: new InMemoryQueueBox(),
+                inboundStores: input.inboundStores,
+                inboundVolatileStores: input.inboundVolatileStores,
+                inboundDiagnostics: input.inboundDiagnostics
+            });
+            acquired = { engine: input.qboxEngine, close: () => queueBox.close() };
+            input.qboxEngine.start();
+            return queueBox;
+        });
+        vi.spyOn(rtcEngine, 'initialiseRtcOverlayMulticastManager').mockReturnValue(doubles.webRtcOverlayMulticastManager);
+        vi.spyOn(rtcEngine, 'initialiseRtcRxStreamer').mockReturnValue(doubles.rtcRxStreamer);
+        vi.spyOn(browserStateCacheLifecycle, 'initialise').mockImplementation(() => {});
+        vi.spyOn(browserStateCacheLifecycle, 'hydrate').mockResolvedValue();
+        vi.spyOn(stateSnapshots, 'refreshStateSnapshots').mockResolvedValue({ clients: [], groups: [] });
+        vi.spyOn(heartbeat, 'initHeartbeat').mockResolvedValue(doubles.heartbeat);
+
+        const connected = await initialiseMiddleware(SESSION, 'rtc', options);
+        const { webSocketQueueBox, webRtcGroupManager } = connected.middleware;
+        await webSocketQueueBox.acceptIncomingMessage(toHeldOfferEnvelope('startup-peer'));
+        // The sixth refusal leaves the offer's next retry a second out.
+        await vi.waitFor(() => expect(readRetriedOfferCount(inboundEvents)).toBe(6), { timeout: 5_000 });
+        expect(nativeRuntime.createdConnections).toEqual([]);
+
+        const group = createAcceptedGroupSnapshotFixture([SESSION.sessionId, 'startup-peer']);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(group);
+        overlaysRepository.setAcceptedOverlayById(toScopedOverlayId(group.group), createAcceptedOverlayFixture(group, 1, ['startup-peer']));
+        await webRtcGroupManager.getOrCreate(group.group).acceptGroupUpdate(group);
+        await webRtcGroupManager.notifyOverlayTopologyChanged();
+
+        await vi.waitFor(
+            () => expect(nativeRuntime.createdConnections[0]?.receivedDescriptions).toEqual([{ type: 'offer', sdp: 'held-offer-sdp' }]),
+            { timeout: 400 }
+        );
+        expect(readRetriedOfferCount(inboundEvents)).toBe(6);
     });
 });
 
@@ -253,6 +333,25 @@ describe('the checkpoint stores a connect hands its carriers', () => {
     });
 });
 
+function toHeldOfferEnvelope(senderId: string) {
+    const message = newALUnicastMessage(senderId, newALEventRoute('rtc', SESSION.sessionId), SESSION.sessionId, 'rtc', {
+        channel: 'RtcSignal',
+        type: 'Signal',
+        fromId: senderId,
+        toId: SESSION.sessionId,
+        sessionId: senderId,
+        token: 'test-token',
+        signalType: 'Offer',
+        offerId: 'offer-1',
+        payload: { description: { type: 'offer', sdp: 'held-offer-sdp' }, candidate: null }
+    });
+    return { ...message, id: { ...message.id, msgId: 'held-offer' } };
+}
+
+function readRetriedOfferCount(events: readonly ALInboundRuntimeDiagnosticsEvent[]): number {
+    return events.filter((event) => event.kind === 'consumer-invocation' && event.msgId === 'held-offer' && event.outcome === 'retry').length;
+}
+
 function createConnectionService(): WebRtcConnectionService {
     return new WebRtcConnectionService({
         send: async () => undefined,
@@ -266,7 +365,8 @@ function createConnectionService(): WebRtcConnectionService {
     }, {
         faultPort: createPassThroughTransportFaultPort(),
         createOfferId: new DeterministicRtcOfferIds().createOfferId,
-        nowEpochMs: () => Date.now()
+        nowEpochMs: () => Date.now(),
+        writeRetainedSignalsDueNow: async () => []
     });
 }
 

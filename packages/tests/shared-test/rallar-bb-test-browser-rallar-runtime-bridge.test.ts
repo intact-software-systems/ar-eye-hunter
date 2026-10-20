@@ -6,7 +6,7 @@ import {
     AL_VOLATILE_SESSION_MAX_AGE_MS,
     AL_VOLATILE_SESSION_MAX_TRACKS
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     createBrowserWebSocketFactory,
     createSpaBrowserRallarRuntime,
@@ -25,15 +25,25 @@ const runtimeModuleLoads = vi.hoisted(() => ({ count: 0 }));
 vi.mock('@shared-test/black-box-runner/browser/rallar-browser-runtime.ts', () => {
     runtimeModuleLoads.count += 1;
     const targetWindow = window as {
-        __blackBoxRallar?: { readAlmUsage(): Promise<undefined>; };
+        __blackBoxRallar?: { readAlmUsage(): Promise<undefined>; close(): Promise<undefined>; };
         __blackBoxRallarEmit?: (event: RallarBlackBoxBrowserRallarEvent) => void;
     };
     targetWindow.__blackBoxRallarEmit?.({ kind: 'diagnostic', topic: 'rallar.browser.runtime_loaded' });
-    targetWindow.__blackBoxRallar = { readAlmUsage: async () => undefined };
+    targetWindow.__blackBoxRallar = { readAlmUsage: async () => undefined, close: async () => undefined };
     return {};
 });
 
+// The bridge keeps one runtime import per page, so a test that imports gets a bridge of its own.
+async function importFreshBridge(): Promise<typeof import('../../shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts')> {
+    vi.resetModules();
+    return await import('../../shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts');
+}
+
 describe('browser Rallar runtime bridge', () => {
+    beforeEach(() => {
+        runtimeModuleLoads.count = 0;
+    });
+
     afterEach(() => {
         vi.unstubAllGlobals();
     });
@@ -254,5 +264,27 @@ describe('browser Rallar runtime bridge', () => {
         socket.close(1000, 'done');
         expect(native.closedWith).toEqual({ code: 1000, reason: 'done' });
         expect(socket.readyState).toBe(WebSocket.CLOSED);
+    });
+
+    it('starts no runtime import for a page that already installed the runtime', async () => {
+        const bridge = await importFreshBridge();
+        vi.stubGlobal('window', { __blackBoxRallar: { readAlmUsage: async () => undefined } });
+
+        bridge.startSpaBrowserRallarRuntimeImport();
+        await Promise.resolve();
+
+        expect(runtimeModuleLoads.count).toBe(0);
+    });
+
+    it('starts the runtime import before any command, and the first command awaits that same import', async () => {
+        const bridge = await importFreshBridge();
+        vi.stubGlobal('window', {});
+
+        bridge.startSpaBrowserRallarRuntimeImport();
+        await vi.waitFor(() => expect(runtimeModuleLoads.count).toBe(1));
+        bridge.startSpaBrowserRallarRuntimeImport();
+        await bridge.createSpaBrowserRallarRuntime().close();
+
+        expect(runtimeModuleLoads.count).toBe(1);
     });
 });

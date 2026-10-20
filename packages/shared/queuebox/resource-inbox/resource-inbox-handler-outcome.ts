@@ -1,6 +1,6 @@
 import { toErrorSummary } from '../../resilience/to-error.ts';
-import { toDequeuedKeyText } from '../dequeue/dequeue-batch.ts';
 import type { DequeueController } from '../dequeue/dequeue-controller.ts';
+import { toDequeuedKeyText } from '../dequeue/dequeue-lane-flight.ts';
 import type * as Resource from '../ResourceEntry.ts';
 import {
     EntityStatus,

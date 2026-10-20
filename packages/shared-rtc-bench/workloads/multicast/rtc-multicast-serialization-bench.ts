@@ -347,7 +347,8 @@ function createConnectionService(peerIds: readonly string[]): RtcMulticastConnec
     }, {
         faultPort: createPassThroughTransportFaultPort(),
         createOfferId: () => crypto.randomUUID(),
-        nowEpochMs: () => Date.now()
+        nowEpochMs: () => Date.now(),
+        writeRetainedSignalsDueNow: async () => []
     });
     const dispose = (): void => {
         for (const peerId of service.knownPeerIds()) {

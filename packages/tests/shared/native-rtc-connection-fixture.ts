@@ -99,7 +99,8 @@ export function createNativeRtcConnectionFixture(
     const dependencies = {
         faultPort,
         createOfferId: new DeterministicRtcOfferIds().createOfferId,
-        nowEpochMs: () => Date.now()
+        nowEpochMs: () => Date.now(),
+        writeRetainedSignalsDueNow: async () => []
     };
     const allocatedPeers: WebRtcConnectionService.Peer[] = [];
     const service = new WebRtcConnectionService(signaler, input, dependencies);

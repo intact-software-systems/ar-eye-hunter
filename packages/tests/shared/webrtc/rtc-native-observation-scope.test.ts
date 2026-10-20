@@ -452,7 +452,13 @@ function createObservedService(diagnostics: RtcSignalingDiagnostics, timeoutEnab
         rtcSignalingTopicId: 'rtc',
         iceCandidates: { iceServers: [], expiresAtEpochMs: 1000 },
         peerEstablishmentTimeout: { enabled: timeoutEnabled, timeoutMs: 50 }
-    }, { createOfferId: () => 'offer', nowEpochMs: () => 1, faultPort: createPassThroughTransportFaultPort(), signalingDiagnostics: diagnostics });
+    }, {
+        createOfferId: () => 'offer',
+        nowEpochMs: () => 1,
+        faultPort: createPassThroughTransportFaultPort(),
+        signalingDiagnostics: diagnostics,
+        writeRetainedSignalsDueNow: async () => []
+    });
     onTestFinished(() => {
         for (const peerId of service.knownPeerIds()) {
             service.disconnectPeer(peerId);

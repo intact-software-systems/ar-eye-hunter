@@ -3,9 +3,9 @@
 ## Goal
 
 Reduce measured WS outbox formation-tail delay without changing its event protocol.
-Bounded admission reads are the first implemented repair; the current focus is the
-long committed-output-to-reservation gap. The parent V1c plan's full ≤2 s
-formation-tail target remains open.
+Bounded admission reads are the first implemented repair, the group-audience cache
+(#675) the second, and formation tail 2 (#687) cuts the setup admission and handler
+waits. The parent V1c plan's full ≤2 s formation-tail target remains open.
 
 ## Global constraints
 
@@ -105,6 +105,202 @@ There are zero rejected or truncated events; phase bytes total 212,825,733.
 Canonical correctness, postflight and owned cleanup pass. The earlier incomplete
 capture remains evidence of the repaired defects, not a discarded run.
 Instrumented timings are attribution evidence, not performance acceptance.
+
+### Formation tail 2: admission, connect statements and held offers (PR #687)
+
+Four static surveys of main after #675 located the remaining setup waits at 50
+(design proposal §1.14, decisions D306–D320). Six repairs landed at their owners,
+each RED first; counts are from counter scopes, fake clocks and EXPLAIN, and the
+local numbers below use the memory API.
+
+1. **Pipelined NEW lane** (`dequeue-controller.ts`, `dequeue-lane-flight.ts`, new
+   `packages/shared/resilience/exclusion-keyed-admission.ts`). The lane reserves
+   again as soon as a slot frees, orders overlapping colon-path exclusion keys
+   across reservations, and releases each settled row in its own transaction; K = 1
+   is the same code path. RED: 5 of 5 failed on main (the third reservation and the
+   short rows' releases waited for the long compute; one release call per round).
+   GREEN: 9 of 9, three runs in a row. The unreachable round-release fallback
+   (`releaseResourceInboxRound`) is removed; a single-row lost reservation is
+   covered through the real dequeuer.
+2. **Absorbed engine wake** (`inbox-outbox-engine.ts`). A wake that lands while a
+   runnable holds its task's slot brings the next pass forward when that runnable
+   ends. RED: the next probe came 0.090 s after the runnable ended (the idle
+   backoff), not at once. GREEN: 5 of 5, including a sibling submitted after the
+   wake (no reschedule) and a runnable that ends after stop (no timer). Every pass,
+   zero-claim passes included, now closes with one `dequeue-pass-boundary` line
+   when phase timing is on; a test proves no clock read with timing off.
+3. **Connect write and audience probe** (`compute-authorised-ws-connect-runtime-batch.ts`,
+   `write-client-mutation.ts`, `version-probed-read-through-cache.ts`,
+   `read-runtime-state-batch-versions.ts`). RED: `first connect issued 15`
+   (next 14); `one version statement probes every kept group — 21 !== 1`. GREEN:
+   7 statements first and next (one guarded batch, one event, three WS_OUTBOX
+   pages, two completion); a stale principal revision or a spent ticket rolls back
+   at statement 1 as a typed conflict with an unchanged durable footprint. The
+   audience-group read over 21 unchanged groups is 5 statements (25), one changed
+   group 6; every #675 case (transfer bound, expiry, revocation, concurrent change,
+   scope, failure, recovery) stays green.
+4. **Co-member audience and prefix-suffix bound** (`client-state-snapshot-repository.ts`,
+   `state-sync-principal-audience.ts`, `read-runtime-state-batch.ts`). RED:
+   `expected [ 69, 3 ] to deeply equal [ 6, 3 ]` rows transferred for principals
+   with stale instances, with an identical audience. GREEN: 6 + 3 rows (72 → 9).
+   The prefix-suffix equal-results test (24 groups × 24 principals in two
+   workspaces, PGlite and Postgres) is a characterization test, green before and
+   after; its evidence is the EXPLAIN below. A suffix that starts outside the Basic
+   Multilingual Plane is now a typed rejection (RED: the validator did not throw).
+5. **Held inbound offers** (`web-rtc-connection-service.ts`, `al-inbound-store-lane.ts`,
+   `web-rtc-group-manager.ts`, the browser composition). RED:
+   `expected [] to deeply equal [ 'offer' ]` one engine round after adoption, on
+   the memory and the IndexedDB pair. GREEN: the offer is applied ≈ 0.001 s after
+   adoption on the memory pair and 0.085–0.114 s on the IndexedDB pair (one engine
+   pass, because the commit's batch reads the rotation's NEW page first), against
+   ≥ 0.800 s before. A test through the real browser composition fails when either
+   wiring is a no-op; a signal refused for another reason, or still refused, is not
+   re-dued; adoption with nothing held reads neither clock nor storage.
+6. **Harness waits** (`create-alm-scale-setup-commands.ts`, the runtime bridge and
+   control agent). RED: 9 failed of 118 (the audience loop and assert still present,
+   no preload, no `activeSessionCount`). GREEN: 118 of 118; an end-to-end wait test
+   fails with a 5 s wait timeout when the count is off by one. Manifests 19–21 and
+   the 6- and 11-agent diagnostic manifests are regenerated. Routine browser
+   diagnostics stay on: nothing in the acceptance path consumes them, but turning
+   them off is a worker setting the hosted dispatch cannot pass yet.
+
+EXPLAIN evidence for repair 4: `group-state:members`, 20,000 rows (10,000 in
+`app=bench:ws=w1`, 10,000 in a sibling workspace `ws=w2`, 400 groups × 25 members),
+one `principal-members` prefix-suffix selector for a principal with 19 memberships
+in `w1`, `ANALYZE` first, then `EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF,
+SUMMARY OFF)` of the exact `readRuntimeStateBatch` statement. Postgres ran on a
+session temp table (`like public.runtime_state_store including all`, so the index
+names are the copies' generated names); PGlite ran on the api-v1 in-memory schema.
+
+Postgres, before (`right()` filter):
+
+```text
+->  Index Scan using runtime_state_store_store_namespace_store_key_idx on runtime_state_store suffix_entry (actual rows=19 loops=1)
+      Index Cond: ((store_namespace = ...) AND ((store_key)::text >= keyPrefix) AND ((store_key)::text < prefixEnd))
+      Filter: ((right(store_key, char_length(keySuffix)))::text = keySuffix) AND (char_length(store_key) >= ...))
+      Rows Removed by Filter: 9981
+      Buffers: local hit=554 read=287 written=205
+```
+
+Postgres, after (reversed bound):
+
+```text
+->  Index Scan using runtime_state_store_store_namespace_reverse_idx on runtime_state_store suffix_entry (actual rows=19 loops=1)
+      Index Cond: ((store_namespace = ...) AND ((reverse(store_key))::text >= reversedSuffix) AND ((reverse(store_key))::text < reversedSuffixEnd))
+      Filter: (((store_key)::text >= keyPrefix) AND ((store_key)::text < prefixEnd) AND (char_length(store_key) >= ...))
+      Rows Removed by Filter: 19
+      Buffers: local hit=41
+```
+
+PGlite before: `Index Scan using runtime_state_store_namespace_key_c_ix`, actual
+rows 19, 9,981 rows removed by filter, 841 shared buffers hit. PGlite after:
+`Index Scan using runtime_state_store_namespace_reversed_key_c_ix`, actual rows 19,
+19 rows removed, 41 buffers hit. The 19 removed rows after the change are the same
+principal's memberships in the sibling workspace. On Postgres the planner chose the
+reversed-key index on every other shape tried (one workspace × 400 groups, four
+workspaces × 50 groups, one workspace × 4,000 groups with 100,000 rows); the choice
+is cost-based and no test pins it.
+
+Local 15/30/50 on head `b62deafab` pass in 48.2 s / 57.3 s / ≈ 66 s (main
+`fadcd3e93`: 50.4 s / 57.3 s / ≈ 72 s; the 50-agent lane reports 1.1 against 1.2 min). Local 50 with AppInbox phase timing, main →
+head (memory API, handlers 0.010–0.030 s and unchanged; not a hosted measurement):
+
+| Command type                   | Queue age p50 / p95 / max on main (s) |       On the head (s) |
+| ------------------------------ | ------------------------------------: | --------------------: |
+| `CLIENT_AUTHORISED_WS_CONNECT` |                 0.662 / 1.121 / 1.199 | 0.261 / 0.468 / 0.469 |
+| `GROUP_JOIN`                   |                 0.245 / 0.540 / 0.640 | 0.110 / 0.425 / 0.455 |
+| `GROUP_PRESENCE_CONNECT`       |                 0.189 / 0.541 / 0.659 | 0.218 / 0.639 / 0.650 |
+| `AUTH_WS_TICKET_ISSUE`         |                 0.182 / 0.267 / 0.286 | 0.195 / 0.302 / 0.352 |
+
+The connect's completion wait p50 is 0.700 → 0.290 s and the setup window
+6.673 → 6.220 s. The presence connect is the floor of the group's serial exclusion
+chain and does not move; the ticket issue's tail rose slightly and is not
+attributed. These are queue ages behind the lane, not the ≤ 2 s commit→browser
+target, which stays open.
+
+The #675 comparison's hot throughput decline (−2.692 %) is closed by an
+identical-source A-A comparison (run 39386790366, main against the same production
+source plus one note file): pooled hot 24.221 → 24.388 mutations/s (+0.691 %),
+uncontended 101.475 → 101.818 (+0.339 %), shared 89.980 → 89.947 (−0.036 %), hot
+p99 4.000 → 3.940 s, hot wall 527.6 → 523.9 s, comparator pass. The two base
+positions of identical source differ by 4.98 % on hot (25.120 and 23.868
+mutations/s), so the decline sits inside identical-source drift. No production
+cause was located with timing off.
+
+Hosted acceptance on `54564ce4e` (uninstrumented, persistent hosted Postgres):
+15 (run 39404111587), 30 (run 39404711766) and 50 (run 39405452333) pass every
+recipe, binding, the 231/231 assertions, barrier, RTC outcome and native pair,
+with 0 failed/missing/stale/flaky agents and 0 reconnects. At 50 (player medians;
+p95/max where given):
+
+| Measure (50 agents)                     | Value                                                     |
+| --------------------------------------- | --------------------------------------------------------- |
+| Group created→layout accepted (primary) | 44.653 s (p95 44.656 s)                                   |
+| Connected→accepted (of it →appointed)   | 0.385 s (0.374 s); before 1.762–2.019 s                   |
+| Sign-in                                 | 6.951 s                                                   |
+| Connect p50 / p90 / max                 | 36.146 / 38.844 / 43.923 s                                |
+| SDK connect p50 / p95 / max             | 14.586 / 27.284 / 29.444 s                                |
+| Room join p50 / p95 / max               | 14.077 / 22.599 / 24.325 s                                |
+| RTC readiness wait p50 / p95 / max      | 8.303 / 15.668 / 17.263 s                                 |
+| Last participant (controller-50)        | sign-in 12.146, SDK 25.352, join 8.701, readiness 9.857 s |
+| Traffic-ready from run creation         | 67.302 s                                                  |
+| Last room join → all connects done      | 9.861 s                                                   |
+| Shot ACK p50 / p99                      | 0.118 / 0.182 s (294/294)                                 |
+
+Connected→accepted is 0.186 s at 15 and 0.218 s at 30 (step 2g, wiped database:
+0.753/1.011 s). The "before" range at 50 is the four #675 legs and main the same
+day (1.787 s), all on the persistent database.
+
+Frozen native-50 A–B–B–A, main against the PR (timing off, the #675 inputs and
+rule; player medians over 49 players):
+
+| Leg     | Run         | Source      | Primary (s) | Connected→accepted (s) | Last arrival SDK / join (s) |
+| ------- | ----------- | ----------- | ----------: | ---------------------: | --------------------------: |
+| A1 main | 39406411626 | `fadcd3e93` |      41.720 |                  1.787 |             12.765 / 18.913 |
+| B2 PR   | 39407190783 | `54564ce4e` |      42.301 |                  0.462 |              30.481 / 4.281 |
+| B3 PR   | 39407923422 | `158267a2c` |      41.661 |                  0.333 |              32.244 / 1.916 |
+| A4 main | 39409483420 | `fadcd3e93` |      48.960 |                  2.384 |             10.675 / 25.890 |
+
+`158267a2c` differs from `54564ce4e` in harness files only. The primary contrasts
+are **+0.581 s** (B2−A1, unfavourable) and **−7.299 s** (B3−A4); symmetric
+**−3.359 s** (−7.4 %), baseline drift **+7.240 s**, candidate drift **−0.640 s**.
+Connected→accepted favours the PR in both contrasts (−1.325/−2.051 s). Verdict:
+the end-of-formation benefit is verified in both contrasts; the whole-formation
+primary does **not** meet the benefit rule, because one contrast is unfavourable
+and the symmetric delta is smaller than the baseline drift. The PR moved the last
+arrival's wait from room join to SDK connect; a shared admission throughput limit,
+not lane order, sets the window. All legs pass every count with 0 faults.
+
+The state-write comparison on the head (run 39404146293) passes: uncontended
++6.706 % (p99 0.159 → 0.123 s), shared +1.538 %, hot −4.823 % (p99 3.336 →
+3.219 s) with the two identical-source base positions 15.4 % apart on hot. Hot
+statements rise +2.6 % (56,215 → 57,693 per run) with flat conflicts and attempts:
+not retries, consistent with one probe per absorbed wake. The medium-scale gate
+passes (2,842 passed, 0 failed), as do the coupling, changed-style, tests-typecheck,
+bundle (`rallar.ts` 266.8 of 267.0 KiB), `deno task check`, governance (567/567)
+and transaction-write gates. The ad-hoc local Postgres lane could not start the API
+under local ICE with the Metered keys of `apps/api-v1/.env`; Postgres coverage is
+the medium-scale gate, the CI Postgres gates and the hosted lane.
+
+The timing-on hosted 50 (run 39410485156, production source of `54564ce4e`;
+instrumented, primary 51.507 s, not acceptance) attributes the remaining window:
+
+- 79 % of the last five arrivals' SDK-connect (103.44 of 130.97 s) and room-join
+  (69.84 of 88.46 s) time is queue age; handlers are 4.2 % and 2.1 %. Queue age
+  p50/p95: ticket 3.745/14.250 s, WS connect 8.027/20.083 s, join
+  5.449/20.487 s, presence 4.731/18.135 s.
+- From 20.3 to 63.0 s, 26 back-to-back passes each claim the 8-context cap with
+  36–48 rows still waiting; occupancy 0.44; WS-connect rows waited 411.8 s inside
+  passes against 23.9 s between them.
+- Group commands form a strictly serial 24.1 s chain (2 of 329 same-pass pairs
+  overlap).
+- The WS-connect handler is 1.041 s p50; its co-member read (0.263 s) is now its
+  largest read (audience groups 0.503 → 0.213 s).
+- 4.9 statements in flight p50 against a pool of five; 13.2 ms per statement
+  against 1.3 ms before the window.
+- Upgrade → browser `connected` is 2.406 s for every agent; a login spends
+  6.254 s before its inbox row exists; the per-second maximum event-loop lag is
+  144.5 ms median.
 
 ## Hosted formation evidence
 
@@ -1007,42 +1203,48 @@ ignored `tmp/perf/`; no generated profiles are committed.
 
 ## Next two useful slices
 
-The dedicated RTC agent completed the earlier minimum-readiness/cleanup repair
-with TDD; the primary agent completed that RTC block and restoration. Independent
-review preserves its negative performance result. The later cache block above
-now meets its separate descriptive benefit rule. The maintainer's performance, scalability, QueueBox
-responsiveness and fault-tolerance requirements continue to govern both product
-and shared-test code. Use `performance-analysis`, `rallar-code-writing`,
-`rallar-realtime`, `rallar-testing`, `adaptive-plan-execution`, and
-`publishing-plan-progress`; add the existing Hetzner operations skill before any
-hosted measurement. Do not repeat a broad capture without a named missing boundary.
+The group-audience cache (#675) met its descriptive native-50 benefit rule. Formation
+tail 2 (#687) verified an end-of-formation benefit in both A–B–B–A contrasts
+(connected→accepted 0.385 s at 50 hosted), but its whole-formation primary does not
+meet the benefit rule. The timing-on hosted 50 above sets the next owners: queue age
+behind the AppInbox lane is 79 % of the last arrivals' SDK-connect and room-join
+time. The maintainer's performance, scalability, QueueBox responsiveness and
+fault-tolerance requirements continue to govern both product and shared-test code.
+Use `performance-analysis`, `rallar-code-writing`, `rallar-realtime`,
+`rallar-testing`, `adaptive-plan-execution`, and `publishing-plan-progress`; add the
+existing Hetzner operations skill before any hosted measurement.
 
-1. **Attribute the remaining connection and join tails on the cache source.**
-   Reuse the existing bounded owner timings to separate SDK configuration/ticket/
-   authorized-WS initialization from membership completion queue age and actual
-   handler read work. Start from the final participant, preserve immutable scope
-   and same-clock joins, and distinguish eligibility, retry due time, transaction
-   return and completion observation. Add a diagnostic only for a named missing
-   boundary, with TDD for off/error behavior. Do not infer SQL/pool/CPU causation
-   from page spans or repeat a broad unchanged capture.
-2. **Repair the demonstrated remaining owner and verify the whole path.** Apply
-   TDD to the strongest reproduced bottleneck using existing production owners.
-   Preserve authority, serial captured-policy reads, delivery expiry, cleanup and
-   fault recovery. Select required PostgreSQL regression gates and one frozen
-   full-formation comparison only after the executable change earns it. Keep the
-   physical commit→browser ≤2 s target distinct from barrier-tail timing. The
-   current hot throughput decline is unresolved: retain exact command/retry/phase
-   evidence and do not shorten retry policy or label it noise without a cause.
+1. **The per-pass context cap and the pass barrier.** 26 back-to-back passes claim
+   their 8-context cap with 36–48 rows waiting and claim nothing new until they
+   drain (occupancy 0.44). Run a hosted A/B of a higher per-pass cap or refill
+   across the pass boundary, K and the application pool size, measured with the
+   pass-boundary line, with its own state-write comparison and medium-scale gate.
+   In the same slice measure pool saturation (4.9 statements in flight p50 against
+   a pool of five, 13.2 ms per statement; record the hosted pool size) and the
+   group-command serial chain (a 24.1 s floor; 2 of 329 same-pass pairs overlap),
+   including whether the presence write compares-and-sets the group revision, and
+   the probe counts behind the hot benchmark's +2.6 % statements.
+2. **The remaining per-command and per-session costs**, each measured before it is
+   selected: a cache for the co-member client read (0.263 s, now the largest
+   WS-connect read); the initial outbound WS delivery after the upgrade (2.406 s
+   for every agent); the PBKDF2 admission bound on the hosted core count (a login
+   spends 6.254 s before its inbox row exists); one CPU/GC capture (event-loop lag
+   maximum 144.5 ms per second, median); a commit that requests a head read of the
+   ALM inbound RETRY page so a re-dued offer lands in the committed batch; and the
+   hosted plumbing for turning routine browser diagnostics off.
 
-The cache slice satisfies its measured native-50 descriptive benefit rule;
-the broader ALM performance/scalability outcome remains active. Production and
-shared-test both remain in scope, and QueueBox responsiveness and intermittent
-fault recovery are acceptance qualities. Earlier parallel-read and RTC-only
-experiments failed their full-formation benefit rule; the parallel code was
-reverted, while the RTC authority/cleanup correction remains without a speedup
-claim. Current state-write passes despite −2.692% hot throughput; earlier
-−2.720%, +2.405% and failed −5.103% comparisons remain source-specific evidence.
-Raw collection/scanning scalability and control retention remain
+Harness follow-up: a documented local Postgres lane profile (the ad-hoc profile
+cannot start the API under local ICE with the Metered keys in `apps/api-v1/.env`).
+The physical commit→browser ≤ 2 s target stays open; connected→accepted is a
+timing-off barrier span and does not prove it. Preserve authority, serial
+captured-policy reads, delivery expiry, cleanup and fault recovery.
+
+Earlier parallel-read and RTC-only experiments failed their full-formation benefit
+rule; the parallel code was reverted, while the RTC authority/cleanup correction
+remains without a speedup claim. The #675 hot throughput decline (−2.692 %) is
+closed as identical-source drift; earlier −2.720 %, +2.405 % and failed −5.103 %
+comparisons remain source-specific evidence. Raw collection/scanning scalability
+and control retention remain
 [#686](https://github.com/intact-software-systems/ar-eye-hunter/issues/686) and
 [#682](https://github.com/intact-software-systems/ar-eye-hunter/issues/682).
 No new issue was created; dependent formation and throughput investigation stays

@@ -1,11 +1,11 @@
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
-import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { GroupStateRepositoryReads } from '../../group-state/persistence/group-state-repository-reads.ts';
 import { readGroupVisibility } from '../../group-state/policy/group-snapshot-visibility-policy.ts';
 import type { GroupStateCurrentSnapshotCache } from '../../group-state/snapshot/group-state-current-snapshot-cache.ts';
 import { StateSnapshotReadConflictError } from '../../state-events/state-snapshot-read.ts';
+import type { PrincipalAudienceSessions } from '../../state-sync/state-sync-principal-audience.ts';
 import { timeClientStateReadPhase, type ClientStateMutationTiming } from '../client-state-service-timing.ts';
 import { ClientStateRepository } from '../persistence/client-state-repository.ts';
 import { ClientMutationRejectedError } from '../validation/client-mutation-rejection.ts';
@@ -30,7 +30,7 @@ interface ClientMutationTargetRefs {
 
 interface ClientMutationAudienceRead {
     readonly audienceGroupSnapshots: readonly GroupSnapshot[];
-    readonly audienceClientSnapshots: readonly ClientSnapshot[];
+    readonly audienceCoMemberSessions: readonly PrincipalAudienceSessions[];
 }
 
 export interface ReadClientMutationInput {
@@ -40,7 +40,7 @@ export interface ReadClientMutationInput {
     readonly command: ClientMutationCommand;
     readonly audienceObservedAtEpochMs: number;
     readonly timing?: ClientStateMutationTiming;
-    readonly currentGroupSnapshots?: Pick<GroupStateCurrentSnapshotCache, 'readSnapshot'>;
+    readonly currentGroupSnapshots?: Pick<GroupStateCurrentSnapshotCache, 'readSnapshots'>;
 }
 
 type ClientMutationStateRead = Pick<
@@ -50,7 +50,7 @@ type ClientMutationStateRead = Pick<
 
 const EMPTY_AUDIENCE_READ: ClientMutationAudienceRead = {
     audienceGroupSnapshots: [],
-    audienceClientSnapshots: []
+    audienceCoMemberSessions: []
 };
 
 export async function readClientMutation(
@@ -141,14 +141,14 @@ async function readPrincipalAudience(
             }
         }
     }
-    const audienceClientSnapshots = await timeClientStateReadPhase(
+    const audienceCoMemberSessions = await timeClientStateReadPhase(
         { timing, command, operation: 'mutation.read-audience-clients' },
         () =>
-            repository.readSnapshotsForPrincipals(
+            repository.readAudienceSessionsForPrincipals(
                 [...coGroupPrincipalIds].map((principalId) => ({ ...scope, principalId }))
             )
     );
-    return { audienceGroupSnapshots, audienceClientSnapshots };
+    return { audienceGroupSnapshots, audienceCoMemberSessions };
 }
 
 function toClientMutationTargetRefs(command: ClientMutationCommand): ClientMutationTargetRefs {

@@ -1,13 +1,27 @@
-import type { ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-types.ts';
+import type { ClientPrincipalRef, ClientSession } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { readGroupVisibility } from '../group-state/policy/group-snapshot-visibility-policy.ts';
 import { isClientSnapshotSessionLive } from '../presence/snapshot-presence.ts';
 import { sameScope } from './state-sync-payload.ts';
 
+/** A principal and its active sessions: all of a principal the audience reads, never its instances. */
+export interface PrincipalAudienceSessions {
+    readonly principalRef: ClientPrincipalRef;
+    readonly activeSessions: readonly ClientSession[];
+}
+
+export function toPrincipalAudienceSessions(
+    principalRef: ClientPrincipalRef,
+    activeSessions: readonly ClientSession[]
+): PrincipalAudienceSessions {
+    const { applicationId, workspaceId, principalId } = principalRef;
+    return { principalRef: { applicationId, workspaceId, principalId }, activeSessions };
+}
+
 export interface PrincipalStateSyncAudienceInput {
     readonly principalRef: ClientPrincipalRef;
-    readonly ownSnapshot: ClientSnapshot;
-    readonly clientSnapshots: readonly ClientSnapshot[];
+    readonly ownSessions: PrincipalAudienceSessions;
+    readonly coMemberSessions: readonly PrincipalAudienceSessions[];
     readonly groupSnapshots: readonly GroupSnapshot[];
     readonly nowEpochMs: number;
 }
@@ -16,7 +30,7 @@ export interface PrincipalStateSyncAudienceInput {
 export function computePrincipalStateSyncAudience(
     input: PrincipalStateSyncAudienceInput
 ): readonly string[] {
-    const { principalRef, ownSnapshot, clientSnapshots, groupSnapshots, nowEpochMs } = input;
+    const { principalRef, ownSessions, coMemberSessions, groupSnapshots, nowEpochMs } = input;
     const principalIds = new Set<string>([principalRef.principalId]);
     for (const groupSnapshot of groupSnapshots) {
         if (
@@ -42,15 +56,15 @@ export function computePrincipalStateSyncAudience(
         }
     }
     const audience = new Set<string>();
-    for (const snapshot of [ownSnapshot, ...clientSnapshots]) {
+    for (const sessions of [ownSessions, ...coMemberSessions]) {
         if (
-            !sameScope(snapshot.principal, principalRef) ||
-            !principalIds.has(snapshot.principal.principalId) ||
-            (snapshot !== ownSnapshot && snapshot.principal.principalId === principalRef.principalId)
+            !sameScope(sessions.principalRef, principalRef) ||
+            !principalIds.has(sessions.principalRef.principalId) ||
+            (sessions !== ownSessions && sessions.principalRef.principalId === principalRef.principalId)
         ) {
             continue;
         }
-        for (const session of snapshot.activeSessions) {
+        for (const session of sessions.activeSessions) {
             if (isClientSnapshotSessionLive(session, nowEpochMs)) {
                 audience.add(session.sessionId);
             }

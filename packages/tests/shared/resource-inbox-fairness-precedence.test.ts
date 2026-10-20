@@ -20,7 +20,7 @@ describe('resource inbox fairness precedence', () => {
             .withMaxNumToReserve(() => 1)
             .withInboxTypesToDequeue(() => new Set(['APP_INBOX']))
             .withReturnDequeuedEntries(true)
-            .onRoundAdmissionDo(() => available)
+            .onReservationAdmissionDo(() => available)
             .onNewEntriesReserveDo(async () => new Map())
             .onRetryEntriesReserveDo(reserveEligibleRetry)
             .onFairnessEntriesReserveDo(reserveEligibleRetry)

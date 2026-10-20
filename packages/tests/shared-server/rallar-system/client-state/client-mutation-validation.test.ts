@@ -204,7 +204,7 @@ describe('client mutation computation determinism', () => {
             receiptEvent: null,
             audienceObservedAtEpochMs: command.facts.nowEpochMs,
             audienceGroupSnapshots: [],
-            audienceClientSnapshots: []
+            audienceCoMemberSessions: []
         });
         const first = computeClientMutation({ command, read });
         const second = computeClientMutation({ command, read });

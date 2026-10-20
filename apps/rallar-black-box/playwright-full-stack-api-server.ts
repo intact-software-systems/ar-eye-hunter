@@ -79,6 +79,8 @@ const DEFAULT_SPA_BASE_URL = 'http://localhost:5176';
 const CO_LOCATED_AGENT_CEILING = 50;
 const AUTH_REQUESTS_PER_CO_LOCATED_AGENT_PER_WINDOW = 4;
 const CO_LOCATED_AUTH_IP_RATE_LIMIT = CO_LOCATED_AGENT_CEILING * AUTH_REQUESTS_PER_CO_LOCATED_AGENT_PER_WINDOW;
+const REQUIRE_LAUNCHING_DATABASE_URL =
+    ': "${DATABASE_URL:?must be set in the launching environment; the local Postgres API loads no env files}"';
 
 export function readFullStackApiServerMode(
     env: Readonly<NodeJS.ProcessEnv> = process.env
@@ -297,11 +299,11 @@ function createMemoryApiCommand({ apiBaseUrl, spaBaseUrl, apiInvocation, iceRequ
 }
 
 function createPostgresApiCommand(apiBaseUrl: string, spaBaseUrl: string, apiInvocation: string): string {
-    return `cd ../.. && ${createFullStackApiProfileEnvBlock()} RALLAR_SQL_BACKEND=postgres RALLAR_PGLITE_SCHEMA_INIT=disabled RALLAR_DB_PUBSUB=postgres CORS_ORIGINS=${
+    return `cd ../.. && ${REQUIRE_LAUNCHING_DATABASE_URL} && ${createFullStackApiProfileEnvBlock()} RALLAR_SQL_BACKEND=postgres RALLAR_PGLITE_SCHEMA_INIT=disabled RALLAR_DB_PUBSUB=postgres CORS_ORIGINS=${
         createFullStackSpaCorsOrigins(spaBaseUrl)
     } PORT=${portFromBaseUrl(apiBaseUrl)} ${
         createFullStackApiUrlEnvBlock(apiBaseUrl)
-    } ${apiInvocation} run --env-file=apps/api-v1/.env.local --env-file=apps/api-v1/.env --env-file=.env --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
+    } ${apiInvocation} run --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
 }
 
 function toFullStackApiInvocation(

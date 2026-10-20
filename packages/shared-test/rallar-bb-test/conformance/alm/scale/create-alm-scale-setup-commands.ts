@@ -177,33 +177,25 @@ function createConnectCommand(
     };
 }
 
+/**
+ * The page's own room snapshot, kept current over its WS state stream, must hold every cohort session; each change
+ * to it is forwarded as a formation change carrying its active session count, so the wait reads nothing from the API.
+ */
 function createAudienceWait(input: AlmScaleRecipeInput, prefix: string): RallarBlackBoxTestCommand {
-    const path = `/api/state/apps/${encodeURIComponent(input.group.applicationId)}` +
-        `/workspaces/${encodeURIComponent(input.group.workspaceId)}/groups/${encodeURIComponent(input.group.groupId)}`;
     return {
-        kind: 'loop',
+        kind: 'wait',
         commandId: `${prefix}-audience-ready`,
-        count: Math.ceil(input.readyTimeoutMs / 200),
-        intervalMs: 200,
         timeoutMs: input.readyTimeoutMs,
-        until: 'first-success',
-        commands: [
-            {
-                kind: 'http.request',
-                commandId: `${prefix}-audience`,
-                request: { method: 'GET', path },
-                response: { body: 'json', acceptedStatusCodes: [200] },
-                timeoutMs: 5_000
-            },
-            {
-                kind: 'assert',
-                commandId: `${prefix}-assert-audience`,
-                operator: 'equals',
-                expected: input.participantCount,
-                source:
-                    `resultCache.${prefix}-audience-ready:i{loop.iteration}:c1:${prefix}-audience.value.body.activeSessions.length`
+        match: {
+            kind: 'diagnostic',
+            topic: 'rallar.browser.formation.changed',
+            payloadFields: {
+                'data.roomRef.applicationId': input.group.applicationId,
+                'data.roomRef.workspaceId': input.group.workspaceId,
+                'data.roomRef.groupId': input.group.groupId,
+                'data.activeSessionCount': input.participantCount
             }
-        ]
+        }
     };
 }
 

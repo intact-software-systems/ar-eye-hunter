@@ -144,12 +144,12 @@ async function selectRuntimeStateBatchRows(
       from runtime_state_store suffix_entry
       where selector.selector_kind = 'prefix-suffix'
         and suffix_entry.store_namespace = selector.store_namespace
+        and reverse(suffix_entry.store_key) collate "C" >= selector.reversed_suffix
+        and reverse(suffix_entry.store_key) collate "C" < selector.reversed_suffix_end
         and suffix_entry.store_key collate "C" >= selector.key_prefix
         and suffix_entry.store_key collate "C" < selector.prefix_end
         and char_length(suffix_entry.store_key)
           >= char_length(selector.key_prefix) + char_length(selector.key_suffix)
-        and right(suffix_entry.store_key, char_length(selector.key_suffix)) collate "C"
-          = selector.key_suffix
 
       union all
 
@@ -187,22 +187,26 @@ function toSqlSelector(
         case 'prefix-suffix':
             return {
                 ...selector,
-                ...NO_SQL_SELECTOR_BOUNDS,
+                ...toReversedSuffixBounds(selector.keySuffix),
                 key: null,
                 prefixEnd: toExclusivePrefixEnd(selector.keyPrefix)
             };
-        case 'suffix': {
-            const reversedSuffix = toReversedKey(selector.keySuffix);
+        case 'suffix':
             return {
                 ...selector,
+                ...toReversedSuffixBounds(selector.keySuffix),
                 key: null,
                 keyPrefix: null,
-                prefixEnd: null,
-                reversedSuffix,
-                reversedSuffixEnd: toExclusivePrefixEnd(reversedSuffix)
+                prefixEnd: null
             };
-        }
     }
+}
+
+function toReversedSuffixBounds(
+    keySuffix: string
+): Pick<PSqlRuntimeStateReadBatchSelector, 'reversedSuffix' | 'reversedSuffixEnd'> {
+    const reversedSuffix = toReversedKey(keySuffix);
+    return { reversedSuffix, reversedSuffixEnd: toExclusivePrefixEnd(reversedSuffix) };
 }
 
 /** Code-point order, as Postgres `reverse()` reverses characters, never UTF-16 units. */

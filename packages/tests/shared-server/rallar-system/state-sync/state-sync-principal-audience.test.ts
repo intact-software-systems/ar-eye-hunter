@@ -5,7 +5,10 @@ import {
 } from 'vitest';
 
 import { computeClientStateSyncEntries } from '@shared-server/rallar-system/state-sync/state-sync-entry-computation.ts';
-import { computePrincipalStateSyncAudience } from '@shared-server/rallar-system/state-sync/state-sync-principal-audience.ts';
+import {
+    computePrincipalStateSyncAudience,
+    toPrincipalAudienceSessions
+} from '@shared-server/rallar-system/state-sync/state-sync-principal-audience.ts';
 import { resolveStateSyncRecipients } from '@shared-server/rallar-system/state-sync/state-sync-routing.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -59,8 +62,8 @@ describe('principal state-sync audience', () => {
         };
         const audience = computePrincipalStateSyncAudience({
             principalRef: own.principal,
-            ownSnapshot: own,
-            clientSnapshots: [bob, carol, expiredDave, otherScope],
+            ownSessions: toPrincipalAudienceSessions(own.principal, own.activeSessions),
+            coMemberSessions: [bob, carol, expiredDave, otherScope].map((snapshot) => toPrincipalAudienceSessions(snapshot.principal, snapshot.activeSessions)),
             groupSnapshots: [group, wrongScopeGroup],
             nowEpochMs: NOW_EPOCH_MS
         });

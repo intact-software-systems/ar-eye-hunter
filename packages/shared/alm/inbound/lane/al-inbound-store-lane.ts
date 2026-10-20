@@ -1,6 +1,8 @@
+import { Temporal } from '@js-temporal/polyfill';
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import { EntityStatus, type ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
 import { Either } from '../../../resilience/Either.ts';
 import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import { AL_VOLATILE_STORE_EVICTION_INTERVAL_MS } from '../../ALStoreRetention.ts';
@@ -27,6 +29,7 @@ import {
 import { AL_WORK_UNDESCRIBED_COMMIT } from '../../work/al-work-readiness-memory.ts';
 import type { ALInboundPlanner } from '../al-inbound-admission-store.ts';
 import { ALInboundAdmittedDelivery } from '../al-inbound-admitted-delivery.ts';
+import { toALInboundLocalDeliveryEffectId } from '../al-inbound-effect-intent.ts';
 import { ALInboundMessageAdmission } from '../al-inbound-message-admission.ts';
 import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '../al-inbound-message-runtime.ts';
 import type { ALInboundPendingAdmission } from '../al-inbound-pending-admission.ts';
@@ -36,6 +39,7 @@ import {
     assertALInboundWorkCarrier,
     decodeALInboundWorkEntry,
     resolveALInboundWorkDueAtMs,
+    toALInboundWorkKey,
     toALInboundWorkType,
     type ALPersistedInboundEffect
 } from '../al-inbound-work-entry.ts';
@@ -217,6 +221,44 @@ export class ALInboundStoreLane {
                 this.announceRetention(await this.admission.retainIncomingMessage(msg, source, planIncomingMessage)),
             () => ({ kind: 'not-admitted', reason: 'storage-unavailable' })
         );
+    }
+
+    /**
+     * Brings each message's local delivery that waits out a retry delay due now. The row keeps its status,
+     * attempts and deadline, so the retry schedule and its exhaustion are unchanged; a row claimed, settled
+     * or brought due meanwhile is left as it is. Answers the messages whose row it brought due.
+     */
+    async writeRetainedDeliveriesDueNow(msgs: readonly ALMessage[]): Promise<readonly ALMessage[]> {
+        if (this.disposed) {
+            return [];
+        }
+        const broughtDue = await this.readiness.runStoreOperation(
+            () => this.writeRetainedDeliveriesDueNowInStore(msgs),
+            (): readonly ALMessage[] => []
+        );
+        if (broughtDue.length > 0) {
+            this.work.committed(AL_WORK_UNDESCRIBED_COMMIT);
+        }
+        return broughtDue;
+    }
+
+    private async writeRetainedDeliveriesDueNowInStore(msgs: readonly ALMessage[]): Promise<readonly ALMessage[]> {
+        const { admissionStore, workQueue } = this.input.stores;
+        const workType = toALInboundWorkType(admissionStore.namespace, this.input.runtime.carrier);
+        const nowMs = this.readNowMs();
+        const broughtDue: ALMessage[] = [];
+        for (const msg of msgs) {
+            const observed = await workQueue.getItem(
+                toALInboundWorkKey(admissionStore.namespace, toALInboundLocalDeliveryEffectId(msg))
+            );
+            if (observed?.typeId !== workType || !isALInboundRetryDueAfter(observed, nowMs)) {
+                continue;
+            }
+            if (await workQueue.replaceIfObserved(observed, toALInboundRetryDueAt(observed, nowMs)) !== null) {
+                broughtDue.push(msg);
+            }
+        }
+        return broughtDue;
     }
 
     /**
@@ -618,6 +660,17 @@ function createALInboundLaneControlAdmission(
         newControlId: dependencies.effectPreparation.newControlId,
         retention: dependencies.admissionStore.retention
     });
+}
+
+function isALInboundRetryDueAfter(entry: ResourceEntry, nowMs: number): boolean {
+    return entry.status === EntityStatus.RETRY && resolveALInboundWorkDueAtMs(entry) > nowMs;
+}
+
+function toALInboundRetryDueAt(entry: ResourceEntry, nowMs: number): ResourceEntry {
+    return {
+        ...entry,
+        dequeueAudit: { ...entry.dequeueAudit, nextTs: Temporal.Instant.fromEpochMilliseconds(nowMs) }
+    };
 }
 
 function toOldestFirstALInboundDeferredEffects(

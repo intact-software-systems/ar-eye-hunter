@@ -847,7 +847,12 @@ function createConnectionService(connectedPeerIds: readonly string[], readyState
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         dataChannelName: 'test',
         rtcSignalingTopicId: 'rtc-signaling'
-    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId, nowEpochMs: () => Date.now() });
+    }, {
+        faultPort: createPassThroughTransportFaultPort(),
+        createOfferId: new DeterministicRtcOfferIds().createOfferId,
+        nowEpochMs: () => Date.now(),
+        writeRetainedSignalsDueNow: async () => []
+    });
     vi.spyOn(connectionService, 'readyPeerIdsForLane').mockReturnValue(connectedPeerIds);
     vi.spyOn(connectionService, 'readPeer').mockImplementation((peerId) => peers.get(peerId));
     return Object.assign(connectionService, { sendByPeerId });

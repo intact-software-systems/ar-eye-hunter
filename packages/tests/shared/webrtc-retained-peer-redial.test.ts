@@ -97,7 +97,7 @@ async function createManagedSide(sessionId: string, remoteSessionId: string): Pr
         groupCache: new LatestRepository<string, GroupSnapshot>(),
         clientCache: new LatestRepository<string, ClientInfo>(),
         acceptedOverlayCache
-    });
+    }, { onOverlayAdopted: async () => {} });
     managers.push(manager);
     manager.startReconcileWakes();
     const snapshot = createGroupSnapshot({

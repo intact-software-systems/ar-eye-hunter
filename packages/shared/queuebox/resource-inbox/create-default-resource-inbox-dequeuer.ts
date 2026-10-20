@@ -2,8 +2,8 @@ import { Temporal } from '@js-temporal/polyfill';
 
 import { RateLimiter } from '../../resilience/Resilience.ts';
 import { toErrorSummaryLine } from '../../resilience/to-error.ts';
-import { toDequeuedKeyText } from '../dequeue/dequeue-batch.ts';
 import { DequeueController, Reservator } from '../dequeue/dequeue-controller.ts';
+import { toDequeuedKeyText } from '../dequeue/dequeue-lane-flight.ts';
 import {
     toSaturatedResourceInboxFairnessScanBudget,
     type DequeueResourceEntryRepository,
@@ -26,7 +26,6 @@ import {
     type ResourceInboxRetryPolicy
 } from '../ResourceInboxRetryPolicy.ts';
 import { isNotReadyException, NotReadyException } from './not-ready-exception.ts';
-import { releaseResourceInboxRound } from './release-resource-inbox-round.ts';
 import {
     computeResourceInboxAttempt,
     recordResourceInboxAttemptRelease,
@@ -148,8 +147,8 @@ export interface DequeueResourceEntryOptions {
     /** Recognizes an expected optimistic conflict: it retries the entry without counting as an operational failure. */
     readonly isRetryableConflict?: (error: Error) => boolean;
     /**
-     * Entries of one round that would only conflict on one shared row: they compute one after another instead of
-     * together. Absent, every entry of a round computes concurrently up to the lane's budget.
+     * Claimed entries that would only conflict on one shared row: they compute one after another instead of together.
+     * Absent, every claimed entry computes concurrently up to the lane's budget.
      */
     readonly toComputeExclusionKey?: (key: Resource.Key, attempt: ResourceInboxAttempt) => string | undefined;
     readonly jitterUnit?: () => number;
@@ -242,8 +241,8 @@ function createResourceInboxFinalizationController<V>(
 ): DequeueController<Resource.Key, ResourceInboxAttempt, V> {
     return DequeueController.create<Resource.Key, ResourceInboxAttempt, V>()
         .withInboxTypesToDequeue(input.typesToDequeue)
-        // A round that tripped the breaker releases what it claimed and starts no other round of the pass.
-        .onRoundAdmissionDo(() => !dependencies.resilience.isNotAllowedThroughToDequeue())
+        // A released row that tripped the breaker ends the lane's claims; the rows it already claimed still finish.
+        .onReservationAdmissionDo(() => !dependencies.resilience.isNotAllowedThroughToDequeue())
         .withComputeExclusion(dependencies.options.toComputeExclusionKey)
         .withMaxNumToDequeue(input.maxNumToDequeue)
         .withLaneBudgets(input.readLaneBudgets)
@@ -399,13 +398,12 @@ async function releaseResourceInboxSuccesses<V>(
         !isResourceInboxHandlerFinalized(success.computedValue) &&
         !(success.computedValue instanceof ResourceInboxHandlerRetryableConflict)
     );
-    const { released, lost } = await releaseResourceInboxRound(
-        dependencies.repository,
-        reserved.map((success) => ({
+    const released = reserved.length === 0
+        ? new Map<Resource.Key, ResourceEntry>()
+        : await dependencies.repository.releaseEntries(reserved.map((success) => ({
             entry: success.value.entry,
             disposition: { status: EntityStatus.COMPLETED, delayMs: null }
-        }))
-    );
+        })));
     const handlerFinalized = [...successes.values()].flatMap((success) =>
         isResourceInboxHandlerFinalized(success.computedValue)
             ? [toHandlerFinalizedResourceInboxRelease(success, success.computedValue)]
@@ -429,9 +427,6 @@ async function releaseResourceInboxSuccesses<V>(
             value: { ...original.value, entry },
             computedValue: original.computedValue
         });
-    }
-    if (lost !== undefined) {
-        throw lost;
     }
     return result;
 }

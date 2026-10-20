@@ -74,6 +74,13 @@ export function createSpaBrowserRallarRuntime(): RallarBlackBoxBrowserRallarRunt
     };
 }
 
+/** A failed import is reported by the first command, which awaits the same import. */
+export function startSpaBrowserRallarRuntimeImport(): void {
+    if (!readBrowserWindow().__blackBoxRallar) {
+        void readBrowserRallarRuntimeImport().catch(() => undefined);
+    }
+}
+
 export function installSpaBrowserRallarEventBridge(
     runtime: Pick<RallarBlackBoxBrowserTestRuntime, 'receiveRallarBrowserEvent'>
 ): () => void {
@@ -139,16 +146,20 @@ function createSpaBrowserRallarFormationRuntime(): RallarBlackBoxBrowserRallarFo
 async function readBrowserRallarRuntime(): Promise<BlackBoxRallarRuntime> {
     const targetWindow = readBrowserWindow();
     if (!targetWindow.__blackBoxRallar) {
-        runtimeImportPromise ??= import('@shared-test/black-box-runner/browser/rallar-browser-runtime.ts').then(
-            () => undefined
-        );
-        await runtimeImportPromise;
+        await readBrowserRallarRuntimeImport();
     }
     const runtime = targetWindow.__blackBoxRallar;
     if (!runtime) {
         throw new Error('browser-rallar provider did not expose window.__blackBoxRallar.');
     }
     return runtime;
+}
+
+function readBrowserRallarRuntimeImport(): Promise<void> {
+    runtimeImportPromise ??= import('@shared-test/black-box-runner/browser/rallar-browser-runtime.ts').then(
+        () => undefined
+    );
+    return runtimeImportPromise;
 }
 
 function readBrowserWindow(): BlackBoxRallarRuntimeInstallationTarget {
