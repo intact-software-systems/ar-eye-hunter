@@ -14,6 +14,7 @@ const REF: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', grou
 const SESSION_EXPIRES_AT_EPOCH_MS = Date.parse('2999-01-01T00:00:00.000Z');
 
 interface SeededCache {
+    readonly runtime: AudienceReadRuntime;
     readonly repository: GroupStateRepository;
     readonly cache: GroupStateCurrentSnapshotCache;
     readonly fullReads: () => number;
@@ -26,6 +27,13 @@ interface SeededCache {
 
 class AudienceReadRuntime extends PSqlRuntimeStateRepository {
     valueRows = 0;
+    versionReads = 0;
+    versionedValueReads = 0;
+
+    override async readRuntimeStateBatchVersion(selectors: readonly RuntimeStateReadBatchSelector[]) {
+        this.versionReads += 1;
+        return await super.readRuntimeStateBatchVersion(selectors);
+    }
 
     override async readRuntimeStateBatch(selectors: readonly RuntimeStateReadBatchSelector[]) {
         const selections = await super.readRuntimeStateBatch(selectors);
@@ -34,6 +42,7 @@ class AudienceReadRuntime extends PSqlRuntimeStateRepository {
     }
 
     override async readRuntimeStateBatchWithVersion(selectors: readonly RuntimeStateReadBatchSelector[]) {
+        this.versionedValueReads += 1;
         const batch = await super.readRuntimeStateBatchWithVersion(selectors);
         this.valueRows += batch.selections.reduce((count, selection) => count + selection.entries.length, 0);
         return batch;
@@ -93,11 +102,12 @@ Deno.test('a group changed during its cached audience read falls back to current
     const seeded = await seedCache();
     try {
         const snapshots = await seeded.repository.listSnapshotsForPrincipal(REF, 'alice', {
-            readSnapshot: async (ref) => {
-                const before = await seeded.cache.readSnapshot(ref);
-                assert.ok(before);
+            readSnapshots: async (refs) => {
+                const before = await seeded.cache.readSnapshots(refs);
+                const group = before[0]?.group;
+                assert.ok(group);
                 await seeded.repository.putMember(createMember('bob', 'member'));
-                await seeded.repository.putGroup({ ...before.group, activeMemberCount: 2 });
+                await seeded.repository.putGroup({ ...group, activeMemberCount: 2 });
                 return before;
             }
         });
@@ -113,9 +123,9 @@ Deno.test('revocation during a cached audience read is excluded by the second me
     const seeded = await seedCache();
     try {
         const snapshots = await seeded.repository.listSnapshotsForPrincipal(REF, 'alice', {
-            readSnapshot: async (ref) => {
-                const before = await seeded.cache.readSnapshot(ref);
-                await seeded.repository.removeMember({ ...ref, principalId: 'alice' });
+            readSnapshots: async (refs) => {
+                const before = await seeded.cache.readSnapshots(refs);
+                await seeded.repository.removeMember({ ...REF, principalId: 'alice' });
                 return before;
             }
         });
@@ -133,9 +143,7 @@ Deno.test('a failed current group read preserves the failure and allows a later 
         const failure = new Error('version reader unavailable');
         await assert.rejects(
             seeded.repository.listSnapshotsForPrincipal(REF, 'alice', {
-                readSnapshot: async () => {
-                    throw failure;
-                }
+                readSnapshots: () => Promise.reject(failure)
             }),
             (error) => error === failure
         );
@@ -245,7 +253,48 @@ Deno.test('a cached snapshot is read again, without the session, once a presence
     }
 });
 
-async function seedCache(): Promise<SeededCache> {
+Deno.test('a principal in 21 unchanged kept groups costs one version statement for all of them, and a changed group one probe plus one value read', async () => {
+    const seeded = await seedCache(32);
+    try {
+        const refs = Array.from({ length: 20 }, (_, index) => ({ ...REF, groupId: `kept-room-${index}` }));
+        for (const ref of refs) {
+            await seeded.repository.putGroup(groupFixture(ref, `Kept ${ref.groupId}`));
+            await seeded.repository.putMember({ ...createMember('alice', 'owner'), ...ref });
+        }
+        const warm = await seeded.repository.listSnapshotsForPrincipal(REF, 'alice', seeded.cache);
+        assert.equal(warm.length, 21);
+        seeded.runtime.versionReads = 0;
+        seeded.runtime.versionedValueReads = 0;
+        seeded.takeStatements();
+
+        const kept = await seeded.repository.listSnapshotsForPrincipal(REF, 'alice', seeded.cache);
+
+        assert.deepEqual(kept, warm);
+        assert.equal(seeded.runtime.versionReads, 1, 'one version statement probes every kept group');
+        assert.equal(seeded.runtime.versionedValueReads, 0);
+        // Two membership selections before and two after, around the one probe.
+        assert.equal(seeded.takeStatements(), 5);
+
+        const changed = refs[7]!;
+        const group = await seeded.repository.findGroup(changed);
+        assert.ok(group);
+        await seeded.repository.putGroup({ ...group, displayName: 'renamed' });
+        seeded.runtime.versionReads = 0;
+        seeded.takeStatements();
+
+        const afterChange = await seeded.repository.listSnapshotsForPrincipal(REF, 'alice', seeded.cache);
+
+        assert.equal(afterChange.find((snapshot) => snapshot.group.groupId === changed.groupId)?.group.displayName, 'renamed');
+        assert.equal(seeded.runtime.versionReads, 1);
+        assert.equal(seeded.runtime.versionedValueReads, 1, 'only the changed group is read again');
+        assert.equal(seeded.takeStatements(), 6);
+    }
+    finally {
+        await seeded.close();
+    }
+});
+
+async function seedCache(maxEntries = 8): Promise<SeededCache> {
     const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
     const runtime = new AudienceReadRuntime(lifecycle.database);
     const repository = new GroupStateRepository(runtime, new InMemoryGroupStateEventStore());
@@ -274,9 +323,10 @@ async function seedCache(): Promise<SeededCache> {
         },
         versionReader: runtime,
         nowEpochMs: () => nowEpochMs,
-        maxEntries: 8
+        maxEntries
     });
     return {
+        runtime,
         repository,
         cache,
         fullReads: () => fullReads,

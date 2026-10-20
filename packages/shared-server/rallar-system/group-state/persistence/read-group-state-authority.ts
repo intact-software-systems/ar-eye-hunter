@@ -85,12 +85,12 @@ async function toGroupStateAuthorityBatchRead(
     };
 }
 
-/** The version of exactly the rows `readGroupStateAuthorityBatch` reads, without their values (D289). */
-export async function readGroupStateAuthorityVersion(
+/** The version of exactly the rows `readGroupStateAuthorityBatch` reads for each group, without their values, in one read (D289). */
+export async function readGroupStateAuthorityVersions(
     reader: RuntimeStateReadBatchVersionReader,
-    ref: GroupRef
-): Promise<RuntimeStateReadBatchVersion | undefined> {
-    return await reader.readRuntimeStateBatchVersion(toGroupStateAuthoritySelectors(ref));
+    refs: readonly GroupRef[]
+): Promise<readonly (RuntimeStateReadBatchVersion['version'] | undefined)[]> {
+    return await reader.readRuntimeStateBatchVersions(refs.map(toGroupStateAuthoritySelectors));
 }
 
 /** The authority selectors and the group's presence admissions, which the presence summary also reads. */

@@ -95,7 +95,7 @@ export type ClientStateServiceDependencies = Readonly<{
     timing?: import('../observability/timing.ts').RallarTimingSink;
     nowMs?: () => number;
     /** A backend-owned row-version-probed reader; absence uses batched durable group reads. */
-    currentGroupSnapshots?: Pick<GroupStateCurrentSnapshotCache, 'readSnapshot'>;
+    currentGroupSnapshots?: Pick<GroupStateCurrentSnapshotCache, 'readSnapshots'>;
 }>;
 
 export function requiresClientWrite(

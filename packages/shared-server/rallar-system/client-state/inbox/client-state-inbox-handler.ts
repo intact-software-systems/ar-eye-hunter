@@ -7,7 +7,6 @@ import type { AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import {
     readAuthWsTicketConsumption,
     writeAuthWsTicketConsumption,
-    type AuthWsTicketConsumption,
     type AuthWsTicketConsumptionClaim,
     type AuthWsTicketConsumptionReader
 } from '../../auth/ws-ticket/auth-ws-ticket-consumption.ts';
@@ -40,6 +39,7 @@ import { toDisconnectClientSessionMutationInput } from '../mutation/command-inpu
 import { toExpireClientSessionMutationInput } from '../mutation/command-input/to-expire-client-session-mutation-input.ts';
 import { ClientMutationIdempotencyConflictError } from '../mutation/result-validation/assert-client-mutation.ts';
 import { validateClientMutationAuthorityPolicy } from '../mutation/result-validation/validate-client-mutation-authority-policy.ts';
+import { writeClientMutationRecords, writeClientRuntimeBatch } from '../mutation/write-client-mutation.ts';
 import { writeClientSnapshotProvenance } from '../persistence/client-snapshot-provenance.ts';
 import type { ClientMutationValidationIssue } from '../validation/client-mutation-rejection.ts';
 import type {
@@ -81,8 +81,6 @@ interface MissingSessionDisconnectAttemptInput extends ComputeMissingSessionDisc
 interface WriteClientMutationOperationInput {
     readonly context: AppInboxExecutionMetadata;
     readonly computed: Extract<ClientMutationOperationComputed, { outcome: 'completed'; }>;
-    /** An authorised connect's first guard; every other client mutation has none. */
-    readonly ticketConsumption: AuthWsTicketConsumption | null;
 }
 
 interface WriteExpiredSessionsOperationInput {
@@ -128,7 +126,7 @@ export class ClientStateInboxHandler {
         if (computed.outcome === 'idempotency-conflict') {
             throwClientMutationIdempotencyConflict(command, computed.mutation);
         }
-        const result = await this.writeMutationOperation({ context, computed, ticketConsumption: null });
+        const result = await this.writeMutationOperation({ context, computed });
         await this.observeCommittedSnapshots(computed.committedSnapshots);
         return result;
     }
@@ -184,11 +182,7 @@ export class ClientStateInboxHandler {
                     async (transaction) => await writeAuthWsTicketConsumption(transaction, computed.ticketConsumption)
                 );
             case 'completed': {
-                const result = await this.writeMutationOperation({
-                    context,
-                    computed,
-                    ticketConsumption: computed.ticketConsumption
-                });
+                const result = await this.writeAuthorisedConnectMutation(context, computed);
                 await this.observeCommittedSnapshots(computed.committedSnapshots);
                 return result;
             }
@@ -229,7 +223,7 @@ export class ClientStateInboxHandler {
         if (computed.outcome === 'idempotency-conflict') {
             throwClientMutationIdempotencyConflict(command, computed.mutation);
         }
-        const result = await this.writeMutationOperation({ context, computed, ticketConsumption: null });
+        const result = await this.writeMutationOperation({ context, computed });
         await this.observeCommittedSnapshots(computed.committedSnapshots);
         return result;
     }
@@ -357,8 +351,11 @@ export class ClientStateInboxHandler {
         return computed;
     }
 
-    private async writeMutationOperation(input: WriteClientMutationOperationInput): Promise<ClientStateWritten> {
-        const { context, computed, ticketConsumption } = input;
+    /** The connect's guarded batch is its first write: the ticket, lifecycle, client and proof rows in one statement. */
+    private async writeAuthorisedConnectMutation(
+        context: AppInboxMessageContext<AuthorisedWsClientMutationResult>,
+        computed: Extract<AuthorisedWsConnectOperationComputed, { outcome: 'completed'; }>
+    ): Promise<ClientStateWritten> {
         return await timeClientStateMutationCommit(
             { timing: this.dependencies.mutationTiming, writes: computed.writes },
             async () =>
@@ -366,9 +363,24 @@ export class ClientStateInboxHandler {
                     context,
                     computed.completion,
                     async (transaction) => {
-                        if (ticketConsumption !== null) {
-                            await writeAuthWsTicketConsumption(transaction, ticketConsumption);
+                        await writeClientRuntimeBatch(transaction, computed.runtimeBatch, computed.sidecarWrites);
+                        for (const mutation of computed.writes) {
+                            await writeClientMutationRecords(transaction, mutation);
                         }
+                    }
+                )
+        );
+    }
+
+    private async writeMutationOperation(input: WriteClientMutationOperationInput): Promise<ClientStateWritten> {
+        const { context, computed } = input;
+        return await timeClientStateMutationCommit(
+            { timing: this.dependencies.mutationTiming, writes: computed.writes },
+            async () =>
+                await this.dependencies.transactionWriter.writeComputedMutation(
+                    context,
+                    computed.completion,
+                    async (transaction) => {
                         if (computed.lifecycleComputed) {
                             await this.dependencies.sessionGenerationLifecycle.write(
                                 transaction,

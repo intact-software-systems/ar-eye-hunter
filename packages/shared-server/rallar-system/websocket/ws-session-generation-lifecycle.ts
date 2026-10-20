@@ -1,4 +1,5 @@
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
+import type { RuntimeStateGuardedBatchEffect } from '../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
 import type {
     RuntimeStateEntry,
@@ -46,6 +47,28 @@ export interface WsSessionGenerationLifecycleService {
         transaction: PSqlSql,
         computed: WsSessionGenerationLifecycleComputed
     ): Promise<void>;
+}
+
+/** The lifecycle row's conditional write as a guarded-batch effect; null when the row stays as read. */
+export function toWsSessionGenerationLifecycleEffect(
+    computed: WsSessionGenerationLifecycleComputed,
+    effectId: string
+): RuntimeStateGuardedBatchEffect | null {
+    const row = {
+        effectId,
+        namespace: SESSION_CLOSE_HIGH_WATER_NAMESPACE,
+        key: computed.key,
+        value: computed.value,
+        expireAtTimestamp: computed.state.expireAtEpochMs
+    };
+    switch (computed.outcome) {
+        case 'none':
+            return null;
+        case 'insert':
+            return { ...row, operation: 'insert' };
+        case 'update':
+            return { ...row, operation: 'update', expectedRevision: computed.expectedRevision };
+    }
 }
 
 export function createWsSessionGenerationLifecycleService(

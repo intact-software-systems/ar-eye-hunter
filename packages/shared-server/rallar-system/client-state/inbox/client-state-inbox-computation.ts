@@ -5,6 +5,7 @@ import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
+import type { RuntimeStateGuardedBatchWrite } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type { AppInboxExecutionMetadata } from '../../app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxCommand } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import {
@@ -62,6 +63,7 @@ import type {
     InactiveAuthorisedWsSessionResult,
     TicketRejectedAuthorisedWsSessionResult
 } from './client-state-inbox-result-codec.ts';
+import { computeAuthorisedWsConnectRuntimeBatch } from './compute-authorised-ws-connect-runtime-batch.ts';
 
 type ClientMutationLifecycleInput =
     | Readonly<{
@@ -95,7 +97,11 @@ export type AuthorisedWsConnectOperationComputed =
     | Extract<ClientMutationOperationComputed, { outcome: 'idempotency-conflict'; }>
     | Readonly<
         & Extract<ClientMutationOperationComputed, { outcome: 'completed'; }>
-        & { ticketConsumption: AuthWsTicketConsumption; }
+        & {
+            ticketConsumption: AuthWsTicketConsumption;
+            /** The ticket, lifecycle, client and proof rows, all written by this one statement. */
+            runtimeBatch: RuntimeStateGuardedBatchWrite;
+        }
     >
     | InactiveAuthorisedWsConnectComputed
     | TicketRejectedAuthorisedWsConnectComputed;
@@ -282,16 +288,24 @@ export function computeAuthorisedWsConnectOperation(
         input.lifecycleRead
     );
     const durableResult = toClientStateWritten(mutation);
+    const writes = requiresClientWrite(mutation) ? [mutation] : [];
+    const sidecarWrites = computeClientSnapshotProvenance(mutation);
     return {
         outcome: 'completed',
         mutation,
         lifecycleComputed,
         durableResult,
         completion: computeCompletion(input.completionFacts, durableResult),
-        writes: requiresClientWrite(mutation) ? [mutation] : [],
-        sidecarWrites: computeClientSnapshotProvenance(mutation),
+        writes,
+        sidecarWrites,
         committedSnapshots: [mutation.snapshot],
-        ticketConsumption
+        ticketConsumption,
+        runtimeBatch: computeAuthorisedWsConnectRuntimeBatch({
+            ticketConsumption,
+            lifecycleComputed,
+            writes,
+            sidecarWrites
+        })
     };
 }
 

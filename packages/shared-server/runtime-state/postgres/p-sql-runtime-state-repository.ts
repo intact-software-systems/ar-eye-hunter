@@ -22,6 +22,7 @@ import type {
     RuntimeStateReadBatchVersionReader,
     RuntimeStateVersionedReadBatch
 } from '../read-batch/runtime-state-read-batch.ts';
+import { readRuntimeStateBatchVersions } from './read-runtime-state-batch-versions.ts';
 import {
     readRuntimeStateBatch,
     readRuntimeStateBatchVersion,
@@ -85,6 +86,12 @@ export class PSqlRuntimeStateRepository
         selectors: readonly RuntimeStateReadBatchSelector[]
     ): Promise<RuntimeStateVersionedReadBatch> {
         return await readRuntimeStateBatchWithVersion(this.sql, selectors);
+    }
+
+    async readRuntimeStateBatchVersions(
+        selectorGroups: readonly (readonly RuntimeStateReadBatchSelector[])[]
+    ): Promise<readonly (RuntimeStateReadBatchVersion['version'] | undefined)[]> {
+        return await readRuntimeStateBatchVersions(this, selectorGroups);
     }
 
     async begin<T>(

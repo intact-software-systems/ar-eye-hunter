@@ -107,6 +107,34 @@ Deno.test('PGlite probes a version of exactly the rows a batch reads that every 
     }
 });
 
+Deno.test('PGlite probes every selector group in one statement, each group reporting the version its own probe reports', async () => {
+    const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
+    const namespace = `read-batch-${crypto.randomUUID()}`;
+    const repository = new PSqlRuntimeStateRepository(lifecycle.database);
+    const groups = ['first', 'empty', 'third'].map((group) => createSelectors(`${namespace}:${group}`));
+
+    try {
+        assert.deepEqual(await repository.readRuntimeStateBatchVersions(groups), [undefined, undefined, undefined]);
+        await repository.upsert(`${namespace}:first`, 'prefix:a', 'first-a', FUTURE_MS);
+        await repository.upsert(`${namespace}:third`, 'exact', 'third-exact', FUTURE_MS);
+        await repository.upsert(`${namespace}:third`, 'prefix:b', 'third-b', FUTURE_MS);
+        const statementsBefore = lifecycle.database.getExecutorCounters?.()?.statements ?? 0;
+
+        const versions = await repository.readRuntimeStateBatchVersions(groups);
+
+        assert.equal((lifecycle.database.getExecutorCounters?.()?.statements ?? 0) - statementsBefore, 1);
+        const ownVersions = await Promise.all(
+            groups.map(async (selectors) => (await repository.readRuntimeStateBatchVersion(selectors))?.version)
+        );
+        assert.deepEqual(versions, ownVersions);
+        assert.equal(versions[1], undefined);
+        assert.deepEqual(await repository.readRuntimeStateBatchVersions([]), []);
+    }
+    finally {
+        await lifecycle.close();
+    }
+});
+
 function createSelectors(
     namespace: string
 ): readonly RuntimeStateReadBatchSelector[] {

@@ -1,7 +1,12 @@
+import { Temporal } from '@js-temporal/polyfill';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { ResourceInboxInvariantCorruptionError } from '../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import type {
+    RuntimeStateGuardedBatchEffect,
+    RuntimeStateGuardedBatchEffectResult
+} from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import {
     computeWsOutboxProvenanceDigest,
     toWsOutboxProvenanceKey,
@@ -92,6 +97,44 @@ function computeClientSnapshotProvenanceInsert(
         value: JSON.stringify(proof),
         expiresAt: write.expiresAt
     };
+}
+
+/** The proof's insert as a guarded-batch effect; the outbox expiry it carries is whole milliseconds by construction. */
+export function toClientSnapshotProvenanceEffect(
+    insert: ClientSnapshotProvenanceInsert
+): RuntimeStateGuardedBatchEffect {
+    const expiresAt = Temporal.Instant.from(insert.expiresAt);
+    if (expiresAt.epochNanoseconds % 1_000_000n !== 0n) {
+        throw new TypeError(`Client snapshot provenance expiry is finer than a millisecond: ${insert.expiresAt}`);
+    }
+    return {
+        effectId: toClientSnapshotProvenanceEffectId(insert),
+        operation: 'insert',
+        namespace: insert.namespace,
+        key: insert.key,
+        value: insert.value,
+        expireAtTimestamp: expiresAt.epochMilliseconds
+    };
+}
+
+/** A proof that did not create its row is the same corruption the standalone insert reports. */
+export function requireClientSnapshotProvenanceApplied(
+    results: readonly RuntimeStateGuardedBatchEffectResult[],
+    inserts: readonly ClientSnapshotProvenanceInsert[]
+): void {
+    for (const insert of inserts) {
+        const effectId = toClientSnapshotProvenanceEffectId(insert);
+        if (results.find((result) => result.effectId === effectId)?.status !== 'applied') {
+            throw new ResourceInboxInvariantCorruptionError(
+                insert.queueKey,
+                'Client snapshot provenance insert did not create exactly one row'
+            );
+        }
+    }
+}
+
+function toClientSnapshotProvenanceEffectId(insert: ClientSnapshotProvenanceInsert): string {
+    return `provenance:${insert.key}`;
 }
 
 export async function writeClientSnapshotProvenance(

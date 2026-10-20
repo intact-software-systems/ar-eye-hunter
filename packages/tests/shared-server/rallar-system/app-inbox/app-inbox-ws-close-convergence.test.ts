@@ -62,8 +62,13 @@ describe('AppInbox websocket close convergence', () => {
         pause.resume();
         await staleConnect;
 
-        // The ticket's guarded delete comes first; the lifecycle guard behind it conflicts and rolls both back.
-        expect(authoritativeWrites.slice(0, 2)).toEqual(['auth-sessions:ws-tickets', 'ws-session-close-high-water']);
+        // One guarded batch: the principal guard, then the ticket delete and the lifecycle row, which conflicts and
+        // rolls the whole batch back.
+        expect(authoritativeWrites.slice(0, 3)).toEqual([
+            'client-state:principals',
+            'auth-sessions:ws-tickets',
+            'ws-session-close-high-water'
+        ]);
         expect(rollbacks).toBe(1);
         expect(
             (

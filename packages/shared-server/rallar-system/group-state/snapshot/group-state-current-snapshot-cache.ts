@@ -4,7 +4,7 @@ import { VersionProbedReadThroughCache } from '@shared/cache/store-backed/versio
 import type { RuntimeStateReadBatchVersionReader } from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
 import type { GroupStateSnapshotRepository } from '../persistence/group-state-snapshot-repository.ts';
-import { readGroupStateAuthorityVersion } from '../persistence/read-group-state-authority.ts';
+import { readGroupStateAuthorityVersions } from '../persistence/read-group-state-authority.ts';
 
 export interface GroupStateCurrentSnapshotCacheDependencies {
     readonly repository: Pick<GroupStateSnapshotRepository, 'readVersionedSnapshot'>;
@@ -15,8 +15,8 @@ export interface GroupStateCurrentSnapshotCacheDependencies {
 }
 
 /**
- * The current group snapshot, as durable as a full read (D289). A group with a kept snapshot costs one revision probe
- * while unchanged; any other read is one statement that returns the rows with their version. A kept snapshot is
+ * The current group snapshot, as durable as a full read (D289). Groups with a kept snapshot cost one revision probe
+ * together while unchanged; any other read is one statement per group that returns the rows with their version. A kept snapshot is
  * served only while the probe reports exactly the row versions it was assembled from, and only until a lease or row it
  * shows expires.
  */
@@ -26,7 +26,7 @@ export class GroupStateCurrentSnapshotCache {
     public constructor(dependencies: GroupStateCurrentSnapshotCacheDependencies) {
         const { repository, versionReader, nowEpochMs } = dependencies;
         this.cache = new VersionProbedReadThroughCache({
-            readVersion: async (ref) => (await readGroupStateAuthorityVersion(versionReader, ref))?.version,
+            readVersions: async (refs) => await readGroupStateAuthorityVersions(versionReader, refs),
             readValue: async (ref) => {
                 const observedAtEpochMs = nowEpochMs();
                 const read = await repository.readVersionedSnapshot(versionReader, ref, observedAtEpochMs);
@@ -50,6 +50,11 @@ export class GroupStateCurrentSnapshotCache {
 
     public async readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined> {
         return await this.cache.read(ref);
+    }
+
+    /** The snapshots in ref order, every kept group probed by one statement. */
+    public async readSnapshots(refs: readonly GroupRef[]): Promise<readonly (GroupSnapshot | undefined)[]> {
+        return await this.cache.readMany(refs);
     }
 }
 

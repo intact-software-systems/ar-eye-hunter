@@ -106,7 +106,7 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
     async listSnapshotsForPrincipal(
         scope: GroupScope,
         principalId: string,
-        currentSnapshots?: Pick<GroupStateCurrentSnapshotCache, 'readSnapshot'>
+        currentSnapshots?: Pick<GroupStateCurrentSnapshotCache, 'readSnapshots'>
     ): Promise<readonly GroupSnapshot[]> {
         return await readGroupStateSnapshotsForPrincipal({
             repository: this.repository,

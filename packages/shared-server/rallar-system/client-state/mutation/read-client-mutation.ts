@@ -40,7 +40,7 @@ export interface ReadClientMutationInput {
     readonly command: ClientMutationCommand;
     readonly audienceObservedAtEpochMs: number;
     readonly timing?: ClientStateMutationTiming;
-    readonly currentGroupSnapshots?: Pick<GroupStateCurrentSnapshotCache, 'readSnapshot'>;
+    readonly currentGroupSnapshots?: Pick<GroupStateCurrentSnapshotCache, 'readSnapshots'>;
 }
 
 type ClientMutationStateRead = Pick<

@@ -50,7 +50,7 @@ export interface ReadGroupStateSnapshotsForPrincipalInput {
     readonly principalId: string;
     readonly observedAtEpochMs: number;
     readonly readSnapshot: (ref: GroupRef) => Promise<GroupSnapshot | undefined>;
-    readonly currentSnapshots?: Pick<GroupStateCurrentSnapshotCache, 'readSnapshot'>;
+    readonly currentSnapshots?: Pick<GroupStateCurrentSnapshotCache, 'readSnapshots'>;
 }
 
 interface PrincipalGroupSelection {
@@ -105,14 +105,13 @@ async function readPrincipalGroups(
     input: ReadGroupStateSnapshotsForPrincipalInput,
     selections: readonly PrincipalGroupSelection[]
 ): Promise<readonly PrincipalGroupRead[]> {
-    const currentSnapshots = input.currentSnapshots;
-    if (currentSnapshots) {
-        const reads: PrincipalGroupRead[] = [];
-        for (const selection of selections) {
-            const snapshot = await currentSnapshots.readSnapshot(selection.group.value);
-            reads.push({ kind: 'current-snapshot', selection, snapshot });
-        }
-        return reads;
+    if (input.currentSnapshots) {
+        const snapshots = await input.currentSnapshots.readSnapshots(selections.map(({ group }) => group.value));
+        return selections.map((selection, index) => ({
+            kind: 'current-snapshot',
+            selection,
+            snapshot: snapshots[index]
+        }));
     }
     const children = await readPrincipalGroupChildren(input.repository, selections);
     return selections.map((selection, index) => ({ kind: 'children', selection, children: children[index] }));

@@ -10,8 +10,8 @@ export interface VersionProbedRead<V> {
 }
 
 export interface VersionProbedReadThroughCacheDependencies<K, V> {
-    /** The cheap probe: the current version of the value, or undefined when nothing is stored. */
-    readonly readVersion: (key: K) => Promise<string | undefined>;
+    /** The cheap probe, in one store read: each key's current version in key order, or undefined when nothing is stored. */
+    readonly readVersions: (keys: readonly K[]) => Promise<readonly (string | undefined)[]>;
     readonly readValue: (key: K) => Promise<VersionProbedRead<V> | undefined>;
     readonly toCacheKey: (key: K) => string;
     readonly nowEpochMs: () => number;
@@ -25,8 +25,8 @@ interface VersionedEntry<V> {
 
 /**
  * A read-through cache that serves a kept value only while the store still reports the version that value was read
- * at: a key with a kept value costs one probe when unchanged and a probe plus a read when changed, and a key with none
- * costs one read. A value is kept under the version its own read reported, never a probe's, so a write that lands
+ * at: the keys with a kept value cost one probe together when unchanged, a changed key adds a read, and a key with
+ * none costs one read. A value is kept under the version its own read reported, never a probe's, so a write that lands
  * before or during the read cannot be served under an older version.
  */
 export class VersionProbedReadThroughCache<K, V> {
@@ -39,12 +39,45 @@ export class VersionProbedReadThroughCache<K, V> {
     }
 
     public async read(key: K): Promise<V | undefined> {
-        const cacheKey = this.dependencies.toCacheKey(key);
+        const [value] = await this.readMany([key]);
+        return value;
+    }
+
+    /** The values in key order; every kept key is probed by one store read, and changed or unkept keys are read in order. */
+    public async readMany(keys: readonly K[]): Promise<readonly (V | undefined)[]> {
         const nowEpochMs = this.dependencies.nowEpochMs();
-        const cached = this.entries.readAt(cacheKey, nowEpochMs);
-        if (cached !== undefined && await this.dependencies.readVersion(key) === cached.version) {
-            return cached.value;
+        const cacheKeys = keys.map((key) => this.dependencies.toCacheKey(key));
+        const kept = cacheKeys.map((cacheKey) => this.entries.readAt(cacheKey, nowEpochMs));
+        const currentVersions = await this.readKeptVersions(keys, kept);
+        const values: (V | undefined)[] = [];
+        for (const [index, key] of keys.entries()) {
+            const entry = kept[index];
+            values.push(
+                entry !== undefined && currentVersions[index] === entry.version
+                    ? entry.value
+                    : await this.readThrough(key, cacheKeys[index]!, nowEpochMs)
+            );
         }
+        return values;
+    }
+
+    private async readKeptVersions(
+        keys: readonly K[],
+        kept: readonly (VersionedEntry<V> | undefined)[]
+    ): Promise<readonly (string | undefined)[]> {
+        const probedKeys = keys.filter((_, index) => kept[index] !== undefined);
+        if (probedKeys.length === 0) {
+            return [];
+        }
+        const versions = await this.dependencies.readVersions(probedKeys);
+        if (versions.length !== probedKeys.length) {
+            throw new TypeError(`Version probe returned ${versions.length} versions for ${probedKeys.length} keys`);
+        }
+        let probed = 0;
+        return kept.map((entry) => entry === undefined ? undefined : versions[probed++]);
+    }
+
+    private async readThrough(key: K, cacheKey: string, nowEpochMs: number): Promise<V | undefined> {
         const read = await this.dependencies.readValue(key);
         if (read === undefined || read.version === null) {
             this.entries.take(cacheKey);
