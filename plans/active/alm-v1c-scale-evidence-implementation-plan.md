@@ -15,8 +15,9 @@ Use the current repository owners, nearby tests and examples to recover each act
 this plan is neither a substitute for source navigation nor a delivery ledger. No new dependencies,
 runner, evaluator, generic diagnostic framework or duplicate policy engine are required.
 
-The artifact-flush consolidation is merged as #674 and the group-audience cache as #675. The current
-increment (#687) cuts the formation admission waits its surveys located; the formation-tail delivery delay,
+The artifact-flush consolidation is merged as #674 and the group-audience cache as #675. Formation tail 2
+(#687) cut the formation admission waits its surveys located. The current increment (#689) removes the AppInbox
+pass barrier and takes presence off the group's serial chain; the formation-tail delivery delay,
 the remaining shared-mechanism audit, full V1c acceptance and comparative evidence remain open.
 Delivery of one consolidation does not make the full V1c outcome complete or waive its remaining gates.
 
@@ -197,49 +198,48 @@ final evidence reconciliation must preserve workload provenance and the unwaived
 
 ## Next two useful slices
 
-Formation tail 2 (#687; proposal §1.14, D306–D320) repaired the admission and handler owners four static surveys of
-main after #675 located: the NEW lane pipelines inside a pass, the engine no longer loses a wake to a busy slot and
-reports every pass boundary under phase timing, the authorized-WS connect writes 7 statements instead of 15/14 and
-probes its 21 audience groups in one statement, the co-member read drops instance rows, the prefix-suffix read uses
-the reversed key, a held offer is re-dued on layout adoption and the harness's audience wait is event-driven. Hosted
-15, 30 and 50 pass uninstrumented on Postgres, and connected→accepted at 50 is 0.385 s against 1.762–2.019 s on every
-earlier persistent-database run. The frozen native-50 A–B–B–A block verifies that end-of-formation benefit in both
-contrasts, but the whole-formation primary does **not** meet the benefit rule: the contrasts are +0.581 s
-(unfavourable) and −7.299 s, and the symmetric −3.359 s is smaller than the +7.240 s baseline drift (D320). The
-state-write comparison and the medium-scale gate pass; hot is −4.823 % inside a 15.4 % identical-source base drift,
-and its +2.6 % statements are not retries (consistent with one probe per absorbed wake).
+Formation tail 3 (#689; proposal §1.15, D321–D329) removed the AppInbox pass barrier that three static surveys of
+main after #687 located. The NEW lane keeps a persistent flight across passes with a hold of 16 rows. A keyed row
+released by a same-key predecessor takes the freed slot first. Contexts in flight are excluded from every reservation
+lane. Presence commands are keyed per session and leave the group's serial chain, and a join reads in one batch.
+Locally at 50 the queue age p50 falls 0.254 → 0.050 s for the WS connect, 0.135 → 0.022 s for the join and
+0.106 → 0.036 s for presence; the pass wall p50 falls 87.9 → 3.5 ms. The pool stays five: the pool-only hosted
+A-B-B-A gave +3.398 s on its passing leg and one failed leg (D325). The medium-scale gate passes with 2,842 passed
+and 0 failed. The hosted acceptance, the A-B-B-A verdict, the timing-on attribution and the state-write comparison on
+the head are recorded in proposal §1.15 and in the As applied entry below.
 
-The timing-on hosted 50 (run 39410485156; instrumented, not acceptance) defines the next slices: 79 % of the last
-five arrivals' SDK-connect and room-join time is AppInbox queue age, and handlers are 2–4 %.
-
-1. **The lane's per-pass context cap and the pass barrier.** From 20.3 to 63.0 s, 26 back-to-back passes each claim
-   the 8-context cap with 36–48 rows still waiting and claim nothing new until they drain; the occupancy is 0.44
-   (1.88 of 4 handlers), and WS-connect rows waited 411.8 s inside passes against 23.9 s between them (D319). Run a
-   hosted A/B, timing off for the verdict and on for attribution with the pass-boundary line (D308), of a higher
-   per-pass cap or refill across the pass boundary, K, and the application pool size, with its own state-write
-   comparison and medium-scale gate; never weaken their constants. In the same slice measure:
-   - pool saturation: 4.9 statements in flight p50 (10.9 p95) against a pool of five, 13.2 ms per statement against
-     1.3 ms before the window; record the hosted pool size and sample `pg_stat_activity` waits;
-   - the group-command serial chain: a strictly serial 24.1 s floor for one room (2 of 329 same-pass group pairs
-     overlap), which remains for the last joiner at any K; measure whether the presence write compares-and-sets the
-     group revision before its exclusion key narrows (D317);
-   - the probe counts per pass, to confirm the hot benchmark's +2.6 % statements as one probe per absorbed wake, and
-     whether that reschedule can share the probe memo.
+1. **The flight across instances and the connect burst's fault tolerance.** Per-context order holds per instance
+   only. The flight makes a peer's claim of a context's next row routine (two-reader Postgres test: 14 → 40–50 of 50
+   contexts), and the handler converges through a typed conflict and retry (D326). In this slice:
+   - count conflict-retries on the cluster profile with and without the flight;
+   - add a Postgres test for a presence disconnect claimed ahead of its connect across instances;
+   - measure, then add if earned, a bounded jittered retry of the idempotent ticket request on 503
+     `app-inbox-unavailable`. A ticket POST can outrun the 30 s completion wait under the connect burst, and the
+     browser connect then fails without retry (pool-only leg B3);
+   - cap the IndexedDB FAIRNESS and TIMEOUT candidate reads past excluded rows. They are uncapped since #689 and
+     unreachable today, because no browser reader passes exclusions.
 2. **The remaining per-command and per-session costs**, each measured before it is selected:
-   - a cache for the co-member client read, now the largest authorized-WS connect read (0.263 s p50; the handler is
-     1.041 s p50 and the slowest in 16 of 31 long passes);
-   - the initial outbound WS delivery after the upgrade (2.406 s p50 for every agent; outbound claim→settled 2.912 s);
-   - the PBKDF2 admission bound on the hosted core count (a login spends 6.254 s p50 before its inbox row exists);
+   - a cache for the co-member client read, the largest authorized-WS connect read on #687 (0.263 s p50; the handler
+     was 1.041 s p50 and the slowest in 16 of 31 long passes);
+   - the initial outbound WS delivery after the upgrade (2.406 s p50 for every agent on #687; outbound claim→settled
+     2.912 s);
+   - the PBKDF2 admission bound on the hosted core count (a login spent 6.254 s p50 before its inbox row existed);
    - one CPU/GC capture (per-second maximum event-loop lag 144.5 ms median, 578 ms at most);
    - a commit that requests a head read of the ALM inbound RETRY page (`al-inbound-rotation-page.ts`,
      `read-al-inbound-work-selection.ts`), so a re-dued held offer lands in the committed batch instead of the next
      engine pass (≈ 0.1 s today when the rotation stands on NEW);
-   - the routine-diagnostics hosted plumbing (D315): a dispatch input and the worker environment.
+   - the routine-diagnostics hosted plumbing (D315): a dispatch input and the worker environment;
+   - `stateWriteProductionPhaseDuration`, which keys on `mutation.<phase>`, so the group-state read lines never fed
+     it.
+   - the joins' serial share of the group chain (13.133 s of 24.187 s at 50 on #687); only coalescing joins into one
+     transaction cuts it, and the group-chain survey ranks that high risk;
+   - the probe counts per pass behind the hot benchmark's +2.6 % statements, and the begin wait (`beginWaitMs`) under
+     the flight before the pool size is revisited (D325).
 
-Harness follow-up: a documented local Postgres lane profile. The ad-hoc local Postgres profile cannot start the API
-under local ICE with the Metered keys of `apps/api-v1/.env`, so Postgres coverage is the medium-scale gate, the CI
-Postgres gates and the hosted lane. The physical commit→browser ≤ 2 s target stays open and distinct from barrier
-timing; connected→accepted is a timing-off barrier span and does not prove it.
+The local Postgres ALM lane runs on a fresh isolated database: 15/15 on main in 35.0 min. It joins the medium-scale
+gate, the CI Postgres gates and the hosted lane as Postgres coverage. The physical commit→browser ≤ 2 s target stays
+open and distinct from barrier timing; connected→accepted is a timing-off barrier span and does not prove it. The
+V1c closure (D281) follows these slices.
 
 Use the focused plan's performance, coding, realtime, testing, adaptive execution, publication and hosted-operations
 skills. The earlier RTC minimum-readiness fix preserves authority and cleanup but its formation comparison worsened
@@ -717,6 +717,36 @@ the initial outbound delivery, the PBKDF2 bound, a CPU/GC capture, the RETRY hea
 routine-diagnostics plumbing (D315), a multi-row outbox insert (7 → 5 connect statements), a local Postgres lane
 profile, the physical commit→browser ≤ 2 s target, and the V1c closure.
 
+**As applied (PR #689).** Formation tail 3 landed D321–D324 and D328; D325 keeps the pool at five against the
+pool-only A-B-B-A, D326 and D327 are rulings and not applied, and D329 is recorded (proposal §3, §6). The AppInbox
+NEW lane keeps a standing flight with a required hold of 16 rows (`appInbox.newLaneHeldRows`). A pass tops it up and
+returns. A keyed row released by a same-key predecessor goes first. Contexts in flight are excluded from the NEW,
+RETRY, FAIRNESS and TIMEOUT reservations. The engine joins the flight on stop and reports a kept release error once.
+Presence commands are keyed per session; joins take `G:aggregate`. A join reads in one batch (4 → 2 statements).
+The startup summary names the pool, K and H, and `beginWaitMs` measures the wait before a transaction begins when
+timing is on. Measured (proposal §1.15): locally at 50 the queue age p50 falls 0.254 → 0.050 s for the WS connect,
+0.135 → 0.022 s for the join and 0.106 → 0.036 s for presence. The medium-scale gate passes on the final head
+`e6f4d1b63` (2,842 passed, 0 failed). Hosted 15, 30 and 50 pass uninstrumented on Postgres (runs 39498892622,
+39499824957, 39500626461) with 0 faults; at 50 the primary is 43.123 s against 44.653 s on #687, connected→accepted
+0.605 s, SDK connect p50 15.114 s, room join p50 15.022 s, last join → all ready 7.398 s and shot ACK p99 0.241 s
+(294/294). The frozen native-50 A–B–B–A (main `c0e3b6e15` against `e6f4d1b63`, timing off; runs 39501549027,
+39502459511, 39503337200, 39504235833) **verifies the whole-formation benefit**: both primary contrasts favour the
+head (B2−A1 −12.378 s, B3−A4 −6.344 s; symmetric −9.361 s, −15.6 %, against a +6.024 s baseline drift), mainly
+through RTC readiness and room join; SDK connect is unchanged (symmetric +0.807 s) and the end of formation flat
+(−0.053 / +0.029 s), since main already carries #687's repair (D330). The timing-on hosted 50 (run 39505125464) puts
+lane occupancy at 0.721 against 0.355 on the same basis and leaves a strictly serial 21.5 s group-key chain, 19.5 s of
+it joins, whose handler slowed 0.167 → 0.310 s p50 (D331). The state-write comparison (run 39498888877) passes:
+hot +2.86 % (p99 3.783 → 3.667 s, statements −7.8 %), shared +0.88 %, uncontended −0.30 %, 0 exhausted retries, with
+identical-main drift at most 1.16 %.
+
+Open after this step, first the join chain (the join handler's cost on Postgres, the batched read's plan and
+statements under K = 4 contention, and the serial `G:aggregate` chain, 19.5 s of 21.5 s), then SDK connect
+(unchanged, +0.8 s), then the cluster profile's conflict-retry count with and without the flight, a cross-instance
+presence disconnect-before-connect test, the ticket request's retry on 503, the IndexedDB recovery-read cap, the
+co-member read, the initial outbound delivery, the PBKDF2 bound, a CPU/GC capture, the RETRY head read on commit,
+the hosted routine-diagnostics plumbing (D315), `stateWriteProductionPhaseDuration`, the physical commit→browser
+≤ 2 s target, and the V1c closure (D281).
+
 #### Performance follow-ups from the step 2h investigation
 
 1. **Formation-tail delivery — high priority, measured historical delay.** Reanalysis of the
@@ -751,6 +781,8 @@ profile, the physical commit→browser ≤ 2 s target, and the V1c closure.
    that is a timing-off barrier span, so the physical commit→browser ≤ 2 s target stays open. Next
    measurement: promotion commit → delta write → outbox claim/send → browser acceptance on one
    candidate, timing on for attribution.
+   #689 removes the AppInbox pass barrier and takes presence off the group chain; it does not change
+   the post-promotion delivery path either.
 2. **Recorder burst latency — low priority, regression not established.** The first twenty-pair
    local probe showed total medians +0.2% for 1,000 small results and +2.1% for fifty larger
    results. An independent twenty-pair process measured effectively 0% and +0.9%; paired
@@ -829,7 +861,12 @@ profile, the physical commit→browser ≤ 2 s target, and the V1c closure.
    (D318). The #687 comparison (run 39404146293) passes: uncontended +6.706 %, shared +1.538 %, hot
    −4.823 % with p99 3.336 → 3.219 s, while its two identical-source base positions differ by 15.4 %
    on hot. Hot statements rise +2.6 % with flat conflicts and attempts (not retries; consistent with
-   one probe per absorbed wake, to confirm from the pass-boundary probe counts). The earlier failures
+   one probe per absorbed wake, to confirm from the pass-boundary probe counts). The #689 benchmark
+   runtime builds its reader with K = 1 and no held-row bound, so it exercises the per-pass path, not
+   the flight (D329). Its comparison (run 39498888877) passes: uncontended −0.30 %, shared +0.88 %,
+   hot +2.86 % with p99 3.783 → 3.667 s, 0 exhausted retries, and identical-main positions at most
+   1.16 % apart (hot 0.97 %). Hot statements fall −7.8 % (59,880.5 → 55,199 per run) with conflicts
+   −3.9 % and attempts −1.6 %, reversing #687's +2.6 %. The earlier failures
    above stay unresolved and source-specific. Next measurement: D281's V1c-wide comparison.
 6. **Test-harness scheduling — observed validation sensitivity.** A local aggregate run had
    nine test timeouts, one polling deadline and one missing drain observation while another
