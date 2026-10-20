@@ -6,8 +6,8 @@ import {
 } from '../../../packages/shared/api/group-lifecycle/group-layout-identity.ts';
 import {
     API_TIMING_DEQUEUE_LANES,
-    decodeSafeApiDequeuePassBoundaryDetails
-} from './decode-safe-api-dequeue-pass-boundary-details.ts';
+    decodeSafeApiDequeuePassDetails
+} from './decode-safe-api-dequeue-pass-details.ts';
 import {
     isAllowedApiTimingString,
     isApiTimingRecord,
@@ -185,8 +185,11 @@ function toSafeTimingContext(record: Readonly<Record<string, unknown>>): Readonl
         safe.httpStatus = record.httpStatus;
     }
     if (isApiTimingRecord(record.details)) {
-        safe.details = record.component === 'app-inbox-phase' && record.operation === 'dequeue-pass-boundary'
-            ? { ...toSafeTimingDetails(record.details), ...decodeSafeApiDequeuePassBoundaryDetails(record.details) }
+        safe.details = record.component === 'app-inbox-phase' && typeof record.operation === 'string'
+            ? {
+                ...toSafeTimingDetails(record.details),
+                ...decodeSafeApiDequeuePassDetails(record.operation, record.details)
+            }
             : toSafeTimingDetails(record.details);
     }
     return safe;
