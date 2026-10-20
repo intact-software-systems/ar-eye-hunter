@@ -140,7 +140,7 @@ function expectCorruptReadAndComputedRejection(): void {
                 receiptEvent: null,
                 audienceObservedAtEpochMs: 1_000,
                 audienceGroupSnapshots: [],
-                audienceClientSnapshots: []
+                audienceCoMemberSessions: []
             }
         })
     ).toThrow(ClientMutationRejectedError);

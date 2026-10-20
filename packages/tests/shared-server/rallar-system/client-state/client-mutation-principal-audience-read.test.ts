@@ -41,6 +41,32 @@ class RecordingReadRepository extends FakeRuntimeStateRepository {
     }
 }
 
+class CoMemberRowCountingRepository extends FakeRuntimeStateRepository {
+    readonly coMemberRowsPerBatch: number[] = [];
+    afterCoMemberSessionRead?: () => Promise<void>;
+
+    override async readRuntimeStateBatch(
+        selectors: readonly RuntimeStateReadBatchSelector[]
+    ): Promise<readonly RuntimeStateReadBatchSelection[]> {
+        const selections = await super.readRuntimeStateBatch(selectors);
+        const coMemberRows = selections
+            .filter((_selection, index) => isCoMemberClientSelector(selectors[index]))
+            .reduce((rows, selection) => rows + selection.entries.length, 0);
+        if (coMemberRows > 0) {
+            this.coMemberRowsPerBatch.push(coMemberRows);
+        }
+        const afterCoMemberSessionRead = this.afterCoMemberSessionRead;
+        if (
+            afterCoMemberSessionRead &&
+            selectors.some((selector) => selector.namespace === 'client-state:sessions' && isCoMemberClientSelector(selector))
+        ) {
+            this.afterCoMemberSessionRead = undefined;
+            await afterCoMemberSessionRead();
+        }
+        return selections;
+    }
+}
+
 class AudienceReadRepository extends FakeRuntimeStateRepository {
     afterActorMemberRead?: () => Promise<void>;
 
@@ -121,18 +147,80 @@ describe('client mutation principal audience read', () => {
             'room-one',
             'room-two'
         ]);
-        expect(read.audienceClientSnapshots.map((snapshot) => snapshot.principal.principalId))
+        expect(read.audienceCoMemberSessions.map((sessions) => sessions.principalRef.principalId))
             .toEqual([
                 'bob',
                 'dave'
             ]);
         expect(computePrincipalStateSyncAudience({
             principalRef: read.snapshot.principal,
-            ownSnapshot: read.snapshot,
+            ownSessions: { principalRef: read.snapshot.principal, activeSessions: read.snapshot.activeSessions },
             groupSnapshots: read.audienceGroupSnapshots,
-            clientSnapshots: read.audienceClientSnapshots,
+            coMemberSessions: read.audienceCoMemberSessions,
             nowEpochMs: AUDIENCE_EPOCH_MS
         })).toEqual(['alice-session', 'bob-session', 'dave-session']);
+    });
+
+    it('reads co-member principals and live sessions without the instances they accumulated', async () => {
+        const runtime = new CoMemberRowCountingRepository();
+        const { groups, clients } = await seedHeartbeatAudience(runtime, ['bob', 'carol', 'dave']);
+        for (const principalId of ['bob', 'carol', 'dave']) {
+            for (let index = 0; index < 20; index += 1) {
+                await clients.insertInstance(instance(principalId, `${principalId}-stale-instance-${index}`));
+            }
+        }
+        runtime.coMemberRowsPerBatch.length = 0;
+
+        const read = await readClientMutation({
+            repository: clients,
+            groupRepository: groups,
+            authSessionRepository: { findBySessionId: async () => undefined },
+            command: principalCommand('stale-instance-audience'),
+            audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
+        });
+        if (!read.snapshot) {
+            throw new Error('Expected Alice principal snapshot');
+        }
+
+        expect(computePrincipalStateSyncAudience({
+            principalRef: read.snapshot.principal,
+            ownSessions: { principalRef: read.snapshot.principal, activeSessions: read.snapshot.activeSessions },
+            groupSnapshots: read.audienceGroupSnapshots,
+            coMemberSessions: read.audienceCoMemberSessions,
+            nowEpochMs: AUDIENCE_EPOCH_MS
+        })).toEqual(['alice-session', 'bob-session', 'carol-session', 'dave-session']);
+        // Three co-member principals and their three live sessions, then the three principals again as the guard.
+        expect(runtime.coMemberRowsPerBatch).toEqual([6, 3]);
+    });
+
+    it('rereads a co-member whose principal moves between the session read and the guard', async () => {
+        const runtime = new CoMemberRowCountingRepository();
+        const { groups, clients } = await seedHeartbeatAudience(runtime, ['bob']);
+        runtime.afterCoMemberSessionRead = async () => {
+            const bobRef = { ...TEST_SCOPE, principalId: 'bob' };
+            const bob = await clients.findPrincipalEntry(bobRef);
+            if (!bob) {
+                throw new Error('Expected Bob principal before the concurrent connect');
+            }
+            await clients.insertSession(
+                session({ principalId: 'bob', sessionId: 'bob-late-session', expiresAtEpochMs: 4_000_000_000_000 })
+            );
+            await clients.updatePrincipal(
+                { ...bob.value, presenceVersion: bob.value.presenceVersion + 1 },
+                bob.entry.revision
+            );
+        };
+
+        const read = await readClientMutation({
+            repository: clients,
+            groupRepository: groups,
+            authSessionRepository: { findBySessionId: async () => undefined },
+            command: principalCommand('moved-co-member'),
+            audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
+        });
+
+        expect(read.audienceCoMemberSessions.map((sessions) => sessions.activeSessions.map(({ sessionId }) => sessionId)))
+            .toEqual([['bob-late-session', 'bob-session']]);
     });
 
     it('reconsiders a group whose roster changes after the actor-member batch', async () => {
@@ -185,9 +273,9 @@ describe('client mutation principal audience read', () => {
         ]);
         expect(computePrincipalStateSyncAudience({
             principalRef: read.snapshot.principal,
-            ownSnapshot: read.snapshot,
+            ownSessions: { principalRef: read.snapshot.principal, activeSessions: read.snapshot.activeSessions },
             groupSnapshots: read.audienceGroupSnapshots,
-            clientSnapshots: read.audienceClientSnapshots,
+            coMemberSessions: read.audienceCoMemberSessions,
             nowEpochMs: AUDIENCE_EPOCH_MS
         })).toEqual(['alice-session', 'bob-session', 'mallory-session']);
     });
@@ -243,9 +331,9 @@ describe('client mutation principal audience read', () => {
 
         expect(computePrincipalStateSyncAudience({
             principalRef: read.snapshot.principal,
-            ownSnapshot: read.snapshot,
+            ownSessions: { principalRef: read.snapshot.principal, activeSessions: read.snapshot.activeSessions },
             groupSnapshots: read.audienceGroupSnapshots,
-            clientSnapshots: read.audienceClientSnapshots,
+            coMemberSessions: read.audienceCoMemberSessions,
             nowEpochMs: AUDIENCE_EPOCH_MS
         })).toEqual(['alice-session', 'bob-session']);
     });
@@ -266,7 +354,7 @@ describe('client mutation principal audience read', () => {
         expect(read.session?.value.generationId).toBe('alice-session-generation');
         expect(audienceSelectors(runtime.batchSelectors)).toEqual([]);
         expect(read.audienceGroupSnapshots).toEqual([]);
-        expect(read.audienceClientSnapshots).toEqual([]);
+        expect(read.audienceCoMemberSessions).toEqual([]);
     });
 
     it('renews a heartbeat to the principal\'s own sessions without reading three co-members', async () => {
@@ -286,7 +374,7 @@ describe('client mutation principal audience read', () => {
 
         expect(audienceSelectors(runtime.batchSelectors)).toEqual([]);
         expect(read.audienceGroupSnapshots).toEqual([]);
-        expect(read.audienceClientSnapshots).toEqual([]);
+        expect(read.audienceCoMemberSessions).toEqual([]);
         expect(computed).toMatchObject({ outcome: 'write', principalAudienceSessionIds: ['alice-session'] });
         expect(() => assertClientMutationInvariants({ command, read, computed })).not.toThrow();
     });
@@ -350,7 +438,7 @@ describe('client mutation principal audience read', () => {
             command: principalCommand('audience-carrying-read'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
-        expect(coMemberRead.audienceClientSnapshots).toHaveLength(1);
+        expect(coMemberRead.audienceCoMemberSessions).toHaveLength(1);
         const command = heartbeatCommandFor(generationId);
         const session = await clients.readSessionEntry({
             ...TEST_SCOPE,
@@ -362,6 +450,34 @@ describe('client mutation principal audience read', () => {
         expect(() => assertClientMutationRead(command, { ...coMemberRead, session: session.value ?? null })).toThrow(
             'Client mutation audience read is out of scope'
         );
+    });
+
+    it.each([
+        [
+            'a co-member outside the principal scope',
+            { ...TEST_SCOPE, workspaceId: 'workspace-2', principalId: 'bob' },
+            'bob',
+            'is wrongly scoped'
+        ],
+        ['a session of another principal', { ...TEST_SCOPE, principalId: 'bob' }, 'carol', 'carries another principal\'s session']
+    ])('rejects an audience read carrying %s', async (_label, principalRef, sessionPrincipalId, message) => {
+        const runtime = new RecordingReadRepository();
+        const { groups, clients } = await seedHeartbeatAudience(runtime);
+        const read = await readClientMutation({
+            repository: clients,
+            groupRepository: groups,
+            authSessionRepository: { findBySessionId: async () => undefined },
+            command: principalCommand('forged-audience'),
+            audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
+        });
+        const forged = {
+            principalRef,
+            activeSessions: [
+                session({ principalId: sessionPrincipalId, sessionId: 'forged-session', expiresAtEpochMs: 4_000_000_000_000 })
+            ]
+        };
+
+        expect(() => assertClientMutationRead(principalCommand('forged-audience'), { ...read, audienceCoMemberSessions: [forged] })).toThrow(message);
     });
 
     it('rejects a heartbeat write computed outside the principal audience read scope', async () => {
@@ -389,7 +505,7 @@ describe('client mutation principal audience read', () => {
                     ...read,
                     session: { ...session, value: { ...session.value, generationId: 'superseded-generation' } },
                     audienceGroupSnapshots: [],
-                    audienceClientSnapshots: []
+                    audienceCoMemberSessions: []
                 },
                 computed
             })
@@ -593,6 +709,11 @@ function audienceSelectors(
     );
 }
 
+function isCoMemberClientSelector(selector: RuntimeStateReadBatchSelector): boolean {
+    return selector.namespace.startsWith('client-state:') &&
+        /principal=(bob|carol|dave)/.test(JSON.stringify(selector));
+}
+
 interface SeedGroupInput {
     readonly repository: ReturnType<typeof createTestGroupStateRepository>;
     readonly groupId: string;
@@ -675,10 +796,19 @@ async function seedClient(
         updated: audit(),
         lastSeenAtEpochMs: 1
     };
-    const instance: ClientInstance = {
-        ...scope,
+    await repository.insertPrincipal(principal);
+    await repository.insertInstance({ ...instance(principalId, `${principalId}-instance`), ...scope });
+    await repository.insertSession({
+        ...session({ principalId, sessionId, expiresAtEpochMs: 4_000_000_000_000 }),
+        ...scope
+    });
+}
+
+function instance(principalId: string, clientInstanceId: string): ClientInstance {
+    return {
+        ...TEST_SCOPE,
         principalId,
-        clientInstanceId: `${principalId}-instance`,
+        clientInstanceId,
         status: 'active',
         revoked: null,
         platform: 'web',
@@ -689,12 +819,6 @@ async function seedClient(
         registered: audit(),
         updated: audit()
     };
-    await repository.insertPrincipal(principal);
-    await repository.insertInstance(instance);
-    await repository.insertSession({
-        ...session({ principalId, sessionId, expiresAtEpochMs: 4_000_000_000_000 }),
-        ...scope
-    });
 }
 
 interface SessionInput {

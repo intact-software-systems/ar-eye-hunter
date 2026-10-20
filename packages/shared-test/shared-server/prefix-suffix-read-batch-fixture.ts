@@ -1,4 +1,5 @@
 import type { RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
+import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
 
 export interface PrefixSuffixReadBatchFixtureEntry {
     readonly namespace: string;
@@ -105,6 +106,43 @@ export function createPrefixSuffixReadBatchFixture(
             { selectorId: 'suffix-ali', keys: [] }
         ]
     };
+}
+
+/**
+ * A workspace whose member rows far outnumber any one principal's memberships, beside a sibling workspace
+ * holding the same principals, read for principals whose ids end like, start like or contain one another.
+ * The expected selections are the in-memory selection of the same rows.
+ */
+export function createDensePrefixSuffixReadBatchFixture(
+    namespace: string
+): PrefixSuffixReadBatchFixture {
+    const principalIds = Array.from({ length: 24 }, (_value, index) => `p${index}`);
+    const entries = Array.from({ length: 24 }, (_value, groupIndex) => groupIndex).flatMap((groupIndex) =>
+        principalIds.flatMap((principalId) => [
+            { namespace, key: `${SCOPE_PREFIX}group=g${groupIndex}:member=${principalId}` },
+            { namespace, key: `app=bench:ws=w2:group=g${groupIndex}:member=${principalId}` }
+        ])
+    );
+    const selectors = ['p1', 'p11', 'p23', 'x1', '1'].map((principalId) =>
+        prefixSuffix(namespace, `member-${principalId}`, `:member=${principalId}`)
+    );
+    const expectedSelections = selectRuntimeStateReadBatch(
+        entries.map((entry) => ({
+            namespace: entry.namespace,
+            entry: {
+                key: entry.key,
+                value: '',
+                expireAtTimestamp: 0,
+                updatedTimestamp: new Date(0).toISOString(),
+                revision: 0
+            }
+        })),
+        selectors
+    ).map((selection) => ({
+        selectorId: selection.selectorId,
+        keys: selection.entries.map((entry) => entry.key)
+    }));
+    return { entries, selectors, expectedSelections };
 }
 
 function prefixSuffix(

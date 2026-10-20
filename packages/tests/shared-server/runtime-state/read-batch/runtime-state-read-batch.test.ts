@@ -241,7 +241,10 @@ describe('runtime-state read batches', () => {
         expect(query.source).toMatch(/store_key collate "C"\s*>=/iu);
         expect(query.source).toMatch(/store_key collate "C"\s*</iu);
         expect(query.source).toContain(
-            'right(suffix_entry.store_key, char_length(selector.key_suffix)) collate "C" = selector.key_suffix'
+            'reverse(suffix_entry.store_key) collate "C" >= selector.reversed_suffix'
+        );
+        expect(query.source).toContain(
+            'reverse(suffix_entry.store_key) collate "C" < selector.reversed_suffix_end'
         );
         expect(query.source).toContain(
             'char_length(suffix_entry.store_key) >= char_length(selector.key_prefix) + char_length(selector.key_suffix)'
@@ -291,8 +294,8 @@ describe('runtime-state read batches', () => {
                 keyPrefix: 'app=app:ws=workspace:',
                 keySuffix: ':member=alice',
                 prefixEnd: 'app=app:ws=workspace;',
-                reversedSuffix: null,
-                reversedSuffixEnd: null
+                reversedSuffix: 'ecila=rebmem:',
+                reversedSuffixEnd: 'ecila=rebmem;'
             }
         ]);
     });

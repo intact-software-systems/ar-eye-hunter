@@ -1,7 +1,10 @@
 import type { PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
-import { createPrefixSuffixReadBatchFixture } from '@shared-test/shared-server/prefix-suffix-read-batch-fixture.ts';
+import {
+    createDensePrefixSuffixReadBatchFixture,
+    createPrefixSuffixReadBatchFixture
+} from '@shared-test/shared-server/prefix-suffix-read-batch-fixture.ts';
 import { describe, expect, it } from 'vitest';
 import { createRuntimeStatePostgresSql } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 
@@ -70,40 +73,35 @@ describe('Postgres runtime-state read batches', () => {
         }
     });
 
-    postgresIt(
-        'selects literal prefix-suffix matches in caller order and C key order',
-        async () => {
-            const sql = await createRuntimeStatePostgresSql(requireDatabaseUrl());
-            const namespace = `read-batch-${crypto.randomUUID()}`;
-            const fixture = createPrefixSuffixReadBatchFixture(namespace);
-            const repository = new PSqlRuntimeStateRepository(sql);
+    postgresIt.each([
+        ['literal prefix-suffix matches in caller order and C key order', createPrefixSuffixReadBatchFixture],
+        ['a dense workspace\'s prefix-suffix matches as the in-memory selection does', createDensePrefixSuffixReadBatchFixture]
+    ])('selects %s', async (_label, createFixture) => {
+        const sql = await createRuntimeStatePostgresSql(requireDatabaseUrl());
+        const namespace = `read-batch-${crypto.randomUUID()}`;
+        const fixture = createFixture(namespace);
+        const repository = new PSqlRuntimeStateRepository(sql);
 
-            try {
-                for (const [index, entry] of fixture.entries.entries()) {
-                    await repository.upsert(
-                        entry.namespace,
-                        entry.key,
-                        `value-${index}`,
-                        FUTURE_MS
-                    );
-                }
-
-                const selections = await repository.readRuntimeStateBatch(fixture.selectors);
-
-                expect(selections.map((selection) => ({
-                    selectorId: selection.selectorId,
-                    keys: selection.entries.map((entry) => entry.key)
-                }))).toEqual(fixture.expectedSelections);
+        try {
+            for (const [index, entry] of fixture.entries.entries()) {
+                await repository.upsert(entry.namespace, entry.key, `value-${index}`, FUTURE_MS);
             }
-            finally {
-                await sql`
+
+            const selections = await repository.readRuntimeStateBatch(fixture.selectors);
+
+            expect(selections.map((selection) => ({
+                selectorId: selection.selectorId,
+                keys: selection.entries.map((entry) => entry.key)
+            }))).toEqual(fixture.expectedSelections);
+        }
+        finally {
+            await sql`
         delete from runtime_state_store
         where store_namespace in (${namespace}, ${`${namespace}:sibling`})
       `;
-                await sql.end();
-            }
+            await sql.end();
         }
-    );
+    });
 });
 
 function createSelectors(

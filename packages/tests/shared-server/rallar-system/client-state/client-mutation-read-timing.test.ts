@@ -56,7 +56,7 @@ describe('client mutation read timing', () => {
             Number.isFinite(event.durationMs) && event.durationMs >= 0
         )).toBe(true);
         expect(result.audienceGroupSnapshots).toEqual([]);
-        expect(result.audienceClientSnapshots).toEqual([]);
+        expect(result.audienceCoMemberSessions).toEqual([]);
     });
 
     it('records the failed audience boundary and preserves the original failure', async () => {

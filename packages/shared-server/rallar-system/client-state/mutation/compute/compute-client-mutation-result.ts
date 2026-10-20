@@ -54,8 +54,8 @@ export function computeClientMutationResult(
     const stateSync = toClientStateSync(command, snapshot, event);
     const principalAudienceSessionIds = computePrincipalStateSyncAudience({
         principalRef: command.aggregateRef,
-        ownSnapshot: snapshot,
-        clientSnapshots: read.audienceClientSnapshots,
+        ownSessions: { principalRef: snapshot.principal, activeSessions: snapshot.activeSessions },
+        coMemberSessions: read.audienceCoMemberSessions,
         groupSnapshots: read.audienceGroupSnapshots,
         nowEpochMs: read.audienceObservedAtEpochMs
     });
