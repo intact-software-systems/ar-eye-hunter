@@ -1634,36 +1634,19 @@
             "timeoutMs": 77500
           },
           {
-            "kind": "loop",
+            "kind": "wait",
             "commandId": "alm-scale-director-audience-ready",
-            "count": 225,
-            "intervalMs": 200,
             "timeoutMs": 45000,
-            "until": "first-success",
-            "commands": [
-              {
-                "kind": "http.request",
-                "commandId": "alm-scale-director-audience",
-                "request": {
-                  "method": "GET",
-                  "path": "/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room"
-                },
-                "response": {
-                  "body": "json",
-                  "acceptedStatusCodes": [
-                    200
-                  ]
-                },
-                "timeoutMs": 5000
-              },
-              {
-                "kind": "assert",
-                "commandId": "alm-scale-director-assert-audience",
-                "operator": "equals",
-                "expected": 50,
-                "source": "resultCache.alm-scale-director-audience-ready:i{loop.iteration}:c1:alm-scale-director-audience.value.body.activeSessions.length"
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.formation.changed",
+              "payloadFields": {
+                "data.roomRef.applicationId": "rallar-server",
+                "data.roomRef.workspaceId": "default",
+                "data.roomRef.groupId": "hetzner-headless-room",
+                "data.activeSessionCount": 50
               }
-            ]
+            }
           },
           {
             "kind": "barrier",
@@ -6857,36 +6840,19 @@
             "timeoutMs": 77500
           },
           {
-            "kind": "loop",
+            "kind": "wait",
             "commandId": "alm-scale-player-audience-ready",
-            "count": 225,
-            "intervalMs": 200,
             "timeoutMs": 45000,
-            "until": "first-success",
-            "commands": [
-              {
-                "kind": "http.request",
-                "commandId": "alm-scale-player-audience",
-                "request": {
-                  "method": "GET",
-                  "path": "/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room"
-                },
-                "response": {
-                  "body": "json",
-                  "acceptedStatusCodes": [
-                    200
-                  ]
-                },
-                "timeoutMs": 5000
-              },
-              {
-                "kind": "assert",
-                "commandId": "alm-scale-player-assert-audience",
-                "operator": "equals",
-                "expected": 50,
-                "source": "resultCache.alm-scale-player-audience-ready:i{loop.iteration}:c1:alm-scale-player-audience.value.body.activeSessions.length"
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.formation.changed",
+              "payloadFields": {
+                "data.roomRef.applicationId": "rallar-server",
+                "data.roomRef.workspaceId": "default",
+                "data.roomRef.groupId": "hetzner-headless-room",
+                "data.activeSessionCount": 50
               }
-            ]
+            }
           },
           {
             "kind": "barrier",

@@ -16,6 +16,7 @@ import type { BlackBoxRallarRuntimeInstallationTarget } from '@shared-test/black
 import { decodeBlackBoxRallarFormationCommandInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/formation/decode-black-box-rallar-formation-input.ts';
 import { BlackBoxRallarFormationController } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/formation/formation-controller.ts';
 import { installSpaBrowserRallarEventBridge } from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
+import { createAlmScaleRecipes } from '@shared-test/rallar-bb-test/conformance/alm/scale/create-alm-scale-recipes.ts';
 import { toControlEventEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import { createDefaultRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import type {
@@ -549,6 +550,48 @@ it('forwards changes, layout events and room status as diagnostics', () => {
         'rallar.browser.formation.layout-timing',
         'rallar.browser.formation.room-status'
     ]);
+});
+
+it('carries the held snapshot\'s active session count in every forwarded change, so a recipe waits for its audience on the page', () => {
+    const harness = new FormationHarness({
+        stage: 'planned',
+        formationEpoch: 1
+    });
+    const unsubscribe = harness.controller.installDiagnostics(roomRef);
+
+    harness.emitChange({ snapshot: createGroupSnapshotFixture({ ...roomRef, sessionIds: ['session-a', 'session-b'] }) });
+    harness.emitChange({
+        snapshot: createGroupSnapshotFixture({ ...roomRef, sessionIds: ['session-a', 'session-b', 'session-c'] })
+    });
+    unsubscribe();
+
+    expect(
+        harness.emitted
+            .filter((event) => event.topic === 'rallar.browser.formation.changed')
+            .map((event) => event.data)
+    ).toEqual([
+        expect.objectContaining({ roomRef, activeSessionCount: 2 }),
+        expect.objectContaining({ roomRef, activeSessionCount: 3 })
+    ]);
+});
+
+it('settles the scale recipe\'s audience wait on the page\'s own change event once its snapshot holds the cohort', async () => {
+    const harness = new FormationHarness({ stage: 'planned', formationEpoch: 1 });
+    const runtime = createDefaultRallarBlackBoxBrowserTestRuntime();
+    const target: BlackBoxRallarRuntimeInstallationTarget = {};
+    vi.stubGlobal('window', target);
+    onTestFinished(installSpaBrowserRallarEventBridge(runtime));
+    harness.emit.mockImplementation((event) => target.__blackBoxRallarEmit?.({ ...event, atEpochMs: harness.nowEpochMs }));
+    onTestFinished(harness.controller.installDiagnostics(roomRef));
+    const cohort = Array.from({ length: 15 }, (_, index) => `session-${index + 1}`);
+    const audienceWait = createAlmScaleRecipes({ participantCount: 15, group: roomRef, readyTimeoutMs: 5_000, almDiagnostics: false })
+        .recipes[1].commands.find((command) => command.commandId === 'alm-scale-player-audience-ready')!;
+
+    harness.emitChange({ snapshot: createGroupSnapshotFixture({ ...roomRef, sessionIds: cohort.slice(1) }) });
+    const waiting = runtime.execute(audienceWait);
+    harness.emitChange({ snapshot: createGroupSnapshotFixture({ ...roomRef, sessionIds: cohort }) });
+
+    expect(await waiting).toMatchObject({ status: 'ok', value: { matched: true } });
 });
 
 beforeEach(() => {

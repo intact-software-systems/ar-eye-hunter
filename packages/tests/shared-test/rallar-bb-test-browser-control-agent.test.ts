@@ -255,6 +255,25 @@ describe('browser control-agent lifecycle', () => {
         agent.dispose();
     });
 
+    it('starts the page runtime import at bootstrap, before the runtime executes its first command', async () => {
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
+        const execute = vi.spyOn(runtime, 'execute');
+        const startRuntimeImport = vi.fn();
+        const agent = createRallarBlackBoxBrowserControlAgent({
+            bootstrap: resolveRallarBlackBoxBootstrapConfig('?mode=control&provider=simulated&autoConnect=0&runId=run-9&agentId=agent-9', {}, ''),
+            agentRuntime: { runtime, startRuntimeImport },
+            controlClient: new FakeAgentControlClient()
+        });
+
+        expect((await agent.start()).right).toBe('configured');
+
+        expect(startRuntimeImport).toHaveBeenCalledTimes(1);
+        expect(execute).toHaveBeenCalled();
+        expect(startRuntimeImport.mock.invocationCallOrder[0]).toBeLessThan(Math.min(...execute.mock.invocationCallOrder));
+
+        agent.dispose();
+    });
+
     it('does not start or connect after disposal', async () => {
         const { agent, controlClient } = createTestControlAgent(
             '?mode=control&provider=simulated&autoConnect=1&controlUrl=ws%3A%2F%2Fcontrol.example.test%2Fcontrol&runId=run-5&agentId=agent-5'

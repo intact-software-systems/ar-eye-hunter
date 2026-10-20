@@ -299,6 +299,7 @@ function toReplacementFormationReadiness(
             formationEpoch: 1,
             formationAttemptCount: 1,
             causalRevision: { groupRevision: 1, presenceRevision: 1 },
+            activeSessionCount: 3,
             transportState: 'flowing',
             dialing: 'accepted',
             memberPolicy: { maxConcurrentEdgeSetups: 4, transports: 'rtc-and-ws' },
@@ -850,6 +851,7 @@ describe('group formation lifecycle driver', () => {
                         formationEpoch: 1,
                         formationAttemptCount: 1,
                         causalRevision: { groupRevision: 1, presenceRevision: 1 },
+                        activeSessionCount: sessionIds.length,
                         transportState: 'flowing',
                         dialing: 'accepted',
                         memberPolicy: {

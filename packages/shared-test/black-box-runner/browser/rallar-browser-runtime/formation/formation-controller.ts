@@ -258,6 +258,7 @@ function toFormationSummary(
             ? { lastFormationOutcome: status.lastFormationOutcome }
             : {}),
         causalRevision: status.snapshot.causalRevision,
+        activeSessionCount: status.snapshot.activeSessions.length,
         transportState: status.transportState,
         dialing: status.dialing,
         memberPolicy: status.memberPolicy,

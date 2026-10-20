@@ -760,10 +760,11 @@ export interface BlackBoxRallarFormationCommandRequest extends BlackBoxRallarFor
 }
 
 /**
- * `RallarRoomFormationStatus` without its `snapshot`, carrying the causal revision lifted out of it
- * and the six fields of the room's transport status the pins read. The status declares its
- * absent-capable fields as required-with-`undefined`, so this record is built field by field: a
- * spread would carry explicit `undefined` keys that a recipe's `exists` operator then sees.
+ * `RallarRoomFormationStatus` without its `snapshot`, carrying the causal revision and the active
+ * session count lifted out of it and the six fields of the room's transport status the pins read.
+ * The status declares its absent-capable fields as required-with-`undefined`, so this record is
+ * built field by field: a spread would carry explicit `undefined` keys that a recipe's `exists`
+ * operator then sees.
  */
 export interface BlackBoxRallarFormationSummary {
     readonly roomRef: GroupRef;
@@ -772,6 +773,7 @@ export interface BlackBoxRallarFormationSummary {
     readonly formationAttemptCount: number;
     readonly lastFormationOutcome?: GroupFormationOutcome;
     readonly causalRevision: GroupStateCausalRevision;
+    readonly activeSessionCount: number;
     readonly transportState: GroupTransportState;
     readonly dialing: GroupDialLayoutRoles;
     readonly memberPolicy: GroupMemberPolicy;

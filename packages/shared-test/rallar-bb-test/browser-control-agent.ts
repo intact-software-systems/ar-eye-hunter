@@ -14,7 +14,8 @@ import { validateRallarBlackBoxProviderConfig } from './browser-control-agent/va
 import {
     createBrowserWebSocketFactory,
     createSpaBrowserRallarRuntime,
-    installSpaBrowserRallarEventBridge
+    installSpaBrowserRallarEventBridge,
+    startSpaBrowserRallarRuntimeImport
 } from './browser-rallar-runtime-bridge.ts';
 import {
     createDefaultRallarBlackBoxControlClient,
@@ -65,6 +66,8 @@ export interface BrowserControlAgentRuntime {
     readonly runtime: RallarBlackBoxTestRuntime;
     /** Absent when the simulated runtime installs no page event bridge. */
     readonly disposeBridge?: () => void;
+    /** Absent when the simulated runtime has no page runtime to import. */
+    readonly startRuntimeImport?: () => void;
 }
 
 /** The agent owns the runtime bridge and control client it is given, and disposes both with itself. */
@@ -162,6 +165,7 @@ class BrowserControlAgent implements RallarBlackBoxBrowserControlAgent {
         if (refusal !== undefined) {
             return this.recordBootstrapFailure(refusal);
         }
+        this.agentRuntime.startRuntimeImport?.();
 
         const config = toRemoteControlConfig({
             bootstrap: this.bootstrap,
@@ -288,7 +292,11 @@ function createDefaultBrowserControlAgentRuntime(bootstrap: RallarBlackBoxBootst
         fetch: (request, init) => globalThis.fetch(request, init),
         webSocketFactory: createBrowserWebSocketFactory()
     });
-    return { runtime, disposeBridge: installSpaBrowserRallarEventBridge(runtime) };
+    return {
+        runtime,
+        disposeBridge: installSpaBrowserRallarEventBridge(runtime),
+        startRuntimeImport: startSpaBrowserRallarRuntimeImport
+    };
 }
 
 function toRunState(

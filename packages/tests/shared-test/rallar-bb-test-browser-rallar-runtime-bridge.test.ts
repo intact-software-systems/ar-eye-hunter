@@ -10,7 +10,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
     createBrowserWebSocketFactory,
     createSpaBrowserRallarRuntime,
-    installSpaBrowserRallarEventBridge
+    installSpaBrowserRallarEventBridge,
+    startSpaBrowserRallarRuntimeImport
 } from '../../shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
 import type {
     RallarBlackBoxBrowserRallarEvent,
@@ -25,11 +26,11 @@ const runtimeModuleLoads = vi.hoisted(() => ({ count: 0 }));
 vi.mock('@shared-test/black-box-runner/browser/rallar-browser-runtime.ts', () => {
     runtimeModuleLoads.count += 1;
     const targetWindow = window as {
-        __blackBoxRallar?: { readAlmUsage(): Promise<undefined>; };
+        __blackBoxRallar?: { readAlmUsage(): Promise<undefined>; close(): Promise<undefined>; };
         __blackBoxRallarEmit?: (event: RallarBlackBoxBrowserRallarEvent) => void;
     };
     targetWindow.__blackBoxRallarEmit?.({ kind: 'diagnostic', topic: 'rallar.browser.runtime_loaded' });
-    targetWindow.__blackBoxRallar = { readAlmUsage: async () => undefined };
+    targetWindow.__blackBoxRallar = { readAlmUsage: async () => undefined, close: async () => undefined };
     return {};
 });
 
@@ -254,5 +255,26 @@ describe('browser Rallar runtime bridge', () => {
         socket.close(1000, 'done');
         expect(native.closedWith).toEqual({ code: 1000, reason: 'done' });
         expect(socket.readyState).toBe(WebSocket.CLOSED);
+    });
+
+    it('starts no runtime import for a page that already installed the runtime', async () => {
+        vi.stubGlobal('window', { __blackBoxRallar: { readAlmUsage: async () => undefined } });
+
+        startSpaBrowserRallarRuntimeImport();
+        await Promise.resolve();
+
+        expect(runtimeModuleLoads.count).toBe(0);
+    });
+
+    // Runs last: the bridge keeps the one import it starts for the page's lifetime.
+    it('starts the runtime import before any command, and the first command awaits that same import', async () => {
+        vi.stubGlobal('window', {});
+
+        startSpaBrowserRallarRuntimeImport();
+        await vi.waitFor(() => expect(runtimeModuleLoads.count).toBe(1));
+        startSpaBrowserRallarRuntimeImport();
+        await createSpaBrowserRallarRuntime().close();
+
+        expect(runtimeModuleLoads.count).toBe(1);
     });
 });
