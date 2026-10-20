@@ -99,21 +99,17 @@ function computeClientSnapshotProvenanceInsert(
     };
 }
 
-/** The proof's insert as a guarded-batch effect; the outbox expiry it carries is whole milliseconds by construction. */
+/** The proof's insert as a guarded-batch effect; the row expires at the proof's own millisecond expiry. */
 export function toClientSnapshotProvenanceEffect(
     insert: ClientSnapshotProvenanceInsert
 ): RuntimeStateGuardedBatchEffect {
-    const expiresAt = Temporal.Instant.from(insert.expiresAt);
-    if (expiresAt.epochNanoseconds % 1_000_000n !== 0n) {
-        throw new TypeError(`Client snapshot provenance expiry is finer than a millisecond: ${insert.expiresAt}`);
-    }
     return {
         effectId: toClientSnapshotProvenanceEffectId(insert),
         operation: 'insert',
         namespace: insert.namespace,
         key: insert.key,
         value: insert.value,
-        expireAtTimestamp: expiresAt.epochMilliseconds
+        expireAtTimestamp: Temporal.Instant.from(insert.expiresAt).epochMilliseconds
     };
 }
 

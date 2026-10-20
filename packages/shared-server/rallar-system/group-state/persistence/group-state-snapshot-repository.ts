@@ -269,7 +269,7 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
 
     /**
      * The snapshot as of the caller's instant with the version of exactly the rows it was assembled from, read in
-     * one statement (D289); a read that had to fall back to several statements carries no version.
+     * one statement; a read that had to fall back to several statements carries no version.
      */
     async readVersionedSnapshot(
         reader: RuntimeStateReadBatchVersionReader,

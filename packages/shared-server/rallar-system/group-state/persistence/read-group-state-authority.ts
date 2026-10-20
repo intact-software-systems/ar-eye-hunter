@@ -52,7 +52,7 @@ export async function readGroupStateAuthorityBatch(
     );
 }
 
-/** The same batch read with the version of exactly the rows it returned, from one statement (D289). */
+/** The same batch read with the version of exactly the rows it returned, from one statement. */
 export async function readVersionedGroupStateAuthorityBatch(
     reader: RuntimeStateReadBatchVersionReader,
     ref: GroupRef,
@@ -85,7 +85,10 @@ async function toGroupStateAuthorityBatchRead(
     };
 }
 
-/** The version of exactly the rows `readGroupStateAuthorityBatch` reads for each group, without their values, in one read (D289). */
+/**
+ * The version of exactly the rows `readGroupStateAuthorityBatch` reads, for each group, without their values and in
+ * one read.
+ */
 export async function readGroupStateAuthorityVersions(
     reader: RuntimeStateReadBatchVersionReader,
     refs: readonly GroupRef[]

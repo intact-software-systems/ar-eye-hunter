@@ -213,8 +213,7 @@ function lifecycleGuardFixture(lifecycleRead: WsSessionGenerationLifecycleRead):
         key: lifecycleRead.key,
         expectedRevision: null,
         state,
-        value: JSON.stringify(state),
-        expireAtIsoTimestamp: new Date(state.expireAtEpochMs).toISOString()
+        value: JSON.stringify(state)
     };
 }
 

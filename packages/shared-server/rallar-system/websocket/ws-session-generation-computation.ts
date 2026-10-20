@@ -67,7 +67,6 @@ type WsSessionGenerationLifecycleComputedValue = Readonly<{
     readonly key: string;
     readonly state: WsSessionCloseHighWaterState;
     readonly value: string;
-    readonly expireAtIsoTimestamp: string;
 }>;
 
 export type WsSessionGenerationLifecycleComputed =
@@ -326,8 +325,7 @@ function toComputed(
     const value = {
         key: read.key,
         state,
-        value: JSON.stringify(state),
-        expireAtIsoTimestamp: new Date(state.expireAtEpochMs).toISOString()
+        value: JSON.stringify(state)
     };
     if (outcome === 'insert') {
         return { ...value, outcome, expectedRevision: null };

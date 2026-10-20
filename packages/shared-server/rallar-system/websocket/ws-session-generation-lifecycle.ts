@@ -1,6 +1,10 @@
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
-import type { RuntimeStateGuardedBatchEffect } from '../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import type {
+    RuntimeStateGuardedBatchInsert,
+    RuntimeStateGuardedBatchUpdate
+} from '../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
+import { createTransactionBoundPSqlRuntimeStateRepository } from '../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type {
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike
@@ -49,13 +53,14 @@ export interface WsSessionGenerationLifecycleService {
     ): Promise<void>;
 }
 
-/** The lifecycle row's conditional write as a guarded-batch effect; null when the row stays as read. */
-export function toWsSessionGenerationLifecycleEffect(
-    computed: WsSessionGenerationLifecycleComputed,
-    effectId: string
-): RuntimeStateGuardedBatchEffect | null {
+/**
+ * The lifecycle row's conditional write, the one encoding that a guarded batch and the standalone write both execute;
+ * null when the row stays as read.
+ */
+export function toWsSessionGenerationLifecycleRow(
+    computed: WsSessionGenerationLifecycleComputed
+): RuntimeStateGuardedBatchInsert | RuntimeStateGuardedBatchUpdate | null {
     const row = {
-        effectId,
         namespace: SESSION_CLOSE_HIGH_WATER_NAMESPACE,
         key: computed.key,
         value: computed.value,
@@ -92,30 +97,21 @@ export function createWsSessionGenerationLifecycleService(
         computeClosed: computeWsSessionGenerationClosed,
         computeConnectGuard: computeWsSessionConnectGuard,
         write: async (transaction, computed) => {
-            if (computed.outcome === 'none') {
+            const row = toWsSessionGenerationLifecycleRow(computed);
+            if (row === null) {
                 return;
             }
-            const rows = computed.outcome === 'insert'
-                ? await transaction<Array<{ revision: number | string; }>>`
-                    insert into runtime_state_store (store_namespace, store_key, store_value,
-                                                     expire_at_ts, updated_ts, revision)
-                    values (${SESSION_CLOSE_HIGH_WATER_NAMESPACE}, ${computed.key},
-                            ${computed.value}, ${computed.expireAtIsoTimestamp}, now(), 0)
-                    on conflict (store_namespace, store_key) do nothing
-                    returning revision
-                `
-                : await transaction<Array<{ revision: number | string; }>>`
-                    update runtime_state_store
-                    set store_value = ${computed.value},
-                        expire_at_ts = ${computed.expireAtIsoTimestamp},
-                        updated_ts = now(),
-                        revision = revision + 1
-                    where store_namespace = ${SESSION_CLOSE_HIGH_WATER_NAMESPACE}
-                      and store_key = ${computed.key}
-                      and revision = ${computed.expectedRevision}
-                    returning revision
-                `;
-            if (rows.length === 0) {
+            const store = createTransactionBoundPSqlRuntimeStateRepository(transaction);
+            const written = row.operation === 'insert'
+                ? await store.insertIfAbsent(row.namespace, row.key, row.value, row.expireAtTimestamp)
+                : await store.upsertIfRevision(
+                    row.namespace,
+                    row.key,
+                    row.value,
+                    row.expireAtTimestamp,
+                    row.expectedRevision
+                );
+            if (written.status !== 'applied') {
                 throw new RuntimeStateWriteConflictError();
             }
         }

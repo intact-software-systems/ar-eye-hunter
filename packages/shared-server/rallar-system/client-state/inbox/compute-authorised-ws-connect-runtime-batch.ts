@@ -7,7 +7,7 @@ import type {
 import { validateRuntimeStateGuardedBatch } from '../../../runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
 import type { AuthWsTicketConsumption } from '../../auth/ws-ticket/auth-ws-ticket-consumption.ts';
 import type { WsSessionGenerationLifecycleComputed } from '../../websocket/ws-session-generation-computation.ts';
-import { toWsSessionGenerationLifecycleEffect } from '../../websocket/ws-session-generation-lifecycle.ts';
+import { toWsSessionGenerationLifecycleRow } from '../../websocket/ws-session-generation-lifecycle.ts';
 import type {
     ClientMutationComputedWrite,
     ClientRuntimePersistenceOperation
@@ -40,10 +40,10 @@ export function computeAuthorisedWsConnectRuntimeBatch(
         key: input.ticketConsumption.key,
         expectedRevision: input.ticketConsumption.expectedRevision
     };
-    const lifecycle = toWsSessionGenerationLifecycleEffect(input.lifecycleComputed, 'ws-session-lifecycle');
+    const lifecycle = toWsSessionGenerationLifecycleRow(input.lifecycleComputed);
     const effects: RuntimeStateGuardedBatchEffect[] = [
         ...(principal === undefined ? [] : [{ ...ticket, effectId: 'ws-ticket' }]),
-        ...(lifecycle === null ? [] : [lifecycle]),
+        ...(lifecycle === null ? [] : [{ ...lifecycle, effectId: 'ws-session-lifecycle' }]),
         ...clientRows
             .filter((row) => row !== principal)
             .map((row) => ({ ...toClientRuntimeRow(row), effectId: `client:${row.namespace}` })),

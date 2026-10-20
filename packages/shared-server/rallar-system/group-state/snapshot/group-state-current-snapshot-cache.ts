@@ -15,10 +15,10 @@ export interface GroupStateCurrentSnapshotCacheDependencies {
 }
 
 /**
- * The current group snapshot, as durable as a full read (D289). Groups with a kept snapshot cost one revision probe
- * together while unchanged; any other read is one statement per group that returns the rows with their version. A kept snapshot is
- * served only while the probe reports exactly the row versions it was assembled from, and only until a lease or row it
- * shows expires.
+ * The current group snapshot, as durable as a full read. Groups with a kept snapshot cost one revision probe together
+ * while unchanged; any other read is one statement per group that returns the rows with their version. A kept snapshot
+ * is served only while the probe reports exactly the row versions it was assembled from, and only until a lease or row
+ * it shows expires.
  */
 export class GroupStateCurrentSnapshotCache {
     private readonly cache: VersionProbedReadThroughCache<GroupRef, GroupSnapshot>;
