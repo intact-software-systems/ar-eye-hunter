@@ -221,6 +221,7 @@ function createConfiguredApiV1Runtime(
         appInboxOptions: toApiAppInboxServiceOptions(configuration.appInbox),
         appInboxLaneBudgetPolicy: configuration.appInbox.laneBudgetPolicy,
         appInboxNewLaneConcurrency: configuration.appInbox.newLaneConcurrency,
+        appInboxNewLaneHeldRows: configuration.appInbox.newLaneHeldRows,
         groupCapacity: {
             defaultMaxMembers: configuration.group.defaultMaxMembers
         },

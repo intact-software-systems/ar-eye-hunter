@@ -141,6 +141,15 @@ export class InboxOutboxEngine {
         }
     }
 
+    /**
+     * Keeps work a task's runnable started and returned without awaiting, such as the rows a queue reader holds in
+     * flight across passes: `stop` waits for it, a rejection is reported once like a failed runnable's, and its
+     * settlement wakes the engine, since it frees capacity the task's next pass can use.
+     */
+    retainSettlingWork(taskId: string, completion: Promise<void>): void {
+        void this.retainTaskCompletion(taskId, completion).then(() => this.wake());
+    }
+
     start(): void {
         if (this.running) {
             return;
@@ -160,15 +169,28 @@ export class InboxOutboxEngine {
         this.timer = NOT_SET;
         this.scheduledAtMs = undefined;
 
-        const started = [...this.tasksInFlight.keys()];
-        await this.execution;
-        const outcomes = await Promise.allSettled([...new Set([...started, ...this.tasksInFlight.keys()])]);
-        const failures = outcomes.filter((outcome) => outcome.status === 'rejected').map((outcome) =>
-            toError(outcome.reason)
-        );
+        const failures = await this.joinTasksInFlight();
         if (failures.length > 0) {
             throw new AggregateError(failures, 'Queue engine owned work failed during shutdown');
         }
+    }
+
+    /** Settling work may retain more while it is joined, such as a runnable that claims rows, so the join repeats. */
+    private async joinTasksInFlight(): Promise<Error[]> {
+        const started = [...this.tasksInFlight.keys()];
+        await this.execution;
+        const joined = new Set<Promise<void>>();
+        const failures: Error[] = [];
+        let pending = [...new Set([...started, ...this.tasksInFlight.keys()])];
+        while (pending.length > 0) {
+            pending.forEach((completion) => joined.add(completion));
+            const outcomes = await Promise.allSettled(pending);
+            failures.push(
+                ...outcomes.flatMap((outcome) => outcome.status === 'rejected' ? [toError(outcome.reason)] : [])
+            );
+            pending = [...this.tasksInFlight.keys()].filter((completion) => !joined.has(completion));
+        }
+        return failures;
     }
 
     /**

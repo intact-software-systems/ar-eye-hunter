@@ -99,6 +99,7 @@ The exact non-secret override allowlist is:
   `RALLAR_RTC_TOPOLOGY_REPLAY`, `RALLAR_API_QUEUE_WORKERS`.
 - AppInbox/observability: `RALLAR_APP_INBOX_PHASE_TIMING`,
   `RALLAR_APP_INBOX_NEW_LANE_CONCURRENCY`,
+  `RALLAR_APP_INBOX_NEW_LANE_HELD_ROWS`,
   `RALLAR_APP_INBOX_WAIT_MAX_ELAPSED_MS`,
   `RALLAR_APP_INBOX_WAIT_RETRY_INTERVAL_MS`,
   `RALLAR_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MS`,
@@ -207,6 +208,7 @@ Startup also rejects `RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE` below the tree minimum,
 | `RALLAR_TIMING_LOGS`                          | No       | Enabled | Enables the console timing sink. Exact values `0` and `false` disable it; `1` and `true` enable it. Other values reject startup. |
 | `RALLAR_APP_INBOX_PHASE_TIMING`               | No       | `false` | Enables phase timing in app inbox processing.                                                                                    |
 | `RALLAR_APP_INBOX_NEW_LANE_CONCURRENCY`       | No       | `4`     | Distinct-context AppInbox heads one NEW round claims in one statement and runs together, 1–8. Invalid values reject startup.     |
+| `RALLAR_APP_INBOX_NEW_LANE_HELD_ROWS`         | No       | `16`    | Claimed AppInbox rows the standing flight holds across passes, NEW lane concurrency to 64. Invalid values reject startup.        |
 | `RALLAR_APP_INBOX_WAIT_MAX_ELAPSED_MS`        | No       | `30000` | Max app inbox wait time. Invalid values reject startup.                                                                          |
 | `RALLAR_APP_INBOX_WAIT_RETRY_INTERVAL_MS`     | No       | `250`   | Initial app inbox retry interval. Invalid values reject startup.                                                                 |
 | `RALLAR_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MS` | No       | `1000`  | Max app inbox retry interval. Invalid values reject startup.                                                                     |
@@ -312,6 +314,7 @@ variables are relevant too:
 - Timing and app inbox: `RALLAR_TIMING_LOGS`,
   `RALLAR_APP_INBOX_PHASE_TIMING`,
   `RALLAR_APP_INBOX_NEW_LANE_CONCURRENCY`,
+  `RALLAR_APP_INBOX_NEW_LANE_HELD_ROWS`,
   `RALLAR_APP_INBOX_WAIT_MAX_ELAPSED_MS`,
   `RALLAR_APP_INBOX_WAIT_RETRY_INTERVAL_MS`,
   `RALLAR_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MS`,

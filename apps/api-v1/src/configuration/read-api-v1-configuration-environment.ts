@@ -361,6 +361,11 @@ const ENVIRONMENT_SETTINGS: readonly EnvironmentSetting[] = [
         apply: (source, value) => source.appInbox.newLaneConcurrency = value
     },
     {
+        name: 'RALLAR_APP_INBOX_NEW_LANE_HELD_ROWS',
+        decode: decodeNumber,
+        apply: (source, value) => source.appInbox.newLaneHeldRows = value
+    },
+    {
         name: 'RALLAR_APP_INBOX_WAIT_MAX_ELAPSED_MS',
         decode: decodeNumber,
         apply: (source, value) => source.appInbox.completionWait.maxElapsedMs = value

@@ -114,6 +114,7 @@ export interface CreateApiV1RuntimeInput {
     readonly appInboxOptions: AppInboxOptions;
     readonly appInboxLaneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
     readonly appInboxNewLaneConcurrency: number;
+    readonly appInboxNewLaneHeldRows: number;
     readonly groupCapacity: GroupPolicyCapacityConfig;
     readonly groupFormationRecomputeDebounceMs: number;
     readonly groupFormationRecomputeMaxWaitMs: number;
@@ -345,6 +346,7 @@ function toMutationRuntimeInput(
         appInboxOptions: input.appInboxOptions,
         appInboxLaneBudgetPolicy: input.appInboxLaneBudgetPolicy,
         appInboxNewLaneConcurrency: input.appInboxNewLaneConcurrency,
+        appInboxNewLaneHeldRows: input.appInboxNewLaneHeldRows,
         groupCapacity: input.groupCapacity,
         groupFormationRecomputeDebounceMs: input.groupFormationRecomputeDebounceMs,
         groupFormationRecomputeMaxWaitMs: input.groupFormationRecomputeMaxWaitMs,

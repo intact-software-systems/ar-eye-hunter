@@ -11,7 +11,7 @@ interface GatedRuns {
 
 describe('exclusion keyed admission', () => {
     it('runs a keyed run after every earlier run whose key equals, prefixes or extends its own', async () => {
-        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 4 });
+        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 4, keyedRunsFirst: false });
         const runs = createGatedRuns();
 
         const scoped = admission.admit('app:group', runs.run('scoped'));
@@ -36,7 +36,7 @@ describe('exclusion keyed admission', () => {
     });
 
     it('holds at most the bound in flight and gives a waiting keyed run no slot', async () => {
-        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 2 });
+        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 2, keyedRunsFirst: false });
         const runs = createGatedRuns();
 
         const first = admission.admit('group', runs.run('first'));
@@ -56,23 +56,24 @@ describe('exclusion keyed admission', () => {
     });
 
     it('releases the runs ordered behind a failed run and rejects only the failed one', async () => {
-        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1 });
+        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, keyedRunsFirst: false });
         const runs = createGatedRuns();
         const failure = new Error('handler failed');
 
         const failed = admission.admit('group', runs.run('failed'));
+        const failedRejection = expect(failed).rejects.toBe(failure);
         const next = admission.admit('group', runs.run('next'));
         await vi.waitFor(() => expect(runs.started).toEqual(['failed']));
         runs.fail('failed', failure);
         await vi.waitFor(() => expect(runs.started).toEqual(['failed', 'next']));
         runs.finish('next');
 
-        await expect(failed).rejects.toBe(failure);
+        await failedRejection;
         await expect(next).resolves.toBe('next');
     });
 
     it('admits runs without an earlier overlapping run in arrival order, keyed or not', async () => {
-        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1 });
+        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, keyedRunsFirst: false });
         const runs = createGatedRuns();
 
         const results = [
@@ -87,6 +88,49 @@ describe('exclusion keyed admission', () => {
 
         expect(await Promise.all(results)).toEqual(['first', 'second', 'third']);
         expect(runs.started).toEqual(['first', 'second', 'third']);
+    });
+
+    it('gives a freed slot to keyed runs ahead of waiting keyless runs when keyed runs go first, in order within a key', async () => {
+        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 2, keyedRunsFirst: true });
+        const runs = createGatedRuns();
+
+        const results = [
+            admission.admit('group', runs.run('group-1')),
+            admission.admit(undefined, runs.run('free-1')),
+            admission.admit(undefined, runs.run('free-2')),
+            admission.admit('group', runs.run('group-2')),
+            admission.admit('other', runs.run('other-1'))
+        ];
+        await vi.waitFor(() => expect(runs.started).toEqual(['group-1', 'free-1']));
+        // The freed slot goes to the keyed run that waits for a slot alone, ahead of the earlier keyless one.
+        runs.finish('free-1');
+        await vi.waitFor(() => expect(runs.started).toEqual(['group-1', 'free-1', 'other-1']));
+        // A keyed run released by its predecessor's settlement still goes ahead of the waiting keyless run.
+        runs.finish('group-1');
+        await vi.waitFor(() => expect(runs.started).toEqual(['group-1', 'free-1', 'other-1', 'group-2']));
+        runs.finish('other-1');
+        await vi.waitFor(() => expect(runs.started.at(-1)).toBe('free-2'));
+        runs.finish('group-2');
+        runs.finish('free-2');
+
+        expect(await Promise.all(results)).toEqual(['group-1', 'free-1', 'free-2', 'group-2', 'other-1']);
+    });
+
+    it('keeps arrival order across keyed and keyless runs when keyed runs do not go first', async () => {
+        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, keyedRunsFirst: false });
+        const runs = createGatedRuns();
+
+        const results = [
+            admission.admit(undefined, runs.run('holder')),
+            admission.admit(undefined, runs.run('free')),
+            admission.admit('group', runs.run('keyed'))
+        ];
+        for (const name of ['holder', 'free', 'keyed']) {
+            await vi.waitFor(() => expect(runs.started.at(-1)).toBe(name));
+            runs.finish(name);
+        }
+
+        expect(await Promise.all(results)).toEqual(['holder', 'free', 'keyed']);
     });
 });
 

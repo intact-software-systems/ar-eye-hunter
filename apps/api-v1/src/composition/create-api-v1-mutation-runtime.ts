@@ -103,6 +103,7 @@ export interface CreateApiV1MutationRuntimeInput {
     readonly appInboxOptions: AppInboxOptions;
     readonly appInboxLaneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
     readonly appInboxNewLaneConcurrency: number;
+    readonly appInboxNewLaneHeldRows: number;
     readonly groupCapacity: GroupPolicyCapacityConfig;
     readonly groupFormationRecomputeDebounceMs: number;
     readonly groupFormationRecomputeMaxWaitMs: number;
@@ -484,6 +485,7 @@ function createAppInboxDequeueOptions(
     return {
         laneBudgetPolicy: input.appInboxLaneBudgetPolicy,
         newLaneConcurrency: input.appInboxNewLaneConcurrency,
+        newLaneHeldRows: input.appInboxNewLaneHeldRows,
         toComputeExclusionKey: (_key, attempt) => toGroupCommandExclusionKey(attempt.entry),
         completionNotifications,
         nowEpochMs: input.nowEpochMs,

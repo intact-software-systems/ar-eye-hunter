@@ -110,7 +110,7 @@ describe('OutboxQueueReader', () => {
         expect(outboxMessages).toHaveLength(1);
     });
 
-    it('tells its dequeue-pass observer about the probe, the pass and each claimed handler', async () => {
+    it('tells its dequeue-pass observer about the probe, the pass, each claim and each claimed handler', async () => {
         const queue = new InMemoryQueueBox();
         const outbox = new OutboxQueueReader(queue);
         const observed: string[] = [];
@@ -118,6 +118,7 @@ describe('OutboxQueueReader', () => {
             onProbeStarted: () => observed.push('probe-started'),
             onProbeFinished: (advertisedLanes) => observed.push(`probe-finished:${advertisedLanes.NEW}`),
             onPassStarted: () => observed.push('pass-started'),
+            onEntryClaimed: (attempt) => observed.push(`claimed:${attempt.entry.key.resourceId}`),
             onHandlerStarted: (attempt) => observed.push(`handler-started:${attempt.entry.key.resourceId}`),
             onHandlerFinished: (attempt) => observed.push(`handler-finished:${attempt.entry.key.resourceId}`),
             onPassFinished: () => observed.push('pass-finished')
@@ -133,6 +134,7 @@ describe('OutboxQueueReader', () => {
             'probe-started',
             'probe-finished:true',
             'pass-started',
+            `claimed:${message.route.resourceId}`,
             `handler-started:${message.route.resourceId}`,
             `handler-finished:${message.route.resourceId}`,
             'pass-finished'

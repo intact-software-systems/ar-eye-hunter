@@ -14,7 +14,7 @@ export interface RegisterRallarMiddlewareQueueTasksInput {
 }
 
 export interface RegisterApplicationQueueReaderTasksInput {
-    readonly engine: Pick<InboxOutboxEngine, 'includeTask' | 'wake' | 'wakeAt'>;
+    readonly engine: Pick<InboxOutboxEngine, 'includeTask' | 'wake' | 'wakeAt' | 'retainSettlingWork'>;
     readonly nowEpochMs: () => number;
     readonly inboxQueueReader: InboxQueueReader;
     readonly outboxQueueReader: OutboxQueueReader;
@@ -28,6 +28,8 @@ const QUEUE_READER_FAILURE_BACKOFF: FailureBackoff.Config = { baseMs: 1_000, max
 interface QueueReaderTask {
     readonly taskId: string;
     readonly resilience: ResourceInboxResilience;
+    /** True while the next pass could claim nothing before a row the reader holds in flight settles. */
+    readonly isAwaitingFlightSettlement: () => boolean;
     readonly readWorkAdvertisement: () => Promise<DequeueController.WorkAdvertisement>;
     readonly dequeue: (workAdvertisement: DequeueController.WorkAdvertisement | undefined) => Promise<number>;
 }
@@ -100,12 +102,20 @@ export function createRallarMiddlewareQueueRegistration(
     return new RallarMiddlewareQueueRegistration(engine);
 }
 
+/**
+ * The AppInbox reader's flight rows outlive the pass that claimed them: the engine joins each on stop, and each
+ * settlement wakes it, so the next pass tops the flight up at once instead of probing while it is full.
+ */
 export function registerApplicationQueueReaderTasks(
     input: RegisterApplicationQueueReaderTasksInput
 ): void {
+    input.inboxQueueReader.onFlightEntryDo((settlement) =>
+        input.engine.retainSettlingWork(InboxQueueReader.INBOX_ENQUEUE_TYPE, settlement)
+    );
     includeQueueReaderTask(input, {
         taskId: InboxQueueReader.INBOX_ENQUEUE_TYPE,
         resilience: input.appInboxResilience,
+        isAwaitingFlightSettlement: () => input.inboxQueueReader.isAwaitingFlightSettlement(),
         readWorkAdvertisement: () =>
             input.inboxQueueReader.readWorkAdvertisement(
                 InboxQueueReader.INBOX_DEQUEUE_TYPES,
@@ -121,6 +131,7 @@ export function registerApplicationQueueReaderTasks(
     includeQueueReaderTask(input, {
         taskId: OutboxQueueReader.OUTBOX_ENQUEUE_TYPE,
         resilience: input.appOutboxResilience,
+        isAwaitingFlightSettlement: () => false,
         readWorkAdvertisement: () =>
             input.outboxQueueReader.readWorkAdvertisement(
                 OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
@@ -142,7 +153,8 @@ export function registerApplicationQueueReaderTasks(
  * A batch that claimed work wakes the engine, so the next claim does not wait out the idle backoff.
  * An open circuit, a failed readiness probe or a failed batch advertises no work and wakes the task
  * when it may run again, so none of them probes storage on every pass nor holds the task's only slot
- * while it waits. A failed probe still rethrows, so the engine reports it once for that pass.
+ * while it waits. A failed probe still rethrows, so the engine reports it once for that pass. A reader
+ * awaiting a flight settlement advertises no work either: the settlement wakes the engine.
  */
 function includeQueueReaderTask(
     input: RegisterApplicationQueueReaderTasksInput,
@@ -158,6 +170,9 @@ function includeQueueReaderTask(
             const deferredUntilMs = task.resilience.getDequeueReopenAtMs(nowMs) ?? failureBackoff.getRetryAtMs(nowMs);
             if (deferredUntilMs !== undefined) {
                 input.engine.wakeAt(task.taskId, deferredUntilMs);
+                return false;
+            }
+            if (task.isAwaitingFlightSettlement()) {
                 return false;
             }
             try {

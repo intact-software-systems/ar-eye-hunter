@@ -34,10 +34,12 @@ describe('AppInboxDequeuePassTiming', () => {
         executor.run(5);
         executor.observer.onPassStarted();
         executor.run(1);
+        executor.observer.onEntryClaimed(first);
         executor.observer.onHandlerStarted(first);
         executor.run(3);
         executor.observer.onHandlerFinished(first);
         executor.run(1);
+        executor.observer.onEntryClaimed(second);
         executor.observer.onHandlerStarted(second);
         executor.run(2);
         executor.observer.onHandlerFinished(second);
@@ -83,6 +85,7 @@ describe('AppInboxDequeuePassTiming', () => {
 
         executor.observer.onPassStarted();
         executor.run(2);
+        executor.observer.onEntryClaimed(only);
         executor.observer.onHandlerStarted(only);
         executor.run(1);
         executor.observer.onHandlerFinished(only);
@@ -112,6 +115,7 @@ describe('AppInboxDequeuePassTiming', () => {
         executor.observer.onProbeFinished({ FINALIZATION: false, NEW: true, RETRY: false, FAIRNESS: false, TIMEOUT: false });
         executor.observer.onPassStarted();
         executor.run(1);
+        executor.observer.onEntryClaimed(presenceSummary);
         executor.observer.onHandlerStarted(presenceSummary);
         executor.run(2);
         executor.observer.onHandlerFinished(presenceSummary);
@@ -152,8 +156,10 @@ describe('AppInboxDequeuePassTiming', () => {
 
         executor.observer.onPassStarted();
         executor.run(1);
+        executor.observer.onEntryClaimed(first);
         executor.observer.onHandlerStarted(first);
         executor.run(2);
+        executor.observer.onEntryClaimed(second);
         executor.observer.onHandlerStarted(second);
         executor.run(3);
         executor.observer.onHandlerFinished(first);
@@ -171,6 +177,65 @@ describe('AppInboxDequeuePassTiming', () => {
         );
     });
 
+    it('attributes each row to the pass that claimed it when its handler runs after that pass, less only the handler time inside each pass', () => {
+        const executor = createSimulatedExecutor();
+        const first = createAttempt('first', Reservator.NEW);
+        const second = createAttempt('second', Reservator.NEW);
+        const third = createAttempt('third', Reservator.RETRY);
+
+        executor.observer.onProbeStarted();
+        executor.run(1);
+        executor.observer.onProbeFinished({ FINALIZATION: false, NEW: true, RETRY: false, FAIRNESS: false, TIMEOUT: false });
+        executor.observer.onPassStarted();
+        executor.run(1);
+        executor.observer.onEntryClaimed(first);
+        executor.run(1);
+        executor.observer.onEntryClaimed(second);
+        executor.observer.onPassFinished();
+        executor.observer.onHandlerStarted(first);
+        executor.run(3);
+        executor.observer.onPassStarted();
+        executor.run(2);
+        executor.observer.onEntryClaimed(third);
+        executor.observer.onHandlerFinished(first);
+        executor.run(1);
+        executor.observer.onPassFinished();
+        executor.observer.onHandlerStarted(second);
+        executor.run(4);
+        executor.observer.onHandlerFinished(second);
+
+        expect(executor.getLines('dequeue-pass').map(({ requestId, durationMs, details }) => ({ requestId, durationMs, details }))).toEqual([
+            { requestId: 'first', durationMs: 3, details: expect.objectContaining({ statements: 3, claimedInPass: 2, passWallMs: 2, handlersMs: 0 }) },
+            { requestId: 'second', durationMs: 3, details: expect.objectContaining({ statements: 3, claimedInPass: 2, passWallMs: 2, handlersMs: 0 }) },
+            { requestId: 'third', durationMs: 1, details: expect.objectContaining({ statements: 1, claimedInPass: 1, passWallMs: 3, handlersMs: 2 }) }
+        ]);
+        expect(executor.getLines('dequeue-pass-boundary').map(({ details }) => details)).toEqual([
+            expect.objectContaining({ claimedInPass: 2, claimedNew: 2, claimedRetry: 0, passWallMs: 2 }),
+            expect.objectContaining({ claimedInPass: 1, claimedNew: 0, claimedRetry: 1, passWallMs: 3 })
+        ]);
+    });
+
+    it('subtracts a handler that outlives the pass only up to the end of that pass', () => {
+        const executor = createSimulatedExecutor();
+        const running = createAttempt('running', Reservator.NEW);
+        const claimed = createAttempt('claimed', Reservator.NEW);
+
+        executor.observer.onPassStarted();
+        executor.run(1);
+        executor.observer.onEntryClaimed(running);
+        executor.observer.onHandlerStarted(running);
+        executor.run(2);
+        executor.observer.onEntryClaimed(claimed);
+        executor.observer.onPassFinished();
+        executor.run(5);
+        executor.observer.onHandlerFinished(running);
+
+        expect(executor.getLines('dequeue-pass').map(({ details }) => details)).toEqual([
+            expect.objectContaining({ statements: 1, passWallMs: 3, handlersMs: 2 }),
+            expect.objectContaining({ statements: 1, passWallMs: 3, handlersMs: 2 })
+        ]);
+    });
+
     it('closes a claiming pass with one boundary line: its wall, the probe before it and what it claimed per lane', () => {
         const executor = createSimulatedExecutor();
         const first = createAttempt('first', Reservator.NEW);
@@ -183,6 +248,7 @@ describe('AppInboxDequeuePassTiming', () => {
         executor.nowMs += 5;
         executor.observer.onPassStarted();
         for (const attempt of [first, second, retry]) {
+            executor.observer.onEntryClaimed(attempt);
             executor.observer.onHandlerStarted(attempt);
             executor.run(2);
             executor.observer.onHandlerFinished(attempt);

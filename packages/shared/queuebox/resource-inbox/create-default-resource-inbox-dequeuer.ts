@@ -3,7 +3,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import { RateLimiter } from '../../resilience/Resilience.ts';
 import { toErrorSummaryLine } from '../../resilience/to-error.ts';
 import { DequeueController, Reservator } from '../dequeue/dequeue-controller.ts';
-import { toDequeuedKeyText } from '../dequeue/dequeue-lane-flight.ts';
+import { toDequeuedKeyText, type DequeueLaneFlight } from '../dequeue/dequeue-lane-flight.ts';
 import {
     toSaturatedResourceInboxFairnessScanBudget,
     type DequeueResourceEntryRepository,
@@ -125,7 +125,7 @@ export class ResourceInboxHandlerEntryError extends Error {
     }
 }
 
-export interface ResourceInboxDequeuerInput {
+export interface ResourceInboxDequeuerInput<V> {
     readonly repository: DequeueResourceEntryRepository;
     readonly typesToDequeue: () => Set<string>;
     /** The order the NEW lane claims in; the other lanes always claim in queue order. */
@@ -137,6 +137,12 @@ export interface ResourceInboxDequeuerInput {
     readonly workAdvertisement?: DequeueController.WorkAdvertisement;
     readonly resilience: ResourceInboxResilience;
     readonly options?: DequeueResourceEntryOptions;
+    /**
+     * The flight its owner keeps across passes, which every lane tops up; its rows' contexts are excluded from each NEW
+     * and RETRY claim, which then take context heads. Absent, each pass drains its claims and serves a context's head
+     * at most once.
+     */
+    readonly standingFlight?: DequeueLaneFlight<Resource.Key, ResourceInboxAttempt, V>;
 }
 
 export interface DequeueResourceEntryOptions {
@@ -186,7 +192,7 @@ interface ResourceInboxFailureDecision {
 }
 
 export function createDefaultResourceInboxDequeuer<V>(
-    input: ResourceInboxDequeuerInput
+    input: ResourceInboxDequeuerInput<V>
 ): DequeueController<Resource.Key, ResourceInboxAttempt, V> {
     const options = input.options ?? {};
     const dependencies: ResourceInboxDequeueDependencies = {
@@ -197,22 +203,17 @@ export function createDefaultResourceInboxDequeuer<V>(
         jitterUnit: options.jitterUnit ?? Math.random,
         recordReservationTelemetry: options.onReservationTelemetry ?? recordResourceInboxReservation
     };
-    // One pass serves a context's head at most once: its next row waits for the next pass.
-    const servedNewContextIds = new Set<string>();
-    const newContextClaim = input.newLaneClaimOrder === 'oldest-per-context'
-        ? { excludedContextIds: servedNewContextIds }
-        : undefined;
+    const contextClaims = createResourceInboxContextClaims(input);
     return createResourceInboxFinalizationController<V>(dependencies, input)
+        .withStandingFlight(input.standingFlight)
         .onNewEntriesReserveDo(async (types, maxToReserve) => {
             const attempts = await reserveResourceInboxAttempts(dependencies, {
                 types,
                 maxToReserve,
                 lane: Reservator.NEW,
-                contextClaim: newContextClaim
+                contextClaim: contextClaims.getNewContextClaim()
             });
-            for (const key of attempts.keys()) {
-                servedNewContextIds.add(key.contextId);
-            }
+            contextClaims.recordServedContexts(attempts.keys());
             return attempts;
         })
         .onRetryEntriesReserveDo((types, maxToReserve) =>
@@ -220,7 +221,7 @@ export function createDefaultResourceInboxDequeuer<V>(
                 types,
                 maxToReserve,
                 lane: Reservator.RETRY,
-                contextClaim: undefined
+                contextClaim: contextClaims.getRetryContextClaim()
             })
         )
         .onFairnessEntriesReserveDo((types, maxToReserve) =>
@@ -235,9 +236,47 @@ export function createDefaultResourceInboxDequeuer<V>(
         );
 }
 
+interface ResourceInboxContextClaims {
+    readonly getNewContextClaim: () => ResourceInboxContextClaim | undefined;
+    readonly getRetryContextClaim: () => ResourceInboxContextClaim | undefined;
+    readonly recordServedContexts: (keys: Iterable<Resource.Key>) => void;
+}
+
+/**
+ * A standing flight excludes the contexts it holds a row of, so a context's next row is claimed once its head is
+ * released, in whichever pass that is. Without one, a pass serves a context's head at most once: its next row waits
+ * for the next pass, and RETRY claims in queue order.
+ */
+function createResourceInboxContextClaims<V>(input: ResourceInboxDequeuerInput<V>): ResourceInboxContextClaims {
+    const flight = input.standingFlight;
+    if (flight !== undefined) {
+        const getInFlightClaim = () => ({
+            excludedContextIds: new Set(flight.getUnreleasedKeys().map((key) => key.contextId))
+        });
+        return {
+            getNewContextClaim: getInFlightClaim,
+            getRetryContextClaim: getInFlightClaim,
+            recordServedContexts: () => {}
+        };
+    }
+    const servedNewContextIds = new Set<string>();
+    const newContextClaim = input.newLaneClaimOrder === 'oldest-per-context'
+        ? { excludedContextIds: servedNewContextIds }
+        : undefined;
+    return {
+        getNewContextClaim: () => newContextClaim,
+        getRetryContextClaim: () => undefined,
+        recordServedContexts: (keys) => {
+            for (const key of keys) {
+                servedNewContextIds.add(key.contextId);
+            }
+        }
+    };
+}
+
 function createResourceInboxFinalizationController<V>(
     dependencies: ResourceInboxDequeueDependencies,
-    input: ResourceInboxDequeuerInput
+    input: ResourceInboxDequeuerInput<V>
 ): DequeueController<Resource.Key, ResourceInboxAttempt, V> {
     return DequeueController.create<Resource.Key, ResourceInboxAttempt, V>()
         .withInboxTypesToDequeue(input.typesToDequeue)

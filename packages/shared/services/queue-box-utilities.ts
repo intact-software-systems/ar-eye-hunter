@@ -4,6 +4,7 @@ import type { ALMessage } from '../al-contracts/al-contract.ts';
 import { resolveALMessageExpireAtMs } from '../al-contracts/al-policy.ts';
 import { toAppQueueCreatedBy } from '../queuebox/AppQueueIdentity.ts';
 import { DequeueController } from '../queuebox/dequeue/dequeue-controller.ts';
+import type { DequeueLaneFlight } from '../queuebox/dequeue/dequeue-lane-flight.ts';
 import type { QueueBoxResourceEntryRepository, ResourceInboxClaimOrder } from '../queuebox/queue-box-types.ts';
 import {
     createDefaultResourceInboxDequeuer,
@@ -22,14 +23,19 @@ import type { ResourceInboxResilience } from '../queuebox/resource-inbox/resourc
 import {
     EntityStatus,
     NEVER_EXPIRE_TS,
+    type Key,
     type ResourceEntry
 } from '../queuebox/ResourceEntry.ts';
 
 export namespace QueueBoxUtilities {
     export type CreationClock = () => Temporal.Instant;
 
-    /** Told when a claimed entry's handler starts and settles, whatever its outcome; the owner measures around them. */
+    /**
+     * Told when a pass claims an entry, and when the entry's handler starts and settles, whatever its outcome; the owner
+     * measures around them. With a standing flight the handler may start and settle after the claiming pass returned.
+     */
     export interface DequeueHandlerObserver {
+        onEntryClaimed(attempt: ResourceInboxAttempt): void;
         onHandlerStarted(attempt: ResourceInboxAttempt): void;
         onHandlerFinished(attempt: ResourceInboxAttempt): void;
     }
@@ -48,13 +54,16 @@ export namespace QueueBoxUtilities {
         /** The probe that preceded this pass; without one every lane is offered a reservation. */
         readonly workAdvertisement?: DequeueController.WorkAdvertisement;
         readonly handlerObserver?: DequeueHandlerObserver;
+        /** Absent, the pass drains what it claims before it resolves. */
+        readonly standingFlight?: DequeueLaneFlight<Key, ResourceInboxAttempt, ResourceInboxHandlerOutcome | undefined>;
     }
 }
 
 export class QueueBoxUtilities {
     /**
-     * Resolves with the number of entries this invocation's processing lanes claimed and released, whatever each
-     * handler's outcome. A claim retried within the same invocation counts again.
+     * Resolves with the number of entries this invocation's processing lanes claimed, whatever each handler's outcome;
+     * a claim retried within the same invocation counts again. The breaker hears each entry's verdict when it is
+     * released, which with a standing flight may be after the invocation resolved.
      */
     static async defaultDequeue(
         {
@@ -66,7 +75,8 @@ export class QueueBoxUtilities {
             options,
             readLaneBudgets,
             workAdvertisement,
-            handlerObserver
+            handlerObserver,
+            standingFlight
         }: QueueBoxUtilities.DequeueInput
     ): Promise<number> {
         if (resilience.isNotAllowedThroughToDequeue()) {
@@ -88,16 +98,21 @@ export class QueueBoxUtilities {
             readLaneBudgets,
             workAdvertisement,
             resilience: resilience,
-            options: options
+            options: options,
+            standingFlight
         })
+            .onClaimedEntries((claimed) => {
+                claimedCount += claimed.size;
+                for (const attempt of claimed.values()) {
+                    handlerObserver?.onEntryClaimed(attempt);
+                }
+            })
             .onFailedEntries((failures) => {
-                claimedCount += failures.size;
                 if ([...failures.values()].some((failure) => isOperationalDequeueFailure(failure.exception, options))) {
                     resilience.failure();
                 }
             })
             .onCompletedEntries((completed) => {
-                claimedCount += completed.size;
                 // A typed rejection is a completed entry: the queue worked, so it is a resilience success. A conflict
                 // value is redelivered, neither a success nor an operational failure.
                 if (

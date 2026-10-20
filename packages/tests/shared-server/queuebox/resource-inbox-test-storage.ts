@@ -27,8 +27,14 @@ export interface ResourceInboxTestRow {
     readonly expired?: boolean;
 }
 
-/** The API-v1 schema on PGlite, or on the integration PostgreSQL in its own schema when `RALLAR_POSTGRES_INTEGRATION=1`. */
-export async function createResourceInboxTestStorage(schemaPrefix: string): Promise<ResourceInboxTestStorage> {
+/**
+ * The API-v1 schema on PGlite, or on the integration PostgreSQL in its own schema when `RALLAR_POSTGRES_INTEGRATION=1`,
+ * through a pool of `maxConnections` there.
+ */
+export async function createResourceInboxTestStorage(
+    schemaPrefix: string,
+    maxConnections = 1
+): Promise<ResourceInboxTestStorage> {
     const schemaSql = await readFile(API_V1_IN_MEMORY_SCHEMA_URL, 'utf8');
     if (process.env.RALLAR_POSTGRES_INTEGRATION !== '1') {
         const sql = createPGliteSqlClient(new PGlite());
@@ -37,7 +43,7 @@ export async function createResourceInboxTestStorage(schemaPrefix: string): Prom
     }
     const schema = `${schemaPrefix}_${crypto.randomUUID().replaceAll('-', '')}`;
     const client = postgres(process.env.DATABASE_URL ?? 'postgres://app:app@localhost:5432/appdb', {
-        max: 1,
+        max: maxConnections,
         connection: { search_path: schema },
         types: { timestampWithoutTimeZone: createPostgresTimestampWithoutTimeZoneTextType() }
     });

@@ -456,10 +456,16 @@ function decodeTopology(
 function decodeAppInbox(
     decoder: ApiV1ConfigurationValueDecoder
 ): ApiV1AppInboxConfiguration {
+    const newLaneConcurrency = decoder.integer(
+        'appInbox.newLaneConcurrency',
+        1,
+        InboxQueueReader.NEW_CONTEXTS_PER_PASS
+    );
     return {
         phaseTiming: decoder.boolean('appInbox.phaseTiming'),
         laneBudgetPolicy: decoder.enumeration('appInbox.laneBudgetPolicy', InboxQueueReader.LANE_BUDGET_POLICIES),
-        newLaneConcurrency: decoder.integer('appInbox.newLaneConcurrency', 1, InboxQueueReader.NEW_CONTEXTS_PER_PASS),
+        newLaneConcurrency,
+        newLaneHeldRows: decodeAppInboxNewLaneHeldRows(decoder, newLaneConcurrency),
         completionWait: {
             maxElapsedMs: decoder.integer('appInbox.completionWait.maxElapsedMs', 0),
             retryIntervalMs: decoder.integer(
@@ -473,6 +479,25 @@ function decodeAppInbox(
             jitterRatio: decoder.ratio('appInbox.completionWait.jitterRatio')
         }
     };
+}
+
+/** The defaults source may not name the bound yet; until it does, the flight holds four rows per compute slot of the default lane. */
+const DEFAULT_APP_INBOX_NEW_LANE_HELD_ROWS = 16;
+
+function decodeAppInboxNewLaneHeldRows(decoder: ApiV1ConfigurationValueDecoder, newLaneConcurrency: number): number {
+    const path = 'appInbox.newLaneHeldRows';
+    if (!decoder.hasValue(path)) {
+        return DEFAULT_APP_INBOX_NEW_LANE_HELD_ROWS;
+    }
+    const newLaneHeldRows = decoder.integer(path, 1, InboxQueueReader.MAX_NEW_LANE_HELD_ROWS);
+    if (decoder.isValid(path, 'appInbox.newLaneConcurrency') && newLaneHeldRows < newLaneConcurrency) {
+        decoder.invariant(
+            path,
+            'held-rows-below-concurrency',
+            'The flight must hold at least the NEW lane concurrency.'
+        );
+    }
+    return newLaneHeldRows;
 }
 
 function decodeIce(

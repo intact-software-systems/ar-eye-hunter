@@ -2,13 +2,22 @@ export namespace BoundedConcurrencyAdmission {
     export interface Config {
         readonly maxConcurrent: number;
     }
+
+    /** A preferred run takes a freed slot ahead of every waiting in-turn run. */
+    export type Priority = 'preferred' | 'in-turn';
 }
 
-/** Admits runs in arrival order with at most the bound in flight; a run keeps its slot until it settles. */
+/**
+ * Admits runs with at most the bound in flight; a run keeps its slot until it settles. Waiting runs of one priority
+ * are admitted in arrival order, and a waiting preferred run goes before every waiting in-turn run.
+ */
 export class BoundedConcurrencyAdmission {
     private readonly maxConcurrent: number;
     private inFlight = 0;
-    private readonly waiting: Array<() => void> = [];
+    private readonly waiting: Readonly<Record<BoundedConcurrencyAdmission.Priority, Array<() => void>>> = {
+        preferred: [],
+        'in-turn': []
+    };
 
     constructor(config: BoundedConcurrencyAdmission.Config) {
         if (!Number.isInteger(config.maxConcurrent) || config.maxConcurrent < 1) {
@@ -17,8 +26,8 @@ export class BoundedConcurrencyAdmission {
         this.maxConcurrent = config.maxConcurrent;
     }
 
-    async admit<T>(run: () => Promise<T>): Promise<T> {
-        await this.waitForSlot();
+    async admit<T>(run: () => Promise<T>, priority: BoundedConcurrencyAdmission.Priority = 'in-turn'): Promise<T> {
+        await this.waitForSlot(priority);
         try {
             return await run();
         }
@@ -27,13 +36,13 @@ export class BoundedConcurrencyAdmission {
         }
     }
 
-    private waitForSlot(): Promise<void> {
+    private waitForSlot(priority: BoundedConcurrencyAdmission.Priority): Promise<void> {
         if (this.inFlight < this.maxConcurrent) {
             this.inFlight += 1;
             return Promise.resolve();
         }
         return new Promise((resolve) => {
-            this.waiting.push(() => {
+            this.waiting[priority].push(() => {
                 this.inFlight += 1;
                 resolve();
             });
@@ -42,6 +51,6 @@ export class BoundedConcurrencyAdmission {
 
     private releaseSlot(): void {
         this.inFlight -= 1;
-        this.waiting.shift()?.();
+        (this.waiting.preferred.shift() ?? this.waiting['in-turn'].shift())?.();
     }
 }

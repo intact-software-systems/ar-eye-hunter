@@ -182,6 +182,11 @@ export interface ApiV1AppInboxConfiguration {
     readonly laneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
     /** Distinct-context heads one NEW round claims and runs together (1 to `InboxQueueReader.NEW_CONTEXTS_PER_PASS`). */
     readonly newLaneConcurrency: number;
+    /**
+     * Claimed AppInbox rows the standing flight holds across passes, computing or waiting for a slot or a predecessor
+     * (`newLaneConcurrency` to `InboxQueueReader.MAX_NEW_LANE_HELD_ROWS`).
+     */
+    readonly newLaneHeldRows: number;
     readonly completionWait: ApiV1AppInboxCompletionWaitConfiguration;
 }
 

@@ -36,6 +36,18 @@ export namespace DequeueController {
         readonly value: V;
         readonly computedValue: T;
     }
+
+    /** Claims up to `numToReserve` entries of the given types; claiming fewer means none more are claimable now. */
+    export type EntryReservator<K, V> = (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>;
+}
+
+interface ReserveIntoFlightInput<K, V, T> {
+    readonly reservator: DequeueController.EntryReservator<K, V>;
+    readonly flight: DequeueLaneFlight<K, V, T>;
+    readonly work: DequeueLaneFlight.Work<K, V, T>;
+    readonly budget: DequeueController.LaneBudget | undefined;
+    /** Absent for a standing flight: the pass then neither waits for a compute slot nor joins what it claimed. */
+    readonly settlements: Promise<DequeueLaneFlight.Settlement<K, V, T>>[] | undefined;
 }
 
 export class DequeueController<K, V, T> {
@@ -55,12 +67,13 @@ export class DequeueController<K, V, T> {
     private typesToDequeue: () => Set<string> = () => new Set<string>();
     private admitsReservation: (types: Set<string>) => boolean = () => true;
     private toExclusionKey: ((key: K, value: V) => string | undefined) | undefined;
+    private standingFlight: DequeueLaneFlight<K, V, T> | undefined;
 
-    private newReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>;
-    private retryReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>;
-    private fairnessReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>;
-    private timeoutReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>;
-    private finalizationReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>;
+    private newReservator?: DequeueController.EntryReservator<K, V>;
+    private retryReservator?: DequeueController.EntryReservator<K, V>;
+    private fairnessReservator?: DequeueController.EntryReservator<K, V>;
+    private timeoutReservator?: DequeueController.EntryReservator<K, V>;
+    private finalizationReservator?: DequeueController.EntryReservator<K, V>;
     private finalizationComputer?: (key: K, value: V) => Promise<K>;
 
     private successReleaser?: (
@@ -73,6 +86,7 @@ export class DequeueController<K, V, T> {
     private onCompleted?: (m: Map<K, DequeueController.Success<K, V, T>>) => void;
     private onFailed?: (m: Map<K, DequeueController.Failure<K, V>>) => void;
     private onPreProcessingReserved?: (m: Map<K, V>) => Promise<Map<K, V>>;
+    private onClaimed?: (m: Map<K, V>) => void;
 
     private constructor(logger: Pick<Console, 'debug' | 'warn' | 'error'> = console) {
         this.log = logger;
@@ -122,38 +136,50 @@ export class DequeueController<K, V, T> {
         return this;
     }
 
+    /**
+     * The flight every processing lane adds its claims to instead of one of its own, kept by the owner across passes.
+     * A pass then tops it up to its hold bound and returns without waiting for what it claimed: those rows compute and
+     * release after the pass, and the flight's own exclusion and compute bound order them with the rows of earlier
+     * passes. The recovery lanes top up before NEW, so a NEW backlog never leaves them without a place. Absent, each
+     * lane computes its claims in a flight of its own that the pass drains before it returns.
+     */
+    withStandingFlight(standingFlight: DequeueLaneFlight<K, V, T> | undefined): this {
+        this.standingFlight = standingFlight;
+        return this;
+    }
+
     /** Asked before every reservation of a lane; false ends the lane, and the rows already reserved still finish. */
     onReservationAdmissionDo(admitsReservation: (types: Set<string>) => boolean): this {
         this.admitsReservation = requireNonNull(admitsReservation);
         return this;
     }
 
-    onNewEntriesReserveDo(reservator: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>): this {
+    onNewEntriesReserveDo(reservator: DequeueController.EntryReservator<K, V>): this {
         this.newReservator = requireNonNull(reservator);
         return this;
     }
 
-    onRetryEntriesReserveDo(retryReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>): this {
+    onRetryEntriesReserveDo(retryReservator?: DequeueController.EntryReservator<K, V>): this {
         this.retryReservator = retryReservator;
         return this;
     }
 
     onFairnessEntriesReserveDo(
-        fairnessReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>
+        fairnessReservator?: DequeueController.EntryReservator<K, V>
     ): this {
         this.fairnessReservator = fairnessReservator;
         return this;
     }
 
     onTimeoutEntriesReserveDo(
-        timeoutReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>
+        timeoutReservator?: DequeueController.EntryReservator<K, V>
     ): this {
         this.timeoutReservator = timeoutReservator;
         return this;
     }
 
     onFinalizationEntriesReserveDo(
-        reservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>
+        reservator?: DequeueController.EntryReservator<K, V>
     ): this {
         this.finalizationReservator = reservator;
         return this;
@@ -192,24 +218,24 @@ export class DequeueController<K, V, T> {
         return this;
     }
 
+    /** Told of the entries each processing-lane reservation claimed, once preprocessed and before any computes. */
+    onClaimedEntries(onClaimed?: (m: Map<K, V>) => void): this {
+        this.onClaimed = onClaimed;
+        return this;
+    }
+
+    /** A standing flight's release error kept since the last pass rejects this pass before it claims anything. */
     async dequeueForCompute(
         computer: (key: K, value: V) => Promise<T>
     ): Promise<
         Map<Reservator, Map<K, Either<DequeueController.Failure<K, V>, DequeueController.Success<K, V, T | K>>>>
     > {
-        if (this.typesToDequeue().size === 0) {
-            this.log.warn('No types provided for callbacks: [newReservator, retryReservator, fairnessReservator].');
-        }
-        if (!this.retryReservator) {
-            this.log.warn('No retry reservator configured. Retries are not performed.');
-        }
-        if (!this.fairnessReservator) {
-            this.log.warn('No fairness reservator configured. Overdue retries are not recovered.');
-        }
+        this.warnOfMissingReservators();
         requireNonNull(computer);
         requireNonNull(this.newReservator, 'newReservator is required');
         requireNonNull(this.successReleaser, 'successReleaser is required');
         requireNonNull(this.failureReleaser, 'failureReleaser is required');
+        this.rethrowStandingFlightError();
         const laneBudgets = this.readLaneBudgets
             ? toValidatedLaneBudgets(await this.readLaneBudgets(this.typesToDequeue()))
             : undefined;
@@ -223,13 +249,7 @@ export class DequeueController<K, V, T> {
                 ? await this.dequeueFinalizations(laneBudgets?.FINALIZATION)
                 : new Map()
         );
-        const lanes = [
-            [Reservator.NEW, this.newReservator],
-            [Reservator.FAIRNESS, this.fairnessReservator],
-            [Reservator.RETRY, this.retryReservator],
-            [Reservator.TIMEOUT, this.timeoutReservator]
-        ] as const;
-        for (const [lane, reservator] of lanes) {
+        for (const [lane, reservator] of this.toProcessingLanes()) {
             byReservator.set(
                 lane,
                 reservator && this.isOffered(lane)
@@ -237,7 +257,40 @@ export class DequeueController<K, V, T> {
                     : new Map()
             );
         }
+        this.rethrowStandingFlightError();
         return byReservator;
+    }
+
+    private warnOfMissingReservators(): void {
+        if (this.typesToDequeue().size === 0) {
+            this.log.warn('No types provided for callbacks: [newReservator, retryReservator, fairnessReservator].');
+        }
+        if (!this.retryReservator) {
+            this.log.warn('No retry reservator configured. Retries are not performed.');
+        }
+        if (!this.fairnessReservator) {
+            this.log.warn('No fairness reservator configured. Overdue retries are not recovered.');
+        }
+    }
+
+    private rethrowStandingFlightError(): void {
+        const error = this.standingFlight?.takeFirstError();
+        if (error !== undefined) {
+            throw error;
+        }
+    }
+
+    private toProcessingLanes(): readonly (readonly [
+        Reservator,
+        DequeueController.EntryReservator<K, V> | undefined
+    ])[] {
+        const recovery = [
+            [Reservator.FAIRNESS, this.fairnessReservator],
+            [Reservator.RETRY, this.retryReservator],
+            [Reservator.TIMEOUT, this.timeoutReservator]
+        ] as const;
+        const fresh = [Reservator.NEW, this.newReservator] as const;
+        return this.standingFlight ? [...recovery, fresh] : [fresh, ...recovery];
     }
 
     private isOffered(lane: Reservator): boolean {
@@ -273,74 +326,86 @@ export class DequeueController<K, V, T> {
     }
 
     /**
-     * Claims rows whenever fewer than the lane's compute bound are unreleased, and releases each row as soon as it settles,
-     * so one slow row holds only its own slot. The pass still joins every row it claimed before it returns. A reservation
-     * or release error claims nothing more and lets the claimed rows finish before it is rethrown: the caller owns its
-     * backoff, never this slot.
+     * Claims rows whenever the flight has a free place and, without a standing flight, fewer than the lane's compute
+     * bound are unreleased; each row releases as soon as it settles, so one slow row holds only its own slot. Without a
+     * standing flight the pass joins every row it claimed before it returns. A reservation or release error claims
+     * nothing more; the rows already claimed still finish, and the error is rethrown: the caller owns its backoff.
      */
     private async dequeueLane(
-        reservator: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>,
+        reservator: DequeueController.EntryReservator<K, V>,
         computer: (key: K, value: V) => Promise<T>,
         budget: DequeueController.LaneBudget | undefined
     ): Promise<Map<K, Either<DequeueController.Failure<K, V>, DequeueController.Success<K, V, T>>>> {
+        const work = { computer, release: this.toRelease() };
+        if (this.standingFlight) {
+            await this.reserveIntoFlight({
+                reservator,
+                flight: this.standingFlight,
+                work,
+                budget,
+                settlements: undefined
+            });
+            return new Map();
+        }
+        const maxConcurrentComputes = budget?.maxConcurrentComputes ?? 1;
         const flight = new DequeueLaneFlight<K, V, T>({
-            maxConcurrentComputes: budget?.maxConcurrentComputes ?? 1,
-            computer,
+            maxConcurrentComputes,
+            // A serial lane still claims a whole reservation at once.
+            maxUnreleased: Math.max(budget?.maxToReserve ?? this.maxNumToReserve(), maxConcurrentComputes),
+            keyedRunsFirst: false,
             toExclusionKey: this.toExclusionKey,
-            release: {
-                successReleaser: requireNonNull(this.successReleaser),
-                failureReleaser: requireNonNull(this.failureReleaser),
-                onCompleted: this.onCompleted,
-                onFailed: this.onFailed
-            },
-            log: this.log
+            log: this.log,
+            retainSettlement: undefined
         });
-        try {
-            await this.reserveIntoFlight(reservator, flight, budget);
-        }
-        catch (error) {
-            flight.stop(toError(error));
-        }
-        const released = await flight.drain();
+        const settlements: Promise<DequeueLaneFlight.Settlement<K, V, T>>[] = [];
+        await this.reserveIntoFlight({ reservator, flight, work, budget, settlements });
+        const released = await flight.drain(settlements);
         return this.returnDequeuedEntries ? released : new Map();
+    }
+
+    private toRelease(): DequeueLaneFlight.Release<K, V, T> {
+        return {
+            successReleaser: requireNonNull(this.successReleaser),
+            failureReleaser: requireNonNull(this.failureReleaser),
+            onCompleted: this.onCompleted,
+            onFailed: this.onFailed
+        };
     }
 
     /**
      * A reservation that claimed fewer than it asked for found every row it could claim, so the lane ends for this pass;
-     * rows that arrive meanwhile wait for the next pass. The lane holds at most its reservation size or its compute
-     * bound of unreleased rows, whichever is larger, so a serial lane still claims a whole reservation at once.
+     * rows that arrive meanwhile wait for the next pass. An error stops the flight instead of escaping.
      */
-    private async reserveIntoFlight(
-        reservator: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>,
-        flight: DequeueLaneFlight<K, V, T>,
-        budget: DequeueController.LaneBudget | undefined
-    ): Promise<void> {
+    private async reserveIntoFlight(input: ReserveIntoFlightInput<K, V, T>): Promise<void> {
+        const { reservator, flight, budget, settlements } = input;
         const maxNumDequeue = budget?.maxNumToDequeue ?? this.maxNumDequeue;
         let claimedCount = 0;
-        while (
-            await flight.waitForFreeSlot() && this.admitsReservation(this.typesToDequeue()) &&
-            claimedCount < maxNumDequeue
-        ) {
-            const maxToReserve = budget?.maxToReserve ?? this.maxNumToReserve();
-            const maxUnreleased = Math.max(maxToReserve, flight.getMaxConcurrentComputes());
-            const numToReserve = Math.min(
-                maxToReserve,
-                maxUnreleased - flight.getUnreleasedCount(),
-                maxNumDequeue - claimedCount
-            );
-            if (numToReserve <= 0) {
-                return;
+        try {
+            while (
+                (settlements === undefined ? !flight.isStopped() : await flight.waitForFreeSlot()) &&
+                this.admitsReservation(this.typesToDequeue()) && claimedCount < maxNumDequeue
+            ) {
+                const maxToReserve = budget?.maxToReserve ?? this.maxNumToReserve();
+                const numToReserve = Math.min(maxToReserve, flight.getFreePlaceCount(), maxNumDequeue - claimedCount);
+                if (numToReserve <= 0) {
+                    return;
+                }
+                if (!isPositiveSafeInteger(numToReserve)) {
+                    throw new TypeError('Reservation request requires a positive safe integer');
+                }
+                const reserved = await reservator(this.typesToDequeue(), numToReserve) ?? new Map<K, V>();
+                claimedCount += reserved.size;
+                const entries = this.onPreProcessingReserved ? await this.onPreProcessingReserved(reserved) : reserved;
+                const added = flight.add(entries, input.work);
+                settlements?.push(...added);
+                this.onClaimed?.(entries);
+                if (entries.size === 0 || reserved.size < numToReserve) {
+                    return;
+                }
             }
-            if (!isPositiveSafeInteger(numToReserve)) {
-                throw new TypeError('Reservation request requires a positive safe integer');
-            }
-            const reserved = await reservator(this.typesToDequeue(), numToReserve) ?? new Map<K, V>();
-            claimedCount += reserved.size;
-            const entries = this.onPreProcessingReserved ? await this.onPreProcessingReserved(reserved) : reserved;
-            flight.add(entries);
-            if (entries.size === 0 || reserved.size < numToReserve) {
-                return;
-            }
+        }
+        catch (error) {
+            flight.stop(toError(error));
         }
     }
 }
