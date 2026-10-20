@@ -19,7 +19,7 @@
     "schemaInitialization": "auto",
     "pubSub": "local",
     "applicationPool": {
-      "maxConnections": 5,
+      "maxConnections": 10,
       "idleTimeoutSeconds": 20
     },
     "listenerPool": {
