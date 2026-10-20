@@ -19,6 +19,7 @@ interface SimulatedExecutor {
     readonly observer: AppInboxDequeuePassTiming;
     /** The executor ran this many statements, each waiting one millisecond, while the clock advanced the same amount. */
     run(statements: number): void;
+    getLines(operation: 'dequeue-pass' | 'dequeue-pass-boundary'): RallarTimingEvent[];
 }
 
 describe('AppInboxDequeuePassTiming', () => {
@@ -43,7 +44,7 @@ describe('AppInboxDequeuePassTiming', () => {
         executor.run(1);
         executor.observer.onPassFinished();
 
-        expect(executor.timing).toEqual([
+        expect(executor.getLines('dequeue-pass')).toEqual([
             expect.objectContaining({
                 component: 'app-inbox-phase',
                 operation: 'dequeue-pass',
@@ -87,7 +88,7 @@ describe('AppInboxDequeuePassTiming', () => {
         executor.observer.onHandlerFinished(only);
         executor.observer.onPassFinished();
 
-        expect(executor.timing).toEqual([
+        expect(executor.getLines('dequeue-pass')).toEqual([
             expect.objectContaining({
                 requestId: 'only',
                 durationMs: 3,
@@ -116,7 +117,7 @@ describe('AppInboxDequeuePassTiming', () => {
         executor.observer.onHandlerFinished(presenceSummary);
         executor.observer.onPassFinished();
 
-        expect(executor.timing).toEqual([
+        expect(executor.getLines('dequeue-pass')).toEqual([
             expect.objectContaining({
                 component: 'app-inbox-phase',
                 operation: 'dequeue-pass',
@@ -143,7 +144,7 @@ describe('AppInboxDequeuePassTiming', () => {
         ]);
     });
 
-    // Before step 2g D302 the pass subtracted the sum of concurrent handler spans, so concurrent heads reported negative cost.
+    // The pass once subtracted the sum of concurrent handler spans, so concurrent heads reported a negative cost.
     it('attributes concurrent handlers by the union of their spans, so the pass cost outside them is never negative', () => {
         const executor = createSimulatedExecutor();
         const first = createAttempt('first', Reservator.NEW);
@@ -161,7 +162,7 @@ describe('AppInboxDequeuePassTiming', () => {
         executor.run(1);
         executor.observer.onPassFinished();
 
-        expect(executor.timing.map(({ requestId, durationMs, details }) => ({ requestId, durationMs, details }))).toEqual(
+        expect(executor.getLines('dequeue-pass').map(({ requestId, durationMs, details }) => ({ requestId, durationMs, details }))).toEqual(
             ['first', 'second'].map((requestId) => ({
                 requestId,
                 durationMs: 2,
@@ -170,11 +171,78 @@ describe('AppInboxDequeuePassTiming', () => {
         );
     });
 
-    it('reports nothing for a pass that claimed nothing', () => {
+    it('closes a claiming pass with one boundary line: its wall, the probe before it and what it claimed per lane', () => {
+        const executor = createSimulatedExecutor();
+        const first = createAttempt('first', Reservator.NEW);
+        const second = createAttempt('second', Reservator.NEW);
+        const retry = createAttempt('retry', Reservator.RETRY);
+
+        executor.observer.onProbeStarted();
+        executor.run(1);
+        executor.observer.onProbeFinished({ FINALIZATION: false, NEW: true, RETRY: true, FAIRNESS: false, TIMEOUT: false });
+        executor.nowMs += 5;
+        executor.observer.onPassStarted();
+        for (const attempt of [first, second, retry]) {
+            executor.observer.onHandlerStarted(attempt);
+            executor.run(2);
+            executor.observer.onHandlerFinished(attempt);
+        }
+        executor.observer.onPassFinished();
+
+        expect(executor.getLines('dequeue-pass')).toHaveLength(3);
+        expect(executor.getLines('dequeue-pass-boundary')).toEqual([
+            expect.objectContaining({
+                component: 'app-inbox-phase',
+                operation: 'dequeue-pass-boundary',
+                serviceId: 'server-1',
+                status: 'ok',
+                durationMs: 6,
+                details: {
+                    passWallMs: 6,
+                    lanesProbed: 'NEW,RETRY',
+                    probeMs: 1,
+                    probeToPassMs: 5,
+                    claimedInPass: 3,
+                    claimedNew: 2,
+                    claimedRetry: 1,
+                    claimedFairness: 0,
+                    claimedTimeout: 0,
+                    claimedFinalization: 0
+                }
+            })
+        ]);
+    });
+
+    it('closes a pass that claimed nothing with its boundary line alone', () => {
         const executor = createSimulatedExecutor();
 
         executor.observer.onPassStarted();
         executor.run(2);
+        executor.observer.onPassFinished();
+
+        expect(executor.timing).toEqual([
+            expect.objectContaining({
+                operation: 'dequeue-pass-boundary',
+                durationMs: 2,
+                details: {
+                    passWallMs: 2,
+                    lanesProbed: '',
+                    probeMs: undefined,
+                    probeToPassMs: undefined,
+                    claimedInPass: 0,
+                    claimedNew: 0,
+                    claimedRetry: 0,
+                    claimedFairness: 0,
+                    claimedTimeout: 0,
+                    claimedFinalization: 0
+                }
+            })
+        ]);
+    });
+
+    it('reports nothing for a pass it never saw start', () => {
+        const executor = createSimulatedExecutor();
+
         executor.observer.onPassFinished();
 
         expect(executor.timing).toEqual([]);
@@ -199,7 +267,8 @@ function createSimulatedExecutor(): SimulatedExecutor {
             counters.statements += statements;
             counters.executorWaitMs += statements;
             executor.nowMs += statements;
-        }
+        },
+        getLines: (operation) => timing.filter((event) => event.operation === operation)
     };
     return executor;
 }

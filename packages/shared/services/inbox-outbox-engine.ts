@@ -68,6 +68,11 @@ export class InboxOutboxEngine {
     private wakeAfterExecution = false;
     private successiveIdleExecutions = 0;
     private scheduledAtMs: number | undefined;
+    /**
+     * The wakes requested so far. A wake's pass skips a task whose slot a runnable still holds, so a
+     * runnable that ends after a wake it predates brings the next pass forward in that wake's place.
+     */
+    private wakeCount = 0;
 
     private readonly tasksInFlight = new Map<Promise<void>, Promise<void>>();
 
@@ -173,6 +178,7 @@ export class InboxOutboxEngine {
      * make each owner drop the answers of every other owner sharing the engine.
      */
     wake(): void {
+        this.wakeCount += 1;
         this.rescheduleNow();
     }
 
@@ -184,6 +190,7 @@ export class InboxOutboxEngine {
      */
     wakeAfterExternalWrite(typeIds: ReadonlySet<string>): void {
         this.notifyWake(typeIds);
+        this.wakeCount += 1;
         this.rescheduleNow();
     }
 
@@ -339,17 +346,26 @@ export class InboxOutboxEngine {
         if (retained !== undefined) {
             return retained;
         }
+        const wakeCountAtSubmit = this.wakeCount;
         const observation = completion.then(
             () => {
                 this.tasksInFlight.delete(completion);
+                this.rescheduleAfterMissedWake(wakeCountAtSubmit);
             },
             (error: unknown) => {
                 this.tasksInFlight.delete(completion);
                 this.reportTaskFailure(taskId, toError(error));
+                this.rescheduleAfterMissedWake(wakeCountAtSubmit);
             }
         );
         this.tasksInFlight.set(completion, observation);
         return observation;
+    }
+
+    private rescheduleAfterMissedWake(wakeCountAtSubmit: number): void {
+        if (this.wakeCount !== wakeCountAtSubmit) {
+            this.rescheduleNow();
+        }
     }
 
     private reportTaskFailure(taskId: string, error: Error): void {
