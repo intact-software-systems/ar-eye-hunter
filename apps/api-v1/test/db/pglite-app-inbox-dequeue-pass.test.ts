@@ -149,7 +149,11 @@ function createDequeuePassRuntime(sql: PGliteSql): DequeuePassRuntime {
         onRetryExhaustionRecovery: finalizeAppInboxRetry
     });
     inboxQueueReader.onDequeuePassDo(
-        new AppInboxDequeuePassTiming({ database: sql, nowMs }, { serviceId: SERVICE_ID, sink: (event) => timing.push(event) })
+        new AppInboxDequeuePassTiming({ database: sql, nowMs }, {
+            serviceId: SERVICE_ID,
+            queueType: InboxQueueReader.INBOX_ENQUEUE_TYPE,
+            sink: (event) => timing.push(event)
+        })
     );
     const outboxQueueReader = new OutboxQueueReader(new InMemoryQueueBox());
     const queueEntryWriter = createAppInboxClientRuntime({

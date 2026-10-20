@@ -198,6 +198,7 @@ describe('AppInboxDequeuePassTiming', () => {
                 status: 'ok',
                 durationMs: 6,
                 details: {
+                    queueType: 'APP_INBOX',
                     passWallMs: 6,
                     lanesProbed: 'NEW,RETRY',
                     probeMs: 1,
@@ -225,6 +226,7 @@ describe('AppInboxDequeuePassTiming', () => {
                 operation: 'dequeue-pass-boundary',
                 durationMs: 2,
                 details: {
+                    queueType: 'APP_INBOX',
                     passWallMs: 2,
                     lanesProbed: '',
                     probeMs: undefined,
@@ -261,7 +263,7 @@ function createSimulatedExecutor(): SimulatedExecutor {
                 database: { getExecutorCounters: (): PSqlExecutorCounters => ({ ...counters }) },
                 nowMs: () => executor.nowMs
             },
-            { serviceId: 'server-1', sink: (event) => timing.push(event) }
+            { serviceId: 'server-1', queueType: 'APP_INBOX', sink: (event) => timing.push(event) }
         ),
         run: (statements) => {
             counters.statements += statements;

@@ -50,6 +50,8 @@ export namespace AppInboxDequeuePassTiming {
 
     export interface Config {
         readonly serviceId: string;
+        /** The queue type of the reader whose passes this observes, which names the pass a boundary line closes. */
+        readonly queueType: string;
         readonly sink: RallarTimingSink;
     }
 }
@@ -60,9 +62,9 @@ export namespace AppInboxDequeuePassTiming {
  * releases, with the lanes the probe advertised and the claimed type. The executor is shared, so
  * statements other callers ran meanwhile are counted too.
  *
- * Every pass, one that claimed nothing included, closes with one `dequeue-pass-boundary` line: its wall
- * time as the duration, so it started at `atEpochMs - durationMs`, the entries it claimed per lane, and
- * how long its probe took and then waited for the pass to start.
+ * Every pass, one that claimed nothing included, closes with one `dequeue-pass-boundary` line: the queue
+ * type of the reader, its wall time as the duration, so it started at `atEpochMs - durationMs`, the
+ * entries it claimed per lane, and how long its probe took and then waited for the pass to start.
  */
 export class AppInboxDequeuePassTiming implements QueueMessageReader.DequeuePassObserver {
     private readonly database: Pick<PSqlSql, 'getExecutorCounters'>;
@@ -124,7 +126,7 @@ export class AppInboxDequeuePassTiming implements QueueMessageReader.DequeuePass
                 component: 'app-inbox-phase',
                 operation: 'dequeue-pass-boundary',
                 serviceId: this.config.serviceId,
-                details: toPassBoundaryDetails(pass, finished)
+                details: { queueType: this.config.queueType, ...toPassBoundaryDetails(pass, finished) }
             },
             status: 'ok',
             durationMs: finished.atMs - pass.started.atMs

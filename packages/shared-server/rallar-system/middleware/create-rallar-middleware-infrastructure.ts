@@ -128,19 +128,24 @@ function createMiddlewareInboxQueueReader(options: CreateRallarMiddlewareOptions
             toCompletionAwaitability: toAppInboxEntryCompletionAwaitability
         }
     );
-    installDequeuePassTiming(inboxQueueReader, options.appInboxDequeuePassTiming);
+    installDequeuePassTiming(inboxQueueReader, InboxQueueReader.INBOX_ENQUEUE_TYPE, options.appInboxDequeuePassTiming);
     return inboxQueueReader;
 }
 
 function createMiddlewareOutboxQueueReader(options: CreateRallarMiddlewareOptions): OutboxQueueReader {
     const outboxQueueReader = new OutboxQueueReader(options.outbox ?? options.inbox);
-    installDequeuePassTiming(outboxQueueReader, options.appInboxDequeuePassTiming);
+    installDequeuePassTiming(
+        outboxQueueReader,
+        OutboxQueueReader.OUTBOX_ENQUEUE_TYPE,
+        options.appInboxDequeuePassTiming
+    );
     return outboxQueueReader;
 }
 
 /** Each reader observes its own passes, so each gets its own timing with the server's one sink. */
 function installDequeuePassTiming(
     reader: Pick<InboxQueueReader, 'onDequeuePassDo'>,
+    queueType: string,
     timing: RallarMiddlewareDequeuePassTimingOptions | undefined
 ): void {
     if (timing === undefined) {
@@ -149,6 +154,7 @@ function installDequeuePassTiming(
     reader.onDequeuePassDo(
         new AppInboxDequeuePassTiming({ database: timing.database, nowMs }, {
             serviceId: timing.serviceId,
+            queueType,
             sink: timing.sink
         })
     );

@@ -63,7 +63,7 @@ describe('Rallar middleware dequeue-pass timing', () => {
                 component: 'app-inbox-phase',
                 operation: 'dequeue-pass-boundary',
                 serviceId: 'server-1',
-                details: expect.objectContaining({ lanesProbed: 'NEW', claimedInPass: 1, claimedNew: 1 })
+                details: expect.objectContaining({ queueType: 'APP_INBOX', lanesProbed: 'NEW', claimedInPass: 1, claimedNew: 1 })
             })
         ]);
     });
@@ -93,7 +93,7 @@ describe('Rallar middleware dequeue-pass timing', () => {
                 component: 'app-inbox-phase',
                 operation: 'dequeue-pass-boundary',
                 serviceId: 'server-1',
-                details: expect.objectContaining({ lanesProbed: '', claimedInPass: 0, claimedNew: 0 })
+                details: expect.objectContaining({ queueType: 'APP_INBOX', lanesProbed: '', claimedInPass: 0, claimedNew: 0 })
             })
         ]);
     });
@@ -181,7 +181,7 @@ describe('Rallar middleware dequeue-pass timing', () => {
             expect.objectContaining({
                 operation: 'dequeue-pass-boundary',
                 serviceId: 'server-1',
-                details: expect.objectContaining({ lanesProbed: 'NEW', claimedInPass: 1, claimedNew: 1 })
+                details: expect.objectContaining({ queueType: 'APP_OUTBOX', lanesProbed: 'NEW', claimedInPass: 1, claimedNew: 1 })
             })
         ]);
     });

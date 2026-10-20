@@ -18,6 +18,7 @@ import {
     it
 } from 'vitest';
 
+import { toSafeApiTimingRecord } from '../../../apps/rallar-black-box/scripts/to-safe-api-timing-record.ts';
 import type { ApiJsonObject } from '../../shared/api/api-json-value.ts';
 
 interface TimingCaptureFiles {
@@ -508,4 +509,81 @@ describe('full-stack API timing stdio capture', () => {
             await rm(directory, { recursive: true, force: true });
         }
     }, 12_000);
+});
+
+const passBoundary = {
+    type: 'rallar.timing',
+    component: 'app-inbox-phase',
+    operation: 'dequeue-pass-boundary',
+    status: 'ok',
+    durationMs: 6.5,
+    atEpochMs: 1234,
+    serviceId: 'server-1',
+    details: {
+        queueType: 'APP_INBOX',
+        passWallMs: 6.5,
+        lanesProbed: 'NEW,RETRY',
+        probeMs: 1.25,
+        probeToPassMs: 5,
+        claimedInPass: 3,
+        claimedNew: 2,
+        claimedRetry: 1,
+        claimedFairness: 0,
+        claimedTimeout: 0,
+        claimedFinalization: 0
+    }
+};
+
+describe('safe dequeue-pass boundary projection', () => {
+    it('retains the boundary of a claiming pass with its queue, probe timing and claims per lane', () => {
+        expect(toSafeApiTimingRecord(JSON.stringify(passBoundary))).toEqual(passBoundary);
+    });
+
+    it('retains the boundary of an outbox pass that claimed nothing and followed no probe', () => {
+        const unprobed = {
+            ...passBoundary,
+            details: {
+                queueType: 'APP_OUTBOX',
+                passWallMs: 0.5,
+                lanesProbed: '',
+                claimedInPass: 0,
+                claimedNew: 0,
+                claimedRetry: 0,
+                claimedFairness: 0,
+                claimedTimeout: 0,
+                claimedFinalization: 0
+            }
+        };
+
+        expect(toSafeApiTimingRecord(JSON.stringify(unprobed))).toEqual(unprobed);
+    });
+
+    it('drops a boundary field that is not its closed form, and the boundary fields on any other operation', () => {
+        const malformed = {
+            ...passBoundary,
+            details: {
+                ...passBoundary.details,
+                queueType: 'APP_INBOX_SECRET',
+                lanesProbed: 'NEW,SECRET',
+                probeMs: -1,
+                claimedRetry: 'one'
+            }
+        };
+        const kept = {
+            passWallMs: 6.5,
+            probeToPassMs: 5,
+            claimedInPass: 3,
+            claimedNew: 2,
+            claimedFairness: 0,
+            claimedTimeout: 0,
+            claimedFinalization: 0
+        };
+
+        expect(toSafeApiTimingRecord(JSON.stringify(malformed))).toEqual({ ...passBoundary, details: kept });
+        expect(toSafeApiTimingRecord(JSON.stringify({ ...passBoundary, operation: 'transaction' }))).toEqual({
+            ...passBoundary,
+            operation: 'transaction',
+            details: {}
+        });
+    });
 });
