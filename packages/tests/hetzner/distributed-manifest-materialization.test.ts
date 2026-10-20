@@ -609,10 +609,9 @@ describe('Hetzner materialization contracts and effects', () => {
             [
                 `${scope}/stats/me/realtime`,
                 `${scope}/groups/requests/alm-scale-director-ensure-group-{runtimeIdentity}`,
-                `${scope}/groups/${room}/members/{auth.clientId}/requests/alm-scale-director-ensure-member-{runtimeIdentity}`,
-                `${scope}/groups/${room}`
+                `${scope}/groups/${room}/members/{auth.clientId}/requests/alm-scale-director-ensure-member-{runtimeIdentity}`
             ],
-            [`${scope}/stats/me/realtime`, `${scope}/groups/${room}`]
+            [`${scope}/stats/me/realtime`]
         ]);
 
         const unknownPath = '/api/state/apps/rallar-server/workspaces/default/stats/summary';
@@ -630,6 +629,79 @@ describe('Hetzner materialization contracts and effects', () => {
                 `$.recipes[0].recipe.commands[0].request.path has an unrecognized state group path ${JSON.stringify(unknownPath)}`
             )
         });
+    });
+
+    it('rewrites the audience wait\'s room payload fields to the isolated group, so each page matches its own room', async (context) => {
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-audience-wait-materialization-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const sourcePath = path.join(repoRoot, 'apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json');
+        const outputPath = path.join(directory, 'manifest.json');
+
+        await runMaterializer(context, {
+            ...materializerInvocationDefaults,
+            sourcePath,
+            outputPath,
+            recordPath: path.join(directory, 'record.json'),
+            applicationId: 'effective app',
+            workspaceId: 'effective-workspace'
+        });
+
+        const manifest = await readManifest(outputPath);
+        expect(manifest.group.groupId).toMatch(/^hetzner-run-[a-f0-9]{64}$/);
+        const audienceWaits = manifest.recipes.flatMap((selection) => selection.recipe?.commands ?? [])
+            .filter((command) => command.commandId?.endsWith('-audience-ready'));
+        expect(audienceWaits.map((command) => command.kind === 'wait' ? command.match.payloadFields : undefined)).toEqual([
+            {
+                'data.roomRef.applicationId': 'effective app',
+                'data.roomRef.workspaceId': 'effective-workspace',
+                'data.roomRef.groupId': manifest.group.groupId,
+                'data.activeSessionCount': 15
+            },
+            {
+                'data.roomRef.applicationId': 'effective app',
+                'data.roomRef.workspaceId': 'effective-workspace',
+                'data.roomRef.groupId': manifest.group.groupId,
+                'data.activeSessionCount': 15
+            }
+        ]);
+    });
+
+    it('rejects a wait payload field scoped to another room before output writes', async (context) => {
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-payload-field-room-mismatch-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const fixture = await readCaptureManifestFixture({ groupId: 'off', captureMode: 'off' });
+        const source = {
+            ...fixture,
+            recipes: fixture.recipes.map((selection) => {
+                if (!selection.recipe) {
+                    throw new Error('Payload field mismatch fixture requires an inline recipe.');
+                }
+                return {
+                    ...selection,
+                    recipe: {
+                        ...selection.recipe,
+                        commands: [...selection.recipe.commands, {
+                            kind: 'wait' as const,
+                            commandId: 'wrong-room-audience',
+                            match: { kind: 'diagnostic' as const, payloadFields: { 'data.roomRef.groupId': 'wrong-room' } }
+                        }]
+                    }
+                };
+            })
+        };
+        const sourcePath = path.join(directory, 'source.json');
+        const sourceText = `${JSON.stringify(source, null, 2)}\n`;
+        await writeFile(sourcePath, sourceText);
+
+        await expect(runMaterializer(context, {
+            ...materializerInvocationDefaults,
+            sourcePath,
+            outputPath: path.join(directory, 'output.json'),
+            recordPath: path.join(directory, 'record.json')
+        })).rejects.toMatchObject({
+            stderr: expect.stringContaining('.match.payloadFields.data.roomRef.groupId is "wrong-room"; expected "off"')
+        });
+        expect((await readdir(directory)).sort()).toEqual(['source.json']);
     });
 
     it('refuses null source as validation before materialization effects', async (context) => {
