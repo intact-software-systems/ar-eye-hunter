@@ -81,10 +81,11 @@ describe('the AppInbox NEW lane with concurrent context heads', () => {
         expect(statements.filter(isReservation)).toHaveLength(1);
         held.release();
 
-        // Before step 2g a pass reserved one head per round: eight reservations, one handler in flight.
+        // Each released head frees a slot that the lane claims again, so the pass tops up rather than reserving anew.
         expect(await pass).toBe(8);
         expect(held.maxInFlight).toBe(K);
-        expect(statements.filter(isReservation)).toHaveLength(2);
+        expect(statements.filter(isReservation).length).toBeGreaterThanOrEqual(2);
+        expect(statements.filter(isReservation).length).toBeLessThanOrEqual(1 + 8 - K);
     });
 
     it('finishes N rows of distinct contexts in ceil(N / K) handler delays', async () => {
@@ -122,7 +123,7 @@ describe('the AppInbox NEW lane with concurrent context heads', () => {
         expect(held.started.map((message) => message.route.contextId)).toEqual(['shared', 'other-1', 'other-2', 'shared']);
     });
 
-    it('computes a head whose exclusion key is a path prefix of another head\'s key after it, in round order', async () => {
+    it('computes a head whose exclusion key is a path prefix of another head\'s key after it, in claim order', async () => {
         const queue = new InMemoryQueueBox();
         const keyByRow = new Map([['row-0', 'scope-a:group-1'], ['row-1', 'scope-a'], ['row-2', 'scope-a:group-2'], ['row-3', 'scope-b']]);
         const reader = new InboxQueueReader(queue, {
@@ -151,7 +152,7 @@ describe('the AppInbox NEW lane with concurrent context heads', () => {
         expect(span('row-3').startedAt).toBeLessThan(span('row-0').finishedAt);
     });
 
-    it('rejects the release of a row whose lease another owner took while its round ran, and releases the rest at once', async () => {
+    it('rejects the release of a row whose lease another owner took while it ran, and releases the rest at once', async () => {
         const { sql } = await createPSqlAdmissionTestStorage();
         const queue = new PSqlQueueBox(createPSqlResourceInboxRepository(sql, () => new Date()), Temporal.Now.instant);
         const reader = createReader(queue);
@@ -166,15 +167,15 @@ describe('the AppInbox NEW lane with concurrent context heads', () => {
         await sql`update resource_inbox set ri_attempts = ri_attempts + 1 where ri_resource_id = ${stolen!.key.resourceId}`;
         held.release();
 
-        // The round's one release transaction conflicts, so each row releases alone: the other owner keeps its
-        // claim and the round's other rows complete now, not after their leases.
+        // Each row releases alone: the other owner keeps its claim and the other rows complete now, not after their
+        // leases.
         await expect(pass).rejects.toThrow(/reservation/i);
         const rows = await Promise.all(contexts(K).map((_context, index) => queue.getItem(toKey(stolen!, index))));
         expect(rows[0]).toMatchObject({ status: EntityStatus.RESERVED, dequeueAudit: { attempts: 2 } });
         expect(rows.slice(1).map((row) => row?.status)).toEqual(Array(K - 1).fill(EntityStatus.COMPLETED));
     });
 
-    it('still releases a failed row for retry when the same round lost another row\'s reservation', async () => {
+    it('still releases a failed row for retry when the same pass lost another row\'s reservation', async () => {
         const { sql } = await createPSqlAdmissionTestStorage();
         const queue = new PSqlQueueBox(createPSqlResourceInboxRepository(sql, () => new Date()), Temporal.Now.instant);
         const reader = createReader(queue);
@@ -198,7 +199,7 @@ describe('the AppInbox NEW lane with concurrent context heads', () => {
         await sql`update resource_inbox set ri_attempts = ri_attempts + 1 where ri_resource_id = ${stolen!.key.resourceId}`;
         released.resolve();
 
-        // The lost reservation surfaces once the round's failure is released too, never instead of it.
+        // The lost reservation surfaces once the pass's failure is released too, never instead of it.
         await expect(pass).rejects.toThrow(/reservation/i);
         const rows = await Promise.all(contexts(K).map((_context, index) => queue.getItem(toKey(stolen!, index))));
         expect(rows.map((row) => row?.status)).toEqual([
@@ -208,7 +209,7 @@ describe('the AppInbox NEW lane with concurrent context heads', () => {
         ]);
     });
 
-    it('starts no new round once a round tripped the breaker', async () => {
+    it('claims no further head once a released row tripped the breaker', async () => {
         const queue = new InMemoryQueueBox();
         const reader = createReader(queue);
         const handled: string[] = [];
@@ -219,7 +220,7 @@ describe('the AppInbox NEW lane with concurrent context heads', () => {
             }
         });
         await enqueue(reader, contexts(8));
-        // One breaker verdict per released round: after one earlier failure, this pass's first failed round opens it.
+        // One breaker verdict per released row: after one earlier failure, this pass's first failed row opens it.
         const resilience = createResilience(1);
         resilience.failure();
         vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -257,13 +258,13 @@ describe('the AppInbox NEW lane with concurrent context heads', () => {
         expect(sharedVersion).toBe(8);
         expect((await Promise.all(entries.map((entry) => queue.getItem(entry.key)))).map((row) => row?.status))
             .toEqual(Array(8).fill(EntityStatus.COMPLETED));
-        // Each of the two NEW rounds of K racing heads commits one and returns K - 1 conflicts to the RETRY lane,
-        // which serves them in turn, so no retry conflicts again.
+        // Each of the two waves of K racing heads commits one and returns K - 1 conflicts to the RETRY lane, which
+        // serves them in turn, so no retry conflicts again.
         expect(conflicts).toBe(2 * (K - 1));
     });
 
-    // Before step 2g D301, joins to one group from different callers ran as concurrent heads and all but one
-    // conflicted on the group revision (27 of 50 joins on the hosted 50 at K = 4).
+    // Without an exclusion key, joins to one group from different callers ran as concurrent heads and all but one
+    // conflicted on the group revision.
     it('computes the heads of one exclusion key one after another while heads of other keys run concurrently', async () => {
         const queue = new InMemoryQueueBox();
         const sharedGroupRows = new Set(Array.from({ length: 8 }, (_value, index) => `row-${2 * index}`));
