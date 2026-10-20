@@ -10,7 +10,10 @@ import { assertClientMutationInvariants } from '@shared-server/rallar-system/cli
 import { clientStatePrincipalStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-principal-storage-key.ts';
 import { groupStateScopeStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
-import { computePrincipalStateSyncAudience } from '@shared-server/rallar-system/state-sync/state-sync-principal-audience.ts';
+import {
+    computePrincipalStateSyncAudience,
+    toPrincipalAudienceSessions
+} from '@shared-server/rallar-system/state-sync/state-sync-principal-audience.ts';
 import type {
     RuntimeStateReadBatchSelection,
     RuntimeStateReadBatchSelector
@@ -154,7 +157,7 @@ describe('client mutation principal audience read', () => {
             ]);
         expect(computePrincipalStateSyncAudience({
             principalRef: read.snapshot.principal,
-            ownSessions: { principalRef: read.snapshot.principal, activeSessions: read.snapshot.activeSessions },
+            ownSessions: toPrincipalAudienceSessions(read.snapshot.principal, read.snapshot.activeSessions),
             groupSnapshots: read.audienceGroupSnapshots,
             coMemberSessions: read.audienceCoMemberSessions,
             nowEpochMs: AUDIENCE_EPOCH_MS
@@ -184,12 +187,12 @@ describe('client mutation principal audience read', () => {
 
         expect(computePrincipalStateSyncAudience({
             principalRef: read.snapshot.principal,
-            ownSessions: { principalRef: read.snapshot.principal, activeSessions: read.snapshot.activeSessions },
+            ownSessions: toPrincipalAudienceSessions(read.snapshot.principal, read.snapshot.activeSessions),
             groupSnapshots: read.audienceGroupSnapshots,
             coMemberSessions: read.audienceCoMemberSessions,
             nowEpochMs: AUDIENCE_EPOCH_MS
         })).toEqual(['alice-session', 'bob-session', 'carol-session', 'dave-session']);
-        // Three co-member principals and their three live sessions, then the three principals again as the guard.
+        // Three co-member principals and their three active sessions, then the three principals again as the guard.
         expect(runtime.coMemberRowsPerBatch).toEqual([6, 3]);
     });
 
@@ -273,7 +276,7 @@ describe('client mutation principal audience read', () => {
         ]);
         expect(computePrincipalStateSyncAudience({
             principalRef: read.snapshot.principal,
-            ownSessions: { principalRef: read.snapshot.principal, activeSessions: read.snapshot.activeSessions },
+            ownSessions: toPrincipalAudienceSessions(read.snapshot.principal, read.snapshot.activeSessions),
             groupSnapshots: read.audienceGroupSnapshots,
             coMemberSessions: read.audienceCoMemberSessions,
             nowEpochMs: AUDIENCE_EPOCH_MS
@@ -331,7 +334,7 @@ describe('client mutation principal audience read', () => {
 
         expect(computePrincipalStateSyncAudience({
             principalRef: read.snapshot.principal,
-            ownSessions: { principalRef: read.snapshot.principal, activeSessions: read.snapshot.activeSessions },
+            ownSessions: toPrincipalAudienceSessions(read.snapshot.principal, read.snapshot.activeSessions),
             groupSnapshots: read.audienceGroupSnapshots,
             coMemberSessions: read.audienceCoMemberSessions,
             nowEpochMs: AUDIENCE_EPOCH_MS
@@ -703,10 +706,7 @@ function heartbeatCommandFor(generationId: string): ClientMutationCommand {
 function audienceSelectors(
     selectors: readonly RuntimeStateReadBatchSelector[]
 ): readonly RuntimeStateReadBatchSelector[] {
-    return selectors.filter((selector) =>
-        selector.namespace.startsWith('group-state:') ||
-        (selector.namespace.startsWith('client-state:') && /principal=(bob|carol|dave)/.test(JSON.stringify(selector)))
-    );
+    return selectors.filter((selector) => selector.namespace.startsWith('group-state:') || isCoMemberClientSelector(selector));
 }
 
 function isCoMemberClientSelector(selector: RuntimeStateReadBatchSelector): boolean {

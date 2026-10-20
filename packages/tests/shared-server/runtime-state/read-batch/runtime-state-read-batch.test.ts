@@ -78,6 +78,7 @@ describe('runtime-state read batches', () => {
     it.each([
         ['empty prefix-suffix prefix', [{ ...PRINCIPAL_MEMBERS, keyPrefix: '' }]],
         ['empty prefix-suffix suffix', [{ ...PRINCIPAL_MEMBERS, keySuffix: '' }]],
+        ['prefix-suffix suffix that starts outside the BMP', [{ ...PRINCIPAL_MEMBERS, keySuffix: '\u{1F7FF}:member=a' }]],
         ['prefix-suffix without a suffix', [{ ...SELECTORS[1], kind: 'prefix-suffix' }]],
         ['prefix selector carrying a suffix', [{ ...SELECTORS[1], keySuffix: ':member=alice' }]],
         ['prefix-suffix selector carrying an exact key', [{ ...PRINCIPAL_MEMBERS, key: ENTRY.key }]],

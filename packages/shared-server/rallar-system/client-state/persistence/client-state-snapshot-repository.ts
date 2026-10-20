@@ -2,7 +2,6 @@ import type {
     ClientPresenceSnapshot,
     ClientPrincipalRef,
     ClientScope,
-    ClientSession,
     ClientSnapshot
 } from '@shared/api/client-types.ts';
 import { toClientSnapshotLastSeenAtEpochMs } from '@shared/api/group-client-views.ts';
@@ -15,7 +14,10 @@ import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../run
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { ClientStateEventStore } from '../../state-events/client-state-event-store.ts';
 import { readStableStateSnapshot, StateSnapshotReadConflictError } from '../../state-events/state-snapshot-read.ts';
-import type { PrincipalAudienceSessions } from '../../state-sync/state-sync-principal-audience.ts';
+import {
+    toPrincipalAudienceSessions,
+    type PrincipalAudienceSessions
+} from '../../state-sync/state-sync-principal-audience.ts';
 import { toClientPresenceState } from '../client-presence-state.ts';
 import { assembleClientStateSnapshot, toActiveClientSessions } from './assemble-client-state-snapshot.ts';
 import { toLiveClientStateEntryValue, type ClientPrincipalSnapshotRead } from './client-state-persistence-contracts.ts';
@@ -97,7 +99,9 @@ export class ClientStateSnapshotRepository extends ClientStateRepositoryReads {
             }
             return toPrincipalAudienceSessions(
                 ref,
-                beforeSelections[uniqueRefs.length + index].map((entry) => this.toSessionEntry(entry, ref).value)
+                toActiveClientSessions(
+                    beforeSelections[uniqueRefs.length + index].map((entry) => this.toSessionEntry(entry, ref).value)
+                )
             );
         }));
         return audience.filter((sessions): sessions is PrincipalAudienceSessions => sessions !== undefined);
@@ -116,7 +120,7 @@ export class ClientStateSnapshotRepository extends ClientStateRepositoryReads {
                 );
                 return [sessions.map((entry) => entry.value), null] as const;
             },
-            assemble: (_principal, sessions) => toPrincipalAudienceSessions(ref, sessions)
+            assemble: (_principal, sessions) => toPrincipalAudienceSessions(ref, toActiveClientSessions(sessions))
         });
     }
 
@@ -203,16 +207,6 @@ export class ClientStateSnapshotRepository extends ClientStateRepositoryReads {
         void namespace;
         return await toLiveClientStateEntryValue(entry);
     }
-}
-
-function toPrincipalAudienceSessions(
-    ref: ClientPrincipalRef,
-    sessions: readonly ClientSession[]
-): PrincipalAudienceSessions {
-    return {
-        principalRef: { applicationId: ref.applicationId, workspaceId: ref.workspaceId, principalId: ref.principalId },
-        activeSessions: toActiveClientSessions(sessions)
-    };
 }
 
 function collectValuesByPrincipalId<T extends Readonly<{ principalId: string; }>>(

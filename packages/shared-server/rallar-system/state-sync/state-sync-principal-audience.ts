@@ -4,10 +4,18 @@ import { readGroupVisibility } from '../group-state/policy/group-snapshot-visibi
 import { isClientSnapshotSessionLive } from '../presence/snapshot-presence.ts';
 import { sameScope } from './state-sync-payload.ts';
 
-/** A principal and its live sessions: all of a principal the audience reads, never its instances. */
+/** A principal and its active sessions: all of a principal the audience reads, never its instances. */
 export interface PrincipalAudienceSessions {
     readonly principalRef: ClientPrincipalRef;
     readonly activeSessions: readonly ClientSession[];
+}
+
+export function toPrincipalAudienceSessions(
+    principalRef: ClientPrincipalRef,
+    activeSessions: readonly ClientSession[]
+): PrincipalAudienceSessions {
+    const { applicationId, workspaceId, principalId } = principalRef;
+    return { principalRef: { applicationId, workspaceId, principalId }, activeSessions };
 }
 
 export interface PrincipalStateSyncAudienceInput {

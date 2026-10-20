@@ -87,7 +87,7 @@ function toRuntimeStateReadBatchSuffixSelector(
         kind: 'prefix-suffix',
         namespace,
         keyPrefix: requireNonEmptyString(selector.keyPrefix, `${label} key prefix`),
-        keySuffix: requireNonEmptyString(selector.keySuffix, `${label} key suffix`)
+        keySuffix: requireSuffixRangeBound(requireNonEmptyString(selector.keySuffix, `${label} key suffix`), label)
     };
 }
 

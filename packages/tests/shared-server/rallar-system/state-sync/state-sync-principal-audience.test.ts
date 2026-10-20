@@ -7,7 +7,7 @@ import {
 import { computeClientStateSyncEntries } from '@shared-server/rallar-system/state-sync/state-sync-entry-computation.ts';
 import {
     computePrincipalStateSyncAudience,
-    type PrincipalAudienceSessions
+    toPrincipalAudienceSessions
 } from '@shared-server/rallar-system/state-sync/state-sync-principal-audience.ts';
 import { resolveStateSyncRecipients } from '@shared-server/rallar-system/state-sync/state-sync-routing.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -62,8 +62,8 @@ describe('principal state-sync audience', () => {
         };
         const audience = computePrincipalStateSyncAudience({
             principalRef: own.principal,
-            ownSessions: toPrincipalAudienceSessions(own),
-            coMemberSessions: [bob, carol, expiredDave, otherScope].map(toPrincipalAudienceSessions),
+            ownSessions: toPrincipalAudienceSessions(own.principal, own.activeSessions),
+            coMemberSessions: [bob, carol, expiredDave, otherScope].map((snapshot) => toPrincipalAudienceSessions(snapshot.principal, snapshot.activeSessions)),
             groupSnapshots: [group, wrongScopeGroup],
             nowEpochMs: NOW_EPOCH_MS
         });
@@ -353,10 +353,6 @@ function createClientSnapshot(principalId: string, sessionIds: readonly string[]
         activeSessionCount: sessionIds.length,
         lastSeenAtEpochMs: sessionIds.length > 0 ? NOW_EPOCH_MS : null
     };
-}
-
-function toPrincipalAudienceSessions(snapshot: ClientSnapshot): PrincipalAudienceSessions {
-    return { principalRef: snapshot.principal, activeSessions: snapshot.activeSessions };
 }
 
 function createClientPrincipal(principalId: string): ClientSnapshot['principal'] {
