@@ -739,8 +739,15 @@ Deno.test('configuration decoder rejects a queue resilience source naming the re
     );
 });
 
-Deno.test('configuration decoder holds sixteen AppInbox flight rows by default and bounds the hold by the lane concurrency and the largest flight', () => {
+Deno.test('configuration decoder requires the AppInbox flight hold and bounds it by the lane concurrency and the largest flight', () => {
     assert.equal(decodeApiV1Configuration(validDecodeApiV1ConfigurationInput()).appInbox.newLaneHeldRows, 16);
+    const unnamed = validDecodeApiV1ConfigurationInput();
+    const unnamedAppInbox = (unnamed.defaultsSource as MutableApiV1ConfigurationSourceObject).appInbox;
+    delete (unnamedAppInbox as MutableApiV1ConfigurationSourceObject).newLaneHeldRows;
+    assert.deepEqual(
+        captureConfigurationError(() => decodeApiV1Configuration(unnamed)).issues.map(({ path, code }) => ({ path, code })),
+        [{ path: 'appInbox.newLaneHeldRows', code: 'missing-property' }]
+    );
 
     for (const [newLaneHeldRows, valid] of [[3, false], [4, true], [64, true], [65, false], [4.5, false]] as const) {
         const input = validDecodeApiV1ConfigurationInput();

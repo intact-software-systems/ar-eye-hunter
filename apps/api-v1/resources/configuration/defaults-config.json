@@ -120,6 +120,7 @@
     "phaseTiming": false,
     "laneBudgetPolicy": "fixed-retry-two",
     "newLaneConcurrency": 4,
+    "newLaneHeldRows": 16,
     "completionWait": {
       "maxElapsedMs": 30000,
       "retryIntervalMs": 250,

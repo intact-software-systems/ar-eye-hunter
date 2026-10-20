@@ -481,14 +481,8 @@ function decodeAppInbox(
     };
 }
 
-/** The defaults source may not name the bound yet; until it does, the flight holds four rows per compute slot of the default lane. */
-const DEFAULT_APP_INBOX_NEW_LANE_HELD_ROWS = 16;
-
 function decodeAppInboxNewLaneHeldRows(decoder: ApiV1ConfigurationValueDecoder, newLaneConcurrency: number): number {
     const path = 'appInbox.newLaneHeldRows';
-    if (!decoder.hasValue(path)) {
-        return DEFAULT_APP_INBOX_NEW_LANE_HELD_ROWS;
-    }
     const newLaneHeldRows = decoder.integer(path, 1, InboxQueueReader.MAX_NEW_LANE_HELD_ROWS);
     if (decoder.isValid(path, 'appInbox.newLaneConcurrency') && newLaneHeldRows < newLaneConcurrency) {
         decoder.invariant(

@@ -37,6 +37,7 @@ export interface ApiV1ConfigurationStartupSummary {
     };
     readonly appInbox: {
         readonly newLaneConcurrency: ApiV1Configuration['appInbox']['newLaneConcurrency'];
+        readonly newLaneHeldRows: ApiV1Configuration['appInbox']['newLaneHeldRows'];
     };
     readonly appliedEnvironmentOverrideNames: readonly string[];
 }
@@ -46,7 +47,7 @@ interface ApiV1ConfigurationStartupSummaryInput {
     readonly http: Pick<ApiV1Configuration['http'], 'corsOrigins'>;
     readonly publicApi: ApiV1Configuration['publicApi'];
     readonly database: Pick<ApiV1Configuration['database'], 'mode' | 'pubSub' | 'applicationPool'>;
-    readonly appInbox: Pick<ApiV1Configuration['appInbox'], 'newLaneConcurrency'>;
+    readonly appInbox: Pick<ApiV1Configuration['appInbox'], 'newLaneConcurrency' | 'newLaneHeldRows'>;
     readonly topology: {
         readonly replay: ApiV1Configuration['topology']['replay'];
     };
@@ -99,7 +100,10 @@ export function toApiV1ConfigurationStartupSummary(
             rtcTopologyReplay: configuration.topology.replay.mode
         },
         applicationPool: { maxConnections: configuration.database.applicationPool.maxConnections },
-        appInbox: { newLaneConcurrency: configuration.appInbox.newLaneConcurrency },
+        appInbox: {
+            newLaneConcurrency: configuration.appInbox.newLaneConcurrency,
+            newLaneHeldRows: configuration.appInbox.newLaneHeldRows
+        },
         appliedEnvironmentOverrideNames: [
             ...configuration.profile.appliedEnvironmentOverrideNames
         ]
