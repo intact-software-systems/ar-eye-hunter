@@ -1,8 +1,14 @@
 import type { PSqlExecutorCounters, PSqlParameter, PSqlSql, PSqlTransactionWrite } from './p-sql-sql.ts';
 
+export interface PSqlCounterScopeOptions {
+    /** Whether the scope reads the clock around each `begin`; a scope that does not reports no begin wait. */
+    readonly timesBeginWait: boolean;
+}
+
 interface PSqlCounterScopeState {
     statements: number;
     executorWaitMs: number;
+    beginWaitMs: number | undefined;
 }
 
 type PSqlSavepointSql = PSqlSql & {
@@ -13,10 +19,15 @@ type PSqlSavepointSql = PSqlSql & {
  * A handle that counts the statements issued through it and through the transactions and savepoints it opens,
  * and hands every call to `database`: a transaction it opens is `database.begin` itself, so whatever that
  * handle does at begin, commit or rollback applies unchanged. The wait is each statement's call-to-completion
- * time, as `PSqlExecutorCounters` defines it; statements other callers issue never credit the scope.
+ * time, as `PSqlExecutorCounters` defines it; statements other callers issue never credit the scope. When it
+ * times begin waits, it also sums the time each `begin` waits before its transaction callback is entered.
  */
-export function createPSqlCounterScope(database: PSqlSql): PSqlSql {
-    return toCountedSql(database, { statements: 0, executorWaitMs: 0 });
+export function createPSqlCounterScope(database: PSqlSql, options: PSqlCounterScopeOptions): PSqlSql {
+    return toCountedSql(database, {
+        statements: 0,
+        executorWaitMs: 0,
+        beginWaitMs: options.timesBeginWait ? 0 : undefined
+    });
 }
 
 function toCountedSql(source: PSqlSql, scope: PSqlCounterScopeState): PSqlSql {
@@ -36,9 +47,17 @@ function toCountedSql(source: PSqlSql, scope: PSqlCounterScopeState): PSqlSql {
         });
     }
     const counted: PSqlSql = Object.assign(sql, {
-        begin: async <T>(write: PSqlTransactionWrite<T>): Promise<T> =>
-            await source.begin(async (transaction) => await write(toCountedSql(transaction, scope))),
-        getExecutorCounters: (): PSqlExecutorCounters => ({ ...scope })
+        begin: async <T>(write: PSqlTransactionWrite<T>): Promise<T> => {
+            if (scope.beginWaitMs === undefined) {
+                return await source.begin(async (transaction) => await write(toCountedSql(transaction, scope)));
+            }
+            const calledAt = performance.now();
+            return await source.begin(async (transaction) => {
+                scope.beginWaitMs = (scope.beginWaitMs ?? 0) + performance.now() - calledAt;
+                return await write(toCountedSql(transaction, scope));
+            });
+        },
+        getExecutorCounters: (): PSqlExecutorCounters => toExecutorCounters(scope)
     });
     if (!hasSavepoint(source)) {
         return counted;
@@ -47,6 +66,11 @@ function toCountedSql(source: PSqlSql, scope: PSqlCounterScopeState): PSqlSql {
         savepoint: async <T>(write: PSqlTransactionWrite<T>): Promise<T> =>
             await source.savepoint(async (nested) => await write(toCountedSql(nested, scope)))
     });
+}
+
+function toExecutorCounters(scope: PSqlCounterScopeState): PSqlExecutorCounters {
+    const { statements, executorWaitMs, beginWaitMs } = scope;
+    return beginWaitMs === undefined ? { statements, executorWaitMs } : { statements, executorWaitMs, beginWaitMs };
 }
 
 function hasSavepoint(sql: PSqlSql): sql is PSqlSavepointSql {

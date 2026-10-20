@@ -16,6 +16,7 @@ describe('createAppInboxHandlerRuntime', () => {
             onProbeFinished: () => void probes.push('finished'),
             onPassStarted: () => undefined,
             onPassFinished: () => undefined,
+            onEntryClaimed: () => undefined,
             onHandlerStarted: () => undefined,
             onHandlerFinished: () => undefined
         });

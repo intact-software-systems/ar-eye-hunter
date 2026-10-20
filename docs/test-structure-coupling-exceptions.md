@@ -4624,6 +4624,21 @@ moved or changed test.
         "requiredConstraint": "An admission operation whose observer Promise rejects opens zero storage transactions and rejects before authoring a mutation.",
         "failureRationale": "The same rejection and unchanged stored rows could follow a prematurely opened or aborted transaction; the absence assertion separately proves the prescribed refusal-before-storage boundary."
       }
+    },
+    {
+      "id": "app-inbox-transaction-begin-reads-no-clock-with-timing-off",
+      "domain": "AppInbox transaction writer clock work with timing off",
+      "owner": "Rallar shared maintainers",
+      "summary": "With timing off, the AppInbox transaction writer's counter scope reads the clock only around each statement and never around the transaction begin, so a timing-disabled path performs no new clock work. Executable assertion: “reads no clock around the transaction begin when timing is off, only the per-statement waits”.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/app-inbox/handler/app-inbox-phase-executor-counters.test.ts#reads no clock around the transaction begin when timing is off, only the per-statement waits",
+      "coverageRelation": "The test commits an accepted AppInbox completion through a counting database with timing undefined, observes performance.now, and compares the clock reads with twice the statement count the counters report.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "performance.now, the ambient monotonic clock",
+        "observableEffect": "A clock read around the begin would charge every timing-off transaction two clock calls that only a begin-wait measurement needs.",
+        "requiredConstraint": "createPSqlCounterScope with timesBeginWait false performs exactly two clock reads per statement and none around begin; the begin-wait pair exists only when timing is on.",
+        "failureRationale": "The committed rows, the counters and the phase lines are identical with or without the begin-wait pair, so only the clock-read count states the no-new-clock-work constraint directly."
+      }
     }
   ],
   "entries": [
@@ -10192,6 +10207,17 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The assertion proves the rejection prevented storage entry, in addition to the separately asserted error and absent durable row. A transaction opened then aborted, or a readonly transaction, could satisfy both those other assertions while violating the observer gate",
       "semanticCoverage": "packages/tests/shared/alm/indexed-db-admission-observer-gates.test.ts#fails before opening storage or authoring a mutation when the observer rejects"
+    },
+    {
+      "id": "test-structure-coupling-240e55b9afc8f6d3",
+      "path": "packages/tests/shared-server/rallar-system/app-inbox/handler/app-inbox-phase-executor-counters.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "app-inbox-transaction-begin-reads-no-clock-with-timing-off",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The clock-read count against the statement count is the only direct witness that a timing-off transaction pays no begin-wait clock pair; the commit result, counters and phase lines are the same either way.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/app-inbox/handler/app-inbox-phase-executor-counters.test.ts#reads no clock around the transaction begin when timing is off, only the per-statement waits"
     }
   ]
 }

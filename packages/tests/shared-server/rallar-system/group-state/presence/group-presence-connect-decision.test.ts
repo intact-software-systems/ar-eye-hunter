@@ -11,11 +11,12 @@ import {
 import type { WsSessionGenerationLifecycleService } from '@shared-server/rallar-system/websocket/ws-session-generation-lifecycle.ts';
 
 describe('group presence connect read and compute', () => {
-    it('returns inactive without reading or computing a group mutation', async () => {
+    it('returns inactive without computing a group mutation, whatever its discarded mutation read did', async () => {
         const phases: string[] = [];
         const dependencies = createDecisionDependencies({
             phases,
-            closedAtObservation: true
+            closedAtObservation: true,
+            mutationReadFailure: new Error('Authenticated session is missing')
         });
 
         const outcome = await readAndComputeGroupPresenceConnect({
@@ -25,7 +26,22 @@ describe('group presence connect read and compute', () => {
         });
 
         expect(JSON.stringify(outcome)).toBe('{"status":"inactive","sessionId":"session-1","generationId":"generation-1"}');
-        expect(phases).toEqual(['lifecycle-read', 'lifecycle-closed-check']);
+        expect(phases).toEqual(['lifecycle-read', 'mutation-read', 'lifecycle-closed-check']);
+    });
+
+    it('fails with the mutation read once the session is live', async () => {
+        const failure = new Error('Authenticated session is missing');
+        const dependencies = createDecisionDependencies({
+            phases: [],
+            closedAtObservation: false,
+            mutationReadFailure: failure
+        });
+
+        await expect(readAndComputeGroupPresenceConnect({
+            command: dependencies.command,
+            mutationService: dependencies.mutationService,
+            sessionGenerationLifecycle: dependencies.sessionGenerationLifecycle
+        })).rejects.toBe(failure);
     });
 
     it('returns the exact computed mutation and lifecycle guard ' + 'for the handler to commit', async () => {
@@ -60,10 +76,11 @@ describe('group presence connect read and compute', () => {
         expect(outcome.computed).toBe(dependencies.computed);
         expect(outcome.read).toBe(dependencies.read);
         expect(outcome.lifecycleGuard).toBe(dependencies.lifecycleGuard);
+        // The mutation read starts before the lifecycle read settles: one round trip, not two.
         expect(phases).toEqual([
             'lifecycle-read',
-            'lifecycle-closed-check',
             'mutation-read',
+            'lifecycle-closed-check',
             'mutation-compute',
             'lifecycle-compute-guard'
         ]);
@@ -73,6 +90,7 @@ describe('group presence connect read and compute', () => {
 interface CreateDecisionDependenciesInput {
     readonly phases: string[];
     readonly closedAtObservation: boolean;
+    readonly mutationReadFailure?: Error;
 }
 
 interface DecisionDependencies {
@@ -99,7 +117,7 @@ interface LifecycleServiceFixture {
 
 function createDecisionDependencies(input: CreateDecisionDependenciesInput): DecisionDependencies {
     const command = connectCommand();
-    const mutation = createMutationServiceFixture(command, input.phases);
+    const mutation = createMutationServiceFixture(command, input);
     const lifecycle = createLifecycleServiceFixture(input);
     return {
         command,
@@ -112,7 +130,11 @@ function createDecisionDependencies(input: CreateDecisionDependenciesInput): Dec
     };
 }
 
-function createMutationServiceFixture(command: GroupStateMutationCommand, phases: string[]): MutationServiceFixture {
+function createMutationServiceFixture(
+    command: GroupStateMutationCommand,
+    input: CreateDecisionDependenciesInput
+): MutationServiceFixture {
+    const phases = input.phases;
     const read = {} as GroupMutationRead;
     const computed = {
         outcome: 'no-op',
@@ -122,7 +144,13 @@ function createMutationServiceFixture(command: GroupStateMutationCommand, phases
         read: async (receivedCommand) => {
             expect(receivedCommand).toBe(command);
             phases.push('mutation-read');
+            if (input.mutationReadFailure !== undefined) {
+                throw input.mutationReadFailure;
+            }
             return read;
+        },
+        readWithSnapshot: async () => {
+            throw new Error('A presence connect reads no group snapshot');
         },
         compute: (receivedCommand, receivedRead) => {
             expect(receivedCommand).toBe(command);

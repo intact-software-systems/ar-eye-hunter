@@ -2,16 +2,20 @@ import type { ALMessage } from '../al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '../al-contracts/al-message-persistence-validation.ts';
 import { EnqueuedType } from '../api/api-config.ts';
 import type { DequeueController } from '../queuebox/dequeue/dequeue-controller.ts';
+import type { DequeueLaneFlight } from '../queuebox/dequeue/dequeue-lane-flight.ts';
 import type { QueueBoxResourceEntryRepository, ResourceInboxClaimOrder } from '../queuebox/queue-box-types.ts';
 import {
     NonRetryableException,
     ResourceInboxHandlerEntryError,
     type DequeueResourceEntryOptions
 } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
-import type { ResourceInboxAttemptTelemetry } from '../queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
+import type {
+    ResourceInboxAttempt,
+    ResourceInboxAttemptTelemetry
+} from '../queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import type { ResourceInboxHandlerOutcome } from '../queuebox/resource-inbox/resource-inbox-handler-outcome.ts';
 import type { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
-import type { ResourceEntry } from '../queuebox/ResourceEntry.ts';
+import type { Key, ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import { readRtcTopologyWorkEntry, RTC_TOPOLOGY_OUTBOX_TOPIC } from '../queuebox/rtc-topology-work-entry-contract.ts';
 import { QueueBoxUtilities } from './queue-box-utilities.ts';
 import type { OnQueuedMessageCallback, OnRejectedQueuedMessageCallback } from './queue-message-callbacks.ts';
@@ -29,11 +33,16 @@ export namespace QueueMessageReader {
         readonly newLaneClaimOrder: ResourceInboxClaimOrder;
         readonly readLaneBudgets: DequeueController.ReadLaneBudgets | undefined;
         readonly workAdvertisement: DequeueController.WorkAdvertisement | undefined;
+        /** Absent, the pass drains what it claims before it resolves. */
+        readonly standingFlight:
+            | DequeueLaneFlight<Key, ResourceInboxAttempt, ResourceInboxHandlerOutcome | undefined>
+            | undefined;
     }
 
     /**
-     * The lifecycle of one engine pass over this queue: a probe, then the pass it advertised, with the
-     * handler of every claimed entry. One observer at a time; the owner measures what it will at each step.
+     * The lifecycle of one engine pass over this queue: a probe, then the pass it advertised, with every entry the
+     * pass claimed and the handler of every claimed entry, which with a standing flight may run after the pass. One
+     * observer at a time; the owner measures what it will at each step.
      */
     export interface DequeuePassObserver extends QueueBoxUtilities.DequeueHandlerObserver {
         onProbeStarted(): void;
@@ -116,7 +125,8 @@ export class QueueMessageReader {
                     options: this.config.dequeueOptions,
                     readLaneBudgets: input.readLaneBudgets,
                     workAdvertisement: input.workAdvertisement,
-                    handlerObserver: observer
+                    handlerObserver: observer,
+                    standingFlight: input.standingFlight
                 }
             );
         }

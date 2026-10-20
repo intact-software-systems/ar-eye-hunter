@@ -738,3 +738,35 @@ Deno.test('configuration decoder rejects a queue resilience source naming the re
         JSON.stringify(error.issues)
     );
 });
+
+Deno.test('configuration decoder requires the AppInbox flight hold and bounds it by the lane concurrency and the largest flight', () => {
+    assert.equal(decodeApiV1Configuration(validDecodeApiV1ConfigurationInput()).appInbox.newLaneHeldRows, 16);
+    const unnamed = validDecodeApiV1ConfigurationInput();
+    const unnamedAppInbox = (unnamed.defaultsSource as MutableApiV1ConfigurationSourceObject).appInbox;
+    delete (unnamedAppInbox as MutableApiV1ConfigurationSourceObject).newLaneHeldRows;
+    assert.deepEqual(
+        captureConfigurationError(() => decodeApiV1Configuration(unnamed)).issues.map(({ path, code }) => ({ path, code })),
+        [{ path: 'appInbox.newLaneHeldRows', code: 'missing-property' }]
+    );
+
+    for (const [newLaneHeldRows, valid] of [[3, false], [4, true], [64, true], [65, false], [4.5, false]] as const) {
+        const input = validDecodeApiV1ConfigurationInput();
+        setPath(input.defaultsSource, 'appInbox.newLaneConcurrency', 4);
+        setPath(input.defaultsSource, 'appInbox.newLaneHeldRows', newLaneHeldRows);
+        if (valid) {
+            assert.equal(decodeApiV1Configuration(input).appInbox.newLaneHeldRows, newLaneHeldRows);
+            continue;
+        }
+        const error = captureConfigurationError(() => decodeApiV1Configuration(input));
+        assert.equal(error.issues.some((issue) => issue.path === 'appInbox.newLaneHeldRows'), true, `${newLaneHeldRows}`);
+    }
+
+    const belowConcurrency = validDecodeApiV1ConfigurationInput();
+    setPath(belowConcurrency.defaultsSource, 'appInbox.newLaneConcurrency', 8);
+    setPath(belowConcurrency.defaultsSource, 'appInbox.newLaneHeldRows', 4);
+    const error = captureConfigurationError(() => decodeApiV1Configuration(belowConcurrency));
+    assert.deepEqual(
+        error.issues.map(({ path, environmentName, code }) => ({ path, environmentName, code })),
+        [{ path: 'appInbox.newLaneHeldRows', environmentName: 'RALLAR_APP_INBOX_NEW_LANE_HELD_ROWS', code: 'held-rows-below-concurrency' }]
+    );
+});

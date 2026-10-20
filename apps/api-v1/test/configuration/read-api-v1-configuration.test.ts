@@ -300,6 +300,8 @@ Deno.test('configuration startup summary is useful and contains no secret-derive
             apiQueue: 'enabled',
             rtcTopologyReplay: 'enabled'
         },
+        applicationPool: { maxConnections: 5 },
+        appInbox: { newLaneConcurrency: 4, newLaneHeldRows: 16 },
         appliedEnvironmentOverrideNames: [
             'AUTH_ADMIN_CLIENT_IDS',
             'METERED_APP_NAME',
@@ -395,6 +397,14 @@ Deno.test('every committed profile serves due retries at the fixed two per pass 
     assert.equal(selected.appInbox.laneBudgetPolicy, 'adaptive-retry');
 });
 
+Deno.test('every committed profile gives the application pool five connections and the listener one', async () => {
+    for (const profile of ['dev', 'prod', 'prod-hardened', 'prod-in-memory'] as const) {
+        const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));
+        assert.equal(configuration.database.applicationPool.maxConnections, 5, profile);
+        assert.equal(configuration.database.listenerPool.maxConnections, 1, profile);
+    }
+});
+
 Deno.test('every committed profile runs four AppInbox context heads together unless the environment selects another bound (D296)', async () => {
     for (const profile of ['dev', 'prod', 'prod-hardened', 'prod-in-memory'] as const) {
         const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));
@@ -411,6 +421,25 @@ Deno.test('every committed profile runs four AppInbox context heads together unl
             RALLAR_APP_INBOX_NEW_LANE_CONCURRENCY: outOfRange
         }, 4));
         assert.equal(error.issues.some((issue) => issue.path === 'appInbox.newLaneConcurrency'), true, outOfRange);
+    }
+});
+
+Deno.test('every committed profile holds sixteen AppInbox flight rows unless the environment selects another bound', async () => {
+    for (const profile of ['dev', 'prod', 'prod-hardened', 'prod-in-memory'] as const) {
+        const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));
+        assert.equal(configuration.appInbox.newLaneHeldRows, 16, profile);
+    }
+    const selected = await readApiV1Configuration(readerInput({
+        ...validConfigurationEnvironment('prod-in-memory'),
+        RALLAR_APP_INBOX_NEW_LANE_HELD_ROWS: '32'
+    }));
+    assert.equal(selected.appInbox.newLaneHeldRows, 32);
+    for (const outOfRange of ['3', '65']) {
+        const error = await captureConfigurationError(readerInput({
+            ...validConfigurationEnvironment(),
+            RALLAR_APP_INBOX_NEW_LANE_HELD_ROWS: outOfRange
+        }, 4));
+        assert.equal(error.issues.some((issue) => issue.path === 'appInbox.newLaneHeldRows'), true, outOfRange);
     }
 });
 

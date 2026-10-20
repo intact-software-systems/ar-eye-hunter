@@ -323,7 +323,6 @@ describe('GroupStateInboxService authenticated authority', () => {
                 database,
                 groupStateService,
                 resultReader: {
-                    readSnapshot: (ref) => groupStateService.readSnapshot(ref),
                     readEvent: (ref, eventId) => eventStore.readGroupEvent(ref, eventId)
                 }
             },

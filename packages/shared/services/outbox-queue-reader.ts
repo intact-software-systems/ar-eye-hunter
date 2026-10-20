@@ -33,7 +33,7 @@ export class OutboxQueueReader {
         });
     }
 
-    /** A handler may answer a typed outcome, such as a retryable conflict with its own retry delay (D304). */
+    /** A handler may answer a typed outcome, such as a retryable conflict with its own retry delay. */
     onOutboxMessageDo(type: string, callback: OnQueuedMessageCallback): this {
         this.reader.onMessageDo(type, callback);
         return this;
@@ -70,7 +70,8 @@ export class OutboxQueueReader {
             resilience,
             newLaneClaimOrder: 'queue',
             readLaneBudgets: undefined,
-            workAdvertisement
+            workAdvertisement,
+            standingFlight: undefined
         });
     }
 }

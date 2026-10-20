@@ -346,6 +346,248 @@ room-join time (69.84 of 88.46 s) is queue age; handlers are 4.2 % and 2.1 %. Ra
   0.305 s inbox wait.
 - **Persistent-store scans** (proven, minor inside the window): the sign-in read's group scan takes 0.755 s p50.
 
+### 1.15 Measured on the formation tail 3 head (local, this Mac, memory API; hosted through GitHub Free `hetzner-control` with the API on Postgres)
+
+Three read-only surveys of `c0e3b6e15` (main after #687) asked why the AppInbox lane stays the admission floor at 50.
+They started from the timing-on hosted 50 of §1.14 and a model of the lane's code paths. Model figures are labelled
+as such; they are not measurements.
+
+- **A pass serves each context once and then drains** (proven from code). A pass serves a context's head at most
+  once, stops after `NEW_CONTEXTS_PER_PASS` = 8 claims and waits for every claimed row. A player's next command
+  therefore waits for the end of the pass, not only for a slot. Hosted: 26 back-to-back passes each claim 8 with
+  36–48 rows still waiting.
+- **Chained group rows hold places they cannot use** (proven from code). The lane holds at most
+  `max(maxToReserve, K)` = 4 unreleased rows and refills only when fewer than K are unreleased. A row waiting behind
+  its exclusion predecessor counts as unreleased but holds no slot. Hosted symptom: 12.8 s of in-pass idleness with
+  only group-chained rows waiting.
+- **Slot admission is first in, first out** (model). A ready group row queues behind WS connects of about 1 s each.
+  Admitting it first is worth about 3 s at 50 in the model.
+- **The recovery lanes wait for the NEW lane** (proven from code). RETRY, FAIRNESS and TIMEOUT run only after NEW
+  drains, so a raised cap makes a conflicted join wait a longer pass.
+- **Model at 50, last arrival / player p50:** today 43.8 / 38.0 s; a cap of 32 alone 39.7 / 34.4 s, with RETRY
+  waiting up to about 10 s per pass; a persistent flight with a hold of 16 and keyed-first admission 34.4 / 28.0 s.
+- **Presence sits on the group chain by key only** (proven from code). A join compares-and-sets the group row and
+  bumps its versions. Presence connect, heartbeat and disconnect guard their own session row and the principal's
+  admission row, never the group row. Of the 24.187 s of serial GROUP_* handler time at 50, presence connects are
+  8.552 s (35 %) and joins 13.133 s.
+- **A join reads in three statements over two sequential steps** (proven from code). The exact read and the result
+  snapshot are separate statements, and a summary that moves between them raises the result-read-conflict retry.
+  That the five hosted join retries are this class is a strong suspicion.
+- **The pool is five connections on the hosted lane** (proven from code). With the listener the API holds seven
+  Postgres connections, and no environment variable can change the pool. A transaction holds its connection from
+  `BEGIN` to `COMMIT`, so the 7.1 ms counter-scope wait per statement is not pool wait. Formation demand above five
+  is a strong suspicion.
+
+What landed (D321–D324, D328), each RED first at its owner:
+
+- **A persistent NEW flight** (D321, D322). The AppInbox reader keeps one flight across passes. A pass tops it up to
+  H = 16 held rows and returns. A keyed row released by a same-key predecessor takes the freed slot first (D328).
+  Contexts with a row in flight are excluded from every reservation lane, and the recovery lanes share the flight.
+- **Presence off the group chain** (D323). Presence commands are keyed per session; joins and the group's own
+  commands keep a group key.
+- **One join read** (D324). A join reads its policy, decision rows and result snapshot in one batch statement.
+- **The pool facts** (D325). The startup summary names the pool, K and H, and the counter scope measures the wait
+  before a transaction begins.
+
+Postgres evidence (real `PSqlQueueBox`, the AppInbox reader at K = 4 and H = 16). The walls are from `ffafeb51a`;
+every test passes on `e6f4d1b63`:
+
+| Test                                                     | Result                                                                           |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| 170 rows: 50 contexts × 3, plus 20 under one key         | Draining lane 956–1,074 ms in 22 passes; flight 528–543 ms. Every row attempt 1  |
+| One instance                                             | No context ever holds two RESERVED rows; spans under one key never overlap       |
+| Two readers on one store                                 | Contexts with two RESERVED rows across readers: 14 draining, 40–50 flight (D326) |
+| Two presence connects against a join held in its handler | Both connects commit while the join waits; attempts 1; on both lane modes        |
+| Join read, counter scope                                 | 4 → 2 statements, 3 → 2 round trips; presence connect 3 → 2 round trips          |
+
+Local 15/30/50 on the flight head `ffafeb51a` pass in 47.6 s / 52.7 s / 1.1 min against 48.5 s / 57.2 s / 1.1 min on
+main. Local 50 with AppInbox phase timing, main → `ffafeb51a` (memory API; not a hosted measurement):
+
+| Command type                   | Queue age p50 / p95 / max on main (s) | On the flight head (s) |
+| ------------------------------ | ------------------------------------- | ---------------------- |
+| `CLIENT_AUTHORISED_WS_CONNECT` | 0.254 / 0.547 / 0.624                 | 0.050 / 0.210 / 0.210  |
+| `GROUP_JOIN`                   | 0.135 / 0.545 / 0.596                 | 0.022 / 0.311 / 0.372  |
+| `GROUP_PRESENCE_CONNECT`       | 0.106 / 0.549 / 0.732                 | 0.036 / 0.079 / 0.080  |
+| `AUTH_WS_TICKET_ISSUE`         | 0.163 / 0.222 / 0.234                 | 0.099 / 0.167 / 0.167  |
+| `AUTH_SESSION_ISSUE`           | 0.113 / 0.181 / 0.185                 | 0.065 / 0.097 / 0.101  |
+
+| Lane measure (local 50)                           | Main                    | Flight head                   |
+| ------------------------------------------------- | ----------------------- | ----------------------------- |
+| Setup window                                      | 6.374 s                 | 5.501 s                       |
+| APP_INBOX passes                                  | 34, each claiming 8     | 29, claiming 5 p50 and 16 max |
+| Pass wall p50                                     | 87.9 ms                 | 3.5 ms                        |
+| Occupancy, Σ handler ÷ (window × 4)               | 0.180                   | 0.261                         |
+| Completion wait p50: WS connect / join / presence | 0.292 / 0.181 / 0.231 s | 0.148 / 0.112 / 0.130 s       |
+
+The presence connect no longer waits behind joins. The fix waves after `ffafeb51a` narrowed keyed-first admission to
+same-key successors (D328) and added the recovery-lane exclusions. Local 15/30/50 and the timing-on local 50 on the
+final head `e6f4d1b63`:
+
+They pass in 48.2 s / 57.1 s / 1.1 min. Local 50 with AppInbox phase timing, main → `e6f4d1b63` (memory API; not
+a hosted measurement):
+
+| Command type                   | Queue age p50 / p95 / max on main (s) | On the final head (s) | Handler p50, main → head (ms) |
+| ------------------------------ | ------------------------------------- | --------------------- | ----------------------------- |
+| `CLIENT_AUTHORISED_WS_CONNECT` | 0.254 / 0.547 / 0.624                 | 0.059 / 0.190 / 0.386 | 35.1 → 37.1                   |
+| `GROUP_JOIN`                   | 0.135 / 0.545 / 0.596                 | 0.032 / 0.200 / 0.200 | 16.7 → 15.4                   |
+| `GROUP_PRESENCE_CONNECT`       | 0.106 / 0.549 / 0.732                 | 0.040 / 0.491 / 0.500 | 19.6 → 51.5                   |
+| `AUTH_WS_TICKET_ISSUE`         | 0.163 / 0.222 / 0.234                 | 0.125 / 0.179 / 0.194 | 12.5 → 14.3                   |
+| `AUTH_SESSION_ISSUE`           | 0.113 / 0.181 / 0.185                 | 0.080 / 0.127 / 0.129 | 19.2 → 18.8                   |
+
+| Lane measure (local 50)                           | Main                    | Final head                    |
+| ------------------------------------------------- | ----------------------- | ----------------------------- |
+| Setup window                                      | 6.374 s                 | 6.483 s                       |
+| APP_INBOX passes                                  | 34, each claiming 8     | 29, claiming 4 p50 and 16 max |
+| Pass wall p50                                     | 87.9 ms                 | 3.7 ms                        |
+| Occupancy, Σ handler ÷ (window × 4)               | 0.180                   | 0.246                         |
+| Completion wait p50: WS connect / join / presence | 0.292 / 0.181 / 0.231 s | 0.193 / 0.134 / 0.150 s       |
+| `beginWaitMs` p50 / p95 (203 transactions)        | not captured            | 2.66 / 17.91 ms               |
+
+The setup window, 6.483 s against 5.501 s on `ffafeb51a`, is local run-to-run variance. The presence connect's
+handler rose 19.6 → 51.5 ms p50 because handlers now overlap on one executor; the WS connect and the join handlers
+are unchanged. The presence tail is longer than on `ffafeb51a` (p95 0.491 against 0.079 s).
+
+The pool-only hosted A-B-B-A ran before the slice's code (native 50, timing off, persistent Postgres). B is main with
+`database.applicationPool.maxConnections` 10 in place of 5; nothing else differs.
+
+| Leg        | Run         | Source      | Primary  | Connected→accepted                                                        |
+| ---------- | ----------- | ----------- | -------- | ------------------------------------------------------------------------- |
+| A1 pool 5  | 39437291726 | `c0e3b6e15` | 47.779 s | 0.524 s                                                                   |
+| B2 pool 10 | 39438259974 | `012622f4f` | 51.177 s | 0.955 s                                                                   |
+| B3 pool 10 | 39439341700 | `012622f4f` | failed   | a ticket request returned 503 `app-inbox-unavailable` after the 30 s wait |
+| A4 pool 5  | 39440140926 | `c0e3b6e15` | 48.453 s | 0.351 s                                                                   |
+
+B2−A1 is +3.398 s, unfavourable, against a baseline drift of +0.674 s. B2 also had the longest SDK-connect tail
+(37.363 / 41.586 s p95 / max against 29.990–31.390 / 33.709–34.056 s) and RTC churn: 35 peers deleted and 26 lane
+errors. B3 failed before any traffic passed: five SDK connects ran into the 30 s completion budget, and the API
+journal holds no pool, lease or timeout error. A larger pool alone buys nothing at K = 4 (D325).
+
+The Postgres medium-scale gate passes on `ffafeb51a`, `deef13751` and `e6f4d1b63`, each with 2,842 passed and
+0 failed. The local Postgres ALM lane on main passes 15/15 in 35.0 min on a fresh isolated database. On the head:
+
+14 of 15 pass in 34.5 min on a fresh isolated database (`alm_ft3_e6f4`). The one failure, the baseline family over
+`rtc-with-ws-fallback` (full), timed out at its `repair-exhausted-sender-observe-failed-2` command. Rerun alone on a
+fresh database (`alm_ft3_rerun`), the whole `rtc-with-ws-fallback` family passes 5/5 in 10.9 min. The failure did not
+reproduce and is recorded as a flake; the lane counts 15/15 across the two fresh-database runs.
+
+Hosted acceptance on `e6f4d1b63` (uninstrumented, persistent hosted Postgres, D279), 15, 30 and 50 in order:
+
+15 (run 39498892622) passes 15/15 recipes, 45/45 semantic bindings, the 231/231 group assertions, 90/90 barriers,
+15/15 RTC outcomes, 28/28 peers established and 84/84 shots acknowledged, with 0 failed, missing, stale or flaky
+agents, 0 reconnects and 0 errors. The primary is 14.658 s and connected→accepted 0.386 s (#687: 12.253 and
+0.186 s).
+
+30 (run 39499824957) passes 30/30, 90/90, 231/231, 180/180, 30/30, 58/58 peers and 174/174 shots with 0 faults.
+The primary is 27.537 s and connected→accepted 0.393 s (#687: 21.241 and 0.218 s).
+
+50 (run 39500626461) passes 50/50, 150/150, 231/231, 300/300, 50/50, 98/98 peers and 294/294 shots with 0 faults;
+the control journal records the one `canonicalNodes` append failure of #682. Player p50 / p95 / max against #687's
+run 39405452333:
+
+| Measure (50 agents)                     | #687                     | This head                |
+| --------------------------------------- | ------------------------ | ------------------------ |
+| Group created→layout accepted (primary) | 44.653 / 44.656 / 44.658 | 43.123 / 43.126 / 43.133 |
+| Connected→accepted                      | 0.385 / 0.387 / 0.389    | 0.605 / 0.610 / 0.616    |
+| Sign-in                                 | 6.951 / 11.505 / 12.160  | 8.500 / 14.052 / 14.234  |
+| Connect (`rtc.connect`)                 | 36.146 / 39.097 / 43.923 | 41.139 / 41.769 / 41.792 |
+| SDK connect                             | 14.586 / 27.284 / 29.444 | 15.114 / 25.946 / 28.533 |
+| Room join                               | 14.077 / 22.599 / 24.325 | 15.022 / 23.735 / 28.079 |
+| RTC readiness wait                      | 8.303 / 15.668 / 17.263  | 9.767 / 14.741 / 17.414  |
+| Connected-barrier wait                  | 8.121 / 9.451 / 10.885   | 1.377 / 3.887 / 4.112    |
+| Last room join → all connects done      | 9.861                    | 7.398                    |
+| Traffic-ready from run creation         | 67.302                   | 65.667                   |
+| Shot ACK p50 / p99                      | 0.118 / 0.182            | 0.123 / 0.241            |
+
+At 50 the primary is 1.530 s below #687's, the last join → all ready 2.463 s below it and connected→accepted
+0.220 s above it. At 15 and 30 the head is slower on the primary (+2.405 and +6.296 s). These are single runs per
+source on a persistent database that grows between runs; the A-B-B-A block below decides benefit.
+
+The frozen native-50 A-B-B-A block, main `c0e3b6e15` against `e6f4d1b63`, timing off:
+
+| Leg     | Run         | Source      | Primary  | Connected→accepted | SDK connect / room join / RTC readiness p50 |
+| ------- | ----------- | ----------- | -------- | ------------------ | ------------------------------------------- |
+| A1 main | 39501549027 | `c0e3b6e15` | 57.056 s | 0.392 s            | 18.435 / 17.651 / 17.704 s                  |
+| B2 PR   | 39502459511 | `e6f4d1b63` | 44.678 s | 0.339 s            | 15.801 / 15.799 / 10.634 s                  |
+| B3 PR   | 39503337200 | `e6f4d1b63` | 56.736 s | 0.343 s            | 19.771 / 17.967 / 10.908 s                  |
+| A4 main | 39504235833 | `c0e3b6e15` | 63.080 s | 0.314 s            | 15.524 / 20.567 / 23.280 s                  |
+
+| Measure (candidate minus adjacent baseline) | B2−A1   | B3−A4   | Symmetric B−A      | Baseline drift A4−A1 |
+| ------------------------------------------- | ------- | ------- | ------------------ | -------------------- |
+| Primary (group created→accepted)            | −12.378 | −6.344  | −9.361 s (−15.6 %) | +6.024 s             |
+| Connected→accepted (end of formation)       | −0.053  | +0.029  | −0.012 s (−3.4 %)  | −0.078 s             |
+| Connect (`rtc.connect`) median              | −13.003 | −9.962  | −11.482 s          | +4.485 s             |
+| RTC readiness median                        | −7.070  | −12.372 | −9.721 s           | +5.576 s             |
+| Room join median                            | −1.852  | −2.600  | −2.226 s           | +2.916 s             |
+| SDK connect median                          | −2.634  | +4.247  | +0.807 s           | −2.911 s             |
+| Recipe start→group created                  | +3.663  | +3.558  | +3.611 s           | +3.344 s             |
+
+Verdict (D330): the whole-formation benefit is verified. Both adjacent primary contrasts favour the head, and the
+symmetric −9.361 s (60.068 → 50.707 s) is larger than the +6.024 s baseline drift. The gain lies in group
+created→connected, mainly RTC readiness and room join, each favourable in both contrasts. SDK connect does not
+improve (−2.634 and +4.247 s; symmetric +0.807 s). The end of formation is flat and does not meet the rule
+(−0.053 and +0.029 s), because main already carries #687's end-of-formation repair and all four legs sit at
+0.31–0.39 s. Recipe start→group created is slower on both B legs (+3.6 s), before the primary window. All legs drift
+upward on the growing store (A1 57.1 → A4 63.1 s, B2 44.7 → B3 56.7 s); the candidate drift (+12.058 s) is larger
+than the B3−A4 effect, so B2 carries most of the gain. All four legs pass every count with 0 faults. This is a
+descriptive reading of two whole runs per source, not a significance claim; no extra run, sample removal or per-leg
+tuning was used.
+
+Timing-on attribution on the head (instrumented, not acceptance), read for lane occupancy against 0.44 and the
+group chain against 24.1 s:
+
+Run 39505125464 on `e6f4d1b63` against #687's run 39410485156 passes every count with 0 faults; its primary is
+62.053 s with timing on. The server setup window is 59.905 s (64.064 s on #687). Under the flight, queue age stops at
+the claim, so the comparable wait is the enqueue line's end → the first handler start:
+
+| Command type                   | Enqueue → handler start p50 / p95, #687 → head (s) | Handler p50, #687 → head (s) |
+| ------------------------------ | -------------------------------------------------- | ---------------------------- |
+| `AUTH_WS_TICKET_ISSUE`         | 3.435 / 13.948 → 0.344 / 15.993                    | 0.062 → 0.077                |
+| `CLIENT_AUTHORISED_WS_CONNECT` | 8.003 / 20.059 → 6.964 / 18.554                    | 1.041 → 1.979                |
+| `GROUP_JOIN`                   | 5.523 / 20.968 → 11.338 / 22.683                   | 0.167 → 0.310                |
+| `GROUP_PRESENCE_CONNECT`       | 4.901 / 18.255 → 1.984 / 10.412                    | 0.139 → 0.350                |
+| `AUTH_SESSION_ISSUE`           | 0.157 / 1.229 → 0.304 / 1.063                      | 0.039 → 0.338                |
+
+| Lane measure (APP_INBOX, setup window)      | #687                     | This head                |
+| ------------------------------------------- | ------------------------ | ------------------------ |
+| Passes (zero-claim)                         | 83 (0)                   | 120 (2)                  |
+| Claimed per pass p50 / p95 / max            | 1 / 8 / 10               | 1 / 7 / 16               |
+| Pass wall p50 / p95                         | 99.47 / 2,440.95 ms      | 110.33 / 689.10 ms       |
+| Occupancy, Σ handler ÷ (window × 4)         | 0.355                    | 0.721                    |
+| Seconds with four handlers running          | 6.0 s                    | 36.6 s                   |
+| All `GROUP_*` handlers: union (overlapping) | 24.270 s (0 pairs)       | 22.050 s (157 pairs)     |
+| Group-key chain (without presence): union   | 15.691 s, joins 13.167 s | 21.491 s, joins 19.464 s |
+| `beginWaitMs` p50 / p95 (286 transactions)  | not captured             | 15.25 / 136.15 ms        |
+
+#687's published occupancy of 0.44 divides by Σ pass wall; under the flight handlers run across pass boundaries and
+that ratio reaches 1.76, so both runs are given on the window basis (#687 0.355). The lane now runs at its K = 4
+bound for most of setup. Presence runs off the group chain (67 overlapping presence pairs). The remaining group-key
+chain is still strictly serial: 21.5 s, of which the 50 joins are 19.5 s. It is longer than #687's 15.7 s on the same
+set because each join handler takes 0.310 s p50 instead of 0.167 s, so the join's wait rose 5.5 → 11.3 s p50 while
+the WS connect, ticket and presence waits dropped; the "group chain near 15 s" target is not reached. Every handler
+type is slower at that concurrency, and the per-second maximum event-loop lag is 199 ms median against 154 ms. The
+next owner is the join chain: the join handler's cost and its serial `G:aggregate` chain (D331).
+
+The state-write comparison on the head. Its benchmark runtime builds the reader with K = 1 and no held-row bound, so
+it exercises the per-pass path, not the flight (D329):
+
+Run 39498888877 (label `measure-state-write`) passes. The base is `ed776f12a`, which is `c0e3b6e15` plus a
+one-line harness overlay adding `readWithSnapshot` to the benchmark's diagnostic association; the candidate is
+`e6f4d1b63`. Positions A-B-B-A, 9 measured runs each at concurrency 10, 0 automatic maintenance in every preflight.
+Per-role medians of the per-run figures:
+
+| Workload    | Main (mutations/s) | This head | Change  | p99 main → head (s) | Statements per run main → head |
+| ----------- | ------------------ | --------- | ------- | ------------------- | ------------------------------ |
+| Uncontended | 114.639            | 114.292   | −0.30 % | 0.149 → 0.152       | 22,789 → 22,401.5 (−1.7 %)     |
+| Shared      | 100.675            | 101.561   | +0.88 % | 0.150 → 0.154       | 23,632.5 → 23,165 (−2.0 %)     |
+| Hot         | 26.197             | 26.946    | +2.86 % | 3.783 → 3.667       | 59,880.5 → 55,199 (−7.8 %)     |
+
+No workload exhausted a retry. The two identical-main positions differ by at most 1.16 % (hot 0.97 %), so this run is
+far quieter than #687's (15.4 % on hot). Uncontended and shared lie inside that drift. Hot is above the base drift and
+below the 2.51 % candidate drift, and both adjacent hot contrasts favour the head (+0.792 and +1.212 mutations/s).
+Hot conflicts fall 571 → 548.5 (−3.9 %) and attempts 1,371 → 1,348.5 (−1.6 %); the −7.8 % hot statements reverse
+#687's +2.6 %. The host was 4 × AMD EPYC 9V74 against an EPYC 9V45 on #687's run 39404146293, so absolute throughput
+is not comparable across the two runs.
+
 ## 2. GitHub Free review
 
 The repository is public, so standard-runner minutes are free; the hard limits are ≈20 concurrent
@@ -510,6 +752,17 @@ today), deleting the plaintext Actions variable named like the password secret, 
 | D318 | Formation tail 2, ruling and measurement: the −2.692 % hot throughput of the #675 state-write comparison is closed by an identical-source A-A comparison (run 39386790366, main `fadcd3e93` against the same production source): pooled hot 24.221 → 24.388 mutations/s (+0.691 %), uncontended +0.339 %, shared −0.036 %, hot p99 4.000 → 3.940 s, while two positions of the identical base differ by 4.98 % on hot (25.120 and 23.868 mutations/s). The #675 decline sits inside that drift, and no production cause was located with timing off. The V1c-wide comparison against main before step 1 (D281) remains the acceptance.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | D319 | Formation tail 2, ruling from the timing-on hosted 50 (run 39410485156): the measured change of the per-pass context cap, K and the application pool is the next slice's first item, not this PR. The run shows 26 back-to-back passes each claiming the 8-context cap with 36–48 rows still waiting, a lane occupancy of 0.44, WS-connect rows waiting 411.8 s inside passes against 23.9 s between them, and 4.9 statements in flight p50 against a pool of five at 13.2 ms per statement (1.3 ms before the window). A cap, K or pool change is a concurrency-domain configuration change that needs its own hosted A/B measured with the pass-boundary line (D308), its own state-write comparison and its own medium-scale gate; D316 stands until then.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | D320 | Formation tail 2, verdict of the frozen native-50 A-B-B-A block (main `fadcd3e93` against the PR, timing off, §1.14): the end-of-formation benefit is verified, since connected→accepted favours the PR in both adjacent contrasts (−1.325 and −2.051 s; symmetric 2.086 → 0.398 s), nearly all of it connected→appointed. The whole-formation primary does not meet the benefit rule: one adjacent contrast is unfavourable (B2−A1 +0.581 s) and the symmetric −3.359 s is smaller than the baseline drift (+7.240 s). The primary stays set by the pre-connected SDK-connect and room-join window, which the timing-on run attributes to admission queue age (D319); the ≤ 2 s commit→browser target stays open.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| D321 | Formation tail 3, from the lane survey (§1.15): the AppInbox NEW lane keeps a persistent flight across passes. A pass tops up the flight to its held-row bound and returns instead of draining what it claimed; a keyed row released by a same-key predecessor takes the freed slot first (D328); contexts with a row in flight are excluded from the NEW, RETRY, FAIRNESS and TIMEOUT reservations; the recovery lanes top up before NEW and share the flight; the engine joins the flight on stop. The outbox reader and the browser engines keep the draining pass. Local 50 with phase timing: queue age p50 WS connect 254 → 50 ms, join 135 → 22 ms, presence 106 → 36 ms; pass wall p50 87.9 → 3.5 ms; occupancy 0.180 → 0.261.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| D322 | Formation tail 3, with D321: the held-row bound is a required configuration value `appInbox.newLaneHeldRows` with a committed default of 16 (`RALLAR_APP_INBOX_NEW_LANE_HELD_ROWS`, K ≤ H ≤ 64), named in the startup summary beside the pool size and `newLaneConcurrency`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| D323 | Formation tail 3, from the group-chain survey (§1.15; revises D317): presence connect, heartbeat and disconnect are keyed per session (`G:session=<encoded>`) and leave the group's serial chain; joins and the group's other caller commands take `G:aggregate`; server-issued system commands keep `G` and the session cleanup keeps the scope key, so both still order against everything beneath them. Presence never touches the group row, so the per-row compare-and-set the joins rely on is unaffected; a Postgres proof covers connects against a held join, and self-leave and owner removal against a concurrent connect in both commit orders.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| D324 | Formation tail 3, from the group-chain survey: the join read is one batch at one snapshot (lifecycle policy, exact group state and the result snapshot), 4 → 2 statements and 3 → 2 round trips per join, for every command on the exact read path; the result-read-conflict class stays for the director, lifecycle, transport and admission commands that still read sequentially, for the exact read's concurrent-change fallback and for the missing-group no-op. A presence connect runs its lifecycle and mutation reads together, 3 → 2 round trips.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| D325 | Formation tail 3, ruling overridden by measurement: `database.applicationPool.maxConnections` stays 5. The pool-only hosted A-B-B-A (main against main plus pool 10, timing off) gave +3.398 s on its passing leg and one leg that failed with 503 `app-inbox-unavailable` after the 30 s completion wait, so a larger pool alone buys nothing at 50. The startup summary now names the pool size, and the counter scope measures the wait before a transaction begins (`beginWaitMs`) when timing is on.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| D326 | Formation tail 3, maintainer ruling: no store-level cross-instance per-context guard. RESERVED is a per-row lease (the NEW lane claims NEW rows, the RETRY lane RETRY rows, the TIMEOUT lane reclaims after the lease, every release is fenced on status and attempt); per-context head order is per instance since #669 and never existed across instances (the claim carried no context term before it). A peer may claim a context's next row while this instance holds the previous one; the handler meets a typed conflict and retries. The flight widens that window in multi-instance deployments only (two-reader Postgres test: 14 → 40–50 of 50 contexts); the three-server medium-scale gate stays at 0 failures. Follow-up: count conflict-retries on the cluster profile with and without the flight, and a Postgres test for a presence disconnect claimed ahead of its connect across instances.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| D327 | Formation tail 3, maintainer ruling: the AppInbox reservation lease stays 60 s (`APP_INBOX_RESERVATION_LEASE_MS`, since #664; attempt deadline = lease − 5 s). A crashed instance costs a player one minute, not five; a hung attempt pins a NEW slot, a held-row slot and possibly a group chain for 55 s, not 295 s; a reclaim never double-applies because state, receipt, outbox and completion commit in one transaction. The outboxes keep the queuebox's five-minute default.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| D328 | Formation tail 3, maintainer ruling from the final review and its re-review: keyed-first admission prefers same-key chain successors only. A keyed run is preferred only when the predecessor whose settlement released it has the same exclusion key; it then takes the slot that predecessor freed. A fresh keyed run waits in turn with keyless runs, and so does a run released by a prefix-keyed predecessor, such as a group command or a scope cleanup releasing that group's presence and join rows. Preferring every keyed run starved the keyless connect-path commands (ticket, session issue, `CLIENT_*`) behind per-session presence rows (D323): in a unit reproduction a ticket that arrived second ran after ten later presence rows. The residual bound: a continuously fed same-key chain holds one slot for as long as it is fed, so with K such chains the rows waiting in turn wait until one drains.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| D329 | Formation tail 3, recorded: the state-write benchmark runtime builds its reader with K = 1 and no held-row bound, so the state-write comparison exercises the per-pass path, not the flight; the flight's throughput effect is judged by the medium-scale gate and the hosted A-B-B-A.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| D330 | Formation tail 3, verdict of the frozen native-50 A-B-B-A block (main `c0e3b6e15` against `e6f4d1b63`, timing off, §1.15): the whole-formation benefit is verified, since the primary favours the PR in both adjacent contrasts (B2−A1 −12.378 s, B3−A4 −6.344 s; symmetric 60.068 → 50.707 s, −9.361 s, −15.6 %), and the symmetric delta is larger than the +6.024 s baseline drift. The gain is in group created→connected, mainly RTC readiness (−9.721 s symmetric) and room join (−2.226 s), both favourable in both contrasts. SDK connect is unchanged (−2.634 and +4.247 s; symmetric +0.807 s). The end of formation is flat and does not meet the rule (connected→accepted −0.053 and +0.029 s; symmetric −0.012 s), because main already carries #687's end-of-formation repair (D320) and all four legs sit at 0.31–0.39 s. The ≤ 2 s commit→browser target stays open.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| D331 | Formation tail 3, ruling from the timing-on hosted 50 (run 39505125464 against #687's 39410485156, §1.15): the join chain is the next slice's first item, then SDK connect. The flight lifted lane occupancy to 0.721 from 0.355 on the same Σ handler ÷ (window × 4) basis (#687's published 0.44 divided by Σ pass wall), with four handlers running for 36.6 of the 59.9 s window, and presence runs off the group chain. The remaining group-key chain is strictly serial, 21.5 s, of which the 50 joins are 19.5 s: the join handler slowed 0.167 → 0.310 s p50 and the join's enqueue → handler start rose 5.5 → 11.3 s p50, while the WS connect (8.0 → 7.0 s), ticket (3.4 → 0.3 s) and presence (4.9 → 2.0 s) waits dropped. The next measurement is the join handler's cost on Postgres (the batched read's plan and statements under K = 4 contention) and the serial `G:aggregate` chain. `beginWaitMs` is 15.25/136.15 ms p50/p95 in the window; the pool stays five (D325).                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 ## 4. Slices
 
@@ -662,6 +915,22 @@ until measured, D318 closes the #675 hot throughput decline, D319 moves the meas
 next slice, and D320 records the block's verdict: the end of formation improves in both contrasts, the whole
 formation does not meet the benefit rule.
 
+### Formation tail 3: a persistent AppInbox flight, presence off the group chain and one join read, then 15 → 30 → 50 hosted
+
+Measured on main after #687 (§1.15): an AppInbox pass served each context once, claimed at most 8 and drained before
+the next pass; a group row waiting on its key counted against the hold of 4 while it held no slot; slot admission
+was first in, first out; the recovery lanes waited for NEW to drain; presence commands waited behind joins only
+because they shared the group's key; and a join read in three statements over two steps. Decisions D321–D324, each
+RED first at its owner, are judged by the local 50 queue age per command type and the lane's pass and occupancy
+figures with phase timing, Postgres proofs of per-context order and key order on the production lane, local
+15 → 30 → 50, the local Postgres ALM lane, then the uninstrumented hosted 15 → 30 → 50 on one head, one frozen
+native-50 A-B-B-A block main against the head with timing off, one timing-on hosted 50 for occupancy and the group
+chain, the state-write comparison and the medium-scale gate. D325 keeps the pool at five against the pool-only
+A-B-B-A, D326 and D327 are the cross-instance reservation and lease rulings, D328 limits keyed-first admission to
+same-key successors, D329 records what the state-write benchmark exercises, D330 records the block's verdict (the
+whole formation improves in both contrasts; the end of formation is flat and SDK connect unchanged), and D331 names
+the join chain as the next slice's first item.
+
 ## 5. Validation
 
 Per slice: the focused Vitest and Deno suites of the touched owners; `npx tsc` for shared,
@@ -714,6 +983,46 @@ uninstrumented (runs 39404111587, 39404711766, 39405452333), connected→accepte
 whole-formation primary does not meet the benefit rule (+0.581 and −7.299 s; symmetric −3.359 s inside the +7.240 s
 baseline drift); the state-write comparison (run 39404146293) and the medium-scale gate (2,842 passed, 0 failed)
 pass.
+
+**Formation tail 3 (PR #689).** D321 landed as a standing `DequeueLaneFlight` owned by the AppInbox
+`InboxQueueReader` and selected by `newLaneHeldRows`; the outbox reader, the per-pass lanes and the browser engines
+keep the draining pass, and a test pins it. The slot admission gained a preferred class, and `ExclusionKeyedAdmission`
+now lines up a released successor before its predecessor's slot frees; the earlier promise chain handed that slot to
+a waiting keyless run, a race the RED test exposed. The engine retains each flight row's settlement, `stop()` joins
+them, and each settlement wakes the engine. The pass timing attributes each row to the pass that claimed it. The
+review waves added, each RED first: an external write wakes the flight while it awaits a settlement; the settlement
+wait expires at the engine's idle ceiling, so due RETRY, TIMEOUT and FINALIZATION rows are probed again; FAIRNESS
+skips contexts in flight and contexts whose release failed, and TIMEOUT skips contexts in flight only, since it must
+reclaim a failed release; a failed release keeps its context excluded until its lease could have run out; a release
+error is reported once, through the pass that rethrows it or through `stop()` when no pass is left; the flight
+listener is a constructor input, and that guard found a PGlite test whose settlements went unjoined; the begin-wait
+clock runs only with timing on. D322 landed as a required key with the code default removed. D323 landed as
+recorded: the interleaving proof runs on both the draining lane and the production flight, and the convergence proof
+(three runtimes, a lease expiry, self-leave and owner removal against a connect in both orders) runs on the draining
+lane, because its hold needs a blocking pass. D324 landed for every exact-path command, with a read-phase timing
+line for `readWithSnapshot` and the state-write diagnostic association extended to it; an unread snapshot now fails
+loudly, and a corrupt lifecycle-policy row fails as an invariant-corruption error. D325 reverted the pool line to 5 under a pin test and kept the summary fields and `beginWaitMs`, which the
+harness capture keeps. D328 is applied as `releasedKeyedRunsFirst`. `processGroupSessionCleanup` is renamed
+`writeGroupSessionCleanup` in the touched-file closure. Ruled and not applied: pool 10 (D325), a store-level
+cross-instance guard (D326) and a longer lease (D327); D329 is recorded. Known behaviour kept: a presence event
+committed beside a concurrent join carries the previous group version, as in the cluster profile already; two
+sessions of one principal may conflict once on the admission row; a lowered `maxSessionsPerMember` can be outrun once
+on one server; a stale presence connect pays one discarded read. The browser facade `rallar.ts` is 266.8 → 267.9 KiB
+brotli under a budget raised 267 → 268 KiB, and the headless budget 356 → 357 KiB. Measured in §1.15: hosted 15, 30
+and 50 pass uninstrumented (runs 39498892622, 39499824957, 39500626461), the primary at 50 is 43.123 s against
+44.653 s on #687; the A-B-B-A block verifies the whole-formation benefit in both contrasts (−12.378 and −6.344 s;
+symmetric −9.361 s, −15.6 %, against a +6.024 s baseline drift), with the end of formation flat and SDK connect
+unchanged (D330); the timing-on hosted 50 puts lane occupancy at 0.721 against 0.355 and names the join chain as the
+next owner (D331); the state-write comparison (run 39498888877; hot +2.86 %) and the medium-scale gate (2,842 passed,
+0 failed) pass. Open for the next slice, first the join chain: the join handler's cost on Postgres (0.167 → 0.310 s
+p50; the batched read's plan and statements under K = 4 contention) and the serial `G:aggregate` chain (19.5 s of
+21.5 s); then SDK connect (unchanged, +0.807 s symmetric); then the cluster profile's conflict-retry count with and
+without the flight; a Postgres test for a presence disconnect claimed ahead of its connect across instances; the
+IndexedDB FAIRNESS and TIMEOUT candidate reads, which are no longer capped past excluded rows (unreachable today,
+since no browser reader passes exclusions); a bounded, jittered retry of the idempotent ticket request on 503
+`app-inbox-unavailable`; the co-member read cache; the RETRY page head read on commit; the routine-diagnostics hosted
+plumbing (D315); `stateWriteProductionPhaseDuration`, which keys on `mutation.<phase>` and so never sees the
+group-state read lines; the ≤ 2 s commit→browser target; and the V1c closure (D281).
 
 **Step 2c (PR #666).** D209 landed with control hand-offs admitted through the disposed check
 and the circuit breaker only (`rtc-handoff-refusal` and `rateLimited` count data refusals), and

@@ -127,6 +127,7 @@ export function validConfigurationDefaultsSource(): MutableApiV1ConfigurationSou
             phaseTiming: false,
             laneBudgetPolicy: 'fixed-retry-two',
             newLaneConcurrency: 4,
+            newLaneHeldRows: 16,
             completionWait: {
                 maxElapsedMs: 30_000,
                 retryIntervalMs: 250,

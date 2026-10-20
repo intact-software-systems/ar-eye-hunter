@@ -4,8 +4,10 @@
 
 Reduce measured WS outbox formation-tail delay without changing its event protocol.
 Bounded admission reads are the first implemented repair, the group-audience cache
-(#675) the second, and formation tail 2 (#687) cuts the setup admission and handler
-waits. The parent V1c plan's full ≤2 s formation-tail target remains open.
+(#675) the second, formation tail 2 (#687) cut the setup admission and handler
+waits, and formation tail 3 (#689) removes the AppInbox pass barrier and the
+presence share of the group chain. The parent V1c plan's full ≤2 s formation-tail
+target remains open.
 
 ## Global constraints
 
@@ -301,6 +303,205 @@ instrumented, primary 51.507 s, not acceptance) attributes the remaining window:
 - Upgrade → browser `connected` is 2.406 s for every agent; a login spends
   6.254 s before its inbox row exists; the per-second maximum event-loop lag is
   144.5 ms median.
+
+### Formation tail 3: persistent flight, presence keys and one join read (PR #689)
+
+Three static surveys of main after #687 located why the AppInbox lane stayed the
+admission floor at 50 (design proposal §1.15, decisions D321–D329). Six repairs
+landed at their owners, each RED first. Postgres tests run on the local container
+in their own schema or database; the local numbers below use the memory API.
+
+1. **Persistent NEW flight** (`dequeue-lane-flight.ts`, `dequeue-controller.ts`,
+   `create-default-resource-inbox-dequeuer.ts`, `inbox-queue-reader.ts`,
+   `inbox-outbox-engine.ts`, `rallar-middleware-queue-registration.ts`). A pass
+   tops the flight up to H = 16 held rows and returns; in-flight contexts are
+   excluded from every reservation; the recovery lanes top up first and share the
+   flight; the engine joins the flight on stop and wakes on each settlement. RED:
+   `7 failed: TypeError: ...withStandingFlight is not a function`; a probe storm
+   while full, `expected 101 to be 1`; stop did not join a left-in-flight row.
+   GREEN: the controller, reader, engine and registration flight tests. Postgres
+   seed of 170 rows: draining lane 956–1,074 ms in 22 passes, flight 528–543 ms;
+   no context holds two RESERVED rows on one instance, and every row ends with
+   attempt 1. With an empty in-flight exclusion the test fails on 50 contexts.
+2. **Same-key successors first** (`bounded-concurrency-admission.ts`,
+   `exclusion-keyed-admission.ts`). A preferred class in the slot admission, used
+   only for a keyed run that a same-key predecessor's settlement released. RED:
+   the handover race, `"free-2"` instead of `"group-2"`, which led to synchronous
+   successor bookkeeping; then the review's starvation case, `expected 'presence-0'
+   to be 'ws-ticket'`; then the prefix fan-out, `expected 'join-0' to be
+   'ws-ticket'`. GREEN: the ticket runs before later fresh keys and before runs a
+   scope cleanup or group command released.
+3. **Recovery lanes and the settlement wait.** FAIRNESS skips in-flight and
+   release-failed contexts (Postgres RED `expected 2 to be 1`); TIMEOUT skips
+   in-flight contexts only (RED `expected [ 'held', 'peer-held' ] to deeply equal
+   [ 'held', 'peer-held-b' ]`); IndexedDB FAIRNESS reads past excluded rows
+   without spending its scan budget. An external write resets the settlement wait
+   (RED `expected ['keyed-1'] to deeply equal ['keyed-1', 'row-c']`), and the wait
+   expires at the engine's idle ceiling. A release error is reported once (RED:
+   reported twice), and `stop()` rejects with one no pass is left to rethrow (RED:
+   `expected undefined to be an instance of AggregateError`).
+4. **Held-row configuration** (`decode-api-v1-configuration.ts`,
+   `defaults-config.json`, `read-api-v1-configuration.ts`). `newLaneHeldRows` is
+   required with a committed 16 and K ≤ H ≤ 64. RED with the code default removed:
+   `14 passed | 26 failed`. GREEN: `40 passed`; the startup summary names it.
+5. **Presence keys** (`to-group-command-exclusion-key.ts`). Presence connect,
+   heartbeat and disconnect take `G:session=<enc>`, other caller commands
+   `G:aggregate`; system commands keep `G` and cleanup the scope key. RED:
+   `Tests 6 failed | 13 passed (19)`; on Postgres both connects stayed RESERVED
+   behind a held join. GREEN: both connects commit while the join waits, with
+   attempts 1, on the draining lane and on the production flight (K = 4, H = 16).
+   The convergence proof (three runtimes, lease expiry, self-leave and owner
+   removal against a connect in both orders) passes on both keys and pins the
+   contract.
+6. **One join read** (`read-exact-group-state-mutation.ts`,
+   `read-group-mutation.ts`, `group-state-inbox-handler.ts`,
+   `group-presence-service.ts`). RED: the reads were separate, `…(5) to deeply
+   equal …(3)`; a moved summary forced a retry, `attemptCount` 2 against 1; the
+   connect's reads ran in sequence, `expected 18 to be less than 17`. GREEN: a
+   join is 2 statements in 2 round trips (4 in 3), a presence connect 2 round
+   trips (3).
+
+The pool facts landed beside them: the pool stays five under a pin test, the
+startup summary names the pool, K and H, and the counter scope reports
+`beginWaitMs` on the transaction phase line only with timing on (RED:
+`expected "now" to be called 4 times, but got 6 times`).
+
+Local 15/30/50 on the flight head `ffafeb51a` pass in 47.6 s / 52.7 s / 1.1 min
+(main `c0e3b6e15`: 48.5 s / 57.2 s / 1.1 min). Local 50 with AppInbox phase
+timing, main → `ffafeb51a` (memory API; not a hosted measurement):
+
+| Command type                   | Queue age p50 / p95 / max on main (s) | On the flight head (s) |
+| ------------------------------ | ------------------------------------: | ---------------------: |
+| `CLIENT_AUTHORISED_WS_CONNECT` |                 0.254 / 0.547 / 0.624 |  0.050 / 0.210 / 0.210 |
+| `GROUP_JOIN`                   |                 0.135 / 0.545 / 0.596 |  0.022 / 0.311 / 0.372 |
+| `GROUP_PRESENCE_CONNECT`       |                 0.106 / 0.549 / 0.732 |  0.036 / 0.079 / 0.080 |
+| `AUTH_WS_TICKET_ISSUE`         |                 0.163 / 0.222 / 0.234 |  0.099 / 0.167 / 0.167 |
+
+The setup window is 6.374 → 5.501 s. Passes are 34, each claiming 8, against
+29, claiming 5 p50 and 16 at most; the pass wall p50 is 87.9 → 3.5 ms, and the
+occupancy, Σ handler ÷ (window × 4), 0.180 → 0.261. On the final head
+`e6f4d1b63` local 15/30/50 pass in 48.2 s / 57.1 s / 1.1 min, and the timing-on
+local 50, main → `e6f4d1b63` (memory API; not a hosted measurement), gives:
+
+| Command type                   | Queue age p50 / p95 / max on main (s) | On the final head (s) | Handler p50, main → head (ms) |
+| ------------------------------ | ------------------------------------: | --------------------: | ----------------------------: |
+| `CLIENT_AUTHORISED_WS_CONNECT` |                 0.254 / 0.547 / 0.624 | 0.059 / 0.190 / 0.386 |                   35.1 → 37.1 |
+| `GROUP_JOIN`                   |                 0.135 / 0.545 / 0.596 | 0.032 / 0.200 / 0.200 |                   16.7 → 15.4 |
+| `GROUP_PRESENCE_CONNECT`       |                 0.106 / 0.549 / 0.732 | 0.040 / 0.491 / 0.500 |                   19.6 → 51.5 |
+| `AUTH_WS_TICKET_ISSUE`         |                 0.163 / 0.222 / 0.234 | 0.125 / 0.179 / 0.194 |                   12.5 → 14.3 |
+| `AUTH_SESSION_ISSUE`           |                 0.113 / 0.181 / 0.185 | 0.080 / 0.127 / 0.129 |                   19.2 → 18.8 |
+
+The setup window is 6.374 → 6.483 s (5.501 s on `ffafeb51a`: local run-to-run
+variance). Passes are 34, each claiming 8, against 29, claiming 4 p50 and 16 at
+most; the pass wall p50 is 87.9 → 3.7 ms and the occupancy 0.180 → 0.246. The
+presence connect's handler rose 19.6 → 51.5 ms p50 because handlers now overlap
+on one executor; `beginWaitMs` is 2.66 / 17.91 ms p50 / p95 over 203
+transactions.
+
+The pool-only hosted A-B-B-A (main against main plus pool 10, native 50, timing
+off) ran before the slice's code:
+
+| Leg        | Run         | Primary (s) | Connected→accepted (s) |
+| ---------- | ----------- | ----------: | ---------------------: |
+| A1 pool 5  | 39437291726 |      47.779 |                  0.524 |
+| B2 pool 10 | 39438259974 |      51.177 |                  0.955 |
+| B3 pool 10 | 39439341700 |      failed |                 failed |
+| A4 pool 5  | 39440140926 |      48.453 |                  0.351 |
+
+B2−A1 is +3.398 s against a +0.674 s baseline drift. B3 failed when a ticket
+request returned 503 `app-inbox-unavailable` after the 30 s completion wait; the
+API journal holds no pool, lease or timeout error. The pool stays five (D325).
+
+The medium-scale gate passes on `ffafeb51a`, `deef13751` and `e6f4d1b63` (2,842
+passed, 0 failed each). The local Postgres ALM lane on main passes 15/15 in
+35.0 min on a fresh isolated database. On the head, 14 of 15 pass in 34.5 min
+on a fresh database (`alm_ft3_e6f4`). The one failure, the baseline family over
+`rtc-with-ws-fallback` (full), timed out at its
+`repair-exhausted-sender-observe-failed-2` command; rerun alone on a fresh
+database (`alm_ft3_rerun`), the whole `rtc-with-ws-fallback` family passes 5/5
+in 10.9 min. It did not reproduce and is recorded as a flake: 15/15 across the
+two fresh-database runs.
+
+Hosted acceptance on `e6f4d1b63` (uninstrumented, persistent hosted Postgres):
+15 (run 39498892622), 30 (run 39499824957) and 50 (run 39500626461) pass in
+order, each with every recipe, binding, the 231/231 assertions, every barrier and
+RTC outcome, every shot acknowledged, and 0 failed/missing/stale/flaky agents,
+reconnects and errors. The primary is 14.658 / 27.537 / 43.123 s and
+connected→accepted 0.386 / 0.393 / 0.605 s (#687: 12.253 / 21.241 / 44.653 and
+0.186 / 0.218 / 0.385 s). At 50 (player p50 / p95 / max):
+
+| Measure (50 agents)                     |                     #687 |                This head |
+| --------------------------------------- | -----------------------: | -----------------------: |
+| Group created→layout accepted (primary) | 44.653 / 44.656 / 44.658 | 43.123 / 43.126 / 43.133 |
+| Connected→accepted                      |    0.385 / 0.387 / 0.389 |    0.605 / 0.610 / 0.616 |
+| SDK connect                             | 14.586 / 27.284 / 29.444 | 15.114 / 25.946 / 28.533 |
+| Room join                               | 14.077 / 22.599 / 24.325 | 15.022 / 23.735 / 28.079 |
+| RTC readiness wait                      |  8.303 / 15.668 / 17.263 |  9.767 / 14.741 / 17.414 |
+| Connected-barrier wait                  |   8.121 / 9.451 / 10.885 |    1.377 / 3.887 / 4.112 |
+| Last room join → all connects done      |                    9.861 |                    7.398 |
+| Traffic-ready from run creation         |                   67.302 |                   65.667 |
+| Shot ACK p50 / p99                      |            0.118 / 0.182 |            0.123 / 0.241 |
+
+At 15 and 30 the head is slower on the primary (+2.405 and +6.296 s). These are
+single runs on a persistent database that grows between runs; the A-B-B-A
+decides benefit.
+
+Frozen native-50 A-B-B-A, main `c0e3b6e15` against `e6f4d1b63` (timing off):
+
+| Leg     | Run         | Source      | Primary (s) | Connected→accepted (s) | SDK / join / readiness p50 (s) |
+| ------- | ----------- | ----------- | ----------: | ---------------------: | -----------------------------: |
+| A1 main | 39501549027 | `c0e3b6e15` |      57.056 |                  0.392 |       18.435 / 17.651 / 17.704 |
+| B2 PR   | 39502459511 | `e6f4d1b63` |      44.678 |                  0.339 |       15.801 / 15.799 / 10.634 |
+| B3 PR   | 39503337200 | `e6f4d1b63` |      56.736 |                  0.343 |       19.771 / 17.967 / 10.908 |
+| A4 main | 39504235833 | `c0e3b6e15` |      63.080 |                  0.314 |       15.524 / 20.567 / 23.280 |
+
+The primary contrasts are **−12.378 s** (B2−A1) and **−6.344 s** (B3−A4);
+symmetric **−9.361 s** (−15.6 %), baseline drift **+6.024 s**. Verdict (D330):
+the whole-formation benefit is **verified**, both contrasts favouring the head.
+The gain comes mainly from RTC readiness (−9.721 s symmetric) and room join
+(−2.226 s), each favourable in both contrasts. SDK connect does not improve
+(−2.634 / +4.247 s; symmetric +0.807 s). The end of formation is flat
+(connected→accepted −0.053 / +0.029 s, not met), because main already carries
+#687's repair and every leg sits at 0.31–0.39 s. All legs pass every count with
+0 faults; this is a descriptive reading of two runs per source.
+
+Timing-on hosted 50 on the head (instrumented, not acceptance; run 39505125464
+against #687's run 39410485156, all counts pass):
+
+- Lane occupancy, Σ handler ÷ (window × 4), is 0.721 against 0.355 on the same
+  basis; #687's published 0.44 divided by Σ pass wall, which the flight pushes
+  past 1. Four handlers run for 36.6 of the 59.9 s window.
+- 120 passes (2 zero-claim), claiming 1 p50 and 16 at most; pass wall p50
+  110.33 ms (99.47 ms on #687, p95 689 against 2,441 ms).
+- Presence runs off the group chain (67 overlapping presence pairs). The
+  group-key chain is still strictly serial: 21.5 s, of which the 50 joins are
+  19.5 s (#687: 15.7 s and 13.2 s on the same set).
+- The join handler slowed 0.167 → 0.310 s p50, and the join's enqueue → handler
+  start rose 5.5 → 11.3 s p50, while the WS connect (8.0 → 7.0 s), ticket
+  (3.4 → 0.3 s) and presence (4.9 → 2.0 s) waits dropped. Every handler type is
+  slower at that concurrency (WS connect 1.041 → 1.979 s).
+- `beginWaitMs` in the window is 15.25 / 136.15 ms p50 / p95 over 286
+  transactions; it did not exist on #687.
+
+The next owner is the join chain: the join handler's cost and its serial
+`G:aggregate` chain (D331).
+
+The state-write comparison on the head. Its runtime builds the reader with K = 1
+and no held-row bound, so it exercises the per-pass path, not the flight (D329).
+Run 39498888877 (base `ed776f12a`, `c0e3b6e15` plus a one-line harness overlay;
+candidate `e6f4d1b63`) passes:
+
+| Workload    | Main (mutations/s) | This head |  Change | p99 main → head (s) | Statements per run |
+| ----------- | -----------------: | --------: | ------: | ------------------: | -----------------: |
+| Uncontended |            114.639 |   114.292 | −0.30 % |       0.149 → 0.152 |             −1.7 % |
+| Shared      |            100.675 |   101.561 | +0.88 % |       0.150 → 0.154 |             −2.0 % |
+| Hot         |             26.197 |    26.946 | +2.86 % |       3.783 → 3.667 |             −7.8 % |
+
+No workload exhausted a retry, and the identical-main positions drift by at most
+1.16 % (hot 0.97 %; #687's run drifted 15.4 %). Hot lies above the base drift,
+both adjacent hot contrasts favour the head, and hot statements fall
+59,880.5 → 55,199 per run with conflicts −3.9 % and attempts −1.6 %, reversing
+#687's +2.6 %.
 
 ## Hosted formation evidence
 
@@ -1206,37 +1407,54 @@ ignored `tmp/perf/`; no generated profiles are committed.
 The group-audience cache (#675) met its descriptive native-50 benefit rule. Formation
 tail 2 (#687) verified an end-of-formation benefit in both A–B–B–A contrasts
 (connected→accepted 0.385 s at 50 hosted), but its whole-formation primary does not
-meet the benefit rule. The timing-on hosted 50 above sets the next owners: queue age
-behind the AppInbox lane is 79 % of the last arrivals' SDK-connect and room-join
-time. The maintainer's performance, scalability, QueueBox responsiveness and
-fault-tolerance requirements continue to govern both product and shared-test code.
-Use `performance-analysis`, `rallar-code-writing`, `rallar-realtime`,
+meet the benefit rule. Formation tail 3 (#689) removed the AppInbox pass barrier the
+timing-on hosted 50 located and took presence off the group's serial chain; its
+A–B–B–A verifies the whole-formation benefit in both contrasts (−12.378 and
+−6.344 s; symmetric −9.361 s, −15.6 %), with the end of formation flat and SDK
+connect unchanged (D330), and its timing-on hosted 50 names the join chain as the
+next owner (D331). The maintainer's performance, scalability, QueueBox
+responsiveness and fault-tolerance requirements continue to govern both product and
+shared-test code. Use `performance-analysis`, `rallar-code-writing`, `rallar-realtime`,
 `rallar-testing`, `adaptive-plan-execution`, and `publishing-plan-progress`; add the
 existing Hetzner operations skill before any hosted measurement.
 
-1. **The per-pass context cap and the pass barrier.** 26 back-to-back passes claim
-   their 8-context cap with 36–48 rows waiting and claim nothing new until they
-   drain (occupancy 0.44). Run a hosted A/B of a higher per-pass cap or refill
-   across the pass boundary, K and the application pool size, measured with the
-   pass-boundary line, with its own state-write comparison and medium-scale gate.
-   In the same slice measure pool saturation (4.9 statements in flight p50 against
-   a pool of five, 13.2 ms per statement; record the hosted pool size) and the
-   group-command serial chain (a 24.1 s floor; 2 of 329 same-pass pairs overlap),
-   including whether the presence write compares-and-sets the group revision, and
-   the probe counts behind the hot benchmark's +2.6 % statements.
-2. **The remaining per-command and per-session costs**, each measured before it is
-   selected: a cache for the co-member client read (0.263 s, now the largest
+1. **The join chain** (D331). The group-key chain is strictly serial, 21.5 s at
+   50 hosted, of which the 50 joins are 19.5 s; the join handler slowed
+   0.167 → 0.310 s p50 under the flight and the join's enqueue → handler start
+   rose 5.5 → 11.3 s p50. Measure the join handler's cost on Postgres first: the
+   batched read's plan and statements under K = 4 contention (`beginWaitMs`
+   15.25 / 136.15 ms p50 / p95 in the window). Then measure the serial
+   `G:aggregate` chain and what shortens it; only coalescing joins cuts its
+   length, at high risk.
+2. **SDK connect**, unchanged by this slice (A–B–B–A symmetric +0.807 s;
+   contrasts −2.634 and +4.247 s): attribute the connect path's wait and
+   handler time on one timing-on run before selecting a repair.
+3. **The flight across instances and the connect burst's fault tolerance.**
+   Per-context order holds per instance only, and the flight makes a peer's claim
+   of a context's next row routine (two-reader Postgres test: 14 → 40–50 of 50
+   contexts; D326). Count conflict-retries on the cluster profile with and without
+   the flight; add a Postgres test for a presence disconnect claimed ahead of its
+   connect across instances; measure, then add if earned, a bounded jittered retry
+   of the idempotent ticket request on 503 `app-inbox-unavailable` (a ticket POST
+   outran the 30 s completion wait on pool-only leg B3); and cap the IndexedDB
+   FAIRNESS and TIMEOUT candidate reads past excluded rows, unreachable today
+   because no browser reader passes exclusions.
+4. **The remaining per-command and per-session costs**, each measured before it is
+   selected: a cache for the co-member client read (0.263 s on #687, the largest
    WS-connect read); the initial outbound WS delivery after the upgrade (2.406 s
    for every agent); the PBKDF2 admission bound on the hosted core count (a login
-   spends 6.254 s before its inbox row exists); one CPU/GC capture (event-loop lag
+   spent 6.254 s before its inbox row existed); one CPU/GC capture (event-loop lag
    maximum 144.5 ms per second, median); a commit that requests a head read of the
-   ALM inbound RETRY page so a re-dued offer lands in the committed batch; and the
-   hosted plumbing for turning routine browser diagnostics off.
+   ALM inbound RETRY page so a re-dued offer lands in the committed batch; the
+   hosted plumbing for turning routine browser diagnostics off; and
+   `stateWriteProductionPhaseDuration`, which keys on `mutation.<phase>` and so
+   never sees the group-state read lines. Also read `beginWaitMs` under the
+   flight on Postgres before the pool is revisited (D325).
 
-Harness follow-up: a documented local Postgres lane profile (the ad-hoc profile
-cannot start the API under local ICE with the Metered keys in `apps/api-v1/.env`).
-The physical commit→browser ≤ 2 s target stays open; connected→accepted is a
-timing-off barrier span and does not prove it. Preserve authority, serial
+The local Postgres ALM lane runs on a fresh isolated database (15/15 on main in
+35.0 min) and is part of the Postgres coverage. The physical commit→browser ≤ 2 s
+target stays open; connected→accepted is a timing-off barrier span and does not
+prove it. The V1c closure (D281) follows. Preserve authority, serial
 captured-policy reads, delivery expiry, cleanup and fault recovery.
 
 Earlier parallel-read and RTC-only experiments failed their full-formation benefit

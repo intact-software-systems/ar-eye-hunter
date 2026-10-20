@@ -588,6 +588,40 @@ describe('safe dequeue-pass boundary projection', () => {
     });
 });
 
+const transactionLine = {
+    type: 'rallar.timing',
+    component: 'app-inbox-phase',
+    operation: 'transaction',
+    status: 'ok',
+    durationMs: 9,
+    atEpochMs: 1234,
+    serviceId: 'server-1',
+    requestId: 'request-1',
+    details: { type: 'GROUP_CREATE', resourceId: 'request-1', selectedLane: 'NEW', beginWaitMs: 7.25 }
+};
+
+describe('safe transaction projection', () => {
+    it('retains the wait from the begin call to the transaction callback entry', () => {
+        expect(toSafeApiTimingRecord(JSON.stringify(transactionLine))).toEqual(transactionLine);
+    });
+
+    it('drops a begin wait that is not a non-negative number, and the begin wait on any other operation', () => {
+        const kept = { type: 'GROUP_CREATE', resourceId: 'request-1', selectedLane: 'NEW' };
+
+        for (const beginWaitMs of [-1, '7', null, Number.NaN]) {
+            expect(toSafeApiTimingRecord(JSON.stringify({
+                ...transactionLine,
+                details: { ...transactionLine.details, beginWaitMs }
+            }))).toEqual({ ...transactionLine, details: kept });
+        }
+        expect(toSafeApiTimingRecord(JSON.stringify({ ...transactionLine, operation: 'handler-action' }))).toEqual({
+            ...transactionLine,
+            operation: 'handler-action',
+            details: kept
+        });
+    });
+});
+
 const claimedEntryPass = {
     type: 'rallar.timing',
     component: 'app-inbox-phase',

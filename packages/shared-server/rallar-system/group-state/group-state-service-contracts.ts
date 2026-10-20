@@ -49,7 +49,8 @@ import type {
     GroupMutationComputedWrite,
     GroupMutationFacts,
     GroupMutationRead,
-    GroupMutationReceipt
+    GroupMutationReceipt,
+    GroupMutationSnapshotRead
 } from './mutation/group-mutation-contracts.ts';
 import type { GroupSessionCleanupInput } from './presence/group-session-cleanup.ts';
 
@@ -158,6 +159,8 @@ export interface GroupStateMutationCommand {
 
 export interface GroupStateMutationService {
     read(command: GroupStateMutationCommand): Promise<GroupMutationRead>;
+    /** The read and the group snapshot a group-result command returns, from one statement on the exact read path. */
+    readWithSnapshot(command: GroupStateMutationCommand): Promise<GroupMutationSnapshotRead>;
     compute(command: GroupStateMutationCommand, read: GroupMutationRead): GroupMutationComputed;
     validate(
         command: GroupStateMutationCommand,

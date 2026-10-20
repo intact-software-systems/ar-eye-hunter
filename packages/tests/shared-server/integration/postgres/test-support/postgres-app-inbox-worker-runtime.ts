@@ -31,6 +31,8 @@ export interface PostgresAppInboxWorkerRuntime {
     readonly resourceInbox: PSqlResourceInboxRepository;
     readonly resourceInboxResults: ResourceInboxResultsRepository;
     armBarrier(): void;
+    /** Runs AppInbox passes until the given work settles, for work enqueued before the first pass. */
+    dequeueUntilSettled<R>(pending: Promise<R>): Promise<R>;
     runUntilCompletion<R>(start: () => Promise<R>): Promise<R>;
     runUntilAllCompletion<R>(starts: readonly (() => Promise<R>)[]): Promise<readonly R[]>;
 }
@@ -44,6 +46,10 @@ export function createPostgresAppInboxWorkerRuntime(
         sql: PSqlSql;
         serviceId: string;
         atEpochMs: number;
+        /** Absent: one head per NEW round, so the in-process exclusion keys never meet. */
+        newLaneConcurrency?: number;
+        /** The rows a standing NEW-lane flight holds across passes; undefined drains what each pass claims. */
+        newLaneHeldRows: number | undefined;
         barrier?: WorkerBarrier;
         beforeTopologyConfigRead?: (primitive: TopologyReadBarrierPrimitive) => Promise<void>;
         beforeMutationTransaction?: () => Promise<void>;
@@ -60,25 +66,31 @@ export function createPostgresAppInboxWorkerRuntime(
         beforeMutationTransaction,
         trace: input.trace
     });
+    const flightSettlements: Promise<void>[] = [];
     const services = createPostgresAppInboxWorkerServices({
         ...input,
+        newLaneConcurrency: input.newLaneConcurrency ?? 1,
+        flightEntryListener: (settlement) => flightSettlements.push(settlement),
         transactionSql: transactionGate.sql
     });
 
-    const runUntilAllCompletion = async <R>(
-        starts: readonly (() => Promise<R>)[]
-    ): Promise<readonly R[]> => {
+    // A standing flight's pass returns while its rows run, so an empty top-up waits briefly before it claims again.
+    const dequeueUntilSettled = async <R>(pending: Promise<R>): Promise<R> => {
         let settled = false;
-        const pending = Promise.all(starts.map((start) => start())).finally(() => (settled = true));
+        const observed = pending.finally(() => (settled = true));
         while (!settled) {
-            await services.inbox.dequeueInbox(
+            const claimed = await services.inbox.dequeueInbox(
                 InboxQueueReader.INBOX_DEQUEUE_TYPES,
                 createWorkerResilience()
             );
-            await yieldEventLoop();
+            await (claimed === 0 && input.newLaneHeldRows !== undefined ? waitMs(2) : yieldEventLoop());
         }
-        return await pending;
+        await Promise.all(flightSettlements);
+        return await observed;
     };
+    const runUntilAllCompletion = async <R>(
+        starts: readonly (() => Promise<R>)[]
+    ): Promise<readonly R[]> => await dequeueUntilSettled(Promise.all(starts.map((start) => start())));
 
     return {
         client: services.client,
@@ -88,6 +100,7 @@ export function createPostgresAppInboxWorkerRuntime(
         resourceInbox: services.resourceInbox,
         resourceInboxResults: services.resourceInboxResults,
         armBarrier: transactionGate.arm,
+        dequeueUntilSettled,
         runUntilCompletion: async <R>(start: () => Promise<R>) => {
             const [result] = await runUntilAllCompletion([start]);
             if (result === undefined) {
@@ -111,5 +124,9 @@ function createWorkerResilience(): ResourceInboxResilience {
 }
 
 function yieldEventLoop(): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, 0));
+    return waitMs(0);
+}
+
+function waitMs(delayMs: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, delayMs));
 }

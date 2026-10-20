@@ -244,6 +244,7 @@ async function runClientMutation(
     const runtime = createPostgresAppInboxWorkerRuntime({
         sql,
         serviceId: `postgres-state-worker-${Deno.pid}`,
+        newLaneHeldRows: undefined,
         atEpochMs: input.atEpochMs,
         barrier: input.barrier,
         trace
@@ -416,6 +417,7 @@ async function runGroupMutation(
     const runtime = createPostgresAppInboxWorkerRuntime({
         sql,
         serviceId: `postgres-state-worker-${Deno.pid}`,
+        newLaneHeldRows: undefined,
         atEpochMs: input.atEpochMs,
         barrier: input.barrier,
         trace
@@ -516,6 +518,7 @@ async function runTopologyMutation(
     const runtime = createPostgresAppInboxWorkerRuntime({
         sql,
         serviceId: `postgres-state-worker-${Deno.pid}`,
+        newLaneHeldRows: undefined,
         atEpochMs: input.atEpochMs,
         barrier: input.barrier,
         trace

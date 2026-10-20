@@ -239,7 +239,8 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async reserveTimeoutEntries(
-        { typeIds, reservationInput, timeSinceStartTs, observedEntries }: ResourceInboxTimeoutReservationRequest
+        { typeIds, reservationInput, timeSinceStartTs, observedEntries, excludedContextIds }:
+            ResourceInboxTimeoutReservationRequest
     ): Promise<Map<Key, ResourceEntry>> {
         const options = toResourceInboxReservationOptions(
             reservationInput,
@@ -259,7 +260,8 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                     typeIds: typeIds,
                     timeSinceStartMs: timeoutMs,
                     reservationInput: options,
-                    observedRowIds: observedRowIds
+                    observedRowIds: observedRowIds,
+                    excludedContextIds: excludedContextIds ?? new Set()
                 });
 
                 const reservedEntries = new Map<Key, ResourceEntry>();
@@ -302,7 +304,8 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                     overdueBeforeEpochMs,
                     {
                         maxToReserve: options.maxToReserve,
-                        maxAttempts: options.maxAttempts
+                        maxAttempts: options.maxAttempts,
+                        excludedContextIds: options.excludedContextIds ?? new Set()
                     }
                 );
                 const reservedEntries = new Map<Key, ResourceInboxFairnessSelection>();

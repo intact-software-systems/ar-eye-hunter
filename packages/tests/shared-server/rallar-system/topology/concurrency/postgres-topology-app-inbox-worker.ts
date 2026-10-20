@@ -126,6 +126,7 @@ function createTopologyAppInboxRuntime(
     return createPostgresAppInboxWorkerRuntime({
         sql,
         serviceId: `postgres-topology-inbox-${Deno.pid}`,
+        newLaneHeldRows: undefined,
         atEpochMs: input.atEpochMs,
         barrier: input.barrierPhase === 'transaction' ? input.barrier : undefined,
         beforeTopologyConfigRead: input.barrierPhase === 'topology-read'

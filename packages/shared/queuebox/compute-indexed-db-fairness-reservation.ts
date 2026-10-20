@@ -19,6 +19,7 @@ type ComputeIndexedDbFairnessReservationInput = Readonly<{
     maxToScan: number;
     now: Temporal.Instant;
     requestedTypes: readonly string[];
+    excludedContextIds: ReadonlySet<string> | undefined;
 }>;
 
 type ComputedIndexedDbFairnessReservation = Readonly<{
@@ -44,10 +45,12 @@ export function computeIndexedDbFairnessReservation(
         }
         const selectedState = available.reduce(earlierFairnessState);
         const stored = selectedState.entries[selectedState.offset];
-        if (
-            !isStoredQueueEntryExpired(stored, input.now) &&
-            stored.dequeueAudit.attempts < input.maxAttempts
-        ) {
+        if (input.excludedContextIds?.has(stored.key.contextId) === true) {
+            // Like the other stores, an excluded context's row is passed over without spending the scan budget.
+            selectedState.offset += 1;
+            continue;
+        }
+        if (!isStoredQueueEntryExpired(stored, input.now) && stored.dequeueAudit.attempts < input.maxAttempts) {
             const decoded = decodeStoredResourceEntry(stored);
             const selectedDueTs = decoded.dequeueAudit.nextTs!;
             const entry = computeReservedQueueEntry(decoded, input.now);

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { PSqlExecutorCounters, PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -19,6 +19,10 @@ interface CountingDatabase {
     readonly sql: PSqlSql;
     readonly counters: { statements: number; executorWaitMs: number; };
 }
+
+afterEach(() => {
+    vi.restoreAllMocks();
+});
 
 describe('AppInbox phase timing executor counters', () => {
     it('reports the executor statement and wait deltas of the transaction and of the handler action', async () => {
@@ -64,9 +68,11 @@ describe('AppInbox phase timing executor counters', () => {
             selectedLane: harness.context.attemptTelemetry.selectedLane,
             attempt: harness.entry.dequeueAudit.attempts,
             statements: 2,
-            executorWaitMs: expect.any(Number)
+            executorWaitMs: expect.any(Number),
+            beginWaitMs: expect.any(Number)
         });
         expect(handlerAction?.details).toMatchObject({ resourceId: harness.entry.key.resourceId, statements: 3, executorWaitMs: 3 });
+        expect(handlerAction?.details).not.toHaveProperty('beginWaitMs');
         expect(database.counters.statements).toBe(4);
     });
 
@@ -90,6 +96,22 @@ describe('AppInbox phase timing executor counters', () => {
         expect(database.counters).toEqual({ statements: 3, executorWaitMs: 3 });
     });
 
+    it('reads no clock around the transaction begin when timing is off, only the per-statement waits', async () => {
+        const harness = createAtomicHarness();
+        const database = createCountingDatabase();
+        const writer = new AppInboxTransactionWriter(
+            { database: database.sql, nowEpochMs: () => 1_000 },
+            { serviceId: 'server-1', timing: undefined }
+        );
+        const clockReads = vi.spyOn(performance, 'now');
+
+        await commit(writer, harness.context, { accepted: true });
+
+        // Each statement of the transaction reads the clock at its call and at its completion; its begin reads none.
+        expect(database.counters.statements).toBe(2);
+        expect(clockReads).toHaveBeenCalledTimes(2 * database.counters.statements);
+    });
+
     it('keeps the phase lines without counters when the port does not count', async () => {
         const harness = createAtomicHarness();
         const database = createCountingDatabase();
@@ -108,6 +130,7 @@ describe('AppInbox phase timing executor counters', () => {
         const transaction = timing.find((event) => event.operation === 'transaction');
         expect(transaction?.details).toMatchObject({ resourceId: harness.entry.key.resourceId });
         expect(transaction?.details).not.toHaveProperty('statements');
+        expect(transaction?.details).not.toHaveProperty('beginWaitMs');
     });
 });
 

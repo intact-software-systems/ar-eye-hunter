@@ -70,7 +70,8 @@ const OPERATIONS: Readonly<Record<string, readonly string[]>> = {
         'listEventPage',
         'readIssuedAuthSession',
         'observeSnapshot',
-        'read'
+        'read',
+        'readWithSnapshot'
     ],
     'state-write-benchmark-sql': ['read', 'write', 'outbox', 'other'],
     'state-write-benchmark-phase': ['transaction']

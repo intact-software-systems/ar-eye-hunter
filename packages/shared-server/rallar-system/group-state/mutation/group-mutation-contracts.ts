@@ -17,6 +17,7 @@ import type {
     GroupPresenceSummary,
     GroupRef,
     GroupRole,
+    GroupSnapshot,
     GroupStateCausalRevision,
     GroupStatus
 } from '@shared/api/group-types.ts';
@@ -450,6 +451,15 @@ export interface GroupMutationRead {
     readonly plannedLayoutRow: GroupPlannedLayoutRow | null;
     /** The accepted slot, read only by the promotion-capable operations. */
     readonly acceptedLayoutRow: GroupAcceptedLayoutRow | null;
+}
+
+/**
+ * A mutation read and the group snapshot its result carries, from one statement whenever the exact read serves
+ * the command; undefined when the group does not exist.
+ */
+export interface GroupMutationSnapshotRead {
+    readonly read: GroupMutationRead;
+    readonly currentSnapshot: GroupSnapshot | undefined;
 }
 
 /**

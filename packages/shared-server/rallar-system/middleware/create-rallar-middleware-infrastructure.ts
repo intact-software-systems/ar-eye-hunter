@@ -101,7 +101,7 @@ export function createRallarMiddlewareInfrastructure(
 
     return {
         wsQBoxServerService,
-        inboxQueueReader: createMiddlewareInboxQueueReader(options),
+        inboxQueueReader: createMiddlewareInboxQueueReader(options, queueEngine),
         outboxQueueReader: createMiddlewareOutboxQueueReader(options),
         appInboxResilience: options.resilience.appInbox ?? options.resilience.inbox,
         appOutboxResilience: options.resilience.appOutbox,
@@ -119,13 +119,19 @@ function installMiddlewareAppInboxCompletionNoticeSubscriber(options: CreateRall
     return installAppInboxCompletionNoticeSubscriber({ ...options.appInboxCompletionNotices, notifications });
 }
 
-function createMiddlewareInboxQueueReader(options: CreateRallarMiddlewareOptions): InboxQueueReader {
+/** The engine joins each row the reader's flight takes on stop, and each settlement wakes it to top the flight up. */
+function createMiddlewareInboxQueueReader(
+    options: CreateRallarMiddlewareOptions,
+    queueEngine: InboxOutboxEngine
+): InboxQueueReader {
     const inboxQueueReader = new InboxQueueReader(
         options.inbox,
         {
             ...options.appInboxDequeueOptions,
             isRetryableConflict: isAppInboxRetryableConflict,
-            toCompletionAwaitability: toAppInboxEntryCompletionAwaitability
+            toCompletionAwaitability: toAppInboxEntryCompletionAwaitability,
+            flightEntryListener: (settlement) =>
+                queueEngine.retainSettlingWork(InboxQueueReader.INBOX_ENQUEUE_TYPE, settlement)
         }
     );
     installDequeuePassTiming(inboxQueueReader, InboxQueueReader.INBOX_ENQUEUE_TYPE, options.appInboxDequeuePassTiming);

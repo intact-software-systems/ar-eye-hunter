@@ -662,6 +662,7 @@ describe('Postgres presence expiry concurrency', () => {
                 const left = createPostgresAppInboxWorkerRuntime({
                     sql: leftSql,
                     serviceId: 'last-slot-left',
+                    newLaneHeldRows: undefined,
                     atEpochMs: atEpochMs + 1_000,
                     beforeMutationTransaction: () => barrier.arrive(),
                     trace: createPostgresAppInboxWorkerTrace()
@@ -669,6 +670,7 @@ describe('Postgres presence expiry concurrency', () => {
                 const right = createPostgresAppInboxWorkerRuntime({
                     sql: rightSql,
                     serviceId: 'last-slot-right',
+                    newLaneHeldRows: undefined,
                     atEpochMs: atEpochMs + 1_001,
                     beforeMutationTransaction: () => barrier.arrive(),
                     trace: createPostgresAppInboxWorkerTrace()
@@ -836,12 +838,14 @@ describe('Postgres presence expiry concurrency', () => {
                 const left = createPostgresAppInboxWorkerRuntime({
                     sql: leftSql,
                     serviceId: 'heartbeat-100-left',
+                    newLaneHeldRows: undefined,
                     atEpochMs: atEpochMs + 1_000,
                     trace: createPostgresAppInboxWorkerTrace()
                 });
                 const right = createPostgresAppInboxWorkerRuntime({
                     sql: rightSql,
                     serviceId: 'heartbeat-100-right',
+                    newLaneHeldRows: undefined,
                     atEpochMs: atEpochMs + 1_000,
                     trace: createPostgresAppInboxWorkerTrace()
                 });

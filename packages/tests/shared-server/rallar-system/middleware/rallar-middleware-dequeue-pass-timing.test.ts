@@ -193,6 +193,7 @@ function createInertDequeuePassObserver(): QueueMessageReader.DequeuePassObserve
         onProbeFinished: () => undefined,
         onPassStarted: () => undefined,
         onPassFinished: () => undefined,
+        onEntryClaimed: () => undefined,
         onHandlerStarted: () => undefined,
         onHandlerFinished: () => undefined
     };

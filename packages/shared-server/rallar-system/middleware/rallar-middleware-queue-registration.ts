@@ -14,7 +14,10 @@ export interface RegisterRallarMiddlewareQueueTasksInput {
 }
 
 export interface RegisterApplicationQueueReaderTasksInput {
-    readonly engine: Pick<InboxOutboxEngine, 'includeTask' | 'wake' | 'wakeAt'>;
+    readonly engine: Pick<
+        InboxOutboxEngine,
+        'includeTask' | 'includeWakeListener' | 'includeStopFailureSource' | 'wake' | 'wakeAt'
+    >;
     readonly nowEpochMs: () => number;
     readonly inboxQueueReader: InboxQueueReader;
     readonly outboxQueueReader: OutboxQueueReader;
@@ -28,6 +31,12 @@ const QUEUE_READER_FAILURE_BACKOFF: FailureBackoff.Config = { baseMs: 1_000, max
 interface QueueReaderTask {
     readonly taskId: string;
     readonly resilience: ResourceInboxResilience;
+    /** True while the next pass could claim nothing before a row the reader holds in flight settles. */
+    readonly isAwaitingFlightSettlement: () => boolean;
+    /** When a wait that no settlement may end runs out, so the task probes again then. */
+    readonly getFlightSettlementWaitEndMs: () => number | undefined;
+    /** True once a row the reader holds in flight failed to release: the next pass reports that error, or stop does. */
+    readonly hasFlightErrorToRethrow: () => boolean;
     readonly readWorkAdvertisement: () => Promise<DequeueController.WorkAdvertisement>;
     readonly dequeue: (workAdvertisement: DequeueController.WorkAdvertisement | undefined) => Promise<number>;
 }
@@ -100,12 +109,30 @@ export function createRallarMiddlewareQueueRegistration(
     return new RallarMiddlewareQueueRegistration(engine);
 }
 
+/**
+ * The AppInbox reader's flight rows outlive the pass that claimed them; the reader's own flight entry listener hands
+ * them to the engine. Another writer's AppInbox rows end a wait on the flight's own contexts, since they may belong to
+ * a context it does not hold. A release error still kept when the engine stops has no pass left to rethrow it, so the
+ * engine's stop takes it instead.
+ */
 export function registerApplicationQueueReaderTasks(
     input: RegisterApplicationQueueReaderTasksInput
 ): void {
+    input.engine.includeStopFailureSource(
+        InboxQueueReader.INBOX_ENQUEUE_TYPE,
+        () => input.inboxQueueReader.takeFlightErrorToRethrow()
+    );
+    input.engine.includeWakeListener(
+        `${InboxQueueReader.INBOX_ENQUEUE_TYPE}:flight`,
+        InboxQueueReader.INBOX_DEQUEUE_TYPES,
+        () => input.inboxQueueReader.resetFlightSettlementWait()
+    );
     includeQueueReaderTask(input, {
         taskId: InboxQueueReader.INBOX_ENQUEUE_TYPE,
         resilience: input.appInboxResilience,
+        isAwaitingFlightSettlement: () => input.inboxQueueReader.isAwaitingFlightSettlement(),
+        getFlightSettlementWaitEndMs: () => input.inboxQueueReader.getFlightSettlementWaitEndMs(),
+        hasFlightErrorToRethrow: () => input.inboxQueueReader.hasFlightErrorToRethrow(),
         readWorkAdvertisement: () =>
             input.inboxQueueReader.readWorkAdvertisement(
                 InboxQueueReader.INBOX_DEQUEUE_TYPES,
@@ -121,6 +148,9 @@ export function registerApplicationQueueReaderTasks(
     includeQueueReaderTask(input, {
         taskId: OutboxQueueReader.OUTBOX_ENQUEUE_TYPE,
         resilience: input.appOutboxResilience,
+        isAwaitingFlightSettlement: () => false,
+        getFlightSettlementWaitEndMs: () => undefined,
+        hasFlightErrorToRethrow: () => false,
         readWorkAdvertisement: () =>
             input.outboxQueueReader.readWorkAdvertisement(
                 OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
@@ -142,7 +172,10 @@ export function registerApplicationQueueReaderTasks(
  * A batch that claimed work wakes the engine, so the next claim does not wait out the idle backoff.
  * An open circuit, a failed readiness probe or a failed batch advertises no work and wakes the task
  * when it may run again, so none of them probes storage on every pass nor holds the task's only slot
- * while it waits. A failed probe still rethrows, so the engine reports it once for that pass.
+ * while it waits. A failed probe still rethrows, so the engine reports it once for that pass. A reader
+ * awaiting a flight settlement advertises no work either: the settlement wakes the engine, and a wait no
+ * settlement may end wakes the task when it runs out. A flight row whose release failed advertises work
+ * whatever storage holds, so the pass that rethrows its error runs at once and that error is reported once.
  */
 function includeQueueReaderTask(
     input: RegisterApplicationQueueReaderTasksInput,
@@ -158,6 +191,17 @@ function includeQueueReaderTask(
             const deferredUntilMs = task.resilience.getDequeueReopenAtMs(nowMs) ?? failureBackoff.getRetryAtMs(nowMs);
             if (deferredUntilMs !== undefined) {
                 input.engine.wakeAt(task.taskId, deferredUntilMs);
+                return false;
+            }
+            if (task.hasFlightErrorToRethrow()) {
+                advertisedLanes = undefined;
+                return true;
+            }
+            if (task.isAwaitingFlightSettlement()) {
+                const waitEndMs = task.getFlightSettlementWaitEndMs();
+                if (waitEndMs !== undefined) {
+                    input.engine.wakeAt(task.taskId, waitEndMs);
+                }
                 return false;
             }
             try {

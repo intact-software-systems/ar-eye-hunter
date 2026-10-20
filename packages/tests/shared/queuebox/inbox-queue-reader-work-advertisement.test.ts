@@ -122,6 +122,7 @@ describe('InboxQueueReader work advertisement', () => {
                 onProbeFinished: () => undefined,
                 onPassStarted: () => undefined,
                 onPassFinished: () => undefined,
+                onEntryClaimed: () => undefined,
                 onHandlerStarted: () => undefined,
                 onHandlerFinished: () => undefined
             })
@@ -167,6 +168,7 @@ function createObservedReader(dequeueOptions: DequeueResourceEntryOptions = {}):
         onProbeStarted: () => void events.push('probe-started'),
         onProbeFinished: (advertisedLanes) => void events.push(`probe-finished:${Object.values(Reservator).filter((lane) => advertisedLanes[lane]).join(',')}`),
         onPassStarted: () => void events.push('pass-started'),
+        onEntryClaimed: () => undefined,
         onHandlerStarted: (attempt) => {
             claimed.push(attempt);
             events.push(`handler-started:${attempt.entry.key.resourceId}`);

@@ -3,7 +3,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import { RateLimiter } from '../../resilience/Resilience.ts';
 import { toErrorSummaryLine } from '../../resilience/to-error.ts';
 import { DequeueController, Reservator } from '../dequeue/dequeue-controller.ts';
-import { toDequeuedKeyText } from '../dequeue/dequeue-lane-flight.ts';
+import { toDequeuedKeyText, type DequeueLaneFlight } from '../dequeue/dequeue-lane-flight.ts';
 import {
     toSaturatedResourceInboxFairnessScanBudget,
     type DequeueResourceEntryRepository,
@@ -125,7 +125,7 @@ export class ResourceInboxHandlerEntryError extends Error {
     }
 }
 
-export interface ResourceInboxDequeuerInput {
+export interface ResourceInboxDequeuerInput<V> {
     readonly repository: DequeueResourceEntryRepository;
     readonly typesToDequeue: () => Set<string>;
     /** The order the NEW lane claims in; the other lanes always claim in queue order. */
@@ -137,6 +137,12 @@ export interface ResourceInboxDequeuerInput {
     readonly workAdvertisement?: DequeueController.WorkAdvertisement;
     readonly resilience: ResourceInboxResilience;
     readonly options?: DequeueResourceEntryOptions;
+    /**
+     * The flight its owner keeps across passes, which every lane tops up; its rows' contexts are excluded from each NEW
+     * and RETRY claim, which then take context heads. Absent, each pass drains its claims and serves a context's head
+     * at most once.
+     */
+    readonly standingFlight?: DequeueLaneFlight<Resource.Key, ResourceInboxAttempt, V>;
 }
 
 export interface DequeueResourceEntryOptions {
@@ -186,7 +192,7 @@ interface ResourceInboxFailureDecision {
 }
 
 export function createDefaultResourceInboxDequeuer<V>(
-    input: ResourceInboxDequeuerInput
+    input: ResourceInboxDequeuerInput<V>
 ): DequeueController<Resource.Key, ResourceInboxAttempt, V> {
     const options = input.options ?? {};
     const dependencies: ResourceInboxDequeueDependencies = {
@@ -197,22 +203,17 @@ export function createDefaultResourceInboxDequeuer<V>(
         jitterUnit: options.jitterUnit ?? Math.random,
         recordReservationTelemetry: options.onReservationTelemetry ?? recordResourceInboxReservation
     };
-    // One pass serves a context's head at most once: its next row waits for the next pass.
-    const servedNewContextIds = new Set<string>();
-    const newContextClaim = input.newLaneClaimOrder === 'oldest-per-context'
-        ? { excludedContextIds: servedNewContextIds }
-        : undefined;
+    const contextClaims = createResourceInboxContextClaims(dependencies, input);
     return createResourceInboxFinalizationController<V>(dependencies, input)
+        .withStandingFlight(input.standingFlight)
         .onNewEntriesReserveDo(async (types, maxToReserve) => {
             const attempts = await reserveResourceInboxAttempts(dependencies, {
                 types,
                 maxToReserve,
                 lane: Reservator.NEW,
-                contextClaim: newContextClaim
+                contextClaim: contextClaims.getNewContextClaim()
             });
-            for (const key of attempts.keys()) {
-                servedNewContextIds.add(key.contextId);
-            }
+            contextClaims.recordServedContexts(attempts.keys());
             return attempts;
         })
         .onRetryEntriesReserveDo((types, maxToReserve) =>
@@ -220,14 +221,22 @@ export function createDefaultResourceInboxDequeuer<V>(
                 types,
                 maxToReserve,
                 lane: Reservator.RETRY,
-                contextClaim: undefined
+                contextClaim: contextClaims.getRetryContextClaim()
             })
         )
         .onFairnessEntriesReserveDo((types, maxToReserve) =>
-            reserveResourceInboxFairness(dependencies, types, maxToReserve)
+            reserveResourceInboxFairness(dependencies, {
+                types,
+                maxToReserve,
+                excludedContextIds: contextClaims.getRetryContextClaim()?.excludedContextIds
+            })
         )
         .onTimeoutEntriesReserveDo((types, maxToReserve) =>
-            reserveResourceInboxTimeouts(dependencies, types, maxToReserve)
+            reserveResourceInboxTimeouts(dependencies, {
+                types,
+                maxToReserve,
+                excludedContextIds: contextClaims.getTimeoutExcludedContextIds()
+            })
         )
         .onReleaseEntriesDo(
             (successes) => releaseResourceInboxSuccesses(dependencies, successes),
@@ -235,9 +244,65 @@ export function createDefaultResourceInboxDequeuer<V>(
         );
 }
 
+/** One recovery lane's claim: overdue retries for FAIRNESS, lapsed reservations for TIMEOUT. */
+interface ResourceInboxRecoveryClaim {
+    readonly types: Set<string>;
+    readonly maxToReserve: number;
+    readonly excludedContextIds: ReadonlySet<string> | undefined;
+}
+
+interface ResourceInboxContextClaims {
+    readonly getNewContextClaim: () => ResourceInboxContextClaim | undefined;
+    readonly getRetryContextClaim: () => ResourceInboxContextClaim | undefined;
+    readonly getTimeoutExcludedContextIds: () => ReadonlySet<string> | undefined;
+    readonly recordServedContexts: (keys: Iterable<Resource.Key>) => void;
+}
+
+/**
+ * A standing flight excludes the contexts it holds a row of, so a context's next row is claimed once its head is
+ * released, in whichever pass that is. A row whose release failed may still be reserved, so its context stays excluded
+ * until that row's lease could have expired and the TIMEOUT lane can reclaim it. TIMEOUT therefore skips only the
+ * contexts with a row in flight: a peer's lapsed row of such a context would run beside it, while the row whose release
+ * failed must stay reclaimable. Without a flight, a pass serves a context's head at most once: its next row waits for
+ * the next pass, and RETRY claims in queue order.
+ */
+function createResourceInboxContextClaims<V>(
+    dependencies: ResourceInboxDequeueDependencies,
+    input: ResourceInboxDequeuerInput<V>
+): ResourceInboxContextClaims {
+    const flight = input.standingFlight;
+    if (flight !== undefined) {
+        flight.forgetReleaseFailuresBefore(dependencies.nowEpochMs() - dependencies.resilience.reservationLeaseMs);
+        const getInFlightClaim = () => {
+            const heldKeys = [...flight.getUnreleasedKeys(), ...flight.getReleaseFailedKeys()];
+            return { excludedContextIds: new Set(heldKeys.map((key) => key.contextId)) };
+        };
+        return {
+            getNewContextClaim: getInFlightClaim,
+            getRetryContextClaim: getInFlightClaim,
+            getTimeoutExcludedContextIds: () => new Set(flight.getUnreleasedKeys().map((key) => key.contextId)),
+            recordServedContexts: () => {}
+        };
+    }
+    const servedNewContextIds = new Set<string>();
+    const newContextClaim = input.newLaneClaimOrder === 'oldest-per-context'
+        ? { excludedContextIds: servedNewContextIds }
+        : undefined;
+    return {
+        getNewContextClaim: () => newContextClaim,
+        getRetryContextClaim: () => undefined,
+        getTimeoutExcludedContextIds: () => undefined,
+        recordServedContexts: (keys) => {
+            for (const key of keys) {
+                servedNewContextIds.add(key.contextId);
+            }
+        }
+    };
+}
+
 function createResourceInboxFinalizationController<V>(
     dependencies: ResourceInboxDequeueDependencies,
-    input: ResourceInboxDequeuerInput
+    input: ResourceInboxDequeuerInput<V>
 ): DequeueController<Resource.Key, ResourceInboxAttempt, V> {
     return DequeueController.create<Resource.Key, ResourceInboxAttempt, V>()
         .withInboxTypesToDequeue(input.typesToDequeue)
@@ -293,9 +358,9 @@ async function reserveResourceInboxAttempts(
 
 async function reserveResourceInboxTimeouts(
     dependencies: ResourceInboxDequeueDependencies,
-    types: Set<string>,
-    maxToReserve: number
+    claim: ResourceInboxRecoveryClaim
 ): Promise<Map<Resource.Key, ResourceInboxAttempt>> {
+    const { types, maxToReserve, excludedContextIds } = claim;
     const entries = await RateLimiter.tryToExecuteOrDefault(
         dependencies.resilience.checkReserveTimeouts.lockEntryRateLimiter,
         () =>
@@ -304,7 +369,8 @@ async function reserveResourceInboxTimeouts(
                 reservationInput: { maxToReserve, maxAttempts: dependencies.resilience.retryPolicy.maxAttempts },
                 timeSinceStartTs: Temporal.Duration.from({
                     milliseconds: dependencies.resilience.reservationLeaseMs
-                })
+                }),
+                excludedContextIds
             }),
         new Map<Resource.Key, ResourceEntry>()
     );
@@ -314,12 +380,15 @@ async function reserveResourceInboxTimeouts(
     return toResourceInboxAttempts(dependencies, { entries, selectedLane: Reservator.TIMEOUT });
 }
 
-/** An overdue row is claimed on this pass, ahead of RETRY; the probe answered whether one exists. */
+/**
+ * An overdue row is claimed on this pass, ahead of RETRY; the probe answered whether one exists. Like RETRY, it skips
+ * the contexts a standing flight holds, so a context never has a second reserved row on this instance.
+ */
 async function reserveResourceInboxFairness(
     dependencies: ResourceInboxDequeueDependencies,
-    types: Set<string>,
-    maxToReserve: number
+    claim: ResourceInboxRecoveryClaim
 ): Promise<Map<Resource.Key, ResourceInboxAttempt>> {
+    const { types, maxToReserve, excludedContextIds } = claim;
     const selectedAtEpochMs = dependencies.nowEpochMs();
     const policy = dependencies.resilience.retryPolicy;
     const selections = await dependencies.repository.reserveOverdueRetryEntries(
@@ -328,7 +397,8 @@ async function reserveResourceInboxFairness(
         {
             maxToReserve,
             maxAttempts: policy.maxAttempts,
-            maxToScan: Math.max(types.size, toSaturatedResourceInboxFairnessScanBudget(maxToReserve))
+            maxToScan: Math.max(types.size, toSaturatedResourceInboxFairnessScanBudget(maxToReserve)),
+            excludedContextIds
         }
     );
     const attempts = new Map<Resource.Key, ResourceInboxAttempt>();

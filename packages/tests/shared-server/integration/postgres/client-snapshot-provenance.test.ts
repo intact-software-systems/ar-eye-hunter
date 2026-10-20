@@ -84,6 +84,7 @@ describe('Postgres client snapshot provenance transaction', () => {
                 const runtime = createPostgresAppInboxWorkerRuntime({
                     sql,
                     serviceId: 'proof-server',
+                    newLaneHeldRows: undefined,
                     atEpochMs: now,
                     trace: createPostgresAppInboxWorkerTrace()
                 });

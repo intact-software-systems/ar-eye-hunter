@@ -3,7 +3,7 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 
 import { RuntimeStateJsonStore } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
-import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { groupStateGroupStorageKey } from './aggregate/group-aggregate-storage-keys.ts';
 import {
     decodeCurrentGroupLifecyclePolicy,
@@ -26,6 +26,25 @@ export type GroupLifecyclePolicyRead =
     | Readonly<{ status: 'present'; policy: GroupLifecyclePolicy; }>
     | Readonly<{ status: 'corrupt'; reason: string; }>;
 
+export function toGroupLifecyclePolicyRead(
+    stored: JsonWireValue | undefined,
+    ref: GroupRef
+): GroupLifecyclePolicyRead {
+    if (stored === undefined) {
+        return { status: 'absent' };
+    }
+    try {
+        const decoded = decodeStoredGroupLifecyclePolicy(stored, ref);
+        return { status: 'present', policy: decoded.policy };
+    }
+    catch (error) {
+        return {
+            status: 'corrupt',
+            reason: error instanceof Error ? error.message : 'Stored group lifecycle policy is invalid'
+        };
+    }
+}
+
 export class GroupLifecyclePolicyRepository extends RuntimeStateJsonStore {
     readonly runtimeRepository: RuntimeStateRepositoryLike;
 
@@ -35,23 +54,10 @@ export class GroupLifecyclePolicyRepository extends RuntimeStateJsonStore {
     }
 
     async readPolicy(ref: GroupRef): Promise<GroupLifecyclePolicyRead> {
-        const stored = await this.getJsonValue(
-            GROUP_LIFECYCLE_POLICIES_NAMESPACE,
-            groupStateGroupStorageKey(ref)
+        return toGroupLifecyclePolicyRead(
+            await this.getJsonValue(GROUP_LIFECYCLE_POLICIES_NAMESPACE, groupStateGroupStorageKey(ref)),
+            ref
         );
-        if (stored === undefined) {
-            return { status: 'absent' };
-        }
-        try {
-            const decoded = decodeStoredGroupLifecyclePolicy(stored, ref);
-            return { status: 'present', policy: decoded.policy };
-        }
-        catch (error) {
-            return {
-                status: 'corrupt',
-                reason: error instanceof Error ? error.message : 'Stored group lifecycle policy is invalid'
-            };
-        }
     }
 
     async writePolicy(ref: GroupRef, policy: GroupLifecyclePolicy): Promise<void> {

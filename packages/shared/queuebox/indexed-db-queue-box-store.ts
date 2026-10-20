@@ -17,6 +17,8 @@ interface ReadFairnessStoredQueueEntriesInput {
     readonly overdueBeforeEpochMs: number;
     readonly storeName: string;
     readonly typeIds: readonly string[];
+    /** Rows of these contexts are read past without counting against the scan budget. */
+    readonly excludedContextIds: ReadonlySet<string> | undefined;
 }
 
 interface ReadStoredQueueEntriesByTypesAndStatusesInput {
@@ -351,7 +353,10 @@ export async function readFairnessStoredQueueEntries(
                 overdueBeforeEpochMs: input.overdueBeforeEpochMs
             })
         })));
-        let scanned = input.typeIds.length;
+        // An excluded context's row is read past for free, so the budget counts only rows a claim could take.
+        const isExcluded = (entry: StoredResourceEntry | undefined) =>
+            entry !== undefined && input.excludedContextIds?.has(entry.key.contextId) === true;
+        let scanned = input.typeIds.length - states.filter((state) => isExcluded(state.entries[0])).length;
         const active = new Set(states.filter((state) => state.entries.length > 0));
         while (scanned < input.maxToScan && active.size > 0) {
             const selected = [...active].reduce(earlierFairnessReadState);
@@ -361,11 +366,12 @@ export async function readFairnessStoredQueueEntries(
                 overdueBeforeEpochMs: input.overdueBeforeEpochMs,
                 after: selected.entries.at(-1)
             });
-            scanned += 1;
             if (next.length === 0) {
+                scanned += 1;
                 active.delete(selected);
                 continue;
             }
+            scanned += isExcluded(next[0]) ? 0 : 1;
             selected.entries.push(next[0]);
         }
         return new Map(states.map((state) => [state.typeId, state.entries]));

@@ -53,6 +53,8 @@ export type ResourceInboxFairnessReservationOptions =
     & ResourceInboxReservationOptions
     & Readonly<{
         maxToScan: number;
+        /** Overdue rows of these contexts are not claimed; absent, an overdue row of any context is. */
+        excludedContextIds?: ReadonlySet<string>;
     }>;
 
 export type ResourceInboxFairnessReservationInput =
@@ -264,7 +266,11 @@ export function toResourceInboxFairnessReservationOptions(
         throw new Error('maxToScan must be a non-negative safe integer');
     }
 
-    return { ...reservation, maxToScan };
+    return {
+        ...reservation,
+        maxToScan,
+        excludedContextIds: typeof input === 'number' ? undefined : input.excludedContextIds
+    };
 }
 
 export function toSaturatedResourceInboxFairnessScanBudget(
@@ -388,6 +394,8 @@ export interface ResourceInboxTimeoutReservationRequest {
     readonly reservationInput: ResourceInboxReservationInput;
     readonly timeSinceStartTs: Temporal.Duration;
     readonly observedEntries?: readonly ResourceEntry[];
+    /** Lapsed reservations of these contexts are not reclaimed; absent, one of any context is. */
+    readonly excludedContextIds?: ReadonlySet<string>;
 }
 
 export interface EnqueueResourceEntryController {

@@ -16,6 +16,7 @@ import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-
 import { assertGroupMutationIdempotencyRecord } from '../mutation/state-validation/assert-group-mutation-result.ts';
 import { assertStoredIdempotency, canonicalStoredGroup } from './aggregate/group-aggregate-repository.ts';
 import { groupStateGroupStorageKey, groupStateScopeStorageKey } from './aggregate/group-aggregate-storage-keys.ts';
+import { toGroupLifecyclePolicyRead } from './group-lifecycle-policy-repository.ts';
 import { decodeStoredGroupStateValue } from './group-state-persistence-contracts.ts';
 import {
     GROUPS_NAMESPACE,
@@ -62,6 +63,7 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
     async readMutationExactEntries(
         input: GroupStateMutationExactReadInput
     ): Promise<GroupStateMutationExactReadResult> {
+        const observedAtEpochMs = Date.now();
         return await readGroupStateMutationExactEntries(
             this.repository,
             input,
@@ -88,7 +90,10 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
                     canonicalStoredAdmission(entry, {
                         ...input.aggregateRef,
                         principalId
-                    })
+                    }),
+                lifecyclePolicy: (value) => toGroupLifecyclePolicyRead(value, input.aggregateRef),
+                groupSnapshot: (rows) =>
+                    this.toStableAuthoritativeSnapshot(input.aggregateRef, rows, observedAtEpochMs)?.snapshot
             }
         );
     }

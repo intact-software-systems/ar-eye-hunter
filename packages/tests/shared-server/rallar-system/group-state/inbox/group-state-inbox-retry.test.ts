@@ -121,6 +121,12 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                     authorized,
                     command
                 }),
+                readWithSnapshot: async (
+                    command: Readonly<{ facts: { attemptCount: number; nowEpochMs: number; }; }>
+                ) => ({
+                    read: { authorized, command },
+                    currentSnapshot: undefined
+                }),
                 compute: (
                     _command: never,
                     read: Readonly<{
@@ -194,7 +200,6 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                     database: createAppInboxTestDatabase(queue, results),
                     groupStateService: phaseService as never,
                     resultReader: {
-                        readSnapshot: async () => undefined,
                         readEvent: async () => undefined
                     }
                 },

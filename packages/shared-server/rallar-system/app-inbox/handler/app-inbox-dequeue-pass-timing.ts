@@ -20,20 +20,26 @@ interface ExecutorSpan {
     readonly finished: ExecutorSample;
 }
 
+/** A probe or a pass, with the time handlers ran inside it: a handler that started before it or outlives it is clipped. */
+interface ObservedWindow {
+    readonly started: ExecutorSample;
+    readonly handlerSpans: ExecutorSpan[];
+}
+
 interface ObservedProbe extends ExecutorSpan {
     readonly advertisedLanes: DequeueController.WorkAdvertisement;
+    readonly handlerSpans: readonly ExecutorSpan[];
 }
 
-interface ObservedHandler {
-    readonly attempt: ResourceInboxAttempt;
-    readonly started: ExecutorSample;
-    finished: ExecutorSample | undefined;
-}
-
-interface ObservedPass {
+interface ObservedPass extends ObservedWindow {
     readonly probe: ObservedProbe | undefined;
-    readonly started: ExecutorSample;
-    readonly handlers: ObservedHandler[];
+    readonly claimed: ResourceInboxAttempt[];
+}
+
+/** A finished pass: its closing sample and the handler time inside it. */
+interface ClosedPass {
+    readonly finished: ExecutorSample;
+    readonly handlerSpans: readonly ExecutorSpan[];
 }
 
 /** What the queue machinery itself cost: the probe plus the pass, less the time any handler ran. */
@@ -60,7 +66,8 @@ export namespace AppInboxDequeuePassTiming {
  * One `app-inbox-phase` `dequeue-pass` line per claimed entry, on the inbox and on the outbox pass,
  * carrying the executor cost of the pass outside the handlers: the probe, the reservations and the
  * releases, with the lanes the probe advertised and the claimed type. The executor is shared, so
- * statements other callers ran meanwhile are counted too.
+ * statements other callers ran meanwhile are counted too. An entry belongs to the pass that claimed it,
+ * even when its handler runs after that pass; a pass subtracts only the handler time inside it.
  *
  * Every pass, one that claimed nothing included, closes with one `dequeue-pass-boundary` line: the queue
  * type of the reader, its wall time as the duration, so it started at `atEpochMs - durationMs`, the
@@ -71,9 +78,10 @@ export class AppInboxDequeuePassTiming implements QueueMessageReader.DequeuePass
     private readonly nowMs: () => number;
     private readonly config: AppInboxDequeuePassTiming.Config;
 
-    private probeStarted: ExecutorSample | undefined;
+    private probeWindow: ObservedWindow | undefined;
     private probe: ObservedProbe | undefined;
     private pass: ObservedPass | undefined;
+    private readonly runningHandlers = new Map<ResourceInboxAttempt, ExecutorSample>();
 
     constructor(dependencies: AppInboxDequeuePassTiming.Dependencies, config: AppInboxDequeuePassTiming.Config) {
         this.database = dependencies.database;
@@ -83,32 +91,46 @@ export class AppInboxDequeuePassTiming implements QueueMessageReader.DequeuePass
 
     onProbeStarted(): void {
         this.probe = undefined;
-        this.probeStarted = this.sample();
+        this.probeWindow = { started: this.sample(), handlerSpans: [] };
     }
 
     onProbeFinished(advertisedLanes: DequeueController.WorkAdvertisement): void {
-        if (this.probeStarted === undefined) {
+        const window = this.probeWindow;
+        if (window === undefined) {
             return;
         }
-        this.probe = { started: this.probeStarted, finished: this.sample(), advertisedLanes };
-        this.probeStarted = undefined;
+        const finished = this.sample();
+        this.probe = {
+            started: window.started,
+            finished,
+            advertisedLanes,
+            handlerSpans: this.closeWindow(window, finished)
+        };
+        this.probeWindow = undefined;
     }
 
     onPassStarted(): void {
-        this.pass = { probe: this.probe, started: this.sample(), handlers: [] };
+        this.pass = { probe: this.probe, started: this.sample(), claimed: [], handlerSpans: [] };
         this.probe = undefined;
     }
 
+    onEntryClaimed(attempt: ResourceInboxAttempt): void {
+        this.pass?.claimed.push(attempt);
+    }
+
     onHandlerStarted(attempt: ResourceInboxAttempt): void {
-        this.pass?.handlers.push({ attempt, started: this.sample(), finished: undefined });
+        this.runningHandlers.set(attempt, this.sample());
     }
 
     onHandlerFinished(attempt: ResourceInboxAttempt): void {
-        const handler = this.pass?.handlers.findLast((candidate) =>
-            candidate.attempt === attempt && candidate.finished === undefined
-        );
-        if (handler !== undefined) {
-            handler.finished = this.sample();
+        const started = this.runningHandlers.get(attempt);
+        if (started === undefined) {
+            return;
+        }
+        this.runningHandlers.delete(attempt);
+        const finished = this.sample();
+        for (const window of [this.probeWindow, this.pass]) {
+            window?.handlerSpans.push({ started: toLaterSample(started, window.started), finished });
         }
     }
 
@@ -119,7 +141,8 @@ export class AppInboxDequeuePassTiming implements QueueMessageReader.DequeuePass
             return;
         }
         const finished = this.sample();
-        this.recordClaimedEntries(pass, finished);
+        const handlerSpans = this.closeWindow(pass, finished);
+        this.recordClaimedEntries(pass, { finished, handlerSpans });
         recordRallarTiming({
             sink: this.config.sink,
             event: {
@@ -133,25 +156,25 @@ export class AppInboxDequeuePassTiming implements QueueMessageReader.DequeuePass
         });
     }
 
-    private recordClaimedEntries(pass: ObservedPass, finished: ExecutorSample): void {
-        if (pass.handlers.length === 0) {
+    private recordClaimedEntries(pass: ObservedPass, closed: ClosedPass): void {
+        if (pass.claimed.length === 0) {
             return;
         }
-        const cost = computeDequeuePassCost(pass, finished);
+        const cost = computeDequeuePassCost(pass, closed);
         const lanesProbed = pass.probe === undefined ? '' : toLanesProbed(pass.probe.advertisedLanes);
-        for (const handler of pass.handlers) {
+        for (const attempt of pass.claimed) {
             recordRallarTiming({
                 sink: this.config.sink,
                 event: {
                     component: 'app-inbox-phase',
                     operation: 'dequeue-pass',
                     serviceId: this.config.serviceId,
-                    requestId: handler.attempt.entry.key.resourceId,
+                    requestId: attempt.entry.key.resourceId,
                     details: {
-                        ...toClaimedAttemptDetails(handler.attempt),
+                        ...toClaimedAttemptDetails(attempt),
                         ...cost.counters,
                         lanesProbed,
-                        claimedInPass: pass.handlers.length
+                        claimedInPass: pass.claimed.length
                     }
                 },
                 status: 'ok',
@@ -160,22 +183,40 @@ export class AppInboxDequeuePassTiming implements QueueMessageReader.DequeuePass
         }
     }
 
+    /** The handler spans inside the window, with every handler still running clipped to its close. */
+    private closeWindow(window: ObservedWindow, finished: ExecutorSample): readonly ExecutorSpan[] {
+        const running = [...this.runningHandlers.values()].map((started) => ({
+            started: toLaterSample(started, window.started),
+            finished
+        }));
+        return [...window.handlerSpans, ...running];
+    }
+
     private sample(): ExecutorSample {
         return { atMs: this.nowMs(), counters: this.database.getExecutorCounters?.() };
     }
 }
 
-/** Concurrent handlers overlap, so their time is their spans' union, which the pass span always contains. */
-function computeDequeuePassCost(pass: ObservedPass, finished: ExecutorSample): DequeuePassCost {
-    const passSpan = { started: pass.started, finished };
+function toLaterSample(left: ExecutorSample, right: ExecutorSample): ExecutorSample {
+    return left.atMs < right.atMs ? right : left;
+}
+
+/**
+ * Concurrent handlers overlap, so their time is their spans' union, which the window it was clipped to always
+ * contains. The probe and the pass are separate windows, so each subtracts the union of its own handler spans.
+ */
+function computeDequeuePassCost(pass: ObservedPass, closed: ClosedPass): DequeuePassCost {
+    const passSpan = { started: pass.started, finished: closed.finished };
     const spans: ExecutorSpan[] = pass.probe === undefined ? [passSpan] : [passSpan, pass.probe];
-    const handlerSpans = toSpanUnion(
-        pass.handlers.flatMap((handler) =>
-            handler.finished === undefined ? [] : [{ started: handler.started, finished: handler.finished }]
-        )
-    );
+    const handlerSpans = [
+        ...toSpanUnion(closed.handlerSpans),
+        ...toSpanUnion(pass.probe?.handlerSpans ?? [])
+    ];
     const handlersMs = sumDurationMs(handlerSpans);
-    const timing = { passWallMs: toRoundedMs(sumDurationMs([passSpan])), handlersMs: toRoundedMs(handlersMs) };
+    const timing = {
+        passWallMs: toRoundedMs(sumDurationMs([passSpan])),
+        handlersMs: toRoundedMs(sumDurationMs(toSpanUnion(closed.handlerSpans)))
+    };
     const durationMs = sumDurationMs(spans) - handlersMs;
     const counted = [...spans, ...handlerSpans].every((span) =>
         span.started.counters !== undefined && span.finished.counters !== undefined
@@ -238,22 +279,22 @@ function toPassBoundaryDetails(pass: ObservedPass, finished: ExecutorSample): Ra
         lanesProbed: probe === undefined ? '' : toLanesProbed(probe.advertisedLanes),
         probeMs: probe === undefined ? undefined : toRoundedMs(probe.finished.atMs - probe.started.atMs),
         probeToPassMs: probe === undefined ? undefined : toRoundedMs(pass.started.atMs - probe.finished.atMs),
-        claimedInPass: pass.handlers.length,
-        ...toClaimedPerLaneDetails(pass.handlers)
+        claimedInPass: pass.claimed.length,
+        ...toClaimedPerLaneDetails(pass.claimed)
     };
 }
 
-function toClaimedPerLaneDetails(handlers: readonly ObservedHandler[]): RallarTimingDetails {
-    const claimed: Record<Reservator, number> = { FINALIZATION: 0, NEW: 0, RETRY: 0, FAIRNESS: 0, TIMEOUT: 0 };
-    for (const handler of handlers) {
-        claimed[handler.attempt.telemetry.selectedLane] += 1;
+function toClaimedPerLaneDetails(claimed: readonly ResourceInboxAttempt[]): RallarTimingDetails {
+    const counts: Record<Reservator, number> = { FINALIZATION: 0, NEW: 0, RETRY: 0, FAIRNESS: 0, TIMEOUT: 0 };
+    for (const attempt of claimed) {
+        counts[attempt.telemetry.selectedLane] += 1;
     }
     return {
-        claimedNew: claimed.NEW,
-        claimedRetry: claimed.RETRY,
-        claimedFairness: claimed.FAIRNESS,
-        claimedTimeout: claimed.TIMEOUT,
-        claimedFinalization: claimed.FINALIZATION
+        claimedNew: counts.NEW,
+        claimedRetry: counts.RETRY,
+        claimedFairness: counts.FAIRNESS,
+        claimedTimeout: counts.TIMEOUT,
+        claimedFinalization: counts.FINALIZATION
     };
 }
 

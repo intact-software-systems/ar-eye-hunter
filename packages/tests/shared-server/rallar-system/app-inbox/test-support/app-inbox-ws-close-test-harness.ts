@@ -180,7 +180,6 @@ function installWsCloseReader(
                 ...shared,
                 groupStateService: dependencies.groupState,
                 resultReader: {
-                    readSnapshot: (ref) => dependencies.groupState.readSnapshot(ref),
                     readEvent: (ref, eventId) => dependencies.database.groupEventStore.readGroupEvent(ref, eventId)
                 }
             },

@@ -51,7 +51,6 @@ import {
 } from './group-state-inbox-result.ts';
 
 export interface GroupStateInboxResultReader {
-    readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined>;
     readEvent(ref: GroupRef, eventId: string): Promise<GroupEvent | undefined>;
 }
 
@@ -242,18 +241,17 @@ export class GroupStateInboxHandler {
     }
 
     private async readResultFacts(command: GroupStateMutationCommand): Promise<GroupStateInboxResultRead> {
-        const readsSnapshot = !isPresenceOperation(command.command.operation);
-        const [mutationRead, currentSnapshot] = await Promise.all([
-            this.dependencies.mutationService.read(command),
-            readsSnapshot
-                ? this.dependencies.resultReader.readSnapshot(command.command.aggregateRef)
-                : Promise.resolve(undefined)
-        ]);
+        if (isPresenceOperation(command.command.operation)) {
+            const mutationRead = await this.dependencies.mutationService.read(command);
+            return { mutationRead, currentSnapshot: undefined, recordedEvent: undefined };
+        }
+        const { read: mutationRead, currentSnapshot } = await this.dependencies.mutationService.readWithSnapshot(
+            command
+        );
         const receipt = mutationRead.idempotency?.value.receipt;
-        const recordedEvent =
-            readsSnapshot && receipt?.commandHash === command.facts.commandHash && receipt.eventId !== null
-                ? await this.dependencies.resultReader.readEvent(command.command.aggregateRef, receipt.eventId)
-                : undefined;
+        const recordedEvent = receipt?.commandHash === command.facts.commandHash && receipt.eventId !== null
+            ? await this.dependencies.resultReader.readEvent(command.command.aggregateRef, receipt.eventId)
+            : undefined;
         return { mutationRead, currentSnapshot, recordedEvent };
     }
 

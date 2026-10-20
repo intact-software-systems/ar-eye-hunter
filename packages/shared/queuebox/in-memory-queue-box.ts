@@ -342,7 +342,8 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async reserveTimeoutEntries(
-        { typeIds, reservationInput, timeSinceStartTs, observedEntries }: ResourceInboxTimeoutReservationRequest
+        { typeIds, reservationInput, timeSinceStartTs, observedEntries, excludedContextIds }:
+            ResourceInboxTimeoutReservationRequest
     ): Promise<Map<Key, ResourceEntry>> {
         const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
             reservationInput,
@@ -365,7 +366,8 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             if (
                 entry.dequeueAudit.attempts < maxAttempts && typeIds.has(entry.typeId) &&
                 !isExpiredResourceEntry(entry, now) &&
-                isReservedEntryStartedBefore(entry, now.subtract(timeSinceStartTs))
+                isReservedEntryStartedBefore(entry, now.subtract(timeSinceStartTs)) &&
+                excludedContextIds?.has(entry.key.contextId) !== true
             ) {
                 const updated = computeReservedResourceEntry(entry, now);
                 this.storeEntry(key, updated);
@@ -430,7 +432,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         overdueBeforeEpochMs: number,
         reservationInput: ResourceInboxFairnessReservationInput
     ): Promise<Map<Key, ResourceInboxFairnessSelection>> {
-        const { maxToReserve, maxAttempts } = toResourceInboxFairnessReservationOptions(
+        const { maxToReserve, maxAttempts, excludedContextIds } = toResourceInboxFairnessReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
@@ -447,7 +449,8 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                 entry.status === EntityStatus.RETRY &&
                 entry.dequeueAudit.attempts < maxAttempts &&
                 entry.dequeueAudit.nextTs !== undefined &&
-                Temporal.Instant.compare(entry.dequeueAudit.nextTs, overdueBefore) <= 0
+                Temporal.Instant.compare(entry.dequeueAudit.nextTs, overdueBefore) <= 0 &&
+                excludedContextIds?.has(entry.key.contextId) !== true
             )
             .sort(([leftKey, left], [rightKey, right]) => {
                 const dueOrder = Temporal.Instant.compare(

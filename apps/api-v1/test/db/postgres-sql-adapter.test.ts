@@ -57,8 +57,8 @@ Deno.test('Postgres SQL client counts every statement of its root and transactio
 Deno.test('a counter scope over the Postgres client credits only its own statements, inside its transaction and savepoint, and carries none of the client lifecycle', async () => {
     const fake = createFakePostgresClient();
     const sql = createPostgresSqlClient(fake.client);
-    const scoped = createPSqlCounterScope(sql);
-    const other = createPSqlCounterScope(sql);
+    const scoped = createPSqlCounterScope(sql, { timesBeginWait: true });
+    const other = createPSqlCounterScope(sql, { timesBeginWait: true });
 
     await scoped`select ${1} as one`;
     await other`select ${2} as two`;

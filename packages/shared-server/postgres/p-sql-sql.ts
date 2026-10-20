@@ -18,6 +18,11 @@ export type PSqlTransactionWrite<Result> = (transaction: PSqlSql) => Promise<Res
 export interface PSqlExecutorCounters {
     readonly statements: number;
     readonly executorWaitMs: number;
+    /**
+     * Present only on a counter scope: the time from each `begin` call to the entry of its transaction
+     * callback, which is the wait for a connection plus the `BEGIN` round trip.
+     */
+    readonly beginWaitMs?: number;
 }
 
 export interface PSqlQuery {

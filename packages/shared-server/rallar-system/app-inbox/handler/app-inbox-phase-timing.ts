@@ -58,8 +58,15 @@ export function toExecutorCounterDeltaDetails(
     }
     return {
         statements: after.statements - before.statements,
-        executorWaitMs: Math.round((after.executorWaitMs - before.executorWaitMs) * 100) / 100
+        executorWaitMs: toRoundedMillisecondsDelta(before.executorWaitMs, after.executorWaitMs),
+        ...(before.beginWaitMs !== undefined && after.beginWaitMs !== undefined
+            ? { beginWaitMs: toRoundedMillisecondsDelta(before.beginWaitMs, after.beginWaitMs) }
+            : {})
     };
+}
+
+function toRoundedMillisecondsDelta(before: number, after: number): number {
+    return Math.round((after - before) * 100) / 100;
 }
 
 function toPhaseEvent(

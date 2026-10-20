@@ -326,6 +326,32 @@ describe('IndexedDbQueueBox computed writes', () => {
         }
     );
 
+    it('skips fairness rows of excluded contexts without counting them against the scan budget', () => {
+        const dueAt = Temporal.Instant.from('2026-01-01T12:00:00Z');
+        const stored = ['held-1', 'held-2', 'free'].map((resourceId, index) => {
+            const entry = createEntry('fair', resourceId);
+            const contextId = resourceId.startsWith('held') ? 'ctx-held' : 'ctx-free';
+            return {
+                ...encodeStoredResourceEntry({ ...entry, key: { ...entry.key, contextId } }, 0),
+                status: EntityStatus.RETRY,
+                fairnessDueEpochMs: Number(dueAt.epochMilliseconds) + index,
+                dequeueAudit: { attempts: 1, nextTs: dueAt.add({ milliseconds: index }).toString() }
+            };
+        });
+
+        const computed = computeIndexedDbFairnessReservation({
+            entriesByType: new Map([[stored[0]!.typeId, stored]]),
+            maxAttempts: 3,
+            maxToReserve: 1,
+            maxToScan: 1,
+            now: dueAt.add({ seconds: 1 }),
+            requestedTypes: [stored[0]!.typeId],
+            excludedContextIds: new Set(['ctx-held'])
+        });
+
+        expect([...computed.result.values()].map(({ entry }) => entry.key.resourceId)).toEqual(['free']);
+    });
+
     it('computes fairness ordering without reading the IndexedDB global', () => {
         const dueAt = Temporal.Instant.from('2026-01-01T12:00:00Z');
         const stored = ['z-type', 'a-type'].map((typeId) => ({
@@ -349,7 +375,8 @@ describe('IndexedDbQueueBox computed writes', () => {
                 maxToReserve: 1,
                 maxToScan: 2,
                 now: dueAt,
-                requestedTypes: ['z-type', 'a-type']
+                requestedTypes: ['z-type', 'a-type'],
+                excludedContextIds: undefined
             });
 
             expect([...computed.result.values()][0]?.entry.typeId).toBe('a-type');
@@ -375,7 +402,8 @@ describe('IndexedDbQueueBox computed writes', () => {
                 maxToReserve: 1,
                 maxToScan: 1,
                 now,
-                requestedTypes: ['computed-write']
+                requestedTypes: ['computed-write'],
+                excludedContextIds: undefined
             });
             expect([...computed.result.values()][0]?.selectedDueTs.equals(dueAt)).toBe(true);
         });
