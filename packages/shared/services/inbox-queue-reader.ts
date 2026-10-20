@@ -89,9 +89,13 @@ export class InboxQueueReader {
         | DequeueLaneFlight<Key, ResourceInboxAttempt, ResourceInboxHandlerOutcome | undefined>
         | undefined;
     private flightEntryListener: InboxQueueReader.FlightEntryListener | undefined;
-    /** Set by a top-up that claimed nothing while rows were in flight and none settled; the next settlement clears it. */
+    /**
+     * Set by a top-up that claimed nothing while rows were in flight and neither a row settled nor another writer's row
+     * was announced meanwhile; the next settlement or announcement clears it.
+     */
     private flightAwaitsSettlement = false;
     private flightSettlementCount = 0;
+    private externalWriteCount = 0;
     /** The dequeue clock that stamps each claim's selection. */
     public readonly nowEpochMs: () => number;
     private readonly pressureRefreshLimiter: RateLimiter;
@@ -180,6 +184,7 @@ export class InboxQueueReader {
      * worth its probe again; a full flight still waits for a settlement.
      */
     resetFlightSettlementWait(): void {
+        this.externalWriteCount += 1;
         this.flightAwaitsSettlement = false;
     }
 
@@ -211,6 +216,7 @@ export class InboxQueueReader {
         }
         const standingFlight = isAppInbox ? this.flight : undefined;
         const settlementCountAtStart = this.flightSettlementCount;
+        const externalWriteCountAtStart = this.externalWriteCount;
         const claimedCount = await this.reader.dequeue({
             typesToDequeue,
             resilience,
@@ -224,7 +230,8 @@ export class InboxQueueReader {
         });
         if (standingFlight !== undefined) {
             this.flightAwaitsSettlement = claimedCount === 0 && standingFlight.getUnreleasedCount() > 0 &&
-                this.flightSettlementCount === settlementCountAtStart;
+                this.flightSettlementCount === settlementCountAtStart &&
+                this.externalWriteCount === externalWriteCountAtStart;
         }
         return claimedCount;
     }

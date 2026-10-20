@@ -4,6 +4,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { registerApplicationQueueReaderTasks } from '@shared-server/rallar-system/middleware/rallar-middleware-queue-registration.ts';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import type {
+    ResourceInboxReservationObservationRequest,
+    ResourceInboxReservationObservationResult,
+    ResourceInboxReservationRequest
+} from '@shared/queuebox/queue-box-types.ts';
+import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
@@ -28,6 +34,9 @@ interface QueueFlightHarness {
 
 class ProbeCountingQueueBox extends InMemoryQueueBox {
     probes = 0;
+    claims = 0;
+    /** Runs after a claim statement has selected its rows, before its pass sees them; told the claim's ordinal. */
+    afterClaim: ((ordinal: number, claimed: number) => Promise<void>) | undefined;
 
     constructor() {
         super(new Map(), () => Temporal.Instant.fromEpochMilliseconds(Date.now()));
@@ -38,6 +47,17 @@ class ProbeCountingQueueBox extends InMemoryQueueBox {
     ): ReturnType<InMemoryQueueBox['readWorkAdvertisement']> {
         this.probes += 1;
         return await super.readWorkAdvertisement(...input);
+    }
+
+    override reserveEntries(request: ResourceInboxReservationObservationRequest): Promise<ResourceInboxReservationObservationResult>;
+    override reserveEntries(request: ResourceInboxReservationRequest): Promise<Map<Key, ResourceEntry>>;
+    override async reserveEntries(
+        request: ResourceInboxReservationRequest | ResourceInboxReservationObservationRequest
+    ): Promise<Map<Key, ResourceEntry> | ResourceInboxReservationObservationResult> {
+        const claimed = 'reservationObservation' in request ? await super.reserveEntries(request) : await super.reserveEntries(request);
+        this.claims += 1;
+        await this.afterClaim?.(this.claims, claimed instanceof Map ? claimed.size : claimed.entries.size);
+        return claimed;
     }
 }
 
@@ -88,6 +108,35 @@ describe('registered AppInbox queue task with a standing flight', () => {
         harness.engine.wakeAfterExternalWrite(new Set(['APP_INBOX']));
         await vi.advanceTimersByTimeAsync(0);
 
+        expect(harness.started.map(({ rowId }) => rowId)).toEqual(['keyed-1', 'row-c']);
+        for (const rowId of ['keyed-1', 'keyed-2', 'row-c', 'row-a2']) {
+            await vi.waitFor(() => expect(harness.started.map((started) => started.rowId)).toContain(rowId));
+            harness.finish(rowId);
+            await vi.advanceTimersByTimeAsync(0);
+        }
+        await stopEngine(harness.engine);
+    });
+
+    it('probes again after a pass that claimed nothing while another writer announced a row during its claim', async () => {
+        vi.useFakeTimers({ now: 10_000 });
+        const harness = createQueueFlightHarness({ newLaneConcurrency: 2, newLaneHeldRows: 4, keyedPrefix: 'keyed-' });
+        await enqueueRow(harness.reader, 'context-a', 'keyed-1');
+        await enqueueRow(harness.reader, 'context-b', 'keyed-2');
+        await enqueueRow(harness.reader, 'context-a', 'row-a2');
+        const announced: number[] = [];
+        harness.queue.afterClaim = async (ordinal, claimed) => {
+            // The second pass's claim finds only context-a's next row, which its head in flight excludes.
+            if (ordinal === 3 && claimed === 0) {
+                await enqueueRow(harness.reader, 'context-c', 'row-c');
+                harness.engine.wakeAfterExternalWrite(new Set(['APP_INBOX']));
+                announced.push(ordinal);
+            }
+        };
+
+        harness.engine.start();
+        await vi.advanceTimersByTimeAsync(1_000);
+
+        expect(announced).toEqual([3]);
         expect(harness.started.map(({ rowId }) => rowId)).toEqual(['keyed-1', 'row-c']);
         for (const rowId of ['keyed-1', 'keyed-2', 'row-c', 'row-a2']) {
             await vi.waitFor(() => expect(harness.started.map((started) => started.rowId)).toContain(rowId));
