@@ -144,7 +144,7 @@ describe('AppInboxDequeuePassTiming', () => {
         ]);
     });
 
-    // The pass once subtracted the sum of concurrent handler spans, so concurrent heads reported a negative cost.
+    // Concurrent handlers overlap, so the pass cost subtracts the union of their spans, never their sum.
     it('attributes concurrent handlers by the union of their spans, so the pass cost outside them is never negative', () => {
         const executor = createSimulatedExecutor();
         const first = createAttempt('first', Reservator.NEW);

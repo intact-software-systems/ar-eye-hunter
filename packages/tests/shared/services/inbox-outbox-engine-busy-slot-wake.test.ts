@@ -73,6 +73,54 @@ describe('InboxOutboxEngine wake while a task slot is busy', () => {
         task.finishRunnable();
     });
 
+    it('brings the next pass forward when a runnable that predates a wake ends, and not when a sibling submitted after it ends', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(10_000);
+        const engine = createEngine();
+        const holder = includeBusySlotTask(engine, 'holder');
+        const sibling = includeBusySlotTask(engine, 'sibling');
+        holder.waitingRows = 1;
+        engine.start();
+        await vi.advanceTimersByTimeAsync(10);
+
+        sibling.waitingRows = 1;
+        engine.wake();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(sibling.ranAtMs).toEqual([10_010]);
+
+        await vi.advanceTimersByTimeAsync(10);
+        sibling.finishRunnable();
+        await vi.advanceTimersByTimeAsync(10);
+        expect(holder.probedAtMs).toEqual([10_000]);
+        expect(sibling.probedAtMs).toEqual([10_000, 10_000, 10_010]);
+
+        holder.finishRunnable();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(holder.probedAtMs).toEqual([10_000, 10_030]);
+        expect(sibling.probedAtMs).toEqual([10_000, 10_000, 10_010, 10_030]);
+    });
+
+    it('schedules nothing when a runnable that predates a wake ends after stop', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(10_000);
+        const engine = createEngine();
+        const task = includeBusySlotTask(engine);
+        task.waitingRows = 1;
+        engine.start();
+        await vi.advanceTimersByTimeAsync(10);
+        task.waitingRows = 1;
+        engine.wake();
+        await vi.advanceTimersByTimeAsync(0);
+
+        const stopping = engine.stop();
+        task.finishRunnable();
+        await stopping;
+
+        expect(vi.getTimerCount()).toBe(0);
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(task.probedAtMs).toEqual([10_000]);
+    });
+
     it('keeps the scheduled delay when no wake arrived while the runnable was in flight', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(10_000);
@@ -100,7 +148,7 @@ function createEngine(
     return engine;
 }
 
-function includeBusySlotTask(engine: InboxOutboxEngine): BusySlotTask {
+function includeBusySlotTask(engine: InboxOutboxEngine, taskId = 'inbox'): BusySlotTask {
     let settle: PromiseWithResolvers<void> | undefined;
     const task: BusySlotTask = {
         probedAtMs: [],
@@ -109,8 +157,8 @@ function includeBusySlotTask(engine: InboxOutboxEngine): BusySlotTask {
         finishRunnable: () => settle?.resolve(),
         failRunnable: (error) => settle?.reject(error)
     };
-    engine.includeTask('inbox', {
-        name: 'inbox',
+    engine.includeTask(taskId, {
+        name: taskId,
         maxConcurrency: () => 1,
         isWork: () => {
             task.probedAtMs.push(Date.now());
