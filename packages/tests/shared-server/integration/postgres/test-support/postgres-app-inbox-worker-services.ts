@@ -14,6 +14,7 @@ import { AppClientInboxService } from '@shared-server/rallar-system/client-state
 import type { GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
+import { toGroupCommandExclusionKey } from '@shared-server/rallar-system/group-state/inbox/to-group-command-exclusion-key.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
@@ -41,6 +42,8 @@ export interface CreatePostgresAppInboxWorkerServicesInput {
     readonly transactionSql: PSqlSql;
     readonly serviceId: string;
     readonly atEpochMs: number;
+    /** How many distinct-context heads one NEW round claims and computes together, keyed as the API server keys them. */
+    readonly newLaneConcurrency: number;
     readonly beforeTopologyConfigRead?: (primitive: TopologyReadBarrierPrimitive) => Promise<void>;
     readonly trace: PostgresAppInboxWorkerTrace;
 }
@@ -62,7 +65,7 @@ export function createPostgresAppInboxWorkerServices(
     const topologyRuntimeRepository = createTopologyRuntimeRepository(input, runtimeRepository);
     const authSessions = new AuthSessionRepository(runtimeRepository);
     const resourceInbox = createPSqlResourceInboxRepository(input.sql, () => new Date(input.atEpochMs));
-    const inbox = createPostgresAppInboxWorkerInbox(resourceInbox, input.trace);
+    const inbox = createPostgresAppInboxWorkerInbox(resourceInbox, input);
     const resourceInboxResults = new ResourceInboxResultsRepository(input.sql);
     const inboxOptions: AppInboxOptions = {
         nowEpochMs: Date.now,
@@ -185,13 +188,14 @@ function createTopologyRuntimeRepository(
 
 function createPostgresAppInboxWorkerInbox(
     resourceInbox: PSqlResourceInboxRepository,
-    trace: PostgresAppInboxWorkerTrace
+    input: Pick<CreatePostgresAppInboxWorkerServicesInput, 'newLaneConcurrency' | 'trace'>
 ): InboxQueueReader {
     return new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
         laneBudgetPolicy: 'adaptive-retry',
-        newLaneConcurrency: 1,
+        newLaneConcurrency: input.newLaneConcurrency,
+        toComputeExclusionKey: (_key, attempt) => toGroupCommandExclusionKey(attempt.entry),
         onAttemptReleaseTelemetry: (event) =>
-            trace.attempts.push({
+            input.trace.attempts.push({
                 resourceId: event.key.resourceId,
                 attempt: event.attempt,
                 classification: event.classification,

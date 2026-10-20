@@ -31,6 +31,8 @@ export interface PostgresAppInboxWorkerRuntime {
     readonly resourceInbox: PSqlResourceInboxRepository;
     readonly resourceInboxResults: ResourceInboxResultsRepository;
     armBarrier(): void;
+    /** Runs AppInbox passes until the given work settles, for work enqueued before the first pass. */
+    dequeueUntilSettled<R>(pending: Promise<R>): Promise<R>;
     runUntilCompletion<R>(start: () => Promise<R>): Promise<R>;
     runUntilAllCompletion<R>(starts: readonly (() => Promise<R>)[]): Promise<readonly R[]>;
 }
@@ -44,6 +46,8 @@ export function createPostgresAppInboxWorkerRuntime(
         sql: PSqlSql;
         serviceId: string;
         atEpochMs: number;
+        /** Absent: one head per NEW round, so the in-process exclusion keys never meet. */
+        newLaneConcurrency?: number;
         barrier?: WorkerBarrier;
         beforeTopologyConfigRead?: (primitive: TopologyReadBarrierPrimitive) => Promise<void>;
         beforeMutationTransaction?: () => Promise<void>;
@@ -62,14 +66,13 @@ export function createPostgresAppInboxWorkerRuntime(
     });
     const services = createPostgresAppInboxWorkerServices({
         ...input,
+        newLaneConcurrency: input.newLaneConcurrency ?? 1,
         transactionSql: transactionGate.sql
     });
 
-    const runUntilAllCompletion = async <R>(
-        starts: readonly (() => Promise<R>)[]
-    ): Promise<readonly R[]> => {
+    const dequeueUntilSettled = async <R>(pending: Promise<R>): Promise<R> => {
         let settled = false;
-        const pending = Promise.all(starts.map((start) => start())).finally(() => (settled = true));
+        const observed = pending.finally(() => (settled = true));
         while (!settled) {
             await services.inbox.dequeueInbox(
                 InboxQueueReader.INBOX_DEQUEUE_TYPES,
@@ -77,8 +80,11 @@ export function createPostgresAppInboxWorkerRuntime(
             );
             await yieldEventLoop();
         }
-        return await pending;
+        return await observed;
     };
+    const runUntilAllCompletion = async <R>(
+        starts: readonly (() => Promise<R>)[]
+    ): Promise<readonly R[]> => await dequeueUntilSettled(Promise.all(starts.map((start) => start())));
 
     return {
         client: services.client,
@@ -88,6 +94,7 @@ export function createPostgresAppInboxWorkerRuntime(
         resourceInbox: services.resourceInbox,
         resourceInboxResults: services.resourceInboxResults,
         armBarrier: transactionGate.arm,
+        dequeueUntilSettled,
         runUntilCompletion: async <R>(start: () => Promise<R>) => {
             const [result] = await runUntilAllCompletion([start]);
             if (result === undefined) {
