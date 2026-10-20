@@ -120,6 +120,36 @@ describe('InboxOutboxEngine work a runnable leaves settling', () => {
         expect(failures).toEqual(['inbox: release lost its reservation']);
     });
 
+    it('reports a failure a task kept for a pass that no longer runs once stop has joined its work, and stop rejects with it', async () => {
+        vi.useFakeTimers({ now: 10_000 });
+        const failures: string[] = [];
+        const engine = createEngine((taskId, error) => {
+            failures.push(`${taskId}: ${error.message}`);
+            return undefined;
+        });
+        const task = includeFlightTask(engine);
+        let kept: Error | undefined;
+        engine.includeStopFailureSource('inbox', () => {
+            const failure = kept;
+            kept = undefined;
+            return failure;
+        });
+        task.waitingRows = 1;
+        engine.start();
+        await vi.advanceTimersByTimeAsync(0);
+
+        const stopping = engine.stop();
+        const rejection = expect(stopping).rejects.toMatchObject({ errors: [{ message: 'release lost its reservation' }] });
+        // The row settles during shutdown and keeps its failure for a pass that will not run.
+        kept = new Error('release lost its reservation');
+        task.rows[0]!.resolve();
+        await rejection;
+
+        await expect(stopping).rejects.toBeInstanceOf(AggregateError);
+        expect(failures).toEqual(['inbox: release lost its reservation']);
+        await expect(engine.stop()).resolves.toBeUndefined();
+    });
+
     it('wakes an engine that idles behind its backoff as soon as a row it left settling settles', async () => {
         vi.useFakeTimers({ now: 10_000 });
         const engine = createEngine();

@@ -768,6 +768,25 @@ describe('IndexedDbQueueBox', () => {
         expect((await queue.getItem(older.key))?.dequeueAudit.nextTs).toBeUndefined();
     });
 
+    it('claims no IndexedDB fairness row of an excluded context, and the next overdue row instead', async () => {
+        const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
+        const typeId = 'chat.private-text.v1';
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
+        const now = Temporal.Now.instant();
+        const excluded = createEntry(typeId, 'held-context', { status: EntityStatus.RETRY, attempts: 1, nextTs: now.subtract({ seconds: 60 }) });
+        const other = createEntry(typeId, 'other-context', { status: EntityStatus.RETRY, attempts: 1, nextTs: now.subtract({ seconds: 31 }) });
+        await queue.enqueue({ ...excluded, key: { ...excluded.key, contextId: 'ctx-held' } });
+        await queue.enqueue(other);
+
+        const selected = await queue.reserveOverdueRetryEntries(
+            new Set([typeId]),
+            Number(now.epochMilliseconds) - 30_000,
+            { maxToReserve: 2, maxAttempts: 20, maxToScan: 4, excludedContextIds: new Set(['ctx-held']) }
+        );
+
+        expect([...selected.values()].map(({ entry }) => entry.key.resourceId)).toEqual(['other-context']);
+    });
+
     it('breaks equal IndexedDB fairness due timestamps by canonical key', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'chat.private-text.v1';

@@ -36,8 +36,11 @@ export namespace DequeueLaneFlight {
         readonly maxConcurrentComputes: number;
         /** At most this many added entries are unreleased at once, whether computing, waiting to compute or releasing. */
         readonly maxUnreleased: number;
-        /** Whether a keyed entry takes a freed compute slot ahead of every waiting keyless entry. */
-        readonly keyedRunsFirst: boolean;
+        /**
+         * Whether a keyed entry that its predecessor's settlement released takes a freed compute slot ahead of every other
+         * waiting entry; an entry whose key waits on nothing asks for its slot in turn.
+         */
+        readonly releasedKeyedRunsFirst: boolean;
         /** An entry computes after every earlier unsettled entry whose exclusion key overlaps its own. */
         readonly toExclusionKey: ((key: K, value: V) => string | undefined) | undefined;
         /**
@@ -46,8 +49,9 @@ export namespace DequeueLaneFlight {
          */
         readonly releaseFailureClock: (() => number) | undefined;
         /**
-         * Told of each added entry with a promise that settles once the entry is released, rejecting with its release
-         * error. Absent, nothing outside the flight waits for its entries.
+         * Told of each added entry with a promise that resolves once the entry is released or its release failed; the
+         * failure is the flight's kept error, which its owner takes. Absent, nothing outside the flight waits for its
+         * entries.
          */
         readonly retainSettlement: ((settlement: Promise<void>) => void) | undefined;
     }
@@ -78,7 +82,7 @@ export class DequeueLaneFlight<K, V, T> {
         this.input = input;
         this.admission = new ExclusionKeyedAdmission({
             maxConcurrent: input.maxConcurrentComputes,
-            keyedRunsFirst: input.keyedRunsFirst
+            releasedKeyedRunsFirst: input.releasedKeyedRunsFirst
         });
     }
 
@@ -177,9 +181,7 @@ export class DequeueLaneFlight<K, V, T> {
             })
             .finally(() => this.unreleased.delete(settlement));
         this.unreleased.set(settlement, key);
-        this.input.retainSettlement?.(settlement.then(async () => {
-            await released;
-        }));
+        this.input.retainSettlement?.(settlement.then(() => undefined));
         return settlement;
     }
 }

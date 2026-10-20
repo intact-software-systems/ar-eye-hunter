@@ -583,6 +583,28 @@ describe('InMemoryQueueBox', () => {
         expect(selected.entry.dequeueAudit.nextTs).toBeUndefined();
         expect((await queue.getItem(overdue.key))?.dequeueAudit.nextTs).toBeUndefined();
     });
+
+    it('claims no overdue retry of an excluded context', async () => {
+        const queue = new InMemoryQueueBox();
+        const overdue = createEntry('chat.private-text.v1', 'held-context', {
+            status: EntityStatus.RETRY,
+            attempts: 1,
+            startTs: Temporal.Now.instant().subtract({ minutes: 1 }),
+            endTs: Temporal.Now.instant().subtract({ seconds: 40 }),
+            nextTs: Temporal.Now.instant().subtract({ seconds: 31 })
+        });
+        await queue.enqueue(overdue);
+        const options = { maxToReserve: 1, maxAttempts: 20, maxToScan: 1 };
+
+        expect(
+            (await queue.reserveOverdueRetryEntries(
+                new Set([overdue.typeId]),
+                Date.now() - 30_000,
+                { ...options, excludedContextIds: new Set([overdue.key.contextId]) }
+            )).size
+        ).toBe(0);
+        expect((await queue.reserveOverdueRetryEntries(new Set([overdue.typeId]), Date.now() - 30_000, options)).size).toBe(1);
+    });
 });
 
 function createEntry(

@@ -44,6 +44,10 @@ export interface CreatePostgresAppInboxWorkerServicesInput {
     readonly atEpochMs: number;
     /** How many distinct-context heads one NEW round claims and computes together, keyed as the API server keys them. */
     readonly newLaneConcurrency: number;
+    /** The rows a standing NEW-lane flight holds across passes, as the API server holds them; undefined drains each pass. */
+    readonly newLaneHeldRows: number | undefined;
+    /** Told of every row a standing flight takes; undefined only without one. */
+    readonly flightEntryListener: InboxQueueReader.FlightEntryListener | undefined;
     readonly beforeTopologyConfigRead?: (primitive: TopologyReadBarrierPrimitive) => Promise<void>;
     readonly trace: PostgresAppInboxWorkerTrace;
 }
@@ -188,11 +192,13 @@ function createTopologyRuntimeRepository(
 
 function createPostgresAppInboxWorkerInbox(
     resourceInbox: PSqlResourceInboxRepository,
-    input: Pick<CreatePostgresAppInboxWorkerServicesInput, 'newLaneConcurrency' | 'trace'>
+    input: Pick<CreatePostgresAppInboxWorkerServicesInput, 'newLaneConcurrency' | 'newLaneHeldRows' | 'flightEntryListener' | 'trace'>
 ): InboxQueueReader {
     return new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
         laneBudgetPolicy: 'adaptive-retry',
         newLaneConcurrency: input.newLaneConcurrency,
+        newLaneHeldRows: input.newLaneHeldRows,
+        flightEntryListener: input.flightEntryListener,
         toComputeExclusionKey: (_key, attempt) => toGroupCommandExclusionKey(attempt.entry),
         onAttemptReleaseTelemetry: (event) =>
             input.trace.attempts.push({

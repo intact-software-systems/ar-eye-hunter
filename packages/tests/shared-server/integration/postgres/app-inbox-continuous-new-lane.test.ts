@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it, onTestFinished } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -89,6 +89,62 @@ describe('the AppInbox NEW lane on PostgreSQL', () => {
     }, 120_000);
 });
 
+describe('the AppInbox standing flight\'s recovery lanes on PostgreSQL', () => {
+    postgresIt('claims no overdue retry of a context it holds a row of in flight, and claims another context\'s instead', async () => {
+        const storage = await createResourceInboxTestStorage('app_inbox_flight_fairness', 2);
+        onTestFinished(() => storage.close());
+        const queue = new PSqlQueueBox(createPSqlResourceInboxRepository(storage.sql, () => new Date()), Temporal.Now.instant);
+        const gates = new Map<string, () => void>();
+        const settlements: Promise<void>[] = [];
+        const reader = new InboxQueueReader(queue, {
+            laneBudgetPolicy: 'fixed-retry-two',
+            newLaneConcurrency: K,
+            newLaneHeldRows: H,
+            flightEntryListener: (settlement) => settlements.push(settlement)
+        });
+        reader.onInboxMessageDo(TYPE, {
+            onMessage: async (_message, entry) => {
+                await new Promise<void>((resolve) => gates.set(entry.key.resourceId, resolve));
+            }
+        });
+        const resilience = createResilience();
+        await enqueue(reader, 'context-a', 'held');
+        expect(await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, resilience)).toBe(1);
+
+        await enqueue(reader, 'context-a', 'overdue-a');
+        await enqueue(reader, 'context-b', 'overdue-b');
+        await writeOverdueRetry(storage.sql, 'overdue-a', 120);
+        await writeOverdueRetry(storage.sql, 'overdue-b', 60);
+        expect(await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, resilience)).toBe(1);
+
+        // FAIRNESS claims the most overdue row it may: context-a's would be a second RESERVED row beside `held`.
+        expect(await readReservedResourceIds(storage.sql)).toEqual(['held', 'overdue-b']);
+        await vi.waitFor(() => expect([...gates.keys()].sort()).toEqual(['held', 'overdue-b']));
+        for (const release of gates.values()) {
+            release();
+        }
+        await Promise.all(settlements);
+    }, 30_000);
+});
+
+/** Turns a NEW row into a RETRY row whose next attempt fell due the given seconds ago. */
+async function writeOverdueRetry(sql: PSqlSql, resourceId: string, overdueSeconds: number): Promise<void> {
+    await sql`
+        update resource_inbox
+        set ri_status = ${EntityStatus.RETRY},
+            ri_attempts = 1,
+            start_ts = (now() at time zone 'UTC') - ((${overdueSeconds} + 2) * interval '1 second'),
+            end_ts = (now() at time zone 'UTC') - ((${overdueSeconds} + 1) * interval '1 second'),
+            next_ts = (now() at time zone 'UTC') - (${overdueSeconds} * interval '1 second')
+        where ri_resource_id = ${resourceId}`;
+}
+
+async function readReservedResourceIds(sql: PSqlSql): Promise<string[]> {
+    const rows = await sql<{ ri_resource_id: string; }[]>`
+        select ri_resource_id from resource_inbox where ri_status = ${EntityStatus.RESERVED} order by ri_resource_id`;
+    return rows.map((row) => row.ri_resource_id);
+}
+
 async function runSeededLane(input: Readonly<{ readerCount: number; newLaneHeldRows: number | undefined; }>): Promise<LaneRun> {
     const storage = await createResourceInboxTestStorage('app_inbox_continuous_lane', 6);
     onTestFinished(() => storage.close());
@@ -119,12 +175,6 @@ async function runSeededLane(input: Readonly<{ readerCount: number; newLaneHeldR
 function createLaneReader(
     input: Readonly<{ queue: PSqlQueueBox; readerId: string; newLaneHeldRows: number | undefined; spans: HandlerSpan[]; }>
 ): LaneReader {
-    const reader = new InboxQueueReader(input.queue, {
-        laneBudgetPolicy: 'fixed-retry-two',
-        newLaneConcurrency: K,
-        newLaneHeldRows: input.newLaneHeldRows,
-        toComputeExclusionKey: (key) => key.resourceId.startsWith('keyed-') ? GROUP_KEY : undefined
-    });
     const settlements: Promise<void>[] = [];
     let nextSettlement = Promise.withResolvers<void>();
     const announceSettlement = () => {
@@ -132,9 +182,15 @@ function createLaneReader(
         nextSettlement = Promise.withResolvers<void>();
         settled.resolve();
     };
-    reader.onFlightEntryDo((settlement) => {
-        settlements.push(settlement);
-        void settlement.then(announceSettlement, announceSettlement);
+    const reader = new InboxQueueReader(input.queue, {
+        laneBudgetPolicy: 'fixed-retry-two',
+        newLaneConcurrency: K,
+        newLaneHeldRows: input.newLaneHeldRows,
+        flightEntryListener: (settlement) => {
+            settlements.push(settlement);
+            void settlement.then(announceSettlement);
+        },
+        toComputeExclusionKey: (key) => key.resourceId.startsWith('keyed-') ? GROUP_KEY : undefined
     });
     reader.onInboxMessageDo(TYPE, {
         onMessage: async (_message, entry) => {

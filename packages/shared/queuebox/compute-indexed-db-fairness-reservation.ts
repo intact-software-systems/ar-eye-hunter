@@ -19,6 +19,7 @@ type ComputeIndexedDbFairnessReservationInput = Readonly<{
     maxToScan: number;
     now: Temporal.Instant;
     requestedTypes: readonly string[];
+    excludedContextIds: ReadonlySet<string> | undefined;
 }>;
 
 type ComputedIndexedDbFairnessReservation = Readonly<{
@@ -46,7 +47,8 @@ export function computeIndexedDbFairnessReservation(
         const stored = selectedState.entries[selectedState.offset];
         if (
             !isStoredQueueEntryExpired(stored, input.now) &&
-            stored.dequeueAudit.attempts < input.maxAttempts
+            stored.dequeueAudit.attempts < input.maxAttempts &&
+            input.excludedContextIds?.has(stored.key.contextId) !== true
         ) {
             const decoded = decodeStoredResourceEntry(stored);
             const selectedDueTs = decoded.dequeueAudit.nextTs!;

@@ -8,7 +8,7 @@ type ScriptedLane = typeof Reservator.NEW | typeof Reservator.RETRY | typeof Res
 interface StandingLaneInput {
     readonly maxConcurrentComputes: number;
     readonly maxUnreleased: number;
-    readonly keyedRunsFirst?: boolean;
+    readonly releasedKeyedRunsFirst?: boolean;
     /** The rows each reservation of a lane returns, or the error it rejects with, in call order; past the script, none. */
     readonly reservations: Readonly<Partial<Record<ScriptedLane, readonly (readonly string[] | Error)[]>>>;
     readonly exclusionKeys?: Readonly<Record<string, string>>;
@@ -92,23 +92,24 @@ describe('DequeueController standing flight', () => {
         expect(lane.asked).toEqual(['NEW:2', 'NEW:2', 'NEW:1']);
     });
 
-    it('gives a freed compute slot to a waiting keyed row ahead of an earlier keyless row', async () => {
+    it('gives a freed compute slot to a keyed row its chain head released ahead of earlier rows, and a fresh keyed row waits in turn', async () => {
         const lane = createStandingLane({
             maxConcurrentComputes: 1,
-            maxUnreleased: 3,
-            keyedRunsFirst: true,
-            reservations: { NEW: [['keyed-1', 'free', 'keyed-2']] },
-            exclusionKeys: { 'keyed-1': 'app:group-1', 'keyed-2': 'app:group-2' }
+            maxUnreleased: 4,
+            releasedKeyedRunsFirst: true,
+            reservations: { NEW: [['keyed-1', 'free', 'other', 'keyed-2']] },
+            exclusionKeys: { 'keyed-1': 'app:group-1', 'keyed-2': 'app:group-1', other: 'app:group-2' }
         });
 
         await lane.pass();
-        for (const key of ['keyed-1', 'keyed-2', 'free']) {
+        for (const key of ['keyed-1', 'keyed-2', 'free', 'other']) {
             await vi.waitFor(() => expect(lane.events.filter((event) => event.startsWith('start:')).at(-1)).toBe(`start:${key}`));
             lane.finish(key);
         }
         await Promise.all(lane.retained);
 
-        expect(lane.events.filter((event) => event.startsWith('start:'))).toEqual(['start:keyed-1', 'start:keyed-2', 'start:free']);
+        expect(lane.events.filter((event) => event.startsWith('start:')))
+            .toEqual(['start:keyed-1', 'start:keyed-2', 'start:free', 'start:other']);
     });
 
     it('tops up the recovery lanes before NEW, and a retried keyed row computes after the chain row already in flight', async () => {
@@ -170,7 +171,9 @@ describe('DequeueController standing flight', () => {
         expect(await lane.pass()).toBe(2);
         await vi.waitFor(() => expect(lane.events).toEqual(['start:a', 'start:b']));
         lane.finish('a');
-        await expect(lane.retained[0]).rejects.toBe(failure);
+        // The retained settlement resolves; only the next pass rethrows the release error, so it is reported once.
+        await expect(lane.retained[0]).resolves.toBeUndefined();
+        expect(lane.flight.isStopped()).toBe(true);
         lane.finish('b');
         await expect(lane.retained[1]).resolves.toBeUndefined();
         expect(lane.events).toContain('release:b');
@@ -197,8 +200,9 @@ describe('DequeueController standing flight', () => {
         await lane.pass();
         await vi.waitFor(() => expect(lane.events).toEqual(['start:a']));
         lane.finish('a');
-        await expect(lane.retained[0]).rejects.toBe(failure);
+        await expect(lane.retained[0]).resolves.toBeUndefined();
 
+        expect(lane.flight.takeFirstError()).toBe(failure);
         expect(lane.flight.getUnreleasedKeys()).toEqual([]);
         expect(lane.flight.getReleaseFailedKeys()).toEqual(['a']);
         nowMs = 2_000;
@@ -277,13 +281,10 @@ function createStandingLane(input: StandingLaneInput, admitsReservation: () => b
     const flight = new DequeueLaneFlight<string, string, string>({
         maxConcurrentComputes: input.maxConcurrentComputes,
         maxUnreleased: input.maxUnreleased,
-        keyedRunsFirst: input.keyedRunsFirst ?? true,
+        releasedKeyedRunsFirst: input.releasedKeyedRunsFirst ?? true,
         toExclusionKey: (key) => input.exclusionKeys?.[key],
         releaseFailureClock: input.releaseFailureClock,
-        retainSettlement: (settlement) => {
-            void settlement.catch(() => undefined);
-            retained.push(settlement);
-        }
+        retainSettlement: (settlement) => retained.push(settlement)
     });
     const budget = { maxToReserve: 2, maxNumToDequeue: 16, maxConcurrentComputes: input.maxConcurrentComputes };
     const reserve = (lane: ScriptedLane, numToReserve: number) => {

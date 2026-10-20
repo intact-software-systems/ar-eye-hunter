@@ -244,6 +244,7 @@ async function withConvergenceCluster(serverCount: number, run: (cluster: Conver
             const runtime = createPostgresAppInboxWorkerRuntime({
                 sql,
                 serviceId: `convergence-server-${index}`,
+                newLaneHeldRows: undefined,
                 atEpochMs: fixture.atEpochMs + 1_000,
                 beforeMutationTransaction: hold.arrive,
                 trace: createPostgresAppInboxWorkerTrace()

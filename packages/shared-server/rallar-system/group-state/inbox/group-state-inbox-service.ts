@@ -27,8 +27,8 @@ import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts'
 import type { GroupStateService } from '../group-state-service-contracts.ts';
 import type { GroupMutationCommand } from '../mutation/group-mutation-contracts.ts';
 import {
-    processGroupSessionCleanup,
-    toGroupSessionCleanupEnqueue
+    toGroupSessionCleanupEnqueue,
+    writeGroupSessionCleanup
 } from '../presence/group-presence-service.ts';
 import type {
     GroupPresenceSessionCleanupAppInboxPayload
@@ -235,7 +235,7 @@ export class GroupStateInboxService {
     private registerMessageHandlers(): void {
         const encodeGroupStateResult = (result: GroupStateInboxDurableResult) =>
             encodeAppInboxResult(result, 'Group state AppInbox result');
-        const processGroupStateMutation = async (
+        const writeGroupStateMutation = async (
             _command: JsonWireValue,
             context: AppInboxMessageContext<GroupStateInboxDurableResult>
         ) => {
@@ -254,7 +254,7 @@ export class GroupStateInboxService {
                 type,
                 decodeCommand: (value) => decodeGroupStateAppInboxCommand(type, value),
                 encodeResult: encodeGroupStateResult,
-                handle: processGroupStateMutation
+                handle: writeGroupStateMutation
             });
         }
         this.handlers.registerHandler({
@@ -262,7 +262,7 @@ export class GroupStateInboxService {
             decodeCommand: decodeGroupPresenceSessionCleanupAppInboxPayload,
             encodeResult: (result) => encodeAppInboxResult(result, 'Group cleanup AppInbox result'),
             handle: async (payload, context) =>
-                await processGroupSessionCleanup({
+                await writeGroupSessionCleanup({
                     facts: payload,
                     attemptCount: context.entry.dequeueAudit.attempts,
                     context,

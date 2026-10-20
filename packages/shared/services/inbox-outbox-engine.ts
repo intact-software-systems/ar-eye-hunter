@@ -79,6 +79,7 @@ export class InboxOutboxEngine {
     private readonly tasks = new Map<string, ComputeAsyncTask.LoopsTaskDto>();
     private readonly readyAtByTask = new Map<string, number>();
     private readonly wakeListeners = new Map<string, InboxOutboxEngineWakeListener>();
+    private readonly stopFailureSources = new Map<string, () => Error | undefined>();
 
     private readonly dependencies: InboxOutboxEngine.Dependencies;
 
@@ -116,6 +117,15 @@ export class InboxOutboxEngine {
      */
     includeWakeListener(id: string, typeIds: ReadonlySet<string>, listener: () => void): InboxOutboxEngine {
         this.wakeListeners.set(id, { typeIds, listener });
+        return this;
+    }
+
+    /**
+     * Registers where a task keeps a failure for its next pass to rethrow, such as a flight row's release error. Once
+     * `stop` has joined the owned work no pass runs, so each failure still kept then is reported once and rejects stop.
+     */
+    includeStopFailureSource(taskId: string, takeFailure: () => Error | undefined): InboxOutboxEngine {
+        this.stopFailureSources.set(taskId, takeFailure);
         return this;
     }
 
@@ -169,10 +179,21 @@ export class InboxOutboxEngine {
         this.timer = NOT_SET;
         this.scheduledAtMs = undefined;
 
-        const failures = await this.joinTasksInFlight();
+        const failures = [...await this.joinTasksInFlight(), ...this.takeStopFailures()];
         if (failures.length > 0) {
             throw new AggregateError(failures, 'Queue engine owned work failed during shutdown');
         }
+    }
+
+    private takeStopFailures(): Error[] {
+        return [...this.stopFailureSources].flatMap(([taskId, takeFailure]) => {
+            const failure = takeFailure();
+            if (failure === undefined) {
+                return [];
+            }
+            this.reportTaskFailure(taskId, failure);
+            return [failure];
+        });
     }
 
     /** Settling work may retain more while it is joined, such as a runnable that claims rows, so the join repeats. */

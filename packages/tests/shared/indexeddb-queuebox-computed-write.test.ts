@@ -349,7 +349,8 @@ describe('IndexedDbQueueBox computed writes', () => {
                 maxToReserve: 1,
                 maxToScan: 2,
                 now: dueAt,
-                requestedTypes: ['z-type', 'a-type']
+                requestedTypes: ['z-type', 'a-type'],
+                excludedContextIds: undefined
             });
 
             expect([...computed.result.values()][0]?.entry.typeId).toBe('a-type');
@@ -375,7 +376,8 @@ describe('IndexedDbQueueBox computed writes', () => {
                 maxToReserve: 1,
                 maxToScan: 1,
                 now,
-                requestedTypes: ['computed-write']
+                requestedTypes: ['computed-write'],
+                excludedContextIds: undefined
             });
             expect([...computed.result.values()][0]?.selectedDueTs.equals(dueAt)).toBe(true);
         });

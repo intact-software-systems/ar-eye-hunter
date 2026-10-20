@@ -48,6 +48,8 @@ export function createPostgresAppInboxWorkerRuntime(
         atEpochMs: number;
         /** Absent: one head per NEW round, so the in-process exclusion keys never meet. */
         newLaneConcurrency?: number;
+        /** The rows a standing NEW-lane flight holds across passes; undefined drains what each pass claims. */
+        newLaneHeldRows: number | undefined;
         barrier?: WorkerBarrier;
         beforeTopologyConfigRead?: (primitive: TopologyReadBarrierPrimitive) => Promise<void>;
         beforeMutationTransaction?: () => Promise<void>;
@@ -64,22 +66,26 @@ export function createPostgresAppInboxWorkerRuntime(
         beforeMutationTransaction,
         trace: input.trace
     });
+    const flightSettlements: Promise<void>[] = [];
     const services = createPostgresAppInboxWorkerServices({
         ...input,
         newLaneConcurrency: input.newLaneConcurrency ?? 1,
+        flightEntryListener: (settlement) => flightSettlements.push(settlement),
         transactionSql: transactionGate.sql
     });
 
+    // A standing flight's pass returns while its rows run, so an empty top-up waits briefly before it claims again.
     const dequeueUntilSettled = async <R>(pending: Promise<R>): Promise<R> => {
         let settled = false;
         const observed = pending.finally(() => (settled = true));
         while (!settled) {
-            await services.inbox.dequeueInbox(
+            const claimed = await services.inbox.dequeueInbox(
                 InboxQueueReader.INBOX_DEQUEUE_TYPES,
                 createWorkerResilience()
             );
-            await yieldEventLoop();
+            await (claimed === 0 && input.newLaneHeldRows !== undefined ? waitMs(2) : yieldEventLoop());
         }
+        await Promise.all(flightSettlements);
         return await observed;
     };
     const runUntilAllCompletion = async <R>(
@@ -118,5 +124,9 @@ function createWorkerResilience(): ResourceInboxResilience {
 }
 
 function yieldEventLoop(): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, 0));
+    return waitMs(0);
+}
+
+function waitMs(delayMs: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, delayMs));
 }

@@ -12,6 +12,7 @@ import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resourc
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
+import { INBOX_OUTBOX_ENGINE_MAX_IDLE_MS } from '@shared/services/inbox-outbox-engine.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 const TYPE = 'app-inbox.standing-flight.v1';
@@ -68,7 +69,8 @@ class ClaimRecordingQueueBox extends InMemoryQueueBox {
         if (request.contextClaim !== undefined) {
             this.excludedByClaim.push({ status: [...request.statusIds].join(','), excluded: [...request.contextClaim.excludedContextIds].sort() });
         }
-        return 'reservationObservation' in request ? await super.reserveEntries(request) : await super.reserveEntries(request);
+        // The cast only picks an overload for the compiler; the base class serves either request kind at run time.
+        return await super.reserveEntries(request as ResourceInboxReservationRequest);
     }
 }
 
@@ -189,7 +191,7 @@ describe('the AppInbox NEW lane with a standing flight', () => {
         await Promise.all(flight.settlements);
     });
 
-    it('keeps excluding a context whose row failed to release until that row\'s lease could have expired', async () => {
+    it('keeps excluding a context whose row failed to release until that row\'s lease could have expired, and only the next pass rethrows the error', async () => {
         vi.useFakeTimers({ now: 10_000 });
         const flight = createStandingFlightReader({ newLaneConcurrency: 2, newLaneHeldRows: 4, fakeClock: true });
         vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -199,7 +201,8 @@ describe('the AppInbox NEW lane with a standing flight', () => {
 
         flight.queue.failReleaseOf = 'row-0';
         flight.handlers.finish('row-0');
-        await expect(flight.settlements[0]).rejects.toThrow('release lost its reservation');
+        // The settlement resolves: the next pass rethrows the release error, so its owner reports it once.
+        await expect(flight.settlements[0]).resolves.toBeUndefined();
         await expect(flight.pass()).rejects.toThrow('release lost its reservation');
 
         // The failed row may still be RESERVED, so its context's next row must not run ahead of it.
@@ -209,10 +212,45 @@ describe('the AppInbox NEW lane with a standing flight', () => {
         expect(flight.handlers.started).toEqual(['row-0']);
     });
 
+    it('stops waiting for a settlement once the engine\'s idle ceiling has passed, so time-gated rows are probed again', async () => {
+        vi.useFakeTimers({ now: 10_000 });
+        const flight = createStandingFlightReader({ newLaneConcurrency: 2, newLaneHeldRows: 4, fakeClock: true });
+        await enqueue(flight.reader, ['shared', 'shared']);
+        expect(await flight.pass()).toBe(1);
+        await vi.waitFor(() => expect(flight.handlers.started).toEqual(['row-0']));
+
+        const waitStartedAtMs = Date.now();
+        expect(await flight.pass()).toBe(0);
+        expect(flight.reader.isAwaitingFlightSettlement()).toBe(true);
+        expect(flight.reader.getFlightSettlementWaitEndMs()).toBe(waitStartedAtMs + INBOX_OUTBOX_ENGINE_MAX_IDLE_MS);
+
+        vi.setSystemTime(waitStartedAtMs + INBOX_OUTBOX_ENGINE_MAX_IDLE_MS - 1);
+        expect(flight.reader.isAwaitingFlightSettlement()).toBe(true);
+        vi.setSystemTime(waitStartedAtMs + INBOX_OUTBOX_ENGINE_MAX_IDLE_MS);
+        expect(flight.reader.isAwaitingFlightSettlement()).toBe(false);
+        expect(flight.reader.getFlightSettlementWaitEndMs()).toBeUndefined();
+
+        flight.handlers.finish('row-0');
+        await Promise.all(flight.settlements);
+    });
+
+    it('requires a flight entry listener for a standing flight, so no settlement goes unjoined', () => {
+        const queue = new InMemoryQueueBox();
+
+        expect(() => new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 4, newLaneHeldRows: 4 }))
+            .toThrow(TypeError);
+        expect(() => new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 4 })).not.toThrow();
+    });
+
     it('rejects a held-row bound below the lane\'s concurrency or above the largest flight', () => {
         const queue = new InMemoryQueueBox();
         const create = (newLaneHeldRows: number) =>
-            new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 4, newLaneHeldRows });
+            new InboxQueueReader(queue, {
+                laneBudgetPolicy: 'fixed-retry-two',
+                newLaneConcurrency: 4,
+                newLaneHeldRows,
+                flightEntryListener: () => undefined
+            });
 
         expect(() => create(3)).toThrow(RangeError);
         expect(() => create(InboxQueueReader.MAX_NEW_LANE_HELD_ROWS + 1)).toThrow(RangeError);
@@ -228,16 +266,13 @@ function createStandingFlightReader(
     const queue = input.fakeClock
         ? new ClaimRecordingQueueBox(new Map(), () => Temporal.Instant.fromEpochMilliseconds(Date.now()))
         : new ClaimRecordingQueueBox();
+    const settlements: Promise<void>[] = [];
     const reader = new InboxQueueReader(queue, {
         laneBudgetPolicy: 'fixed-retry-two',
         newLaneConcurrency: input.newLaneConcurrency,
         newLaneHeldRows: input.newLaneHeldRows,
+        flightEntryListener: (settlement) => settlements.push(settlement),
         nowEpochMs: () => Date.now()
-    });
-    const settlements: Promise<void>[] = [];
-    reader.onFlightEntryDo((settlement) => {
-        void settlement.catch(() => undefined);
-        settlements.push(settlement);
     });
     const defaultResilience = createResilience();
     return {

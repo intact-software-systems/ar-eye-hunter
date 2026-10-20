@@ -216,7 +216,7 @@ async function createJoinReadGroup(sql: PSqlSql, scope: StateScope): Promise<voi
 }
 
 function createJoinReadHarness(sql: PSqlSql, groupRef: GroupRef): JoinReadHarness {
-    const countedSql = createPSqlCounterScope(sql);
+    const countedSql = createPSqlCounterScope(sql, { timesBeginWait: true });
     const probe = new RuntimeStateReadProbe(countedSql);
     const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date());
     const inbox = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {

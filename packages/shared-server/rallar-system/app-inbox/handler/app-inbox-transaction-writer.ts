@@ -210,10 +210,12 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
 
     /**
      * One scope per transaction when the port counts, so its line counts this transaction's statements alone;
-     * the scope opens the transaction through this writer's own handle.
+     * the scope opens the transaction through this writer's own handle, and times its begin only for a timing line.
      */
     private openTransactionScope(): PSqlSql {
-        return this.database.getExecutorCounters ? createPSqlCounterScope(this.database) : this.database;
+        return this.database.getExecutorCounters
+            ? createPSqlCounterScope(this.database, { timesBeginWait: this.config.timing !== undefined })
+            : this.database;
     }
 
     private toTimingDetails(context: AppInboxExecutionMetadata): RallarTimingDetails {

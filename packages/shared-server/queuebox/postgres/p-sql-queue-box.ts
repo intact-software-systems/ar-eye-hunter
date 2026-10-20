@@ -302,7 +302,8 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                     overdueBeforeEpochMs,
                     {
                         maxToReserve: options.maxToReserve,
-                        maxAttempts: options.maxAttempts
+                        maxAttempts: options.maxAttempts,
+                        excludedContextIds: options.excludedContextIds ?? new Set()
                     }
                 );
                 const reservedEntries = new Map<Key, ResourceInboxFairnessSelection>();

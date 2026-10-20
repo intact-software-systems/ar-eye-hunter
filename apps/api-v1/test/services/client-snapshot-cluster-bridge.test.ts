@@ -171,7 +171,13 @@ async function commitClientSnapshot(sql: PSqlSql, recipient: SnapshotRecipient):
         issuedAtEpochMs: recipient.now - 1_000,
         expiresAtEpochMs: recipient.now + 60_000
     };
-    const runtime = createPostgresAppInboxWorkerRuntime({ sql, serviceId: 'producer', atEpochMs: recipient.now, trace: createPostgresAppInboxWorkerTrace() });
+    const runtime = createPostgresAppInboxWorkerRuntime({
+        sql,
+        serviceId: 'producer',
+        newLaneHeldRows: undefined,
+        atEpochMs: recipient.now,
+        trace: createPostgresAppInboxWorkerTrace()
+    });
     await runtime.authSessions.putSession(authSession);
     const ticketDigest = await putAuthorisedWsTestTicket(runtime.authSessions, authSession);
     const result = await runtime.runUntilCompletion(() =>

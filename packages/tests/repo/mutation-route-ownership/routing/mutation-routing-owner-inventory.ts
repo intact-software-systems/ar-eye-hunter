@@ -48,7 +48,7 @@ export const MUTATION_ROUTE_OWNER_DISPATCH_PATHS = {
     'GroupStateInboxHandler.processGroupStateMutation': 'groupStateInboxHandler.processGroupStateMutation',
     'RtcRttAppInboxHandler.processMutation': 'handler.processMutation',
     'TopologyAppInboxHandler.processMutation': 'handler.processMutation',
-    processGroupSessionCleanup: 'processGroupSessionCleanup'
+    writeGroupSessionCleanup: 'writeGroupSessionCleanup'
 } as const;
 
 const CLIENT_ROUTE = '/api/state/apps/:applicationId/workspaces/:workspaceId/clients';
@@ -788,7 +788,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         enqueueSource: 'l',
         enqueueMarker: 'enqueueGroupSessionCleanup',
         ownerSource: 'P',
-        owner: 'processGroupSessionCleanup',
+        owner: 'writeGroupSessionCleanup',
         typeOwnerSource: 'G',
         dispatchSource: 'G'
     },

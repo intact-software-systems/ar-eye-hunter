@@ -140,7 +140,10 @@ function createGroupSetupMutation(sql: PGliteSql): ApiV1MutationRuntime {
 
 function createGroupSetupQueue(mutation: ApiV1MutationRuntime): GroupSetupQueue {
     const engine = new InboxOutboxEngine();
-    const inboxQueueReader = new InboxQueueReader(mutation.queueBox, mutation.appInboxDequeueOptions);
+    const inboxQueueReader = new InboxQueueReader(mutation.queueBox, {
+        ...mutation.appInboxDequeueOptions,
+        flightEntryListener: (settlement) => engine.retainSettlingWork(InboxQueueReader.INBOX_ENQUEUE_TYPE, settlement)
+    });
     const outboxQueueReader = new OutboxQueueReader(mutation.queueBox);
     const wsQBoxServerService = createDefaultWsQueueBoxServerService({
         inboundVolatileStores: undefined,

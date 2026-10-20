@@ -55,7 +55,7 @@ describe('PostgreSQL resource inbox persistence', () => {
         expect(capture.queries[0]?.query).not.toContain('start_ts is null or next_ts');
     });
 
-    it('claims only retry rows at least thirty seconds overdue through the fairness selector', async () => {
+    it('claims only retry rows at least thirty seconds overdue, of no excluded context, through the fairness selector', async () => {
         const capture = createResourceInboxQueryCapture();
         const repo = createPSqlResourceInboxRepository(capture.sql, () => new Date());
         const overdueBeforeEpochMs = Date.parse('2026-01-01T00:00:00.000Z');
@@ -63,7 +63,7 @@ describe('PostgreSQL resource inbox persistence', () => {
         await repo.reservations.findOverdueRetryEntriesSkipLocked(
             new Set(['APP_INBOX']),
             overdueBeforeEpochMs,
-            3
+            { maxToReserve: 3, maxAttempts: 20, excludedContextIds: new Set(['context-in-flight']) }
         );
 
         expect(capture.queries).toHaveLength(1);
@@ -71,6 +71,7 @@ describe('PostgreSQL resource inbox persistence', () => {
         expect(capture.queries[0]?.query).toContain('expire_ts > (now() at time zone \'utc\')');
         expect(capture.queries[0]?.query).toContain('next_ts <=');
         expect(capture.queries[0]?.query).toContain('ri_attempts <');
+        expect(capture.queries[0]?.query).toContain('fk_ext_bank_id <> all(');
         expect(capture.queries[0]?.query).toContain('order by next_ts asc, ri_row_id asc');
         expect(capture.queries[0]?.query).toContain('for update skip locked');
         expect(capture.queries[0]?.values).toContain(EntityStatus.RETRY);

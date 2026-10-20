@@ -5,6 +5,7 @@ import {
     type ResourceInboxContextClaim,
     type ResourceInboxReleaseDisposition,
     type ResourceInboxReservationInput,
+    type ResourceInboxReservationOptions,
     type ResourceInboxWorkPage
 } from '@shared/queuebox/queue-box-types.ts';
 import { resolveResourceInboxWorkPageRequest } from '@shared/queuebox/resource-entry-observations.ts';
@@ -66,6 +67,10 @@ export namespace PSqlResourceInboxReservationRepository {
     export interface ReservationObservationResult {
         readonly entries: Map<string, ResourceEntry>;
         readonly observations: readonly PSqlReservationObservationRow[];
+    }
+    export interface OverdueRetryReservation extends ResourceInboxReservationOptions {
+        /** Overdue rows of these contexts are not claimed. */
+        readonly excludedContextIds: ReadonlySet<string>;
     }
     export interface ReservationRead extends ReservationSelection {
         readonly observedRowIds: readonly string[];
@@ -212,12 +217,9 @@ export class PSqlResourceInboxReservationRepository {
     async findOverdueRetryEntriesSkipLocked(
         typeIds: ReadonlySet<string>,
         overdueBeforeEpochMs: number,
-        reservationInput: ResourceInboxReservationInput
+        reservation: PSqlResourceInboxReservationRepository.OverdueRetryReservation
     ): Promise<Map<string, ResourceEntry>> {
-        const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
-            reservationInput,
-            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
-        );
+        const { maxToReserve, maxAttempts, excludedContextIds } = reservation;
         if (typeIds.size === 0 || maxToReserve <= 0) {
             return new Map();
         }
@@ -231,6 +233,7 @@ export class PSqlResourceInboxReservationRepository {
               and expire_ts > (now() at time zone 'UTC')
               and next_ts <= ${overdueBefore}
               and ri_attempts < ${maxAttempts}
+              and fk_ext_bank_id <> all(${[...excludedContextIds]}::varchar[])
             order by next_ts asc, ri_row_id asc
                 for update skip locked
             limit ${maxToReserve}

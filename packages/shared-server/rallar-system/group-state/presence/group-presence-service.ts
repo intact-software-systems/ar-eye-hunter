@@ -101,7 +101,7 @@ export async function readAndComputeGroupPresenceConnect(
         lifecycle.read(identity),
         input.mutationService.read(input.command)
     ]);
-    const lifecycleRead = toSettledValue(lifecycleReading);
+    const lifecycleRead = requireSettledValue(lifecycleReading);
     if (lifecycle.isObservedAtClosed(identity, observedAtEpochMs, lifecycleRead)) {
         return {
             status: 'inactive',
@@ -109,7 +109,7 @@ export async function readAndComputeGroupPresenceConnect(
             generationId: operation.input.generationId
         };
     }
-    const read = toSettledValue(mutationReading);
+    const read = requireSettledValue(mutationReading);
     const computed = input.mutationService.compute(input.command, read);
     const lifecycleGuardFacts = {
         ...identity,
@@ -121,14 +121,14 @@ export async function readAndComputeGroupPresenceConnect(
     return { status: 'ready-to-commit', computed, read, lifecycleGuardFacts, lifecycleRead, lifecycleGuard };
 }
 
-function toSettledValue<Value>(result: PromiseSettledResult<Value>): Value {
+function requireSettledValue<Value>(result: PromiseSettledResult<Value>): Value {
     if (result.status === 'rejected') {
         throw result.reason;
     }
     return result.value;
 }
 
-export async function processGroupSessionCleanup(
+export async function writeGroupSessionCleanup(
     input: Readonly<{
         facts: GroupPresenceSessionCleanupAppInboxPayload;
         attemptCount: number;

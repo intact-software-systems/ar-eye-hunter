@@ -22,6 +22,7 @@ import type {
     OnRejectedQueuedMessageCallback
 } from '@shared/services/queue-message-callbacks.ts';
 
+import { INBOX_OUTBOX_ENGINE_MAX_IDLE_MS } from './inbox-outbox-engine.ts';
 import type { QueueBoxUtilities } from './queue-box-utilities.ts';
 import { QueueMessageReader } from './queue-message-reader.ts';
 
@@ -46,9 +47,17 @@ export namespace InboxQueueReader {
          * and every lane's claims join it. Absent, each pass drains what it claimed before it resolves.
          */
         readonly newLaneHeldRows?: number;
+        /**
+         * Told of every row the AppInbox flight takes, so the owner of the passes joins and wakes on them; required with
+         * `newLaneHeldRows`, and absent only for a reader whose passes drain what they claim.
+         */
+        readonly flightEntryListener?: FlightEntryListener;
     }
 
-    /** Told of each row the flight takes; the promise settles once the row is released, rejecting with its release error. */
+    /**
+     * Told of each row the flight takes; the promise resolves once the row is released or its release failed. A release
+     * error is rethrown by the next pass instead, or taken by an owner that runs no further pass, so it is reported once.
+     */
     export type FlightEntryListener = (settlement: Promise<void>) => void;
 
     export interface PressureSample {
@@ -88,12 +97,13 @@ export class InboxQueueReader {
     private readonly flight:
         | DequeueLaneFlight<Key, ResourceInboxAttempt, ResourceInboxHandlerOutcome | undefined>
         | undefined;
-    private flightEntryListener: InboxQueueReader.FlightEntryListener | undefined;
+    private readonly flightEntryListener: InboxQueueReader.FlightEntryListener | undefined;
     /**
      * Set by a top-up that claimed nothing while rows were in flight and neither a row settled nor another writer's row
-     * was announced meanwhile; the next settlement or announcement clears it.
+     * was announced meanwhile; the next settlement or announcement clears it. The wait ends at the engine's idle ceiling
+     * at the latest, since a retry coming due, a peer's lease running out or a finalization row settles nothing here.
      */
-    private flightAwaitsSettlement = false;
+    private flightSettlementWaitEndMs: number | undefined;
     private flightSettlementCount = 0;
     private externalWriteCount = 0;
     /** The dequeue clock that stamps each claim's selection. */
@@ -123,12 +133,16 @@ export class InboxQueueReader {
             ? undefined
             : requireNewLaneHeldRows(dequeueOptions.newLaneHeldRows, this.newLaneConcurrency);
         this.nowEpochMs = dequeueOptions.nowEpochMs ?? Date.now;
+        this.flightEntryListener = dequeueOptions.flightEntryListener;
+        if (this.newLaneHeldRows !== undefined && this.flightEntryListener === undefined) {
+            throw new TypeError('An AppInbox standing flight requires a flight entry listener');
+        }
         this.flight = this.newLaneHeldRows === undefined
             ? undefined
             : new DequeueLaneFlight({
                 maxConcurrentComputes: this.newLaneConcurrency,
                 maxUnreleased: this.newLaneHeldRows,
-                keyedRunsFirst: true,
+                releasedKeyedRunsFirst: true,
                 toExclusionKey: dequeueOptions.toComputeExclusionKey,
                 releaseFailureClock: this.nowEpochMs,
                 retainSettlement: (settlement) => this.retainFlightSettlement(settlement)
@@ -162,21 +176,29 @@ export class InboxQueueReader {
         this.reader.onDequeuePassDo(observer);
     }
 
-    /** One listener, told of every row the AppInbox flight takes; the owner of the passes joins and wakes on them. */
-    onFlightEntryDo(listener: InboxQueueReader.FlightEntryListener): void {
-        if (this.flightEntryListener !== undefined) {
-            throw new Error('A flight entry listener is already installed on this queue reader');
-        }
-        this.flightEntryListener = listener;
-    }
-
     /**
      * Whether an AppInbox pass would claim nothing until a row in flight settles: the flight holds its bound, or the
      * last top-up claimed nothing while rows were in flight, so what work there is belongs to their contexts.
      */
     isAwaitingFlightSettlement(): boolean {
         return this.flight !== undefined &&
-            (this.flight.getFreePlaceCount() === 0 || this.flightAwaitsSettlement);
+            (this.flight.getFreePlaceCount() === 0 || this.getFlightSettlementWaitEndMs() !== undefined);
+    }
+
+    /** Whether a row's release failed since the last pass: the next pass rethrows that error before it claims anything. */
+    hasFlightErrorToRethrow(): boolean {
+        return this.flight?.isStopped() ?? false;
+    }
+
+    /** Takes the release error the next pass would rethrow, for an owner that runs no further pass. */
+    takeFlightErrorToRethrow(): Error | undefined {
+        return this.flight?.takeFirstError();
+    }
+
+    /** When the wait of a top-up that claimed nothing ends without a settlement; undefined when no such wait holds. */
+    getFlightSettlementWaitEndMs(): number | undefined {
+        const waitEndMs = this.flightSettlementWaitEndMs;
+        return waitEndMs !== undefined && this.nowEpochMs() < waitEndMs ? waitEndMs : undefined;
     }
 
     /**
@@ -185,7 +207,7 @@ export class InboxQueueReader {
      */
     resetFlightSettlementWait(): void {
         this.externalWriteCount += 1;
-        this.flightAwaitsSettlement = false;
+        this.flightSettlementWaitEndMs = undefined;
     }
 
     /** One storage read naming the lanes the next pass may claim from; the engine's work probe for this queue. */
@@ -229,23 +251,21 @@ export class InboxQueueReader {
             standingFlight
         });
         if (standingFlight !== undefined) {
-            this.flightAwaitsSettlement = claimedCount === 0 && standingFlight.getUnreleasedCount() > 0 &&
+            const awaitsSettlement = claimedCount === 0 && standingFlight.getUnreleasedCount() > 0 &&
                 this.flightSettlementCount === settlementCountAtStart &&
                 this.externalWriteCount === externalWriteCountAtStart;
+            this.flightSettlementWaitEndMs = awaitsSettlement
+                ? this.nowEpochMs() + INBOX_OUTBOX_ENGINE_MAX_IDLE_MS
+                : undefined;
         }
         return claimedCount;
     }
 
     private retainFlightSettlement(settlement: Promise<void>): void {
-        const settled = settlement.finally(() => {
+        this.flightEntryListener?.(settlement.then(() => {
             this.flightSettlementCount += 1;
-            this.flightAwaitsSettlement = false;
-        });
-        if (this.flightEntryListener === undefined) {
-            void settled.catch(() => undefined);
-            return;
-        }
-        this.flightEntryListener(settled);
+            this.flightSettlementWaitEndMs = undefined;
+        }));
     }
 
     private readLaneBudgets(

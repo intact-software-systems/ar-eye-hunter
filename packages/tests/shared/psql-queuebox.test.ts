@@ -478,7 +478,7 @@ describe('PSqlQueueBox', () => {
         expect(findOverdueRetryEntriesSkipLocked).toHaveBeenCalledWith(
             new Set(['type-1']),
             123_000,
-            { maxToReserve: 4, maxAttempts: 20 }
+            { maxToReserve: 4, maxAttempts: 20, excludedContextIds: new Set() }
         );
         const selected = reserved.get(retry.key);
         expect(selected?.selectedDueTs.toString()).toBe(nextTs.toString());

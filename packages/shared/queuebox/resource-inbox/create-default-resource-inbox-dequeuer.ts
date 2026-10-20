@@ -225,7 +225,11 @@ export function createDefaultResourceInboxDequeuer<V>(
             })
         )
         .onFairnessEntriesReserveDo((types, maxToReserve) =>
-            reserveResourceInboxFairness(dependencies, types, maxToReserve)
+            reserveResourceInboxFairness(dependencies, {
+                types,
+                maxToReserve,
+                excludedContextIds: contextClaims.getRetryContextClaim()?.excludedContextIds
+            })
         )
         .onTimeoutEntriesReserveDo((types, maxToReserve) =>
             reserveResourceInboxTimeouts(dependencies, types, maxToReserve)
@@ -234,6 +238,12 @@ export function createDefaultResourceInboxDequeuer<V>(
             (successes) => releaseResourceInboxSuccesses(dependencies, successes),
             (failures) => releaseResourceInboxFailures(dependencies, failures)
         );
+}
+
+interface ResourceInboxFairnessClaim {
+    readonly types: Set<string>;
+    readonly maxToReserve: number;
+    readonly excludedContextIds: ReadonlySet<string> | undefined;
 }
 
 interface ResourceInboxContextClaims {
@@ -359,12 +369,15 @@ async function reserveResourceInboxTimeouts(
     return toResourceInboxAttempts(dependencies, { entries, selectedLane: Reservator.TIMEOUT });
 }
 
-/** An overdue row is claimed on this pass, ahead of RETRY; the probe answered whether one exists. */
+/**
+ * An overdue row is claimed on this pass, ahead of RETRY; the probe answered whether one exists. Like RETRY, it skips
+ * the contexts a standing flight holds, so a context never has a second reserved row on this instance.
+ */
 async function reserveResourceInboxFairness(
     dependencies: ResourceInboxDequeueDependencies,
-    types: Set<string>,
-    maxToReserve: number
+    claim: ResourceInboxFairnessClaim
 ): Promise<Map<Resource.Key, ResourceInboxAttempt>> {
+    const { types, maxToReserve, excludedContextIds } = claim;
     const selectedAtEpochMs = dependencies.nowEpochMs();
     const policy = dependencies.resilience.retryPolicy;
     const selections = await dependencies.repository.reserveOverdueRetryEntries(
@@ -373,7 +386,8 @@ async function reserveResourceInboxFairness(
         {
             maxToReserve,
             maxAttempts: policy.maxAttempts,
-            maxToScan: Math.max(types.size, toSaturatedResourceInboxFairnessScanBudget(maxToReserve))
+            maxToScan: Math.max(types.size, toSaturatedResourceInboxFairnessScanBudget(maxToReserve)),
+            excludedContextIds
         }
     );
     const attempts = new Map<Resource.Key, ResourceInboxAttempt>();

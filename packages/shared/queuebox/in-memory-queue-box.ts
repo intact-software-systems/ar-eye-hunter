@@ -430,7 +430,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         overdueBeforeEpochMs: number,
         reservationInput: ResourceInboxFairnessReservationInput
     ): Promise<Map<Key, ResourceInboxFairnessSelection>> {
-        const { maxToReserve, maxAttempts } = toResourceInboxFairnessReservationOptions(
+        const { maxToReserve, maxAttempts, excludedContextIds } = toResourceInboxFairnessReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
@@ -447,7 +447,8 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                 entry.status === EntityStatus.RETRY &&
                 entry.dequeueAudit.attempts < maxAttempts &&
                 entry.dequeueAudit.nextTs !== undefined &&
-                Temporal.Instant.compare(entry.dequeueAudit.nextTs, overdueBefore) <= 0
+                Temporal.Instant.compare(entry.dequeueAudit.nextTs, overdueBefore) <= 0 &&
+                excludedContextIds?.has(entry.key.contextId) !== true
             )
             .sort(([leftKey, left], [rightKey, right]) => {
                 const dueOrder = Temporal.Instant.compare(

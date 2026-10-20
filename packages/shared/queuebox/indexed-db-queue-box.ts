@@ -560,7 +560,8 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 maxToReserve,
                 maxToScan,
                 now,
-                requestedTypes
+                requestedTypes,
+                excludedContextIds: options.excludedContextIds
             });
             const decision = this.#observeReservation(computed.mutations);
             if (decision instanceof Promise) {

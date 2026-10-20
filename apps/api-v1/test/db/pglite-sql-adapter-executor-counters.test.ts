@@ -40,7 +40,7 @@ Deno.test('PGlite executor counters count every statement handed to one executor
 Deno.test('a counter scope over PGlite credits only the statements issued through it, inside and outside its transaction, while the executor counts them all', async () => {
     const root = createPGliteSqlClient(new PGlite('memory://'));
     try {
-        const scoped = createPSqlCounterScope(root);
+        const scoped = createPSqlCounterScope(root, { timesBeginWait: true });
         await Promise.all([
             scoped.begin(async (transaction) => {
                 await transaction`select pg_sleep(0.01)`;
@@ -57,7 +57,7 @@ Deno.test('a counter scope over PGlite credits only the statements issued throug
         assert.ok(scopedCounters !== undefined && scopedCounters.executorWaitMs >= 5, `wait ${scopedCounters?.executorWaitMs}`);
         assert.equal(root.getExecutorCounters?.()?.statements, 6, 'the executor: every statement of every handle');
         assert.deepEqual(
-            createPSqlCounterScope(root).getExecutorCounters?.(),
+            createPSqlCounterScope(root, { timesBeginWait: true }).getExecutorCounters?.(),
             { statements: 0, executorWaitMs: 0, beginWaitMs: 0 },
             'a new scope starts empty'
         );
@@ -91,7 +91,7 @@ Deno.test('a counter scope opens its transaction through the wrapped handle\'s b
                 return begin;
             }
         });
-        const scoped = createPSqlCounterScope(rollingBack);
+        const scoped = createPSqlCounterScope(rollingBack, { timesBeginWait: true });
 
         await assert.rejects(
             scoped.begin(async (transaction) => {
@@ -114,7 +114,7 @@ Deno.test('a counter scope keeps the PGlite transaction savepoint and counts its
     const root = createPGliteSqlClient(new PGlite('memory://'));
     try {
         await root.exec('create table savepoint_writes (id int)');
-        const scoped = createPSqlCounterScope(root);
+        const scoped = createPSqlCounterScope(root, { timesBeginWait: true });
         await scoped.begin(async (transaction) => {
             assert.ok('savepoint' in transaction && typeof transaction.savepoint === 'function');
             const savepointSql = transaction as PSqlSql & { savepoint<T>(write: (nested: PSqlSql) => Promise<T>): Promise<T>; };
@@ -138,7 +138,7 @@ Deno.test('a counter scope credits the time from its begin call to the transacti
     const holdMs = 30;
     const bodyMs = 200;
     const slowToOpen = createSlowToOpenSql(holdMs);
-    const scoped = createPSqlCounterScope(slowToOpen);
+    const scoped = createPSqlCounterScope(slowToOpen, { timesBeginWait: true });
 
     await scoped.begin(async () => {
         await new Promise((resolve) => setTimeout(resolve, bodyMs));
@@ -147,6 +147,23 @@ Deno.test('a counter scope credits the time from its begin call to the transacti
     const beginWaitMs = scoped.getExecutorCounters?.()?.beginWaitMs;
     assert.ok(beginWaitMs !== undefined && beginWaitMs >= holdMs - 2, `begin wait ${beginWaitMs}`);
     assert.ok(beginWaitMs < holdMs + bodyMs, `begin wait excludes the body: ${beginWaitMs}`);
+});
+
+Deno.test('a counter scope that does not time begin waits reports none and still counts its statements', async () => {
+    const root = createPGliteSqlClient(new PGlite('memory://'));
+    try {
+        const scoped = createPSqlCounterScope(root, { timesBeginWait: false });
+        await scoped.begin(async (transaction) => {
+            await transaction`select 1 as one`;
+        });
+
+        const counters = scoped.getExecutorCounters?.();
+        assert.equal(counters?.statements, 1);
+        assert.equal(counters !== undefined && 'beginWaitMs' in counters, false);
+    }
+    finally {
+        await root.close();
+    }
 });
 
 Deno.test('a handle that is not a counter scope reports no begin wait', async () => {
