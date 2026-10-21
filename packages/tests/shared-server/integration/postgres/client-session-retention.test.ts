@@ -7,9 +7,7 @@ import { toAuthorisedWsClientConnection } from '@shared-server/rallar-system/cli
 import { CLIENT_STATE_SESSIONS_NAMESPACE } from '@shared-server/rallar-system/client-state/persistence/client-state-runtime-namespaces.ts';
 import { clientStateSessionStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-session-storage-key.ts';
 import { toSessionPurgeAfterEpochMs } from '@shared-server/rallar-system/presence/session-expiry.ts';
-import { RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-runtime-namespaces.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import { evictExpiredRuntimeStateRows } from '@shared-server/runtime-state/postgres/runtime-state-expiry-worker.ts';
 import type { ClientSession } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 
@@ -21,6 +19,11 @@ import {
     withPostgresClients
 } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 import {
+    deletePostgresRunRows,
+    NO_POSTGRES_RUN_ROWS,
+    readPostgresRunRowCounts
+} from './test-support/delete-postgres-run-rows.ts';
+import {
     createPostgresAppInboxWorkerRuntime,
     createPostgresAppInboxWorkerTrace,
     type PostgresAppInboxWorkerRuntime
@@ -30,6 +33,8 @@ const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.ski
 const DAY_MS = 24 * 60 * 60 * 1_000;
 
 interface RetentionHarness {
+    /** Carried by every scope, session and ticket this test writes, so its rows can be found and removed. */
+    readonly runId: string;
     readonly sql: PSqlSql;
     readonly runtime: PostgresAppInboxWorkerRuntime;
     readonly scope: StateScope;
@@ -47,11 +52,8 @@ describe('Postgres disconnected client session retention', () => {
             const expired = await connectAndDisconnect(harness, 'expired', harness.nowEpochMs - 8 * DAY_MS);
             const retained = await connectAndDisconnect(harness, 'retained', harness.nowEpochMs - 6 * DAY_MS);
 
-            // The production sweep over the shared test database: it removes only rows already past their expiry.
-            await evictExpiredRuntimeStateRows({
-                repository: new PSqlRuntimeStateRepository(harness.sql),
-                excludedNamespaces: RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES
-            });
+            // The expiry sweep's statement, scoped to the client session namespace rather than the shared database.
+            await new PSqlRuntimeStateRepository(harness.sql).deleteExpired(CLIENT_STATE_SESSIONS_NAMESPACE);
 
             expect(await readStoredSession(harness, expired)).toBeUndefined();
             const kept = await readStoredSession(harness, retained);
@@ -89,18 +91,26 @@ async function withRetentionHarness(run: (harness: RetentionHarness) => Promise<
     }, async (clients) => {
         const sql = requirePostgresClient(clients, 0);
         const nowEpochMs = Date.now();
-        await run({
-            sql,
-            nowEpochMs,
-            scope: { applicationId: 'client-session-retention-test', workspaceId: crypto.randomUUID() },
-            runtime: createPostgresAppInboxWorkerRuntime({
+        const runId = crypto.randomUUID();
+        try {
+            await run({
+                runId,
                 sql,
-                serviceId: 'client-session-retention',
-                newLaneHeldRows: undefined,
-                atEpochMs: nowEpochMs,
-                trace: createPostgresAppInboxWorkerTrace()
-            })
-        });
+                nowEpochMs,
+                scope: { applicationId: 'client-session-retention-test', workspaceId: runId },
+                runtime: createPostgresAppInboxWorkerRuntime({
+                    sql,
+                    serviceId: 'client-session-retention',
+                    newLaneHeldRows: undefined,
+                    atEpochMs: nowEpochMs,
+                    trace: createPostgresAppInboxWorkerTrace()
+                })
+            });
+        }
+        finally {
+            await deletePostgresRunRows(sql, runId);
+        }
+        expect(await readPostgresRunRowCounts(sql, runId)).toEqual(NO_POSTGRES_RUN_ROWS);
     });
 }
 
@@ -113,7 +123,7 @@ async function connectAndDisconnect(
     const authSession: IssuedAuthSession = {
         clientId: principalId,
         username: principalId,
-        sessionId: `${principalId}-${crypto.randomUUID()}`,
+        sessionId: `${principalId}-${harness.runId}`,
         accessToken: `${principalId}-retention-token`,
         issuedAtEpochMs: harness.nowEpochMs - 9 * DAY_MS,
         expiresAtEpochMs: harness.nowEpochMs + 21 * DAY_MS
@@ -143,7 +153,7 @@ async function connect(
     const ticketDigest = await putAuthorisedWsTestTicket(
         harness.runtime.authSessions,
         authSession,
-        `${connection.generationId}-${crypto.randomUUID()}`
+        `${connection.generationId}-${harness.runId}`
     );
     await harness.runtime.runUntilCompletion(() =>
         harness.runtime.client.writeAuthorisedWsClientConnect({
