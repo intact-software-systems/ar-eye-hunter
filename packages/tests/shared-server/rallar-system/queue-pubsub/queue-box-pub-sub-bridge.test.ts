@@ -21,6 +21,7 @@ import {
 } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
+import type { ALOutboundCapturedPolicy } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import {
     captureALOutboundCreationExpiry,
     toALOutboundCanonicalKey,
@@ -1010,6 +1011,57 @@ describe('the captured audience of a cluster publication', () => {
         expect(sends.map((send) => send.recipientScope)).toEqual([recipientScope, recipientScope]);
     });
 
+    it('sends a row under the policy its commit handed over, after the cluster publish, and reads only the remote copy', async () => {
+        const outboxPublishers: ClusterPublisher[] = [];
+        const bridge = createBridge();
+        const entry = createCanonicalRoomOutboxEntry(Date.now());
+        const outbox = new InMemoryQueueBox();
+        await persistCanonicalEntry(outbox, entry);
+        const effects: string[] = [];
+        const policyReads: (ALOutboundCapturedPolicy | undefined)[] = [];
+        const committedPolicy: ALOutboundCapturedPolicy = {
+            persist: true,
+            ackTracking: null,
+            retryTracking: null,
+            repairTracking: null,
+            supersedenceTracking: null,
+            admittedAudience: ['committed-session']
+        };
+        await installQueueBoxPubSubBridge({
+            wsQBoxServerService: createTestQueueBoxPubSubWsService({
+                outbox,
+                registerOutboxPublisher: (publisher) => outboxPublishers.push(publisher),
+                policyReads,
+                readAudience: async () => {
+                    effects.push('stored-read');
+                    return ['stored-session'];
+                },
+                sendToTargetsWithResult: (message, _recipientSessionIds, admittedPeerIds) => {
+                    effects.push(`send:${admittedPeerIds?.join()}`);
+                    return sentLiveResult(message);
+                }
+            }),
+            bridge: {
+                ...bridge,
+                publish: async (channel, message) => {
+                    effects.push('publish');
+                    await bridge.publish(channel, message);
+                }
+            },
+            channel: 'queuebox-events',
+            publisherId: 'local'
+        });
+
+        await outboxPublishers[0]!(decodePersistedALMessage(entry.resource), entry, {
+            committedPolicy,
+            deferObservation: undefined
+        });
+        await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry }));
+
+        expect(effects).toEqual(['publish', 'send:committed-session', 'stored-read', 'send:stored-session']);
+        expect(policyReads).toEqual([committedPolicy, undefined]);
+    });
+
     it('fails the local publish closed when the captured policy is missing, as the remote receive does', async () => {
         const outboxPublishers: ClusterPublisher[] = [];
         const entry = createCanonicalRoomOutboxEntry(Date.now());
@@ -1067,6 +1119,8 @@ interface CreateTestQueueBoxPubSubWsServiceInput {
     readonly readAudience?: (message: ALMessage, entry: ResourceEntry) => Promise<readonly string[] | undefined>;
     readonly recipientScope?: StateScope;
     readonly sends?: WsServerLiveSendInputDto[];
+    /** The committed policy each captured-policy read was handed, or `undefined` for a stored read. */
+    readonly policyReads?: (ALOutboundCapturedPolicy | undefined)[];
     readonly sendToTargetsWithResult?: (
         message: ALMessage,
         recipientSessionIds?: readonly string[],
@@ -1090,7 +1144,11 @@ function createTestQueueBoxPubSubWsService(
             return input.sendToTargetsWithResult?.(message, recipientSessionIds, admittedPeerIds) ??
                 noRecipientLiveSendResult(message);
         },
-        async readCapturedPolicy(message, entry) {
+        async readCapturedPolicy(message, entry, committedPolicy) {
+            input.policyReads?.push(committedPolicy);
+            if (committedPolicy !== undefined) {
+                return committedPolicy;
+            }
             return {
                 persist: true,
                 ackTracking: null,

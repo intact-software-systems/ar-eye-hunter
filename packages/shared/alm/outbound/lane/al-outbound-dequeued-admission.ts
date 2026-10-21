@@ -11,8 +11,10 @@ import type { ALWorkAttemptResult, ALWorkBatchDiagnostics } from '../../work/al-
 import type { ALWorkClaim, ALWorkOutcome } from '../../work/al-work-queue-port.ts';
 import type {
     ALOutboundAdmissionStore,
+    ALOutboundCommitBundle,
     ALOutboundEffectSnapshot
 } from '../admission/al-outbound-admission-store.ts';
+import type { ALOutboundCapturedPolicy } from '../admission/al-outbound-admission-validation.ts';
 import type { ALOutboundDispatchAdmission } from '../al-outbound-dispatch-admission.ts';
 import type {
     ALOutboundDequeueAuthority,
@@ -357,6 +359,10 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
         return commits;
     }
 
+    /**
+     * Only a committed dispatch reaches its after-admission: a conflict rejects and an expiry carries no bundle, so
+     * the bundle a dispatch carries here is the one its commit wrote, and its captured policy needs no read back.
+     */
     private async finishDequeuedAdmission(input: ALOutboundDequeuedFinishInput<TPrepared>): Promise<ALWorkOutcome> {
         const { member, read, commits, index } = input;
         const admission = await read;
@@ -380,7 +386,11 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
         if (computed.msg && entry) {
             member.evidence?.recordStage('dequeue-after-admission');
             this.recordOrderedDispatchStart(member, entry.key, computed.verdict.kind);
-            await this.dependencies.runtime.afterDequeueAdmission?.(computed.msg, entry);
+            await this.dependencies.runtime.afterDequeueAdmission?.(
+                computed.msg,
+                entry,
+                toBundleSentPolicy(computed.bundle)
+            );
         }
         return { status: 'completed' };
     }
@@ -390,11 +400,7 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
         stage: ALOutboundDequeuedAdmission.TimingStage,
         outcome?: string
     ): void {
-        const sink = this.dependencies.timing;
-        if (sink === undefined) {
-            return;
-        }
-        recordALOutboundDequeueTiming(sink, {
+        recordALOutboundDequeueTiming(this.dependencies.timing, {
             kind: 'admission-stage',
             stage,
             member,
@@ -407,11 +413,7 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
         publicationKey: Key,
         outcome: string
     ): void {
-        const sink = this.dependencies.timing;
-        if (sink === undefined) {
-            return;
-        }
-        recordALOutboundDequeueTiming(sink, {
+        recordALOutboundDequeueTiming(this.dependencies.timing, {
             kind: 'admission-stage',
             stage: 'ordered-dispatch-start',
             member,
@@ -468,6 +470,14 @@ async function readMemberSupersedence(
         throw settled.reason;
     }
     return settled.value;
+}
+
+/** The captured policy a bundle writes with its message's sent admission; none for a bundle that writes none. */
+function toBundleSentPolicy<TPrepared>(
+    bundle: ALOutboundCommitBundle<TPrepared> | undefined
+): ALOutboundCapturedPolicy | undefined {
+    const sent = bundle?.mutations.find((mutation) => mutation.kind === 'set-sent-message');
+    return sent?.kind === 'set-sent-message' ? sent.policy : undefined;
 }
 
 interface ALOutboundDequeuedFinishInput<TPrepared> {

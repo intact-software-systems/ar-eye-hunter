@@ -13,7 +13,9 @@ import {
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import type { ALOutboundCapturedPolicy } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import {
     captureALOutboundCreationExpiry,
     toALOutboundCanonicalKey,
@@ -147,6 +149,70 @@ describe('WS first dequeue authority', () => {
         expect(await fixture.service.readCapturedPolicy(message, entry)).toMatchObject({ admittedAudience: ['peer'], recipientScope: SCOPE });
     });
 
+    it('publishes each row of a dequeued group under the policy its commit wrote, in row order, reading none back', async () => {
+        const fixture = createFixture(async () => ({ admittedAudience: ['peer'], recipientScope: SCOPE }));
+        const published: PublishedDequeuedRow[] = [];
+        fixture.service.onOutboxClusterPublishDo(async (message, entry, handoff) => {
+            published.push({ message, entry, committedPolicy: handoff?.committedPolicy });
+        });
+        const storedReads = recordStoredPolicyReads(fixture.stores);
+        const messages = [0, 1, 2].map(createIndexedMessage);
+        for (const message of messages) {
+            await fixture.stores.workQueue.enqueue(
+                QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant())
+            );
+        }
+
+        await fixture.engine.executeOnce();
+
+        await expect.poll(() => published.length).toBe(messages.length);
+        expect(storedReads).toEqual([]);
+        expect(published.map(({ message }) => message.id.msgId)).toEqual(messages.map((message) => message.id.msgId));
+        for (const { message, entry, committedPolicy } of published) {
+            expect(committedPolicy).toEqual(await fixture.service.readCapturedPolicy(message, entry));
+        }
+    });
+
+    it('holds the awaited audience of an unpublished row under the policy its commit wrote, reading none back', async () => {
+        const fixture = createFixture(async () => ({ admittedAudience: ['peer'], recipientScope: SCOPE }));
+        fixture.socket.expectedConnections.expect({ id: 'awaited', generationId: 'generation', expiresAtEpochMs: Date.now() + 30_000 });
+        const storedReads = recordStoredPolicyReads(fixture.stores);
+        const heldAudiences: (readonly string[])[] = [];
+        const holdForAudience = fixture.socket.expectedConnections.holdForAudience.bind(fixture.socket.expectedConnections);
+        vi.spyOn(fixture.socket.expectedConnections, 'holdForAudience').mockImplementation((audience, send) => {
+            heldAudiences.push(audience);
+            return holdForAudience(audience, send);
+        });
+        const message = createMessage('unicast');
+        await fixture.stores.workQueue.enqueue(QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant()));
+
+        await fixture.engine.executeOnce();
+
+        await expect.poll(() => heldAudiences).toEqual([['peer']]);
+        expect(storedReads).toEqual([]);
+        expect(fixture.native.sent).toHaveLength(1);
+    });
+
+    it('refuses a handed policy that does not authorize the row as corruption, without reading the stored one', async () => {
+        const fixture = createFixture();
+        const storedReads = recordStoredPolicyReads(fixture.stores);
+        const message = createMessage('unicast');
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
+        const unscoped: ALOutboundCapturedPolicy = {
+            persist: true,
+            ackTracking: null,
+            retryTracking: null,
+            repairTracking: null,
+            supersedenceTracking: null,
+            admittedAudience: ['peer']
+        };
+
+        await expect(fixture.service.readCapturedPolicy(message, entry, unscoped)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        expect(await fixture.service.readCapturedPolicy(message, entry, { ...unscoped, recipientScope: SCOPE }))
+            .toEqual({ ...unscoped, recipientScope: SCOPE });
+        expect(storedReads).toEqual([]);
+    });
+
     it('refuses a raw group-addressed unicast even with producer provenance', async () => {
         const fixture = createFixture(async () => ({ admittedAudience: ['peer'], recipientScope: SCOPE }));
         const message = newALUnicastMessage('server', { topicId: 'app.message', resourceId: 'resource', contextId: 'context' }, 'peer', 'message.v1', {}, {
@@ -202,6 +268,13 @@ function createMessage(mode: 'unicast' | 'broadcast'): ALMessage {
             ...options,
             groupRef: { ...SCOPE, groupId: 'room' }
         });
+}
+
+/** One row the server handed its cluster publisher, with the policy its commit wrote. */
+interface PublishedDequeuedRow {
+    readonly message: ALMessage;
+    readonly entry: ResourceEntry;
+    readonly committedPolicy: ALOutboundCapturedPolicy | undefined;
 }
 
 interface DequeueAuthorityFixture {
@@ -265,6 +338,18 @@ async function writeCompetingAdmission(
     if (!computed.bundle || await stores.admissionStore.commitBundle(computed.bundle) !== 'committed') {
         throw new Error('Competing admission did not commit');
     }
+}
+
+/** The message id of every stored captured-policy read, as the store answers it. */
+function recordStoredPolicyReads(stores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>): readonly string[] {
+    const reads: string[] = [];
+    const store = stores.admissionStore;
+    const readCapturedPolicy = store.readCapturedPolicy.bind(store);
+    vi.spyOn(store, 'readCapturedPolicy').mockImplementation(async (message, entry) => {
+        reads.push(message.id.msgId);
+        return await readCapturedPolicy(message, entry);
+    });
+    return reads;
 }
 
 interface ReadRounds {

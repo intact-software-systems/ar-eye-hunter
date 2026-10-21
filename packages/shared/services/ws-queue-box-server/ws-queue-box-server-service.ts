@@ -403,9 +403,9 @@ export class WsQueueBoxServerService {
             readDequeueAuthority: (message, entry) => this.dequeueAuthority.readDequeueAuthority(message, entry),
             planOutgoingMessage: (message, authority) => this.planWorkDispatch(message, authority, 'immediate'),
             planDequeuedMessage: (message, authority) => this.planWorkDispatch(message, authority, 'dequeue'),
-            afterDequeueAdmission: async (message, entry) => {
-                await this.clusterPublication.writeDequeuedRow(message, entry);
-                await this.deferUnpublishedRowToAwaitedRecipients(message, entry);
+            afterDequeueAdmission: async (message, entry, committedPolicy) => {
+                await this.clusterPublication.writeDequeuedRow(message, entry, committedPolicy);
+                await this.deferUnpublishedRowToAwaitedRecipients(message, entry, committedPolicy);
             },
             sendPreparedMessage: async (prepared, _phase, lifecycle) =>
                 await this.sendPreparedMessage(prepared, lifecycle),
@@ -726,8 +726,13 @@ export class WsQueueBoxServerService {
         return this.liveDelivery.sendToTargets(message);
     }
 
-    async readCapturedPolicy(message: ALMessage, entry: ResourceEntry): Promise<ALOutboundCapturedPolicy> {
-        return await this.dequeueAuthority.readCapturedPolicy(message, entry);
+    /** The policy the row's own commit handed over, when there is one, is checked instead of read back. */
+    async readCapturedPolicy(
+        message: ALMessage,
+        entry: ResourceEntry,
+        committedPolicy?: ALOutboundCapturedPolicy
+    ): Promise<ALOutboundCapturedPolicy> {
+        return await this.dequeueAuthority.readCapturedPolicy(message, entry, committedPolicy);
     }
 
     sendToTargetsWithResult(input: WsServerLiveSendInputDto): WsServerLiveSendResult {
@@ -736,13 +741,17 @@ export class WsQueueBoxServerService {
 
     /**
      * Without a cluster publisher the prepared sends reach only sockets already open, so a session whose upgrade
-     * committed here but has not opened is held for (D269); with one, the publisher's local send holds instead.
+     * committed here but has not opened is held for; with one, the publisher's local send holds instead.
      */
-    private async deferUnpublishedRowToAwaitedRecipients(message: ALMessage, entry: ResourceEntry): Promise<void> {
+    private async deferUnpublishedRowToAwaitedRecipients(
+        message: ALMessage,
+        entry: ResourceEntry,
+        committedPolicy: ALOutboundCapturedPolicy | undefined
+    ): Promise<void> {
         if (this.clusterPublication.hasPublisher() || !this.socket.expectedConnections.hasExpectations()) {
             return;
         }
-        const policy = await this.dequeueAuthority.readCapturedPolicy(message, entry);
+        const policy = await this.dequeueAuthority.readCapturedPolicy(message, entry, committedPolicy);
         const awaited = this.socket.expectedConnections.holdForAudience(policy.admittedAudience ?? [], {
             expiresAtEpochMs: entry.audit.expiryTs.epochMilliseconds,
             send: (sessionId) =>

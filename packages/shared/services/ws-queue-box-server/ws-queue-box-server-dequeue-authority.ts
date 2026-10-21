@@ -104,9 +104,16 @@ export class WsQueueBoxServerDequeueAuthority {
         return authority;
     }
 
-    /** The row's captured policy, refused as corruption unless it still authorizes the row's recipients. */
-    async readCapturedPolicy(message: ALMessage, entry: ResourceEntry): Promise<ALOutboundCapturedPolicy> {
-        const policy = await this.dependencies.admissionStore.readCapturedPolicy(message, entry);
+    /**
+     * The row's captured policy, refused as corruption unless it still authorizes the row's recipients: the one the
+     * row's own commit handed over, or else the stored one.
+     */
+    async readCapturedPolicy(
+        message: ALMessage,
+        entry: ResourceEntry,
+        committedPolicy?: ALOutboundCapturedPolicy
+    ): Promise<ALOutboundCapturedPolicy> {
+        const policy = committedPolicy ?? await this.dependencies.admissionStore.readCapturedPolicy(message, entry);
         if (validateWsQueueBoxServerRecipientAuthority(message, policy, entry.key).length > 0) {
             throw toDequeueCorruption(entry, 'Captured recipient authority differs from the WS row');
         }

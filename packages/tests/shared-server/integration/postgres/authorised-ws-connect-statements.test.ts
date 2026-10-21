@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { AUTH_SESSIONS_BY_SESSION_NAMESPACE } from '@shared-server/rallar-system/auth/persistence/auth-storage-keys.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -24,20 +24,13 @@ import {
     type PostgresAppInboxWorkerRuntime
 } from './test-support/postgres-app-inbox-worker-runtime.ts';
 import { seedGroupFormation } from './test-support/postgres-group-formation-fixture.ts';
+import {
+    recordPostgresStatements,
+    type PostgresStatementLog,
+    type RecordedPostgresStatement
+} from './test-support/record-postgres-statements.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
-
-interface RecordedStatement {
-    readonly transaction: number | null;
-    readonly text: string;
-    readonly values: readonly PSqlParameter[];
-    readonly rowCount: number;
-}
-
-interface StatementLog {
-    readonly statements: RecordedStatement[];
-    transactions: number;
-}
 
 describe('Postgres authorised WebSocket connect statements', () => {
     postgresIt('reads a co-member connect in at most seven statements and writes it in at most five', async () => {
@@ -71,9 +64,9 @@ async function measureCoMemberConnect(setupSql: PSqlSql, sql: PSqlSql, runId: st
         atEpochMs,
         requestIdFor: createPostgresTestRequestIdFactory()
     });
-    const log: StatementLog = { statements: [], transactions: 0 };
+    const log: PostgresStatementLog = { statements: [], transactions: 0 };
     const runtime = createPostgresAppInboxWorkerRuntime({
-        sql: recordStatements(sql, log, null),
+        sql: recordPostgresStatements(sql, log, null),
         serviceId: 'connect-statements',
         newLaneHeldRows: undefined,
         atEpochMs,
@@ -133,7 +126,7 @@ function toAuthSession(principalId: string, atEpochMs: number, runId: string): I
     };
 }
 
-function requireConnectTransaction(log: StatementLog): readonly RecordedStatement[] {
+function requireConnectTransaction(log: PostgresStatementLog): readonly RecordedPostgresStatement[] {
     const eventInsert = log.statements.find(({ text }) => text.startsWith('insert into client_state_events'));
     if (eventInsert?.transaction === null || eventInsert === undefined) {
         throw new Error('The connect wrote no client event inside a transaction');
@@ -141,41 +134,9 @@ function requireConnectTransaction(log: StatementLog): readonly RecordedStatemen
     return log.statements.filter(({ transaction }) => transaction === eventInsert.transaction);
 }
 
-function countValueOccurrences(statements: readonly RecordedStatement[], text: string): number {
+function countValueOccurrences(statements: readonly RecordedPostgresStatement[], text: string): number {
     return statements.reduce(
         (count, statement) => count + (JSON.stringify(statement.values).split(text).length - 1),
         0
     );
-}
-
-/** Records every template statement with its values, its row count and the transaction it ran in. */
-function recordStatements(source: PSqlSql, log: StatementLog, transaction: number | null): PSqlSql {
-    function recording<Result>(strings: TemplateStringsArray, ...values: readonly PSqlParameter[]): Promise<Result>;
-    function recording(values: readonly PSqlParameter[]): object;
-    function recording<Result>(
-        stringsOrValues: TemplateStringsArray | readonly PSqlParameter[],
-        ...values: readonly PSqlParameter[]
-    ): Promise<Result> | object {
-        if (!Object.hasOwn(stringsOrValues, 'raw')) {
-            return source(stringsOrValues as readonly PSqlParameter[]);
-        }
-        const strings = stringsOrValues as TemplateStringsArray;
-        const text = strings.join('?').replace(/\s+/gu, ' ').trim().toLowerCase();
-        return source<Result>(strings, ...values).then((rows) => {
-            log.statements.push({ transaction, text, values, rowCount: Array.isArray(rows) ? rows.length : 0 });
-            return rows;
-        });
-    }
-    const savepoint = (source as Partial<{ savepoint: PSqlSql['begin']; }>).savepoint;
-    return Object.assign(recording, {
-        begin: async <T>(write: (transaction: PSqlSql) => Promise<T>): Promise<T> => {
-            log.transactions += 1;
-            const opened = log.transactions;
-            return await source.begin(async (inner) => await write(recordStatements(inner, log, opened)));
-        },
-        ...(savepoint === undefined ? {} : {
-            savepoint: async <T>(write: (inner: PSqlSql) => Promise<T>): Promise<T> =>
-                await savepoint.call(source, async (inner: PSqlSql) => await write(recordStatements(inner, log, transaction))) as T
-        })
-    });
 }
