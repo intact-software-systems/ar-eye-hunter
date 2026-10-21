@@ -22,6 +22,12 @@ export interface UnansweredRetainedDialsInput {
     readonly rtcQBox: WebRtcConnectionService;
 }
 
+export interface AbsentPeerDialsInput {
+    readonly desiredPeerIds: ReadonlySet<PeerId>;
+    readonly dialAllowedPeerIds: ReadonlySet<PeerId>;
+    readonly rtcQBox: WebRtcConnectionService;
+}
+
 export interface OutboundDialsStarted {
     readonly attemptCount: number;
     readonly failureCount: number;
@@ -147,6 +153,19 @@ function getGroupSetupBound(ownership: WebRtcPeerOwnership, groupKey: string): n
 export function disconnectUnansweredRetainedDials(input: UnansweredRetainedDialsInput): void {
     for (const peerId of resolveUnansweredRetainedDialPeerIds(input)) {
         input.rtcQBox.disconnectPeer(peerId, { resetAttemptBudget: false });
+    }
+}
+
+/**
+ * Drops a desired peer's dial that is still in flight once the peer leaves group presence. Signaling is live-only, so
+ * the departed session's next connection never answers it; the peer is dialled again when its presence returns.
+ * Established edges are kept.
+ */
+export function disconnectAbsentPeerDials(input: AbsentPeerDialsInput): void {
+    for (const peerId of input.rtcQBox.inFlightPeerIds()) {
+        if (input.desiredPeerIds.has(peerId) && !input.dialAllowedPeerIds.has(peerId)) {
+            input.rtcQBox.disconnectPeer(peerId, { resetAttemptBudget: false });
+        }
     }
 }
 

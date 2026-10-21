@@ -38,6 +38,7 @@ import {
 } from './webrtc-group-overlay-reading.ts';
 import { computeOutboundDialPlan } from './webrtc-outbound-dial-plan.ts';
 import {
+    disconnectAbsentPeerDials,
     disconnectUnansweredRetainedDials,
     WebRtcOutboundDialing,
     type OutboundDialsStarted
@@ -444,6 +445,11 @@ export class WebRtcGroupManager {
         const ownership = this.readPeerOwnership();
         const desiredPeerIds = new Set(ownership.groupsByPeerId.keys());
         this.removeRetainedDesiredPeers(desiredPeerIds);
+        disconnectAbsentPeerDials({
+            desiredPeerIds,
+            dialAllowedPeerIds: ownership.dialAllowedPeerIds,
+            rtcQBox: this.rtcQBox
+        });
         const peerIdsWithNoReconnectableLanes = new Set(
             this.rtcQBox.peerIdsWithNoReconnectableLanes()
         );
@@ -467,17 +473,21 @@ export class WebRtcGroupManager {
             new WebRtcOutboundDialing({ rtcQBox: this.rtcQBox, dialPlan, ownership }).start()
         );
 
+        this.reconcileRetainedPeers(desiredPeerIds);
+
+        this.options.onDesiredPeerIdsChanged?.({
+            desiredPeerIds: [...desiredPeerIds],
+            rttReportingPeerIds: this.rttReportingPeerIds({ degreeLimit: this.options.rttReportingDegreeLimit })
+        });
+    }
+
+    private reconcileRetainedPeers(desiredPeerIds: Set<PeerId>): void {
         const reconciledKnownPeerIds = new Set(this.rtcQBox.knownPeerIds());
         this.removeUnknownRetainedPeers(reconciledKnownPeerIds);
         this.retainUndesiredKnownPeers(desiredPeerIds, reconciledKnownPeerIds);
         this.disconnectExpiredRetainedPeers(reconciledKnownPeerIds);
         this.evictRetainedPeers(desiredPeerIds, reconciledKnownPeerIds);
         this.startRetainedExpiryWake();
-
-        this.options.onDesiredPeerIdsChanged?.({
-            desiredPeerIds: [...desiredPeerIds],
-            rttReportingPeerIds: this.rttReportingPeerIds({ degreeLimit: this.options.rttReportingDegreeLimit })
-        });
     }
 
     private recordDialsStarted(started: OutboundDialsStarted): void {
