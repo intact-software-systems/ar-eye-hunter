@@ -72,7 +72,16 @@ have separate owners:
 - `AppInboxReservationClient` materializes commands that require a durable
   reservation before their current authority can be computed;
 - `AppInboxQueueEntryWriter` writes current commands and wakes the owning queue;
-- `AppInboxCommandClient` coordinates ordinary enqueue-and-wait calls;
+- `AppInboxCommandClient` coordinates ordinary enqueue-and-wait calls, and
+  reserve-and-wait calls whose volatile facts the winning reservation stores:
+  authenticated group commands capture their ingress facts at enqueue,
+  including the enqueue-instant timestamp, and every attempt reuses them.
+  That timestamp only stamps: events, audit, outbox creation times and the
+  skew checks on request timestamps. Each attempt samples its own lane
+  instant (`attemptAtEpochMs`) for every time-based decision it makes
+  (group expiry, session liveness, invite and join-code expiry, director
+  eligibility, the snapshot its result reports) and for every TTL default
+  or window it opens;
 - `AppInboxResultWaiter` polls completion state and decodes the typed durable
   result;
 - `AppInboxHandlerRegistry` registers exact command decoders and handlers;
@@ -114,8 +123,7 @@ that has not claimed its deadline by committing when it falls due is abandoned a
 a retryable `app-inbox-attempt-deadline-exceeded` failure with a
 `handler-deadline-expired` timing event, so the serial lane serves its next entry
 and the entry follows the retry path. The abandoned handler's own commit then
-loses the claim and rolls back, its pre-transaction authority write is refused
-(`requireUnexpiredAttempt`), and it records no late queue-retry line. A handler
+loses the claim and rolls back, and it records no late queue-retry line. A handler
 that claimed its deadline and still ran past what remained of its lease, such as a
 slow commit, is reported as a `handler-outran-lease` timing event.
 

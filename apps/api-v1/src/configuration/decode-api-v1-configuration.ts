@@ -6,6 +6,7 @@ import type {
     ApiV1AuthenticationConfiguration,
     ApiV1BlackBoxConfiguration,
     ApiV1CircuitBreakerConfiguration,
+    ApiV1ClientSessionsConfiguration,
     ApiV1Configuration,
     ApiV1CrdtConfiguration,
     ApiV1DatabaseConfiguration,
@@ -72,6 +73,7 @@ export function decodeApiV1Configuration(
         staticClientsSource: input.staticClientsSource,
         hardwareConcurrency: input.hardwareConcurrency
     });
+    const clientSessions = decodeClientSessions(decoder, authentication);
     const stateApi = decodeStateApi(decoder);
     const group = decodeGroup(decoder);
     const topology = decodeTopology(decoder);
@@ -106,6 +108,7 @@ export function decodeApiV1Configuration(
         publicApi,
         database,
         authentication,
+        clientSessions,
         stateApi,
         group,
         topology,
@@ -317,6 +320,22 @@ function decodeAuthentication(
             )
         }
     };
+}
+
+function decodeClientSessions(
+    decoder: ApiV1ConfigurationValueDecoder,
+    authentication: Pick<ApiV1AuthenticationConfiguration, 'sessionTtlMs'>
+): ApiV1ClientSessionsConfiguration {
+    const path = 'clientSessions.disconnectedRetentionMs';
+    const disconnectedRetentionMs = decoder.integer(path, 1);
+    if (decoder.isValid(path, 'authentication.sessionTtlMs') && disconnectedRetentionMs > authentication.sessionTtlMs) {
+        decoder.invariant(
+            path,
+            'retention-exceeds-session-ttl',
+            'A disconnected client session must not outlive the auth session TTL.'
+        );
+    }
+    return { disconnectedRetentionMs };
 }
 
 function decodeStateApi(

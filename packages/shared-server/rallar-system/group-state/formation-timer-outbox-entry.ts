@@ -173,7 +173,7 @@ function computeEstablishmentTimerEntries(
     const { command, next, policy, facts } = input;
     const deadlineArmed = policy.activation.mode === 'deadline' || policy.activation.mode === 'threshold-or-deadline';
     if (consumesFormationDeadlineAt(next.lifecycleState) && deadlineArmed) {
-        return [timerEntry(input, 'deadline', facts.nowEpochMs + policy.activation.deadlineMs)];
+        return [timerEntry(input, 'deadline', facts.attemptAtEpochMs + policy.activation.deadlineMs)];
     }
     // The `forming` landing already implies an unspent budget since slice
     // 11c — the attempt that spends it parks in `dormant`. This keeps the
@@ -188,7 +188,7 @@ function computeEstablishmentTimerEntries(
             timerEntry(
                 input,
                 'retry',
-                facts.nowEpochMs + computeFormationRetryBackoffMs(next.formationAttemptCount)
+                facts.attemptAtEpochMs + computeFormationRetryBackoffMs(next.formationAttemptCount)
             )
         ];
     }
@@ -213,7 +213,7 @@ function computeStageTriggerTimerEntries(
     }
     if (next.lifecycleState === 'forming' && (previous === null || previous === 'dormant')) {
         const delayMs = toStageTriggerTimerDelayMs(policy.establishment.planTrigger);
-        return delayMs === null ? [] : [timerEntry(input, 'plan', facts.nowEpochMs + delayMs)];
+        return delayMs === null ? [] : [timerEntry(input, 'plan', facts.attemptAtEpochMs + delayMs)];
     }
     const { connectTrigger } = policy.establishment;
     if (
@@ -225,7 +225,7 @@ function computeStageTriggerTimerEntries(
         return [];
     }
     const delayMs = toStageTriggerTimerDelayMs(connectTrigger);
-    return delayMs === null ? [] : [timerEntry(input, 'connect', facts.nowEpochMs + delayMs)];
+    return delayMs === null ? [] : [timerEntry(input, 'connect', facts.attemptAtEpochMs + delayMs)];
 }
 
 function timerEntry(

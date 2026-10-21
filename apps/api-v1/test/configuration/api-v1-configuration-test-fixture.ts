@@ -52,6 +52,9 @@ export function validConfigurationDefaultsSource(): MutableApiV1ConfigurationSou
                 webSocketTicket: 30
             }
         },
+        clientSessions: {
+            disconnectedRetentionMs: 604_800_000
+        },
         stateApi: {
             strictReadAuthorization: false,
             rateLimits: {

@@ -1,8 +1,11 @@
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import type {
+    RuntimeStateReadBatchSelection,
+    RuntimeStateReadBatchSelector
+} from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
+import type {
     RuntimeStateConditionalWriteResult,
-    RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike,
     RuntimeStateOptimisticTransactionRepositoryLike
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
@@ -32,11 +35,18 @@ export class AggregateBarrierRepository extends FakeRuntimeStateRepository {
     releasePrincipalReadBarrier(): void {
         this.releasePrincipalReads?.();
     }
-    override async findEntry(namespace: string, key: string): Promise<RuntimeStateEntry | undefined> {
-        const value = await super.findEntry(namespace, key);
-        if (namespace !== 'client-state:principals' || this.principalReadsRemaining <= 0) {
-            return value;
+    /** A mutation's principal row arrives with its point statement; the barrier holds the read after it observed. */
+    override async readRuntimeStateBatch(
+        selectors: readonly RuntimeStateReadBatchSelector[]
+    ): Promise<readonly RuntimeStateReadBatchSelection[]> {
+        const selections = await super.readRuntimeStateBatch(selectors);
+        if (selectors.some(isPrincipalSelector) && this.principalReadsRemaining > 0) {
+            await this.arriveAtPrincipalRead();
         }
+        return selections;
+    }
+
+    private async arriveAtPrincipalRead(): Promise<void> {
         this.principalReadsArrived += 1;
         this.releaseFirstPrincipalRead?.();
         this.releaseFirstPrincipalRead = undefined;
@@ -45,12 +55,11 @@ export class AggregateBarrierRepository extends FakeRuntimeStateRepository {
             if (!this.holdFirstPrincipalRead) {
                 this.releasePrincipalReads?.();
             }
-            return value;
+            return;
         }
         await new Promise<void>((resolve) => {
             this.releasePrincipalReads = resolve;
         });
-        return value;
     }
 
     override async begin<T>(
@@ -78,13 +87,17 @@ export class PrincipalChangeAfterFirstReadRepository extends AggregateBarrierRep
         this.changeAfterPrincipalRead = true;
     }
 
-    override async findEntry(namespace: string, key: string): Promise<RuntimeStateEntry | undefined> {
-        const entry = await super.findEntry(namespace, key);
-        if (namespace === 'client-state:principals' && entry && this.changeAfterPrincipalRead) {
+    override async readRuntimeStateBatch(
+        selectors: readonly RuntimeStateReadBatchSelector[]
+    ): Promise<readonly RuntimeStateReadBatchSelection[]> {
+        const selections = await super.readRuntimeStateBatch(selectors);
+        const index = selectors.findIndex(isPrincipalSelector);
+        const [entry] = index < 0 ? [] : selections[index].entries;
+        if (entry && this.changeAfterPrincipalRead) {
             this.changeAfterPrincipalRead = false;
-            await super.upsert(namespace, key, entry.value, entry.expireAtTimestamp);
+            await super.upsert(selectors[index].namespace, entry.key, entry.value, entry.expireAtTimestamp);
         }
-        return entry;
+        return selections;
     }
 }
 
@@ -162,6 +175,10 @@ export class StatementRecordingRepository extends AggregateBarrierRepository {
             this.transactionStatements.push(`${operation}:${namespace}`);
         }
     }
+}
+
+function isPrincipalSelector(selector: RuntimeStateReadBatchSelector): boolean {
+    return selector.kind === 'key' && selector.namespace === 'client-state:principals';
 }
 
 export function createService(

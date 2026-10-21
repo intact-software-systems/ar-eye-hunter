@@ -285,6 +285,7 @@ function connectCommand(): GroupStateMutationCommand {
         },
         facts: {
             nowEpochMs: 2_000,
+            attemptAtEpochMs: 2_000,
             expireAtEpochMs: 604_802_000,
             serviceId: 'server-1',
             eventId: 'event-1',

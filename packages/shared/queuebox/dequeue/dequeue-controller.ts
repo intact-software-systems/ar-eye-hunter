@@ -353,7 +353,7 @@ export class DequeueController<K, V, T> {
             maxConcurrentComputes,
             // A serial lane still claims a whole reservation at once.
             maxUnreleased: Math.max(budget?.maxToReserve ?? this.maxNumToReserve(), maxConcurrentComputes),
-            releasedKeyedRunsFirst: false,
+            keyedChainsFirst: false,
             toExclusionKey: this.toExclusionKey,
             releaseFailureClock: undefined,
             retainSettlement: undefined

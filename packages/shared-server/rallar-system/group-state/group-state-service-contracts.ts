@@ -33,7 +33,6 @@ import type {
     GroupPlannedLayoutRow
 } from './mutation/aggregate/compute-planned-layout-promotion.ts';
 
-import { type AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../runtime-state/runtime-state-repository.ts';
@@ -48,6 +47,7 @@ import type {
     GroupMutationComputed,
     GroupMutationComputedWrite,
     GroupMutationFacts,
+    GroupMutationIngressFacts,
     GroupMutationRead,
     GroupMutationReceipt,
     GroupMutationSnapshotRead
@@ -140,7 +140,7 @@ export interface GroupMutationIngress {
     readonly authorityProof: GroupMutationAuthorityProof | null;
     readonly descriptor: GroupMutationDescriptor | null;
     readonly command: GroupMutationCommand;
-    readonly facts: Omit<GroupMutationFacts, 'attemptCount'>;
+    readonly facts: GroupMutationIngressFacts;
     readonly causalToken: string;
     readonly queueResourceId: string;
 }
@@ -241,7 +241,6 @@ export interface GroupStateServiceDependencies {
     readonly randomId?: () => string;
     readonly serviceId: string;
     readonly timing?: RallarTimingSink;
-    readonly authSessionRepository: Pick<AuthSessionRepository, 'findBySessionId'>;
     /**
      * Reads the stored planned-layout row — snapshot, identity, revision and
      * input fingerprint. Null when no planned row exists. Deployments without

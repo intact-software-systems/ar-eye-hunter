@@ -179,7 +179,7 @@ function assembleCommittedSnapshot(
             summary: computed.initialPresenceSummary?.value ?? input.read.presenceSummary?.value,
             authoritativeSessions: input.currentSnapshot?.activeSessions ?? [],
             groupRevision: computed.guard.value.snapshotVersion,
-            observedAtEpochMs: input.command.facts.nowEpochMs,
+            observedAtEpochMs: input.command.facts.attemptAtEpochMs,
             sessionLeaseFields: 'authoritative'
         },
         (storageKey, message) => new GroupStateRepositoryInvariantCorruptionError(storageKey, message)

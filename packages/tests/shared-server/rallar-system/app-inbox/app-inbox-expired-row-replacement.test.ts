@@ -233,8 +233,7 @@ describe('AppInbox expired row replacement', () => {
                 serviceId: 'expired-group-service',
                 readPlannedLayoutRow: async () => null,
                 readAcceptedLayoutRow: async () => null,
-                now: () => nowEpochMs,
-                authSessionRepository: sessions
+                now: () => nowEpochMs
             });
             const service = new GroupStateInboxService(
                 {

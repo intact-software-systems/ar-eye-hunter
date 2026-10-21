@@ -1,4 +1,3 @@
-import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-group-state-event-store.ts';
@@ -52,8 +51,7 @@ async function main(): Promise<void> {
         now: () => 1_700_000_000_000,
         serviceId: 'group-list-fanout-bench',
         readPlannedLayoutRow: async () => null,
-        readAcceptedLayoutRow: async () => null,
-        authSessionRepository: new AuthSessionRepository(repository)
+        readAcceptedLayoutRow: async () => null
     });
 
     for (let index = 0; index < GROUPS; index += 1) {

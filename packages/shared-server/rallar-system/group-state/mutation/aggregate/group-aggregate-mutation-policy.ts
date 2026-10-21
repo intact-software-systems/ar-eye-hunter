@@ -104,7 +104,7 @@ export function toGroupAuthorityPolicyInput(
         throw new TypeError('Group authority compute requires the roster read');
     }
     return {
-        snapshot: toPolicySnapshot(read, command.aggregateRef, facts.nowEpochMs),
+        snapshot: toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs),
         actor: {
             principalId: command.input.actorPrincipalId ?? undefined,
             sessionId: command.input.actorSessionId ?? undefined
@@ -131,10 +131,10 @@ export function assertPrincipalAuthority(command: GroupMutationCommand, principa
 export function assertGovernance(input: AssertGroupMutationGovernanceInput): void {
     const { action, command, facts, read } = input;
     const stored = requireGroup(read, command.aggregateRef);
-    assertActive(stored.value, facts.nowEpochMs);
+    assertActive(stored.value, facts.attemptAtEpochMs);
     assertAllowed(
         canGovernGroupMember({
-            snapshot: toPolicySnapshot(read, command.aggregateRef, facts.nowEpochMs),
+            snapshot: toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs),
             actor: {
                 principalId: command.input.actorPrincipalId ?? undefined,
                 sessionId: command.input.actorSessionId ?? undefined

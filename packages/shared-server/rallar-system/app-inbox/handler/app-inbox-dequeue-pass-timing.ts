@@ -65,7 +65,8 @@ export namespace AppInboxDequeuePassTiming {
 /**
  * One `app-inbox-phase` `dequeue-pass` line per claimed entry, on the inbox and on the outbox pass,
  * carrying the executor cost of the pass outside the handlers: the probe, the reservations and the
- * releases, with the lanes the probe advertised and the claimed type. The executor is shared, so
+ * releases, with the lanes the probe advertised, the claimed type, and the entry's row id and creation
+ * time, so a row claimed ahead of an older one shows. The executor is shared, so
  * statements other callers ran meanwhile are counted too. An entry belongs to the pass that claimed it,
  * even when its handler runs after that pass; a pass subtracts only the handler time inside it.
  *
@@ -174,7 +175,9 @@ export class AppInboxDequeuePassTiming implements QueueMessageReader.DequeuePass
                         ...toClaimedAttemptDetails(attempt),
                         ...cost.counters,
                         lanesProbed,
-                        claimedInPass: pass.claimed.length
+                        claimedInPass: pass.claimed.length,
+                        rowId: attempt.entry.db?.id,
+                        createdTs: attempt.entry.audit.createdTs.toString()
                     }
                 },
                 status: 'ok',

@@ -167,7 +167,7 @@ describe('GroupPresenceSummaryWork canonical persisted command', () => {
         } as never)).rejects.toMatchObject({ code: 'resource-inbox-invariant-corruption' });
 
         expect(statements).toHaveLength(1);
-        expect(statements[0]?.toLowerCase()).not.toContain('select');
+        expect(statements[0]?.trim().toLowerCase()).toMatch(/^insert into resource_inbox /u);
     });
 
     it.each(INVALID_SUMMARY_SCENARIOS)('rejects $name before read or effects', async ({ mutate }) => {

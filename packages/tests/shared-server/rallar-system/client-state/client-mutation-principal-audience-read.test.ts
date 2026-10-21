@@ -29,6 +29,7 @@ import { describe, expect, it } from 'vitest';
 import { createTestGroup } from '../../../create-test-group.ts';
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { principalCommand, TEST_SCOPE } from './client-mutation-compute-test-fixtures.ts';
+import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 const AUDIENCE_EPOCH_MS = 2_000_000_000_000;
 const HEARTBEAT_EPOCH_MS = 2;
@@ -138,7 +139,6 @@ describe('client mutation principal audience read', () => {
         const read = await readClientMutation({
             repository: clients,
             groupRepository: groups,
-            authSessionRepository: { findBySessionId: async () => undefined },
             command: principalCommand('audience-read'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -177,7 +177,6 @@ describe('client mutation principal audience read', () => {
         const read = await readClientMutation({
             repository: clients,
             groupRepository: groups,
-            authSessionRepository: { findBySessionId: async () => undefined },
             command: principalCommand('stale-instance-audience'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -192,11 +191,11 @@ describe('client mutation principal audience read', () => {
             coMemberSessions: read.audienceCoMemberSessions,
             nowEpochMs: AUDIENCE_EPOCH_MS
         })).toEqual(['alice-session', 'bob-session', 'carol-session', 'dave-session']);
-        // Three co-member principals and their three active sessions, then the three principals again as the guard.
-        expect(runtime.coMemberRowsPerBatch).toEqual([6, 3]);
+        // Three co-member principals and their three active sessions, from one statement and with no reread guard.
+        expect(runtime.coMemberRowsPerBatch).toEqual([6]);
     });
 
-    it('rereads a co-member whose principal moves between the session read and the guard', async () => {
+    it('takes a co-member principal and its sessions from one statement and leaves a later write to its own fan-out', async () => {
         const runtime = new CoMemberRowCountingRepository();
         const { groups, clients } = await seedHeartbeatAudience(runtime, ['bob']);
         runtime.afterCoMemberSessionRead = async () => {
@@ -217,13 +216,13 @@ describe('client mutation principal audience read', () => {
         const read = await readClientMutation({
             repository: clients,
             groupRepository: groups,
-            authSessionRepository: { findBySessionId: async () => undefined },
             command: principalCommand('moved-co-member'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
 
         expect(read.audienceCoMemberSessions.map((sessions) => sessions.activeSessions.map(({ sessionId }) => sessionId)))
-            .toEqual([['bob-late-session', 'bob-session']]);
+            .toEqual([['bob-session']]);
+        expect(runtime.coMemberRowsPerBatch).toEqual([2]);
     });
 
     it('reconsiders a group whose roster changes after the actor-member batch', async () => {
@@ -264,7 +263,6 @@ describe('client mutation principal audience read', () => {
         const read = await readClientMutation({
             repository: clients,
             groupRepository: groups,
-            authSessionRepository: { findBySessionId: async () => undefined },
             command: principalCommand('concurrent-membership'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -324,7 +322,6 @@ describe('client mutation principal audience read', () => {
         const read = await readClientMutation({
             repository: clients,
             groupRepository: groups,
-            authSessionRepository: { findBySessionId: async () => undefined },
             command: principalCommand('audience-sessions'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -349,7 +346,6 @@ describe('client mutation principal audience read', () => {
         const read = await readClientMutation({
             repository: clients,
             groupRepository: groups,
-            authSessionRepository: { findBySessionId: async () => undefined },
             command: heartbeatCommandFor('superseded-generation'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -369,7 +365,6 @@ describe('client mutation principal audience read', () => {
         const read = await readClientMutation({
             repository: clients,
             groupRepository: groups,
-            authSessionRepository: { findBySessionId: async () => undefined },
             command,
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -390,7 +385,6 @@ describe('client mutation principal audience read', () => {
         const read = await readClientMutation({
             repository: clients,
             groupRepository: groups,
-            authSessionRepository: { findBySessionId: async () => undefined },
             command,
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -410,7 +404,6 @@ describe('client mutation principal audience read', () => {
         const read = await readClientMutation({
             repository: clients,
             groupRepository: groups,
-            authSessionRepository: { findBySessionId: async () => undefined },
             command,
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -437,7 +430,6 @@ describe('client mutation principal audience read', () => {
         const coMemberRead = await readClientMutation({
             repository: clients,
             groupRepository: groups,
-            authSessionRepository: { findBySessionId: async () => undefined },
             command: principalCommand('audience-carrying-read'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -469,7 +461,6 @@ describe('client mutation principal audience read', () => {
         const read = await readClientMutation({
             repository: clients,
             groupRepository: groups,
-            authSessionRepository: { findBySessionId: async () => undefined },
             command: principalCommand('forged-audience'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -490,7 +481,6 @@ describe('client mutation principal audience read', () => {
         const read = await readClientMutation({
             repository: clients,
             groupRepository: groups,
-            authSessionRepository: { findBySessionId: async () => undefined },
             command,
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -549,7 +539,6 @@ describe('client mutation principal audience read', () => {
         await expect(readClientMutation({
             repository: clients,
             groupRepository: groups,
-            authSessionRepository: { findBySessionId: async () => undefined },
             command: principalCommand('corrupt-membership'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         })).rejects.toMatchObject({
@@ -587,7 +576,6 @@ describe('client mutation principal audience read', () => {
         await expect(readClientMutation({
             repository: clients,
             groupRepository: groups,
-            authSessionRepository: { findBySessionId: async () => undefined },
             command: principalCommand('corrupt-co-group-client'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         })).rejects.toMatchObject({
@@ -646,7 +634,8 @@ function disconnectCommandFor(generationId: string): ClientMutationCommand {
             serviceId: 'client-service',
             eventId: `event:${requestId}`,
             attemptCount: 1,
-            expireAtEpochMs: 20_000
+            expireAtEpochMs: 20_000,
+            disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
         },
         toClientMutationIssuedSessionAuthority(
             {
@@ -686,7 +675,8 @@ function heartbeatCommandFor(generationId: string): ClientMutationCommand {
             serviceId: 'client-service',
             eventId: `event:${requestId}`,
             attemptCount: 1,
-            expireAtEpochMs: 20_000
+            expireAtEpochMs: 20_000,
+            disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
         },
         toClientMutationIssuedSessionAuthority(
             {

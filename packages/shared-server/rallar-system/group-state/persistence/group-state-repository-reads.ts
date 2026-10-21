@@ -11,6 +11,7 @@ import type {
 
 import { resolveRuntimeStateReadBatchLiveValues } from '../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
 import type { RuntimeStateEntryRead, RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import { decodeAuthSessionBySessionIdEntry } from '../../auth/persistence/auth-session-persistence.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
 import { assertGroupMutationIdempotencyRecord } from '../mutation/state-validation/assert-group-mutation-result.ts';
@@ -92,6 +93,7 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
                         principalId
                     }),
                 lifecyclePolicy: (value) => toGroupLifecyclePolicyRead(value, input.aggregateRef),
+                authSession: decodeAuthSessionBySessionIdEntry,
                 groupSnapshot: (rows) =>
                     this.toStableAuthoritativeSnapshot(input.aggregateRef, rows, observedAtEpochMs)?.snapshot
             }

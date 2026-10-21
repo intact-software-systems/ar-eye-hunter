@@ -30,8 +30,8 @@ import {
     processAppInbox,
     requireRightSnapshot
 } from './app-client-inbox-mutation-test-harness.ts';
-import { createEmptyWsTicketReader } from './authorised-ws-test-ticket.ts';
 import { createClientStateServiceFixture } from './create-client-state-service-fixture.ts';
+import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 describe('AppClientInbox operation matrix', () => {
     it('finishes construction only after all eight client handlers are registered', () => {
@@ -50,11 +50,11 @@ function createClientInboxServiceForRegistration(): AppClientInboxService {
             resourceInboxRepository: queue,
             resourceInboxResultsRepository: results,
             database: createAppInboxTestDatabase(queue, results),
-            clientStateService: createClientStateServiceFixture(),
-            wsTickets: createEmptyWsTicketReader()
+            clientStateService: createClientStateServiceFixture()
         },
         {
-            serviceId: 'client-registration-service'
+            serviceId: 'client-registration-service',
+            disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
         }
     );
 }
@@ -95,11 +95,11 @@ describe('AppClientInbox mutation processing', () => {
                         read: vi.fn(async () => {
                             throw new NonRetryableException('Client principal update failed');
                         })
-                    },
-                    wsTickets: createEmptyWsTicketReader()
+                    }
                 },
                 {
-                    serviceId: 'server-12345678'
+                    serviceId: 'server-12345678',
+                    disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
                 }
             );
 
@@ -149,11 +149,11 @@ function createMutationProcessingHarness(): MutationProcessingHarness {
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: results,
                 database: database,
-                clientStateService: createAutoAuthorizingClientStateService(runtimeRepository, database),
-                wsTickets: new AuthSessionRepository(runtimeRepository)
+                clientStateService: createAutoAuthorizingClientStateService(runtimeRepository, database)
             },
             {
-                serviceId: 'server-12345678'
+                serviceId: 'server-12345678',
+                disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
             }
         )
     };

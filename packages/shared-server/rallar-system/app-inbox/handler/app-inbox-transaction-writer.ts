@@ -77,16 +77,6 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
         this.deadlineByContext.set(context, deadline);
     }
 
-    /**
-     * A handler write outside its transaction, such as persisting captured authority, first checks the attempt was not
-     * abandoned at its deadline; it does not claim the deadline, which only the commit does.
-     */
-    requireUnexpiredAttempt(context: AppInboxExecutionMetadata): void {
-        if (this.deadlineByContext.get(context)?.isExpired() ?? false) {
-            throw new AppInboxAttemptDeadlineExceededError(context.entry.key);
-        }
-    }
-
     read(context: AppInboxExecutionMetadata): AppInboxHandlerFinalization {
         return this.finalizationByContext.get(context) ?? { state: 'pending' };
     }

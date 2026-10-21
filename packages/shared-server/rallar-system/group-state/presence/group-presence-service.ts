@@ -26,6 +26,7 @@ import type {
 import { GroupMutationIdempotencyConflictError } from '../group-state-service.ts';
 import type { GroupMutationComputed } from '../mutation/group-mutation-contracts.ts';
 import type { GroupMutationRead } from '../mutation/group-mutation-contracts.ts';
+import { toGroupMutationAttemptFacts } from '../mutation/to-group-mutation-attempt-facts.ts';
 import type { GroupPresenceSessionCleanupAppInboxPayload } from './group-presence-session-cleanup-app-inbox-payload.ts';
 
 export interface InactiveGroupPresenceResult {
@@ -132,6 +133,7 @@ export async function writeGroupSessionCleanup(
     input: Readonly<{
         facts: GroupPresenceSessionCleanupAppInboxPayload;
         attemptCount: number;
+        laneNowEpochMs: number;
         context: AppInboxMessageContext<GroupSessionCleanupResult>;
         groupStateService: GroupStateService;
         transactionWriter: Pick<AppInboxMutationTransactionWriter, 'readCompletionFacts' | 'writeComputedMutation'>;
@@ -155,7 +157,7 @@ export async function writeGroupSessionCleanup(
                 authorityProof: ingress.authorityProof,
                 descriptor: ingress.descriptor,
                 command: ingress.command,
-                facts: { ...ingress.facts, attemptCount: input.attemptCount }
+                facts: toGroupMutationAttemptFacts(ingress.facts, input.attemptCount, input.laneNowEpochMs)
             };
             const read = await input.groupStateService.read(command);
             const computed = input.groupStateService.compute(command, read);

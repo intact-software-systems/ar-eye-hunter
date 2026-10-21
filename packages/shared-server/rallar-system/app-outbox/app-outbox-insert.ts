@@ -15,6 +15,30 @@ export interface AppOutboxInsert {
     readonly attempts: number;
 }
 
+/** One row of the multi-row outbox insert, named as the statement's recordset columns. */
+export interface AppOutboxInsertRow {
+    readonly resourceId: string;
+    readonly topicId: string;
+    readonly resource: string;
+    readonly typeId: string;
+    readonly status: string;
+    readonly contextId: string;
+    readonly systemDate: string;
+    readonly createdBy: string;
+    readonly createdAt: string;
+    readonly expiresAt: string;
+    readonly startedAt: string | null;
+    readonly finishedAt: string | null;
+    readonly nextAt: string | null;
+    readonly attempts: number;
+}
+
+interface AppOutboxInsertedRow {
+    readonly ri_resource_id: string;
+    readonly ri_topic_id: string;
+    readonly fk_ext_bank_id: string;
+}
+
 export function computeAppOutboxInsert(entry: ResourceEntry): AppOutboxInsert {
     const snapshot: Readonly<ResourceEntry> = {
         ...entry,
@@ -57,54 +81,64 @@ export function isExactAppOutboxInsert(
 }
 
 export async function writeAppOutboxInsert(transaction: PSqlSql, computed: AppOutboxInsert): Promise<void> {
-    if (!await insertAppOutboxRow(transaction, computed)) {
-        throwAppOutboxInsertConflict(computed);
-    }
+    await writeAppOutboxInserts(transaction, [computed]);
 }
 
-async function insertAppOutboxRow(transaction: PSqlSql, computed: AppOutboxInsert): Promise<boolean> {
-    const entry = computed.entry;
-    const inserted = await transaction<readonly { ri_row_id: bigint; }[]>`
-        insert into resource_inbox (ri_resource_id,
-                                    ri_topic_id,
-                                    ri_resource,
-                                    ri_type_id,
-                                    ri_status,
-                                    fk_ext_bank_id,
-                                    system_date,
-                                    created_by,
-                                    created_ts,
-                                    expire_ts,
-                                    start_ts,
-                                    end_ts,
-                                    next_ts,
+/**
+ * Every row in one statement and in the given order; each must return its row id, since a row whose key already
+ * exists is the corruption the insert reports.
+ */
+export async function writeAppOutboxInserts(
+    transaction: PSqlSql,
+    computed: readonly AppOutboxInsert[]
+): Promise<void> {
+    if (computed.length === 0) {
+        return;
+    }
+    const inserted = await transaction<readonly AppOutboxInsertedRow[]>`
+        insert into resource_inbox (ri_resource_id, ri_topic_id, ri_resource, ri_type_id, ri_status, fk_ext_bank_id,
+                                    system_date, created_by, created_ts, expire_ts, start_ts, end_ts, next_ts,
                                     ri_attempts)
-        values (${entry.key.resourceId},
-                ${entry.key.topicId},
-                ${entry.resource},
-                ${entry.typeId},
-                ${entry.status},
-                ${entry.key.contextId},
-                ${computed.systemDate},
-                ${entry.audit.createdBy},
-                ${computed.createdAt},
-                ${computed.expiresAt},
-                ${computed.startedAt},
-                ${computed.finishedAt},
-                ${computed.nextAt},
-                ${computed.attempts})
+        select row."resourceId", row."topicId", row.resource, row."typeId", row.status, row."contextId",
+               row."systemDate"::date, row."createdBy", row."createdAt"::timestamp(6), row."expiresAt"::timestamp(6),
+               row."startedAt"::timestamp(6), row."finishedAt"::timestamp(6), row."nextAt"::timestamp(6), row.attempts
+        from jsonb_to_recordset(${computed.map(toAppOutboxInsertRow)}::jsonb)
+            as row("resourceId" text, "topicId" text, resource text, "typeId" text, status text, "contextId" text,
+                   "systemDate" text, "createdBy" text, "createdAt" text, "expiresAt" text, "startedAt" text,
+                   "finishedAt" text, "nextAt" text, attempts bigint)
         on conflict (fk_ext_bank_id, ri_resource_id, ri_topic_id) do nothing
-        returning ri_row_id
+        returning ri_row_id, ri_resource_id, ri_topic_id, fk_ext_bank_id
     `;
-    if (inserted.length > 1) {
-        throwAppOutboxInsertConflict(computed);
+    if (inserted.length !== computed.length) {
+        const missing = computed.find(({ entry: { key } }) =>
+            !inserted.some((row) =>
+                row.ri_resource_id === key.resourceId && row.ri_topic_id === key.topicId &&
+                row.fk_ext_bank_id === key.contextId
+            )
+        );
+        throw new ResourceInboxInvariantCorruptionError(
+            (missing ?? computed[0]).entry.key,
+            'App outbox insert did not create exactly one row'
+        );
     }
-    return inserted.length === 1;
 }
 
-function throwAppOutboxInsertConflict(computed: AppOutboxInsert): never {
-    throw new ResourceInboxInvariantCorruptionError(
-        computed.entry.key,
-        'App outbox insert did not create exactly one row'
-    );
+function toAppOutboxInsertRow(computed: AppOutboxInsert): AppOutboxInsertRow {
+    const { entry } = computed;
+    return {
+        resourceId: entry.key.resourceId,
+        topicId: entry.key.topicId,
+        resource: entry.resource,
+        typeId: entry.typeId,
+        status: entry.status,
+        contextId: entry.key.contextId,
+        systemDate: computed.systemDate,
+        createdBy: entry.audit.createdBy,
+        createdAt: computed.createdAt,
+        expiresAt: computed.expiresAt,
+        startedAt: computed.startedAt,
+        finishedAt: computed.finishedAt,
+        nextAt: computed.nextAt,
+        attempts: computed.attempts
+    };
 }

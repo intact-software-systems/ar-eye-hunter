@@ -2,6 +2,7 @@ import { Temporal } from '@js-temporal/polyfill';
 
 import type { PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import type { AppOutboxInsertRow } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import { validateRuntimeStateReadBatchSelectors } from '@shared-server/runtime-state/read-batch/validate-runtime-state-read-batch-selectors.ts';
@@ -282,27 +283,8 @@ async function executeResultAndReservationSql(
 }
 
 function executeOutboxSql(input: AppInboxTestSqlExecution): PSqlRows | undefined {
-    const insertsOutbox = input.query.includes('insert into resource_inbox');
-    if (insertsOutbox) {
-        const entry = toInboxEntry(input.values);
-        if (input.options.shouldFailOutboxWrite?.()) {
-            throw new ResourceInboxInvariantCorruptionError(
-                entry.key,
-                'Injected AppInbox outbox collision'
-            );
-        }
-        const key = toResourceKey(entry);
-        if (input.pending.outbox.has(key)) {
-            if (input.query.includes('on conflict') && input.query.includes('do nothing')) {
-                return [];
-            }
-            throw new ResourceInboxInvariantCorruptionError(
-                entry.key,
-                'AppInbox outbox identity already exists'
-            );
-        }
-        input.pending.outbox.set(key, entry);
-        return [toInboxRow(entry)];
+    if (input.query.includes('insert into resource_inbox')) {
+        return toAppOutboxInsertParameterRows(input.query, input.values).flatMap((values) => insertOutboxEntry(input, toInboxEntry(values)));
     }
     if (input.query.includes('from resource_inbox') && input.query.includes('where ri_topic_id')) {
         const topicId = readStringParameter(input.values[0], 'Outbox topic ID');
@@ -312,6 +294,53 @@ function executeOutboxSql(input: AppInboxTestSqlExecution): PSqlRows | undefined
         return entry ? [toInboxRow(entry)] : [];
     }
     return undefined;
+}
+
+function insertOutboxEntry(input: AppInboxTestSqlExecution, entry: ResourceEntry): PSqlRows {
+    if (input.options.shouldFailOutboxWrite?.()) {
+        throw new ResourceInboxInvariantCorruptionError(
+            entry.key,
+            'Injected AppInbox outbox collision'
+        );
+    }
+    const key = toResourceKey(entry);
+    if (input.pending.outbox.has(key)) {
+        if (input.query.includes('on conflict') && input.query.includes('do nothing')) {
+            return [];
+        }
+        throw new ResourceInboxInvariantCorruptionError(
+            entry.key,
+            'AppInbox outbox identity already exists'
+        );
+    }
+    input.pending.outbox.set(key, entry);
+    return [toInboxRow(entry)];
+}
+
+/** The positional values of each row an outbox insert writes: one row, or every row of the multi-row form. */
+export function toAppOutboxInsertParameterRows(
+    query: string,
+    values: readonly PSqlParameter[]
+): readonly (readonly PSqlParameter[])[] {
+    if (!query.includes('jsonb_to_recordset')) {
+        return [values];
+    }
+    return (values[0] as readonly AppOutboxInsertRow[]).map((row) => [
+        row.resourceId,
+        row.topicId,
+        row.resource,
+        row.typeId,
+        row.status,
+        row.contextId,
+        row.systemDate,
+        row.createdBy,
+        row.createdAt,
+        row.expiresAt,
+        row.startedAt,
+        row.finishedAt,
+        row.nextAt,
+        row.attempts
+    ]);
 }
 
 function toInboxEntry(values: readonly PSqlParameter[]): ResourceEntry {

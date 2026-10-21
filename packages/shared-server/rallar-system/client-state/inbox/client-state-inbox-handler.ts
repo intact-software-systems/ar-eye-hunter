@@ -5,10 +5,8 @@ import type { AppInboxExecutionMetadata, AppInboxMessageContext } from '../../ap
 import type { AppInboxMutationTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
 import type { AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import {
-    readAuthWsTicketConsumption,
     writeAuthWsTicketConsumption,
-    type AuthWsTicketConsumptionClaim,
-    type AuthWsTicketConsumptionReader
+    type AuthWsTicketConsumptionClaim
 } from '../../auth/ws-ticket/auth-ws-ticket-consumption.ts';
 import type { ClientSessionExpiryCandidate } from '../../presence/session-expiry.ts';
 import {
@@ -91,7 +89,6 @@ interface WriteExpiredSessionsOperationInput {
 export namespace ClientStateInboxHandler {
     export interface Input {
         readonly mutationService: ClientStateMutationService;
-        readonly wsTickets: AuthWsTicketConsumptionReader;
         readonly sessionGenerationLifecycle: Pick<WsSessionGenerationLifecycleService, 'read' | 'write'>;
         readonly expiryCandidates: Pick<ClientStateService, 'readExpiredSessionPage'>;
         readonly expiryContinuationWriter: ClientExpiryContinuationWriter;
@@ -100,6 +97,7 @@ export namespace ClientStateInboxHandler {
         readonly mutationTiming: ClientStateMutationTiming;
         readonly wakeQueue?: () => void;
         readonly serviceId: string;
+        readonly disconnectedSessionRetentionMs: number;
     }
 }
 
@@ -138,19 +136,21 @@ export class ClientStateInboxHandler {
         const { connection } = ticketConnect;
         const completionFacts = this.dependencies.transactionWriter.readCompletionFacts(context);
         const ticketClaim = toAuthWsTicketConsumptionClaim(ticketConnect, context.message.id.ts);
-        const ticketRead = await readAuthWsTicketConsumption(this.dependencies.wsTickets, ticketClaim);
         const lifecycleFacts = toWsSessionGenerationFacts(connection);
-        const lifecycleRead = await this.dependencies.sessionGenerationLifecycle.read(lifecycleFacts);
         const command = this.toAuthorisedWsConnectCommand(context, connection);
-        const read = await this.dependencies.mutationService.read(command);
+        const read = await this.dependencies.mutationService.readAuthorisedWsConnect({
+            command,
+            ticketClaim,
+            lifecycle: lifecycleFacts
+        });
         const computed = this.measureAuthorisedConnectComputation({
             connection,
             ticketClaim,
-            ticketRead,
+            ticketRead: read.ticket,
             command,
-            read,
+            read: read.mutation,
             lifecycleFacts,
-            lifecycleRead,
+            lifecycleRead: read.lifecycle,
             completionFacts
         });
         if (computed.outcome === 'idempotency-conflict') {
@@ -525,7 +525,7 @@ function throwClientMutationIdempotencyConflict(
 function toClientMutationPersistedFacts(
     context: AppInboxExecutionMetadata,
     commandId: string,
-    dependencies: Pick<ClientStateInboxHandler.Input, 'serviceId'>
+    dependencies: Pick<ClientStateInboxHandler.Input, 'serviceId' | 'disconnectedSessionRetentionMs'>
 ): Omit<ClientMutationPersistedFacts, 'commandHash'> {
     return {
         nowEpochMs: context.message.id.ts,
@@ -538,7 +538,8 @@ function toClientMutationPersistedFacts(
             ])
         }`,
         attemptCount: context.entry.dequeueAudit.attempts,
-        expireAtEpochMs: Number(context.entry.audit.expiryTs.epochMilliseconds)
+        expireAtEpochMs: Number(context.entry.audit.expiryTs.epochMilliseconds),
+        disconnectedSessionRetentionMs: dependencies.disconnectedSessionRetentionMs
     };
 }
 

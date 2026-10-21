@@ -25,6 +25,7 @@ import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { ClientInstance, ClientPrincipal, ClientSession } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { EntityStatus, NEVER_EXPIRE_TS, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 export const TEST_SCOPE: StateScope = {
     applicationId: 'app-1',
@@ -194,7 +195,8 @@ export function authorisedConnectOperationInput(): ComputeAuthorisedWsConnectOpe
             serviceId: 'client-service',
             eventId: `event:${requestId}`,
             attemptCount: 1,
-            expireAtEpochMs: 20_000
+            expireAtEpochMs: 20_000,
+            disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
         },
         toClientMutationIssuedSessionAuthority(authSession, TEST_SCOPE, 'connectAuthorisedWsSession')
     );
@@ -354,7 +356,8 @@ function command(
             serviceId: 'client-service',
             eventId: `event:${input.commandId}`,
             attemptCount: 1,
-            expireAtEpochMs: 20_000
+            expireAtEpochMs: 20_000,
+            disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
         },
         authority
     );

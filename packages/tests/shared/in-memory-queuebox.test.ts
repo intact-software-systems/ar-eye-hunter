@@ -28,6 +28,7 @@ interface QueueEntryTestOptions {
     readonly startTs?: Temporal.Instant;
     readonly endTs?: Temporal.Instant;
     readonly nextTs?: Temporal.Instant;
+    readonly createdTs?: Temporal.PlainDateTime;
 }
 
 describe('InMemoryQueueBox', () => {
@@ -71,6 +72,37 @@ describe('InMemoryQueueBox', () => {
         const reserved = await queue.reserveEntries({ typeIds: new Set([original.typeId]), statusIds: new Set([EntityStatus.NEW]), reservationInput: 1 });
 
         expect(firstValue(reserved).resource).toBe(original.resource);
+    });
+
+    it('claims NEW in creation order, then insertion order, though a younger row was inserted first', async () => {
+        const queue = new InMemoryQueueBox();
+        const createdTs = Temporal.Now.plainDateTimeISO();
+        await queue.enqueue(createEntry('presence.state.v1', 'younger', { createdTs }));
+        await queue.enqueue(createEntry('presence.state.v1', 'older', { createdTs: createdTs.subtract({ seconds: 10 }) }));
+        await queue.enqueue(createEntry('presence.state.v1', 'older-tie', { createdTs: createdTs.subtract({ seconds: 10 }) }));
+        const claim = { typeIds: new Set(['presence.state.v1']), statusIds: new Set([EntityStatus.NEW]) };
+
+        const first = await queue.reserveEntries({ ...claim, reservationInput: 1 });
+        const rest = await queue.reserveEntries({ ...claim, reservationInput: 2 });
+
+        expect([...first.values()].map((entry) => entry.key.resourceId)).toEqual(['older']);
+        expect([...rest.values()].map((entry) => entry.key.resourceId)).toEqual(['older-tie', 'younger']);
+    });
+
+    it('names the oldest NEW row its context head, though a younger row of that context was inserted first', async () => {
+        const queue = new InMemoryQueueBox();
+        const createdTs = Temporal.Now.plainDateTimeISO();
+        await queue.enqueue(createEntry('presence.state.v1', 'younger', { createdTs }));
+        await queue.enqueue(createEntry('presence.state.v1', 'older', { createdTs: createdTs.subtract({ seconds: 10 }) }));
+
+        const claimed = await queue.reserveEntries({
+            typeIds: new Set(['presence.state.v1']),
+            statusIds: new Set([EntityStatus.NEW]),
+            reservationInput: 2,
+            contextClaim: { excludedContextIds: new Set() }
+        });
+
+        expect([...claimed.values()].map((entry) => entry.key.resourceId)).toEqual(['older']);
     });
 
     it('replaces an entry only while its complete observed value is current', async () => {
@@ -641,7 +673,7 @@ function createEntry(
         audit: {
             date: Temporal.Now.plainTimeISO(),
             createdBy: 'test',
-            createdTs: Temporal.Now.plainDateTimeISO(),
+            createdTs: options.createdTs ?? Temporal.Now.plainDateTimeISO(),
             expiryTs: options.expiryTs ?? NEVER_EXPIRE_TS
         },
         status: options.status ?? EntityStatus.NEW,

@@ -2,7 +2,6 @@ import { requireExactKeys, requireString } from '../../protocol/exact-object-dec
 import type { JsonWireObject, JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts';
 import type {
-    AuthorizedGroupMutation,
     GroupMutationAuthorityProof,
     GroupMutationDescriptor,
     GroupMutationIngress
@@ -10,15 +9,10 @@ import type {
 import { requireNonNegativeSafeInteger } from '../group-state-validation-primitives.ts';
 import { assertGroupMutationCommand } from '../mutation/command-validation/assert-group-mutation-command.ts';
 import { assertGroupMutationRequest } from '../mutation/command-validation/group-mutation-request-validation.ts';
-import type { GroupMutationCommand, GroupMutationFacts } from '../mutation/group-mutation-contracts.ts';
-import { assertGroupMutationFacts } from '../mutation/state-validation/assert-group-mutation-facts.ts';
+import type { GroupMutationCommand, GroupMutationIngressFacts } from '../mutation/group-mutation-contracts.ts';
+import { assertGroupMutationIngressFacts } from '../mutation/state-validation/assert-group-mutation-facts.ts';
 
-export type DecodedGroupStateInboxAuthority =
-    | Readonly<{ kind: 'authorized'; mutation: AuthorizedGroupMutation; }>
-    | Readonly<{ kind: 'ingress'; mutation: GroupMutationIngress; }>;
-
-const AUTHORIZED_MUTATION_KEYS = ['authorityProof', 'descriptor'] as const;
-const PREPARED_MUTATION_KEYS = [
+const INGRESS_KEYS = [
     'authorityProof',
     'descriptor',
     'command',
@@ -27,35 +21,15 @@ const PREPARED_MUTATION_KEYS = [
     'queueResourceId'
 ] as const;
 
+/** A queued group command carries the ingress its enqueue captured: the route's or the server's. */
 export function decodeGroupStateInboxAuthority(
     value: JsonWireValue | undefined
-): DecodedGroupStateInboxAuthority {
+): GroupMutationIngress {
     const authority = requireJsonWireObject(value, 'Group AppInbox authority');
-    if (hasExactKeys(authority, AUTHORIZED_MUTATION_KEYS)) {
-        return {
-            kind: 'authorized',
-            mutation: decodeAuthorizedGroupMutation(authority)
-        };
+    if (!hasExactKeys(authority, INGRESS_KEYS)) {
+        throw malformedAuthority('group mutation ingress');
     }
-    if (hasExactKeys(authority, PREPARED_MUTATION_KEYS)) {
-        return {
-            kind: 'ingress',
-            mutation: decodeGroupMutationIngress(authority)
-        };
-    }
-    throw malformedAuthority('authenticated group mutation intent');
-}
-
-function decodeAuthorizedGroupMutation(value: JsonWireObject): AuthorizedGroupMutation {
-    try {
-        return {
-            authorityProof: decodeGroupMutationAuthorityProof(value.authorityProof),
-            descriptor: decodeGroupMutationDescriptor(value.descriptor)
-        };
-    }
-    catch {
-        throw malformedAuthority('authenticated group mutation intent');
-    }
+    return decodeGroupMutationIngress(authority);
 }
 
 function decodeGroupMutationIngress(value: JsonWireObject): GroupMutationIngress {
@@ -185,7 +159,7 @@ export function decodeGroupMutationDescriptor(
 
 function decodeGroupMutationIngressFacts(
     value: JsonWireValue | undefined
-): Omit<GroupMutationFacts, 'attemptCount'> {
+): GroupMutationIngressFacts {
     const facts = requireJsonWireObject(value, 'Group mutation ingress facts');
     requireExactKeys(
         facts,
@@ -203,9 +177,8 @@ function decodeGroupMutationIngressFacts(
         ],
         'Group mutation ingress facts'
     );
-    const withAttemptCount = { ...facts, attemptCount: 1 };
-    const decodedFacts = withAttemptCount as GroupMutationFacts;
-    assertGroupMutationFacts(decodedFacts);
+    const decodedFacts: GroupMutationIngressFacts = facts as JsonWireObject & GroupMutationIngressFacts;
+    assertGroupMutationIngressFacts(decodedFacts);
     return {
         nowEpochMs: decodedFacts.nowEpochMs,
         expireAtEpochMs: decodedFacts.expireAtEpochMs,
@@ -262,7 +235,7 @@ function decodeGroupMutationOperation(
 
 function assertIngressAuthorityFacts(
     authorityProof: GroupMutationAuthorityProof | null,
-    facts: Omit<GroupMutationFacts, 'attemptCount'>
+    facts: GroupMutationIngressFacts
 ): void {
     if (authorityProof === null) {
         if (facts.internalAuthority === 'none' || facts.authenticatedAuthority !== null) {

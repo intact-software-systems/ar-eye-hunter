@@ -22,6 +22,12 @@ export interface UnansweredRetainedDialsInput {
     readonly rtcQBox: WebRtcConnectionService;
 }
 
+export interface AbsentPeerDialsInput {
+    readonly desiredPeerIds: ReadonlySet<PeerId>;
+    readonly dialAllowedPeerIds: ReadonlySet<PeerId>;
+    readonly rtcQBox: WebRtcConnectionService;
+}
+
 export interface OutboundDialsStarted {
     readonly attemptCount: number;
     readonly failureCount: number;
@@ -150,6 +156,25 @@ export function disconnectUnansweredRetainedDials(input: UnansweredRetainedDials
     }
 }
 
+/**
+ * Drops the offering side's dial to a desired peer that is still in flight once the peer leaves group presence.
+ * Signaling is live-only, so the departed session's next connection never answers it; the peer is dialled again when
+ * its presence returns. The answering side keeps its setup: no signal tells the offerer it was dropped, and the
+ * offerer's next offer reaches the kept setup. The rule does not wait for the local offer, which may not be sent yet.
+ * Established edges are kept.
+ */
+export function disconnectAbsentPeerDials(input: AbsentPeerDialsInput): void {
+    for (const peerId of input.rtcQBox.inFlightPeerIds()) {
+        if (
+            input.desiredPeerIds.has(peerId) &&
+            !input.dialAllowedPeerIds.has(peerId) &&
+            isOfferingSide(input.rtcQBox.readPeer(peerId))
+        ) {
+            input.rtcQBox.disconnectPeer(peerId, { resetAttemptBudget: false });
+        }
+    }
+}
+
 function resolveUnansweredRetainedDialPeerIds(
     input: UnansweredRetainedDialsInput
 ): readonly PeerId[] {
@@ -162,7 +187,9 @@ function resolveUnansweredRetainedDialPeerIds(
 }
 
 function hasUnansweredOffer(peer: WebRtcConnectionService.Peer | undefined): boolean {
-    return peer !== undefined &&
-        !peer.connection.input.isPolite &&
-        peer.connection.status.pc?.signalingState === 'have-local-offer';
+    return isOfferingSide(peer) && peer?.connection.status.pc?.signalingState === 'have-local-offer';
+}
+
+function isOfferingSide(peer: WebRtcConnectionService.Peer | undefined): boolean {
+    return peer !== undefined && !peer.connection.input.isPolite;
 }

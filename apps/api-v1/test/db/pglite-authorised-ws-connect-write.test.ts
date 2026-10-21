@@ -29,6 +29,7 @@ import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { putAuthorisedWsTestTicket } from '../../../../packages/tests/shared-server/rallar-system/client-state/authorised-ws-test-ticket.ts';
+import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/client-state/test-disconnected-session-retention.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { FUTURE_MS, withPGliteSql } from './pglite-auth-test-harness.ts';
@@ -80,8 +81,8 @@ async function createConnectWriteFixture(sql: PGliteSql): Promise<ConnectWriteFi
     let interference: (() => Promise<void>) | undefined;
     const interferingClientState: ClientStateService = {
         ...clientState,
-        read: async (command) => {
-            const read = await clientState.read(command);
+        readAuthorisedWsConnect: async (input) => {
+            const read = await clientState.readAuthorisedWsConnect(input);
             const write = interference;
             interference = undefined;
             await write?.();
@@ -93,10 +94,10 @@ async function createConnectWriteFixture(sql: PGliteSql): Promise<ConnectWriteFi
         resourceInboxRepository: resourceInbox.entries,
         resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
         database: sql,
-        clientStateService: interferingClientState,
-        wsTickets: sessions
+        clientStateService: interferingClientState
     }, {
         serviceId: 'connect-write',
+        disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,
         timing: (event) => {
             if (event.component === 'app-inbox-phase' && event.operation === 'transaction') {
                 transactions.push(event);

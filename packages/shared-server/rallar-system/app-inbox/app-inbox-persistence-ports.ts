@@ -4,10 +4,6 @@ import type { ResourceInboxStatusAndAttempts } from '../../queuebox/postgres/res
 
 export interface AppInboxEntryRepository {
     readStatusAndAttempts(key: Key): Promise<ResourceInboxStatusAndAttempts | undefined>;
-    replaceIfObserved(
-        expected: ResourceEntry,
-        replacement: ResourceEntry
-    ): Promise<ResourceEntry | null>;
     /**
      * Reserves one absent/expired placeholder and invokes the winning materializer once, without a local retry.
      * A losing or active replay returns the retained row without invoking it. The bounded materializer may

@@ -129,7 +129,7 @@ export function computeUpdate(
     assertUpdateAuthority(command, read);
     const allowsArchivedDeletion = stored.value.status === 'archived' && command.input.status === 'deleted';
     if (!allowsArchivedDeletion) {
-        assertActive(stored.value, facts.nowEpochMs);
+        assertActive(stored.value, facts.attemptAtEpochMs);
     }
     const audit = auditStamp(command, facts, command.input.actorPrincipalId ?? undefined);
     const current = stored.value;
@@ -182,7 +182,7 @@ export function computeDirector(
     facts: GroupMutationFacts
 ): GroupMutationComputed {
     const stored = requireGroup(read, command.aggregateRef);
-    assertActive(stored.value, facts.nowEpochMs);
+    assertActive(stored.value, facts.attemptAtEpochMs);
     const principalId = command.input.actorPrincipalId;
     const sessionId = command.input.actorSessionId;
     if (!principalId || !sessionId) {
@@ -190,7 +190,7 @@ export function computeDirector(
             'Forbidden: Cannot appoint a director without a local session.'
         );
     }
-    const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.nowEpochMs);
+    const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs);
     const eligibility = resolveRallarGroupDirectorAppointmentEligibility({
         snapshot,
         principalId,
@@ -204,7 +204,7 @@ export function computeDirector(
     const appointment = createRallarGroupDirectorAppointment({
         session: { clientId: principalId, sessionId },
         previous: readRallarGroupDirectorFromSnapshot(snapshot),
-        now: facts.nowEpochMs,
+        now: facts.attemptAtEpochMs,
         heartbeatTtlMs: command.input.heartbeatTtlMs
     });
     const next: Group = {

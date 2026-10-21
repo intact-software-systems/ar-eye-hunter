@@ -68,7 +68,8 @@ Deno.test('PGlite AppInbox dequeue pass reports its statements outside the handl
         await engine.stop();
         const countersAfterPass = sql.getExecutorCounters?.();
 
-        assert.equal((await queueInbox.entries.findAnyByKey(enqueued.key))?.status, EntityStatus.COMPLETED);
+        const stored = await queueInbox.entries.findAnyByKey(enqueued.key);
+        assert.equal(stored?.status, EntityStatus.COMPLETED);
         const passLines = timing.filter((event) => event.component === 'app-inbox-phase' && event.operation === 'dequeue-pass');
         const handlerAction = timing.find((event) => event.component === 'app-inbox-phase' && event.operation === 'handler-action');
         const transaction = timing.find((event) => event.component === 'app-inbox-phase' && event.operation === 'transaction');
@@ -87,6 +88,8 @@ Deno.test('PGlite AppInbox dequeue pass reports its statements outside the handl
             executorWaitMs: passLines[0]?.details?.executorWaitMs,
             lanesProbed: 'NEW',
             claimedInPass: 1,
+            rowId: stored?.db?.id,
+            createdTs: stored?.audit.createdTs.toString(),
             passWallMs: passLines[0]?.details?.passWallMs,
             handlersMs: passLines[0]?.details?.handlersMs
         });

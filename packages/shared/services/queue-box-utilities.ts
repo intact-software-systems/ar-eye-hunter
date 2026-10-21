@@ -135,6 +135,14 @@ export class QueueBoxUtilities {
         return claimedCount;
     }
 
+    /**
+     * The creation time an entry stores, to the whole millisecond: the creation clock's finer digits are not monotonic,
+     * so every store orders entries created in one millisecond by arrival.
+     */
+    static toEntryCreatedAt(createdAt: Temporal.Instant): Temporal.ZonedDateTime {
+        return Temporal.Instant.fromEpochMilliseconds(createdAt.epochMilliseconds).toZonedDateTimeISO('UTC');
+    }
+
     static toResourceEntryFromMsg(
         msg: ALMessage,
         typeId: string,
@@ -145,7 +153,7 @@ export class QueueBoxUtilities {
             ? Temporal.Instant.fromEpochMilliseconds(expireAtMs)
             : NEVER_EXPIRE_TS;
 
-        const createdAtUtc = createdAt.toZonedDateTimeISO('UTC');
+        const createdAtUtc = QueueBoxUtilities.toEntryCreatedAt(createdAt);
         return {
             key: {
                 topicId: msg.route.topicId,

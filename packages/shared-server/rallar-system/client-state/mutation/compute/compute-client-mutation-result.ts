@@ -89,7 +89,7 @@ export function computeClientMutationResult(
         outbox,
         principalAudienceSessionIds
     };
-    return { ...computed, persistence: computeClientPersistence(computed) };
+    return { ...computed, persistence: computeClientPersistence(computed, facts) };
 }
 
 export function computeClientMutationNoOp(
@@ -122,7 +122,7 @@ export function computeClientMutationNoOp(
             snapshot,
             event: null
         };
-        return { ...computed, persistence: computeClientPersistence(computed) };
+        return { ...computed, persistence: computeClientPersistence(computed, command.facts) };
     }
     return {
         outcome: 'no-op',

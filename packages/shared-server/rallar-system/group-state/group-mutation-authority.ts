@@ -1,9 +1,8 @@
-import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 
-import { type AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
+import type { AuthSessionPersistence } from '../auth/persistence/auth-session-persistence.ts';
 import type { IssuedAuthSession } from '../auth/persistence/auth-session-types.ts';
 import type { PersistedAuthSession } from '../auth/persistence/persisted-auth-session.ts';
 import { authSessionProofSecret } from '../auth/sessions/auth-session-proof-secret.ts';
@@ -21,24 +20,21 @@ import {
     type GroupStateMutationCommand
 } from './group-state-service-contracts.ts';
 import { assertGroupMutationCommand } from './mutation/command-validation/assert-group-mutation-command.ts';
-import { type GroupMutationCommand, type GroupMutationFacts } from './mutation/group-mutation-contracts.ts';
+import { type GroupMutationCommand, type GroupMutationIngressFacts } from './mutation/group-mutation-contracts.ts';
 import { hmacSha256Hex } from './mutation/group-state-crypto.ts';
 import { toScopedGroupMutationCommandId } from './scoped-group-mutation-command-id.ts';
 import { toLifecycleMutationCommand } from './to-lifecycle-mutation-command.ts';
 import { toTransportMutationCommand } from './to-transport-mutation-command.ts';
 
 export interface GroupMutationAuthorityDependencies {
-    readonly authSessionRepository: Pick<AuthSessionRepository, 'findBySessionId'>;
+    readonly authSessions: Pick<AuthSessionPersistence, 'findBySessionId'>;
     readonly now: () => number;
     readonly randomId: () => string;
     readonly serviceId: string;
     readonly capacity?: GroupPolicyCapacityConfig;
-    readonly readCausalRevision: (ref: GroupRef) => Promise<GroupStateCausalRevision | undefined>;
 }
 
 const LIVE_SESSION_DENIAL = 'Authenticated session is missing, expired, revoked, or mismatched.';
-
-type ClaimedAuthSession = Pick<IssuedAuthSession, 'clientId' | 'sessionId' | 'issuedAtEpochMs' | 'expiresAtEpochMs'>;
 
 interface CaptureAuthorizedGroupMutationIngressInput {
     readonly dependencies: GroupMutationAuthorityDependencies;
@@ -101,7 +97,7 @@ async function captureAuthorizedGroupMutationIngress(
         decodeJsonWireValue(materialized.semanticCommand, 'Group semantic mutation command')
     );
     const resolvedJoinCode = resolveCommandJoinCode(command, commandHash);
-    const facts: Omit<GroupMutationFacts, 'attemptCount'> = {
+    const facts: GroupMutationIngressFacts = {
         nowEpochMs: dependencies.now(),
         expireAtEpochMs: GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS,
         serviceId: dependencies.serviceId,
@@ -116,12 +112,7 @@ async function captureAuthorizedGroupMutationIngress(
             sessionId: authorized.authorityProof.sessionId
         }
     };
-    const ingressCausalRevision = (await dependencies.readCausalRevision(command.aggregateRef)) ?? null;
-    const causalToken = computeSha256CanonicalJson({
-        command,
-        facts,
-        ingressCausalRevision
-    });
+    const causalToken = computeSha256CanonicalJson({ command, facts });
     const queueResourceId = `g-${
         computeSha256CanonicalJson({
             requestId: command.requestId,
@@ -146,7 +137,7 @@ async function captureAuthorizedGroupMutationIngress(
 /**
  * The authority is the session the route's bearer lookup read and verified by
  * its token digest; the lane re-checks its liveness at execution, through
- * readAndVerifyLiveGroupMutationSession.
+ * verifyLiveGroupMutationSession.
  */
 export async function authorizeGroupMutation(
     dependencies: Pick<GroupMutationAuthorityDependencies, 'now'>,
@@ -170,7 +161,7 @@ export async function authorizeGroupMutation(
 /**
  * The route verified the credential and minted this proof before the queue
  * entry was written; the lane trusts it and re-checks only session liveness
- * at execution, through readAndVerifyLiveGroupMutationSession.
+ * at execution, through verifyLiveGroupMutationSession.
  */
 function reuseGroupMutationAuthorityProof(
     descriptor: GroupMutationDescriptor,
@@ -181,20 +172,39 @@ function reuseGroupMutationAuthorityProof(
     return { authorityProof, descriptor: trustedDescriptor };
 }
 
+/** The attempt re-reads its session and checks it at the attempt's instant. */
 export async function readAndVerifyLiveGroupMutationSession(
-    dependencies: Pick<GroupMutationAuthorityDependencies, 'authSessionRepository' | 'now'>,
+    dependencies: Pick<GroupMutationAuthorityDependencies, 'authSessions'>,
     ingress: GroupStateMutationCommand
 ): Promise<void> {
+    const proof = requireGroupMutationAuthorityProof(ingress);
+    const session = await dependencies.authSessions.findBySessionId(proof.sessionId);
+    verifyLiveGroupMutationSession(proof, session, ingress.facts.attemptAtEpochMs);
+}
+
+export function requireGroupMutationAuthorityProof(ingress: GroupStateMutationCommand): GroupMutationAuthorityProof {
     if (ingress.authorityProof === null || ingress.descriptor === null) {
         throw new GroupMutationAuthorizationError('Authenticated group mutation authority is missing.');
     }
-    const proof = ingress.authorityProof;
-    await readLiveAuthSession(dependencies.authSessionRepository, {
-        clientId: proof.principalId,
-        sessionId: proof.sessionId,
-        issuedAtEpochMs: proof.sessionIssuedAtEpochMs,
-        expiresAtEpochMs: proof.sessionExpiresAtEpochMs
-    }, dependencies.now());
+    return ingress.authorityProof;
+}
+
+/** The stored session must still be exactly the one the route verified, and unexpired at execution. */
+export function verifyLiveGroupMutationSession(
+    proof: GroupMutationAuthorityProof,
+    session: PersistedAuthSession | undefined,
+    nowEpochMs: number
+): void {
+    if (
+        !session ||
+        session.clientId !== proof.principalId ||
+        session.sessionId !== proof.sessionId ||
+        session.issuedAtEpochMs !== proof.sessionIssuedAtEpochMs ||
+        session.expiresAtEpochMs !== proof.sessionExpiresAtEpochMs ||
+        session.expiresAtEpochMs <= nowEpochMs
+    ) {
+        throw new GroupMutationAuthorizationError(LIVE_SESSION_DENIAL);
+    }
 }
 
 interface MaterializeAuthenticatedGroupMutationInput {
@@ -274,25 +284,6 @@ export function toDescriptorCommand(
         default:
             return toMembershipMutationCommand(descriptor, randomId);
     }
-}
-
-async function readLiveAuthSession(
-    repository: Pick<AuthSessionRepository, 'findBySessionId'>,
-    claimed: ClaimedAuthSession,
-    nowEpochMs: number
-): Promise<PersistedAuthSession> {
-    const session = await repository.findBySessionId(claimed.sessionId);
-    if (
-        !session ||
-        session.clientId !== claimed.clientId ||
-        session.sessionId !== claimed.sessionId ||
-        session.issuedAtEpochMs !== claimed.issuedAtEpochMs ||
-        session.expiresAtEpochMs !== claimed.expiresAtEpochMs ||
-        session.expiresAtEpochMs <= nowEpochMs
-    ) {
-        throw new GroupMutationAuthorizationError(LIVE_SESSION_DENIAL);
-    }
-    return session;
 }
 
 function toTrustedMutationDescriptor(

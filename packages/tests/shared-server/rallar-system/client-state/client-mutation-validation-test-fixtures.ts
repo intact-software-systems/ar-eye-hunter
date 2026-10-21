@@ -5,6 +5,7 @@ import {
     type ClientMutationOperation,
     type ClientMutationRead
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
+import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 export const CLIENT_MUTATION_TEST_SCOPE = {
     applicationId: 'app-1',
@@ -105,7 +106,8 @@ export function validFacts(): ClientMutationFacts {
         eventId: 'event-1',
         commandHash: `sha256:${'a'.repeat(64)}`,
         attemptCount: 1,
-        expireAtEpochMs: 10_000
+        expireAtEpochMs: 10_000,
+        disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
     };
 }
 

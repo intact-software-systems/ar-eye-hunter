@@ -196,7 +196,7 @@ describe('QueueBoxUtilities', () => {
         expect(SlidingWindowCounter.sumInWindowWithNow(resilience.rateAdjuster.slidingWindow, Date.now())).toBe(0);
         expect(resilience.rateAdjuster.status.get().rate).toBe(2);
     });
-    it('uses the precise explicit UTC creation instant independently of message time', () => {
+    it('stores the explicit UTC creation instant to the millisecond independently of message time', () => {
         const createdAt = Temporal.Instant.from('2026-10-14T01:59:59.123456789+02:00');
         const expiresAtMs = Date.UTC(2026, 0, 1, 0, 0, 30);
         const msg = {
@@ -228,8 +228,8 @@ describe('QueueBoxUtilities', () => {
         expect(entry.key).toEqual(msg.route);
         expect(entry.typeId).toBe('ws.outbox');
         expect(entry.audit.createdBy).toBe('alice');
-        expect(entry.audit.createdTs.toString()).toBe('2026-10-13T23:59:59.123456789');
-        expect(entry.audit.date.toString()).toBe('23:59:59.123456789');
+        expect(entry.audit.createdTs.toString()).toBe('2026-10-13T23:59:59.123');
+        expect(entry.audit.date.toString()).toBe('23:59:59.123');
         expect(entry.audit.expiryTs.epochMilliseconds).toBe(expiresAtMs);
         expect(entry.status).toBe(EntityStatus.NEW);
         expect(entry.dequeueAudit).toEqual({ attempts: 0 });

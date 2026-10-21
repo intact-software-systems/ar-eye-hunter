@@ -70,6 +70,35 @@ describe('bounded concurrency admission', () => {
         expect(started).toEqual(['holder', 'preferred-1', 'preferred-2', 'in-turn-1', 'in-turn-2']);
     });
 
+    it('moves a waiting in-turn run its caller prefers behind the waiting preferred runs, and ignores a later prefer', async () => {
+        const admission = new BoundedConcurrencyAdmission({ maxConcurrent: 1 });
+        const started: string[] = [];
+        const gates = new Map<string, () => void>();
+        const run = (name: string) => () => {
+            started.push(name);
+            return new Promise<string>((resolve) => gates.set(name, () => resolve(name)));
+        };
+
+        const holder = admission.admitPromotable(run('holder'), 'in-turn');
+        const results = [
+            holder.result,
+            admission.admit(run('in-turn-1')),
+            admission.admit(run('preferred-1'), 'preferred')
+        ];
+        const promoted = admission.admitPromotable(run('promoted'), 'in-turn');
+        results.push(promoted.result, admission.admit(run('in-turn-2')));
+        promoted.prefer();
+        holder.prefer();
+        for (const name of ['holder', 'preferred-1', 'promoted', 'in-turn-1', 'in-turn-2']) {
+            await vi.waitFor(() => expect(started.at(-1)).toBe(name));
+            promoted.prefer();
+            gates.get(name)!();
+        }
+
+        await Promise.all(results);
+        expect(started).toEqual(['holder', 'preferred-1', 'promoted', 'in-turn-1', 'in-turn-2']);
+    });
+
     it('releases the slot of a run that throws and admits the next waiting run', async () => {
         const admission = new BoundedConcurrencyAdmission({ maxConcurrent: 1 });
         const failed = admission.admit(() => Promise.reject(new Error('derivation failed')));

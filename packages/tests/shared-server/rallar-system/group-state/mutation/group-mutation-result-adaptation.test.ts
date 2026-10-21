@@ -78,7 +78,7 @@ async function computeCreateReplay(runtime: TestGroupStateRuntime, request: Crea
         authorityProof: ingress.authorityProof,
         descriptor: ingress.descriptor,
         command: ingress.command,
-        facts: { ...ingress.facts, attemptCount: 1 }
+        facts: { ...ingress.facts, attemptCount: 1, attemptAtEpochMs: ingress.facts.nowEpochMs }
     };
     const read = await runtime.durable.read(command);
     const computed = runtime.durable.compute(command, read);

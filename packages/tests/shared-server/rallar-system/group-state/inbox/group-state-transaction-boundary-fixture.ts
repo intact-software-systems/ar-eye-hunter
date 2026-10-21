@@ -162,20 +162,14 @@ function createTransactionBoundaryExecution(
     const formationMutationEvents: GroupFormationGroupMutationEvent[] = [];
     const handler = new GroupStateInboxHandler({
         mutationService: groupState.service,
-        captureAuthenticatedMutationIngress: async () => {
-            throw new Error('A reserved transaction-boundary command must already be internal.');
-        },
-        persistMutationIngress: async () => {
-            throw new Error('A reserved transaction-boundary command must not persist mutation ingress.');
-        },
         sessionGenerationLifecycle: groupState.service.sessionGenerationLifecycle,
         resultReader: createTestGroupStateRepository(
             storage.runtimeRepository,
             storage.database.groupEventStore
         ),
         transactionWriter,
-        lanePhaseTiming: undefined,
         publicationTiming: undefined,
+        nowEpochMs: () => NOW_EPOCH_MS,
         wakeQueue: () => {
             wakeCount += 1;
         },
@@ -236,8 +230,7 @@ async function createTransactionBoundaryGroupStateService(
         readPlannedLayoutRow: async () => null,
         readAcceptedLayoutRow: async () => null,
         now: () => NOW_EPOCH_MS,
-        randomId: () => 'fixed-random-id',
-        authSessionRepository: authSessions
+        randomId: () => 'fixed-random-id'
     });
     const observedSnapshots: GroupSnapshot[] = [];
     const service: GroupStateService = {

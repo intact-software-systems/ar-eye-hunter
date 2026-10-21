@@ -8,7 +8,7 @@ type ScriptedLane = typeof Reservator.NEW | typeof Reservator.RETRY | typeof Res
 interface StandingLaneInput {
     readonly maxConcurrentComputes: number;
     readonly maxUnreleased: number;
-    readonly releasedKeyedRunsFirst?: boolean;
+    readonly keyedChainsFirst?: boolean;
     /** The rows each reservation of a lane returns, or the error it rejects with, in call order; past the script, none. */
     readonly reservations: Readonly<Partial<Record<ScriptedLane, readonly (readonly string[] | Error)[]>>>;
     readonly exclusionKeys?: Readonly<Record<string, string>>;
@@ -96,7 +96,7 @@ describe('DequeueController standing flight', () => {
         const lane = createStandingLane({
             maxConcurrentComputes: 1,
             maxUnreleased: 4,
-            releasedKeyedRunsFirst: true,
+            keyedChainsFirst: true,
             reservations: { NEW: [['keyed-1', 'free', 'other', 'keyed-2']] },
             exclusionKeys: { 'keyed-1': 'app:group-1', 'keyed-2': 'app:group-1', other: 'app:group-2' }
         });
@@ -110,6 +110,39 @@ describe('DequeueController standing flight', () => {
 
         expect(lane.events.filter((event) => event.startsWith('start:')))
             .toEqual(['start:keyed-1', 'start:keyed-2', 'start:free', 'start:other']);
+    });
+
+    it('starts a chain head claimed behind twelve slow keyless rows at the first settlement after its successor attaches', async () => {
+        const slowRows = Array.from({ length: 12 }, (_, index) => `ws-${index + 1}`);
+        const lane = createStandingLane({
+            maxConcurrentComputes: 4,
+            maxUnreleased: 16,
+            reservations: {
+                NEW: [
+                    ...Array.from({ length: 6 }, (_, index) => slowRows.slice(index * 2, index * 2 + 2)),
+                    ['join-1'],
+                    ['join-2']
+                ]
+            },
+            exclusionKeys: { 'join-1': 'scope:g:aggregate', 'join-2': 'scope:g:aggregate' }
+        });
+
+        expect(await lane.pass()).toBe(13);
+        await vi.waitFor(() => expect(lane.events).toEqual(['start:ws-1', 'start:ws-2', 'start:ws-3', 'start:ws-4']));
+        expect(await lane.pass()).toBe(1);
+        lane.finish('ws-1');
+
+        await vi.waitFor(() => expect(lane.events).toContain('start:join-1'));
+        expect(lane.events.filter((event) => event.startsWith('start:')))
+            .toEqual(['start:ws-1', 'start:ws-2', 'start:ws-3', 'start:ws-4', 'start:join-1']);
+        lane.finish('join-1');
+        await vi.waitFor(() => expect(lane.events).toContain('start:join-2'));
+        expect(lane.events).not.toContain('start:ws-5');
+        for (const key of [...slowRows.slice(1), 'join-2']) {
+            await vi.waitFor(() => expect(lane.events).toContain(`start:${key}`));
+            lane.finish(key);
+        }
+        await Promise.all(lane.retained);
     });
 
     it('tops up the recovery lanes before NEW, and a retried keyed row computes after the chain row already in flight', async () => {
@@ -281,7 +314,7 @@ function createStandingLane(input: StandingLaneInput, admitsReservation: () => b
     const flight = new DequeueLaneFlight<string, string, string>({
         maxConcurrentComputes: input.maxConcurrentComputes,
         maxUnreleased: input.maxUnreleased,
-        releasedKeyedRunsFirst: input.releasedKeyedRunsFirst ?? true,
+        keyedChainsFirst: input.keyedChainsFirst ?? true,
         toExclusionKey: (key) => input.exclusionKeys?.[key],
         releaseFailureClock: input.releaseFailureClock,
         retainSettlement: (settlement) => retained.push(settlement)

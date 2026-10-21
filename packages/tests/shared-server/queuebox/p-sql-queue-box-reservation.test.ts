@@ -48,10 +48,10 @@ beforeEach(async () => {
 });
 
 describe('PSqlQueueBox reservation claim', () => {
-    it('claims the next NEW row in one statement with the lease and attempt a reservation carries', async () => {
+    it('claims the next NEW row in creation order over row id, in one statement with the lease and attempt a reservation carries', async () => {
         await seed({ resourceId: 'second', status: EntityStatus.NEW });
         await seed({ resourceId: 'first', status: EntityStatus.NEW });
-        await sql`update resource_inbox set ri_row_id = ri_row_id - 1000 where ri_resource_id = 'first'`;
+        await sql`update resource_inbox set created_ts = created_ts - interval '1 second' where ri_resource_id = 'first'`;
 
         const reserved = await queue.reserveEntries({ typeIds: INBOX_TYPES, statusIds: new Set([EntityStatus.NEW]), reservationInput: 1 });
 

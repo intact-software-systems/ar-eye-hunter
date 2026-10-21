@@ -22,10 +22,10 @@ import {
     createClientExpiryTestIssuedAuthority,
     readClientExpiryTestEntries
 } from './app-client-inbox-expiry-fixtures.ts';
-import { createEmptyWsTicketReader } from './authorised-ws-test-ticket.ts';
 import { decodeExpiredClientSessionsTestResult } from './client-inbox-test-result-decoding.ts';
 import { createClientStatePhaseTestDriver } from './client-state-test-runtime.ts';
 import { createClientStateServiceFixture } from './create-client-state-service-fixture.ts';
+import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 const SCOPE: StateScope = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
 
@@ -54,11 +54,11 @@ it(
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: results,
                 database: database,
-                clientStateService: clientStateService,
-                wsTickets: createEmptyWsTicketReader()
+                clientStateService: clientStateService
             },
             {
-                serviceId: 'server-12345678'
+                serviceId: 'server-12345678',
+                disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
             }
         );
         await seedClientExpirySession(service, reader, { expiresAtEpochMs, runtimeRepository });
@@ -97,11 +97,11 @@ it('durably enqueues each client expiry reconciliation tick', async () => {
             resourceInboxRepository: queue,
             resourceInboxResultsRepository: results,
             database: createAppInboxTestDatabase(queue, results),
-            clientStateService: { ...createClientStateServiceFixture(), readExpiredSessionPage },
-            wsTickets: createEmptyWsTicketReader()
+            clientStateService: { ...createClientStateServiceFixture(), readExpiredSessionPage }
         },
         {
-            serviceId: 'server-12345678'
+            serviceId: 'server-12345678',
+            disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
         }
     );
 

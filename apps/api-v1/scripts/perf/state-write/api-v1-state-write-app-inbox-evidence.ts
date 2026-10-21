@@ -9,6 +9,7 @@ import {
 import {
     toAuthenticatedClientMutationContextId
 } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
+import { toAuthenticatedGroupMutationQueueKey } from '@shared-server/rallar-system/group-state/inbox/to-authenticated-group-mutation-queue-key.ts';
 import {
     decodeJsonWireValue,
     type JsonWireObject,
@@ -77,14 +78,14 @@ export function toStateWriteAppInboxExpectations(
                     topicId: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
                     logicalResourceId: `${command.commandId}-profile`,
                     logicalContextId
-                }),
+                }, toAppQueueKey),
                 toExpectation({
                     commandId: command.commandId,
                     operationId: 'instance',
                     topicId: AppInboxType.CLIENT_INSTANCE_UPSERT,
                     logicalResourceId: `${command.commandId}-instance`,
                     logicalContextId
-                })
+                }, toAppQueueKey)
             ];
         }
         const topicId = toSingleOperationTopic(command.kind);
@@ -94,7 +95,7 @@ export function toStateWriteAppInboxExpectations(
             topicId,
             logicalResourceId: command.commandId,
             logicalContextId: toStateWriteBenchmarkGroupContextId(scope, groupId)
-        })];
+        }, toStateWriteCommandQueueKey(command.kind))];
     });
 }
 
@@ -165,6 +166,13 @@ export function readStateWriteBenchmarkClientIndex(commandId: string): number {
     return clientIndex;
 }
 
+/** A group command is reserved under its verbatim key; the queue writer shortens a topology source's. */
+function toStateWriteCommandQueueKey(
+    kind: Exclude<StateWriteAppInboxCommand['kind'], 'profile-instance'>
+): (key: Key) => Key {
+    return kind === 'topology-source' ? toAppQueueKey : toAuthenticatedGroupMutationQueueKey;
+}
+
 function toSingleOperationTopic(
     kind: Exclude<StateWriteAppInboxCommand['kind'], 'profile-instance'>
 ): AppInboxTypeValue {
@@ -185,11 +193,12 @@ function toSingleOperationTopic(
 }
 
 function toExpectation(
-    identity: Omit<StateWriteAppInboxExpectation, 'physicalKey'>
+    identity: Omit<StateWriteAppInboxExpectation, 'physicalKey'>,
+    toPhysicalKey: (key: Key) => Key
 ): StateWriteAppInboxExpectation {
     return {
         ...identity,
-        physicalKey: toAppQueueKey({
+        physicalKey: toPhysicalKey({
             topicId: identity.topicId,
             resourceId: identity.logicalResourceId,
             contextId: identity.logicalContextId

@@ -1,4 +1,3 @@
-import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
@@ -18,6 +17,7 @@ import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { TestResourceInbox, TestResourceInboxResults } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
+import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../client-state/test-disconnected-session-retention.ts';
 
 const TEST_SERVICE_ID = 'rallar-middleware-test';
 
@@ -51,7 +51,6 @@ export function createRallarMiddlewareTestRuntime(
     const outbox = input.outbox ?? inbox;
     const results = new TestResourceInboxResults();
     const database = createAppInboxTestDatabase(inbox, results, { runtimeRepository });
-    const authSessions = new AuthSessionRepository(runtimeRepository);
     const clientStateService = createClientStateService({
         runtimeRepository,
         clientStateEventStore: database.clientEventStore,
@@ -60,7 +59,6 @@ export function createRallarMiddlewareTestRuntime(
     const groupStateService = createGroupStateService({
         runtimeRepository,
         groupStateEventStore: database.groupEventStore,
-        authSessionRepository: authSessions,
         serviceId: TEST_SERVICE_ID,
         readPlannedLayoutRow: async () => null,
         readAcceptedLayoutRow: async () => null
@@ -178,11 +176,11 @@ export function createRallarMiddlewareTestRuntime(
                     resourceInboxRepository: inbox,
                     resourceInboxResultsRepository: results,
                     database,
-                    clientStateService,
-                    wsTickets: authSessions
+                    clientStateService
                 },
                 {
                     serviceId: TEST_SERVICE_ID,
+                    disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,
                     wakeOwningQueue: factoryInput.wakeQueueEngine
                 }
             );

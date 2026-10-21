@@ -1,3 +1,4 @@
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { describe, expect, it } from 'vitest';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { createService, requireSnapshot, seedOpenGroup } from '../presence/group-presence-test-runtime.ts';
@@ -56,26 +57,28 @@ describe('convergent group and presence state', () => {
             actorPrincipalId: 'alice',
             requestId: 'invite-bob'
         });
+        const ban = { actorPrincipalId: 'alice', requestId: 'ban-bob-race' };
         runtime.armGroupReadBarrier(2);
-        const results = await Promise.allSettled([
+        const [joined, banned] = await Promise.allSettled([
             createService(runtime, 2_000).joinGroup(SCOPE, 'join-ban-room', {
                 actorPrincipalId: 'bob',
                 requestId: 'join-bob-race'
             }),
-            createService(runtime, 2_001).banGroupMember(SCOPE, 'join-ban-room', 'bob', {
-                actorPrincipalId: 'alice',
-                requestId: 'ban-bob-race'
-            })
+            createService(runtime, 2_001).banGroupMember(SCOPE, 'join-ban-room', 'bob', ban)
         ]);
+        expect([joined, banned].filter((result) => result.status === 'rejected')).toEqual([
+            expect.objectContaining({ reason: expect.any(RuntimeStateWriteConflictError) })
+        ]);
+        if (banned.status === 'rejected') {
+            // The ban's next queue delivery is a fresh attempt that reads the join it lost to.
+            await createService(runtime, 2_001, 2).banGroupMember(SCOPE, 'join-ban-room', 'bob', ban);
+        }
 
-        expect(results[1]).toMatchObject({ status: 'fulfilled' });
         const snapshot = await requireSnapshot(runtime, 'join-ban-room');
         expect(snapshot.members.find((member) => member.principalId === 'bob')).toMatchObject({
             status: 'banned'
         });
-        expect(snapshot.group.snapshotVersion).toBe(
-            2 + results.filter((result) => result.status === 'fulfilled').length
-        );
+        expect(snapshot.group.snapshotVersion).toBe(joined.status === 'fulfilled' ? 4 : 3);
     });
 
     it('rebases ownership transfer versus target removal without losing a winner', async () => {

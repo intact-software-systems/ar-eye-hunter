@@ -1,7 +1,7 @@
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
 import { encodeRuntimeStateJsonValue } from '../../../../runtime-state/runtime-state-json-store.ts';
-import { toSessionPurgeAfterEpochMs } from '../../../presence/session-expiry.ts';
+import { toClientSessionPurgeAfterEpochMs } from '../../../presence/session-expiry.ts';
 import { clientStateIdempotencyStorageKey } from '../../persistence/client-state-idempotency-storage-key.ts';
 import { clientStateInstanceStorageKey } from '../../persistence/client-state-instance-storage-key.ts';
 import { clientStatePrincipalStorageKey } from '../../persistence/client-state-principal-storage-key.ts';
@@ -15,6 +15,7 @@ import { clientStateSessionStorageKey } from '../../persistence/client-state-ses
 import { clientStateWorkspaceStorageKey } from '../../persistence/client-state-workspace-storage-key.ts';
 import type {
     ClientMutationDomainWrite,
+    ClientMutationFacts,
     ClientMutationPersistence,
     ClientRuntimePersistenceOperation,
     ConditionalCandidate
@@ -28,7 +29,8 @@ interface ClientRuntimeInsertInput {
 }
 
 export function computeClientPersistence(
-    computed: ClientMutationDomainWrite
+    computed: ClientMutationDomainWrite,
+    facts: Pick<ClientMutationFacts, 'disconnectedSessionRetentionMs'>
 ): ClientMutationPersistence {
     if (computed.outcome === 'no-op') {
         return {
@@ -52,7 +54,7 @@ export function computeClientPersistence(
         NEVER_EXPIRE_AT_TIMESTAMP
     )];
     appendInstanceWrite(runtimeWrites, computed.instance);
-    appendSessionWrite(runtimeWrites, computed.session);
+    appendSessionWrite(runtimeWrites, computed.session, facts.disconnectedSessionRetentionMs);
     if (computed.idempotency) {
         runtimeWrites.push(runtimeInsert({
             namespace: CLIENT_STATE_IDEMPOTENT_NAMESPACE,
@@ -91,7 +93,8 @@ function appendInstanceWrite(
 
 function appendSessionWrite(
     writes: ClientRuntimePersistenceOperation[],
-    candidate: Extract<ClientMutationDomainWrite, { outcome: 'write'; }>['session']
+    candidate: Extract<ClientMutationDomainWrite, { outcome: 'write'; }>['session'],
+    disconnectedRetentionMs: number
 ): void {
     if (candidate.operation === 'none') {
         return;
@@ -100,10 +103,7 @@ function appendSessionWrite(
         CLIENT_STATE_SESSIONS_NAMESPACE,
         clientStateSessionStorageKey(candidate.value),
         candidate,
-        toSessionPurgeAfterEpochMs(
-            candidate.value.expiresAtEpochMs,
-            candidate.value.disconnectedAtEpochMs
-        )
+        toClientSessionPurgeAfterEpochMs(candidate.value, disconnectedRetentionMs)
     ));
 }
 

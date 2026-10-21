@@ -39,6 +39,10 @@ import {
     resolveResourceEntryObservedWrites,
     toResourceEntrySnapshot
 } from './resource-entry-observations.ts';
+import {
+    resolveResourceInboxClaimOrder,
+    toCreationOrderedEntries
+} from './resource-inbox/resource-inbox-claim-order.ts';
 import { ResourceInboxClaimedContexts } from './resource-inbox/resource-inbox-claimed-contexts.ts';
 import { toUnavailableReservationObservation } from './resource-inbox/resource-inbox-reservation-observation.ts';
 import { ResourceInboxResilience } from './resource-inbox/resource-inbox-resilience.ts';
@@ -395,7 +399,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         const now = this.now();
         const claimedContexts = contextClaim === undefined ? undefined : new ResourceInboxClaimedContexts(contextClaim);
 
-        for (const candidate of observations?.values() ?? this.data.values()) {
+        for (const candidate of observations?.values() ?? this.getClaimCandidates(typeIds, statusIds)) {
             if (reserved.size >= maxToReserve) {
                 break;
             }
@@ -581,6 +585,23 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                 yield [key, entry];
             }
         }
+    }
+
+    /**
+     * The rows a claim looks at, in its claim order; creation ties keep insertion order, so a row stored early under an
+     * old key does not go ahead of older work. A due-order claim keeps insertion order.
+     */
+    private getClaimCandidates(
+        typeIds: ReadonlySet<string>,
+        statusIds: ReadonlySet<EntityStatus>
+    ): Iterable<ResourceEntry> {
+        if (resolveResourceInboxClaimOrder(statusIds) === 'due') {
+            return this.data.values();
+        }
+        return toCreationOrderedEntries(
+            [...this.data.values()].filter((entry) => typeIds.has(entry.typeId) && statusIds.has(entry.status)),
+            (entry) => entry.audit.createdTs
+        );
     }
 
     private *getIndexedEntries(

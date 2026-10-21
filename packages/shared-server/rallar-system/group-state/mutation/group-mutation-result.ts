@@ -106,7 +106,7 @@ export function materializedRotateJoinCode(
     facts: GroupMutationFacts
 ): MaterializedGroupJoinCode {
     const joinCode = command.input.joinCode ?? facts.resolvedJoinCode;
-    const expiresAtEpochMs = command.input.expiresAtEpochMs ?? facts.nowEpochMs + DEFAULT_GROUP_JOIN_CODE_TTL_MS;
+    const expiresAtEpochMs = command.input.expiresAtEpochMs ?? facts.attemptAtEpochMs + DEFAULT_GROUP_JOIN_CODE_TTL_MS;
     if (!joinCode || !Number.isSafeInteger(expiresAtEpochMs) || expiresAtEpochMs <= 0) {
         throw new GroupMutationRejectedError('Join code defaults could not be materialized safely');
     }

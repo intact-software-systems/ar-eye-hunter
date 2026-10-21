@@ -80,7 +80,7 @@ describe('RTC enqueue protection', () => {
         expect(recovered.verdict.kind, recovered.reason).toBe('admitted');
     });
 
-    it('recovers own-send quota on its own clock while preserving independent admission time and precise creation', async () => {
+    it('recovers own-send quota on its own clock while preserving independent admission time and the creation millisecond', async () => {
         const quotaStartMs = 1791883286866;
         let quotaAtMs = quotaStartMs;
         let admissionAtMs = quotaStartMs + 20_000;
@@ -100,8 +100,8 @@ describe('RTC enqueue protection', () => {
             const result = await fixture.manager.enqueueIfAbsent(createOriginReceiverMulticast(`own-${sequence}`));
             expect(result.verdict.kind, result.reason).toBe('admitted');
             if (sequence === 0) {
-                expect(result.entry?.audit.createdTs.toString()).toBe('2026-10-13T23:59:59.123456789');
-                expect(result.entry?.audit.date.toString()).toBe('23:59:59.123456789');
+                expect(result.entry?.audit.createdTs.toString()).toBe('2026-10-13T23:59:59.123');
+                expect(result.entry?.audit.date.toString()).toBe('23:59:59.123');
             }
         }
         await vi.advanceTimersByTimeAsync(0);

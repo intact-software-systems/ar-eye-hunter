@@ -51,18 +51,11 @@ export function createWsSessionGenerationLifecycleService(
     repository: RuntimeStateOptimisticTransactionalRepositoryLike
 ): WsSessionGenerationLifecycleService {
     return {
-        read: async (identity) => {
-            const key = toWsSessionLifecycleKey(identity);
-            const entry = await repository.findEntry(WS_SESSION_CLOSE_HIGH_WATER_NAMESPACE, key);
-            const state = entry ? decodeCurrentSessionGenerationRow(entry, identity) : null;
-            return {
+        read: async (identity) =>
+            toWsSessionGenerationLifecycleRead(
                 identity,
-                key,
-                revision: entry?.revision ?? null,
-                persistedExpireAtEpochMs: entry?.expireAtTimestamp ?? null,
-                state
-            };
-        },
+                await repository.findEntry(WS_SESSION_CLOSE_HIGH_WATER_NAMESPACE, toWsSessionLifecycleKey(identity))
+            ),
         isGenerationClosed: isWsSessionGenerationClosed,
         isObservedAtClosed: isWsSessionObservedAtClosed,
         computeClosed: computeWsSessionGenerationClosed,
@@ -96,6 +89,20 @@ export function createWsSessionGenerationLifecycleService(
                 throw new RuntimeStateWriteConflictError();
             }
         }
+    };
+}
+
+/** The close high-water row of a session, expired or not, as the generation lifecycle reads it. */
+export function toWsSessionGenerationLifecycleRead(
+    identity: WsSessionHighWaterIdentity,
+    entry: RuntimeStateEntry | undefined
+): WsSessionGenerationLifecycleRead {
+    return {
+        identity,
+        key: toWsSessionLifecycleKey(identity),
+        revision: entry?.revision ?? null,
+        persistedExpireAtEpochMs: entry?.expireAtTimestamp ?? null,
+        state: entry ? decodeCurrentSessionGenerationRow(entry, identity) : null
     };
 }
 

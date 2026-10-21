@@ -18,7 +18,11 @@ import type {
 import { runInPSqlTransaction } from '@shared-server/postgres/run-in-p-sql-transaction.ts';
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import type { ResourceInboxRow } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
-import { computeAppOutboxInsert, writeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
+import {
+    computeAppOutboxInsert,
+    writeAppOutboxInsert,
+    type AppOutboxInsertRow
+} from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import {
     writeCoalescedAppOutboxWork,
     type ComputedCoalescedAppOutboxWork
@@ -964,8 +968,11 @@ function executeResourceInboxQuery(
     query: string,
     values: readonly PSqlParameter[]
 ): PSqlRows {
+    if (query.startsWith('insert into resource_inbox') && query.includes('jsonb_to_recordset')) {
+        return insertResourceInboxTestRows(rows, readInsertRowsParameter(values[0]));
+    }
     if (query.startsWith('insert into resource_inbox')) {
-        return insertResourceInboxTestRow(rows, values);
+        return insertResourceInboxTestRows(rows, [toPositionalInsertRow(values)]);
     }
     if (query.startsWith('select ri_row_id')) {
         return readResourceInboxTestRow(rows, values);
@@ -976,17 +983,20 @@ function executeResourceInboxQuery(
     throw new Error(`Unexpected resource inbox SQL: ${query}`);
 }
 
-function insertResourceInboxTestRow(
+function insertResourceInboxTestRows(
     rows: Map<string, ResourceInboxRow>,
-    values: readonly PSqlParameter[]
+    inserts: readonly AppOutboxInsertRow[]
 ): PSqlRows {
-    const row = toTestRow(values, BigInt(rows.size + 1));
-    const key = toRowKey(row);
-    if (rows.has(key)) {
-        return [];
+    const inserted: ResourceInboxRow[] = [];
+    for (const insert of inserts) {
+        const row = toTestRow(insert, BigInt(rows.size + 1));
+        const key = toRowKey(row);
+        if (!rows.has(key)) {
+            rows.set(key, row);
+            inserted.push(row);
+        }
     }
-    rows.set(key, row);
-    return [row];
+    return inserted;
 }
 
 function readResourceInboxTestRow(
@@ -1032,23 +1042,52 @@ function updateResourceInboxTestRow(
     return [{ ...row }];
 }
 
-function toTestRow(values: readonly PSqlParameter[], rowId: bigint): ResourceInboxRow {
+/** The outbox insert passes its rows as one recordset parameter. */
+function readInsertRowsParameter(value: PSqlParameter): readonly AppOutboxInsertRow[] {
+    if (!Array.isArray(value)) {
+        throw new TypeError('Expected the outbox insert rows SQL parameter to be an array');
+    }
+    return value as readonly AppOutboxInsertRow[];
+}
+
+/** The repository's single-row insert passes its columns as positional parameters. */
+function toPositionalInsertRow(values: readonly PSqlParameter[]): AppOutboxInsertRow {
+    const toTimestamp = (value: PSqlParameter) => (value === null ? null : String(value));
+    return {
+        resourceId: readStringParameter(values[0], 'resource id'),
+        topicId: readStringParameter(values[1], 'topic id'),
+        resource: readStringParameter(values[2], 'resource'),
+        typeId: readStringParameter(values[3], 'type id'),
+        status: readStringParameter(values[4], 'status'),
+        contextId: readStringParameter(values[5], 'context id'),
+        systemDate: readStringParameter(values[6], 'system date'),
+        createdBy: readStringParameter(values[7], 'created by'),
+        createdAt: String(values[8]),
+        expiresAt: String(values[9]),
+        startedAt: toTimestamp(values[10]),
+        finishedAt: toTimestamp(values[11]),
+        nextAt: toTimestamp(values[12]),
+        attempts: Number(readBigIntParameter(values[13], 'attempts'))
+    };
+}
+
+function toTestRow(insert: AppOutboxInsertRow, rowId: bigint): ResourceInboxRow {
     return {
         ri_row_id: rowId,
-        ri_resource_id: readStringParameter(values[0], 'resource id'),
-        ri_topic_id: readStringParameter(values[1], 'topic id'),
-        ri_resource: readStringParameter(values[2], 'resource'),
-        ri_type_id: readStringParameter(values[3], 'type id'),
-        ri_status: readStringParameter(values[4], 'status'),
-        fk_ext_bank_id: readStringParameter(values[5], 'context id'),
-        system_date: readStringParameter(values[6], 'system date'),
-        created_by: readStringParameter(values[7], 'created by'),
-        created_ts: withoutZone(String(values[8])),
-        expire_ts: withoutZone(String(values[9])),
-        start_ts: values[10] === null ? null : withoutZone(String(values[10])),
-        end_ts: values[11] === null ? null : withoutZone(String(values[11])),
-        next_ts: values[12] === null ? null : withoutZone(String(values[12])),
-        ri_attempts: readBigIntParameter(values[13], 'attempts')
+        ri_resource_id: insert.resourceId,
+        ri_topic_id: insert.topicId,
+        ri_resource: insert.resource,
+        ri_type_id: insert.typeId,
+        ri_status: insert.status,
+        fk_ext_bank_id: insert.contextId,
+        system_date: insert.systemDate,
+        created_by: insert.createdBy,
+        created_ts: withoutZone(insert.createdAt),
+        expire_ts: withoutZone(insert.expiresAt),
+        start_ts: insert.startedAt === null ? null : withoutZone(insert.startedAt),
+        end_ts: insert.finishedAt === null ? null : withoutZone(insert.finishedAt),
+        next_ts: insert.nextAt === null ? null : withoutZone(insert.nextAt),
+        ri_attempts: BigInt(insert.attempts)
     };
 }
 

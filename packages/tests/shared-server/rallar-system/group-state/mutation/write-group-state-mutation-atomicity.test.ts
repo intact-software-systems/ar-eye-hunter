@@ -111,7 +111,7 @@ describe('GroupStateService guarded batch atomicity', () => {
                 runtime.readCountsBeforeBatch[0] ?? 0
             );
             expect(runtime.transactionOrder).toEqual(['batch', 'batch', 'event', 'commit']);
-            expect([...runtime.data.values()].every(({ revision }) => revision === 0)).toBe(true);
+            expect([...toGroupStateRows(runtime).values()].every(({ revision }) => revision === 0)).toBe(true);
             expect(eventStore.events).toHaveLength(1);
         }
     );
@@ -209,7 +209,7 @@ describe('GroupStateService guarded batch atomicity', () => {
         runtime.forceNextConflict('guard');
         runtime.forceNextConflict('guard');
         runtime.forceNextConflict('guard');
-        const before = new Map(runtime.data);
+        const before = toGroupStateRows(runtime);
 
         for (const attemptCount of [1, 2, 3]) {
             const service = createTestGroupStateService({
@@ -228,7 +228,7 @@ describe('GroupStateService guarded batch atomicity', () => {
         expect(runtime.beginCount).toBe(3);
         expect(runtime.batches).toHaveLength(3);
         expect(runtime.transactionOrder).toEqual(['batch', 'batch', 'batch']);
-        expect(runtime.data).toEqual(before);
+        expect(toGroupStateRows(runtime)).toEqual(before);
         expect(eventStore.events).toEqual([]);
     });
 
@@ -242,14 +242,14 @@ describe('GroupStateService guarded batch atomicity', () => {
             randomId: () => 'event-conflict-id',
             serviceId: 'event-conflict-service'
         });
-        const before = new Map(runtime.data);
+        const before = toGroupStateRows(runtime);
 
         await expect(createGroup(service, 'event-conflict')).rejects.toBeInstanceOf(
             GroupStateEventCollisionError
         );
 
         expect(runtime.transactionOrder).toEqual(['batch', 'event']);
-        expect(runtime.data).toEqual(before);
+        expect(toGroupStateRows(runtime)).toEqual(before);
         expect(eventStore.events).toEqual([]);
     });
 
@@ -264,7 +264,7 @@ describe('GroupStateService guarded batch atomicity', () => {
             randomId: () => 'missing-member-result-id',
             serviceId: 'missing-member-result-service'
         });
-        const before = new Map(runtime.data);
+        const before = toGroupStateRows(runtime);
 
         await expect(createGroup(service, 'missing-member-result')).rejects.toThrow(
             'expected 3 effects, received 2'
@@ -293,6 +293,11 @@ function expectTerminalRollback(
     expect(runtime.beginCount).toBe(1);
     expect(runtime.batches).toHaveLength(1);
     expect(runtime.transactionOrder).toEqual(['batch']);
-    expect(runtime.data).toEqual(before);
+    expect(toGroupStateRows(runtime)).toEqual(before);
     expect(events).toEqual([]);
+}
+
+/** The group's own rows; the authenticated sessions the test service provisions beside them are not under test. */
+function toGroupStateRows(runtime: ApplyingGuardedBatchRepository): Map<string, RuntimeStateEntry> {
+    return new Map([...runtime.data].filter(([key]) => key.startsWith('group-state:')));
 }

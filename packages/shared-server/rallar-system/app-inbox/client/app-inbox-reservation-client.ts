@@ -1,15 +1,8 @@
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 import type { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
-import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { validateAppInboxCommandIdentity } from '../app-inbox-command-identity.ts';
-import {
-    AppInboxIdempotencyConflictError,
-    AppInboxReservationConflictError,
-    type AppInboxEnqueueInput,
-    type AppInboxMessageContext
-} from '../app-inbox-contracts.ts';
+import { AppInboxIdempotencyConflictError, type AppInboxEnqueueInput } from '../app-inbox-contracts.ts';
 import type { AppInboxEntryRepository } from '../app-inbox-persistence-ports.ts';
 import {
     createAppInboxResourceEntry,
@@ -24,8 +17,7 @@ export namespace AppInboxReservationClient {
         readonly winner: boolean;
     }
 
-    export interface Repository
-        extends Pick<AppInboxEntryRepository, 'replaceIfObserved' | 'writeMaterializedIfAbsentOrReplaceExpired'> {}
+    export interface Repository extends Pick<AppInboxEntryRepository, 'writeMaterializedIfAbsentOrReplaceExpired'> {}
 
     export interface Dependencies {
         readonly creationNow: QueueBoxUtilities.CreationClock;
@@ -50,29 +42,6 @@ export class AppInboxReservationClient {
         this.repository = dependencies.repository;
         this.entryCreation = { creationNow: dependencies.creationNow, createMessage: dependencies.createMessage };
         this.serviceId = config.serviceId;
-    }
-
-    async persistAuthority<Result>(
-        context: AppInboxMessageContext<Result>,
-        authority: JsonWireValue
-    ): Promise<ResourceEntry> {
-        const enqueue = { ...context.enqueue, authority };
-        const message: ALMessage = {
-            ...context.message,
-            payload: {
-                ...context.message.payload,
-                resource: JSON.stringify(enqueue)
-            }
-        };
-        const replacement: ResourceEntry = {
-            ...context.entry,
-            resource: JSON.stringify(message)
-        };
-        const result = await this.repository.replaceIfObserved(context.entry, replacement);
-        if (result === null) {
-            throw new AppInboxReservationConflictError(context.entry.key);
-        }
-        return result;
     }
 
     async reserveMaterializedEntry(

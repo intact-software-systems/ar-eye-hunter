@@ -59,6 +59,12 @@ interface ClientStateTestExecutorInput {
     readonly mutationTiming: ClientStateMutationTiming;
 }
 
+/**
+ * The driver's clocks may start near the epoch while row liveness reads the wall clock, so a session it disconnects
+ * keeps the purge time it had before the retention bound existed.
+ */
+const SYNTHETIC_CLOCK_DISCONNECTED_SESSION_RETENTION_MS = Number.MAX_SAFE_INTEGER;
+
 interface ClientStateTestDriverDependencies {
     readonly runtimeRepository: ClientStateTestRuntimeRepository;
     readonly now?: () => number;
@@ -159,7 +165,8 @@ async function prepareClientStateTestMutation(
             serviceId: context.serviceId,
             eventId: `test-client-event:${input.commandId}:${context.nextSequence()}`,
             attemptCount: attempt,
-            expireAtEpochMs: TEST_AUTH_EXPIRES_AT_EPOCH_MS
+            expireAtEpochMs: TEST_AUTH_EXPIRES_AT_EPOCH_MS,
+            disconnectedSessionRetentionMs: SYNTHETIC_CLOCK_DISCONNECTED_SESSION_RETENTION_MS
         },
         authority
     );

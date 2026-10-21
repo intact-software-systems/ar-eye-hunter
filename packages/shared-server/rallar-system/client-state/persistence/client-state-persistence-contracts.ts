@@ -1,12 +1,40 @@
-import type { ClientPrincipal, ClientSnapshot } from '@shared/api/client-types.ts';
+import type {
+    ClientInstance,
+    ClientInstanceRef,
+    ClientPrincipal,
+    ClientPrincipalRef,
+    ClientSession,
+    ClientSessionRef,
+    ClientSnapshot
+} from '@shared/api/client-types.ts';
 
-import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import type { RuntimeStateReadBatchLiveSelection } from '../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
+import type { RuntimeStateReadBatchSelector } from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
+import type { RuntimeStateEntryRead, RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
 import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 export type ClientPrincipalSnapshotRead = Readonly<{
     principal: RuntimeStateEntryValue<ClientPrincipal>;
     snapshot: ClientSnapshot;
 }>;
+
+/** The rows one mutation decides on, and the rows other features read beside them, selected by one statement. */
+export interface ClientMutationStateBatchInput {
+    readonly principalRef: ClientPrincipalRef;
+    readonly instanceRef: ClientInstanceRef | null;
+    readonly sessionRef: ClientSessionRef | null;
+    readonly requestId: string | null;
+    readonly companionSelectors: readonly RuntimeStateReadBatchSelector[];
+}
+
+export interface ClientMutationStateBatch {
+    readonly idempotency: RuntimeStateEntryValue<ClientMutationIdempotencyRecord> | undefined;
+    readonly principalSnapshot: ClientPrincipalSnapshotRead | undefined;
+    readonly instance: RuntimeStateEntryValue<ClientInstance> | undefined;
+    readonly session: RuntimeStateEntryRead<ClientSession>;
+    /** One live selection per companion selector, in the order they were given, still undecoded. */
+    readonly companions: readonly RuntimeStateReadBatchLiveSelection<JsonWireValue>[];
+}
 
 export type ClientMutationReceipt = Readonly<{
     commandId: string;

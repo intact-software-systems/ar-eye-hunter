@@ -41,13 +41,13 @@ export function computeConnectGroupPresence(
     }
     assertAllowed(
         canConnectGroupPresenceSession({
-            snapshot: toPolicySnapshot(read, command.aggregateRef, facts.nowEpochMs),
+            snapshot: toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs),
             actor: {
                 principalId: command.input.principalId,
                 sessionId: command.input.actorSessionId ?? undefined
             },
             sessionId: command.sessionId,
-            nowEpochMs: facts.nowEpochMs
+            nowEpochMs: facts.attemptAtEpochMs
         })
     );
     const existing = read.targetPresence;
@@ -161,7 +161,7 @@ function resolvePresenceConnectionTiming({
             'Group presence lastHeartbeatAtEpochMs is too far in the future.'
         );
     }
-    const expiresAt = command.input.expiresAtEpochMs ?? facts.nowEpochMs + DEFAULT_GROUP_SESSION_TTL_MS;
+    const expiresAt = command.input.expiresAtEpochMs ?? facts.attemptAtEpochMs + DEFAULT_GROUP_SESSION_TTL_MS;
     if (heartbeatAt < connectedAt || expiresAt < heartbeatAt) {
         throw new GroupMutationRejectedError(
             'Presence connection timestamps are causally inconsistent.'

@@ -7,6 +7,9 @@ import {
     type ResourceInboxResultsRow
 } from './resource-inbox-row-codec.ts';
 
+/** The replaced row's identity; the stored result is not echoed back. */
+export type ResourceInboxResultRowIdentity = Pick<ResourceInboxResultsRow, 'ris_row_id'>;
+
 export interface ResourceInboxResultReplacement {
     readonly resourceId: string;
     readonly topicId: string;
@@ -40,8 +43,8 @@ export function computeResourceInboxResultReplacement(
 export async function writeResourceInboxResultReplacement(
     transaction: PSqlSql,
     computed: ResourceInboxResultReplacement
-): Promise<ResourceInboxResultsRow> {
-    const rows = await transaction<readonly ResourceInboxResultsRow[]>`
+): Promise<ResourceInboxResultRowIdentity> {
+    const rows = await transaction<readonly ResourceInboxResultRowIdentity[]>`
         insert into resource_inbox_results (ris_resource_id,
                                             ris_topic_id,
                                             ris_resource,
@@ -70,7 +73,7 @@ export async function writeResourceInboxResultReplacement(
                           created_by   = excluded.created_by,
                           created_ts   = excluded.created_ts,
                           expire_ts    = excluded.expire_ts
-        returning *
+        returning ris_row_id
     `;
 
     if (rows.length !== 1 || rows[0] === undefined) {

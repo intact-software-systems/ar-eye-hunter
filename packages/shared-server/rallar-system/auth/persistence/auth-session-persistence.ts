@@ -139,14 +139,9 @@ export class AuthSessionPersistence extends RuntimeStateJsonStore {
             AUTH_SESSIONS_BY_SESSION_NAMESPACE,
             authSessionKey(sessionId)
         );
-        if (!read.value) {
-            return { value: undefined, expiredEntry: read.expiredEntry };
-        }
-        const value = decodePersistedAuthSession(read.value.value);
-        if (value.sessionId !== sessionId) {
-            throw new TypeError('Persisted auth session id identity differs');
-        }
-        return { value: { entry: read.value.entry, value }, expiredEntry: undefined };
+        return read.value
+            ? { value: decodeAuthSessionBySessionIdEntry(sessionId, read.value), expiredEntry: undefined }
+            : { value: undefined, expiredEntry: read.expiredEntry };
     }
 
     async deleteSession(session: IssuedAuthSession): Promise<void> {
@@ -187,6 +182,18 @@ export class AuthSessionPersistence extends RuntimeStateJsonStore {
             expectedRevision
         );
     }
+}
+
+/** A live row of the by-session namespace, decoded and held to the session id it was read for. */
+export function decodeAuthSessionBySessionIdEntry(
+    sessionId: string,
+    stored: RuntimeStateEntryValue<JsonWireValue>
+): RuntimeStateEntryValue<PersistedAuthSession> {
+    const value = decodePersistedAuthSession(stored.value);
+    if (value.sessionId !== sessionId) {
+        throw new TypeError('Persisted auth session id identity differs');
+    }
+    return { entry: stored.entry, value };
 }
 
 async function toPersistedAuthSession(session: IssuedAuthSession): Promise<PersistedAuthSession> {

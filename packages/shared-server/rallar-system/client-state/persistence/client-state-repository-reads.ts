@@ -315,7 +315,7 @@ export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
         });
     }
 
-    private toIdempotencyEntry(
+    protected toIdempotencyEntry(
         stored: RuntimeStateEntryValue<JsonWireValue>,
         expected: ClientPrincipalRef & Readonly<{ requestId: string; }>
     ): RuntimeStateEntryValue<ClientMutationIdempotencyRecord> {

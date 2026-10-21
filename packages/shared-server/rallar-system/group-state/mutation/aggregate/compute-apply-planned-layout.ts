@@ -68,7 +68,7 @@ export function computeApplyPlannedLayout(
     facts: GroupMutationFacts
 ): GroupMutationComputed {
     const stored = requireGroup(read, command.aggregateRef);
-    assertActive(stored.value, facts.nowEpochMs);
+    assertActive(stored.value, facts.attemptAtEpochMs);
     const preconditionRejection = computeApplyPreconditionRejection({ command, read, facts, stored: stored.value });
     if (preconditionRejection !== null) {
         return preconditionRejection;

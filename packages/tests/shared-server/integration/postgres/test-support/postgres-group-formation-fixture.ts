@@ -1,9 +1,9 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
-import { GROUP_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/app-inbox/app-inbox-topics.ts';
 import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import type { GroupStateInboxDurableResult } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
+import { toAuthenticatedGroupMutationQueueKey } from '@shared-server/rallar-system/group-state/inbox/to-authenticated-group-mutation-queue-key.ts';
 import type { GroupMutationReceipt } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
@@ -11,7 +11,6 @@ import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgre
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 
@@ -173,11 +172,7 @@ function toCallerCommand(input: GroupAppInboxMutationInput): GroupFormationComma
     return {
         input,
         enqueue,
-        queueKey: toAppQueueKey({
-            topicId: GROUP_STATE_APP_INBOX_TOPIC,
-            resourceId: input.data.request.requestId,
-            contextId: enqueue.contextId
-        })
+        queueKey: toAuthenticatedGroupMutationQueueKey(enqueue)
     };
 }
 

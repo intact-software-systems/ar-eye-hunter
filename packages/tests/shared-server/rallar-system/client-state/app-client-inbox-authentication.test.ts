@@ -37,8 +37,8 @@ import {
     processAuthenticatedClientMutation,
     readEntries
 } from './app-client-inbox-mutation-test-harness.ts';
-import { createEmptyWsTicketReader } from './authorised-ws-test-ticket.ts';
 import { createClientStateServiceFixture } from './create-client-state-service-fixture.ts';
+import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 describe('AppClientInbox authentication', () => {
     it('validates issued authority from an explicit observation time without reading the clock', () => {
@@ -156,10 +156,9 @@ describe('AppClientInbox authentication', () => {
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: results,
                 database,
-                clientStateService: createClientStateServiceFixture(),
-                wsTickets: createEmptyWsTicketReader()
+                clientStateService: createClientStateServiceFixture()
             },
-            { serviceId: 'server-12345678' }
+            { serviceId: 'server-12345678', disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS }
         );
         const authority = issuedSession('alice', 'alice-session');
         const pending = service.processAuthenticatedEntryUntilCompletion(
@@ -224,10 +223,9 @@ describe('AppClientInbox authentication', () => {
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: new TestResourceInboxResults(),
                 database: createAppInboxTestDatabase(queue, new TestResourceInboxResults()),
-                clientStateService: createClientStateServiceFixture(),
-                wsTickets: createEmptyWsTicketReader()
+                clientStateService: createClientStateServiceFixture()
             },
-            { serviceId: 'server-12345678' }
+            { serviceId: 'server-12345678', disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS }
         );
 
         const result = await service.processAuthenticatedEntryUntilCompletion(
@@ -291,10 +289,9 @@ describe('AppClientInbox authentication', () => {
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: new TestResourceInboxResults(),
                 database: createAppInboxTestDatabase(queue, new TestResourceInboxResults()),
-                clientStateService: createClientStateServiceFixture(),
-                wsTickets: createEmptyWsTicketReader()
+                clientStateService: createClientStateServiceFixture()
             },
-            { serviceId: 'server-12345678' }
+            { serviceId: 'server-12345678', disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS }
         );
         const enqueue = {
             type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
@@ -347,7 +344,8 @@ describe('AppClientInbox authentication', () => {
                 serviceId: 'server-12345678',
                 eventId: 'direct-mallory-targets-alice-event',
                 attemptCount: 1,
-                expireAtEpochMs: Date.now() + 60_000
+                expireAtEpochMs: Date.now() + 60_000,
+                disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
             },
             toClientMutationIssuedSessionAuthority(mallory, CLIENT_STATE_TEST_SCOPE, 'upsertPrincipal')
         );
@@ -381,11 +379,11 @@ describe('AppClientInbox authentication', () => {
                     runtimeRepository,
                     clientStateEventStore: new InMemoryClientStateEventStore(),
                     serviceId: 'server-12345678'
-                }),
-                wsTickets: new AuthSessionRepository(runtimeRepository)
+                })
             },
             {
-                serviceId: 'server-12345678'
+                serviceId: 'server-12345678',
+                disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
             }
         );
 
@@ -505,10 +503,9 @@ async function createRevokedAuthorityRetryHarness(nowEpochMs: () => number): Pro
                 runtimeRepository,
                 clientStateEventStore: new InMemoryClientStateEventStore(),
                 serviceId: 'server-12345678'
-            }),
-            wsTickets: new AuthSessionRepository(runtimeRepository)
+            })
         },
-        { serviceId: 'server-12345678' }
+        { serviceId: 'server-12345678', disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS }
     );
     return {
         alice,

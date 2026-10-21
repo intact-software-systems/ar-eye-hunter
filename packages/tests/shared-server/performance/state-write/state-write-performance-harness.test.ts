@@ -7,6 +7,7 @@ import { compareStateWriteArtifacts, validateStateWriteArtifact } from '../../..
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { mutationDescriptor, toDescriptorCommand } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
+import { toAuthenticatedGroupMutationQueueKey } from '@shared-server/rallar-system/group-state/inbox/to-authenticated-group-mutation-queue-key.ts';
 import { toGroupMutationDescriptorTargetIdentity } from '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
 import { toScopedGroupMutationCommandId } from '@shared-server/rallar-system/group-state/scoped-group-mutation-command-id.ts';
 import { computeMutationCommandDigest, decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
@@ -56,7 +57,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
         const logicalContextId = [groupRef.applicationId, groupRef.workspaceId, groupRef.groupId]
             .map(encodeURIComponent)
             .join(':');
-        const physicalKey = toAppQueueKey({
+        const physicalKey = toAuthenticatedGroupMutationQueueKey({
             resourceId: requestId,
             topicId,
             contextId: logicalContextId
@@ -183,7 +184,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
         }, expectation)).toBeUndefined();
 
         const wrongTopicId = AppInboxType.GROUP_MEMBER_UPSERT;
-        const wrongTopicKey = toAppQueueKey({
+        const wrongTopicKey = toAuthenticatedGroupMutationQueueKey({
             resourceId: requestId,
             topicId: wrongTopicId,
             contextId: logicalContextId
@@ -255,7 +256,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
         const semanticCommand = toDescriptorCommand(descriptor, () => requestId);
         const commandHash = computeMutationCommandDigest(decodeJsonWireValue(semanticCommand));
         const command = { ...semanticCommand, commandId };
-        const physicalKey = toAppQueueKey({ topicId, resourceId: requestId, contextId: logicalContextId });
+        const physicalKey = toAuthenticatedGroupMutationQueueKey({ topicId, resourceId: requestId, contextId: logicalContextId });
         const row = {
             ri_resource_id: physicalKey.resourceId,
             ri_topic_id: physicalKey.topicId,

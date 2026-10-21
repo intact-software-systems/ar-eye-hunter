@@ -17,11 +17,8 @@ export class ResourceInboxResultsRepository {
     }
 
     async replace(entry: ResourceEntry): Promise<ResourceEntry> {
-        const row = await writeResourceInboxResultReplacement(
-            this.sql,
-            computeResourceInboxResultReplacement(entry)
-        );
-        return toResultsDomain(row);
+        await writeResourceInboxResultReplacement(this.sql, computeResourceInboxResultReplacement(entry));
+        return entry;
     }
 
     async findAnyByKey(key: Key): Promise<ResourceEntry | null> {

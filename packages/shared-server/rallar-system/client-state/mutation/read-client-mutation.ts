@@ -1,15 +1,38 @@
-import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
+import type { RuntimeStateReadBatchLiveSelection } from '../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
+import type { RuntimeStateReadBatchSelector } from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
+import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import { decodeAuthSessionBySessionIdEntry } from '../../auth/persistence/auth-session-persistence.ts';
+import {
+    AUTH_SESSIONS_BY_SESSION_NAMESPACE,
+    authSessionKey,
+    authTicketDigestKey,
+    WS_AUTH_TICKETS_NAMESPACE
+} from '../../auth/persistence/auth-storage-keys.ts';
+import { decodeWebSocketTicketByDigestEntry } from '../../auth/persistence/auth-ticket-persistence.ts';
+import type { PersistedAuthSession } from '../../auth/persistence/persisted-auth-session.ts';
+import type { AuthWsTicketConsumptionClaim } from '../../auth/ws-ticket/auth-ws-ticket-consumption.ts';
 import { GroupStateRepositoryReads } from '../../group-state/persistence/group-state-repository-reads.ts';
 import { readGroupVisibility } from '../../group-state/policy/group-snapshot-visibility-policy.ts';
 import type { GroupStateCurrentSnapshotCache } from '../../group-state/snapshot/group-state-current-snapshot-cache.ts';
-import { StateSnapshotReadConflictError } from '../../state-events/state-snapshot-read.ts';
+import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { PrincipalAudienceSessions } from '../../state-sync/state-sync-principal-audience.ts';
+import {
+    toWsSessionLifecycleKey,
+    WS_SESSION_CLOSE_HIGH_WATER_NAMESPACE,
+    type WsSessionHighWaterIdentity
+} from '../../websocket/ws-session-generation-computation.ts';
+import { toWsSessionGenerationLifecycleRead } from '../../websocket/ws-session-generation-lifecycle.ts';
 import { timeClientStateReadPhase, type ClientStateMutationTiming } from '../client-state-service-timing.ts';
 import { ClientStateRepository } from '../persistence/client-state-repository.ts';
 import { ClientMutationRejectedError } from '../validation/client-mutation-rejection.ts';
-import type { ClientMutationCommand, ClientMutationRead } from './client-mutation-contracts.ts';
+import type {
+    ClientAuthorisedWsConnectRead,
+    ClientAuthorisedWsConnectReadInput,
+    ClientMutationCommand,
+    ClientMutationRead
+} from './client-mutation-contracts.ts';
 import { resolveClientMutationAudienceReadScope } from './resolve-client-mutation-audience-read-scope.ts';
 
 interface ClientMutationTargetRefs {
@@ -36,17 +59,34 @@ interface ClientMutationAudienceRead {
 export interface ReadClientMutationInput {
     readonly repository: ClientStateRepository;
     readonly groupRepository: GroupStateRepositoryReads;
-    readonly authSessionRepository: Pick<AuthSessionRepository, 'findBySessionId'>;
     readonly command: ClientMutationCommand;
     readonly audienceObservedAtEpochMs: number;
     readonly timing?: ClientStateMutationTiming;
     readonly currentGroupSnapshots?: Pick<GroupStateCurrentSnapshotCache, 'readSnapshots'>;
 }
 
+export type ReadAuthorisedWsConnectMutationInput =
+    & ReadClientMutationInput
+    & Omit<ClientAuthorisedWsConnectReadInput, 'command'>;
+
 type ClientMutationStateRead = Pick<
     ClientMutationRead,
     'authoritySession' | 'idempotency' | 'principal' | 'instance' | 'session' | 'expiredSessionEntry' | 'snapshot'
 >;
+
+/** Auth sessions and rows of other features that one mutation's point statement reads beside its own rows. */
+interface ClientMutationCompanionRead {
+    readonly authSessionIds: readonly string[];
+    readonly selectors: readonly RuntimeStateReadBatchSelector[];
+}
+
+interface ClientMutationStateBatchRead {
+    readonly state: ClientMutationStateRead;
+    readonly authSessions: ReadonlyMap<string, RuntimeStateEntryValue<PersistedAuthSession>>;
+    readonly companions: readonly RuntimeStateReadBatchLiveSelection<JsonWireValue>[];
+}
+
+const NO_COMPANIONS: ClientMutationCompanionRead = { authSessionIds: [], selectors: [] };
 
 const EMPTY_AUDIENCE_READ: ClientMutationAudienceRead = {
     audienceGroupSnapshots: [],
@@ -56,11 +96,46 @@ const EMPTY_AUDIENCE_READ: ClientMutationAudienceRead = {
 export async function readClientMutation(
     input: ReadClientMutationInput
 ): Promise<ClientMutationRead> {
-    const { repository, command, audienceObservedAtEpochMs, timing } = input;
-    const state = await timeClientStateReadPhase(
-        { timing, command, operation: 'mutation.read-state' },
-        () => readClientMutationState(input)
+    const { state } = await timeClientStateReadPhase(
+        { timing: input.timing, command: input.command, operation: 'mutation.read-state' },
+        () => readClientMutationState(input, NO_COMPANIONS)
     );
+    return await readClientMutationAudience(input, state);
+}
+
+/** The connect's ticket, its session and close high-water join the mutation's own point statement. */
+export async function readAuthorisedWsConnectMutation(
+    input: ReadAuthorisedWsConnectMutationInput
+): Promise<ClientAuthorisedWsConnectRead> {
+    const { ticketClaim, lifecycle } = input;
+    const { state, authSessions, companions } = await timeClientStateReadPhase(
+        { timing: input.timing, command: input.command, operation: 'mutation.read-state' },
+        () =>
+            readClientMutationState(input, {
+                authSessionIds: [ticketClaim.sessionId],
+                selectors: [toWsTicketSelector(ticketClaim), toWsSessionHighWaterSelector(lifecycle)]
+            })
+    );
+    const [ticket, highWater] = companions;
+    const [storedTicket] = ticket.entries;
+    return {
+        ticket: {
+            ticket: storedTicket ? decodeWebSocketTicketByDigestEntry(ticketClaim.ticketDigest, storedTicket) : null,
+            session: authSessions.get(ticketClaim.sessionId) ?? null
+        },
+        lifecycle: toWsSessionGenerationLifecycleRead(
+            lifecycle,
+            highWater.entries[0]?.entry ?? highWater.expiredEntries[0]
+        ),
+        mutation: await readClientMutationAudience(input, state)
+    };
+}
+
+async function readClientMutationAudience(
+    input: ReadClientMutationInput,
+    state: ClientMutationStateRead
+): Promise<ClientMutationRead> {
+    const { repository, command, audienceObservedAtEpochMs, timing } = input;
     const receiptEvent = await timeClientStateReadPhase(
         { timing, command, operation: 'mutation.read-receipt' },
         () => readReceiptEvent(repository, command, state.idempotency ?? undefined)
@@ -74,34 +149,42 @@ export async function readClientMutation(
 }
 
 async function readClientMutationState(
-    input: ReadClientMutationInput
-): Promise<ClientMutationStateRead> {
-    const { repository, authSessionRepository, command } = input;
+    input: ReadClientMutationInput,
+    companion: ClientMutationCompanionRead
+): Promise<ClientMutationStateBatchRead> {
+    const { repository, command } = input;
     const targets = toClientMutationTargetRefs(command);
-    const [authoritySession, idempotency, principalSnapshot, instance, sessionRead] = await Promise.all([
-        readAuthoritySession(authSessionRepository, command),
-        readIdempotency(repository, command),
-        repository.readPrincipalSnapshot(command.aggregateRef),
-        targets.instanceRef ? repository.findInstanceEntry(targets.instanceRef) : undefined,
-        targets.sessionRef
-            ? repository.readSessionEntry(targets.sessionRef)
-            : { value: undefined, expiredEntry: undefined }
-    ]);
-
-    assertPrincipalSnapshotRevision(principalSnapshot);
+    const authorityIds = command.authority.kind === 'issued-session' ? [command.authority.sessionId] : [];
+    const authSessionIds = [...new Set([...authorityIds, ...companion.authSessionIds])];
+    const batch = await repository.readMutationState({
+        principalRef: command.aggregateRef,
+        instanceRef: targets.instanceRef,
+        sessionRef: targets.sessionRef,
+        requestId: command.requestId,
+        companionSelectors: [...authSessionIds.map(toAuthSessionSelector), ...companion.selectors]
+    });
+    const authSessions = new Map(authSessionIds.flatMap((sessionId, index) => {
+        const [stored] = batch.companions[index].entries;
+        return stored ? [[sessionId, decodeAuthSessionBySessionIdEntry(sessionId, stored)] as const] : [];
+    }));
+    const [authorityId] = authorityIds;
     return {
-        authoritySession: authoritySession ?? null,
-        idempotency: idempotency ?? null,
-        principal: principalSnapshot?.principal ?? null,
-        instance: instance ?? null,
-        session: sessionRead.value ?? null,
-        expiredSessionEntry: sessionRead.expiredEntry ?? null,
-        snapshot: principalSnapshot?.snapshot ?? null
+        state: {
+            authoritySession: authorityId === undefined ? null : authSessions.get(authorityId)?.value ?? null,
+            idempotency: batch.idempotency ?? null,
+            principal: batch.principalSnapshot?.principal ?? null,
+            instance: batch.instance ?? null,
+            session: batch.session.value ?? null,
+            expiredSessionEntry: batch.session.expiredEntry ?? null,
+            snapshot: batch.principalSnapshot?.snapshot ?? null
+        },
+        authSessions,
+        companions: batch.companions.slice(authSessionIds.length)
     };
 }
 
 async function readPrincipalAudience(
-    input: Omit<ReadClientMutationInput, 'authSessionRepository'>
+    input: ReadClientMutationInput
 ): Promise<ClientMutationAudienceRead> {
     const { repository, groupRepository, command, audienceObservedAtEpochMs, timing } = input;
     const scope = {
@@ -163,36 +246,37 @@ function toClientMutationTargetRefs(command: ClientMutationCommand): ClientMutat
     };
 }
 
-function readAuthoritySession(
-    authSessionRepository: Pick<AuthSessionRepository, 'findBySessionId'>,
-    command: ClientMutationCommand
-) {
-    return command.authority.kind === 'issued-session'
-        ? authSessionRepository.findBySessionId(command.authority.sessionId)
-        : undefined;
+function toAuthSessionSelector(sessionId: string, index: number): RuntimeStateReadBatchSelector {
+    return {
+        selectorId: `auth-session:${index}`,
+        kind: 'key',
+        namespace: AUTH_SESSIONS_BY_SESSION_NAMESPACE,
+        key: authSessionKey(sessionId)
+    };
 }
 
-function readIdempotency(repository: ClientStateRepository, command: ClientMutationCommand) {
-    return command.requestId === null
-        ? undefined
-        : repository.findIdempotentClientMutationReceiptEntry(command.aggregateRef, command.requestId);
+function toWsTicketSelector(claim: AuthWsTicketConsumptionClaim): RuntimeStateReadBatchSelector {
+    return {
+        selectorId: 'ws-ticket',
+        kind: 'key',
+        namespace: WS_AUTH_TICKETS_NAMESPACE,
+        key: authTicketDigestKey(claim.ticketDigest)
+    };
 }
 
-function assertPrincipalSnapshotRevision(
-    principalSnapshot: Awaited<ReturnType<ClientStateRepository['readPrincipalSnapshot']>>
-): void {
-    if (
-        principalSnapshot &&
-        principalSnapshot.snapshot.stateRevision !== principalSnapshot.principal.entry.revision + 1
-    ) {
-        throw new StateSnapshotReadConflictError(principalSnapshot.principal.entry.key);
-    }
+function toWsSessionHighWaterSelector(identity: WsSessionHighWaterIdentity): RuntimeStateReadBatchSelector {
+    return {
+        selectorId: 'ws-session-high-water',
+        kind: 'key',
+        namespace: WS_SESSION_CLOSE_HIGH_WATER_NAMESPACE,
+        key: toWsSessionLifecycleKey(identity)
+    };
 }
 
 async function readReceiptEvent(
     repository: ClientStateRepository,
     command: ClientMutationCommand,
-    idempotency: Awaited<ReturnType<ClientStateRepository['findIdempotentClientMutationReceiptEntry']>>
+    idempotency: ClientMutationRead['idempotency'] | undefined
 ) {
     if (!idempotency || idempotency.value.receipt.eventId === null) {
         return null;

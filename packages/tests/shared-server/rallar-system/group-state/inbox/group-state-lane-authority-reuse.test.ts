@@ -29,17 +29,18 @@ import {
 
 /**
  * Runtime-state reads one presence connect performs inside the lane, from its
- * dequeue to its completion: the lane captures the ingress with the route's
- * proof (one causal-revision read), persists it, re-checks only that the
- * session is still live (one session read), then reads the presence facts.
+ * dequeue to its completion: the session lifecycle read, and beside it the one
+ * batch that re-checks the session is still live and reads the presence facts.
+ * The enqueue captured the ingress with the route's proof, so the lane neither
+ * captures nor persists it.
  */
-const LANE_RUNTIME_STATE_READS_PER_PRESENCE_CONNECT = 5;
+const LANE_RUNTIME_STATE_READS_PER_PRESENCE_CONNECT = 2;
 
 /**
  * Runtime-state reads the route's authorization performs before enqueue: none.
  * The route's bearer lookup already read and verified the session by its token
- * digest and hands that session over; the lane reads the causal revision,
- * persists the ingress and re-checks the session's liveness itself.
+ * digest and hands that session over; the enqueue captures the ingress without
+ * a read and the lane re-checks the session's liveness itself.
  */
 const ROUTE_RUNTIME_STATE_READS_PER_AUTHORIZATION = 0;
 

@@ -5,6 +5,7 @@ import {
 } from 'vitest';
 
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type { AppOutboxInsertRow } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import { writeClientMutation } from '@shared-server/rallar-system/client-state/mutation/write-client-mutation.ts';
 import { assertClientMutationMatchesRecompute } from '@shared-test/shared-server/assert-client-mutation-matches-recompute.ts';
@@ -59,10 +60,21 @@ describe('client mutation write purity', () => {
     });
 });
 
+/** Applies every statement: a runtime row returns its revision and each outbox row returns its identity. */
 function appliedSql(): PSqlSql {
     const sql = (
-        _stringsOrValues: TemplateStringsArray | readonly PSqlParameter[],
-        ..._values: readonly PSqlParameter[]
-    ): Promise<readonly Readonly<{ revision: number; }>[]> | object => Promise.resolve([{ revision: 0 }]);
+        stringsOrValues: TemplateStringsArray | readonly PSqlParameter[],
+        ...values: readonly PSqlParameter[]
+    ): Promise<readonly object[]> | object => {
+        if (!('raw' in stringsOrValues) || !stringsOrValues.join('').includes('insert into resource_inbox')) {
+            return Promise.resolve([{ revision: 0 }]);
+        }
+        const rows = values[0] as readonly AppOutboxInsertRow[];
+        return Promise.resolve(rows.map((row) => ({
+            ri_resource_id: row.resourceId,
+            ri_topic_id: row.topicId,
+            fk_ext_bank_id: row.contextId
+        })));
+    };
     return sql as PSqlSql;
 }

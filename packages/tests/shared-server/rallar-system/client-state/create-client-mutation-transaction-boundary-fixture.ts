@@ -7,7 +7,6 @@ import {
 } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
-import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type {
     ClientStateMutationService,
     ClientStateWritten
@@ -30,6 +29,7 @@ import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fak
 import { TestResourceInboxResults } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import { createAutoAuthorizingClientStateService } from './app-client-inbox-mutation-test-harness.ts';
+import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 const SCOPE: StateScope = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
 
@@ -75,7 +75,6 @@ export async function createClientMutationTransactionBoundaryFixture(
             actions,
             computedSnapshots
         }),
-        wsTickets: new AuthSessionRepository(runtimeRepository),
         sessionGenerationLifecycle: durable.sessionGenerationLifecycle,
         expiryCandidates: durable,
         expiryContinuationWriter: { write: async () => undefined },
@@ -99,7 +98,8 @@ export async function createClientMutationTransactionBoundaryFixture(
                 ? (event) => actions.push(event.operation)
                 : undefined
         },
-        serviceId: 'client-inbox-service'
+        serviceId: 'client-inbox-service',
+        disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
     });
     return { actions, computedSnapshots, context, handler, observedSnapshots, results };
 }
@@ -115,6 +115,7 @@ function observeMutationWrites(
 ): ClientStateMutationService {
     return {
         read: durable.read,
+        readAuthorisedWsConnect: durable.readAuthorisedWsConnect,
         write: async (transaction, computed) => {
             effects.actions.push('write');
             effects.computedSnapshots.push(computed.snapshot);

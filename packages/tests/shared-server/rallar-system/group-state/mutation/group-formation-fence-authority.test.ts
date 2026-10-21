@@ -23,6 +23,7 @@ const LAYOUT_B: GroupLayoutIdentity = { ...LAYOUT_A, groupRevision: 5, version: 
 function internalFacts(mode: GroupMutationFacts['internalAuthority']): GroupMutationFacts {
     return {
         nowEpochMs: 1_000,
+        attemptAtEpochMs: 1_000,
         expireAtEpochMs: 100_000,
         attemptCount: 1,
         serviceId: 'server-1',

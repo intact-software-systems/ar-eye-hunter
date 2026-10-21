@@ -58,22 +58,20 @@ describe('group presence concurrency', () => {
     it('keeps independent service writes convergent without service-local retry', async () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'cross-service-lane-room');
-        const first = createService(runtime, 2_000);
-        const second = createService(runtime, 2_001);
+        const requests = [
+            { displayName: 'Cross-service first', actorPrincipalId: 'alice', requestId: 'cross-service-lane-first' },
+            { displayName: 'Cross-service second', actorPrincipalId: 'alice', requestId: 'cross-service-lane-second' }
+        ];
         runtime.armGroupReadBarrier(2);
 
-        await Promise.all([
-            first.updateGroup(SCOPE, 'cross-service-lane-room', {
-                displayName: 'Cross-service first',
-                actorPrincipalId: 'alice',
-                requestId: 'cross-service-lane-first'
-            }),
-            second.updateGroup(SCOPE, 'cross-service-lane-room', {
-                displayName: 'Cross-service second',
-                actorPrincipalId: 'alice',
-                requestId: 'cross-service-lane-second'
-            })
-        ]);
+        const attempts = await Promise.allSettled(
+            requests.map((request, index) => createService(runtime, 2_000 + index).updateGroup(SCOPE, 'cross-service-lane-room', request))
+        );
+        const lost = attempts.findIndex((attempt) => attempt.status === 'rejected');
+        expect(attempts.filter((attempt) => attempt.status === 'fulfilled')).toHaveLength(1);
+        expect(attempts[lost]).toMatchObject({ reason: expect.any(RuntimeStateWriteConflictError) });
+        // The loser's next queue delivery is a fresh attempt that reads the winner's row.
+        await createService(runtime, 2_000 + lost, 2).updateGroup(SCOPE, 'cross-service-lane-room', requests[lost]);
 
         expect((await requireSnapshot(runtime, 'cross-service-lane-room')).group.snapshotVersion).toBe(
             3

@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 
-import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import {
@@ -40,7 +39,6 @@ export function createRoomStateTestRuntime(
     const durable = createGroupStateService({
         runtimeRepository,
         groupStateEventStore: runtimeRepository.groupStateEventStore,
-        authSessionRepository: new AuthSessionRepository(runtimeRepository),
         serviceId: 'ws-room-test',
         readPlannedLayoutRow: async () => null,
         readAcceptedLayoutRow: async () => null

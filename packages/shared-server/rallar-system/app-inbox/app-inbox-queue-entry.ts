@@ -5,7 +5,7 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import type { AppInboxEnqueueInput } from './app-inbox-contracts.ts';
 
-export interface ToPhysicalAppInboxQueueKeyInput extends AppInboxEnqueueInput {
+export interface ToPhysicalAppInboxQueueKeyInput extends Pick<AppInboxEnqueueInput, 'topicId' | 'contextId'> {
     readonly resourceId: string;
 }
 

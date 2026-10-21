@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
@@ -12,7 +13,7 @@ import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/stat
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 
-import { toPersistedAuthSessionFixture, withPGliteSql } from './pglite-auth-test-harness.ts';
+import { FUTURE_MS, withPGliteSql } from './pglite-auth-test-harness.ts';
 import {
     applyPGliteGroupMutation,
     applyPGliteGroupMutationIngress,
@@ -307,20 +308,15 @@ Deno.test(
                 accessToken: 'test-token',
                 username: 'alice',
                 issuedAtEpochMs: 1,
-                expiresAtEpochMs: 100_000
+                expiresAtEpochMs: FUTURE_MS
             };
-            const persistedAuthority = await toPersistedAuthSessionFixture(authority);
+            const authSessionRepository = new AuthSessionRepository(runtime);
+            await authSessionRepository.putSession(authority);
             const service = createGroupStateService({
                 readPlannedLayoutRow: () => Promise.resolve(null),
                 readAcceptedLayoutRow: () => Promise.resolve(null),
                 runtimeRepository: runtime,
                 groupStateEventStore: new PSqlGroupStateEventRepository(sql),
-                authSessionRepository: {
-                    findBySessionId: (sessionId) =>
-                        Promise.resolve(
-                            sessionId === authority.sessionId ? persistedAuthority : undefined
-                        )
-                },
                 now: () => 10_000,
                 serviceId: 'pglite-group-service'
             });
@@ -410,20 +406,15 @@ Deno.test(
                 accessToken: 'test-token',
                 username: 'alice',
                 issuedAtEpochMs: 1,
-                expiresAtEpochMs: 100_000
+                expiresAtEpochMs: FUTURE_MS
             };
-            const persistedAuthority = await toPersistedAuthSessionFixture(authority);
+            const authSessionRepository = new AuthSessionRepository(runtime);
+            await authSessionRepository.putSession(authority);
             const service = createGroupStateService({
                 readPlannedLayoutRow: () => Promise.resolve(null),
                 readAcceptedLayoutRow: () => Promise.resolve(null),
                 runtimeRepository: runtime,
                 groupStateEventStore: new PSqlGroupStateEventRepository(sql),
-                authSessionRepository: {
-                    findBySessionId: (sessionId) =>
-                        Promise.resolve(
-                            sessionId === authority.sessionId ? persistedAuthority : undefined
-                        )
-                },
                 now: () => 10_000,
                 serviceId: 'pglite-group-summary-collision'
             });
@@ -463,7 +454,7 @@ Deno.test(
             );
             const command = {
                 ...ingress,
-                facts: { ...ingress.facts, attemptCount: 1 }
+                facts: { ...ingress.facts, attemptCount: 1, attemptAtEpochMs: ingress.facts.nowEpochMs }
             };
             const read = await service.read(command);
             const computed = service.compute(command, read);

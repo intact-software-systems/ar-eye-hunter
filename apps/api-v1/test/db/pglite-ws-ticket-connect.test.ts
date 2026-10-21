@@ -16,13 +16,15 @@ import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@share
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { pauseNextAuthorisedWsConnectRead } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/app-inbox-ws-close-test-harness.ts';
 import { putAuthorisedWsTestTicket } from '../../../../packages/tests/shared-server/rallar-system/client-state/authorised-ws-test-ticket.ts';
+import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/client-state/test-disconnected-session-retention.ts';
 import { TestWebSocket } from '../../../../packages/tests/shared/websocket/test-web-socket.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { registerWsRoutes } from '../../src/routes/ws-routes.ts';
 import { releaseAuthorisedWsCloseFacts } from '../../src/runtime/rtc-topology/authorised-ws-connection-registry.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
-import { createPGliteAppInboxWsCloseHarness, pauseNextPGliteLifecycleRead } from './pglite-app-inbox-ws-close-test-harness.ts';
+import { createPGliteAppInboxWsCloseHarness } from './pglite-app-inbox-ws-close-test-harness.ts';
 import { FUTURE_MS, withPGliteSql } from './pglite-auth-test-harness.ts';
 
 const OPTIONS = { waitMaxElapsedMsecs: 5_000, waitRetryIntervalMsecs: 1, waitMaxRetryIntervalMsecs: 4, waitJitterRatio: 0 } as const;
@@ -73,9 +75,8 @@ async function createWsConnectFixture(
             runtimeRepository: runtime,
             clientStateEventStore: events,
             serviceId: 'ws-ticket-connect'
-        }),
-        wsTickets: sessions
-    }, { serviceId: 'ws-ticket-connect', timing: undefined, options: OPTIONS });
+        })
+    }, { serviceId: 'ws-ticket-connect', disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS, timing: undefined, options: OPTIONS });
     const socketServer = new JsonWebSocketServer();
     const upgradedSockets: TestWebSocket[] = [];
     const app = new Hono();
@@ -263,7 +264,7 @@ Deno.test('a connect whose ticket was spent after its read conflicts on the guar
                 input: { applicationId, workspaceId: 'default', connectedAtEpochMs: Date.now() }
             });
         // Different scopes are different lanes: the stale connect holds its ticket read while the other spends it.
-        const pause = pauseNextPGliteLifecycleRead(harness.clientState);
+        const pause = pauseNextAuthorisedWsConnectRead(harness.clientState);
         const stale = connectInScope('scope-stale', 'generation-stale');
         const staleKey = await waitForQueuedConnectKey(harness.reader, sql, 'generation-stale');
         const staleAttempt = harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createApiV1TestQueueResilience());

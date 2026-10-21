@@ -1,3 +1,4 @@
+import { AUTH_SESSIONS_BY_SESSION_NAMESPACE, authSessionKey } from '@shared-server/rallar-system/auth/persistence/auth-storage-keys.ts';
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import {
     readGroupMutation,
@@ -83,18 +84,28 @@ describe('GroupStateService mutation exact reads', () => {
                         ...ref,
                         principalId: 'bob'
                     })
+                },
+                {
+                    selectorId: 'auth-session',
+                    kind: 'key',
+                    namespace: AUTH_SESSIONS_BY_SESSION_NAMESPACE,
+                    key: authSessionKey('owner-session')
                 }
             ]
         ]);
     });
 
-    it('reads a join\'s policy, decision rows and result snapshot in one batch', async () => {
+    it('reads a join\'s session, policy, decision rows and result snapshot in one batch', async () => {
         const { runtime } = await createSeededService('join');
         const ref = { ...SCOPE, groupId: 'join' };
         const repository = createTestGroupStateRepository(runtime);
         runtime.readBatchCalls.length = 0;
 
-        const { read, currentSnapshot } = await readGroupMutationWithSnapshot(repository, joinCommand(ref, 'bob'));
+        const { read, currentSnapshot, authSession } = await readGroupMutationWithSnapshot(
+            repository,
+            joinCommand(ref, 'bob'),
+            'bob-session'
+        );
 
         expect(mutationReadCalls(runtime).map((selectors) => selectors.map((selector) => selector.selectorId)))
             .toEqual([[
@@ -105,9 +116,11 @@ describe('GroupStateService mutation exact reads', () => {
                 'lifecycle-policy',
                 'idempotency:0',
                 'member:0',
-                'admission:0'
+                'admission:0',
+                'auth-session'
             ]]);
         expect(runtime.readBatchCalls).toHaveLength(1);
+        expect(authSession).toEqual({ status: 'read', session: undefined });
         expect(read.lifecyclePolicy?.status).toBe('present');
         expect(currentSnapshot?.group).toEqual((await repository.readSnapshot(ref))?.group);
         expect(currentSnapshot?.members.map((member) => member.principalId)).toEqual(['owner']);
@@ -162,6 +175,12 @@ describe('GroupStateService mutation exact reads', () => {
                         ...ref,
                         principalId: 'owner'
                     })
+                },
+                {
+                    selectorId: 'auth-session',
+                    kind: 'key',
+                    namespace: AUTH_SESSIONS_BY_SESSION_NAMESPACE,
+                    key: authSessionKey('owner-session')
                 }
             ]
         ]);
@@ -224,6 +243,12 @@ describe('GroupStateService mutation exact reads', () => {
                         ...ref,
                         principalId: 'owner'
                     })
+                },
+                {
+                    selectorId: 'auth-session',
+                    kind: 'key',
+                    namespace: AUTH_SESSIONS_BY_SESSION_NAMESPACE,
+                    key: authSessionKey('presence-session')
                 }
             ]
         ]);
@@ -255,10 +280,11 @@ describe('GroupStateService mutation exact reads', () => {
         const requestId = 'expiry-replacement-request';
         const command = updateCommand(ref, requestId);
 
-        const observed = await readGroupMutation(createTestGroupStateRepository(runtime), command);
+        const observed = await readGroupMutation(createTestGroupStateRepository(runtime), command, null);
         const expected = await readGroupMutation(
             createTestGroupStateRepository(cloneRuntime(runtime)),
-            command
+            command,
+            null
         );
 
         expect(observed).toEqual(expected);

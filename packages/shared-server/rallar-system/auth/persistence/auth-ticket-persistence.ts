@@ -133,14 +133,9 @@ export class AuthTicketPersistence extends RuntimeStateJsonStore {
             WS_AUTH_TICKETS_NAMESPACE,
             authTicketDigestKey(ticketDigest)
         );
-        if (!read.value) {
-            return { value: undefined, expiredEntry: read.expiredEntry };
-        }
-        const value = decodePersistedWebSocketTicket(read.value.value);
-        if (value.ticketDigest !== ticketDigest) {
-            throw new TypeError('Persisted websocket ticket digest identity differs');
-        }
-        return { value: { entry: read.value.entry, value }, expiredEntry: undefined };
+        return read.value
+            ? { value: decodeWebSocketTicketByDigestEntry(ticketDigest, read.value), expiredEntry: undefined }
+            : { value: undefined, expiredEntry: read.expiredEntry };
     }
 
     async deleteWebSocketTicketIfRevision(
@@ -237,4 +232,16 @@ export class AuthTicketPersistence extends RuntimeStateJsonStore {
         const session = await this.findSessionById(issuedTicket.sessionId);
         return session?.clientId === issuedTicket.clientId ? session : undefined;
     }
+}
+
+/** A live row of the WebSocket ticket namespace, decoded and held to the digest it was read for. */
+export function decodeWebSocketTicketByDigestEntry(
+    ticketDigest: string,
+    stored: RuntimeStateEntryValue<JsonWireValue>
+): RuntimeStateEntryValue<PersistedWebSocketTicket> {
+    const value = decodePersistedWebSocketTicket(stored.value);
+    if (value.ticketDigest !== ticketDigest) {
+        throw new TypeError('Persisted websocket ticket digest identity differs');
+    }
+    return { entry: stored.entry, value };
 }

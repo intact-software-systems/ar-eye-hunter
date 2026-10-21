@@ -4,6 +4,7 @@ import type { ClientStateService } from '@shared-server/rallar-system/client-sta
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import type { ToAuthorisedWsClientConnectionInput } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
+import type { ClientAuthorisedWsConnectReadInput } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import type { GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
@@ -16,6 +17,7 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { putAuthorisedWsTestTicket } from '../../client-state/authorised-ws-test-ticket.ts';
+import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../client-state/test-disconnected-session-retention.ts';
 import { TestResourceInbox, TestResourceInboxResults } from './app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase, type AppInboxTestDatabase } from './app-inbox-test-database.ts';
 
@@ -99,7 +101,6 @@ export async function createAppInboxWsCloseHarness(
     await authSessions.putSession(authSession);
     const groupState = createGroupStateService({
         runtimeRepository,
-        authSessionRepository: authSessions,
         groupStateEventStore: database.groupEventStore,
         serviceId: 'server-12345678',
         readPlannedLayoutRow: async () => null,
@@ -172,8 +173,8 @@ function installWsCloseReader(
     };
     return {
         client: new AppClientInboxService(
-            { ...shared, clientStateService: dependencies.clientState, wsTickets: dependencies.authSessions },
-            { serviceId: 'server-12345678' }
+            { ...shared, clientStateService: dependencies.clientState },
+            { serviceId: 'server-12345678', disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS }
         ),
         group: new GroupStateInboxService(
             {
@@ -189,23 +190,43 @@ function installWsCloseReader(
 }
 
 export function pauseNextLifecycleRead(
-    state: Pick<ClientStateService | GroupStateService, 'sessionGenerationLifecycle'>
+    state: Pick<GroupStateService, 'sessionGenerationLifecycle'>
 ): PausedLifecycleRead {
     const lifecycle = state.sessionGenerationLifecycle;
+    const paused = pauseOnce();
     const originalRead = lifecycle.read.bind(lifecycle);
+    lifecycle.read = async (identity) => await paused.after(await originalRead(identity));
+    return paused;
+}
+
+/** Holds the next authorised connect after its one point read observed the ticket, the lifecycle and the client rows. */
+export function pauseNextAuthorisedWsConnectRead(
+    state: Pick<ClientStateService, 'readAuthorisedWsConnect'>
+): PausedLifecycleRead {
+    const paused = pauseOnce();
+    const originalRead = state.readAuthorisedWsConnect.bind(state);
+    Object.assign(state, {
+        readAuthorisedWsConnect: async (input: ClientAuthorisedWsConnectReadInput) => await paused.after(await originalRead(input))
+    });
+    return paused;
+}
+
+function pauseOnce(): PausedLifecycleRead & Readonly<{ after<T>(read: T): Promise<T>; }> {
     const reached = Promise.withResolvers<void>();
     const resumed = Promise.withResolvers<void>();
     let pause = true;
-    lifecycle.read = async (identity) => {
-        const read = await originalRead(identity);
-        if (pause) {
-            pause = false;
-            reached.resolve();
-            await resumed.promise;
+    return {
+        reached: reached.promise,
+        resume: resumed.resolve,
+        after: async (read) => {
+            if (pause) {
+                pause = false;
+                reached.resolve();
+                await resumed.promise;
+            }
+            return read;
         }
-        return read;
     };
-    return { reached: reached.promise, resume: resumed.resolve };
 }
 
 function issuedSession(clientId: string, sessionId: string): IssuedAuthSession {

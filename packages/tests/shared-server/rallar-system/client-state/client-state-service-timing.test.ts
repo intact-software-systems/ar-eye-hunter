@@ -16,6 +16,7 @@ import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-syst
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { emptyRead, requireWrite } from './client-mutation-compute-test-fixtures.ts';
 import { createClientMutationTransactionBoundaryFixture } from './create-client-mutation-transaction-boundary-fixture.ts';
+import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 describe('client-state service timing', () => {
     it('times reads without wrapping writes', async () => {
@@ -67,7 +68,8 @@ const TIMED_COMMAND: ClientMutationCommand = {
         eventId: 'event-timed',
         commandHash: `sha256:${'a'.repeat(64)}`,
         attemptCount: 1,
-        expireAtEpochMs: 2_000
+        expireAtEpochMs: 2_000,
+        disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
     },
     input: {
         username: 'alice',
@@ -118,6 +120,9 @@ function createTimedClientStateServiceFixture(): TimedClientStateServiceFixture 
             calls.push('read');
             expect(command).toBe(TIMED_COMMAND);
             return readResult;
+        },
+        readAuthorisedWsConnect: async () => {
+            throw new Error('The timing fixture reads no authorised connect');
         },
         write: async (transaction, computed) => {
             calls.push('write');

@@ -16,9 +16,17 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
 import type { AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
+import type {
+    AuthWsTicketConsumptionClaim,
+    AuthWsTicketConsumptionRead
+} from '../../auth/ws-ticket/auth-ws-ticket-consumption.ts';
 import type { JsonWireObject } from '../../protocol/json-wire-identity.ts';
 import type { ComputedClientStateSync } from '../../state-sync/state-sync-entry-computation.ts';
 import type { PrincipalAudienceSessions } from '../../state-sync/state-sync-principal-audience.ts';
+import type {
+    WsSessionGenerationLifecycleRead,
+    WsSessionHighWaterIdentity
+} from '../../websocket/ws-session-generation-computation.ts';
 import type {
     ClientMutationIdempotencyRecord,
     ClientMutationReceipt
@@ -227,6 +235,19 @@ export type ClientMutationRead = Readonly<{
     audienceCoMemberSessions: readonly PrincipalAudienceSessions[];
 }>;
 
+export type ClientAuthorisedWsConnectReadInput = Readonly<{
+    command: ClientMutationCommand;
+    ticketClaim: AuthWsTicketConsumptionClaim;
+    lifecycle: WsSessionHighWaterIdentity;
+}>;
+
+/** An authorised WebSocket connect's ticket, close high-water and mutation rows, read by one point statement. */
+export type ClientAuthorisedWsConnectRead = Readonly<{
+    ticket: AuthWsTicketConsumptionRead;
+    lifecycle: WsSessionGenerationLifecycleRead;
+    mutation: ClientMutationRead;
+}>;
+
 export type ClientMutationFacts = Readonly<{
     nowEpochMs: number;
     serviceId: string;
@@ -234,6 +255,8 @@ export type ClientMutationFacts = Readonly<{
     commandHash: string;
     attemptCount: number;
     expireAtEpochMs: number;
+    /** How long a session that ended keeps its row before the runtime-state expiry sweep removes it. */
+    disconnectedSessionRetentionMs: number;
 }>;
 
 export type ClientMutationCommandInput = ClientMutationCommand extends infer Command ?

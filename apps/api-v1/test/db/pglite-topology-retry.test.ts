@@ -85,7 +85,6 @@ Deno.test(
                 readAcceptedLayoutRow: () => Promise.resolve(null),
                 runtimeRepository: runtime,
                 groupStateEventStore: new PSqlGroupStateEventRepository(sql),
-                authSessionRepository: authSessions,
                 serviceId: 'pglite-topology-route-errors',
                 now: () => nowEpochMs
             });
@@ -321,7 +320,6 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
             readAcceptedLayoutRow: () => Promise.resolve(null),
             runtimeRepository: runtime,
             groupStateEventStore: new PSqlGroupStateEventRepository(sql),
-            authSessionRepository: authSessions,
             serviceId: 'pglite-topology-retry',
             now: () => nowEpochMs
         });

@@ -104,6 +104,7 @@ export interface CreateApiV1MutationRuntimeInput {
     readonly appInboxLaneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
     readonly appInboxNewLaneConcurrency: number;
     readonly appInboxNewLaneHeldRows: number;
+    readonly disconnectedSessionRetentionMs: number;
     readonly groupCapacity: GroupPolicyCapacityConfig;
     readonly groupFormationRecomputeDebounceMs: number;
     readonly groupFormationRecomputeMaxWaitMs: number;
@@ -182,6 +183,10 @@ interface CreateGroupStateInboxServiceFactoryInput extends ApiV1StateMutationDep
     readonly groupFormationRecomputeMaxWaitMs: number;
 }
 
+interface CreateAppClientInboxServiceFactoryInput extends ApiV1StateMutationDependencies {
+    readonly disconnectedSessionRetentionMs: number;
+}
+
 interface CreateAppAuthInboxServiceFactoryInput extends ApiV1StateMutationDependencies {
     readonly authCredentialSecret: string;
     readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
@@ -229,7 +234,10 @@ export function createApiV1MutationRuntime(
             groupFormationRecomputeDebounceMs: input.groupFormationRecomputeDebounceMs,
             groupFormationRecomputeMaxWaitMs: input.groupFormationRecomputeMaxWaitMs
         }),
-        createAppClientInboxService: createAppClientInboxServiceFactory(stateDependencies),
+        createAppClientInboxService: createAppClientInboxServiceFactory({
+            ...stateDependencies,
+            disconnectedSessionRetentionMs: input.disconnectedSessionRetentionMs
+        }),
         createAppAuthInboxService: createAppAuthInboxServiceFactory({
             ...stateDependencies,
             authCredentialSecret: input.authCredentialSecret,
@@ -256,7 +264,6 @@ function createMutationGroupStateService(
         durable: createGroupStateService({
             runtimeRepository: resources.runtimeStateRepository,
             capacity: input.groupCapacity,
-            authSessionRepository: resources.authSessionRepository,
             groupStateEventStore: resources.groupStateEventStore,
             serviceId: input.serviceId,
             timing: input.timing,
@@ -411,7 +418,7 @@ function createGroupStateInboxServiceFactory(
 }
 
 function createAppClientInboxServiceFactory(
-    input: ApiV1StateMutationDependencies
+    input: CreateAppClientInboxServiceFactoryInput
 ): CreateRallarMiddlewareOptions['createAppClientInboxService'] {
     return ({ inboxQueueReader, wakeQueueEngine }) => {
         const clientStateService = createCachedClientStateService({
@@ -431,11 +438,11 @@ function createAppClientInboxServiceFactory(
                 resourceInboxRepository: input.resourceInboxRepository.entries,
                 resourceInboxResultsRepository: input.resourceInboxResultsRepository,
                 database: input.database,
-                clientStateService: clientStateService,
-                wsTickets: input.authSessionRepository
+                clientStateService: clientStateService
             },
             {
                 serviceId: input.serviceId,
+                disconnectedSessionRetentionMs: input.disconnectedSessionRetentionMs,
                 timing: input.timing,
                 options: input.appInboxOptions,
                 wakeOwningQueue: wakeQueueEngine

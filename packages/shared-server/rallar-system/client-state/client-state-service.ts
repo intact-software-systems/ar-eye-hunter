@@ -10,7 +10,12 @@ import {
     type ClientStateServiceDependencies
 } from './client-state-service-contracts.ts';
 import { createTimedClientStateService } from './client-state-service-timing.ts';
-import { readClientMutation } from './mutation/read-client-mutation.ts';
+import type { ClientMutationCommand } from './mutation/client-mutation-contracts.ts';
+import {
+    readAuthorisedWsConnectMutation,
+    readClientMutation,
+    type ReadClientMutationInput
+} from './mutation/read-client-mutation.ts';
 import { writeClientMutation } from './mutation/write-client-mutation.ts';
 import { ClientStateRepository } from './persistence/client-state-repository.ts';
 
@@ -23,6 +28,14 @@ export function createClientStateService(
     const nowMs = dependencies.nowMs ?? Date.now;
     const repositoryFor = (runtime: typeof runtimeRepository) =>
         new ClientStateRepository(runtime, dependencies.clientStateEventStore);
+    const toReadInput = (command: ClientMutationCommand): ReadClientMutationInput => ({
+        repository: repositoryFor(runtimeRepository),
+        groupRepository,
+        command,
+        audienceObservedAtEpochMs: nowMs(),
+        timing: { sink: dependencies.timing, serviceId: dependencies.serviceId },
+        currentGroupSnapshots: dependencies.currentGroupSnapshots
+    });
     const service: ClientStateService = {
         sessionGenerationLifecycle: createWsSessionGenerationLifecycleService(runtimeRepository),
         listSnapshots: async (scope) => await repositoryFor(runtimeRepository).listSnapshots(scope),
@@ -31,16 +44,9 @@ export function createClientStateService(
         listEvents: async (ref) => await repositoryFor(runtimeRepository).listEvents(ref),
         listRecentEvents: async (ref, query) => await repositoryFor(runtimeRepository).listRecentEvents(ref, query),
         listEventPage: async (ref, query) => await repositoryFor(runtimeRepository).listEventPage(ref, query),
-        read: async (command) =>
-            await readClientMutation({
-                repository: repositoryFor(runtimeRepository),
-                groupRepository,
-                authSessionRepository,
-                command,
-                audienceObservedAtEpochMs: nowMs(),
-                timing: { sink: dependencies.timing, serviceId: dependencies.serviceId },
-                currentGroupSnapshots: dependencies.currentGroupSnapshots
-            }),
+        read: async (command) => await readClientMutation(toReadInput(command)),
+        readAuthorisedWsConnect: async (input) =>
+            await readAuthorisedWsConnectMutation({ ...toReadInput(input.command), ...input }),
         write: async (transaction, computed) => await writeClientMutation(transaction, computed),
         readExpiredSessionPage: async (input) => {
             const page = await repositoryFor(runtimeRepository).readSessionPage({

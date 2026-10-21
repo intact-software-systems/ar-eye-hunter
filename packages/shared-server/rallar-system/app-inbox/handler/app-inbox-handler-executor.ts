@@ -74,8 +74,6 @@ interface BegunAppInboxExecution<Command, Result> {
 
 interface FailedAppInboxExecution<Command, Result> extends AppInboxExecutionAttempt<Command, Result> {
     readonly error: Error;
-    /** The handler's own failure, unwrapped from the persisted-entry carrier the error may be. */
-    readonly handlerError: Error;
     readonly classification: AppInboxErrorClassification;
     readonly context: AppInboxMessageContext<Result> | undefined;
 }
@@ -251,13 +249,10 @@ export class AppInboxHandlerExecutor {
         }
         catch (caught) {
             const error = caught instanceof Error ? caught : new Error(String(caught));
-            const handlerError = caught instanceof ResourceInboxHandlerEntryError ? caught.handlerError : error;
             return await this.finishFailedExecution({
                 ...attempt,
-                entry: caught instanceof ResourceInboxHandlerEntryError ? caught.entry : attempt.entry,
                 error,
-                handlerError,
-                classification: classifyAppInboxError(handlerError),
+                classification: classifyAppInboxError(error),
                 context
             });
         }
@@ -333,11 +328,11 @@ export class AppInboxHandlerExecutor {
             if (!input.deadline.isExpired()) {
                 this.recordQueueRetryTiming(input);
             }
-            if (isAppInboxRetryableConflict(input.handlerError)) {
+            if (isAppInboxRetryableConflict(input.error)) {
                 return new ResourceInboxHandlerRetryableConflict(
                     input.entry,
                     input.classification.code,
-                    input.handlerError
+                    input.error
                 );
             }
             throw input.error;

@@ -63,6 +63,10 @@ import {
     resolveResourceEntryObservation,
     resolveResourceInboxWorkPageRequest
 } from './resource-entry-observations.ts';
+import {
+    resolveResourceInboxClaimOrder,
+    toCreationOrderedEntries
+} from './resource-inbox/resource-inbox-claim-order.ts';
 import { toUnavailableReservationObservation } from './resource-inbox/resource-inbox-reservation-observation.ts';
 import { ResourceInboxResilience } from './resource-inbox/resource-inbox-resilience.ts';
 import {
@@ -472,7 +476,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             const now = this.#now();
             // The index pages a claim in keyString order, not in readiness order; overdue rows that
             // ordering would strand are reached by reserveOverdueRetryEntries' own fairness pass.
-            const candidates = await this.#readReservationCandidates({
+            const read = await this.#readReservationCandidates({
                 db,
                 observations,
                 typeIds,
@@ -480,7 +484,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 maxToReadPerCombination: maxToReserve
             });
             const selection = computeIndexedDbReservation({
-                candidates,
+                candidates: observations === undefined ? toIndexedDbClaimOrder(read, statusIds) : read,
                 observations,
                 maxToReserve,
                 now,
@@ -883,6 +887,19 @@ interface ComputeIndexedDbReservationInput {
     readonly maxToReserve: number;
     readonly now: Temporal.Instant;
     readonly isReservable: (stored: StoredResourceEntry) => boolean;
+}
+
+/**
+ * The rows a claim read, in its claim order; creation ties keep the order read, so its oldest row goes first whichever
+ * work type or key the read reached first. A due-order claim keeps the order read.
+ */
+function toIndexedDbClaimOrder(
+    candidates: readonly StoredResourceEntry[],
+    statusIds: ReadonlySet<EntityStatus>
+): readonly StoredResourceEntry[] {
+    return resolveResourceInboxClaimOrder(statusIds) === 'due'
+        ? candidates
+        : toCreationOrderedEntries(candidates, (stored) => Temporal.PlainDateTime.from(stored.audit.createdTs));
 }
 
 /** Turns one page of candidates into the rows a claim reserves and the rows its predicate refused. */

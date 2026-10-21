@@ -5,9 +5,23 @@ import {
     requirePositiveSafeInteger,
     requireRecord
 } from '../../group-state-validation-primitives.ts';
-import { GROUP_MUTATION_INTERNAL_AUTHORITY_MODES, type GroupMutationFacts } from '../group-mutation-contracts.ts';
+import {
+    GROUP_MUTATION_INTERNAL_AUTHORITY_MODES,
+    type GroupMutationFacts,
+    type GroupMutationIngressFacts
+} from '../group-mutation-contracts.ts';
 
 export function assertGroupMutationFacts(facts: GroupMutationFacts): void {
+    requireRecord(facts, 'Group mutation facts');
+    const { attemptCount, attemptAtEpochMs, ...ingressFacts } = facts;
+    assertGroupMutationIngressFacts(ingressFacts);
+    requirePositiveSafeInteger(attemptCount, 'Group mutation attemptCount');
+    if (!Number.isSafeInteger(attemptAtEpochMs) || attemptAtEpochMs < facts.nowEpochMs) {
+        throw new TypeError('Group mutation attempt timestamp is invalid');
+    }
+}
+
+export function assertGroupMutationIngressFacts(facts: GroupMutationIngressFacts): void {
     requireJsonSafe(facts, 'Group mutation facts');
     assertExactKeys(
         facts,
@@ -21,8 +35,7 @@ export function assertGroupMutationFacts(facts: GroupMutationFacts): void {
             'joinCodeVerifier',
             'internalAuthority',
             'capacity',
-            'authenticatedAuthority',
-            'attemptCount'
+            'authenticatedAuthority'
         ],
         'Group mutation facts'
     );
@@ -32,7 +45,6 @@ export function assertGroupMutationFacts(facts: GroupMutationFacts): void {
     if (!Number.isSafeInteger(facts.expireAtEpochMs) || facts.expireAtEpochMs <= facts.nowEpochMs) {
         throw new TypeError('Group mutation expiry timestamp is invalid');
     }
-    requirePositiveSafeInteger(facts.attemptCount, 'Group mutation attemptCount');
     requireNonEmptyString(facts.serviceId, 'Group mutation serviceId');
     requireNonEmptyString(facts.eventId, 'Group mutation eventId');
     if (!/^sha256:[0-9a-f]{64}$/.test(facts.commandHash)) {
@@ -49,7 +61,7 @@ export function assertGroupMutationFacts(facts: GroupMutationFacts): void {
     }
 }
 
-function assertCapacityFacts(capacity: GroupMutationFacts['capacity']): void {
+function assertCapacityFacts(capacity: GroupMutationIngressFacts['capacity']): void {
     const record = requireRecord(capacity, 'Group mutation capacity facts');
     assertExactKeys(record, ['defaultMaxMembers'], 'Group mutation capacity facts');
     if (record.defaultMaxMembers === null) {
@@ -59,7 +71,7 @@ function assertCapacityFacts(capacity: GroupMutationFacts['capacity']): void {
 }
 
 function assertAuthenticatedAuthorityFacts(
-    authenticatedAuthority: GroupMutationFacts['authenticatedAuthority']
+    authenticatedAuthority: GroupMutationIngressFacts['authenticatedAuthority']
 ): void {
     if (authenticatedAuthority === null) {
         return;
@@ -80,7 +92,7 @@ function assertAuthenticatedAuthorityFacts(
     requireNonEmptyString(authority.sessionId, 'Group mutation authenticated authority sessionId');
 }
 
-function assertResolvedJoinCodePair(facts: GroupMutationFacts): void {
+function assertResolvedJoinCodePair(facts: GroupMutationIngressFacts): void {
     if (facts.joinCodeVerifier !== null) {
         requireNonEmptyString(facts.joinCodeVerifier, 'Group mutation joinCodeVerifier');
     }

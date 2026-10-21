@@ -2,6 +2,7 @@ import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/sta
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import assert from 'node:assert/strict';
 
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
@@ -10,7 +11,7 @@ import { GroupStateRepository } from '@shared-server/rallar-system/group-state/p
 import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
 import { groupStatePresenceSessionStorageKey } from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import { toPersistedAuthSessionFixture, withPGliteSql } from './pglite-auth-test-harness.ts';
+import { withPGliteSql } from './pglite-auth-test-harness.ts';
 import {
     applyPGliteGroupMutation,
     canonicalAuditStamp,
@@ -286,22 +287,17 @@ Deno.test(
                     accessToken: `alice-token-${testCase.kind}`,
                     username: 'alice',
                     issuedAtEpochMs: 1,
-                    expiresAtEpochMs: 100_000
+                    expiresAtEpochMs: FUTURE_MS
                 };
-                const persistedAuthority = await toPersistedAuthSessionFixture(authority);
-                let eventSequence = 0;
                 const runtime = new PSqlRuntimeStateRepository(sql);
+                const authSessionRepository = new AuthSessionRepository(runtime);
+                await authSessionRepository.putSession(authority);
+                let eventSequence = 0;
                 const service = createGroupStateService({
                     readPlannedLayoutRow: () => Promise.resolve(null),
                     readAcceptedLayoutRow: () => Promise.resolve(null),
                     runtimeRepository: runtime,
                     groupStateEventStore: new PSqlGroupStateEventRepository(sql),
-                    authSessionRepository: {
-                        findBySessionId: (sessionId) =>
-                            Promise.resolve(
-                                sessionId === authority.sessionId ? persistedAuthority : undefined
-                            )
-                    },
                     now: () => 10_000,
                     randomId: () => `event-${testCase.kind}-${eventSequence++}`,
                     serviceId: `pglite-complete-${testCase.kind}`

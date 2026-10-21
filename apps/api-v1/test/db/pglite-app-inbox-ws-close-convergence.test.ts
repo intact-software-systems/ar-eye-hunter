@@ -13,6 +13,10 @@ import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInbo
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
+import {
+    pauseNextAuthorisedWsConnectRead,
+    pauseNextLifecycleRead
+} from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/app-inbox-ws-close-test-harness.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
@@ -20,7 +24,6 @@ import {
     assertPGliteQueuedTypes,
     completePGliteAppInboxRetry,
     createPGliteAppInboxWsCloseHarness,
-    pauseNextPGliteLifecycleRead,
     type PGliteAppInboxWsCloseHarness
 } from './pglite-app-inbox-ws-close-test-harness.ts';
 import {
@@ -40,7 +43,7 @@ Deno.test('PGlite client connect conflicts when close commits after lifecycle re
             generationId,
             input: { ...SCOPE, connectedAtEpochMs, expiresAtEpochMs: FUTURE_MS }
         } as const;
-        const pause = pauseNextPGliteLifecycleRead(harness.clientState);
+        const pause = pauseNextAuthorisedWsConnectRead(harness.clientState);
         const connectEntry = await harness.startAuthorisedWsConnect(connectInput);
         const staleConnect = processNext(harness.reader);
         await pause.reached;
@@ -80,7 +83,7 @@ Deno.test('PGlite group connect conflicts when cleanup commits after lifecycle r
         const wsGenerationId = 'pglite-group-ws-interleaved';
         const wsStartedAtEpochMs = Date.now() - 900;
         const presenceGenerationId = crypto.randomUUID();
-        const pause = pauseNextPGliteLifecycleRead(harness.groupState);
+        const pause = pauseNextLifecycleRead(harness.groupState);
         const pending = harness.group.processAuthenticatedGroupEntryUntilCompletion({
             type: AppInboxType.GROUP_PRESENCE_CONNECT,
             resourceId: `presence-${presenceGenerationId}`,

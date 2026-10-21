@@ -1,7 +1,10 @@
 import type { ClientMutationComputedWrite } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-client-state-event-store.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
-import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import type {
+    RuntimeStateReadBatchSelection,
+    RuntimeStateReadBatchSelector
+} from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import {
     describe,
     expect,
@@ -104,11 +107,10 @@ function recordPostgresAttempt(
 class PhaseRecordingBarrierRepository extends FakeRuntimeStateRepository {
     readonly phaseOperations: string[] = [];
 
-    override async findEntry(
-        namespace: string,
-        key: string
-    ): Promise<RuntimeStateEntry | undefined> {
-        this.phaseOperations.push(namespace);
-        return await super.findEntry(namespace, key);
+    override async readRuntimeStateBatch(
+        selectors: readonly RuntimeStateReadBatchSelector[]
+    ): Promise<readonly RuntimeStateReadBatchSelection[]> {
+        this.phaseOperations.push(...selectors.map(({ namespace }) => namespace));
+        return await super.readRuntimeStateBatch(selectors);
     }
 }

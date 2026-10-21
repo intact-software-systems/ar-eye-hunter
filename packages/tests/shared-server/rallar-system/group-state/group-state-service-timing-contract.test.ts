@@ -134,7 +134,7 @@ describe('group-state service timing contract', () => {
 });
 
 describe('group mutation lane phase timing', () => {
-    it('attributes the ingress capture and its persistence as app-inbox phases of the lane item', async () => {
+    it('captures the ingress before its enqueue spans start and leaves the lane no capture or persist phase', async () => {
         const timingEvents: RallarTimingEvent[] = [];
         const harness = await createAuthorityHarness(['owner', 'alice'], {
             serviceOptions: { phaseTiming: true },
@@ -142,6 +142,7 @@ describe('group mutation lane phase timing', () => {
         });
         await createRoom(harness, 'lane-timing-room', 'Lane timing room');
         await activateMember(harness, 'lane-timing-room', 'alice');
+        const recordedBefore = timingEvents.length;
 
         const connected = await processAuthenticated({
             service: harness.service,
@@ -151,32 +152,41 @@ describe('group mutation lane phase timing', () => {
         });
         expect(connected.right).toMatchObject({ commandId: expect.any(String) });
 
-        const lanePhases = timingEvents.filter(
-            (event) => event.component === 'app-inbox-phase' && event.requestId === 'connect-alice'
+        const connectEvents = timingEvents.slice(recordedBefore);
+        const order = connectEvents.map((event) => `${event.component}:${event.operation}`);
+        const phaseOrder = connectEvents
+            .filter((event) => event.component === 'app-inbox-phase' && event.requestId === 'connect-alice')
+            .map((event) => event.operation);
+        expect(phaseOrder).not.toContain('ingress-capture');
+        expect(phaseOrder).not.toContain('ingress-persist');
+        const capture = connectEvents.find((event) => event.operation === 'captureAppInboxMutationIngress');
+        const spans = connectEvents.filter((event) =>
+            event.requestId === 'connect-alice' &&
+            (event.operation === 'enqueue' || event.operation === 'enqueueAndWaitForResult')
         );
-        const phaseOrder = lanePhases.map((event) => event.operation);
-        expect(phaseOrder.indexOf('ingress-capture')).toBeGreaterThanOrEqual(0);
-        expect(phaseOrder.indexOf('ingress-capture')).toBeLessThan(phaseOrder.indexOf('ingress-persist'));
-        expect(phaseOrder.indexOf('ingress-persist')).toBeLessThan(phaseOrder.indexOf('transaction'));
-        for (const operation of ['ingress-capture', 'ingress-persist'] as const) {
-            expect(lanePhases.find((event) => event.operation === operation), operation).toEqual({
-                type: 'rallar.timing',
-                component: 'app-inbox-phase',
-                operation,
-                serviceId: 'server-12345678',
-                requestId: 'connect-alice',
-                status: 'ok',
-                durationMs: expect.any(Number),
-                atEpochMs: expect.any(Number),
-                details: {
-                    type: AppInboxType.GROUP_PRESENCE_CONNECT,
-                    topicId: expect.any(String),
-                    contextId: expect.any(String),
-                    resourceId: 'connect-alice',
-                    senderId: 'alice'
-                }
-            });
+        expect(capture).toBeDefined();
+        expect(spans.map((event) => event.operation).sort()).toEqual(['enqueue', 'enqueueAndWaitForResult']);
+        for (const span of spans) {
+            // A line's end is a whole wall-clock millisecond and its duration a monotonic one, hence the 1 ms slack.
+            expect(capture?.atEpochMs).toBeLessThanOrEqual(span.atEpochMs - span.durationMs + 1);
         }
+        expect(phaseOrder.indexOf('enqueue')).toBeLessThan(phaseOrder.indexOf('transaction'));
+        expect(connectEvents.find((event) => event.operation === 'enqueue')).toEqual({
+            type: 'rallar.timing',
+            component: 'app-inbox-phase',
+            operation: 'enqueue',
+            serviceId: 'server-12345678',
+            requestId: 'connect-alice',
+            status: 'ok',
+            durationMs: expect.any(Number),
+            atEpochMs: expect.any(Number),
+            details: {
+                type: AppInboxType.GROUP_PRESENCE_CONNECT,
+                contextId: expect.any(String),
+                resourceId: 'connect-alice',
+                senderId: 'alice'
+            }
+        });
     });
 
     it('emits no lane phases while phase timing is off', async () => {
@@ -188,7 +198,7 @@ describe('group mutation lane phase timing', () => {
 
         expect(
             timingEvents.filter((event) => event.component === 'app-inbox-phase').map((event) => event.operation)
-        ).not.toContain('ingress-capture');
+        ).not.toContain('enqueue');
         expect(timingEvents.map((event) => event.component)).toContain('group-state-service');
     });
 });
