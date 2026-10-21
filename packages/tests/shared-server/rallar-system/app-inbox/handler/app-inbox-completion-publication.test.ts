@@ -51,12 +51,10 @@ describe('Committed AppInbox completion publication', () => {
         const harness = createAtomicHarness();
         const completionNotifications = ResourceInboxCompletionNotifications.createDefault();
         const queue = new TestResourceInbox();
-        vi.spyOn(queue, 'readStatusesAndAttempts').mockImplementation(async (keys) =>
-            keys.map((key) => {
-                const entry = harness.database.state.inbox.get(toKeyAsString(key));
-                return entry && { status: entry.status, attempts: entry.dequeueAudit.attempts };
-            })
-        );
+        vi.spyOn(queue, 'readStatusAndAttempts').mockImplementation(async (key) => {
+            const entry = harness.database.state.inbox.get(toKeyAsString(key));
+            return entry && { status: entry.status, attempts: entry.dequeueAudit.attempts };
+        });
         const results = {
             replace: async (entry: typeof harness.entry) => entry,
             findByKey: async (key: typeof harness.entry.key) => harness.database.state.results.get(toKeyAsString(key))

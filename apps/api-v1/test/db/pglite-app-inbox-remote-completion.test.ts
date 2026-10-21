@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
-import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import { CLIENT_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/app-inbox/app-inbox-topics.ts';
 import { createAppInboxClientRuntime } from '@shared-server/rallar-system/app-inbox/client/create-app-inbox-client-runtime.ts';
 import { computeAppInboxCompletion } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-completion-computation.ts';
@@ -19,6 +20,7 @@ import {
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import type { Either } from '@shared/resilience/Either.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
@@ -42,38 +44,56 @@ interface ServerRuntime {
 /** A WebSocket connect is awaited by its upgrade route, so its completion is relayed like any other awaited type. */
 for (const type of [AppInboxType.CLIENT_PRINCIPAL_UPSERT, AppInboxType.CLIENT_AUTHORISED_WS_CONNECT] as const) {
     Deno.test(`PGlite AppInbox ${type} waiter on one server returns promptly when another server handles its entry`, async () => {
-        await withPGliteSql(async (sql) => {
-            const notification = createMemoryNotificationPort();
-            const waiterNotices = createCompletionNotices(notification, 'server-a');
-            const handlerNotices = createCompletionNotices(notification, 'server-b');
-            const waiterNotifications = createRelayedNotifications(waiterNotices);
-            const handlerNotifications = createRelayedNotifications(handlerNotices);
-            const waiterServer = createServerRuntime(sql, 'server-a', waiterNotifications, type);
-            const handlerServer = createServerRuntime(sql, 'server-b', handlerNotifications, type);
-            await installAppInboxCompletionNoticeSubscriber({ ...waiterNotices, notifications: waiterNotifications });
-            await installAppInboxCompletionNoticeSubscriber({ ...handlerNotices, notifications: handlerNotifications });
+        await verifyRemoteCompletion(type, (client, command) => client.commandClient.enqueueAndWait(command));
+    });
+}
 
-            const waited = waiterServer.client.commandClient.enqueueAndWait({
-                type,
-                resourceId: REQUEST_ID,
-                contextId: 'remote-completion-client',
-                data: { requestId: REQUEST_ID }
-            });
-            await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
-            await new Promise((resolve) => setTimeout(resolve, 20));
-            const handledAt = performance.now();
-            await handlerServer.engine.executeOnce();
-            const result = await waited;
-            const returnedAfterMs = performance.now() - handledAt;
-            await handlerServer.engine.stop();
-            await waiterServer.engine.stop();
+/** A winner waits for its wake before its first read, so only the relayed wake can return it before the safety tick. */
+Deno.test('PGlite AppInbox reservation winner on one server returns promptly when another server handles its entry', async () => {
+    await verifyRemoteCompletion(AppInboxType.CLIENT_AUTHORISED_WS_CONNECT, (client, received) => {
+        const command = { ...received, topicId: CLIENT_STATE_APP_INBOX_TOPIC };
+        return client.commandClient.reserveMaterializedAndWaitForResult(
+            { received: command, placeholder: command, materialize: async () => command },
+            (value) => value
+        );
+    });
+});
 
-            assert.deepEqual(result.right, { accepted: true });
-            assert.ok(
-                returnedAfterMs < REMOTE_WAKE_ALLOWANCE_MS,
-                `the waiter returned ${Math.round(returnedAfterMs)} ms after the remote handler`
-            );
+async function verifyRemoteCompletion(
+    type: AppInboxType,
+    waitForCommand: (client: ServerRuntime['client'], command: AppInboxEnqueueInput) => Promise<Either<AppInboxFailure, JsonWireValue>>
+): Promise<void> {
+    await withPGliteSql(async (sql) => {
+        const notification = createMemoryNotificationPort();
+        const waiterNotices = createCompletionNotices(notification, 'server-a');
+        const handlerNotices = createCompletionNotices(notification, 'server-b');
+        const waiterNotifications = createRelayedNotifications(waiterNotices);
+        const handlerNotifications = createRelayedNotifications(handlerNotices);
+        const waiterServer = createServerRuntime(sql, 'server-a', waiterNotifications, type);
+        const handlerServer = createServerRuntime(sql, 'server-b', handlerNotifications, type);
+        await installAppInboxCompletionNoticeSubscriber({ ...waiterNotices, notifications: waiterNotifications });
+        await installAppInboxCompletionNoticeSubscriber({ ...handlerNotices, notifications: handlerNotifications });
+
+        const waited = waitForCommand(waiterServer.client, {
+            type,
+            resourceId: REQUEST_ID,
+            contextId: 'remote-completion-client',
+            data: { requestId: REQUEST_ID }
         });
+        await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        const handledAt = performance.now();
+        await handlerServer.engine.executeOnce();
+        const result = await waited;
+        const returnedAfterMs = performance.now() - handledAt;
+        await handlerServer.engine.stop();
+        await waiterServer.engine.stop();
+
+        assert.deepEqual(result.right, { accepted: true });
+        assert.ok(
+            returnedAfterMs < REMOTE_WAKE_ALLOWANCE_MS,
+            `the waiter returned ${Math.round(returnedAfterMs)} ms after the remote handler`
+        );
     });
 }
 

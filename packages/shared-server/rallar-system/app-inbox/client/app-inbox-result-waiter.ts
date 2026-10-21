@@ -1,6 +1,5 @@
 import {
     RESOURCE_INBOX_COMPLETION_SAFETY_TICK_MSECS,
-    toResourceInboxCompletionKey,
     type ResourceInboxCompletionNotifications
 } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
 import {
@@ -9,13 +8,11 @@ import {
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { toError } from '@shared/resilience/to-error.ts';
 import {
     TryWithExhaustedError,
     TryWithPolicy,
     tryWithPolicy
 } from '@shared/resilience/try-with-policy.ts';
-import { TurnBatchedReads } from '@shared/resilience/turn-batched-reads.ts';
 
 import type { ResourceInboxStatusAndAttempts } from '../../../queuebox/postgres/resource-inbox-row-codec.ts';
 import {
@@ -50,19 +47,6 @@ type AppInboxQueueObservation =
 /** A winner wrote the entry it waits for, so its first observation is its wake or safety tick, not a read. */
 type AppInboxFirstObservation = 'read' | 'wait';
 
-/** One key's answer from a batched status read, with the size of the batch it was read in. */
-type AppInboxStatusRead =
-    | {
-        readonly outcome: 'observed';
-        readonly batchSize: number;
-        readonly observed: ResourceInboxStatusAndAttempts | undefined;
-    }
-    | {
-        readonly outcome: 'failed';
-        readonly batchSize: number;
-        readonly error: Error;
-    };
-
 interface AppInboxSubscribedWait<Result> {
     readonly enqueue: AppInboxEnqueueInput;
     readonly key: Key;
@@ -79,9 +63,12 @@ interface AppInboxCompletedResultRead<Result> {
     readonly firstObservation: AppInboxFirstObservation;
 }
 
-/** The entry is not terminal yet; the wait retries on it exactly as on a failed read. */
+/**
+ * The entry is not terminal yet; the wait retries on it exactly as on a failed read. `unread` is a winner's first
+ * attempt, which waits for its wake or the safety tick before it reads anything.
+ */
 class AppInboxEntryPendingError extends Error {
-    constructor(observation: AppInboxQueueObservation) {
+    constructor(observation: AppInboxQueueObservation | 'unread') {
         super(`App inbox entry is not complete: ${observation}`);
         this.name = 'AppInboxEntryPendingError';
     }
@@ -99,8 +86,7 @@ export namespace AppInboxResultWaiter {
     export type ResultDecoder<Result> = (value: JsonWireValue) => Result;
 
     export interface StatusRepository {
-        /** One answer per key, in key order; `undefined` for a key without a live entry. */
-        readStatusesAndAttempts(keys: readonly Key[]): Promise<readonly (ResourceInboxStatusAndAttempts | undefined)[]>;
+        readStatusAndAttempts(key: Key): Promise<ResourceInboxStatusAndAttempts | undefined>;
     }
 
     export interface ResultRepository {
@@ -123,7 +109,7 @@ export namespace AppInboxResultWaiter {
 
 export class AppInboxResultWaiter {
     private readonly completionNotifications: ResourceInboxCompletionNotifications | undefined;
-    private readonly statusReads: TurnBatchedReads<Key, AppInboxStatusRead>;
+    private readonly statusRepository: AppInboxResultWaiter.StatusRepository;
     private readonly resultRepository: AppInboxResultWaiter.ResultRepository;
     private readonly serviceId: string;
     private readonly timing: RallarTimingSink | undefined;
@@ -135,11 +121,7 @@ export class AppInboxResultWaiter {
         config: AppInboxResultWaiter.Config
     ) {
         this.completionNotifications = dependencies.completionNotifications;
-        const statusRepository = dependencies.statusRepository;
-        this.statusReads = new TurnBatchedReads<Key, AppInboxStatusRead>({
-            toKeyId: toResourceInboxCompletionKey,
-            readBatch: async (keys) => await readStatusBatch(statusRepository, keys)
-        });
+        this.statusRepository = dependencies.statusRepository;
         this.resultRepository = dependencies.resultRepository;
         this.serviceId = config.serviceId;
         this.timing = config.timing;
@@ -261,11 +243,11 @@ export class AppInboxResultWaiter {
         const { enqueue, key, subscription } = read;
         let unread = read.firstObservation === 'wait';
         return async () => {
-            subscription?.beginRead();
             if (unread) {
                 unread = false;
-                throw new AppInboxEntryPendingError(EntityStatus.NEW);
+                throw new AppInboxEntryPendingError('unread');
             }
+            subscription?.beginRead();
             return await this.readCompletionPoll(enqueue, key);
         };
     }
@@ -293,17 +275,18 @@ export class AppInboxResultWaiter {
     }
 
     private async readCompletionPoll(enqueue: AppInboxEnqueueInput, key: Key): Promise<boolean> {
-        const read = await this.statusReads.read(key);
-        if (read.outcome === 'failed') {
-            this.recordPoll(enqueue, key, { queueObservation: 'read-failure', batchSize: read.batchSize });
-            throw read.error;
+        let observed: ResourceInboxStatusAndAttempts | undefined;
+        try {
+            observed = await this.statusRepository.readStatusAndAttempts(key);
         }
-        const { observed, batchSize } = read;
+        catch (error) {
+            this.recordPoll(enqueue, key, { queueObservation: 'read-failure' });
+            throw error;
+        }
         const queueObservation = toAppInboxQueueObservation(observed);
         this.recordPoll(enqueue, key, {
             queueObservation,
-            ...(observed === undefined ? {} : { attempts: observed.attempts }),
-            batchSize
+            ...(observed === undefined ? {} : { attempts: observed.attempts })
         });
         if (
             observed?.status !== EntityStatus.COMPLETED &&
@@ -405,21 +388,6 @@ export class AppInboxResultWaiter {
             },
             phase.action
         );
-    }
-}
-
-async function readStatusBatch(
-    repository: AppInboxResultWaiter.StatusRepository,
-    keys: readonly Key[]
-): Promise<readonly AppInboxStatusRead[]> {
-    const batchSize = keys.length;
-    try {
-        const statuses = await repository.readStatusesAndAttempts(keys);
-        return statuses.map((observed) => ({ outcome: 'observed', batchSize, observed }));
-    }
-    catch (error) {
-        const failed: AppInboxStatusRead = { outcome: 'failed', batchSize, error: toError(error) };
-        return keys.map(() => failed);
     }
 }
 

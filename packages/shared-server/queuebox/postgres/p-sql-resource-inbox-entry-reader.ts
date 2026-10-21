@@ -1,12 +1,15 @@
+import { toResourceInboxCompletionKey } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
 import {
     toKeyAsString,
     type EntityStatus,
     type Key,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import {
+    ResourceInboxRowCorruptionError,
     rowsToMap,
     toDomain,
     toResourceInboxStatusAndAttempts,
@@ -15,6 +18,9 @@ import {
 } from './resource-inbox-row-codec.ts';
 
 const MAX_ROWS_TO_RETURN = 50;
+
+/** One key's live row decoded, or the corruption that row holds. */
+export type ResourceInboxStatusRead = Either<ResourceInboxRowCorruptionError, ResourceInboxStatusAndAttempts>;
 
 type ResourceInboxStatusRow = Pick<
     ResourceInboxRow,
@@ -158,10 +164,11 @@ export class PSqlResourceInboxEntryReader {
         return rows.length > 0;
     }
 
-    /** The live status and attempts of each key, in key order: one statement on the unique key however many keys. */
-    async readStatusesAndAttempts(
-        keys: readonly Key[]
-    ): Promise<readonly (ResourceInboxStatusAndAttempts | undefined)[]> {
+    /**
+     * The live status and attempts of each key, in key order, `undefined` without a live row: one statement on the
+     * unique key however many keys. A corrupt row fails only its own key.
+     */
+    async readStatusesAndAttempts(keys: readonly Key[]): Promise<readonly (ResourceInboxStatusRead | undefined)[]> {
         if (keys.length === 0) {
             return [];
         }
@@ -179,17 +186,25 @@ export class PSqlResourceInboxEntryReader {
               and expire_ts > ${now}
         `;
         const found = new Map(rows.map((row) => [
-            toStatusRowKeyId({
+            toResourceInboxCompletionKey({
                 topicId: row.ri_topic_id,
                 resourceId: row.ri_resource_id,
                 contextId: row.fk_ext_bank_id
             }),
-            toResourceInboxStatusAndAttempts(row)
+            toResourceInboxStatusRead(row)
         ]));
-        return keys.map((key) => found.get(toStatusRowKeyId(key)));
+        return keys.map((key) => found.get(toResourceInboxCompletionKey(key)));
     }
 }
 
-function toStatusRowKeyId(key: Key): string {
-    return JSON.stringify([key.topicId, key.resourceId, key.contextId]);
+function toResourceInboxStatusRead(row: ResourceInboxStatusRow): ResourceInboxStatusRead {
+    try {
+        return Either.ofRight(toResourceInboxStatusAndAttempts(row));
+    }
+    catch (error) {
+        if (error instanceof ResourceInboxRowCorruptionError) {
+            return Either.ofLeft(error);
+        }
+        throw error;
+    }
 }

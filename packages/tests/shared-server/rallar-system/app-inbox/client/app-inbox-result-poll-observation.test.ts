@@ -60,7 +60,7 @@ describe('AppInbox sampled result polls', () => {
                 status: 'ok',
                 requestId: 'request-1',
                 serviceId: 'server-1',
-                details: { type: 'GROUP_CREATE', ...key, senderId: 'sender-1', queueObservation, attempts: 7, batchSize: 1 }
+                details: { type: 'GROUP_CREATE', ...key, senderId: 'sender-1', queueObservation, attempts: 7 }
             })
         ]);
     });
@@ -72,13 +72,7 @@ describe('AppInbox sampled result polls', () => {
         expect(events.filter((event) => event.operation === 'wait-poll')).toEqual([
             expect.objectContaining({
                 status: observation === undefined ? 'ok' : 'error',
-                details: {
-                    type: 'GROUP_CREATE',
-                    ...key,
-                    senderId: 'sender-1',
-                    queueObservation: observation === undefined ? 'missing' : 'read-failure',
-                    batchSize: 1
-                }
+                details: { type: 'GROUP_CREATE', ...key, senderId: 'sender-1', queueObservation: observation === undefined ? 'missing' : 'read-failure' }
             })
         ]);
     });
@@ -100,9 +94,9 @@ describe('AppInbox sampled result polls', () => {
         await vi.runAllTimersAsync();
         expect((await pending).right).toEqual({ accepted: true });
         expect(events.filter((event) => event.operation === 'wait-poll').map((event) => event.details)).toEqual([
-            { type: 'GROUP_CREATE', ...key, senderId: 'sender-1', queueObservation: 'read-failure', batchSize: 1 },
-            { type: 'GROUP_CREATE', ...key, senderId: 'sender-1', queueObservation: 'RETRY', attempts: 2, batchSize: 1 },
-            { type: 'GROUP_CREATE', ...key, senderId: 'sender-1', queueObservation: 'COMPLETED', attempts: 3, batchSize: 1 }
+            { type: 'GROUP_CREATE', ...key, senderId: 'sender-1', queueObservation: 'read-failure' },
+            { type: 'GROUP_CREATE', ...key, senderId: 'sender-1', queueObservation: 'RETRY', attempts: 2 },
+            { type: 'GROUP_CREATE', ...key, senderId: 'sender-1', queueObservation: 'COMPLETED', attempts: 3 }
         ]);
     });
 
@@ -162,7 +156,7 @@ describe('AppInbox sampled result polls', () => {
         const events: RallarTimingEvent[] = [];
         const failure = new Error('result repository failure');
         const waiter = new AppInboxResultWaiter({
-            statusRepository: { readStatusesAndAttempts: async () => [{ status: 'COMPLETED', attempts: 1 }] },
+            statusRepository: { readStatusAndAttempts: async () => ({ status: 'COMPLETED', attempts: 1 }) },
             resultRepository: {
                 findByKey: async () => {
                     throw failure;
@@ -187,12 +181,12 @@ function createWaiter(
     const remaining = Array.isArray(observation) ? [...observation] : [observation];
     return new AppInboxResultWaiter({
         statusRepository: {
-            readStatusesAndAttempts: async () => {
+            readStatusAndAttempts: async () => {
                 const row = remaining.length > 1 ? remaining.shift() : remaining[0];
                 if (row instanceof Error) {
                     throw row;
                 }
-                return [row];
+                return row;
             }
         },
         resultRepository: {

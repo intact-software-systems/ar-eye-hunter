@@ -171,7 +171,7 @@ describe('PostgreSQL full-row integrity', () => {
                 .rejects.toBeInstanceOf(ResourceInboxRowCorruptionError);
         }
         expect(await sql`select * from resource_inbox`).toEqual(before);
-        expect(await repository.entries.readStatusesAndAttempts([NEW_ENTRY.key])).toEqual([{ status, attempts: 1 }]);
+        expect(await repository.entries.readStatusAndAttempts(NEW_ENTRY.key)).toEqual({ status, attempts: 1 });
     });
 
     it('rolls back a batch containing valid and corrupt rows without claiming the valid row', async () => {

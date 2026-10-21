@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { PSqlResourceInboxEntryRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import { ResourceInboxRowCorruptionError } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
 import {
     createResourceInboxTestStorage,
+    recordResourceInboxStatements,
     seedResourceInboxRow,
     type ResourceInboxTestStorage
 } from '../../queuebox/resource-inbox-test-storage.ts';
@@ -13,16 +15,19 @@ import {
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 
 describe('Postgres resource inbox status batch read', () => {
-    postgresIt('answers each key in the order asked, absent and expired rows as undefined', async () => {
+    postgresIt('answers the status reads of one turn, from any caller, with one statement and per-key answers', async () => {
         await withStorage(async (storage) => {
             const completed = await seedResourceInboxRow(storage.sql, { resourceId: 'completed', status: EntityStatus.COMPLETED, attempts: 2 });
             const reserved = await seedResourceInboxRow(storage.sql, { resourceId: 'reserved', status: EntityStatus.RESERVED, attempts: 1 });
             const expired = await seedResourceInboxRow(storage.sql, { resourceId: 'expired', status: EntityStatus.COMPLETED, expired: true });
             const absent = { ...completed, resourceId: 'absent' };
             const otherContext = { ...reserved, contextId: 'context-2' };
-            const entries = new PSqlResourceInboxEntryRepository(storage.sql, () => new Date());
+            const statements: string[] = [];
+            const entries = new PSqlResourceInboxEntryRepository(recordResourceInboxStatements(storage.sql, statements), () => new Date());
+            const groupWaiterReads = [reserved, absent, completed].map((key) => entries.readStatusAndAttempts(key));
+            const clientWaiterReads = [expired, otherContext, reserved].map((key) => entries.readStatusAndAttempts(key));
 
-            expect(await entries.readStatusesAndAttempts([reserved, absent, completed, expired, otherContext, reserved])).toEqual([
+            expect(await Promise.all([...groupWaiterReads, ...clientWaiterReads])).toEqual([
                 { status: 'RESERVED', attempts: 1 },
                 undefined,
                 { status: 'COMPLETED', attempts: 2 },
@@ -30,11 +35,32 @@ describe('Postgres resource inbox status batch read', () => {
                 undefined,
                 { status: 'RESERVED', attempts: 1 }
             ]);
-            expect(await entries.readStatusesAndAttempts([])).toEqual([]);
+            expect(statements).toHaveLength(1);
         });
     });
 
-    postgresIt('reads every key in one statement through the unique key', async () => {
+    postgresIt('fails only the read of a corrupt row and answers the others of its statement', async () => {
+        await withStorage(async (storage) => {
+            const healthy = await seedResourceInboxRow(storage.sql, { resourceId: 'healthy', status: EntityStatus.RESERVED, attempts: 1 });
+            const badStatus = await seedResourceInboxRow(storage.sql, { resourceId: 'bad-status', status: EntityStatus.NEW });
+            const badAttempts = await seedResourceInboxRow(storage.sql, { resourceId: 'bad-attempts', status: EntityStatus.NEW });
+            await storage.sql`update resource_inbox set ri_status = 'UNKNOWN' where ri_resource_id = 'bad-status'`;
+            await storage.sql`update resource_inbox set ri_attempts = null where ri_resource_id = 'bad-attempts'`;
+            const statements: string[] = [];
+            const entries = new PSqlResourceInboxEntryRepository(recordResourceInboxStatements(storage.sql, statements), () => new Date());
+
+            const [badStatusRead, healthyRead, badAttemptsRead] = await Promise.allSettled(
+                [badStatus, healthy, badAttempts].map((key) => entries.readStatusAndAttempts(key))
+            );
+
+            expect(healthyRead).toEqual({ status: 'fulfilled', value: { status: 'RESERVED', attempts: 1 } });
+            expect(badStatusRead.status === 'rejected' && badStatusRead.reason).toBeInstanceOf(ResourceInboxRowCorruptionError);
+            expect(badAttemptsRead.status === 'rejected' && badAttemptsRead.reason).toBeInstanceOf(ResourceInboxRowCorruptionError);
+            expect(statements).toHaveLength(1);
+        });
+    });
+
+    postgresIt('reads every key of one turn in one statement through the unique key', async () => {
         await withStorage(async (storage) => {
             await storage.sql`
                 insert into resource_inbox (ri_resource_id, ri_topic_id, ri_resource, ri_type_id, ri_status,
@@ -51,7 +77,7 @@ describe('Postgres resource inbox status batch read', () => {
             const explained: string[] = [];
             const entries = new PSqlResourceInboxEntryRepository(toExplainingSql(storage.sql, explained), () => new Date());
 
-            await entries.readStatusesAndAttempts(keys);
+            await Promise.all(keys.map((key) => entries.readStatusAndAttempts(key)));
 
             expect(explained).toHaveLength(1);
             expect(explained[0]).toContain('resource_inbox_unique_k');

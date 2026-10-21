@@ -3,8 +3,7 @@ import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { ResourceInboxStatusAndAttempts } from '../../queuebox/postgres/resource-inbox-row-codec.ts';
 
 export interface AppInboxEntryRepository {
-    /** One answer per key, in key order; `undefined` for a key without a live entry. */
-    readStatusesAndAttempts(keys: readonly Key[]): Promise<readonly (ResourceInboxStatusAndAttempts | undefined)[]>;
+    readStatusAndAttempts(key: Key): Promise<ResourceInboxStatusAndAttempts | undefined>;
     /**
      * Reserves one absent/expired placeholder and invokes the winning materializer once, without a local retry.
      * A losing or active replay returns the retained row without invoking it. The bounded materializer may
