@@ -10,10 +10,11 @@ import {
 import type { ResourceInboxStatusAndAttempts } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { normalizeAppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
+import type { AppInboxReservationClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-reservation-client.ts';
 import { AppInboxResultWaiter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-result-waiter.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
-import { EntityStatus, toResourceEntryWithKey } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, toResourceEntryWithKey, type Key } from '@shared/queuebox/ResourceEntry.ts';
 
 const key = { topicId: 'AppInbox', resourceId: 'request-1', contextId: 'context-1' };
 const enqueue = { type: AppInboxType.GROUP_CREATE, ...key, senderId: 'sender-1', data: null };
@@ -114,12 +115,14 @@ describe('AppInbox local completion wait', () => {
         vi.useFakeTimers();
         const notifications = new ObservedCompletionNotifications();
         let finishRead: ((row: ResourceInboxStatusAndAttempts) => void) | undefined;
+        const firstReadStarted = Promise.withResolvers<void>();
         let reads = 0;
         const waiter = createWaiter({
             notifications,
             readStatus: async () => {
                 reads += 1;
                 if (reads === 1) {
+                    firstReadStarted.resolve();
                     return await new Promise((resolve) => {
                         finishRead = resolve;
                     });
@@ -128,6 +131,7 @@ describe('AppInbox local completion wait', () => {
             }
         });
         const pending = waiter.waitForResult(enqueue, key, (value) => value);
+        await firstReadStarted.promise;
         for (let duplicate = 0; duplicate < 100; duplicate += 1) {
             notifications.publish(key, 'awaitable');
         }
@@ -331,12 +335,12 @@ describe('AppInbox local completion wait', () => {
         const pending = [waiter.waitForResult(enqueue, key, (value) => value), waiter.waitForResult(enqueue, key, (value) => value)];
         await vi.advanceTimersByTimeAsync(0);
         expect(notifications.activeSubscriptions).toBe(2);
-        expect(vi.getTimerCount()).toBe(2);
+        expect(vi.getTimerCount()).toBe(1);
         status = EntityStatus.COMPLETED;
         notifications.publish(key, 'awaitable');
         await vi.advanceTimersByTimeAsync(0);
         expect((await Promise.all(pending)).map((result) => result.right)).toEqual([{ accepted: true }, { accepted: true }]);
-        expect(reads).toBe(4);
+        expect(reads).toBe(2);
         expect(notifications.activeSubscriptions).toBe(0);
         expect(vi.getTimerCount()).toBe(0);
     });
@@ -449,21 +453,211 @@ describe('AppInbox local completion wait', () => {
     });
 });
 
+describe('AppInbox coalesced completion polls', () => {
+    const resourceIds = ['request-a', 'request-b', 'request-c'];
+
+    it('re-reads every waiter of one safety tick in one batched read', async () => {
+        vi.useFakeTimers();
+        const notifications = new ObservedCompletionNotifications();
+        const batches: number[] = [];
+        const completedIds = new Set<string>();
+        const waiter = createWaiter({
+            notifications,
+            batches,
+            waitMaxElapsedMsecs: 10_000,
+            readStatus: async (read) => ({ status: completedIds.has(read.resourceId) ? 'COMPLETED' : 'RESERVED', attempts: 1 })
+        });
+        const pending = [];
+        for (const resourceId of resourceIds) {
+            pending.push(waiter.waitForResult({ ...enqueue, resourceId }, { ...key, resourceId }, (value) => value));
+            await vi.advanceTimersByTimeAsync(250);
+        }
+        expect(batches).toEqual([1, 1, 1]);
+        expect(vi.getTimerCount()).toBe(1);
+        resourceIds.forEach((resourceId) => completedIds.add(resourceId));
+        await vi.advanceTimersByTimeAsync(250);
+        expect((await Promise.all(pending)).map((result) => result.right)).toEqual(resourceIds.map(() => ({ accepted: true })));
+        expect(batches).toEqual([1, 1, 1, 3]);
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('reads a woken waiter in the turn of its wake while the others stay on the tick', async () => {
+        vi.useFakeTimers();
+        const notifications = new ObservedCompletionNotifications();
+        const events: RallarTimingEvent[] = [];
+        const batches: number[] = [];
+        const completedIds = new Set<string>();
+        const waiter = createWaiter({
+            notifications,
+            batches,
+            events,
+            phaseTiming: true,
+            waitMaxElapsedMsecs: 10_000,
+            readStatus: async (read) => ({ status: completedIds.has(read.resourceId) ? 'COMPLETED' : 'NEW', attempts: 0 })
+        });
+        const pending = resourceIds.map((resourceId) => waiter.waitForResult({ ...enqueue, resourceId }, { ...key, resourceId }, (value) => value));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(batches).toEqual([3]);
+        completedIds.add('request-b');
+        notifications.publish({ ...key, resourceId: 'request-b' }, 'awaitable');
+        await vi.advanceTimersByTimeAsync(0);
+        expect((await pending[1]).right).toEqual({ accepted: true });
+        expect(batches).toEqual([3, 1]);
+        completedIds.add('request-a');
+        completedIds.add('request-c');
+        await vi.advanceTimersByTimeAsync(999);
+        expect(batches).toEqual([3, 1]);
+        await vi.advanceTimersByTimeAsync(1);
+        expect((await Promise.all(pending)).map((result) => result.right)).toEqual(resourceIds.map(() => ({ accepted: true })));
+        expect(batches).toEqual([3, 1, 2]);
+        expect(events.filter((event) => event.operation === 'wait-poll').map((event) => [event.requestId, event.details?.batchSize]))
+            .toEqual([['request-a', 3], ['request-b', 3], ['request-c', 3], ['request-b', 1], ['request-a', 2], ['request-c', 2]]);
+    });
+
+    it('fails every waiter of a failed batch as its own read failure and retries each on its own policy', async () => {
+        vi.useFakeTimers();
+        const notifications = new ObservedCompletionNotifications();
+        const events: RallarTimingEvent[] = [];
+        const batches: number[] = [];
+        let failing = false;
+        let completed = false;
+        const waiter = createWaiter({
+            notifications,
+            events,
+            batches,
+            phaseTiming: true,
+            waitMaxElapsedMsecs: 1_500,
+            readStatus: async () => {
+                if (failing) {
+                    throw new Error('batch read failed');
+                }
+                return { status: completed ? 'COMPLETED' : 'RESERVED', attempts: 1 };
+            }
+        });
+        const pending = ['request-a', 'request-b'].map((resourceId) =>
+            waiter.waitForResult({ ...enqueue, resourceId }, { ...key, resourceId }, (value) => value)
+        );
+        await vi.advanceTimersByTimeAsync(0);
+        failing = true;
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(batches).toEqual([2, 2]);
+        expect(
+            events.filter((event) => event.operation === 'wait-poll' && event.status === 'error').map((event) => [event.requestId, event.details?.batchSize])
+        )
+            .toEqual([['request-a', 2], ['request-b', 2]]);
+        expect(
+            events.filter((event) => event.operation === 'wait-retry' && event.details?.attempt === 2).map((
+                event
+            ) => [event.requestId, event.details?.delayMsecs])
+        )
+            .toEqual([['request-a', 500], ['request-b', 500]]);
+        failing = false;
+        completed = true;
+        await vi.advanceTimersByTimeAsync(500);
+        expect((await Promise.all(pending)).map((result) => result.right)).toEqual([{ accepted: true }, { accepted: true }]);
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('keeps the budget of each waiter sharing the tick, down to its fitted last delay and fallback', async () => {
+        vi.useFakeTimers();
+        const notifications = new ObservedCompletionNotifications();
+        const events: RallarTimingEvent[] = [];
+        const batches: number[] = [];
+        const completedIds = new Set<string>();
+        const waiter = createWaiter({
+            notifications,
+            events,
+            batches,
+            phaseTiming: true,
+            waitMaxElapsedMsecs: 1_300,
+            readStatus: async (read) => ({ status: completedIds.has(read.resourceId) ? 'COMPLETED' : 'RESERVED', attempts: 1 })
+        });
+        const early = waiter.waitForResult({ ...enqueue, resourceId: 'request-a' }, { ...key, resourceId: 'request-a' }, (value) => value);
+        await vi.advanceTimersByTimeAsync(500);
+        const late = waiter.waitForResult({ ...enqueue, resourceId: 'request-b' }, { ...key, resourceId: 'request-b' }, (value) => value);
+        await vi.advanceTimersByTimeAsync(800);
+        expect((await early).left).toMatchObject({ code: 'app-inbox-unavailable', status: 503 });
+        completedIds.add('request-b');
+        await vi.advanceTimersByTimeAsync(500);
+        expect((await late).right).toEqual({ accepted: true });
+        expect(batches).toEqual([1, 1, 2, 1, 1]);
+        const retries = events.filter((event) => event.operation === 'wait-retry');
+        expect(retries.map((event) => [event.requestId, event.details?.delayMsecs])).toEqual([
+            ['request-a', 1_000],
+            ['request-b', 1_000],
+            ['request-a', 300],
+            ['request-b', 800]
+        ]);
+        expect(events.filter((event) => event.operation === 'wait-fallback').map((event) => [event.requestId, event.details?.elapsedMsecs]))
+            .toEqual([['request-a', 1_300]]);
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('lets a winner wait for its wake or tick before its first read, while a replay reads first', async () => {
+        vi.useFakeTimers();
+        const notifications = new ObservedCompletionNotifications();
+        const events: RallarTimingEvent[] = [];
+        const reads: string[] = [];
+        let wakes = 0;
+        const completedIds = new Set<string>();
+        const waiter = createWaiter({
+            notifications,
+            events,
+            phaseTiming: true,
+            waitMaxElapsedMsecs: 10_000,
+            wakeOwningQueue: () => {
+                wakes += 1;
+            },
+            readStatus: async (read) => {
+                reads.push(read.resourceId);
+                return { status: completedIds.has(read.resourceId) ? 'COMPLETED' : 'NEW', attempts: 0 };
+            }
+        });
+        const winner = waiter.waitForReservedResult(createReservation('request-winner', true), (value) => value);
+        const ticked = waiter.waitForReservedResult(createReservation('request-ticked', true), (value) => value);
+        const replay = waiter.waitForReservedResult(createReservation('request-replay', false), (value) => value);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(wakes).toBe(2);
+        expect(reads).toEqual(['request-replay']);
+        completedIds.add('request-winner');
+        notifications.publish({ ...key, resourceId: 'request-winner' }, 'awaitable');
+        await vi.advanceTimersByTimeAsync(0);
+        expect((await winner).right).toEqual({ accepted: true });
+        expect(reads).toEqual(['request-replay', 'request-winner']);
+        completedIds.add('request-ticked');
+        completedIds.add('request-replay');
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect((await Promise.all([ticked, replay])).map((result) => result.right)).toEqual([{ accepted: true }, { accepted: true }]);
+        expect(reads).toEqual(['request-replay', 'request-winner', 'request-ticked', 'request-replay']);
+        expect(events.filter((event) => event.operation === 'wait-retry' && event.requestId === 'request-winner').map((event) => event.details?.errorMessage))
+            .toEqual(['App inbox entry is not complete: NEW']);
+    });
+});
+
 interface WaiterFixture {
     readonly notifications: ResourceInboxCompletionNotifications | undefined;
-    readonly readStatus: AppInboxResultWaiter.StatusRepository['readStatusAndAttempts'];
+    /** Answers one key of a batch read; the waiter's repository asks every key of one batch at once. */
+    readonly readStatus: (key: Key) => Promise<ResourceInboxStatusAndAttempts | undefined>;
+    /** Collects the size of each batched status read. */
+    readonly batches?: number[];
     readonly readResult?: AppInboxResultWaiter.ResultRepository['findByKey'];
     readonly phaseTiming?: boolean;
     /** Collects the timing lines; absent, the sink throws so the wait is proven independent of diagnostics. */
     readonly events?: RallarTimingEvent[];
     readonly waitMaxElapsedMsecs?: number;
+    readonly wakeOwningQueue?: () => void;
 }
 
 function createWaiter(fixture: WaiterFixture): AppInboxResultWaiter {
     const events = fixture.events;
     return new AppInboxResultWaiter({
         completionNotifications: fixture.notifications,
-        statusRepository: { readStatusAndAttempts: fixture.readStatus },
+        statusRepository: {
+            readStatusesAndAttempts: async (keys) => {
+                fixture.batches?.push(keys.length);
+                return await Promise.all(keys.map(fixture.readStatus));
+            }
+        },
         resultRepository: { findByKey: fixture.readResult ?? (async () => completed) }
     }, {
         serviceId: 'test',
@@ -480,8 +674,17 @@ function createWaiter(fixture: WaiterFixture): AppInboxResultWaiter {
             waitMaxRetryIntervalMsecs: 1000,
             waitJitterRatio: 0,
             waitMaxElapsedMsecs: fixture.waitMaxElapsedMsecs ?? 3000
-        })
+        }),
+        wakeOwningQueue: fixture.wakeOwningQueue
     });
+}
+
+function createReservation(
+    resourceId: string,
+    winner: boolean
+): AppInboxReservationClient.MaterializedReservation {
+    const reservedKey = { ...key, resourceId };
+    return { enqueue: { ...enqueue, resourceId }, key: reservedKey, winner };
 }
 
 class ObservedCompletionNotifications extends ResourceInboxCompletionNotifications {

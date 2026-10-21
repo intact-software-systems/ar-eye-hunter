@@ -60,7 +60,7 @@ describe('AppInbox sampled result polls', () => {
                 status: 'ok',
                 requestId: 'request-1',
                 serviceId: 'server-1',
-                details: { type: 'GROUP_CREATE', ...key, senderId: 'sender-1', queueObservation, attempts: 7 }
+                details: { type: 'GROUP_CREATE', ...key, senderId: 'sender-1', queueObservation, attempts: 7, batchSize: 1 }
             })
         ]);
     });
@@ -72,7 +72,13 @@ describe('AppInbox sampled result polls', () => {
         expect(events.filter((event) => event.operation === 'wait-poll')).toEqual([
             expect.objectContaining({
                 status: observation === undefined ? 'ok' : 'error',
-                details: { type: 'GROUP_CREATE', ...key, senderId: 'sender-1', queueObservation: observation === undefined ? 'missing' : 'read-failure' }
+                details: {
+                    type: 'GROUP_CREATE',
+                    ...key,
+                    senderId: 'sender-1',
+                    queueObservation: observation === undefined ? 'missing' : 'read-failure',
+                    batchSize: 1
+                }
             })
         ]);
     });
@@ -94,9 +100,9 @@ describe('AppInbox sampled result polls', () => {
         await vi.runAllTimersAsync();
         expect((await pending).right).toEqual({ accepted: true });
         expect(events.filter((event) => event.operation === 'wait-poll').map((event) => event.details)).toEqual([
-            { type: 'GROUP_CREATE', ...key, senderId: 'sender-1', queueObservation: 'read-failure' },
-            { type: 'GROUP_CREATE', ...key, senderId: 'sender-1', queueObservation: 'RETRY', attempts: 2 },
-            { type: 'GROUP_CREATE', ...key, senderId: 'sender-1', queueObservation: 'COMPLETED', attempts: 3 }
+            { type: 'GROUP_CREATE', ...key, senderId: 'sender-1', queueObservation: 'read-failure', batchSize: 1 },
+            { type: 'GROUP_CREATE', ...key, senderId: 'sender-1', queueObservation: 'RETRY', attempts: 2, batchSize: 1 },
+            { type: 'GROUP_CREATE', ...key, senderId: 'sender-1', queueObservation: 'COMPLETED', attempts: 3, batchSize: 1 }
         ]);
     });
 
@@ -109,6 +115,27 @@ describe('AppInbox sampled result polls', () => {
         expect((await pending).left).toMatchObject({ code: 'app-inbox-unavailable' });
         expect(events.filter((event) => event.operation === 'wait-poll').map((event) => event.details?.queueObservation)).toEqual(['NEW', 'NEW']);
         expect(events.find((event) => event.operation === 'wait-fallback')?.details?.elapsedMsecs).toBe(1);
+    });
+
+    it.each(
+        [
+            [{ status: 'NEW', attempts: 0 } as const, 'App inbox entry is not complete: NEW'],
+            [{ status: 'RESERVED', attempts: 1 } as const, 'App inbox entry is not complete: RESERVED'],
+            [{ status: 'RETRY', attempts: 1 } as const, 'App inbox entry is not complete: RETRY'],
+            [undefined, 'App inbox entry is not complete: missing'],
+            [new Error('private read failure'), 'private read failure']
+        ] as const
+    )('names the pending observation %o in the retry it causes', async (observation, errorMessage) => {
+        vi.useFakeTimers();
+        const events: RallarTimingEvent[] = [];
+        const waiter = createWaiter([observation, { status: 'COMPLETED', attempts: 1 }], (event) => events.push(event), {
+            phaseTiming: true,
+            waitMaxElapsedMsecs: 100
+        });
+        const pending = waiter.waitForResult(enqueue, key, (value) => value);
+        await vi.runAllTimersAsync();
+        expect((await pending).right).toEqual({ accepted: true });
+        expect(events.filter((event) => event.operation === 'wait-retry').map((event) => event.details?.errorMessage)).toEqual([errorMessage]);
     });
 
     it('keeps the same narrow read and completion with phase capture disabled', async () => {
@@ -135,7 +162,7 @@ describe('AppInbox sampled result polls', () => {
         const events: RallarTimingEvent[] = [];
         const failure = new Error('result repository failure');
         const waiter = new AppInboxResultWaiter({
-            statusRepository: { readStatusAndAttempts: async () => ({ status: 'COMPLETED', attempts: 1 }) },
+            statusRepository: { readStatusesAndAttempts: async () => [{ status: 'COMPLETED', attempts: 1 }] },
             resultRepository: {
                 findByKey: async () => {
                     throw failure;
@@ -160,12 +187,12 @@ function createWaiter(
     const remaining = Array.isArray(observation) ? [...observation] : [observation];
     return new AppInboxResultWaiter({
         statusRepository: {
-            readStatusAndAttempts: async () => {
+            readStatusesAndAttempts: async () => {
                 const row = remaining.length > 1 ? remaining.shift() : remaining[0];
                 if (row instanceof Error) {
                     throw row;
                 }
-                return row;
+                return [row];
             }
         },
         resultRepository: {

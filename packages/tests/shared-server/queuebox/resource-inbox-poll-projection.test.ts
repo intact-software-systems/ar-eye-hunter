@@ -47,7 +47,7 @@ describe('resource inbox poll projection', () => {
         expect([...(await entries.findByTopicId(key.topicId)).values()]).toMatchObject([{ key }]);
         expect([...(await entries.findByTypeId('APP_INBOX')).values()]).toMatchObject([{ key }]);
         expect(await entries.isAnyWithStatuses(new Set([EntityStatus.NEW]))).toBe(true);
-        expect(await entries.readStatusAndAttempts(key)).toEqual({ status: 'NEW', attempts: 0 });
+        expect(await entries.readStatusesAndAttempts([key])).toEqual([{ status: 'NEW', attempts: 0 }]);
         now = expiry;
         expect(await entries.findByKey(key)).toBeNull();
         expect(await entries.findAllByTopicAndResourceId(key.topicId, key.resourceId)).toEqual([]);
@@ -55,7 +55,7 @@ describe('resource inbox poll projection', () => {
         expect(await entries.findByTopicId(key.topicId)).toEqual(new Map());
         expect(await entries.findByTypeId('APP_INBOX')).toEqual(new Map());
         expect(await entries.isAnyWithStatuses(new Set([EntityStatus.NEW]))).toBe(false);
-        expect(await entries.readStatusAndAttempts(key)).toBeUndefined();
+        expect(await entries.readStatusesAndAttempts([key])).toEqual([undefined]);
         expect(await entries.findAnyByKey(key)).toMatchObject({ key });
     });
 
@@ -63,17 +63,21 @@ describe('resource inbox poll projection', () => {
         await writeRow(key, 'COMPLETED', 1n);
         await sql`update resource_inbox set expire_ts = ${new Date('2060-01-01T12:00:00.000Z')}`;
         const resources = createPSqlResourceInboxRepository(sql, () => new Date('2060-01-01T12:00:00.000Z'));
-        expect(await resources.entries.readStatusAndAttempts(key)).toBeUndefined();
-        expect(await resources.transaction(async (transaction) => await transaction.entries.readStatusAndAttempts(key))).toBeUndefined();
+        expect(await resources.entries.readStatusesAndAttempts([key])).toEqual([undefined]);
+        expect(await resources.transaction(async (transaction) => await transaction.entries.readStatusesAndAttempts([key]))).toEqual([undefined]);
     });
 
-    it('reads only status and attempts in one bounded exact-key SQL statement', async () => {
+    it('reads only the key, status and attempts of every key in one SQL statement', async () => {
         const capture = createResourceInboxQueryCapture();
         const entries = new PSqlResourceInboxEntryRepository(capture.sql, () => new Date());
-        expect(await entries.readStatusAndAttempts(key)).toBeUndefined();
+        const other = { ...key, resourceId: 'request-2' };
+        expect(await entries.readStatusesAndAttempts([key, other])).toEqual([undefined, undefined]);
+        expect(await entries.readStatusesAndAttempts([])).toEqual([]);
         expect(capture.queries).toEqual([{
-            query: 'select ri_status, ri_attempts from resource_inbox where ri_topic_id = and ri_resource_id = and fk_ext_bank_id = and expire_ts > limit 1',
-            values: ['AppInbox', 'request-1', 'context-1', expect.any(Date)]
+            query: 'select ri_topic_id, ri_resource_id, fk_ext_bank_id, ri_status, ri_attempts from resource_inbox ' +
+                'where (fk_ext_bank_id, ri_resource_id, ri_topic_id) in ( select * from unnest( ::text[], ::text[], ::text[] ) ) ' +
+                'and expire_ts >',
+            values: [['context-1', 'context-1'], ['request-1', 'request-2'], ['AppInbox', 'AppInbox'], expect.any(Date)]
         }]);
     });
 
@@ -81,19 +85,19 @@ describe('resource inbox poll projection', () => {
         await writeRow({ ...key, topicId: 'other-topic' }, 'COMPLETED', 4n);
         await writeRow({ ...key, resourceId: 'other-request' }, 'FAILED', 5n);
         await writeRow({ ...key, contextId: 'other-context' }, 'NON_RETRYABLE', 6n);
-        expect(await repository.readStatusAndAttempts(key)).toBeUndefined();
+        expect(await repository.readStatusesAndAttempts([key])).toEqual([undefined]);
         await writeRow(key, 'NEW', 0n);
-        expect(await repository.readStatusAndAttempts(key)).toEqual({ status: 'NEW', attempts: 0 });
+        expect(await repository.readStatusesAndAttempts([key])).toEqual([{ status: 'NEW', attempts: 0 }]);
         await sql`update resource_inbox set expire_ts = (now() at time zone 'UTC') - interval '1 second'
                   where ri_topic_id = ${key.topicId} and ri_resource_id = ${key.resourceId} and fk_ext_bank_id = ${key.contextId}`;
-        expect(await repository.readStatusAndAttempts(key)).toBeUndefined();
+        expect(await repository.readStatusesAndAttempts([key])).toEqual([undefined]);
     });
 
     it.each(['NEW', 'RESERVED', 'RETRY', 'COMPLETED', 'FAILED', 'NON_RETRYABLE', 'ABORTED', 'PARTITIONED', 'MERGED'] as const)(
         'projects canonical %s and its valid attempts without decoding resource bytes',
         async (status) => {
             await writeRow(key, status, 17n);
-            expect(await repository.readStatusAndAttempts(key)).toEqual({ status, attempts: 17 });
+            expect(await repository.readStatusesAndAttempts([key])).toEqual([{ status, attempts: 17 }]);
         }
     );
 
@@ -106,7 +110,7 @@ describe('resource inbox poll projection', () => {
         ] as const
     )('fails closed for %s', async (_label, status, attempts) => {
         await writeRow(key, status, attempts);
-        await expect(repository.readStatusAndAttempts(key)).rejects.toBeInstanceOf(ResourceInboxRowCorruptionError);
+        await expect(repository.readStatusesAndAttempts([key])).rejects.toBeInstanceOf(ResourceInboxRowCorruptionError);
         const events: RallarTimingEvent[] = [];
         const waiter = new AppInboxResultWaiter({
             statusRepository: repository,
@@ -119,7 +123,7 @@ describe('resource inbox poll projection', () => {
         const result = await waiter.waitForResult({ type: AppInboxType.GROUP_CREATE, ...key, data: null }, key, (value) => value);
         expect(result.left).toMatchObject({ code: 'app-inbox-unavailable', status: 503 });
         expect(events.filter((event) => event.operation === 'wait-poll')).toEqual([
-            expect.objectContaining({ status: 'error', details: { type: 'GROUP_CREATE', ...key, queueObservation: 'read-failure' } })
+            expect.objectContaining({ status: 'error', details: { type: 'GROUP_CREATE', ...key, queueObservation: 'read-failure', batchSize: 1 } })
         ]);
     });
 });

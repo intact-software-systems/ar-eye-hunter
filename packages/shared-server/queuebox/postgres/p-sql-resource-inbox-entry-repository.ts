@@ -291,8 +291,10 @@ export class PSqlResourceInboxEntryRepository {
         return await this.reader.isAnyWithStatuses(statuses);
     }
 
-    async readStatusAndAttempts(key: Key): Promise<ResourceInboxStatusAndAttempts | undefined> {
-        return await this.reader.readStatusAndAttempts(key);
+    async readStatusesAndAttempts(
+        keys: readonly Key[]
+    ): Promise<readonly (ResourceInboxStatusAndAttempts | undefined)[]> {
+        return await this.reader.readStatusesAndAttempts(keys);
     }
 
     async upsert(entry: ResourceEntry): Promise<ResourceEntry> {

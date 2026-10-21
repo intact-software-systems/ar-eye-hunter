@@ -84,9 +84,11 @@ export class TestResourceInbox extends InMemoryQueueBox {
         }
     }
 
-    async readStatusAndAttempts(key: Key): Promise<ResourceInboxStatusAndAttempts | undefined> {
-        const entry = await this.getItem(key);
-        return entry === undefined ? undefined : { status: entry.status, attempts: entry.dequeueAudit.attempts };
+    async readStatusesAndAttempts(keys: readonly Key[]): Promise<readonly (ResourceInboxStatusAndAttempts | undefined)[]> {
+        return await Promise.all(keys.map(async (key) => {
+            const entry = await this.getItem(key);
+            return entry === undefined ? undefined : { status: entry.status, attempts: entry.dequeueAudit.attempts };
+        }));
     }
 
     override async enqueueIfAbsent(entry: ResourceEntry): Promise<ResourceEntry> {

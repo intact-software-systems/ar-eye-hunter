@@ -9,11 +9,6 @@ export const APP_INBOX_RESERVATION_LEASE_MS = 60_000;
  * the attempt's own commit is refused before another process can reclaim the entry.
  */
 export const DEFAULT_APP_INBOX_ATTEMPT_DEADLINE_MARGIN_MS = 5_000;
-/**
- * A waiter with a live completion subscription re-reads on a wake, or on this tick when a wake was lost. Well below
- * any caller's HTTP allowance (the native fixtures allow 5 s), so one lost wake costs a tick, not the request.
- */
-export const APP_INBOX_WAIT_SAFETY_TICK_MSECS = 1_000;
 
 export interface AppInboxOptions {
     readonly phaseTiming?: boolean;

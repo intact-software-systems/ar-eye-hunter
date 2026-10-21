@@ -16,6 +16,11 @@ import {
 
 const MAX_ROWS_TO_RETURN = 50;
 
+type ResourceInboxStatusRow = Pick<
+    ResourceInboxRow,
+    'ri_topic_id' | 'ri_resource_id' | 'fk_ext_bank_id' | 'ri_status' | 'ri_attempts'
+>;
+
 export class PSqlResourceInboxEntryReader {
     private readonly sql: PSqlSql;
     private readonly now: () => Date;
@@ -153,18 +158,38 @@ export class PSqlResourceInboxEntryReader {
         return rows.length > 0;
     }
 
-    async readStatusAndAttempts(key: Key): Promise<ResourceInboxStatusAndAttempts | undefined> {
+    /** The live status and attempts of each key, in key order: one statement on the unique key however many keys. */
+    async readStatusesAndAttempts(
+        keys: readonly Key[]
+    ): Promise<readonly (ResourceInboxStatusAndAttempts | undefined)[]> {
+        if (keys.length === 0) {
+            return [];
+        }
         const now = this.now();
-        const rows = await this.sql<Pick<ResourceInboxRow, 'ri_status' | 'ri_attempts'>[]>`
-            select ri_status, ri_attempts
+        const rows = await this.sql<ResourceInboxStatusRow[]>`
+            select ri_topic_id, ri_resource_id, fk_ext_bank_id, ri_status, ri_attempts
             from resource_inbox
-            where ri_topic_id = ${key.topicId}
-              and ri_resource_id = ${key.resourceId}
-              and fk_ext_bank_id = ${key.contextId}
+            where (fk_ext_bank_id, ri_resource_id, ri_topic_id) in (
+                select * from unnest(
+                    ${keys.map((key) => key.contextId)}::text[],
+                    ${keys.map((key) => key.resourceId)}::text[],
+                    ${keys.map((key) => key.topicId)}::text[]
+                )
+            )
               and expire_ts > ${now}
-            limit 1
         `;
-
-        return rows.length === 0 ? undefined : toResourceInboxStatusAndAttempts(rows[0]);
+        const found = new Map(rows.map((row) => [
+            toStatusRowKeyId({
+                topicId: row.ri_topic_id,
+                resourceId: row.ri_resource_id,
+                contextId: row.fk_ext_bank_id
+            }),
+            toResourceInboxStatusAndAttempts(row)
+        ]));
+        return keys.map((key) => found.get(toStatusRowKeyId(key)));
     }
+}
+
+function toStatusRowKeyId(key: Key): string {
+    return JSON.stringify([key.topicId, key.resourceId, key.contextId]);
 }
