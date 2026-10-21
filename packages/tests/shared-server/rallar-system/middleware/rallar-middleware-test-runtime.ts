@@ -1,4 +1,3 @@
-import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
@@ -52,7 +51,6 @@ export function createRallarMiddlewareTestRuntime(
     const outbox = input.outbox ?? inbox;
     const results = new TestResourceInboxResults();
     const database = createAppInboxTestDatabase(inbox, results, { runtimeRepository });
-    const authSessions = new AuthSessionRepository(runtimeRepository);
     const clientStateService = createClientStateService({
         runtimeRepository,
         clientStateEventStore: database.clientEventStore,
@@ -61,7 +59,6 @@ export function createRallarMiddlewareTestRuntime(
     const groupStateService = createGroupStateService({
         runtimeRepository,
         groupStateEventStore: database.groupEventStore,
-        authSessionRepository: authSessions,
         serviceId: TEST_SERVICE_ID,
         readPlannedLayoutRow: async () => null,
         readAcceptedLayoutRow: async () => null

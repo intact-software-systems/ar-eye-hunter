@@ -20,9 +20,13 @@ describe('Postgres group join enqueue-time ingress', () => {
 
             expect(harness.probe.interleave.writeCount()).toBe(1);
             expect(harness.queueEntries.reservations).toHaveLength(1);
-            const enqueued = readIngress(harness.queueEntries.reservations[0]);
-            // The lane neither captured nor persisted an ingress on either attempt.
-            expect(harness.queueEntries.replacementCount).toBe(0);
+            const [reservation] = harness.queueEntries.reservations;
+            if (reservation === undefined) {
+                throw new Error('The join was not reserved at enqueue');
+            }
+            const enqueued = readIngress(reservation);
+            // Neither attempt rewrote the queued command: the completed row still carries the enqueue-time ingress.
+            expect((await harness.queueEntries.findAnyByKey(reservation.key))?.resource).toBe(reservation.resource);
             const record = await harness.repository.findIdempotentGroupMutationReceipt(
                 harness.groupRef,
                 toGroupAppInboxStorageCommandId(enqueue, 'bob')
@@ -41,9 +45,6 @@ describe('Postgres group join enqueue-time ingress', () => {
     }, 30_000);
 });
 
-function readIngress(entry: ResourceEntry | undefined) {
-    if (entry === undefined) {
-        throw new Error('The join was not reserved at enqueue');
-    }
+function readIngress(entry: ResourceEntry) {
     return decodeGroupStateInboxAuthority(decodePersistedAppInboxEnqueue(entry).authority);
 }

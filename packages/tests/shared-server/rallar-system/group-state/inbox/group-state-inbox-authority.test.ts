@@ -296,21 +296,14 @@ describe('GroupStateInboxService authenticated authority', () => {
         const results = new TestResourceInboxResults();
         const eventStore = new InMemoryGroupStateEventStore();
         const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
-        const groupStateService = createGroupStateService(
-            {
-                runtimeRepository,
-                serviceId: 'server-12345678',
-                readPlannedLayoutRow: async () => null,
-                readAcceptedLayoutRow: async () => null,
-                now: () => nowEpochMs,
-                groupStateEventStore: eventStore,
-                authSessionRepository: authSessions
-            } as
-                & Parameters<typeof createGroupStateService>[0]
-                & Readonly<{
-                    authSessionRepository: AuthSessionRepository;
-                }>
-        );
+        const groupStateService = createGroupStateService({
+            runtimeRepository,
+            serviceId: 'server-12345678',
+            readPlannedLayoutRow: async () => null,
+            readAcceptedLayoutRow: async () => null,
+            now: () => nowEpochMs,
+            groupStateEventStore: eventStore
+        });
         const service = new GroupStateInboxService(
             {
                 inboxQueueReader: reader,

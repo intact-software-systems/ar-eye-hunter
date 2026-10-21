@@ -411,7 +411,15 @@ describe('state-write diagnostic projection', () => {
                     newResourceId: () => 'PRIVATE-generated',
                     createMessage: createAppInboxQueueMessageFixture
                 }, { serviceId: 'PRIVATE-worker-a', defaultTopicId: 'app-inbox.client-state' }),
+                reservationClient: {
+                    reserveMaterializedEntry: async () => {
+                        throw new Error('The diagnostic workload enqueues through the queue writer');
+                    }
+                },
                 resultWaiter: {
+                    waitForReservedResult: async () => {
+                        throw new Error('The diagnostic workload waits by its written key');
+                    },
                     waitForResult: async <Result>(
                         _enqueue: AppInboxEnqueueInput,
                         key: Key,

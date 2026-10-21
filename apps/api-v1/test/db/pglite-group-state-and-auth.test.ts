@@ -250,7 +250,6 @@ Deno.test(
                 readAcceptedLayoutRow: () => Promise.resolve(null),
                 runtimeRepository: runtime,
                 groupStateEventStore: groupEvents,
-                authSessionRepository: authSessions,
                 serviceId: 'pglite-group-service',
                 now: () => nowEpochMs
             });
@@ -473,7 +472,6 @@ Deno.test(
                 readAcceptedLayoutRow: () => Promise.resolve(null),
                 runtimeRepository: runtime,
                 groupStateEventStore: groupEvents,
-                authSessionRepository: authSessions,
                 serviceId: 'pglite-summary-fence',
                 now: () => nowEpochMs
             });

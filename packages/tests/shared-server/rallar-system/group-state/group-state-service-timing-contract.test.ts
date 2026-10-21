@@ -134,7 +134,7 @@ describe('group-state service timing contract', () => {
 });
 
 describe('group mutation lane phase timing', () => {
-    it('captures the ingress inside the enqueue phase and leaves the lane no capture or persist phase', async () => {
+    it('records the ingress capture before its enqueue phase completes and leaves the lane no capture or persist phase', async () => {
         const timingEvents: RallarTimingEvent[] = [];
         const harness = await createAuthorityHarness(['owner', 'alice'], {
             serviceOptions: { phaseTiming: true },

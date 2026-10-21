@@ -264,7 +264,6 @@ function createMutationGroupStateService(
         durable: createGroupStateService({
             runtimeRepository: resources.runtimeStateRepository,
             capacity: input.groupCapacity,
-            authSessionRepository: resources.authSessionRepository,
             groupStateEventStore: resources.groupStateEventStore,
             serviceId: input.serviceId,
             timing: input.timing,

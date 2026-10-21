@@ -78,14 +78,14 @@ export function toStateWriteAppInboxExpectations(
                     topicId: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
                     logicalResourceId: `${command.commandId}-profile`,
                     logicalContextId
-                }),
+                }, toAppQueueKey),
                 toExpectation({
                     commandId: command.commandId,
                     operationId: 'instance',
                     topicId: AppInboxType.CLIENT_INSTANCE_UPSERT,
                     logicalResourceId: `${command.commandId}-instance`,
                     logicalContextId
-                })
+                }, toAppQueueKey)
             ];
         }
         const topicId = toSingleOperationTopic(command.kind);
@@ -95,7 +95,7 @@ export function toStateWriteAppInboxExpectations(
             topicId,
             logicalResourceId: command.commandId,
             logicalContextId: toStateWriteBenchmarkGroupContextId(scope, groupId)
-        }, command.kind === 'topology-source' ? toAppQueueKey : toAuthenticatedGroupMutationQueueKey)];
+        }, toStateWriteCommandQueueKey(command.kind))];
     });
 }
 
@@ -166,6 +166,13 @@ export function readStateWriteBenchmarkClientIndex(commandId: string): number {
     return clientIndex;
 }
 
+/** A group command is reserved under its verbatim key; the queue writer shortens a topology source's. */
+function toStateWriteCommandQueueKey(
+    kind: Exclude<StateWriteAppInboxCommand['kind'], 'profile-instance'>
+): (key: Key) => Key {
+    return kind === 'topology-source' ? toAppQueueKey : toAuthenticatedGroupMutationQueueKey;
+}
+
 function toSingleOperationTopic(
     kind: Exclude<StateWriteAppInboxCommand['kind'], 'profile-instance'>
 ): AppInboxTypeValue {
@@ -185,10 +192,9 @@ function toSingleOperationTopic(
     }
 }
 
-/** A group command's reservation keeps its identity verbatim; the queue writer's commands shorten theirs. */
 function toExpectation(
     identity: Omit<StateWriteAppInboxExpectation, 'physicalKey'>,
-    toPhysicalKey: (key: Key) => Key = toAppQueueKey
+    toPhysicalKey: (key: Key) => Key
 ): StateWriteAppInboxExpectation {
     return {
         ...identity,

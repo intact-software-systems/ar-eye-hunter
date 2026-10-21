@@ -88,10 +88,7 @@ export interface AuthSessionInput {
 }
 
 type TestGroupStateServiceDependencies =
-    & Omit<
-        GroupStateServiceDependencies,
-        'authSessionRepository' | 'groupStateEventStore' | 'runtimeRepository' | 'readPlannedLayoutRow' | 'readAcceptedLayoutRow'
-    >
+    & Omit<GroupStateServiceDependencies, 'groupStateEventStore' | 'runtimeRepository' | 'readPlannedLayoutRow' | 'readAcceptedLayoutRow'>
     & Readonly<{
         runtimeRepository: RuntimeStateGuardedBatchTransactionalRepositoryLike;
         groupStateEventStoreFor?: (
@@ -133,8 +130,7 @@ export function createTestGroupStateRuntime(
         serviceId: dependencies.serviceId,
         readPlannedLayoutRow: dependencies.readPlannedLayoutRow ?? (async () => null),
         readAcceptedLayoutRow: dependencies.readAcceptedLayoutRow ?? (async () => null),
-        timing: dependencies.timing,
-        authSessionRepository: authSessions
+        timing: dependencies.timing
     });
     const repositoryFor = (runtime: RuntimeStateOptimisticTransactionalRepositoryLike) => createTestGroupStateRepository(runtime, eventStoreFor(runtime));
     const mutationExecutor = new GroupStateTestMutationExecutor({

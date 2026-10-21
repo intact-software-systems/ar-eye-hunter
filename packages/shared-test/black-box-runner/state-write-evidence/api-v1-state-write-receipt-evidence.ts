@@ -13,6 +13,8 @@ import * as AppInboxCommandIdentity from '@shared-server/rallar-system/app-inbox
 import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { validateClientMutationIdempotencyRecord } from '@shared-server/rallar-system/client-state/persistence/validate-persisted-client-state.ts';
+import { isAuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
+import { toAuthenticatedGroupMutationQueueKey } from '@shared-server/rallar-system/group-state/inbox/to-authenticated-group-mutation-queue-key.ts';
 import { assertGroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/command-validation/assert-group-mutation-command.ts';
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import {
@@ -405,7 +407,10 @@ interface ReadGroupReceiptInput {
 async function readGroupReceipt(input: ReadGroupReceiptInput): Promise<PersistedCommandEvidence> {
     const { runtime, row, authority, logicalResourceId, commandType, requireReceipt } = input;
     const { command, requestId, idempotencyKey, commandHash } = decodeGroupReceiptPreparation(authority);
-    const physicalResourceId = toAppQueueKey({
+    const toPhysicalKey = isAuthenticatedGroupMutationEnqueue({ type: commandType })
+        ? toAuthenticatedGroupMutationQueueKey
+        : toAppQueueKey;
+    const physicalResourceId = toPhysicalKey({
         topicId: row.ri_topic_id,
         resourceId: logicalResourceId,
         contextId: ''

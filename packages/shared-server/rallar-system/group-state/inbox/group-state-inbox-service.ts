@@ -1,35 +1,27 @@
-import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import {
-    AppInboxIdempotencyConflictError,
     AppInboxType,
     type AppInboxEnqueueInput,
     type AppInboxMessageContext
 } from '../../app-inbox/app-inbox-contracts.ts';
 import { type AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
-import { normalizeAppInboxOptions, type AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
+import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
 import { encodeAppInboxCommand, encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import { GROUP_STATE_APP_INBOX_TOPIC } from '../../app-inbox/app-inbox-topics.ts';
+import type { AppInboxCommandClient } from '../../app-inbox/client/app-inbox-command-client.ts';
 import type { AppInboxQueueEntryWriter } from '../../app-inbox/client/app-inbox-queue-entry-writer.ts';
-import type { AppInboxReservationClient } from '../../app-inbox/client/app-inbox-reservation-client.ts';
-import type { AppInboxResultWaiter } from '../../app-inbox/client/app-inbox-result-waiter.ts';
 import { createAppInboxClientRuntime } from '../../app-inbox/client/create-app-inbox-client-runtime.ts';
 import { AppInboxHandlerRegistry } from '../../app-inbox/handler/app-inbox-handler-registry.ts';
 import { createAppInboxHandlerRuntime } from '../../app-inbox/handler/app-inbox-handler-runtime.ts';
 import { AppInboxTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
-import { toLogicalAppInboxCommand } from '../../app-inbox/logical-app-inbox-command.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import type { GroupFormationGroupMutationSink } from '../../observability/formation-metrics.ts';
-import { timeRallarAsync, type RallarTimingSink } from '../../observability/timing.ts';
-import {
-    computeMutationCommandDigest,
-    serializeCanonicalMutationCommand,
-    type JsonWireValue
-} from '../../protocol/json-wire-identity.ts';
+import type { RallarTimingSink } from '../../observability/timing.ts';
+import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts';
 import type { AuthorizedGroupMutation, GroupStateService } from '../group-state-service-contracts.ts';
 import type { GroupMutationCommand } from '../mutation/group-mutation-contracts.ts';
@@ -79,16 +71,13 @@ export namespace GroupStateInboxService {
 }
 
 export class GroupStateInboxService {
+    private readonly commandClient: AppInboxCommandClient;
     private readonly queueEntryWriter: AppInboxQueueEntryWriter;
-    private readonly reservationClient: AppInboxReservationClient;
-    private readonly resultWaiter: AppInboxResultWaiter;
     private readonly handlers: AppInboxHandlerRegistry;
     private readonly transactionWriter: AppInboxTransactionWriter;
     private readonly groupStateInboxHandler: GroupStateInboxHandler;
     private readonly wakeQueue?: () => void;
     private readonly serviceId: string;
-    private readonly timing: RallarTimingSink | undefined;
-    private readonly phaseTiming: boolean;
 
     public readonly groupStateService: GroupStateService;
 
@@ -106,9 +95,8 @@ export class GroupStateInboxService {
             options: config.options,
             wakeOwningQueue: config.wakeOwningQueue
         });
+        this.commandClient = clientRuntime.commandClient;
         this.queueEntryWriter = clientRuntime.queueEntryWriter;
-        this.reservationClient = clientRuntime.reservationClient;
-        this.resultWaiter = clientRuntime.resultWaiter;
         const handlerRuntime = createAppInboxHandlerRuntime({
             inboxQueueReader: dependencies.inboxQueueReader,
             resultRepository: dependencies.resourceInboxResultsRepository,
@@ -122,8 +110,6 @@ export class GroupStateInboxService {
         this.groupStateService = dependencies.groupStateService;
         this.wakeQueue = config.wakeOwningQueue;
         this.serviceId = config.serviceId;
-        this.timing = config.timing;
-        this.phaseTiming = normalizeAppInboxOptions(config.options ?? {}).phaseTiming;
         this.groupStateInboxHandler = new GroupStateInboxHandler({
             mutationService: this.groupStateService,
             sessionGenerationLifecycle: this.groupStateService.sessionGenerationLifecycle,
@@ -214,40 +200,9 @@ export class GroupStateInboxService {
             authority: encodeAppInboxCommand(authorized, 'Group mutation AppInbox authority'),
             data: encodeAppInboxCommand(enqueue.data, 'Group mutation AppInbox command')
         };
-        const key = toAuthenticatedGroupMutationQueueKey(received);
-        return await this.timeEnqueueOperation('enqueueAndWaitForResult', received, async () => {
-            const reserved = await this.timeEnqueueOperation(
-                'enqueue',
-                received,
-                async () => await this.reserveAuthenticatedGroupMutation(received, key, authorized)
-            );
-            return await this.resultWaiter.waitForReservedResult(
-                reserved,
-                (value) => decodeGroupStateInboxDurableResult(value, enqueue.type)
-            );
-        });
-    }
-
-    private async authorizeAuthenticatedGroupMutation(
-        enqueue: AuthenticatedGroupMutationEnqueue,
-        authority: IssuedAuthSession
-    ): Promise<AuthorizedGroupMutation> {
-        if (!isAuthenticatedGroupMutationEnqueue(enqueue)) {
-            throw new GroupMutationAuthorizationError(
-                'App inbox type is not an authenticated group mutation.'
-            );
-        }
-        return await this.groupStateService.authorizeMutation(toGroupMutationDescriptor(enqueue), authority);
-    }
-
-    private async reserveAuthenticatedGroupMutation(
-        received: AppInboxEnqueueInput,
-        key: Key,
-        authorized: AuthorizedGroupMutation
-    ): Promise<AppInboxReservationClient.MaterializedReservation> {
         const placeholder: AppInboxEnqueueInput = {
             type: received.type,
-            topicId: key.topicId,
+            topicId: toAuthenticatedGroupMutationQueueKey(received).topicId,
             resourceId: received.resourceId,
             contextId: received.contextId,
             senderId: received.senderId,
@@ -265,44 +220,22 @@ export class GroupStateInboxService {
             ),
             data: received.data
         };
-        const reserved = await this.reservationClient.reserveMaterializedEntry(placeholder, async () => materialized);
-        const existing = toLogicalAppInboxCommand(reserved.enqueue);
-        const incoming = toLogicalAppInboxCommand(received);
-        if (serializeCanonicalMutationCommand(existing) !== serializeCanonicalMutationCommand(incoming)) {
-            throw new AppInboxIdempotencyConflictError(
-                key.resourceId,
-                computeMutationCommandDigest(existing),
-                computeMutationCommandDigest(incoming)
-            );
-        }
-        return reserved;
+        return await this.commandClient.reserveMaterializedAndWaitForResult(
+            { received, placeholder, materialize: async () => materialized },
+            (value) => decodeGroupStateInboxDurableResult(value, enqueue.type)
+        );
     }
 
-    private async timeEnqueueOperation<Result>(
-        operation: 'enqueueAndWaitForResult' | 'enqueue',
-        enqueue: AppInboxEnqueueInput,
-        action: () => Promise<Result>
-    ): Promise<Result> {
-        if (operation === 'enqueue' && !this.phaseTiming) {
-            return await action();
+    private async authorizeAuthenticatedGroupMutation(
+        enqueue: AuthenticatedGroupMutationEnqueue,
+        authority: IssuedAuthSession
+    ): Promise<AuthorizedGroupMutation> {
+        if (!isAuthenticatedGroupMutationEnqueue(enqueue)) {
+            throw new GroupMutationAuthorizationError(
+                'App inbox type is not an authenticated group mutation.'
+            );
         }
-        return await timeRallarAsync(
-            this.timing,
-            {
-                component: operation === 'enqueue' ? 'app-inbox-phase' : 'app-inbox',
-                operation,
-                serviceId: this.serviceId,
-                requestId: enqueue.resourceId,
-                details: {
-                    type: enqueue.type,
-                    topicId: enqueue.topicId,
-                    contextId: enqueue.contextId,
-                    resourceId: enqueue.resourceId,
-                    senderId: enqueue.senderId
-                }
-            },
-            action
-        );
+        return await this.groupStateService.authorizeMutation(toGroupMutationDescriptor(enqueue), authority);
     }
 
     private registerMessageHandlers(): void {

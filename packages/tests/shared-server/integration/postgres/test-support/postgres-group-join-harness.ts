@@ -120,15 +120,9 @@ export class RuntimeStateReadProbe extends PSqlRuntimeStateRepository {
     }
 }
 
-/** Counts the queue-row replacements a handler issues outside its transaction, such as persisting a lane capture. */
-export class ReplacementCountingEntryRepository extends PSqlResourceInboxEntryRepository {
-    replacementCount = 0;
+/** Keeps every queue row an enqueue reserved, as the reservation returned it. */
+export class ReservationRecordingEntryRepository extends PSqlResourceInboxEntryRepository {
     readonly reservations: ResourceEntry[] = [];
-
-    override async replaceIfObserved(expected: ResourceEntry, replacement: ResourceEntry): Promise<ResourceEntry | null> {
-        this.replacementCount += 1;
-        return await super.replaceIfObserved(expected, replacement);
-    }
 
     override async writeMaterializedIfAbsentOrReplaceExpired(
         placeholder: ResourceEntry,
@@ -145,7 +139,7 @@ export interface PostgresGroupJoinHarness {
     readonly groupRef: GroupRef;
     readonly probe: RuntimeStateReadProbe;
     readonly repository: GroupStateRepository;
-    readonly queueEntries: ReplacementCountingEntryRepository;
+    readonly queueEntries: ReservationRecordingEntryRepository;
     /** Moves the lane's clock; the route's authorization and the enqueue-time capture keep the wall clock. */
     advanceLaneClock(offsetMs: number): void;
     join(principalId: string): Promise<AuthenticatedGroupMutationEnqueue>;
@@ -227,7 +221,7 @@ function createJoinReadHarness(sql: PSqlSql, groupRef: GroupRef): PostgresGroupJ
     const countedSql = createPSqlCounterScope(sql, { timesBeginWait: true });
     const probe = new RuntimeStateReadProbe(countedSql);
     const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date());
-    const queueEntries = new ReplacementCountingEntryRepository(sql, () => new Date());
+    const queueEntries = new ReservationRecordingEntryRepository(sql, () => new Date());
     const inbox = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
         laneBudgetPolicy: 'adaptive-retry',
         newLaneConcurrency: 1
@@ -243,7 +237,6 @@ function createJoinReadHarness(sql: PSqlSql, groupRef: GroupRef): PostgresGroupJ
         groupStateService: createGroupStateService({
             runtimeRepository: probe,
             groupStateEventStore: groupEventStore,
-            authSessionRepository: new AuthSessionRepository(probe),
             serviceId: 'join-read-worker',
             now: () => Date.now() + laneClockOffsetMs,
             readPlannedLayoutRow: async () => null,

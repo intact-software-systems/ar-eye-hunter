@@ -317,7 +317,6 @@ Deno.test(
                 readAcceptedLayoutRow: () => Promise.resolve(null),
                 runtimeRepository: runtime,
                 groupStateEventStore: new PSqlGroupStateEventRepository(sql),
-                authSessionRepository,
                 now: () => 10_000,
                 serviceId: 'pglite-group-service'
             });
@@ -416,7 +415,6 @@ Deno.test(
                 readAcceptedLayoutRow: () => Promise.resolve(null),
                 runtimeRepository: runtime,
                 groupStateEventStore: new PSqlGroupStateEventRepository(sql),
-                authSessionRepository,
                 now: () => 10_000,
                 serviceId: 'pglite-group-summary-collision'
             });

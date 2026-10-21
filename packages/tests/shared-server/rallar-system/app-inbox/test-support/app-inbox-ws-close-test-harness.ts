@@ -101,7 +101,6 @@ export async function createAppInboxWsCloseHarness(
     await authSessions.putSession(authSession);
     const groupState = createGroupStateService({
         runtimeRepository,
-        authSessionRepository: authSessions,
         groupStateEventStore: database.groupEventStore,
         serviceId: 'server-12345678',
         readPlannedLayoutRow: async () => null,

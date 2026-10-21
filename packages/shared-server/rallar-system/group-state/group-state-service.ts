@@ -1,3 +1,4 @@
+import { AuthSessionPersistence } from '../auth/persistence/auth-session-persistence.ts';
 import { computeSha256CanonicalJson } from '../protocol/canonical-json.ts';
 import { computeMutationCommandDigest, decodeJsonWireValue } from '../protocol/json-wire-identity.ts';
 import { createWsSessionGenerationLifecycleService } from '../websocket/ws-session-generation-lifecycle.ts';
@@ -59,23 +60,17 @@ export class GroupMutationIdempotencyConflictError extends Error {
 export function createGroupStateRuntime(
     dependencies: GroupStateServiceDependencies
 ): GroupStateRuntime {
-    if (
-        !dependencies.authSessionRepository ||
-        typeof dependencies.authSessionRepository.findBySessionId !== 'function'
-    ) {
-        throw new GroupMutationAuthorizationError(
-            'An auth session repository is required for group mutations.'
-        );
-    }
     const runtime = dependencies.runtimeRepository;
     const now = dependencies.now ?? (() => Date.now());
     const randomId = dependencies.randomId ?? (() => crypto.randomUUID());
     const repositoryFor: GroupStateRepositoryFactory = (target) =>
         new GroupStateRepository(target, dependencies.groupStateEventStore);
+    const authSessions = new AuthSessionPersistence(runtime);
     const owners: GroupStateRuntimeOwners = {
         dependencies,
         repositoryFor,
-        authorityDependencies: createAuthorityDependencies({ dependencies, now, randomId }),
+        authSessions,
+        authorityDependencies: createAuthorityDependencies({ dependencies, authSessions, now, randomId }),
         captureInternalMutationIngress: createInternalMutationIngressCapture(dependencies)
     };
     const service: GroupStateService = {
@@ -106,21 +101,24 @@ type InternalMutationIngressCapture = (
 interface GroupStateRuntimeOwners {
     readonly dependencies: GroupStateServiceDependencies;
     readonly repositoryFor: GroupStateRepositoryFactory;
+    /** The live-session rows the batch read selects live in the same store, so one persistence reads both. */
+    readonly authSessions: AuthSessionPersistence;
     readonly authorityDependencies: GroupMutationAuthorityDependencies;
     readonly captureInternalMutationIngress: InternalMutationIngressCapture;
 }
 
 interface CreateAuthorityDependenciesInput {
     readonly dependencies: GroupStateServiceDependencies;
+    readonly authSessions: AuthSessionPersistence;
     readonly now: () => number;
     readonly randomId: () => string;
 }
 
 function createAuthorityDependencies(
-    { dependencies, now, randomId }: CreateAuthorityDependenciesInput
+    { dependencies, authSessions, now, randomId }: CreateAuthorityDependenciesInput
 ): GroupMutationAuthorityDependencies {
     return {
-        authSessionRepository: dependencies.authSessionRepository,
+        authSessionRepository: authSessions,
         now,
         randomId,
         serviceId: dependencies.serviceId,
@@ -238,7 +236,7 @@ function createQueryOperations(
         listSnapshotsPage: async (scope, options) => await repositoryFor(runtime).listSnapshotsPage(scope, options),
         readSnapshot: async (ref) => await repositoryFor(runtime).readSnapshot(ref),
         readCausalRevision: async (ref) => await repositoryFor(runtime).readCausalRevision(ref),
-        readIssuedAuthSession: async (sessionId) => await dependencies.authSessionRepository.findBySessionId(sessionId),
+        readIssuedAuthSession: async (sessionId) => await owners.authSessions.findBySessionId(sessionId),
         listEvents: async (ref) => await repositoryFor(runtime).listEvents(ref),
         listRecentEvents: async (ref, query) => await repositoryFor(runtime).listRecentEvents(ref, query),
         listEventPage: async (ref, query) => await repositoryFor(runtime).listEventPage(ref, query),

@@ -229,8 +229,7 @@ async function createTransactionBoundaryGroupStateService(
         readPlannedLayoutRow: async () => null,
         readAcceptedLayoutRow: async () => null,
         now: () => NOW_EPOCH_MS,
-        randomId: () => 'fixed-random-id',
-        authSessionRepository: authSessions
+        randomId: () => 'fixed-random-id'
     });
     const observedSnapshots: GroupSnapshot[] = [];
     const service: GroupStateService = {

@@ -114,6 +114,10 @@ export type GroupStateMutationExactReadDecoders = Readonly<{
         entry: RuntimeStateEntryValue<JsonWireValue>
     ): RuntimeStateEntryValue<GroupPresenceAdmission>;
     lifecyclePolicy(value: JsonWireValue | undefined): GroupLifecyclePolicyRead;
+    authSession(
+        sessionId: string,
+        entry: RuntimeStateEntryValue<JsonWireValue>
+    ): RuntimeStateEntryValue<PersistedAuthSession>;
     groupSnapshot(rows: Extract<GroupStateAuthorityBatchRead, { status: 'stable'; }>): GroupSnapshot | undefined;
 }>;
 
@@ -204,23 +208,18 @@ function toExactReadResult(
             ? { status: 'unread' }
             : {
                 status: 'read',
-                session: toAuthSession(input.authSessionId, findSlotSelection(selections, 'auth-session')?.entries[0])
+                session: toAuthSession(input.authSessionId, findSlotSelection(selections, 'auth-session'), decoders)
             }
     };
 }
 
 function toAuthSession(
     sessionId: string,
-    entry: RuntimeStateEntryValue<JsonWireValue> | undefined
+    selection: RuntimeStateReadBatchLiveSelection<JsonWireValue> | undefined,
+    decoders: GroupStateMutationExactReadDecoders
 ): PersistedAuthSession | undefined {
-    if (entry === undefined) {
-        return undefined;
-    }
-    const session = decodePersistedAuthSession(entry.value);
-    if (session.sessionId !== sessionId) {
-        throw new TypeError('Persisted auth session id identity differs');
-    }
-    return session;
+    const entry = selection?.entries[0];
+    return entry === undefined ? undefined : decoders.authSession(sessionId, entry).value;
 }
 
 function findSlotSelection(

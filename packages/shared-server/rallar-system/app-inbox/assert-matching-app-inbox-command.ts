@@ -26,15 +26,29 @@ export function assertMatchingAppInboxCommand(
             receivedCommandHash
         );
     }
+    assertMatchingAppInboxEnqueue({ resourceId: entry.key.resourceId, existing, incoming, receivedCommandIdentity });
+}
+
+/** The command a queue key keeps and the one received under it. */
+export interface MatchingAppInboxEnqueue {
+    readonly resourceId: string;
+    readonly existing: AppInboxEnqueueInput;
+    readonly incoming: AppInboxEnqueueInput;
+    /** The incoming command's canonical logical identity. */
+    readonly receivedCommandIdentity: string;
+}
+
+/** A replay under the same key must carry the same logical command; anything else is an idempotency conflict. */
+export function assertMatchingAppInboxEnqueue(input: MatchingAppInboxEnqueue): void {
     const existingCommandIdentity = serializeCanonicalMutationCommand(
-        toLogicalAppInboxCommand(existing)
+        toLogicalAppInboxCommand(input.existing)
     );
-    if (existingCommandIdentity === receivedCommandIdentity) {
+    if (existingCommandIdentity === input.receivedCommandIdentity) {
         return;
     }
     throw new AppInboxIdempotencyConflictError(
-        entry.key.resourceId,
-        computeMutationCommandDigest(toLogicalAppInboxCommand(existing)),
-        computeMutationCommandDigest(toLogicalAppInboxCommand(incoming))
+        input.resourceId,
+        computeMutationCommandDigest(toLogicalAppInboxCommand(input.existing)),
+        computeMutationCommandDigest(toLogicalAppInboxCommand(input.incoming))
     );
 }

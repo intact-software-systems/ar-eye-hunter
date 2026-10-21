@@ -89,8 +89,7 @@ export async function createAuthorityHarness(
         readPlannedLayoutRow: options.readPlannedLayoutRow ?? (async () => null),
         readAcceptedLayoutRow: async () => null,
         now: () => nowEpochMs,
-        timing: options.timing,
-        authSessionRepository: authSessions
+        timing: options.timing
     });
     const groupStateService = options.snapshotCache
         ? createCachedGroupStateService({

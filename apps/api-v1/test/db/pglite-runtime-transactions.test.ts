@@ -298,7 +298,6 @@ Deno.test(
                     readAcceptedLayoutRow: () => Promise.resolve(null),
                     runtimeRepository: runtime,
                     groupStateEventStore: new PSqlGroupStateEventRepository(sql),
-                    authSessionRepository,
                     now: () => 10_000,
                     randomId: () => `event-${testCase.kind}-${eventSequence++}`,
                     serviceId: `pglite-complete-${testCase.kind}`

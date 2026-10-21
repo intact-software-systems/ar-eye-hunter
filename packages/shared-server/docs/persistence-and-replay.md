@@ -72,7 +72,10 @@ have separate owners:
 - `AppInboxReservationClient` materializes commands that require a durable
   reservation before their current authority can be computed;
 - `AppInboxQueueEntryWriter` writes current commands and wakes the owning queue;
-- `AppInboxCommandClient` coordinates ordinary enqueue-and-wait calls;
+- `AppInboxCommandClient` coordinates ordinary enqueue-and-wait calls, and
+  reserve-and-wait calls whose volatile facts the winning reservation stores:
+  authenticated group commands capture their ingress facts at enqueue,
+  including the enqueue-instant timestamp, and every attempt reuses them;
 - `AppInboxResultWaiter` polls completion state and decodes the typed durable
   result;
 - `AppInboxHandlerRegistry` registers exact command decoders and handlers;

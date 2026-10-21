@@ -79,7 +79,7 @@ export function createAppInboxClientRuntime(
         { serviceId: input.serviceId }
     );
     const commandClient = new AppInboxCommandClient(
-        { queueEntryWriter, resultWaiter },
+        { queueEntryWriter, reservationClient, resultWaiter },
         {
             serviceId: input.serviceId,
             timing: input.timing,

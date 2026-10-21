@@ -696,7 +696,6 @@ Deno.test(
                 readAcceptedLayoutRow: () => Promise.resolve(null),
                 runtimeRepository: runtime,
                 groupStateEventStore: new PSqlGroupStateEventRepository(sql),
-                authSessionRepository: authSessions,
                 serviceId: 'pglite-topology-cross-target',
                 now: () => nowEpochMs
             });

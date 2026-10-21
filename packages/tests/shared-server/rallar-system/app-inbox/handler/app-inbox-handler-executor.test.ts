@@ -7,7 +7,6 @@ import {
 } from 'vitest';
 
 import {
-    AppInboxReservationConflictError,
     AppInboxType,
     type AppInboxMessageContext
 } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -22,10 +21,8 @@ import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbo
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
-import type { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { ResourceInboxHandlerEntryError } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
-import { EntityStatus, toKeyAsString, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
 import type { ClaimableDeadlineClaim } from '@shared/resilience/run-with-claimable-deadline.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -41,56 +38,14 @@ import {
 } from '../test-support/app-inbox-transaction-test-runtime.ts';
 
 describe('AppInboxHandlerExecutor registered handler finalization', () => {
-    it('redelivers a message with captured authority after a later conditional write conflicts', async () => {
-        const timing: RallarTimingEvent[] = [];
-        let now = Temporal.Instant.from('2000-01-01T00:00:00Z');
-        const harness = createRegisteredHandlerHarness({ timing: (event) => timing.push(event), now: () => now });
-        const facts = { eventId: 'stable-event', observedAtEpochMs: 1234 };
-        harness.service.onStateMessage(AppInboxType.GROUP_CREATE, async (_data, context) => {
-            if (context.entry.dequeueAudit.attempts === 1) {
-                const original = context.entry.resource;
-                Object.freeze(context.entry);
-                Object.freeze(context);
-                const entry = await replaceQueuedAuthority(harness.queue, context, facts);
-                expect(context.entry.resource).toBe(original);
-                throw new ResourceInboxHandlerEntryError(entry, new AppInboxReservationConflictError(entry.key));
-            }
-            return await harness.service.commit(context, context.enqueue.authority!, async () => {});
-        });
-
-        const pending = harness.service.enqueueAndWait(harness.enqueue);
-        await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
-        const retry = await harness.readEntry();
-        expect(retry).toMatchObject({ status: EntityStatus.RETRY, dequeueAudit: { attempts: 1 } });
-        expect(retry?.dequeueAudit.startTs?.epochMilliseconds).toBe(now.epochMilliseconds);
-        const nextTs = retry?.dequeueAudit.nextTs;
-        if (nextTs === undefined) {
-            throw new Error('A retry must persist its next eligible time');
-        }
-        now = nextTs;
-        await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
-
-        await expect(pending).resolves.toMatchObject({ right: facts });
-        expect(await harness.readEntry()).toMatchObject({ status: EntityStatus.COMPLETED, dequeueAudit: { attempts: 2 } });
-        expect(timing).toEqual(expect.arrayContaining([
-            expect.objectContaining({ operation: 'queue-retry', details: expect.objectContaining({ errorCode: 'app-inbox-reservation-conflict' }) })
-        ]));
-    });
-
     it('hands a conditional write conflict from the mutation transaction to the lane as a retryable value, not a thrown error with a stack', async () => {
         let now = Temporal.Instant.from('2000-01-01T00:00:00Z');
         const harness = createRegisteredHandlerHarness({ now: () => now });
         harness.service.onStateMessage(AppInboxType.GROUP_CREATE, async (_data, context) => {
             if (context.entry.dequeueAudit.attempts === 1) {
-                const entry = await replaceQueuedAuthority(harness.queue, context, { eventId: 'stable-event' });
-                try {
-                    return await harness.service.commit(context, { status: 'accepted' }, async () => {
-                        throw new RuntimeStateWriteConflictError();
-                    });
-                }
-                catch (error) {
-                    throw new ResourceInboxHandlerEntryError(entry, error as Error);
-                }
+                return await harness.service.commit(context, { status: 'accepted' }, async () => {
+                    throw new RuntimeStateWriteConflictError();
+                });
             }
             return await harness.service.commit(context, { status: 'accepted' }, async () => {});
         });
@@ -112,7 +67,6 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
             expect(conflictLines).toEqual([expect.stringContaining('registered-handler-request')]);
             const retry = await harness.readEntry();
             expect(retry).toMatchObject({ status: EntityStatus.RETRY, dequeueAudit: { attempts: 1 } });
-            expect(retry?.resource).toContain('stable-event');
             now = retry!.dequeueAudit.nextTs!;
             await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
             await expect(pending).resolves.toMatchObject({ right: { status: 'accepted' } });
@@ -121,19 +75,6 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
             errorLog.mockRestore();
             infoLog.mockRestore();
         }
-    });
-
-    it('preserves terminal rejection classification after authority is persisted', async () => {
-        const harness = createRegisteredHandlerHarness();
-        harness.service.onStateMessage(AppInboxType.GROUP_CREATE, async (_data, context) => {
-            const entry = await replaceQueuedAuthority(harness.queue, context, { eventId: 'stable-event' });
-            throw new ResourceInboxHandlerEntryError(entry, new TypeError('Malformed domain value'));
-        });
-        const pending = harness.service.enqueueAndWait(harness.enqueue);
-        await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
-
-        await expect(pending).resolves.toMatchObject({ left: { code: 'app-inbox-malformed-command', status: 400 } });
-        expect(await harness.readEntry()).toMatchObject({ status: EntityStatus.NON_RETRYABLE, dequeueAudit: { attempts: 1 } });
     });
 
     it('rejects startup when a configured handler has not been registered', () => {
@@ -762,21 +703,4 @@ function isJsonWireObject(value: JsonWireValue): value is Readonly<{
     readonly [key: string]: JsonWireValue;
 }> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-/** A handler write outside its transaction: it replaces the reserved row's authority only while the row is unchanged. */
-async function replaceQueuedAuthority(
-    queue: Pick<InMemoryQueueBox, 'replaceIfObserved'>,
-    context: AppInboxMessageContext<JsonWireValue>,
-    authority: JsonWireValue
-): Promise<ResourceEntry> {
-    const message = {
-        ...context.message,
-        payload: { ...context.message.payload, resource: JSON.stringify({ ...context.enqueue, authority }) }
-    };
-    const replaced = await queue.replaceIfObserved(context.entry, { ...context.entry, resource: JSON.stringify(message) });
-    if (replaced === null) {
-        throw new AppInboxReservationConflictError(context.entry.key);
-    }
-    return replaced;
 }

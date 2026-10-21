@@ -98,7 +98,6 @@ export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql): Promis
         readAcceptedLayoutRow: () => Promise.resolve(null),
         runtimeRepository: runtime,
         groupStateEventStore: groupEvents,
-        authSessionRepository: authSessions,
         serviceId: 'pglite-close-test'
     });
     const groups = new GroupStateRepository(runtime, groupEvents);

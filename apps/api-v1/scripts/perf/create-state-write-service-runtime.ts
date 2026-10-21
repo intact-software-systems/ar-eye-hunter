@@ -5,7 +5,6 @@ import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
-import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
@@ -183,7 +182,6 @@ function createStateWriteDomainServices(
     { database, serviceId, timing }: StateWriteDomainServiceInput
 ): StateWriteDomainServices {
     const runtimeRepository = new PSqlRuntimeStateRepository(database);
-    const authSessionRepository = new AuthSessionRepository(runtimeRepository);
     const clientStateEventStore = new PSqlClientStateEventRepository(database);
     const groupStateEventStore = new PSqlGroupStateEventRepository(database);
     const groupStateRepository = new GroupStateRepository(runtimeRepository, groupStateEventStore);
@@ -192,7 +190,6 @@ function createStateWriteDomainServices(
         groupStateEventStore,
         serviceId,
         timing,
-        authSessionRepository,
         // deno-lint-ignore require-await -- The benchmark supplies the asynchronous layout-read port.
         readPlannedLayoutRow: async () => null,
         // deno-lint-ignore require-await -- The benchmark supplies the asynchronous layout-read port.
