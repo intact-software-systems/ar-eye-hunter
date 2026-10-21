@@ -271,7 +271,7 @@ function resetArenaRoomsFixture(): void {
         rooms: [],
         currentRoomId: undefined
     });
-    mockRallar.rooms.directory.mockResolvedValue([]);
+    mockRallar.rooms.directory.mockResolvedValue({ entries: [], nextCursor: null });
     mockRallar.rooms.create.mockReset();
     mockRallar.rooms.createAndSwitch.mockReset();
     mockRallar.director.onStatus.mockReturnValue(vi.fn());

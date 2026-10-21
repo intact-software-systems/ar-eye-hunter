@@ -1,5 +1,6 @@
 const RESPONSE_HEADER_ALLOW_LIST = [
     'cache-control',
+    'etag',
     'rallar-group-revision',
     'rallar-presence-revision',
     'rallar-state-revision',

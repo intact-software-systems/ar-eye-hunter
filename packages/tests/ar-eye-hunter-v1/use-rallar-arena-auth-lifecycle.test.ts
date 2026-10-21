@@ -438,15 +438,18 @@ describe('useRallarArena auth lifecycle', () => {
             groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'arena-9' },
             displayName: 'AR Eye Hunter Arena: Glass Comet',
             kind: 'room',
-            status: 'active',
             joinMode: 'open',
             memberCount: 1,
             onlineMemberCount: 1,
-            activeSessionCount: 1,
-            snapshotVersion: 1,
-            presenceVersion: 1
+            maxMembers: null,
+            isFull: false,
+            lifecycleState: 'active'
         };
-        mockRallar.rooms.directory.mockResolvedValue([openArena]);
+        mockRallar.rooms.directory.mockImplementation(async (request?: { kind?: string; q?: string; }) =>
+            request?.kind === 'room' && request.q === 'eye hunter'
+                ? { entries: [openArena], nextCursor: null }
+                : { entries: [], nextCursor: null }
+        );
 
         await arena.render();
         await waitForState(() => arena.current?.connectionState === 'connected');
@@ -455,6 +458,47 @@ describe('useRallarArena auth lifecycle', () => {
         });
 
         expect(arena.current?.openRooms).toEqual([openArena]);
+        expect(arena.current?.openRoomsError).toBeUndefined();
+    });
+
+    it('follows the directory cursor so the lobby is not truncated at one page', async () => {
+        const toArena = (groupId: string) => ({
+            groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId },
+            displayName: `AR Eye Hunter Arena: ${groupId}`,
+            kind: 'room',
+            joinMode: 'open',
+            memberCount: 1,
+            onlineMemberCount: 1,
+            maxMembers: 256,
+            isFull: false,
+            lifecycleState: 'active'
+        });
+        mockRallar.rooms.directory.mockImplementation(async (request?: { cursor?: string; }) =>
+            request?.cursor === 'page-2'
+                ? { entries: [toArena('arena-2')], nextCursor: null }
+                : { entries: [toArena('arena-1')], nextCursor: 'page-2' }
+        );
+
+        await arena.render();
+        await waitForState(() => arena.current?.connectionState === 'connected');
+        await act(async () => {
+            await arena.current?.refreshRooms();
+        });
+
+        expect(arena.current?.openRooms.map((room) => room.groupRef.groupId)).toEqual(['arena-1', 'arena-2']);
+    });
+
+    it('reports a directory failure instead of showing an empty lobby', async () => {
+        mockRallar.rooms.directory.mockRejectedValue(new Error('directory unavailable'));
+
+        await arena.render();
+        await waitForState(() => arena.current?.connectionState === 'connected');
+        await act(async () => {
+            await arena.current?.refreshRooms();
+        });
+
+        expect(arena.current?.openRooms).toEqual([]);
+        expect(arena.current?.openRoomsError).toBe('directory unavailable');
     });
 
     it('creates a new arena by switching rooms and clearing stale remote players', async () => {

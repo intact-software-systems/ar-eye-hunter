@@ -1,6 +1,8 @@
 import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
+import { etag } from 'jsr:@hono/hono@4.11.9/etag';
 
-import { toSafeGroupSummary } from '@shared-server/rallar-system/admin-support/statistics/spa-statistics-projections.ts';
+import { computeGroupDirectoryPage } from '@shared-server/rallar-system/group-state/directory/compute-group-directory-page.ts';
+import { decodeGroupDirectoryQuery } from '@shared-server/rallar-system/group-state/directory/decode-group-directory-query.ts';
 import {
     readStateEventListQuery,
     type StateEventListQuery
@@ -31,6 +33,7 @@ export function registerGroupStateReadRoutes(
     authorization: GroupStateRouteAuthorization
 ): void {
     app.get(GROUPS_PATH, (context) => readGroupSnapshotList(context, dependencies, authorization));
+    app.use(GROUP_DIRECTORY_PATH, etag());
     app.get(GROUP_DIRECTORY_PATH, (context) => readGroupDirectory(context, dependencies, authorization));
     app.get(GROUP_PATH, (context) => readGroupSnapshot(context, dependencies, authorization));
     app.get(
@@ -72,14 +75,29 @@ async function readGroupDirectory(
 ): Promise<Response> {
     try {
         const authSession = await authorization.readStrictAuthSession(context.req);
-        const snapshots = await dependencies.groupStateService.listSnapshots(
-            toGroupStateRouteScope(context)
-        );
+        return await decodeGroupDirectoryQuery(new URL(context.req.raw.url).searchParams).fold<Promise<Response>>(
+            (issues) =>
+                Promise.resolve(
+                    context.json({ error: issues.join('; '), code: 'invalid-group-directory-query' }, 400)
+                ),
+            async (query) => {
+                const snapshots = await dependencies.groupStateService.listSnapshots(
+                    toGroupStateRouteScope(context)
+                );
+                const nowEpochMs = dependencies.nowEpochMs();
+                const listed = snapshots.filter((snapshot) =>
+                    isGroupStateRouteSnapshotDirectoryListed(snapshot, authSession?.clientId, nowEpochMs)
+                );
 
-        return context.json(
-            snapshots
-                .filter((snapshot) => isGroupStateRouteSnapshotDirectoryListed(snapshot, authSession?.clientId))
-                .map(toSafeGroupSummary)
+                return context.json(
+                    computeGroupDirectoryPage(listed, {
+                        query,
+                        defaultMaxMembers: dependencies.groupDefaultMaxMembers
+                    }),
+                    200,
+                    { 'Cache-Control': 'no-cache' }
+                );
+            }
         );
     }
     catch (error) {

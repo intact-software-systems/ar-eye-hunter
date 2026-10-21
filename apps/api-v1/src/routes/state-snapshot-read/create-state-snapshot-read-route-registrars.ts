@@ -69,6 +69,8 @@ export interface ApiV1StateSnapshotRouteOperations<Runtime extends ApiV1StateSna
 export interface ApiV1StateSnapshotRoutePolicy {
     readonly groupAdmission: ApiV1GroupAdmissionConfiguration;
     readonly strictReadAuthorization: boolean;
+    readonly groupDefaultMaxMembers: number | null;
+    readonly nowEpochMs: () => number;
 }
 
 export function createStateSnapshotReadRouteRegistrars<Runtime extends ApiV1StateSnapshotRouteRuntime>(
@@ -97,6 +99,8 @@ export function createStateSnapshotReadRouteRegistrars<Runtime extends ApiV1Stat
             groupStateRoutes.registerGroupStateRoutes(app, {
                 groupStateService: runtime.groupStateService,
                 strictReadAuthorization: policy.strictReadAuthorization,
+                groupDefaultMaxMembers: policy.groupDefaultMaxMembers,
+                nowEpochMs: policy.nowEpochMs,
                 requireApiAuthSession: (request) =>
                     operations.requireApiAuthSession(request, runtime.authSessionRepository),
                 groupAdmissionQuota,

@@ -13,7 +13,7 @@ import type { ALReceiptMode } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { AuthSessionStorageKind } from '@shared/api/auth.ts';
-import type { SpaStatisticsSafeGroupSummary } from '@shared/api/spa-statistics-types.ts';
+import type { GroupDirectoryEntry } from '@shared/api/group-directory/group-directory-types.ts';
 
 import type { ArenaLinkState, ArenaPresenceNotice } from '../squadLink.ts';
 import type {
@@ -132,7 +132,8 @@ export interface ArenaConnection {
     readonly error?: string;
     readonly roomId?: string;
     readonly rooms: readonly RallarRoomSummary[];
-    readonly openRooms: readonly SpaStatisticsSafeGroupSummary[];
+    readonly openRooms: readonly GroupDirectoryEntry[];
+    readonly openRoomsError: string | undefined;
     readonly directorStatus: RallarDirectorStatus;
     readonly rtcLanes: readonly RtcLaneStatus[];
     readonly directorAttempt: DirectorAttemptState;

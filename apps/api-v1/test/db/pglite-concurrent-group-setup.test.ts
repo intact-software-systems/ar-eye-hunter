@@ -196,6 +196,8 @@ function createGroupSetupApp(mutation: ApiV1MutationRuntime, groupInbox: GroupSt
         },
         groupAdmissionQuota: createGroupAdmissionQuota(defaults.group.admission),
         strictReadAuthorization: true,
+        groupDefaultMaxMembers: defaults.group.defaultMaxMembers,
+        nowEpochMs: () => Date.now(),
         hydrateStateSyncSnapshotCaches: () => Promise.resolve({ clientSnapshotCount: 0, groupSnapshotCount: 0 }),
         readGroupSnapshot: async (ref) => {
             const snapshot = await mutation.groupsRepository.readSnapshot(ref);

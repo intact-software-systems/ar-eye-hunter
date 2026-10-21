@@ -98,6 +98,56 @@ export function createRallarServerRestCollectionTemplates(
             ]
         },
         {
+            collectionId: 'group-directory-discovery',
+            name: 'Group directory discovery',
+            description: 'Read the joinable open-group directory and verify its query and auth failures.',
+            variables: baseVariables,
+            steps: [
+                {
+                    stepId: 'read-directory',
+                    label: 'Read directory',
+                    request: {
+                        method: 'GET',
+                        path: stateCollectionPath('/group-directory?includeEmpty=true'),
+                        attachAuth: true,
+                        responseBodyMode: 'json'
+                    },
+                    expect: {
+                        status: 200,
+                        body: [
+                            { path: '$.entries', exists: true },
+                            { path: '$.nextCursor', exists: true }
+                        ]
+                    }
+                },
+                {
+                    stepId: 'directory-rejects-zero-limit',
+                    label: 'Directory rejects zero limit',
+                    request: {
+                        method: 'GET',
+                        path: stateCollectionPath('/group-directory?limit=0'),
+                        attachAuth: true,
+                        responseBodyMode: 'json'
+                    },
+                    expect: {
+                        status: 400,
+                        body: [{ path: '$.code', equals: 'invalid-group-directory-query' }]
+                    }
+                },
+                {
+                    stepId: 'directory-requires-auth',
+                    label: 'Directory requires auth',
+                    request: {
+                        method: 'GET',
+                        path: stateCollectionPath('/group-directory'),
+                        attachAuth: false,
+                        responseBodyMode: 'json'
+                    },
+                    expect: { status: 401 }
+                }
+            ]
+        },
+        {
             collectionId: 'group-lifecycle-stages',
             name: 'Group lifecycle stages',
             description: 'Drive a phased group through plan, connect and activate by hand, then pause and ' +

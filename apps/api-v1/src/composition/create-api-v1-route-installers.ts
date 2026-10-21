@@ -92,6 +92,7 @@ export interface CreateApiV1RouteInstallersInput<
     readonly publicConfiguration: ApiConfigResponse;
     readonly ice: ApiV1IceConfiguration;
     readonly groupAdmission: ApiV1GroupAdmissionConfiguration;
+    readonly groupDefaultMaxMembers: number | null;
     readonly strictReadAuthorization: boolean;
     readonly nowEpochMs: () => number;
     readonly createTokenId: () => string;
@@ -171,7 +172,9 @@ function createApiV1RouteConstruction<
         requireApiAuthSession: operations.requireApiAuthSession
     }, {
         groupAdmission: input.groupAdmission,
-        strictReadAuthorization: input.strictReadAuthorization
+        strictReadAuthorization: input.strictReadAuthorization,
+        groupDefaultMaxMembers: input.groupDefaultMaxMembers,
+        nowEpochMs: input.nowEpochMs
     });
     const authorizeCrdtDocumentAccess = createApiCrdtDocumentAccessAuthorizer({
         readGroupSnapshot: (ref) => runtime.groupsRepository.readSnapshot(ref),

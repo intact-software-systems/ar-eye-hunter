@@ -1452,6 +1452,32 @@
       "description": "Composed drop-in-social-preset behaviour: immediate formation activates the group at creation, joins and rejoins admit instantly, no manager exists and lifecycle transitions stay server-owned, and application data flows from birth."
     },
     {
+      "id": "api-v1-group-directory",
+      "recipe": "tests/api-v1/api-v1-group-directory.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-directory",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "Group directory contract: a non-member lists joinable open groups as safe entries, with kind and name filters, a stable keyset-paged order, an empty lobby hidden by default, members excluded once they can read the room in full, ETag revalidation with 304, and typed 400/401 failures."
+    },
+    {
       "id": "api-v1-group-admission-approval",
       "recipe": "tests/api-v1/api-v1-group-admission-approval.json",
       "category": "api-v1-black-box",

@@ -645,24 +645,80 @@ paths:
       summary: List joinable open groups
       description: |
         Lists active groups whose `joinMode` is `open` and that the caller may
-        join but cannot yet read in full. Entries are safe summaries: no member
-        roster, sessions, or metadata. Groups the caller already reads in full
-        are returned by the group snapshot list instead.
+        join but cannot yet read in full. Entries carry no member roster,
+        sessions, or metadata. Groups the caller already reads in full are
+        returned by the group snapshot list instead. Rooms with nobody online
+        are omitted unless `includeEmpty` is true. Entries are ordered by
+        online member count (descending), then group id, and paged with an
+        opaque keyset cursor. Online counts change between requests, so paging
+        is best-effort: a room whose count changes can repeat or be skipped
+        across pages. `maxMembers` is the effective cap admission enforces,
+        including the server default when the group sets none. The response
+        carries an `ETag`; send it back in `If-None-Match` to receive `304`
+        while the page is unchanged.
       security:
         - bearerAuth: []
           clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
+        - name: kind
+          in: query
+          required: false
+          description: Return only groups of this kind.
+          schema:
+            type: string
+            enum: [party, room, team, custom]
+        - name: q
+          in: query
+          required: false
+          description: Case-insensitive substring of the group display name.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of entries to return.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque `nextCursor` from the previous page.
+          schema:
+            type: string
+        - name: includeEmpty
+          in: query
+          required: false
+          description: Include rooms with no online member.
+          schema:
+            type: boolean
+            default: false
+        - name: If-None-Match
+          in: header
+          required: false
+          description: An `ETag` from a previous response.
+          schema:
+            type: string
       responses:
         '200':
-          description: Joinable open group summaries for the requested scope.
+          description: A page of joinable open groups.
+          headers:
+            ETag:
+              description: Validator for this page.
+              schema:
+                type: string
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/SpaStatisticsSafeGroupSummary'
+                $ref: '#/components/schemas/GroupDirectoryPage'
+        '304':
+          description: The page is unchanged since the supplied `ETag`.
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/{requestId}:
@@ -6036,6 +6092,57 @@ components:
           type: string
         groupId:
           type: string
+
+    GroupDirectoryEntry:
+      type: object
+      required:
+        - groupRef
+        - displayName
+        - kind
+        - joinMode
+        - memberCount
+        - onlineMemberCount
+        - maxMembers
+        - isFull
+        - lifecycleState
+      properties:
+        groupRef:
+          $ref: '#/components/schemas/GroupRef'
+        displayName:
+          type: string
+        kind:
+          type: string
+          enum: [party, room, team, custom]
+        joinMode:
+          type: string
+          enum: [invite-only, code, open]
+        memberCount:
+          type: integer
+          format: int64
+        onlineMemberCount:
+          type: integer
+          format: int64
+        maxMembers:
+          type: integer
+          format: int64
+          nullable: true
+        isFull:
+          type: boolean
+        lifecycleState:
+          type: string
+          enum: [dormant, forming, planned, connecting, active, reconfiguring, reconnecting]
+
+    GroupDirectoryPage:
+      type: object
+      required: [entries, nextCursor]
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/GroupDirectoryEntry'
+        nextCursor:
+          type: string
+          nullable: true
 
     GraphInfo:
       type: object
