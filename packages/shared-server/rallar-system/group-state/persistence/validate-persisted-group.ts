@@ -23,11 +23,13 @@ import {
     assertRequiredKeys,
     nullableNonEmptyString,
     nullablePositiveSafeInteger,
+    requireJsonSafe,
     requireNonEmptyString,
     requireNonNegativeSafeInteger,
     requireOneOf,
     requirePositiveSafeInteger,
-    requireRecord
+    requireRecord,
+    type GroupStateValidationRecord
 } from '../group-state-validation-primitives.ts';
 
 const STORED_GROUP_KEYS = [
@@ -86,8 +88,6 @@ const STORED_MEMBER_KEYS = [
     'invitationExpiresAtEpochMs'
 ] as const;
 
-type StoredGroupRecord = Readonly<Record<string, unknown>>;
-
 export function validateStoredGroup(group: unknown, ref: GroupRef): asserts group is Group {
     const value = requireRecord(group, 'Stored group value');
     assertExactKeys(value, STORED_GROUP_KEYS, 'Stored group value');
@@ -101,7 +101,7 @@ export function validateStoredGroup(group: unknown, ref: GroupRef): asserts grou
     requireOneOf(value.joinMode, ['invite-only', 'code', 'open'], 'Stored group joinMode');
     nullablePositiveSafeInteger(value.maxMembers, 'Stored group maxMembers');
     nullablePositiveSafeInteger(value.maxSessionsPerMember, 'Stored group maxSessionsPerMember');
-    requireRecord(value.metadata, 'Stored group metadata');
+    requireJsonSafe(requireRecord(value.metadata, 'Stored group metadata'), 'Stored group metadata');
     requirePositiveSafeInteger(value.activeMemberCount, 'Stored group activeMemberCount');
     requireNonEmptyString(value.ownerPrincipalId, 'Stored group ownerPrincipalId');
     requirePositiveSafeInteger(value.snapshotVersion, 'Stored group snapshotVersion');
@@ -146,6 +146,7 @@ export function validateStoredGroup(group: unknown, ref: GroupRef): asserts grou
         if (
             typeof outcome.observedRate !== 'number' ||
             !Number.isFinite(outcome.observedRate) ||
+            Object.is(outcome.observedRate, -0) ||
             outcome.observedRate < 0 ||
             outcome.observedRate > 1
         ) {
@@ -186,7 +187,7 @@ export function validateStoredGroup(group: unknown, ref: GroupRef): asserts grou
     }
 }
 
-function validateStoredGroupLayoutIdentity(identity: StoredGroupRecord, label: string): void {
+function validateStoredGroupLayoutIdentity(identity: GroupStateValidationRecord, label: string): void {
     assertExactKeys(identity, GROUP_LAYOUT_IDENTITY_KEYS, label);
     assertRequiredKeys(identity, GROUP_LAYOUT_IDENTITY_KEYS, label);
     for (const key of ['groupRevision', 'presenceRevision', 'version'] as const) {
@@ -195,7 +196,7 @@ function validateStoredGroupLayoutIdentity(identity: StoredGroupRecord, label: s
     requireOneOf(identity.state, GROUP_LAYOUT_IDENTITY_STATES, `${label} state`);
 }
 
-function validateStoredGroupMemberPolicy(memberPolicy: StoredGroupRecord): void {
+function validateStoredGroupMemberPolicy(memberPolicy: GroupStateValidationRecord): void {
     assertExactKeys(memberPolicy, GROUP_MEMBER_POLICY_KEYS, 'Stored group memberPolicy');
     assertRequiredKeys(memberPolicy, GROUP_MEMBER_POLICY_KEYS, 'Stored group memberPolicy');
     requirePositiveSafeInteger(
@@ -291,7 +292,7 @@ export function validateScopedValue(
 }
 
 export function validateScopedRecord(
-    value: StoredGroupRecord,
+    value: GroupStateValidationRecord,
     ref: GroupRef,
     label: string
 ): void {

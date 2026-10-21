@@ -229,6 +229,31 @@ describe('GroupStateRepository persistence', () => {
         }
     });
 
+    it('rejects stored group text holding negative zero or an overflowed number', async () => {
+        const ref = {
+            applicationId: 'stored-number-app',
+            workspaceId: 'stored-number-workspace',
+            groupId: 'stored-number-group'
+        };
+        const key = groupStateGroupStorageKey(ref);
+        const storedText = JSON.stringify({ ...createCorruptionMutationRead().group!.value, ...ref });
+        for (
+            const corruptText of [
+                storedText.replace('"presenceVersion":0', '"presenceVersion":-0'),
+                storedText.replace('"activeMemberCount":1', '"activeMemberCount":1e400'),
+                storedText.replace('"metadata":{}', '"metadata":{"score":1e400}')
+            ]
+        ) {
+            expect(corruptText).not.toBe(storedText);
+            const runtime = new FakeRuntimeStateRepository();
+            await runtime.upsert('group-state:groups', key, corruptText, Number.MAX_SAFE_INTEGER);
+            await expect(createTestGroupStateRepository(runtime).findGroup(ref)).rejects.toMatchObject({
+                code: 'group-state-repository-invariant-corruption',
+                storageKey: key
+            });
+        }
+    });
+
     it('requires authoritative identity on compact idempotency reads', async () => {
         expectTypeOf<GroupMutationIdempotencyRecord>()
             .toHaveProperty('aggregateRef')

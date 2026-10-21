@@ -24,6 +24,17 @@ describe('in-memory client state event identity', () => {
 
         await expect(store.listClientEvents(event)).resolves.toEqual([event]);
     });
+
+    it('keeps its own copy of an appended event', async () => {
+        const store = new InMemoryClientStateEventStore();
+        const event = createClientEvent();
+        const appended = structuredClone(event);
+
+        await store.appendClientEvent(appended);
+        Object.assign(appended, { reason: 'changed-after-append' });
+
+        await expect(store.listClientEvents(event)).resolves.toEqual([event]);
+    });
 });
 
 function createClientEvent(): ClientEvent {

@@ -9,7 +9,8 @@ import {
     assertRequiredKeys,
     requireNonNegativeSafeInteger,
     requireOneOf,
-    requireRecord
+    requireRecord,
+    type GroupStateValidationRecord
 } from '../group-state-validation-primitives.ts';
 
 /**
@@ -22,8 +23,8 @@ import {
  * them from drifting.
  */
 export function validateStoredGroupActivationStatus(
-    activationStatus: Readonly<Record<string, unknown>>,
-    validateLayoutIdentity: (identity: Readonly<Record<string, unknown>>, label: string) => void
+    activationStatus: GroupStateValidationRecord,
+    validateLayoutIdentity: (identity: GroupStateValidationRecord, label: string) => void
 ): void {
     assertExactKeys(activationStatus, GROUP_ACTIVATION_STATUS_KEYS, 'Stored group activationStatus');
     assertRequiredKeys(activationStatus, GROUP_ACTIVATION_STATUS_KEYS, 'Stored group activationStatus');
@@ -34,7 +35,7 @@ export function validateStoredGroupActivationStatus(
     );
     const coverageRate = activationStatus.coverageRate;
     if (
-        typeof coverageRate !== 'number' || !Number.isFinite(coverageRate) ||
+        typeof coverageRate !== 'number' || !Number.isFinite(coverageRate) || Object.is(coverageRate, -0) ||
         coverageRate < 0 || coverageRate > 1
     ) {
         throw new TypeError('Stored group activationStatus coverageRate must be a rate between 0 and 1');

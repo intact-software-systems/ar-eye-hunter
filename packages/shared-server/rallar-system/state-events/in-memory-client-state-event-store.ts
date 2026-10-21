@@ -11,7 +11,7 @@ export class InMemoryClientStateEventStore implements ClientStateEventStore {
     async appendClientEvent(event: ClientEvent): Promise<void> {
         const existing = this.events.find((candidate) => isSameClientEventIdentity(candidate, event));
         if (existing === undefined) {
-            this.events.push(event);
+            this.events.push(structuredClone(event));
             return;
         }
         if (JSON.stringify(existing) !== JSON.stringify(event)) {
