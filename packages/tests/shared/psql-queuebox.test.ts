@@ -37,7 +37,7 @@ describe('PSqlQueueBox', () => {
             const reserved = { ...original, db: { id: '1' } };
             const queue = new PSqlQueueBox(
                 createQueueBoxRepositoryFixture({
-                    releaseReserved: vi.fn(async () => null),
+                    releaseReserved: vi.fn(async () => [null]),
                     findAnyByKey: vi.fn(async () => current)
                 }),
                 Temporal.Now.instant
@@ -288,15 +288,17 @@ describe('PSqlQueueBox', () => {
         };
         const persistedEndTs = Temporal.Instant.from('2026-01-01T00:00:00.123Z');
         const persistedNextTs = persistedEndTs.add({ milliseconds: 37 });
-        const releaseReserved = vi.fn<PSqlResourceInboxReservationRepository['releaseReserved']>(async (computed) => ({
-            ...entry,
-            status: computed.replacement.entry.status,
-            dequeueAudit: {
-                ...entry.dequeueAudit,
-                endTs: persistedEndTs,
-                nextTs: persistedNextTs
-            }
-        }));
+        const releaseReserved = vi.fn<PSqlResourceInboxReservationRepository['releaseReserved']>(async (computed) =>
+            computed.map((candidate) => ({
+                ...entry,
+                status: candidate.replacement.entry.status,
+                dequeueAudit: {
+                    ...entry.dequeueAudit,
+                    endTs: persistedEndTs,
+                    nextTs: persistedNextTs
+                }
+            }))
+        );
         const repo = createQueueBoxRepositoryFixture({ releaseReserved });
         const queue = new PSqlQueueBox(repo, Temporal.Now.instant);
 
@@ -309,12 +311,12 @@ describe('PSqlQueueBox', () => {
         }]);
         const [updated] = released.values();
 
-        expect(releaseReserved).toHaveBeenCalledWith(
+        expect(releaseReserved).toHaveBeenCalledWith([
             expect.objectContaining({
                 expected: expect.objectContaining({ entry }),
                 replacement: expect.objectContaining({ entry: expect.objectContaining({ status: EntityStatus.RETRY }) })
             })
-        );
+        ]);
         expect(updated?.dequeueAudit.endTs?.toString()).toBe(persistedEndTs.toString());
         expect(updated?.dequeueAudit.nextTs?.toString()).toBe(persistedNextTs.toString());
         expect(
@@ -337,7 +339,9 @@ describe('PSqlQueueBox', () => {
             dequeueAudit: { ...entry.dequeueAudit },
             db: entry.db === undefined ? undefined : { ...entry.db }
         };
-        const releaseReserved = vi.fn<PSqlResourceInboxReservationRepository['releaseReserved']>(async (candidate) => candidate.replacement.entry);
+        const releaseReserved = vi.fn<PSqlResourceInboxReservationRepository['releaseReserved']>(async (computed) =>
+            computed.map((candidate) => candidate.replacement.entry)
+        );
         const repo = createQueueBoxRepositoryFixture({ releaseReserved });
         let insideTransaction = false;
         vi.spyOn(repo, 'transaction').mockImplementation(async (operation) => {
@@ -355,9 +359,9 @@ describe('PSqlQueueBox', () => {
         expect(released.dequeueAudit.endTs?.toString()).toBe('2025-01-01T00:00:00.123456Z');
         expect(released.dequeueAudit.nextTs?.toString()).toBe('2025-01-01T00:00:00.160456Z');
         expect(released.dequeueAudit.attempts).toBe(3);
-        expect(releaseReserved).toHaveBeenCalledWith(
+        expect(releaseReserved).toHaveBeenCalledWith([
             expect.objectContaining({ expected: expect.objectContaining({ entry: expectedReservation }) })
-        );
+        ]);
     });
 
     it('surfaces a typed conflict when a stale PostgreSQL reservation loses release', async () => {
@@ -369,7 +373,7 @@ describe('PSqlQueueBox', () => {
             }
         };
         const repo = createQueueBoxRepositoryFixture({
-            releaseReserved: vi.fn(async () => null)
+            releaseReserved: vi.fn(async () => [null])
         });
         const queue = new PSqlQueueBox(repo, Temporal.Now.instant);
 
@@ -394,7 +398,7 @@ describe('PSqlQueueBox', () => {
             status: EntityStatus.COMPLETED,
             dequeueAudit: { ...reserved.dequeueAudit, endTs: reserved.dequeueAudit.startTs }
         };
-        const releaseReserved = vi.fn(async () => null);
+        const releaseReserved = vi.fn(async () => [null]);
         const findAnyByKey = vi.fn(async () => completed);
         const queue = new PSqlQueueBox(
             createQueueBoxRepositoryFixture({
@@ -429,7 +433,7 @@ describe('PSqlQueueBox', () => {
             ...createEntry(`invalid-second-${_scenario}`, EntityStatus.RESERVED),
             dequeueAudit: { attempts: 1, startTs: Temporal.Now.instant() }
         };
-        const releaseReserved = vi.fn(async () => first);
+        const releaseReserved = vi.fn(async () => [first, first]);
         const repo = createQueueBoxRepositoryFixture({ releaseReserved });
         const transaction = vi.spyOn(repo, 'transaction');
         const queue = new PSqlQueueBox(repo, Temporal.Now.instant);
@@ -532,7 +536,7 @@ function createQueueBoxRepositoryFixture(overrides: PSqlQueueBoxTestRepositoryOv
             findEntriesSkipLocked: overrides.findEntriesSkipLocked ?? vi.fn(async () => new Map<string, ResourceEntry>()),
             findTimedOutReservedEntriesSkipLocked: overrides.findTimedOutReservedEntriesSkipLocked ?? vi.fn(async () => new Map<string, ResourceEntry>()),
             findOverdueRetryEntriesSkipLocked: overrides.findOverdueRetryEntriesSkipLocked ?? vi.fn(async () => new Map<string, ResourceEntry>()),
-            releaseReserved: overrides.releaseReserved ?? vi.fn(async () => null),
+            releaseReserved: overrides.releaseReserved ?? vi.fn(async (computed) => computed.map(() => null)),
             startProcessingEntity: overrides.startProcessingEntity ??
                 vi.fn<PSqlResourceInboxReservationRepository['startProcessingEntity']>(async (entry) => Either.ofRight(entry))
         } satisfies Partial<PSqlResourceInboxReservationRepository>

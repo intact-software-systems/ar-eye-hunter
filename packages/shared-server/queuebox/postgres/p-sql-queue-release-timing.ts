@@ -20,19 +20,20 @@ export namespace PSqlQueueReleaseTiming {
         readonly anchorAfterMs: number | undefined;
     }
 
-    export interface MemberSpan {
+    /** One released row; the batch's one release statement answered whether it updated the row. */
+    export interface MemberRelease {
         readonly entry: ResourceEntry;
         readonly ordinal: number;
-        readonly startedAtMs: number | undefined;
-        readonly endedAtMs: number | undefined;
         readonly updated: boolean;
     }
 
     export interface Callback {
         readonly startedAtMs: number | undefined;
+        /** When the one statement releasing every member returned. */
+        readonly statementEndedAtMs: number | undefined;
         readonly endedAtMs: number | undefined;
         readonly fallbackCount: number;
-        readonly members: readonly MemberSpan[];
+        readonly members: readonly MemberRelease[];
     }
 
     export interface Completion {
@@ -53,9 +54,6 @@ export namespace PSqlQueueReleaseTiming {
         readonly reservationStartedAtEpochMs: number | undefined;
         readonly rowId: string | undefined;
         readonly updated: boolean;
-        readonly startedAtMs: number;
-        readonly endedAtMs: number;
-        readonly releaseReservedElapsedMs: number;
     }
 
     export interface Boundaries {
@@ -64,6 +62,7 @@ export namespace PSqlQueueReleaseTiming {
         readonly candidateEndedAtMs: number;
         readonly transactionCalledAtMs: number;
         readonly callbackStartedAtMs: number;
+        readonly statementEndedAtMs: number;
         readonly callbackEndedAtMs: number;
         readonly transactionReturnedAtMs: number;
     }
@@ -72,6 +71,7 @@ export namespace PSqlQueueReleaseTiming {
         readonly candidateElapsedMs: number;
         readonly transactionAdmissionElapsedMs: number;
         readonly callbackElapsedMs: number;
+        /** The one release statement of every member. */
         readonly releaseReservedElapsedMs: number;
         readonly callbackRemainderElapsedMs: number;
         readonly transactionReturnElapsedMs: number;
@@ -209,7 +209,7 @@ function toReleaseObservation(
         anchorMonotonicMs: invocation.startedAtMs!,
         anchorUncertaintyMs: invocation.anchorAfterMs! - invocation.startedAtMs!,
         boundaries,
-        phases: computeReleasePhases(boundaries, members),
+        phases: computeReleasePhases(boundaries),
         members
     };
 }
@@ -225,7 +225,7 @@ function toReleaseBoundaries(
         completion.candidateEndedAtMs,
         completion.transactionCalledAtMs,
         callback.startedAtMs,
-        ...callback.members.flatMap((member) => [member.startedAtMs, member.endedAtMs]),
+        callback.statementEndedAtMs,
         callback.endedAtMs,
         completion.transactionReturnedAtMs
     ];
@@ -238,6 +238,7 @@ function toReleaseBoundaries(
         candidateEndedAtMs: completion.candidateEndedAtMs!,
         transactionCalledAtMs: completion.transactionCalledAtMs!,
         callbackStartedAtMs: callback.startedAtMs!,
+        statementEndedAtMs: callback.statementEndedAtMs!,
         callbackEndedAtMs: callback.endedAtMs!,
         transactionReturnedAtMs: completion.transactionReturnedAtMs!
     };
@@ -254,7 +255,7 @@ function hasOrderedEndpoints(endpoints: readonly (number | undefined)[]): boolea
     return true;
 }
 
-function toReleaseMember(member: PSqlQueueReleaseTiming.MemberSpan): PSqlQueueReleaseTiming.Member {
+function toReleaseMember(member: PSqlQueueReleaseTiming.MemberRelease): PSqlQueueReleaseTiming.Member {
     const { entry } = member;
     return {
         ordinal: member.ordinal,
@@ -263,23 +264,17 @@ function toReleaseMember(member: PSqlQueueReleaseTiming.MemberSpan): PSqlQueueRe
         reservationStartedAt: entry.dequeueAudit.startTs?.toString(),
         reservationStartedAtEpochMs: entry.dequeueAudit.startTs?.epochMilliseconds,
         rowId: entry.db?.id.toString(),
-        updated: member.updated,
-        startedAtMs: member.startedAtMs!,
-        endedAtMs: member.endedAtMs!,
-        releaseReservedElapsedMs: member.endedAtMs! - member.startedAtMs!
+        updated: member.updated
     };
 }
 
-function computeReleasePhases(
-    boundaries: PSqlQueueReleaseTiming.Boundaries,
-    members: readonly PSqlQueueReleaseTiming.Member[]
-): PSqlQueueReleaseTiming.Phases {
+function computeReleasePhases(boundaries: PSqlQueueReleaseTiming.Boundaries): PSqlQueueReleaseTiming.Phases {
     const candidateElapsedMs = boundaries.candidateEndedAtMs - boundaries.candidateStartedAtMs;
     const transactionAdmissionElapsedMs = boundaries.callbackStartedAtMs - boundaries.transactionCalledAtMs;
     const callbackElapsedMs = boundaries.callbackEndedAtMs - boundaries.callbackStartedAtMs;
     const transactionReturnElapsedMs = boundaries.transactionReturnedAtMs - boundaries.callbackEndedAtMs;
     const releaseOwnerElapsedMs = boundaries.transactionReturnedAtMs - boundaries.releaseStartedAtMs;
-    const releaseReservedElapsedMs = members.reduce((elapsed, member) => elapsed + member.releaseReservedElapsedMs, 0);
+    const releaseReservedElapsedMs = boundaries.statementEndedAtMs - boundaries.callbackStartedAtMs;
     return {
         candidateElapsedMs,
         transactionAdmissionElapsedMs,

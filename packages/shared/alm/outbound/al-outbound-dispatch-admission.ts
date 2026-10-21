@@ -80,9 +80,6 @@ interface ALOutboundGroupMember<TPrepared> {
     readonly phases: ALOutboundCommitPhases;
 }
 
-/** Two independent decision reads share backend batches without occupying the server's whole connection pool. */
-const AL_OUTBOUND_GROUP_READ_CONCURRENCY = 2;
-
 export namespace ALOutboundDispatchAdmission {
     export interface Result<TPrepared> {
         readonly computed: ALOutboundComputedDto<TPrepared>;
@@ -317,15 +314,16 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         }
     }
 
-    /** All bounded reads settle before a group write or fresh single-member fallback may start. */
+    /**
+     * Every member reads in the same turn, so a backend that batches one turn's reads answers the whole group in one
+     * statement per store on its own connection. All reads settle before a group write or fresh single-member
+     * fallback may start.
+     */
     private async readGroupDecisions(
         members: readonly ALOutboundGroupMember<TPrepared>[]
     ): Promise<readonly ALOutboundCommitDecision<TPrepared>[] | undefined> {
-        const reading = new BoundedConcurrencyAdmission({ maxConcurrent: AL_OUTBOUND_GROUP_READ_CONCURRENCY });
         const reads = await Promise.allSettled(
-            members.map(({ dispatch, phases }) =>
-                reading.admit(() => this.readMemberDispatchDecision(dispatch, phases))
-            )
+            members.map(({ dispatch, phases }) => this.readMemberDispatchDecision(dispatch, phases))
         );
         const decisions: ALOutboundCommitDecision<TPrepared>[] = [];
         for (const read of reads) {

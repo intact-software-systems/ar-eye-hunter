@@ -180,6 +180,9 @@ function executeResourceInboxRead(input: ResourceInboxQueryExecution): PSqlRows 
 }
 
 function executeResourceInboxUpdate(input: ResourceInboxQueryExecution): PSqlRows {
+    if (input.query.includes('from jsonb_to_recordset(') && input.query.includes('returning resource_inbox.*')) {
+        return executeObservedReplacements(input);
+    }
     if (
         input.query.includes('set ri_resource =') &&
         input.query.includes('where ri_row_id =') &&
@@ -213,6 +216,30 @@ function executeObservedReplacement(input: ResourceInboxQueryExecution): PSqlRow
     const updated = toObservedReplacementRow(row, input.values);
     input.state.rows.set(toCompositeKey(updated), updated);
     return [cloneRow(updated)];
+}
+
+/** The multi-row compare-and-replace: each recordset row applied as the single-row statement applies its parameters. */
+function executeObservedReplacements(input: ResourceInboxQueryExecution): PSqlRows {
+    const replacements = input.values[0];
+    if (!Array.isArray(replacements)) {
+        throw new TypeError('observed replacements must be a recordset array');
+    }
+    return replacements.flatMap((replacement: Readonly<Record<string, PSqlParameter>>) =>
+        executeObservedReplacement({ ...input, values: toObservedReplacementParameters(replacement) })
+    );
+}
+
+function toObservedReplacementParameters(row: Readonly<Record<string, PSqlParameter>>): readonly PSqlParameter[] {
+    const columns = ['resource', 'typeId', 'status', 'systemDate', 'createdBy', 'createdAt', 'expiresAt', 'startedAt', 'finishedAt', 'nextAt', 'attempts'];
+    const expected = ['TypeId', 'Resource', 'Status', 'SystemDate', 'CreatedBy', 'CreatedAt', 'ExpiresAt', 'StartedAt', 'FinishedAt', 'NextAt', 'Attempts'];
+    return [
+        ...columns.map((column) => row[column]),
+        BigInt(requireStringParameter(row.expectedRowId, 'observed row id')),
+        row.topicId,
+        row.resourceId,
+        row.contextId,
+        ...expected.map((column) => row[`expected${column}`])
+    ];
 }
 
 function hasObservedResourceInboxContent(row: ResourceInboxRow, values: readonly PSqlParameter[]): boolean {

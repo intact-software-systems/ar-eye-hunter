@@ -57,10 +57,7 @@ describe('Postgres release timing projection', () => {
             reservationStartedAt: '2026-01-01T00:00:00.123456Z',
             reservationStartedAtEpochMs: 1767225600123,
             rowId: '9007199254740993',
-            updated: true,
-            startedAtMs: 12,
-            endedAtMs: 112,
-            releaseReservedElapsedMs: 100
+            updated: true
         }]));
         expect(JSON.stringify(events)).not.toContain('secret payload');
         expect(Object.values(events[0]!.details!).every((value) => value === undefined || ['string', 'number', 'boolean'].includes(typeof value))).toBe(true);
@@ -74,7 +71,7 @@ describe('Postgres release timing projection', () => {
             ...completion,
             candidateStartedAtMs: 2,
             transactionCalledAtMs: 7,
-            callback: { ...completion.callback, members: [{ ...completion.callback.members[0]!, startedAtMs: 20, endedAtMs: 100 }] }
+            callback: { ...completion.callback, statementEndedAtMs: 92 }
         });
         expect(observed[0]).toMatchObject({
             phases: {
@@ -150,6 +147,6 @@ function createCompletion(): PSqlQueueReleaseTiming.Completion {
         candidateEndedAtMs: 5,
         transactionCalledAtMs: 5,
         transactionReturnedAtMs: 125,
-        callback: { startedAtMs: 12, endedAtMs: 112, fallbackCount: 0, members: [{ entry, ordinal: 0, startedAtMs: 12, endedAtMs: 112, updated: true }] }
+        callback: { startedAtMs: 12, statementEndedAtMs: 112, endedAtMs: 112, fallbackCount: 0, members: [{ entry, ordinal: 0, updated: true }] }
     };
 }
