@@ -51,7 +51,7 @@ interface ComputeObservedActivationStatusInput {
     readonly group: Group;
     readonly basis: GroupLayoutIdentity;
     readonly policy: GroupLifecyclePolicy;
-    readonly nowEpochMs: number;
+    readonly facts: GroupMutationFacts;
 }
 
 /**
@@ -87,7 +87,7 @@ export function computeUpdateGroupActivationStatus(
         group,
         basis: series.basis,
         policy: series.policy,
-        nowEpochMs: facts.nowEpochMs
+        facts
     });
     if (isSamePublishedStatus(next, group.activationStatus)) {
         return noOp(command, read, facts);
@@ -200,9 +200,9 @@ function resolveActivationStatusSeries(
 }
 
 function computeObservedActivationStatus(
-    { command, group, basis, policy, nowEpochMs }: ComputeObservedActivationStatusInput
+    { command, group, basis, policy, facts }: ComputeObservedActivationStatusInput
 ): GroupActivationStatus {
-    const business = resolveGroupBusinessLiveness(group, nowEpochMs);
+    const business = resolveGroupBusinessLiveness(group, facts.attemptAtEpochMs);
     const attemptBudgetExhausted = isFormationAttemptBudgetExhausted({
         activation: policy.activation,
         formationAttemptCount: group.formationAttemptCount
@@ -233,6 +233,6 @@ function computeObservedActivationStatus(
         coverageBasisLayoutIdentity: basis,
         formationEpoch: group.formationEpoch,
         evidenceWatermark: command.input.evidenceWatermark,
-        publishedAtEpochMs: nowEpochMs
+        publishedAtEpochMs: facts.nowEpochMs
     };
 }

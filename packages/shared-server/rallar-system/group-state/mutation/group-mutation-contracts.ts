@@ -505,11 +505,12 @@ export interface GroupMutationIngressFacts {
 export interface GroupMutationFacts extends GroupMutationIngressFacts {
     readonly attemptCount: number;
     /**
-     * The lane's clock when this attempt began, never before the ingress instant. Every time-based decision the
-     * attempt makes uses it: group expiry, session liveness, invite and join-code expiry, director eligibility, the
-     * snapshot the result reports, and every TTL default or window the attempt opens (leases, formation windows,
-     * timers, the connect-trigger latch, a director appointment). A session that expired while queued is refused,
-     * and a queue wait does not shorten a window.
+     * The lane's clock (`AppInboxOptions.nowEpochMs`) when this attempt began, never before the ingress instant.
+     * Every time-based decision the attempt makes uses it: group expiry, the re-checked session's liveness, invite
+     * and join-code expiry, director eligibility, the observed activation status, the snapshot the result reports, and
+     * every TTL default or window the attempt opens (leases, formation windows, timers, the connect-trigger latch, a
+     * director appointment). A session that expired while queued is refused, and a queue wait does not shorten a
+     * window.
      */
     readonly attemptAtEpochMs: number;
 }

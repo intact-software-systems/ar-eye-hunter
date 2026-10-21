@@ -19,7 +19,7 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 
 describe('InboxQueueReader', () => {
-    it('captures precise enqueue time separately from admission time and retains it on replay', async () => {
+    it('captures the enqueue time to the millisecond separately from admission time and retains it on replay', async () => {
         const queue = new InMemoryQueueBox();
         let createdAt = Temporal.Instant.from('2026-10-14T01:59:59.123456789+02:00');
         const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'adaptive-retry', newLaneConcurrency: 1, nowEpochMs: () => 123 }, () => createdAt);
@@ -30,10 +30,10 @@ describe('InboxQueueReader', () => {
         const replay = await reader.enqueueIfAbsent(message);
         const next = await reader.enqueueIfAbsent(createAppInboxMessage('group-state.create.v1'));
 
-        expect(first.audit.createdTs.toString()).toBe('2026-10-13T23:59:59.123456789');
-        expect(first.audit.date.toString()).toBe('23:59:59.123456789');
-        expect(replay.audit.createdTs.toString()).toBe('2026-10-13T23:59:59.123456789');
-        expect(next.audit.createdTs.toString()).toBe('2026-10-15T00:00:00.987654321');
+        expect(first.audit.createdTs.toString()).toBe('2026-10-13T23:59:59.123');
+        expect(first.audit.date.toString()).toBe('23:59:59.123');
+        expect(replay.audit.createdTs.toString()).toBe('2026-10-13T23:59:59.123');
+        expect(next.audit.createdTs.toString()).toBe('2026-10-15T00:00:00.987');
         expect(first.typeId).toBe('APP_INBOX');
         expect(replay.dequeueAudit).toEqual({ attempts: 0 });
     });

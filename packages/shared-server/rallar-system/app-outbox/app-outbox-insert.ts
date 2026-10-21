@@ -81,54 +81,12 @@ export function isExactAppOutboxInsert(
 }
 
 export async function writeAppOutboxInsert(transaction: PSqlSql, computed: AppOutboxInsert): Promise<void> {
-    if (!await insertAppOutboxRow(transaction, computed)) {
-        throwAppOutboxInsertConflict(computed);
-    }
-}
-
-async function insertAppOutboxRow(transaction: PSqlSql, computed: AppOutboxInsert): Promise<boolean> {
-    const entry = computed.entry;
-    const inserted = await transaction<readonly { ri_row_id: bigint; }[]>`
-        insert into resource_inbox (ri_resource_id,
-                                    ri_topic_id,
-                                    ri_resource,
-                                    ri_type_id,
-                                    ri_status,
-                                    fk_ext_bank_id,
-                                    system_date,
-                                    created_by,
-                                    created_ts,
-                                    expire_ts,
-                                    start_ts,
-                                    end_ts,
-                                    next_ts,
-                                    ri_attempts)
-        values (${entry.key.resourceId},
-                ${entry.key.topicId},
-                ${entry.resource},
-                ${entry.typeId},
-                ${entry.status},
-                ${entry.key.contextId},
-                ${computed.systemDate},
-                ${entry.audit.createdBy},
-                ${computed.createdAt},
-                ${computed.expiresAt},
-                ${computed.startedAt},
-                ${computed.finishedAt},
-                ${computed.nextAt},
-                ${computed.attempts})
-        on conflict (fk_ext_bank_id, ri_resource_id, ri_topic_id) do nothing
-        returning ri_row_id
-    `;
-    if (inserted.length > 1) {
-        throwAppOutboxInsertConflict(computed);
-    }
-    return inserted.length === 1;
+    await writeAppOutboxInserts(transaction, [computed]);
 }
 
 /**
  * Every row in one statement and in the given order; each must return its row id, since a row whose key already
- * exists is the corruption a single insert reports.
+ * exists is the corruption the insert reports.
  */
 export async function writeAppOutboxInserts(
     transaction: PSqlSql,
@@ -151,22 +109,18 @@ export async function writeAppOutboxInserts(
         on conflict (fk_ext_bank_id, ri_resource_id, ri_topic_id) do nothing
         returning ri_row_id, ri_resource_id, ri_topic_id, fk_ext_bank_id
     `;
-    const missing = computed.find(({ entry: { key } }) =>
-        !inserted.some((row) =>
-            row.ri_resource_id === key.resourceId && row.ri_topic_id === key.topicId &&
-            row.fk_ext_bank_id === key.contextId
-        )
-    );
-    if (missing !== undefined || inserted.length !== computed.length) {
-        throwAppOutboxInsertConflict(missing ?? computed[0]);
+    if (inserted.length !== computed.length) {
+        const missing = computed.find(({ entry: { key } }) =>
+            !inserted.some((row) =>
+                row.ri_resource_id === key.resourceId && row.ri_topic_id === key.topicId &&
+                row.fk_ext_bank_id === key.contextId
+            )
+        );
+        throw new ResourceInboxInvariantCorruptionError(
+            (missing ?? computed[0]).entry.key,
+            'App outbox insert did not create exactly one row'
+        );
     }
-}
-
-function throwAppOutboxInsertConflict(computed: AppOutboxInsert): never {
-    throw new ResourceInboxInvariantCorruptionError(
-        computed.entry.key,
-        'App outbox insert did not create exactly one row'
-    );
 }
 
 function toAppOutboxInsertRow(computed: AppOutboxInsert): AppOutboxInsertRow {

@@ -5,6 +5,7 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { decodePersistedAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
 import { decodeGroupStateInboxAuthority } from '@shared-server/rallar-system/group-state/inbox/decode-group-state-inbox-authority.ts';
 
+import { NO_POSTGRES_RUN_ROWS } from './test-support/delete-postgres-run-rows.ts';
 import { toGroupAppInboxStorageCommandId } from './test-support/postgres-group-app-inbox-mutation.ts';
 import { createInterleavedGroupWrite, withPostgresGroupJoinHarness } from './test-support/postgres-group-join-harness.ts';
 
@@ -13,7 +14,7 @@ const postgresIt = POSTGRES_INTEGRATION_ENABLED ? it : it.skip;
 
 describe('Postgres group join enqueue-time ingress', () => {
     postgresIt('stores the join\'s ingress at enqueue and reuses its facts on a conflict retry', async () => {
-        await withPostgresGroupJoinHarness('join-enqueue-ingress', async (harness) => {
+        const leftover = await withPostgresGroupJoinHarness('join-enqueue-ingress', async (harness) => {
             harness.probe.interleave = createInterleavedGroupWrite(harness.sql, harness.groupRef);
 
             const enqueue = await harness.join('bob');
@@ -42,6 +43,7 @@ describe('Postgres group join enqueue-time ingress', () => {
                 occurredAtEpochMs: enqueued.facts.nowEpochMs
             });
         });
+        expect(leftover).toEqual(NO_POSTGRES_RUN_ROWS);
     }, 30_000);
 });
 

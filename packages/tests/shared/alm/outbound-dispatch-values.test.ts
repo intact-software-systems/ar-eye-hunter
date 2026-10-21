@@ -24,15 +24,15 @@ import {
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
 describe('outbound dispatch value ownership', () => {
-    it('creates a canonical row at the explicitly captured nanosecond instant', () => {
+    it('creates a canonical row at the millisecond of the explicitly captured instant', () => {
         const stores = createDefaultOutboundTestStores();
         const message = createOutboundMessage('explicit-creation-instant');
         const createdAt = Temporal.Instant.from('2026-01-01T23:59:59.123456789Z');
 
         const entry = createOutboundCanonicalEntry(stores.admissionStore, message, createdAt);
 
-        expect(entry.audit.createdTs.toString()).toBe('2026-01-01T23:59:59.123456789');
-        expect(entry.audit.date.toString()).toBe('23:59:59.123456789');
+        expect(entry.audit.createdTs.toString()).toBe('2026-01-01T23:59:59.123');
+        expect(entry.audit.date.toString()).toBe('23:59:59.123');
     });
 
     it.each([
@@ -77,7 +77,7 @@ describe('outbound dispatch value ownership', () => {
         }
         else {
             const bundle = await pending;
-            expect(bundle.canonicalEntry?.audit.createdTs.toString()).toBe('2026-01-01T23:59:59.123456789');
+            expect(bundle.canonicalEntry?.audit.createdTs.toString()).toBe('2026-01-01T23:59:59.123');
             expect(bundle.canonicalEntry?.audit.expiryTs.epochMilliseconds).toBe(2_000);
         }
         expect(Date.now()).toBe(1_000);

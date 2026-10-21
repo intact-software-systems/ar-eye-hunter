@@ -4,7 +4,9 @@ import { EntityStatus } from '../ResourceEntry.ts';
 
 /**
  * The order a claim takes its rows in. A claim without RETRY takes them in creation order, because a store's row
- * identity or key order need not follow arrival; a claim with RETRY takes them in due order.
+ * identity or key order need not follow arrival; a claim with RETRY takes them in due order. Entries store their
+ * creation time to the whole millisecond, and rows created in one millisecond keep arrival order: insertion order in
+ * memory and in IndexedDB, row id in PostgreSQL.
  */
 export type ResourceInboxClaimOrder = 'creation' | 'due';
 
@@ -12,10 +14,7 @@ export function resolveResourceInboxClaimOrder(statusIds: ReadonlySet<EntityStat
     return statusIds.has(EntityStatus.RETRY) ? 'due' : 'creation';
 }
 
-/**
- * The entries in creation order to the millisecond, ties kept in the order given: the creation clock's finer digits are
- * not monotonic.
- */
+/** The entries in creation order to the millisecond, ties kept in the order given. */
 export function toCreationOrderedEntries<T>(
     entries: readonly T[],
     toCreatedTs: (entry: T) => Temporal.PlainDateTime

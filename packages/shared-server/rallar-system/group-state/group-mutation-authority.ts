@@ -172,13 +172,14 @@ function reuseGroupMutationAuthorityProof(
     return { authorityProof, descriptor: trustedDescriptor };
 }
 
+/** The attempt re-reads its session and checks it at the attempt's instant. */
 export async function readAndVerifyLiveGroupMutationSession(
-    dependencies: Pick<GroupMutationAuthorityDependencies, 'authSessions' | 'now'>,
+    dependencies: Pick<GroupMutationAuthorityDependencies, 'authSessions'>,
     ingress: GroupStateMutationCommand
 ): Promise<void> {
     const proof = requireGroupMutationAuthorityProof(ingress);
     const session = await dependencies.authSessions.findBySessionId(proof.sessionId);
-    verifyLiveGroupMutationSession(proof, session, dependencies.now());
+    verifyLiveGroupMutationSession(proof, session, ingress.facts.attemptAtEpochMs);
 }
 
 export function requireGroupMutationAuthorityProof(ingress: GroupStateMutationCommand): GroupMutationAuthorityProof {

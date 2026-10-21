@@ -43,6 +43,11 @@ import { createTestGroupStateRuntime } from '../../../rallar-system/group-state/
 import { createRuntimeStatePostgresSql } from '../../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 import { createPostgresTestRequestIdFactory } from './create-postgres-test-request-id-factory.ts';
 import {
+    deletePostgresRunRows,
+    readPostgresRunRowCounts,
+    type PostgresRunRowCounts
+} from './delete-postgres-run-rows.ts';
+import {
     createPostgresAppInboxTestAuthority,
     toAuthenticatedGroupAppInboxEnqueue,
     unwrapAppInboxResult
@@ -75,11 +80,10 @@ export interface GroupJoinAttempt {
     readonly storedSession: IssuedAuthSession | null;
 }
 
-/** Records every runtime-state read; an armed interleave writes a row between a join's reads, a clock jump before them. */
+/** Records every runtime-state read; an armed interleave writes a row between a join's reads. */
 export class RuntimeStateReadProbe extends PSqlRuntimeStateRepository {
     readonly calls: RuntimeStateReadCall[] = [];
     interleave: InterleavedRowWrite | null = null;
-    beforeDecisionRead: (() => void) | null = null;
     private sequence = 0;
 
     override async findEntry(namespace: string, key: string): Promise<RuntimeStateEntry | undefined> {
@@ -94,9 +98,6 @@ export class RuntimeStateReadProbe extends PSqlRuntimeStateRepository {
         const readsRoster = selectors.some((selector) => selector.kind === 'prefix' && selector.namespace === MEMBERS_NAMESPACE);
         if (interleave !== null && readsRoster && !readsDecisionRows) {
             await interleave.written;
-        }
-        if (readsDecisionRows) {
-            this.beforeDecisionRead?.();
         }
         const selections = await this.record(
             [...new Set(selectors.map((selector) => selector.namespace))],
@@ -140,7 +141,7 @@ export interface PostgresGroupJoinHarness {
     readonly probe: RuntimeStateReadProbe;
     readonly repository: GroupStateRepository;
     readonly queueEntries: ReservationRecordingEntryRepository;
-    /** Moves the lane's clock; the route's authorization and the enqueue-time capture keep the wall clock. */
+    /** Moves the clock the lane samples each attempt's instant from; the route and the enqueue keep the wall clock. */
     advanceLaneClock(offsetMs: number): void;
     join(principalId: string): Promise<AuthenticatedGroupMutationEnqueue>;
     attemptJoin(attempt: GroupJoinAttempt): Promise<Either<AppInboxFailure, GroupStateInboxDurableResult>>;
@@ -148,19 +149,25 @@ export interface PostgresGroupJoinHarness {
     recordReads(action: () => Promise<void>): Promise<RecordedReads>;
 }
 
+/** Runs the test against a group of its own and returns the rows its application id still tags after the cleanup. */
 export async function withPostgresGroupJoinHarness(
     label: string,
     test: (harness: PostgresGroupJoinHarness) => Promise<void>
-): Promise<void> {
+): Promise<PostgresRunRowCounts> {
     const sql = await createRuntimeStatePostgresSql(requireDatabaseUrl(), 4);
     const scope: StateScope = { applicationId: `${label}-${crypto.randomUUID()}`, workspaceId: 'workspace-1' };
     const groupRef: GroupRef = { ...scope, groupId: GROUP_ID };
     try {
-        await createJoinReadGroup(sql, scope);
-        await test(createJoinReadHarness(sql, groupRef));
+        try {
+            await createJoinReadGroup(sql, scope);
+            await test(createJoinReadHarness(sql, groupRef));
+        }
+        finally {
+            await deletePostgresRunRows(sql, scope.applicationId);
+        }
+        return await readPostgresRunRowCounts(sql, scope.applicationId);
     }
     finally {
-        await cleanupJoinReadState(sql, scope.applicationId);
         await sql.end();
     }
 }
@@ -238,14 +245,18 @@ function createJoinReadHarness(sql: PSqlSql, groupRef: GroupRef): PostgresGroupJ
             runtimeRepository: probe,
             groupStateEventStore: groupEventStore,
             serviceId: 'join-read-worker',
-            now: () => Date.now() + laneClockOffsetMs,
             readPlannedLayoutRow: async () => null,
             readAcceptedLayoutRow: async () => null
         }),
         resultReader: createTestGroupStateRepository(probe, groupEventStore)
     }, {
         serviceId: 'join-read-worker',
-        options: { nowEpochMs: Date.now, waitRetryIntervalMsecs: 1, waitMaxRetryIntervalMsecs: 5, waitJitterRatio: 0 }
+        options: {
+            nowEpochMs: () => Date.now() + laneClockOffsetMs,
+            waitRetryIntervalMsecs: 1,
+            waitMaxRetryIntervalMsecs: 5,
+            waitJitterRatio: 0
+        }
     });
     const run = async (
         attempt: GroupJoinAttempt,
@@ -371,11 +382,6 @@ function createWorkerResilience(): ResourceInboxResilience {
         concurrencyIncreaseStep: 1,
         concurrencyReduceStep: 1
     });
-}
-
-async function cleanupJoinReadState(sql: PSqlSql, applicationId: string): Promise<void> {
-    await sql`delete from group_state_events where application_id = ${applicationId}`;
-    await sql`delete from runtime_state_store where store_key like ${`%${encodeURIComponent(applicationId)}%`}`;
 }
 
 function requireDatabaseUrl(): string {

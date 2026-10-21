@@ -9,10 +9,12 @@ import {
 import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import type { ALAdmissionReadSession } from '@shared/alm/al-admission-work-backend.ts';
 import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
 import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { TurnBatchedReads } from '@shared/resilience/turn-batched-reads.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
@@ -321,3 +323,100 @@ it('reads the commit observations of a sixteen-member group in at most two store
         admission.dispose();
     }
 });
+
+it('rejects a group commit with two corrupt member observations as corruption, not as an aggregate', async () => {
+    const failure = await readGroupObservationFailure({
+        'member-1': { delayMs: 5, error: () => new ALAdmissionCorruptionError('member-1', new Error('bad row')) },
+        'member-2': { delayMs: 0, error: () => new ALAdmissionCorruptionError('member-2', new Error('bad row')) }
+    });
+
+    expect(failure).toBeInstanceOf(ALAdmissionCorruptionError);
+    expect(failure).toMatchObject({ key: 'member-1' });
+});
+
+it('rejects a group commit with a transient and a corrupt member observation as corruption', async () => {
+    const failure = await readGroupObservationFailure({
+        'member-1': { delayMs: 0, error: () => new Error('connection reset') },
+        'member-2': { delayMs: 5, error: () => new ALAdmissionCorruptionError('member-2', new Error('bad row')) }
+    });
+
+    expect(failure).toBeInstanceOf(ALAdmissionCorruptionError);
+    expect(failure).toMatchObject({ key: 'member-2' });
+});
+
+it('rejects a group commit with two transient member observations with the first member\'s failure', async () => {
+    const failure = await readGroupObservationFailure({
+        'member-1': { delayMs: 5, error: () => new Error('member-1 timed out') },
+        'member-2': { delayMs: 0, error: () => new Error('member-2 timed out') }
+    });
+
+    expect(failure).toMatchObject({ message: 'member-1 timed out' });
+    expect(failure).not.toBeInstanceOf(AggregateError);
+});
+
+interface FailingObservation {
+    readonly delayMs: number;
+    readonly error: () => Error;
+}
+
+/**
+ * Commits four members as one group whose named members' canonical-row observation reads fail after their delays, and
+ * returns what the group commit rejected with; the members then commit alone.
+ */
+async function readGroupObservationFailure(failing: Readonly<Record<string, FailingObservation>>): Promise<Error> {
+    const { admission, store, backend } = createDispatchFixture();
+    let committing = false;
+    const failures: Error[] = [];
+    const commitBundles = store.commitBundles.bind(store);
+    vi.spyOn(store, 'commitBundles').mockImplementation(async (bundles) => {
+        committing = true;
+        try {
+            return await commitBundles(bundles);
+        }
+        catch (error) {
+            failures.push(toError(error));
+            throw error;
+        }
+        finally {
+            committing = false;
+        }
+    });
+    const readWithin = backend.readWithin.bind(backend);
+    vi.spyOn(backend, 'readWithin').mockImplementation((read) => readWithin((session) => read(committing ? toFailingReadSession(session, failing) : session)));
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const messages = Array.from({ length: 4 }, (_, index) => {
+        const message = createOutboundMessage(`member-${index}`);
+        return {
+            ...message,
+            id: { ...message.id, msgId: `member-${index}` },
+            targets: { mode: 'unicast' as const, toPeerId: `peer-${index}` }
+        };
+    });
+    try {
+        await admission.commitAllSettled(messages.map(toDispatch));
+    }
+    finally {
+        admission.dispose();
+    }
+    expect(failures).toHaveLength(1);
+    return failures[0];
+}
+
+function toFailingReadSession(
+    session: ALAdmissionReadSession,
+    failing: Readonly<Record<string, FailingObservation>>
+): ALAdmissionReadSession {
+    const toFailure = (contextId: string) => Object.entries(failing).find(([member]) => contextId.includes(`${member}-3A`))?.[1];
+    return {
+        readWork: async (key) => {
+            const failure = key.topicId === 'AL_OUTBOUND' ? toFailure(key.contextId) : undefined;
+            if (failure === undefined) {
+                return await session.readWork(key);
+            }
+            await new Promise((resolve) => setTimeout(resolve, failure.delayMs));
+            throw failure.error();
+        },
+        read: (key, decode) => session.read(key, decode),
+        list: (prefix, decode) => session.list(prefix, decode)
+    };
+}

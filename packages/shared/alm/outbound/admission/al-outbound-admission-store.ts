@@ -10,7 +10,7 @@ import type { StateScope } from '../../../api/state-types.ts';
 import { PersistenceWriteExpiredError } from '../../../persistence/persistence-write-deadline.ts';
 import { hasSameResourceEntryValue } from '../../../queuebox/resource-entry-observations.ts';
 import { toKeyAsString, type Key, type ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
-import { settleAll } from '../../../resilience/settle-all.ts';
+import { settleAllInOrder } from '../../../resilience/settle-all-in-order.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import type {
     ALAdmissionReadSession,
@@ -609,9 +609,13 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         // to a chain does not, which is a budget a settled batch is measured in -- spend it here,
         // where the commit is what the caller is waiting for, and nowhere on the read path. Every bundle
         // reads at once, so a backend that batches one turn's reads answers the group in its rounds,
-        // not one member's; every read settles before the session closes.
+        // not one member's; every read settles before the session closes. A failed group rethrows what a
+        // lone commit would: a corrupt row first, so the work stays non-retryable, else the first member's.
         const observed = await this.backend.readWithin((session) =>
-            settleAll(writing.map((bundle) => this.readCommitObservation(session, bundle)))
+            settleAllInOrder(
+                writing.map((bundle) => this.readCommitObservation(session, bundle)),
+                (failure) => failure instanceof ALAdmissionCorruptionError
+            )
         );
         return await this.commitObserved(writing, observed, nowMs);
     }

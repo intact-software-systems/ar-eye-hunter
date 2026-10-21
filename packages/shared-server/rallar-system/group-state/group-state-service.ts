@@ -327,7 +327,7 @@ async function verifyGroupMutationAttemptSession(
     verifyLiveGroupMutationSession(
         requireGroupMutationAuthorityProof(ingress),
         authSession.session,
-        owners.authorityDependencies.now()
+        ingress.facts.attemptAtEpochMs
     );
 }
 

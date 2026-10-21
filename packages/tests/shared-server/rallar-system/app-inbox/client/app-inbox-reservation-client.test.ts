@@ -21,7 +21,7 @@ const ENQUEUE: AppInboxEnqueueInput = {
 };
 
 describe('AppInboxReservationClient materialized reservation', () => {
-    it('retains the precise placeholder creation instant when materializing and replaying the winning data', async () => {
+    it('retains the placeholder creation instant to the millisecond when materializing and replaying the winning data', async () => {
         const queue = new TestResourceInbox(new Map());
         let createdAt = Temporal.Instant.from('2026-10-13T23:59:59.123456789Z');
         const client = new AppInboxReservationClient({
@@ -42,8 +42,8 @@ describe('AppInboxReservationClient materialized reservation', () => {
         expect(first.winner).toBe(true);
         expect(replay.winner).toBe(false);
         expect(replay.enqueue.data).toEqual({ requestId: 'authority-command', materialized: true });
-        expect(persisted?.audit.createdTs.toString()).toBe('2026-10-13T23:59:59.123456789');
-        expect(persisted?.audit.date.toString()).toBe('23:59:59.123456789');
+        expect(persisted?.audit.createdTs.toString()).toBe('2026-10-13T23:59:59.123');
+        expect(persisted?.audit.date.toString()).toBe('23:59:59.123');
         expect(persisted?.dequeueAudit).toEqual({ attempts: 0 });
         expect(await queue.getItem(first.key)).toEqual(persisted);
     });

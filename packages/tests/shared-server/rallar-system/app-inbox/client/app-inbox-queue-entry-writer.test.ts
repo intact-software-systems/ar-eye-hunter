@@ -45,7 +45,7 @@ describe('AppInbox durable enqueue', () => {
             contextId: 'app:workspace:principal'
         });
         expect(supplied.key.resourceId).toBe('durable-command-1');
-        expect(generated.audit.createdTs.toString()).toBe('2026-10-13T23:59:59.123456789');
+        expect(generated.audit.createdTs.toString()).toBe('2026-10-13T23:59:59.123');
         expect(generated.dequeueAudit).toEqual({ attempts: 0 });
     });
 

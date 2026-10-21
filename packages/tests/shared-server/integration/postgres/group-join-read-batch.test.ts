@@ -11,6 +11,7 @@ import {
 } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import { WS_SESSION_CLOSE_HIGH_WATER_NAMESPACE } from '@shared-server/rallar-system/websocket/ws-session-generation-computation.ts';
 
+import { NO_POSTGRES_RUN_ROWS } from './test-support/delete-postgres-run-rows.ts';
 import { toGroupAppInboxStorageCommandId } from './test-support/postgres-group-app-inbox-mutation.ts';
 import {
     createInterleavedSummaryWrite,
@@ -36,7 +37,7 @@ const JOIN_BATCH_NAMESPACES = [
 
 describe('Postgres group join read batch', () => {
     postgresIt('reads a join\'s session, policy, decision rows and result snapshot in one statement', async () => {
-        await withPostgresGroupJoinHarness('join-read-statements', async (harness) => {
+        const leftover = await withPostgresGroupJoinHarness('join-read-statements', async (harness) => {
             const reads = await harness.recordReads(async () => {
                 await harness.join('bob');
             });
@@ -46,10 +47,11 @@ describe('Postgres group join read batch', () => {
                 expect.arrayContaining(JOIN_BATCH_NAMESPACES)
             ]);
         });
+        expect(leftover).toEqual(NO_POSTGRES_RUN_ROWS);
     }, 30_000);
 
     postgresIt('applies a join on its first attempt when the presence summary moves during its read', async () => {
-        await withPostgresGroupJoinHarness('join-read-summary-move', async (harness) => {
+        const leftover = await withPostgresGroupJoinHarness('join-read-summary-move', async (harness) => {
             harness.probe.interleave = createInterleavedSummaryWrite(harness.sql, harness.groupRef);
 
             const enqueue = await harness.join('bob');
@@ -63,18 +65,20 @@ describe('Postgres group join read batch', () => {
             const snapshot = await harness.repository.readSnapshot(harness.groupRef);
             expect(snapshot?.members.find((member) => member.principalId === 'bob')?.status).toBe('active');
         });
+        expect(leftover).toEqual(NO_POSTGRES_RUN_ROWS);
     }, 30_000);
 
     postgresIt('denies a join whose session row is missing, from the one statement', async () => {
-        await withPostgresGroupJoinHarness('join-read-missing-session', async (harness) => {
+        const leftover = await withPostgresGroupJoinHarness('join-read-missing-session', async (harness) => {
             const authority = toGroupJoinAuthority(harness.groupRef, 'bob');
 
             await expectDeniedFromOneStatement(harness, { authority, storedSession: null });
         });
+        expect(leftover).toEqual(NO_POSTGRES_RUN_ROWS);
     }, 30_000);
 
     postgresIt('denies a join whose session row differs from the verified session, from the one statement', async () => {
-        await withPostgresGroupJoinHarness('join-read-mismatched-session', async (harness) => {
+        const leftover = await withPostgresGroupJoinHarness('join-read-mismatched-session', async (harness) => {
             const authority = toGroupJoinAuthority(harness.groupRef, 'bob');
 
             await expectDeniedFromOneStatement(harness, {
@@ -82,24 +86,26 @@ describe('Postgres group join read batch', () => {
                 storedSession: { ...authority, issuedAtEpochMs: authority.issuedAtEpochMs + 1 }
             });
         });
+        expect(leftover).toEqual(NO_POSTGRES_RUN_ROWS);
     }, 30_000);
 
     postgresIt('denies a join whose session expired before its execution, from the one statement', async () => {
-        await withPostgresGroupJoinHarness('join-read-expired-session', async (harness) => {
+        const leftover = await withPostgresGroupJoinHarness('join-read-expired-session', async (harness) => {
             const nowEpochMs = Date.now();
             const authority = {
                 ...toGroupJoinAuthority(harness.groupRef, 'bob'),
                 issuedAtEpochMs: nowEpochMs - 1_000,
                 expiresAtEpochMs: nowEpochMs + 60_000
             };
-            harness.probe.beforeDecisionRead = () => harness.advanceLaneClock(120_000);
+            harness.advanceLaneClock(120_000);
 
             await expectDeniedFromOneStatement(harness, { authority, storedSession: authority });
         });
+        expect(leftover).toEqual(NO_POSTGRES_RUN_ROWS);
     }, 30_000);
 
     postgresIt('reads a presence connect\'s session lifecycle and mutation rows together', async () => {
-        await withPostgresGroupJoinHarness('connect-read-overlap', async (harness) => {
+        const leftover = await withPostgresGroupJoinHarness('connect-read-overlap', async (harness) => {
             await harness.join('bob');
 
             const reads = await harness.recordReads(async () => {
@@ -112,6 +118,7 @@ describe('Postgres group join read batch', () => {
             expect(lifecycle?.startedAt).toBeLessThan(session?.endedAt ?? -1);
             expect(session?.startedAt).toBeLessThan(lifecycle?.endedAt ?? -1);
         });
+        expect(leftover).toEqual(NO_POSTGRES_RUN_ROWS);
     }, 30_000);
 });
 

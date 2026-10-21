@@ -22,6 +22,8 @@ import { createAuthorityHarness, processAuthenticated, SCOPE, type AuthorityHarn
 /** How far the lane's clock runs ahead of the enqueue-time capture, as a lane backlog would put it. */
 const LANE_WAIT_MS = 7_000;
 const OWNER_ACTOR = { actorPrincipalId: 'owner', actorSessionId: 'owner-session' } as const;
+/** How long the harness's sessions live past the enqueue instant. */
+const SESSION_LIFETIME_MS = 60_000;
 /** The `managed` preset's formation deadline: a phased group whose establishment the deadline bounds. */
 const DEADLINE_MS = 30_000;
 const PLANNED_IDENTITY = { groupRevision: 1, presenceRevision: 0, version: 1, state: 'active' as const };
@@ -79,7 +81,33 @@ describe('group mutation attempt instant', () => {
             )
         });
 
-        expect(updated.left).toBeDefined();
+        expect(updated.left).toMatchObject({ code: 'group-not-active' });
+        expect((await harness.repository.readSnapshot({ ...SCOPE, groupId }))?.group.displayName).toBe(groupId);
+    });
+
+    it('refuses a command whose session expired while the command was queued', async () => {
+        const groupId = 'attempt-instant-session-room';
+        const harness = await createLaneDelayedHarness({});
+        harness.setLaneWaitMs(0);
+        await processAsOwner(harness, createPhasedGroupEnqueue(groupId));
+        harness.setLaneWaitMs(SESSION_LIFETIME_MS + 1_000);
+
+        const updated = await processAuthenticated({
+            service: harness.service,
+            reader: harness.reader,
+            authority: harness.sessions.owner,
+            input: toEnqueue(
+                AppInboxType.GROUP_UPDATE,
+                groupId,
+                {
+                    scope: SCOPE,
+                    groupId,
+                    request: { displayName: 'Too late', ...OWNER_ACTOR, requestId: `${groupId}-group_update` }
+                } satisfies GroupUpdateAppInboxPayload
+            )
+        });
+
+        expect(updated.left).toMatchObject({ status: 403, code: 'group-mutation-authority-denied' });
         expect((await harness.repository.readSnapshot({ ...SCOPE, groupId }))?.group.displayName).toBe(groupId);
     });
 

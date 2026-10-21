@@ -4,9 +4,11 @@ import { describe, expect, it } from 'vitest';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { ResourceInboxContextClaim } from '@shared/queuebox/queue-box-types.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import { createResourceInboxTestStorage, type ResourceInboxTestStorage } from '../../queuebox/resource-inbox-test-storage.ts';
 
@@ -47,7 +49,37 @@ describe('Postgres resource inbox NEW claim order', () => {
             expect([...claimed.values()].map((entry) => entry.key.resourceId)).toEqual(['older']);
         });
     });
+
+    // The creation clock's sub-millisecond digits are not monotonic, so the second row may read earlier within the ms.
+    postgresIt('claims two NEW rows created in one millisecond in row-id order', async () => {
+        const storage = await createResourceInboxTestStorage('resource_inbox_claim_order', 1);
+        try {
+            const queue = createQueue(storage.sql);
+            const millisecond = Temporal.Instant.fromEpochMilliseconds(Date.now());
+            await queue.enqueue(toAppInboxEntry('first', millisecond.add({ microseconds: 900 })));
+            await queue.enqueue(toAppInboxEntry('second', millisecond.add({ microseconds: 100 })));
+
+            const claimed = await queue.reserveEntries({
+                typeIds: new Set([EnqueuedType.APP_INBOX]),
+                statusIds: new Set([EntityStatus.NEW]),
+                reservationInput: 1
+            });
+
+            expect([...claimed.values()].map((entry) => entry.key.resourceId)).toEqual(['first']);
+        }
+        finally {
+            await storage.close();
+        }
+    });
 });
+
+function toAppInboxEntry(resourceId: string, createdAt: Temporal.Instant): ResourceEntry {
+    const route = { topicId: 'app-inbox.test', resourceId, contextId: 'context-1' };
+    const message = newALUnicastMessage('server-1', route, 'server-1', 'app-inbox.test.v1', { resourceId }, {
+        ttlMs: 60_000
+    });
+    return QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.APP_INBOX, createdAt);
+}
 
 /**
  * Session A draws its id block first and session B the next one; B inserts the older row, then A the younger,
