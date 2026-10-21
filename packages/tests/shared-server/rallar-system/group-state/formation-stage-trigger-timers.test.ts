@@ -205,6 +205,70 @@ describe('stage trigger timer arming', () => {
     });
 });
 
+/** How far an attempt runs after its ingress, as a lane backlog would put it. */
+const LANE_WAIT_MS = 7_000;
+
+describe('formation instants armed at the attempt', () => {
+    const laggingFacts = { ...createGroupAuthorityFacts(), attemptAtEpochMs: NOW_EPOCH_MS + LANE_WAIT_MS };
+
+    function armedAt(input: Omit<Parameters<typeof computeFormationTimerEntries>[0], 'facts'>, kind: GroupFormationTimerWork['kind']) {
+        return timerKinds(computeFormationTimerEntries({ ...input, facts: laggingFacts }))
+            .filter((work) => work.kind === kind)
+            .map((work) => work.notBeforeEpochMs);
+    }
+
+    function latchedAt(connectTrigger: GroupStageTrigger): number | null {
+        const computed = computeGroupConnectTrigger({
+            command: transitionCommand('planGroupLayout'),
+            read: createGroupAuthorityRead({ lifecycleState: 'forming', formationEpoch: 2 }),
+            facts: laggingFacts,
+            next: createTestGroup({ lifecycleState: 'planned', formationEpoch: 3 }),
+            policy: policyWith({ kind: 'manual' }, connectTrigger),
+            previous: 'forming'
+        });
+        return computed.effect && 'value' in computed.effect ? JSON.parse(computed.effect.value).notBeforeEpochMs : null;
+    }
+
+    it('arms the plan trigger from the attempt instant', () => {
+        const policy = policyWith({ kind: 'after', settleMs: 400 }, { kind: 'manual' });
+
+        expect(armedAt({
+            command: createPhasedGroupCommand(policy),
+            previous: null,
+            next: createTestGroup({ lifecycleState: 'forming', formationEpoch: 0 }),
+            policy
+        }, 'plan')).toEqual([NOW_EPOCH_MS + LANE_WAIT_MS + 400]);
+    });
+
+    it('arms the connect timer and latches the connect trigger at one attempt-anchored settle', () => {
+        const connectTrigger = { kind: 'after', settleMs: 700 } as const;
+        const policy = policyWith({ kind: 'manual' }, connectTrigger);
+        const connectTimer = armedAt({
+            command: transitionCommand('planGroupLayout'),
+            previous: 'forming',
+            next: createTestGroup({ lifecycleState: 'planned', formationEpoch: 3 }),
+            policy
+        }, 'connect');
+
+        expect(connectTimer).toEqual([NOW_EPOCH_MS + LANE_WAIT_MS + 700]);
+        expect(latchedAt(connectTrigger)).toBe(connectTimer[0]);
+    });
+
+    it('arms the retry backoff from the attempt instant', () => {
+        const policy = policyWith({ kind: 'immediate' }, { kind: 'immediate' });
+        const input = {
+            command: transitionCommand('failGroupFormation'),
+            previous: 'connecting',
+            next: createTestGroup({ lifecycleState: 'forming', formationEpoch: 5, formationAttemptCount: 1 }),
+            policy
+        } as const;
+        const atIngress = timerKinds(computeFormationTimerEntries({ ...input, facts: createGroupAuthorityFacts() }))
+            .map((work) => work.notBeforeEpochMs);
+
+        expect(armedAt(input, 'retry')).toEqual(atIngress.map((dueAtEpochMs) => dueAtEpochMs + LANE_WAIT_MS));
+    });
+});
+
 describe('connect trigger latching by policy', () => {
     function latchFor(
         connectTrigger: GroupStageTrigger,

@@ -75,10 +75,13 @@ have separate owners:
 - `AppInboxCommandClient` coordinates ordinary enqueue-and-wait calls, and
   reserve-and-wait calls whose volatile facts the winning reservation stores:
   authenticated group commands capture their ingress facts at enqueue,
-  including the enqueue-instant timestamp, and every attempt reuses them,
-  while each attempt samples its own lane instant (`attemptAtEpochMs`) to
-  start the windows it opens: formation establishment, formation and
-  connect-trigger timers, and a director appointment;
+  including the enqueue-instant timestamp, and every attempt reuses them.
+  That timestamp only stamps: events, audit, outbox creation times and the
+  skew checks on request timestamps. Each attempt samples its own lane
+  instant (`attemptAtEpochMs`) for every time-based decision it makes
+  (group expiry, session liveness, invite and join-code expiry, director
+  eligibility, the snapshot its result reports) and for every TTL default
+  or window it opens;
 - `AppInboxResultWaiter` polls completion state and decodes the typed durable
   result;
 - `AppInboxHandlerRegistry` registers exact command decoders and handlers;

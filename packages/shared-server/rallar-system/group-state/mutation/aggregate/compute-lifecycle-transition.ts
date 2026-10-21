@@ -86,7 +86,7 @@ export function computeLifecycleTransition(
             message: `Group not found: ${command.aggregateRef.groupId}`
         });
     }
-    const active = canMutateActiveGroup({ group: stored.value, nowEpochMs: facts.nowEpochMs });
+    const active = canMutateActiveGroup({ group: stored.value, nowEpochMs: facts.attemptAtEpochMs });
     if (!active.allowed) {
         return rejectedByGroupPolicy({ command, read, facts, denial: active });
     }

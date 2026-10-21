@@ -479,7 +479,10 @@ export const GROUP_MUTATION_INTERNAL_AUTHORITY_MODES = [
 
 /** The facts captured once at ingress; every attempt and replay of the command reuses them. */
 export interface GroupMutationIngressFacts {
-    /** The ingress instant: the command's own time, for its event, audit stamps, outbox rows and skew checks. */
+    /**
+     * The ingress instant, used only for stamps: the command's event time, audit stamps, outbox creation times, the
+     * presence timestamps the request defaulted, and the skew checks against them. Never for a decision at execution.
+     */
     readonly nowEpochMs: number;
     readonly expireAtEpochMs: number;
     readonly serviceId: string;
@@ -502,8 +505,11 @@ export interface GroupMutationIngressFacts {
 export interface GroupMutationFacts extends GroupMutationIngressFacts {
     readonly attemptCount: number;
     /**
-     * The lane's clock when this attempt began, never before the ingress instant: it anchors every window the
-     * attempt opens, so a queue wait does not shorten them.
+     * The lane's clock when this attempt began, never before the ingress instant. Every time-based decision the
+     * attempt makes uses it: group expiry, session liveness, invite and join-code expiry, director eligibility, the
+     * snapshot the result reports, and every TTL default or window the attempt opens (leases, formation windows,
+     * timers, the connect-trigger latch, a director appointment). A session that expired while queued is refused,
+     * and a queue wait does not shorten a window.
      */
     readonly attemptAtEpochMs: number;
 }

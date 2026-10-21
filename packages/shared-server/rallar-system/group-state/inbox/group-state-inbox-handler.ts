@@ -75,7 +75,6 @@ export interface GroupStateInboxHandlerDependencies {
     readonly publicationTiming: GroupStateInboxTiming | undefined;
     readonly wakeQueue?: () => void;
     readonly formationMetrics?: GroupFormationGroupMutationSink;
-    /** The lane's clock: each attempt samples its own instant from it. */
     readonly nowEpochMs: () => number;
 }
 

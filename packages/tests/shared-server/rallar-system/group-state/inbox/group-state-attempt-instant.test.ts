@@ -9,7 +9,8 @@ import type {
     GroupConnectAppInboxPayload,
     GroupCreateAppInboxPayload,
     GroupDirectorAppointAppInboxPayload,
-    GroupLifecycleTransitionAppInboxPayload
+    GroupLifecycleTransitionAppInboxPayload,
+    GroupUpdateAppInboxPayload
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 
@@ -28,24 +29,11 @@ const PLANNED_IDENTITY = { groupRevision: 1, presenceRevision: 0, version: 1, st
 describe('group mutation attempt instant', () => {
     it('starts a connect\'s establishment window and deadline at the lane\'s attempt, not at enqueue', async () => {
         const groupId = 'attempt-instant-connect-room';
-        const runtimeRepository = new FakeRuntimeStateRepository();
-        const plannedSnapshots = new RtcTopologySnapshotRepository(runtimeRepository);
-        await plannedSnapshots.commitSnapshot({ candidate: connectPlannedSnapshot(groupId, PLANNED_IDENTITY) });
-        const harness = await createLaneDelayedHarness({
-            runtimeRepository,
-            readPlannedLayoutRow: async (ref) => {
-                const entry = await plannedSnapshots.findSnapshotEntry(ref);
-                return entry ? { snapshot: entry.value, revision: entry.entry.revision } : null;
-            }
-        });
-        await processAsOwner(harness, createPhasedGroupEnqueue(groupId));
-        await processAsOwner(harness, planEnqueue(groupId));
-        const planned = (await harness.repository.readSnapshot({ ...SCOPE, groupId }))?.group;
+        const harness = await createPlannedGroupHarness(groupId);
         const timersBefore = new Set(harness.database.outboxEntries.keys());
 
-        const connected = await processAsOwner(harness, connectEnqueue(groupId, planned?.formationEpoch ?? 0));
+        await processAsOwner(harness, connectEnqueue(groupId, await readFormationEpoch(harness, groupId)));
 
-        expect(connected.left).toBeUndefined();
         const laneAtEpochMs = harness.nowEpochMs + LANE_WAIT_MS;
         const group = (await harness.repository.readSnapshot({ ...SCOPE, groupId }))?.group;
         expect(group?.lifecycleState).toBe('connecting');
@@ -55,6 +43,44 @@ describe('group mutation attempt instant', () => {
             .map(([, entry]) => decodeFormationTimerWorkOrNull(entry.resource))
             .filter((work) => work?.kind === 'deadline');
         expect(deadlines.map((work) => work?.notBeforeEpochMs)).toEqual([laneAtEpochMs + DEADLINE_MS]);
+    });
+
+    it('commits a connect whose lane clock lags the enqueuing server, its window starting at the enqueue instant', async () => {
+        const groupId = 'attempt-instant-lagging-room';
+        const harness = await createPlannedGroupHarness(groupId);
+        harness.setLaneWaitMs(-250);
+
+        await processAsOwner(harness, connectEnqueue(groupId, await readFormationEpoch(harness, groupId)));
+
+        const group = (await harness.repository.readSnapshot({ ...SCOPE, groupId }))?.group;
+        expect(group?.lifecycleState).toBe('connecting');
+        expect(group?.establishmentStartedAtEpochMs).toBe(harness.nowEpochMs);
+    });
+
+    it('refuses a command for a group that expired while the command was queued', async () => {
+        const groupId = 'attempt-instant-expiring-room';
+        const harness = await createLaneDelayedHarness({});
+        harness.setLaneWaitMs(0);
+        await processAsOwner(harness, createPhasedGroupEnqueue(groupId, harness.nowEpochMs + 3_000));
+        harness.setLaneWaitMs(LANE_WAIT_MS);
+
+        const updated = await processAuthenticated({
+            service: harness.service,
+            reader: harness.reader,
+            authority: harness.sessions.owner,
+            input: toEnqueue(
+                AppInboxType.GROUP_UPDATE,
+                groupId,
+                {
+                    scope: SCOPE,
+                    groupId,
+                    request: { displayName: 'Too late', ...OWNER_ACTOR, requestId: `${groupId}-group_update` }
+                } satisfies GroupUpdateAppInboxPayload
+            )
+        });
+
+        expect(updated.left).toBeDefined();
+        expect((await harness.repository.readSnapshot({ ...SCOPE, groupId }))?.group.displayName).toBe(groupId);
     });
 
     it('dates a director appointment at the lane\'s attempt, not at enqueue', async () => {
@@ -73,17 +99,48 @@ describe('group mutation attempt instant', () => {
     });
 });
 
-type LaneDelayedHarnessOptions = Parameters<typeof createAuthorityHarness>[1];
+type LaneDelayedHarnessOptions = NonNullable<Parameters<typeof createAuthorityHarness>[1]>;
 
-/** The enqueue captures at the harness clock; the lane samples its attempt LANE_WAIT_MS later. */
-async function createLaneDelayedHarness(options: NonNullable<LaneDelayedHarnessOptions>): Promise<AuthorityHarness> {
-    let laneAtEpochMs = Number.NaN;
+interface LaneDelayedHarness extends AuthorityHarness {
+    /** Moves the lane's clock relative to the enqueue-time capture; a negative wait is a lagging lane clock. */
+    setLaneWaitMs(waitMs: number): void;
+}
+
+/** The enqueue captures at the harness clock; the lane samples its attempt LANE_WAIT_MS later unless moved. */
+async function createLaneDelayedHarness(options: LaneDelayedHarnessOptions): Promise<LaneDelayedHarness> {
+    let laneWaitMs = LANE_WAIT_MS;
+    let enqueueAtEpochMs = Number.NaN;
     const harness = await createAuthorityHarness(['owner'], {
         ...options,
-        serviceOptions: { nowEpochMs: () => laneAtEpochMs }
+        serviceOptions: { nowEpochMs: () => enqueueAtEpochMs + laneWaitMs }
     });
-    laneAtEpochMs = harness.nowEpochMs + LANE_WAIT_MS;
+    enqueueAtEpochMs = harness.nowEpochMs;
+    return Object.assign(harness, {
+        setLaneWaitMs: (waitMs: number) => {
+            laneWaitMs = waitMs;
+        }
+    });
+}
+
+/** A `managed` group planned against a stored layout, ready for its `connect`. */
+async function createPlannedGroupHarness(groupId: string): Promise<LaneDelayedHarness> {
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    const plannedSnapshots = new RtcTopologySnapshotRepository(runtimeRepository);
+    await plannedSnapshots.commitSnapshot({ candidate: connectPlannedSnapshot(groupId, PLANNED_IDENTITY) });
+    const harness = await createLaneDelayedHarness({
+        runtimeRepository,
+        readPlannedLayoutRow: async (ref) => {
+            const entry = await plannedSnapshots.findSnapshotEntry(ref);
+            return entry ? { snapshot: entry.value, revision: entry.entry.revision } : null;
+        }
+    });
+    await processAsOwner(harness, createPhasedGroupEnqueue(groupId));
+    await processAsOwner(harness, planEnqueue(groupId));
     return harness;
+}
+
+async function readFormationEpoch(harness: AuthorityHarness, groupId: string): Promise<number> {
+    return (await harness.repository.readSnapshot({ ...SCOPE, groupId }))?.group.formationEpoch ?? 0;
 }
 
 async function processAsOwner(harness: AuthorityHarness, input: AuthenticatedGroupMutationEnqueue) {
@@ -112,7 +169,7 @@ function toEnqueue<Type extends AuthenticatedGroupMutationEnqueue['type']>(
     } as AuthenticatedGroupMutationEnqueue;
 }
 
-function createPhasedGroupEnqueue(groupId: string): AuthenticatedGroupMutationEnqueue {
+function createPhasedGroupEnqueue(groupId: string, expiresAtEpochMs?: number): AuthenticatedGroupMutationEnqueue {
     return toEnqueue(
         AppInboxType.GROUP_CREATE,
         groupId,
@@ -120,6 +177,7 @@ function createPhasedGroupEnqueue(groupId: string): AuthenticatedGroupMutationEn
             scope: SCOPE,
             request: {
                 groupId,
+                ...(expiresAtEpochMs === undefined ? {} : { expiresAtEpochMs }),
                 displayName: groupId,
                 kind: 'room',
                 joinMode: 'open',

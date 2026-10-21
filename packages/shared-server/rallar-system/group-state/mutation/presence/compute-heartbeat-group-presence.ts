@@ -20,7 +20,7 @@ export function computeHeartbeatGroupPresence(
     facts: GroupMutationFacts
 ): GroupMutationComputed {
     const group = requireGroup(read, command.aggregateRef);
-    assertActive(group.value, facts.nowEpochMs);
+    assertActive(group.value, facts.attemptAtEpochMs);
     const existing = read.targetPresence;
     if (!existing) {
         throw new GroupMutationRejectedError(`Group presence session not found: ${command.sessionId}`);
@@ -91,7 +91,7 @@ export function isPureLeaseRenewalHeartbeat(
     const existing = read.targetPresence;
     return (
         existing !== null &&
-        existing.value.expiresAtEpochMs > facts.nowEpochMs &&
+        existing.value.expiresAtEpochMs > facts.attemptAtEpochMs &&
         (read.presenceSummary?.value.activeSessionIds ?? []).includes(command.sessionId)
     );
 }

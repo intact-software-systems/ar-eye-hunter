@@ -42,8 +42,8 @@ export function resolveAdmittedMemberStatus(
         admission: policy.admission,
         lifecycleState: group.lifecycleState,
         activeMemberCount: group.activeMemberCount,
-        invited: isUnexpiredInvite(input.existing, input.facts.nowEpochMs),
-        nowEpochMs: input.facts.nowEpochMs
+        invited: isUnexpiredInvite(input.existing, input.facts.attemptAtEpochMs),
+        nowEpochMs: input.facts.attemptAtEpochMs
     });
     if (decision.kind === 'deny') {
         throw new GroupPolicyDeniedError(decision.denial);
@@ -58,14 +58,14 @@ export function computeGrantGroupAdmission(
 ): GroupMutationComputed {
     const stored = requireGroup(read, command.aggregateRef);
     const policy = requireReadableLifecyclePolicy(read);
-    const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.nowEpochMs);
+    const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs);
     assertAllowed(
         canDecideGroupAdmission({
             snapshot,
             actor: toCommandActor(command),
             policy,
             activeMemberPrincipalIds: requireAdmissionRoster(read),
-            nowEpochMs: facts.nowEpochMs
+            nowEpochMs: facts.attemptAtEpochMs
         })
     );
     const existing = read.targetMember ?? undefined;
@@ -83,7 +83,7 @@ export function computeGrantGroupAdmission(
         canActivateGroupMember({
             snapshot,
             targetPrincipalId: command.targetPrincipalId,
-            nowEpochMs: facts.nowEpochMs,
+            nowEpochMs: facts.attemptAtEpochMs,
             capacity: facts.capacity
         })
     );
@@ -107,11 +107,11 @@ export function computeDeclineGroupAdmission(
     const policy = requireReadableLifecyclePolicy(read);
     assertAllowed(
         canDecideGroupAdmission({
-            snapshot: toPolicySnapshot(read, command.aggregateRef, facts.nowEpochMs),
+            snapshot: toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs),
             actor: toCommandActor(command),
             policy,
             activeMemberPrincipalIds: requireAdmissionRoster(read),
-            nowEpochMs: facts.nowEpochMs
+            nowEpochMs: facts.attemptAtEpochMs
         })
     );
     const existing = read.targetMember ?? undefined;
@@ -149,7 +149,7 @@ export function assertGroupAdmissionWindowsOpen(
         lifecycleState: read.group.value.lifecycleState,
         activeMemberCount: read.group.value.activeMemberCount,
         invited: true,
-        nowEpochMs: facts.nowEpochMs
+        nowEpochMs: facts.attemptAtEpochMs
     });
     if (decision.kind === 'deny') {
         throw new GroupPolicyDeniedError(decision.denial);

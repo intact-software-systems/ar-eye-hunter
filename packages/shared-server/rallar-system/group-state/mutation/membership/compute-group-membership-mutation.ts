@@ -44,7 +44,7 @@ export function computeJoin(
 ): GroupMutationComputed {
     assertPrincipalAuthority(command, command.targetPrincipalId);
     const stored = requireGroup(read, command.aggregateRef);
-    const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.nowEpochMs);
+    const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs);
     const joinCodeMetadata = readJoinCode(stored.value.metadata);
     assertAllowed(
         canJoinGroup({
@@ -53,7 +53,7 @@ export function computeJoin(
                 principalId: command.input.actorPrincipalId ?? undefined,
                 sessionId: command.input.actorSessionId ?? undefined
             },
-            nowEpochMs: facts.nowEpochMs,
+            nowEpochMs: facts.attemptAtEpochMs,
             capacity: facts.capacity,
             inviteToken: command.input.inviteToken ?? undefined,
             joinCode: command.input.joinCode ?? undefined,
@@ -121,7 +121,7 @@ export function computeInvite(
         banned: null,
         invitedByPrincipalId: command.input.actorPrincipalId,
         invitationExpiresAtEpochMs: command.input.invitationExpiresAtEpochMs ??
-            facts.nowEpochMs + DEFAULT_GROUP_INVITE_TTL_MS
+            facts.attemptAtEpochMs + DEFAULT_GROUP_INVITE_TTL_MS
     };
     return computeGroupMembershipWrite({
         command,
@@ -255,11 +255,11 @@ export function computeUpsertMember(
     const isSelf = command.input.actorPrincipalId === command.targetPrincipalId;
     assertUpsertAuthority({ command, read, facts, isSelf });
     assertUpsertRoleChange(command, read, isSelf);
-    const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.nowEpochMs);
+    const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs);
     assertUpsertActivationAllowed({
         command,
         snapshot,
-        nowEpochMs: facts.nowEpochMs,
+        nowEpochMs: facts.attemptAtEpochMs,
         capacity: facts.capacity
     });
     const existing = findTargetMember(read);

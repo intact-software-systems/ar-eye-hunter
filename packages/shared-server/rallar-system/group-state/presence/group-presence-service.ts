@@ -133,7 +133,6 @@ export async function writeGroupSessionCleanup(
     input: Readonly<{
         facts: GroupPresenceSessionCleanupAppInboxPayload;
         attemptCount: number;
-        /** The lane's clock when this attempt began. */
         laneNowEpochMs: number;
         context: AppInboxMessageContext<GroupSessionCleanupResult>;
         groupStateService: GroupStateService;

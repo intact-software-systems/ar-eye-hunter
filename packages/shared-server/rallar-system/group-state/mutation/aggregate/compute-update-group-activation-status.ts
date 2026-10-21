@@ -73,7 +73,7 @@ export function computeUpdateGroupActivationStatus(
     facts: GroupMutationFacts
 ): GroupMutationComputed {
     const stored = requireGroup(read, command.aggregateRef);
-    assertActive(stored.value, facts.nowEpochMs);
+    assertActive(stored.value, facts.attemptAtEpochMs);
     const group = stored.value;
     const series = resolveActivationStatusSeries({ command, read, facts, group });
     if (series.status === 'rejected') {
