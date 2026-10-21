@@ -1,13 +1,8 @@
-import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import { ResourceInboxInvariantCorruptionError } from '../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
-import {
-    toDomain,
-    toPgTimestamp,
-    toSystemDate,
-    type ResourceInboxRow
-} from '../../queuebox/postgres/resource-inbox-row-codec.ts';
+import { toPgTimestamp, toSystemDate } from '../../queuebox/postgres/resource-inbox-row-codec.ts';
 
 export interface AppOutboxInsert {
     readonly entry: Readonly<ResourceEntry>;
@@ -118,18 +113,6 @@ export async function writeAppOutboxInserts(
 /** Whether the row was created; a row already stored under its key is left as it is. */
 export async function writeAppOutboxInsertIfAbsent(transaction: PSqlSql, computed: AppOutboxInsert): Promise<boolean> {
     return (await insertAbsentAppOutboxRows(transaction, [computed])).length === 1;
-}
-
-/** The row stored under a key the transaction saw taken; it cannot have gone, since nothing in it deleted the row. */
-export async function readAppOutboxRow(transaction: PSqlSql, key: Key): Promise<ResourceEntry> {
-    const [stored] = await transaction<ResourceInboxRow[]>`
-        select * from resource_inbox
-        where ri_topic_id = ${key.topicId} and ri_resource_id = ${key.resourceId} and fk_ext_bank_id = ${key.contextId}
-    `;
-    if (stored === undefined) {
-        throw new ResourceInboxInvariantCorruptionError(key, 'App outbox row taken by an insert is not stored');
-    }
-    return toDomain(stored);
 }
 
 async function insertAbsentAppOutboxRows(

@@ -5,6 +5,7 @@ import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/p
 import { toDomain, type ResourceInboxRow } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import { writeAppOutboxInserts } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import {
+    readIsObservedCoalescedSuccessorStored,
     writeCoalescedAppOutboxWork,
     type ComputedCoalescedAppOutboxWork
 } from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work.ts';
@@ -13,6 +14,7 @@ import {
     resolveQueuedRtcTopologySuccessor,
     toCoalescedGroupRevisionKey
 } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
@@ -47,37 +49,72 @@ describe('Postgres coalesced APP_OUTBOX work conflicts', () => {
         const first = computeRevisionWork(ref, null, 'automatic');
         const second = computeRevisionWork(ref, null, 'automatic');
 
-        expect(await writeInTransaction(first)).toEqual({ outcome: 'written' });
-        expect(await writeInTransaction(second)).toEqual({ outcome: 'head-present' });
+        expect(await writeInTransaction(first)).toBe('written');
+        expect(await writeInTransaction(second)).toBe('head-present');
 
         const rows = await readRevisionRows(ref);
         expect(rows).toHaveLength(1);
         expect(rows[0]!.resource).toBe(first.entryWrite.entry.resource);
     });
 
-    postgresIt('returns the successor already queued at the same causal revision behind a reserved head, unchanged', async () => {
+    postgresIt('reports a successor already queued at the same causal revision behind a reserved head, unchanged', async () => {
         const ref = toRunGroupRef('queued-successor');
         await writeInTransaction(computeRevisionWork(ref, null, 'automatic'));
         const reservedHead = await reserveHead(ref);
         const first = computeRevisionWork(ref, reservedHead, 'automatic');
         const repeated = computeRevisionWork(ref, reservedHead, 'automatic');
-        const commanded = computeRevisionWork(ref, reservedHead, 'commanded');
         expect(first.operation).toBe('write-successor');
 
-        expect(await writeInTransaction(first)).toEqual({ outcome: 'written' });
-        const found = await writeInTransaction(repeated);
+        expect(await writeInTransaction(first)).toBe('written');
+        expect(await writeInTransaction(repeated)).toBe('successor-present');
 
-        expect(found.outcome).toBe('successor-present');
-        const stored = found.outcome === 'successor-present' ? found.stored : undefined;
-        expect(stored?.key).toEqual(first.successorWrite.entry.key);
-        expect(stored?.resource).toBe(first.successorWrite.entry.resource);
-        expect(resolveQueuedRtcTopologySuccessor(repeated, stored!)).toBe('serves-request');
-        expect(resolveQueuedRtcTopologySuccessor(commanded, stored!)).toBe('request-waits-for-head');
-        expect(resolveQueuedRtcTopologySuccessor(repeated, { ...stored!, status: EntityStatus.FAILED })).toBe(
+        const [, queuedSuccessor] = await readRevisionRows(ref);
+        expect(queuedSuccessor?.key).toEqual(first.successorWrite.entry.key);
+        expect(queuedSuccessor?.resource).toBe(first.successorWrite.entry.resource);
+        expect((await readRevisionRows(ref)).map((row) => row.status)).toEqual([EntityStatus.RESERVED, EntityStatus.NEW]);
+    });
+
+    postgresIt('resolves an observed successor from the request computed for the same room, revision and origin', async () => {
+        const ref = toRunGroupRef('resolved-successor');
+        await writeInTransaction(computeRevisionWork(ref, null, 'automatic'));
+        await writeInTransaction(computeRevisionWork(ref, await reserveHead(ref), 'automatic'));
+        const [, observed] = await readRevisionRows(ref);
+        const request = {
+            overlayId: toScopedOverlayId(ref),
+            sourceGroupStateCausalRevision: topologyGroupSnapshot(ref).causalRevision,
+            origin: 'automatic' as const
+        };
+
+        expect(resolveQueuedRtcTopologySuccessor(request, observed!)).toBe('serves-request');
+        expect(resolveQueuedRtcTopologySuccessor({ ...request, origin: 'commanded' }, observed!)).toBe(
             'request-waits-for-head'
         );
-        expect(resolveQueuedRtcTopologySuccessor(repeated, { ...stored!, resource: '{}' })).toBe('different-request');
-        expect((await readRevisionRows(ref)).map((row) => row.status)).toEqual([EntityStatus.RESERVED, EntityStatus.NEW]);
+        expect(resolveQueuedRtcTopologySuccessor(request, { ...observed!, status: EntityStatus.FAILED })).toBe(
+            'request-waits-for-head'
+        );
+        expect(
+            resolveQueuedRtcTopologySuccessor(
+                { ...request, sourceGroupStateCausalRevision: { groupRevision: 1, presenceRevision: 1 } },
+                observed!
+            )
+        ).toBe('different-request');
+        expect(resolveQueuedRtcTopologySuccessor(request, { ...observed!, resource: '{}' })).toBe('different-request');
+    });
+
+    postgresIt('guards an observed successor: still stored as observed, or changed since', async () => {
+        const ref = toRunGroupRef('guarded-successor');
+        await writeInTransaction(computeRevisionWork(ref, null, 'automatic'));
+        await writeInTransaction(computeRevisionWork(ref, await reserveHead(ref), 'automatic'));
+        const [, observed] = await readRevisionRows(ref);
+
+        expect(await guardInTransaction(observed!)).toBe(true);
+        expect(
+            await guardInTransaction({
+                ...observed!,
+                dequeueAudit: { ...observed!.dequeueAudit, attempts: observed!.dequeueAudit.attempts + 1 }
+            })
+        ).toBe(false);
+        expect(await guardInTransaction({ ...observed!, resource: '{}' })).toBe(false);
     });
 
     postgresIt('still reports a duplicate plain outbox insert as corruption', async () => {
@@ -101,6 +138,13 @@ describe('Postgres coalesced APP_OUTBOX work conflicts', () => {
         return await runInPSqlTransaction(
             requireSql(),
             async (transaction) => await writeCoalescedAppOutboxWork(transaction, computed)
+        );
+    }
+
+    async function guardInTransaction(observed: ResourceEntry): Promise<boolean> {
+        return await runInPSqlTransaction(
+            requireSql(),
+            async (transaction) => await readIsObservedCoalescedSuccessorStored(transaction, observed)
         );
     }
 

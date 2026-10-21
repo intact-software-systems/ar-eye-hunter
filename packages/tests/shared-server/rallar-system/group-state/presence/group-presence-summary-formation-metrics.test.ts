@@ -135,6 +135,7 @@ function createComputedWorkWithDownstreamTopics(
     return {
         work: decodeCanonicalGroupPresenceSummaryEntry(entry),
         summary: { outcome: 'no-op', summary: { activeSessionIds: [] } },
+        snapshot: { causalRevision: { groupRevision: 4, presenceRevision: 0 } },
         reservationFinish: {
             key: entry.key,
             expectedAttempts: entry.dequeueAudit.attempts,

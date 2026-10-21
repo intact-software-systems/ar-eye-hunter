@@ -17,22 +17,28 @@ import {
 } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
-import { toCoalescedGroupRevisionKey } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
+import {
+    resolveQueuedRtcTopologySuccessor,
+    toCoalescedGroupRevisionKey
+} from '@shared-server/rallar-system/topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type {
     RuntimeStateReadBatchSelection,
     RuntimeStateReadBatchSelector
 } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { validateGroupStateDeltaEnvelope, type GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type { GroupPresenceSummary, GroupRef } from '@shared/api/group-types.ts';
 import {
     computeGroupPresenceSummaryEntry,
     decodeCanonicalGroupPresenceSummaryEntry
 } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+import type { ResourceInboxWorkPage } from '@shared/queuebox/queue-box-types.ts';
 import { ResourceInboxHandlerRetryableConflict } from '@shared/queuebox/resource-inbox/resource-inbox-handler-outcome.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
@@ -121,6 +127,17 @@ describe('group presence summary coalescing', () => {
         expect(await fixture.readCommittedDeltas(reference.ref)).toHaveLength(10);
     });
 
+    it('scans the pending NEW and RETRY summary work of a claim through one work-page read', async () => {
+        const fixture = await createCoalescingFixture();
+        const seeded = await fixture.seedConnectedGroup('one-scan-room', 3);
+        const pending = await fixture.enqueue(seeded.entries);
+        fixture.workPageReads.length = 0;
+
+        await fixture.process(pending[0]!);
+
+        expect(fixture.workPageReads).toEqual(['pages:NEW,RETRY', 'page:NEW', 'page:RETRY']);
+    });
+
     it('leaves another group\'s pending connects untouched', async () => {
         const fixture = await createCoalescingFixture();
         const first = await fixture.seedConnectedGroup('first-room', 3);
@@ -177,8 +194,64 @@ describe('group presence summary coalescing', () => {
         expect((await fixture.readTopologyRows(seeded.ref))[1]!.resource).toBe('{"foreign":true}');
     });
 
+    it('fails a summary as corruption, writing nothing, when a decodable row of another revision holds its successor key', async () => {
+        const fixture = await createCoalescingFixture();
+        const seeded = await fixture.seedConnectedGroup('other-revision-successor-room', 3);
+        await fixture.processAlone(seeded.entries[0]!);
+        await fixture.reserveTopologyHead(seeded.ref);
+        await fixture.processAlone(seeded.entries[1]!);
+        const queuedSuccessor = (await fixture.readTopologyRows(seeded.ref))[1]!;
+        const otherRevision = toOtherRevisionSuccessorResource(queuedSuccessor.resource);
+        const queuedRevision = decodeSuccessorRevision(otherRevision);
+        // The rewritten row still decodes: it is a well-formed replan of the same room at another revision.
+        expect(resolveQueuedRtcTopologySuccessor(
+            { overlayId: toScopedOverlayId(seeded.ref), sourceGroupStateCausalRevision: queuedRevision, origin: 'automatic' },
+            { ...queuedSuccessor, resource: otherRevision }
+        )).toBe('serves-request');
+        await fixture.replaceStoredResource(queuedSuccessor.key, otherRevision);
+        const [third] = await fixture.enqueue([seeded.entries[2]!]);
+
+        await expect(fixture.process(third!)).rejects.toBeInstanceOf(ResourceInboxInvariantCorruptionError);
+
+        expect((await fixture.readTopologyRows(seeded.ref))[1]!.resource).toBe(otherRevision);
+        expect(await fixture.readCommittedDeltas(seeded.ref)).toHaveLength(2);
+    });
+
+    it('answers a pending replan at the queue backoff, writing nothing, when its revision\'s successor failed for good', async () => {
+        const fixture = await createCoalescingFixture();
+        const seeded = await fixture.seedConnectedGroup('failed-successor-room', 3);
+        await fixture.processAlone(seeded.entries[0]!);
+        await fixture.reserveTopologyHead(seeded.ref);
+        await fixture.processAlone(seeded.entries[1]!);
+        await fixture.failStoredRow((await fixture.readTopologyRows(seeded.ref))[1]!.key);
+        const [third] = await fixture.enqueue([seeded.entries[2]!]);
+
+        const outcome = await fixture.process(third!);
+
+        expect(outcome).toBeInstanceOf(ResourceInboxHandlerRetryableConflict);
+        expect(outcome?.code).toBe('group-presence-summary-replan-pending');
+        expect(outcome?.retryDelayMs).toBeNull();
+        expect(await fixture.readCommittedDeltas(seeded.ref)).toHaveLength(2);
+        expect((await fixture.resources.entries.findByKey(third!.key))?.status).toBe(EntityStatus.RESERVED);
+    });
+
+    it('answers a short typed conflict, writing nothing, when the successor it observed changed before its write', async () => {
+        const fixture = await createCoalescingFixture(undefined, undefined, { mode: 'stale-successor' });
+        const seeded = await fixture.seedConnectedGroup('changed-successor-room', 3);
+        await fixture.processAlone(seeded.entries[0]!);
+        await fixture.reserveTopologyHead(seeded.ref);
+        await fixture.processAlone(seeded.entries[1]!);
+        const [third] = await fixture.enqueue([seeded.entries[2]!]);
+
+        const outcome = await fixture.process(third!);
+
+        expect(outcome?.code).toBe('group-presence-summary-replan-changed');
+        expect(outcome?.retryDelayMs).toBe(GROUP_PRESENCE_SUMMARY_CONFLICT_RETRY_DELAY_MS);
+        expect(await fixture.readCommittedDeltas(seeded.ref)).toHaveLength(2);
+    });
+
     it('answers a short typed conflict when another writer queued the replan head after this summary read none', async () => {
-        const fixture = await createCoalescingFixture(undefined, undefined, { blind: true });
+        const fixture = await createCoalescingFixture(undefined, undefined, { mode: 'blind' });
         const seeded = await fixture.seedConnectedGroup('lost-head-room', 2);
         await fixture.processAlone(seeded.entries[0]!);
         const [second] = await fixture.enqueue([seeded.entries[1]!]);
@@ -192,15 +265,15 @@ describe('group presence summary coalescing', () => {
     });
 
     it('coalesces the due siblings a failed page released together with the next row it claims', async () => {
-        const headRead = { blind: true };
-        const fixture = await createCoalescingFixture(undefined, undefined, headRead);
+        const topologyRead: { mode: TopologyReadMode; } = { mode: 'blind' };
+        const fixture = await createCoalescingFixture(undefined, undefined, topologyRead);
         const seeded = await fixture.seedConnectedGroup('released-siblings-room', 4);
         await fixture.processAlone(seeded.entries[0]!);
         const pending = await fixture.enqueue(seeded.entries.slice(1));
         expect(await fixture.process(pending[0]!)).toBeInstanceOf(ResourceInboxHandlerRetryableConflict);
         const released = await Promise.all(pending.slice(1).map(async (entry) => await fixture.resources.entries.findByKey(entry.key)));
         expect(released.map((entry) => entry?.status)).toEqual([EntityStatus.RETRY, EntityStatus.RETRY]);
-        headRead.blind = false;
+        topologyRead.mode = 'as-stored';
         await new Promise((resolve) => setTimeout(resolve, 5));
 
         await expect(fixture.process(released[0]!)).resolves.toBeUndefined();
@@ -252,6 +325,8 @@ interface SeededConnectedGroup {
 
 interface CoalescingFixture {
     readonly resources: PSqlResourceInboxRepository;
+    /** The work-page reads the worker's queue answered, in call order. */
+    readonly workPageReads: string[];
     readonly repositoryCalls: string[];
     /** Seeds the group's state and returns its summary work rows without queueing them. */
     seedConnectedGroup(groupId: string, connectCount: number): Promise<SeededConnectedGroup>;
@@ -270,36 +345,71 @@ interface CoalescingFixture {
     reserveTopologyHead(ref: GroupRef): Promise<void>;
     /** Overwrites a stored row's resource, as a row of another request under the same key would read. */
     replaceStoredResource(key: Key, resource: string): Promise<void>;
+    /** Marks a stored row as failed for good, as an exhausted attempt budget leaves it. */
+    failStoredRow(key: Key): Promise<void>;
 }
 
-/** Reads no replan head, as a summary whose read ran before another writer queued it. */
-class HeadBlindQueueBox extends PSqlQueueBox {
-    private readonly headRead: Readonly<{ blind: boolean; }>;
+/**
+ * How the worker's replan reads see the stored rows: as stored; blind, as a summary whose read ran before another
+ * writer queued them; or with a queued successor as it stood before another writer touched it.
+ */
+type TopologyReadMode = 'as-stored' | 'blind' | 'stale-successor';
 
-    constructor(resources: PSqlResourceInboxRepository, headRead: Readonly<{ blind: boolean; }>) {
+/** Records each work-page read it answers. */
+class RecordingQueueBox extends PSqlQueueBox {
+    readonly workPageReads: string[] = [];
+
+    constructor(resources: PSqlResourceInboxRepository) {
         super(resources, Temporal.Now.instant);
-        this.headRead = headRead;
+    }
+
+    override readWorkPages(requests: readonly ResourceInboxWorkPage.Request[]): Promise<readonly ResourceInboxWorkPage[]> {
+        this.workPageReads.push(`pages:${requests.map((request) => request.status).join(',')}`);
+        return super.readWorkPages(requests);
+    }
+
+    override readWorkPage(request: ResourceInboxWorkPage.Request): Promise<ResourceInboxWorkPage> {
+        this.workPageReads.push(`page:${request.status}`);
+        return super.readWorkPage(request);
+    }
+}
+
+class TopologyReadQueueBox extends RecordingQueueBox {
+    private readonly topologyRead: Readonly<{ mode: TopologyReadMode; }>;
+
+    constructor(resources: PSqlResourceInboxRepository, topologyRead: Readonly<{ mode: TopologyReadMode; }>) {
+        super(resources);
+        this.topologyRead = topologyRead;
     }
 
     override async getItem(key: Key): Promise<ResourceEntry | undefined> {
-        return this.headRead.blind && key.topicId === APP_OUTBOX_RTC_TOPOLOGY_TOPIC ? undefined : await super.getItem(key);
+        const stored = await super.getItem(key);
+        if (key.topicId !== APP_OUTBOX_RTC_TOPOLOGY_TOPIC || this.topologyRead.mode === 'as-stored') {
+            return stored;
+        }
+        if (this.topologyRead.mode === 'blind') {
+            return undefined;
+        }
+        return stored?.status === EntityStatus.NEW
+            ? { ...stored, dequeueAudit: { ...stored.dequeueAudit, attempts: stored.dequeueAudit.attempts + 1 } }
+            : stored;
     }
 }
 
 async function createCoalescingFixture(
     timingEvents?: RallarTimingEvent[],
     wakeQueue?: () => void,
-    /** Present, the worker's replan-head reads see no head while it says so. */
-    headRead?: Readonly<{ blind: boolean; }>
+    /** Present, the worker's replan reads see the stored rows as its mode says. */
+    topologyRead?: Readonly<{ mode: TopologyReadMode; }>
 ): Promise<CoalescingFixture> {
     const { sql } = await createPSqlAdmissionTestStorage();
     const now = Date.now();
     const repository = new RecordingRuntimeStateRepository(sql);
     const repositoryCalls = repository.calls;
     const resources = createPSqlResourceInboxRepository(sql, () => new Date(now));
-    const queue = headRead === undefined
-        ? new PSqlQueueBox(resources, Temporal.Now.instant)
-        : new HeadBlindQueueBox(resources, headRead);
+    const queue = topologyRead === undefined
+        ? new RecordingQueueBox(resources)
+        : new TopologyReadQueueBox(resources, topologyRead);
     const worker = new GroupPresenceSummaryWork({
         database: sql,
         runtimeRepository: repository,
@@ -321,6 +431,7 @@ async function createCoalescingFixture(
     };
     return {
         resources,
+        workPageReads: queue.workPageReads,
         repositoryCalls,
         seedConnectedGroup: async (groupId, connectCount) => await seedConnectedGroup({ repository, groupId, connectCount, now }),
         enqueue,
@@ -341,6 +452,12 @@ async function createCoalescingFixture(
         readCommittedDeltas: async (ref) => await readCommittedDeltas(sql, ref),
         readCommittedOutbox: async (ref) => await readCommittedOutbox(sql, ref),
         readTopologyRows: async (ref) => await readTopologyRows(sql, ref),
+        failStoredRow: async (key) => {
+            await sql`update resource_inbox set ri_status = ${EntityStatus.FAILED}, ri_attempts = 20,
+                    start_ts = now() at time zone 'UTC', end_ts = now() at time zone 'UTC', next_ts = null
+                where ri_topic_id = ${key.topicId} and ri_resource_id = ${key.resourceId}
+                  and fk_ext_bank_id = ${key.contextId}`;
+        },
         replaceStoredResource: async (key, resource) => {
             await sql`update resource_inbox set ri_resource = ${resource}
                 where ri_topic_id = ${key.topicId} and ri_resource_id = ${key.resourceId}
@@ -499,4 +616,32 @@ async function readTopologyRows(sql: PSqlSql, ref: GroupRef): Promise<readonly R
         where ri_topic_id = ${head.topicId} and fk_ext_bank_id = ${head.contextId}
         order by ri_row_id`;
     return rows.map(toDomain);
+}
+
+function decodeSuccessorRevision(resource: string): Readonly<{ groupRevision: number; presenceRevision: number; }> {
+    const message = JSON.parse(resource) as ALMessage;
+    return (JSON.parse(message.payload.resource) as {
+        data: { sourceGroupStateCausalRevision: { groupRevision: number; presenceRevision: number; }; };
+    }).data.sourceGroupStateCausalRevision;
+}
+
+/** The same successor message, re-pointed at the next presence revision: decodable, but another request. */
+function toOtherRevisionSuccessorResource(resource: string): string {
+    const message = JSON.parse(resource) as ALMessage;
+    const envelope = JSON.parse(message.payload.resource) as {
+        data: { sourceGroupStateCausalRevision: { groupRevision: number; presenceRevision: number; }; };
+    };
+    const revision = envelope.data.sourceGroupStateCausalRevision;
+    const otherRevision = { ...revision, presenceRevision: revision.presenceRevision + 1 };
+    return JSON.stringify({
+        ...message,
+        ordering: { ...message.ordering, seq: otherRevision.presenceRevision },
+        payload: {
+            ...message.payload,
+            resource: JSON.stringify({
+                ...envelope,
+                data: { ...envelope.data, sourceGroupStateCausalRevision: otherRevision }
+            })
+        }
+    });
 }

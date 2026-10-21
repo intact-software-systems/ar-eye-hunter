@@ -532,7 +532,7 @@ describe('direct resource outbox writes', () => {
                 database.sql,
                 async (transaction) => await writeCoalescedAppOutboxWork(transaction, computed)
             )
-        ).resolves.toEqual({ outcome: 'head-present' });
+        ).resolves.toBe('head-present');
         expect(database.rows.get(toRowKey(first))?.ri_resource).toBe(first.resource);
     });
 

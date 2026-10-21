@@ -187,8 +187,8 @@ Deno.test('pending coalesced guards preserve changed content, type, and attempts
             assert.deepEqual(after, before);
             assert.equal((await repository.entries.findAnyByKey(successor.key))?.resource, successor.resource);
             const repeated = await sql.begin((transaction) => writeCoalescedAppOutboxWork(transaction, computed));
-            assert.equal(repeated.outcome, 'successor-present');
-            assert.equal(repeated.outcome === 'successor-present' ? repeated.stored.resource : null, successor.resource);
+            assert.equal(repeated, 'successor-present');
+            assert.equal((await repository.entries.findAnyByKey(successor.key))?.resource, successor.resource);
             assert.deepEqual(await repository.entries.findAnyByKey(expected.key), before);
         }
     });

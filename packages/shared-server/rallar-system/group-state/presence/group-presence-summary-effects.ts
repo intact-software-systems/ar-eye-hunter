@@ -140,28 +140,18 @@ interface ToGroupPresenceSummaryOutboxInputInput {
     readonly options: ComputeGroupPresenceSummaryWorkOptions;
 }
 
+/** The summary a read yields and the snapshot assembled from it; every expansion of one read shares both. */
+export interface GroupPresenceSummaryState {
+    readonly summary: GroupPresenceSummaryComputed;
+    readonly snapshot: GroupSnapshot;
+}
+
 export function computeGroupPresenceSummaryWork(
     work: GroupPresenceSummaryWorkData,
     read: GroupPresenceSummaryWorkRead,
     options: ComputeGroupPresenceSummaryWorkOptions
 ): GroupPresenceSummaryComputedWork {
-    const summary = computeGroupPresenceSummary({
-        ref: work.aggregateRef,
-        read: read.presence,
-        nowEpochMs: read.nowEpochMs
-    });
-    const snapshot = assembleGroupStateSnapshot(
-        {
-            group: read.presence.group.value,
-            members: read.presence.members.map((member) => member.value),
-            summary: summary.summary,
-            authoritativeSessions: read.presence.presenceSessions.map((session) => session.value),
-            groupRevision: summary.summary.causalRevision.groupRevision,
-            observedAtEpochMs: summary.summary.computedAtEpochMs,
-            sessionLeaseFields: 'authoritative'
-        },
-        (storageKey, message) => new Error(`${message}: ${storageKey}`)
-    );
+    const { summary, snapshot } = computeGroupPresenceSummaryState(work, read);
     const outboxInput = toGroupPresenceSummaryOutboxInput({
         work,
         read,
@@ -184,6 +174,37 @@ export function computeGroupPresenceSummaryWork(
             completedAt: new Date(read.nowEpochMs)
         }
     };
+}
+
+export function computeGroupPresenceSummaryState(
+    work: GroupPresenceSummaryWorkData,
+    read: Pick<GroupPresenceSummaryWorkRead, 'presence' | 'nowEpochMs'>
+): GroupPresenceSummaryState {
+    const summary = computeGroupPresenceSummary({
+        ref: work.aggregateRef,
+        read: read.presence,
+        nowEpochMs: read.nowEpochMs
+    });
+    const snapshot = assembleGroupStateSnapshot(
+        {
+            group: read.presence.group.value,
+            members: read.presence.members.map((member) => member.value),
+            summary: summary.summary,
+            authoritativeSessions: read.presence.presenceSessions.map((session) => session.value),
+            groupRevision: summary.summary.causalRevision.groupRevision,
+            observedAtEpochMs: summary.summary.computedAtEpochMs,
+            sessionLeaseFields: 'authoritative'
+        },
+        (storageKey, message) => new Error(`${message}: ${storageKey}`)
+    );
+    return { summary, snapshot };
+}
+
+/** The revision a summary delta names as its predecessor: the stored summary's, or none before the first summary. */
+export function toGroupPresenceSummaryPredecessorCausalRevision(
+    presence: GroupPresenceSummaryRead
+): GroupStateCausalRevision | null {
+    return presence.current?.value.causalRevision ?? null;
 }
 
 function computeGroupPresenceSummaryWrite(
@@ -329,7 +350,7 @@ function toGroupPresenceSummaryOutboxInput(
         work,
         coalescedEvents: read.coalescedEvents,
         summary,
-        summaryPredecessorCausalRevision: read.presence.current?.value.causalRevision ?? null,
+        summaryPredecessorCausalRevision: toGroupPresenceSummaryPredecessorCausalRevision(read.presence),
         snapshot,
         audience: {
             kind: 'group',

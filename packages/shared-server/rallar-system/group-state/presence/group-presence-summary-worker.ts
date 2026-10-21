@@ -1,17 +1,12 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import { EnqueuedType } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { GROUP_MINIMUM_LAYOUT_AGE_MS } from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
-import {
-    isCanonicalGroupPresenceSummaryEntry,
-    type GroupPresenceSummaryWorkData
-} from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { ResourceInboxHandlerRetryableConflict } from '@shared/queuebox/resource-inbox/resource-inbox-handler-outcome.ts';
-import { EntityStatus, isKeysEqual, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
@@ -23,9 +18,8 @@ import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimisti
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import { writeAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import {
-    writeCoalescedAppOutboxWork,
-    type CoalescedAppOutboxWorkWrite,
-    type ComputedCoalescedAppOutboxWork
+    readIsObservedCoalescedSuccessorStored,
+    writeCoalescedAppOutboxWork
 } from '../../app-outbox/coalesced-app-outbox-work.ts';
 import type { GroupFormationPresenceSummarySink } from '../../observability/formation-metrics.ts';
 import {
@@ -43,7 +37,6 @@ import {
     type TopologyReplanPolicyFacts
 } from '../../topology/planning/resolve-topology-plan-action.ts';
 import {
-    resolveQueuedRtcTopologySuccessor,
     toRtcTopologyCoalescedGroupRevisionResourceId
 } from '../../topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
@@ -56,14 +49,18 @@ import {
 } from './assert-group-presence-summary-read.ts';
 import {
     computeGroupPresenceSummaryCoalescedWrite,
-    computeGroupPresenceSummaryPage,
-    sortGroupPresenceSummaryWorkByCausalOrder,
-    toGroupPresenceSummaryWorkReads,
+    resolveGroupPresenceSummaryReplanWrite,
+    toObservedReplanSuccessorKey,
     validateGroupPresenceSummaryCoalescedWrite,
     type GroupPresenceSummaryCoalescedWrite,
+    type GroupPresenceSummaryPageWrite
+} from './compute-group-presence-summary-coalesced-write.ts';
+import {
+    computeGroupPresenceSummaryPage,
+    toGroupPresenceSummaryWorkReads,
     type GroupPresenceSummaryPage,
     type GroupPresenceSummaryWorkItem
-} from './compute-group-presence-summary-coalesced-write.ts';
+} from './compute-group-presence-summary-page.ts';
 import { decodeCanonicalGroupPresenceSummaryWork } from './decode-canonical-group-presence-summary-work.ts';
 import {
     computeGroupDeltaProvenance,
@@ -71,11 +68,17 @@ import {
     type GroupDeltaProvenanceInsert
 } from './group-delta-provenance.ts';
 import {
+    claimPendingGroupPresenceSummaryWork,
+    releaseUnexpandedGroupPresenceSummaryWork,
+    toDeferredGroupPresenceSummaryWork,
+    toGroupPresenceSummaryCandidates
+} from './group-presence-summary-claim.ts';
+import {
+    computeGroupPresenceSummaryState,
     computeGroupPresenceSummaryWork,
     toTopologyReplanEnqueueFacts,
     validateGroupPresenceSummaryComputedWork,
     type GroupPresenceSummaryComputedWork,
-    type GroupPresenceSummaryReservationRead,
     type GroupPresenceSummaryWorkRead
 } from './group-presence-summary-effects.ts';
 import {
@@ -163,11 +166,6 @@ const REPLAN_PENDING: GroupPresenceSummaryWriteConflict = {
     code: 'group-presence-summary-replan-pending',
     retryDelayMs: null
 };
-
-/** The queue caps a work page at 256 rows; one page of pending APP_OUTBOX work per status is scanned per expansion. */
-const COALESCED_SUMMARY_WORK_SCAN_LIMIT = 256;
-
-const COALESCED_SUMMARY_WORK_STATUSES = [EntityStatus.NEW, EntityStatus.RETRY] as const;
 
 export class GroupPresenceSummaryWork {
     private readonly now: () => number;
@@ -287,22 +285,29 @@ export class GroupPresenceSummaryWork {
         });
     }
 
+    /** The observed-successor guard first, then the summary's compare-and-set, the deltas and the replan. */
     public async write(
         transaction: PSqlSql,
-        computed: GroupPresenceSummaryCoalescedWrite
+        computed: GroupPresenceSummaryPageWrite
     ): Promise<void> {
+        const { replanWrite } = computed;
+        if (
+            replanWrite.write === 'observed-successor' &&
+            !await readIsObservedCoalescedSuccessorStored(transaction, replanWrite.observed)
+        ) {
+            throw new GroupPresenceSummaryWriteConflictError(REPLAN_CHANGED);
+        }
         if (computed.summaryWrite !== null) {
             await writePresenceSummary(transaction, computed.summaryWrite);
         }
         for (const outboxWrite of computed.downstreamOutboxWrites) {
             await writeAppOutboxInsert(transaction, outboxWrite);
         }
-        if (computed.topologyReplan.decision === 'enqueue') {
-            const replan = computed.topologyReplan.work;
-            const conflict = toReplanWriteConflict(replan, await writeCoalescedAppOutboxWork(transaction, replan));
-            if (conflict !== undefined) {
-                throw new GroupPresenceSummaryWriteConflictError(conflict);
-            }
+        if (
+            replanWrite.write === 'coalesced' &&
+            await writeCoalescedAppOutboxWork(transaction, replanWrite.work) !== 'written'
+        ) {
+            throw new GroupPresenceSummaryWriteConflictError(REPLAN_CHANGED);
         }
     }
 
@@ -323,7 +328,8 @@ export class GroupPresenceSummaryWork {
         }
         const primary = decodeCanonicalGroupPresenceSummaryWork(message, entry);
         const claimStartedAtMs = nowMs();
-        const claimed = await this.claimPendingSummaryWork(entry);
+        const outbox = this.options.outboxQueueReader.outbox;
+        const claimed = await claimPendingGroupPresenceSummaryWork(outbox, entry);
         this.recordPhase({
             work: primary,
             operation: 'claim',
@@ -331,16 +337,13 @@ export class GroupPresenceSummaryWork {
             startedAtMs: claimStartedAtMs
         });
         try {
-            const candidates = [
-                { work: primary, reservation: toReservationRead(entry) },
-                ...sortGroupPresenceSummaryWorkByCausalOrder(claimed.map((sibling) => ({
-                    work: decodeCanonicalGroupPresenceSummaryWork(decodePersistedALMessage(sibling.resource), sibling),
-                    reservation: toReservationRead(sibling)
-                })))
-            ];
-            const page = await this.expandItems(database, primary, candidates);
+            const page = await this.expandItems(
+                database,
+                primary,
+                toGroupPresenceSummaryCandidates(primary, entry, claimed)
+            );
             if (page.outcome !== 'written') {
-                await this.releaseClaimedWork(claimed);
+                await releaseUnexpandedGroupPresenceSummaryWork(outbox, claimed);
                 return new ResourceInboxHandlerRetryableConflict(
                     entry,
                     page.outcome.code,
@@ -348,15 +351,14 @@ export class GroupPresenceSummaryWork {
                     page.outcome.retryDelayMs
                 );
             }
-            await this.releaseClaimedWork(
-                claimed.filter((sibling) =>
-                    page.deferred.some((item) => isKeysEqual(item.reservation.key, sibling.key))
-                )
+            await releaseUnexpandedGroupPresenceSummaryWork(
+                outbox,
+                toDeferredGroupPresenceSummaryWork(claimed, page.deferred)
             );
             return undefined;
         }
         catch (error) {
-            await this.releaseClaimedWork(claimed);
+            await releaseUnexpandedGroupPresenceSummaryWork(outbox, claimed);
             throw error;
         }
     }
@@ -399,11 +401,10 @@ export class GroupPresenceSummaryWork {
         if (candidates.length === 1) {
             return { items: candidates, deferred: [] };
         }
-        const reserved = candidates[0]!;
         return computeGroupPresenceSummaryPage({
             candidates,
             read,
-            reservedExpansion: this.compute(reserved.work, toGroupPresenceSummaryWorkReads([reserved], read)[0]!)
+            state: computeGroupPresenceSummaryState(candidates[0]!.work, read)
         });
     }
 
@@ -426,6 +427,20 @@ export class GroupPresenceSummaryWork {
             details: effectDetails,
             startedAtMs: computeStartedAtMs
         });
+        const replanWrite = resolveGroupPresenceSummaryReplanWrite(
+            coalesced,
+            await this.readObservedReplanSuccessor(coalesced)
+        );
+        if (replanWrite.left?.queued === 'different-request') {
+            throw new ResourceInboxInvariantCorruptionError(
+                replanWrite.left.key,
+                'Stored replan successor is not the request its key names'
+            );
+        }
+        if (replanWrite.left !== undefined) {
+            return REPLAN_PENDING;
+        }
+        const pageWrite = { ...coalesced, replanWrite: replanWrite.right! };
         const proofs = expansions.flatMap((expansion) => computeGroupDeltaProvenance(expansion.computed));
         const outcome = await timeRallarAsync(
             this.options.timing,
@@ -435,7 +450,7 @@ export class GroupPresenceSummaryWork {
                 serviceId: this.options.serviceId,
                 details: effectDetails
             }),
-            async () => await this.writeExpansion(database, coalesced, proofs)
+            async () => await this.writeExpansion(database, pageWrite, proofs)
         );
         if (outcome === 'written') {
             this.finishWrittenExpansion(expansions, coalesced);
@@ -462,14 +477,14 @@ export class GroupPresenceSummaryWork {
     /** One transaction for the summary, its deltas, their proofs and every reservation finish; a lost summary write rolls all back. */
     private async writeExpansion(
         database: PSqlSql,
-        coalesced: GroupPresenceSummaryCoalescedWrite,
+        pageWrite: GroupPresenceSummaryPageWrite,
         proofs: readonly GroupDeltaProvenanceInsert[]
     ): Promise<GroupPresenceSummaryWriteOutcome> {
         try {
             await runInPSqlTransaction(database, async (transaction) => {
-                await this.write(transaction, coalesced);
+                await this.write(transaction, pageWrite);
                 await writeGroupDeltaProvenance(transaction, proofs);
-                for (const reservationFinish of coalesced.reservationFinishes) {
+                for (const reservationFinish of pageWrite.reservationFinishes) {
                     if (!await writeResourceInboxReservationFinish(transaction, reservationFinish)) {
                         throw new Error('Presence-summary reservation changed before commit');
                     }
@@ -510,55 +525,12 @@ export class GroupPresenceSummaryWork {
         }
     }
 
-    /**
-     * Claims, through the queue, the same group's summary rows still waiting: new ones and due retries, among them the
-     * rows an earlier page released unexpanded. An unchanged observation is the claim's guard, and a retry still in its
-     * backoff is not due, so it is not claimed.
-     */
-    private async claimPendingSummaryWork(entry: ResourceEntry): Promise<readonly ResourceEntry[]> {
-        const outbox = this.options.outboxQueueReader.outbox;
-        const pages = await Promise.all(
-            COALESCED_SUMMARY_WORK_STATUSES.map(async (status) =>
-                await outbox.readWorkPage({
-                    typeId: EnqueuedType.APP_OUTBOX,
-                    status,
-                    maxToRead: COALESCED_SUMMARY_WORK_SCAN_LIMIT,
-                    cursor: null
-                })
-            )
-        );
-        const pending = pages.flatMap((page) =>
-            page.entries.filter((candidate) => isPendingSummaryWorkOfSameGroup(candidate, entry))
-        );
-        if (pending.length === 0) {
-            return [];
-        }
-        const reserved = await outbox.reserveEntries({
-            typeIds: new Set([EnqueuedType.APP_OUTBOX]),
-            statusIds: new Set(COALESCED_SUMMARY_WORK_STATUSES),
-            reservationInput: pending.length,
-            observedEntries: pending
-        });
-        return [...reserved.values()];
-    }
-
-    /** A claimed row that was not expanded consumed no attempt; it goes back to the queue at once. */
-    private async releaseClaimedWork(claimed: readonly ResourceEntry[]): Promise<void> {
-        if (claimed.length === 0) {
-            return;
-        }
-        try {
-            await this.options.outboxQueueReader.outbox.releaseEntries(
-                claimed.map((entry) => ({
-                    entry,
-                    disposition: { status: EntityStatus.RETRY, delayMs: 1, reason: 'not-ready' }
-                }))
-            );
-        }
-        catch {
-            // The expansion's own failure is the one to report; a claim this release could not return
-            // is reclaimed by the queue's reservation timeout.
-        }
+    /** The successor already stored for the page's replan, read before its transaction; null when none is or none is read. */
+    private async readObservedReplanSuccessor(
+        coalesced: GroupPresenceSummaryCoalescedWrite
+    ): Promise<ResourceEntry | null> {
+        const key = toObservedReplanSuccessorKey(coalesced);
+        return key === null ? null : (await this.options.outboxQueueReader.outbox.getItem(key)) ?? null;
     }
 
     private async readCoalescedTopologyEntry(ref: GroupRef): Promise<ResourceEntry | null> {
@@ -635,17 +607,6 @@ function toRecipientCount(expansions: readonly GroupPresenceSummaryExpansion[]):
     return expansion.computed.summary.summary.activeSessionIds.length;
 }
 
-function isPendingSummaryWorkOfSameGroup(candidate: ResourceEntry, entry: ResourceEntry): boolean {
-    return candidate.key.topicId === entry.key.topicId &&
-        candidate.key.contextId === entry.key.contextId &&
-        !isKeysEqual(candidate.key, entry.key) &&
-        isCanonicalGroupPresenceSummaryEntry(candidate);
-}
-
-function toReservationRead(entry: ResourceEntry): GroupPresenceSummaryReservationRead {
-    return { key: entry.key, expectedAttempts: entry.dequeueAudit.attempts };
-}
-
 async function writePresenceSummary(
     transaction: PSqlSql,
     computed: NonNullable<GroupPresenceSummaryCoalescedWrite['summaryWrite']>
@@ -673,27 +634,6 @@ async function writePresenceSummary(
     if (rows.length !== 1) {
         throw new GroupPresenceSummaryWriteConflictError(SUMMARY_CHANGED);
     }
-}
-
-/** The conflict a replan write found, if any; a stored successor that is not this request's is a broken invariant. */
-function toReplanWriteConflict(
-    replan: ComputedCoalescedAppOutboxWork,
-    written: CoalescedAppOutboxWorkWrite
-): GroupPresenceSummaryWriteConflict | undefined {
-    if (written.outcome === 'written') {
-        return undefined;
-    }
-    if (written.outcome === 'head-present') {
-        return REPLAN_CHANGED;
-    }
-    const queued = resolveQueuedRtcTopologySuccessor(replan, written.stored);
-    if (queued === 'different-request') {
-        throw new ResourceInboxInvariantCorruptionError(
-            written.stored.key,
-            'Stored replan successor is not the request its key names'
-        );
-    }
-    return queued === 'serves-request' ? undefined : REPLAN_PENDING;
 }
 
 /** Rolls the expansion's transaction back when one of its writes loses to another writer; the handler answers a conflict. */

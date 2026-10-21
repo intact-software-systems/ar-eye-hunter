@@ -323,6 +323,13 @@ export function mergeRtcTopologyGroupRevisionWork(
     };
 }
 
+/** The replan a successor key asks for: its room, its source causal revision and the request's origin. */
+export interface RtcTopologySuccessorRequest {
+    readonly overlayId: string;
+    readonly sourceGroupStateCausalRevision: GroupStateCausalRevision;
+    readonly origin: TopologyWorkOrigin;
+}
+
 /**
  * How a successor already stored under this request's successor key stands to the request. The key names the room and
  * the source causal revision, so a stored row of the same room and revision already asks for that revision's replan:
@@ -334,28 +341,27 @@ export function mergeRtcTopologyGroupRevisionWork(
 export type QueuedRtcTopologySuccessor = 'serves-request' | 'request-waits-for-head' | 'different-request';
 
 export function resolveQueuedRtcTopologySuccessor(
-    computed: ComputedCoalescedAppOutboxWork,
-    stored: ResourceEntry
+    request: RtcTopologySuccessorRequest,
+    observed: ResourceEntry
 ): QueuedRtcTopologySuccessor {
-    const requested = readPreviousCoalescedGroupRevisionWork(computed.successorWrite.entry).envelope.data;
     let queued: CoalescedAppOutboxWorkData<RtcTopologyGroupRevisionWork>;
     try {
-        queued = readPreviousCoalescedGroupRevisionWork(stored).envelope.data;
+        queued = readPreviousCoalescedGroupRevisionWork(observed).envelope.data;
     }
     catch {
         return 'different-request';
     }
     if (
-        queued.overlayId !== requested.overlayId ||
-        compareGroupCausalRevision(queued.sourceGroupStateCausalRevision, requested.sourceGroupStateCausalRevision) !==
+        queued.overlayId !== request.overlayId ||
+        compareGroupCausalRevision(queued.sourceGroupStateCausalRevision, request.sourceGroupStateCausalRevision) !==
             'equal'
     ) {
         return 'different-request';
     }
-    if (isFailed(stored.status)) {
+    if (isFailed(observed.status)) {
         return 'request-waits-for-head';
     }
-    return requested.origin === 'automatic' || queued.origin === 'commanded'
+    return request.origin === 'automatic' || queued.origin === 'commanded'
         ? 'serves-request'
         : 'request-waits-for-head';
 }

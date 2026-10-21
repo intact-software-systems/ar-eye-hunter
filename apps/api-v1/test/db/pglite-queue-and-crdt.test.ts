@@ -500,8 +500,8 @@ Deno.test(
             assert.equal((await repository.entries.findByKey(successor.key))?.resource, successor.resource);
 
             const repeated = await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, blockedWrite));
-            assert.equal(repeated.outcome, 'successor-present');
-            assert.equal(repeated.outcome === 'successor-present' ? repeated.stored.resource : null, successor.resource);
+            assert.equal(repeated, 'successor-present');
+            assert.equal((await repository.entries.findByKey(successor.key))?.resource, successor.resource);
             assert.equal((await repository.entries.findAnyByKey(first.key))?.resource, second.resource);
             assert.equal((await repository.entries.findAnyByKey(first.key))?.status, EntityStatus.RESERVED);
             assert.equal((await repository.entries.findByKey(successor.key))?.resource, successor.resource);
@@ -512,8 +512,8 @@ Deno.test(
                 { ...successor, resource: JSON.stringify({ different: true }) }
             );
             const conflicting = await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, conflictingSuccessorWrite));
-            assert.equal(conflicting.outcome, 'successor-present');
-            assert.equal(conflicting.outcome === 'successor-present' ? conflicting.stored.resource : null, successor.resource);
+            assert.equal(conflicting, 'successor-present');
+            assert.equal((await repository.entries.findByKey(successor.key))?.resource, successor.resource);
         });
     }
 );
