@@ -18,6 +18,8 @@ export interface GroupTopologyPlanningAuthority {
     readonly kindHysteresisWidths: RtcTopologyKindHysteresisWidths;
     readonly rttReportingDegreeLimit: number;
     readonly rttMeasurements: readonly RttMeasurementInfo[];
+    /** How long a stored layout stands before a replan caused only by RTT measurements may replace it. */
+    readonly rttReplanMinimumLayoutAgeMs: number;
     /**
      * The replanning mode the planning gate consults. Read from the stored
      * policy only for stages whose disposition follows it; every other

@@ -113,6 +113,7 @@ class ObserverHarness {
             kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
             rttReportingDegreeLimit: 5,
             rttMeasurements: [],
+            rttReplanMinimumLayoutAgeMs: 15_000,
             replanning: 'auto' as const,
             nowEpochMs: this.nowEpochMs
         };
@@ -272,6 +273,7 @@ async function createStageTriggerHarness(
             kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
             rttReportingDegreeLimit: 5,
             rttMeasurements: [],
+            rttReplanMinimumLayoutAgeMs: 15_000,
             replanning: 'auto',
             nowEpochMs: 4_000
         },

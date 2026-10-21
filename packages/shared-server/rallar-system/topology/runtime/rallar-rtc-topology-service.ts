@@ -5,6 +5,7 @@ import type { GroupTopologyKindSetting } from '@shared/api/graph-topology-manage
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot, RallarRtcTopologyKind } from '@shared/api/overlay-topology.ts';
 
+import { DEFAULT_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS } from '../planning/resolve-rtt-replan-promotion.ts';
 import { RtcTopologyPlanner } from '../planning/rtc-topology-planner.ts';
 import {
     RtcTopologyMetrics,
@@ -22,6 +23,7 @@ export interface RallarRtcTopologyServiceOptions {
     readonly meshParamK?: number;
     readonly meshExitWidth?: number;
     readonly treeExitWidth?: number;
+    readonly rttReplanMinimumLayoutAgeMs?: number;
     readonly now?: () => number;
     readonly durationNowMs?: () => number;
 }
@@ -174,6 +176,10 @@ export class RallarRtcTopologyService {
 
     readKindHysteresisWidths(): RtcTopologyKindHysteresisWidths {
         return this.planner.readKindHysteresisWidths();
+    }
+
+    readRttReplanMinimumLayoutAgeMs(): number {
+        return this.options.rttReplanMinimumLayoutAgeMs ?? DEFAULT_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS;
     }
 
     private now(): number {

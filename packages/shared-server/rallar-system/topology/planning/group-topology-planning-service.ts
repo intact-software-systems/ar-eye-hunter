@@ -158,6 +158,7 @@ export class GroupTopologyPlanningService {
                 rttReportingDegreeLimit: this.dependencies.serverDefaults?.rttReportingDegreeLimit
             }),
             rttMeasurements,
+            rttReplanMinimumLayoutAgeMs: this.dependencies.topologyService.readRttReplanMinimumLayoutAgeMs(),
             replanning,
             nowEpochMs: this.dependencies.topologyService.readNowEpochMs()
         };

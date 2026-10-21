@@ -33,6 +33,7 @@ describe('GroupTopologyPlanningService', () => {
             kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
             rttReportingDegreeLimit: 7,
             rttMeasurements: [],
+            rttReplanMinimumLayoutAgeMs: 15_000,
             replanning: 'auto',
             nowEpochMs: 2_000
         });
@@ -128,6 +129,7 @@ describe('GroupTopologyPlanningService', () => {
                 kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
                 rttReportingDegreeLimit: 5,
                 rttMeasurements: [],
+                rttReplanMinimumLayoutAgeMs: 15_000,
                 replanning: 'debounced',
                 nowEpochMs: 2_000
             },
@@ -495,6 +497,7 @@ function planningAuthority(
         kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
         rttReportingDegreeLimit: 5,
         rttMeasurements: [],
+        rttReplanMinimumLayoutAgeMs: 15_000,
         replanning,
         nowEpochMs: 2_000
     };

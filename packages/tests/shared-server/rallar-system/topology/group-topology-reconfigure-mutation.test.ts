@@ -222,6 +222,7 @@ function createRead(actorIsPlatformAdmin = false) {
             kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
             rttReportingDegreeLimit: 5,
             rttMeasurements: [],
+            rttReplanMinimumLayoutAgeMs: 15_000,
             replanning: 'auto' as const,
             nowEpochMs: 1_000
         },

@@ -88,7 +88,8 @@ export function validConfigurationDefaultsSource(): MutableApiV1ConfigurationSou
                 meshMinSize: 16,
                 meshParamK: 2,
                 meshExitWidth: 4,
-                treeExitWidth: 0
+                treeExitWidth: 0,
+                rttReplanMinimumLayoutAgeMs: 15_000
             },
             recompute: {
                 formationDebounceMs: 500,

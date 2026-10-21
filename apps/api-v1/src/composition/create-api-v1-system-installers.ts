@@ -104,6 +104,7 @@ function createTopologyAppOutboxOptions(
         rttRefinementService: topology.rttRefinementService,
         topologyDelivery: runtime.rtcTopologyDelivery,
         nowEpochMs: topology.rtcTopologyOptions.now ?? Date.now,
+        timing: input.timing,
         formationAutomation: {
             latches: new GroupConnectTriggerLatchRepository(new PSqlRuntimeStateRepository(input.database)),
             readGroup: async (ref) => await topology.groupStateRepository.findGroup(ref) ?? null,

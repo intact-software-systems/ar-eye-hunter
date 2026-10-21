@@ -1,3 +1,4 @@
+import { MAX_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS } from '@shared-server/rallar-system/topology/planning/resolve-rtt-replan-promotion.ts';
 import { decodeRallarCrdtDocumentTypePolicies } from '@shared/crdt/mod.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
@@ -399,7 +400,12 @@ function decodeTopology(
             meshMinSize: decoder.integer('topology.planning.meshMinSize', 1),
             meshParamK: decoder.integer('topology.planning.meshParamK', 1),
             meshExitWidth: decoder.integer('topology.planning.meshExitWidth', 0),
-            treeExitWidth: decoder.integer('topology.planning.treeExitWidth', 0)
+            treeExitWidth: decoder.integer('topology.planning.treeExitWidth', 0),
+            rttReplanMinimumLayoutAgeMs: decoder.integer(
+                'topology.planning.rttReplanMinimumLayoutAgeMs',
+                0,
+                MAX_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS
+            )
         },
         recompute: {
             formationDebounceMs: decoder.integer(

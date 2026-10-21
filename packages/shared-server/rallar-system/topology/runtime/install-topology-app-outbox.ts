@@ -6,6 +6,7 @@ import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { AppOutboxType } from '../../app-outbox/app-outbox-type.ts';
 import type { GroupMutationCommand } from '../../group-state/mutation/group-mutation-contracts.ts';
 import type { GroupLifecyclePolicyRead } from '../../group-state/persistence/group-lifecycle-policy-repository.ts';
+import type { RallarTimingSink } from '../../observability/timing.ts';
 import type { RtcRttRefinementService } from '../../rtc-rtt/topic/rtc-rtt-refinement-service.ts';
 import type { RtcTopologyExecutionRepository } from '../persistence/rtc-topology-execution-repository.ts';
 import type { GroupTopologyGroupSnapshotReader } from '../planning/group-topology-planning-contracts.ts';
@@ -38,6 +39,8 @@ export interface InstallTopologyAppOutboxOptions {
     readonly rttRefinementService?: RtcRttRefinementService;
     readonly topologyDelivery?: RtcTopologyDeliveryRuntime;
     readonly nowEpochMs: () => number;
+    /** Absent means timing is off for the topology recompute decision line. */
+    readonly timing?: RallarTimingSink;
     readonly formationAutomation: GroupFormationAutomationPort;
     readonly formationCriterion?: FormationCriterionPort;
     readonly activationStatus?: GroupActivationStatusPort;
@@ -105,6 +108,7 @@ export function installTopologyAppOutbox(options: InstallTopologyAppOutboxOption
             formationAutomation: options.formationAutomation,
             topologyPublication: options.topologyPublication,
             serviceId: options.senderId,
+            timing: options.timing,
             wakeQueue: options.wake,
             wakeReplay: options.wakeReplay
         })

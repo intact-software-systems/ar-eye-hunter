@@ -128,6 +128,11 @@ export interface ApiV1TopologyPlanningConfiguration {
     readonly meshParamK: number;
     readonly meshExitWidth: number;
     readonly treeExitWidth: number;
+    /**
+     * How long a planned layout stands before a replan caused only by RTT measurements may replace it
+     * (0 to `MAX_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS`); membership and presence changes replan at once.
+     */
+    readonly rttReplanMinimumLayoutAgeMs: number;
 }
 
 export interface ApiV1TopologyRecomputeConfiguration {

@@ -551,6 +551,7 @@ function createCompleteWorkInput(): ComputeRtcTopologyWorkInput {
                 kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
                 rttReportingDegreeLimit: 5,
                 rttMeasurements: [],
+                rttReplanMinimumLayoutAgeMs: 15_000,
                 replanning: 'auto',
                 nowEpochMs: 1
             },
@@ -599,7 +600,8 @@ function createWriteInput(): ComputeRtcTopologyWorkWriteInput {
         inputFingerprint: `sha256:${'a'.repeat(64)}`,
         promotionRead: { group: group.group, policy: { status: 'absent' } },
         criterionPetition: null,
-        planningObservation: null
+        planningObservation: null,
+        rttReplanPromotion: null
     };
     return {
         accepted,

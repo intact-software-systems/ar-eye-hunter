@@ -302,6 +302,7 @@ Deno.test('configuration startup summary is useful and contains no secret-derive
         },
         applicationPool: { maxConnections: 5 },
         appInbox: { newLaneConcurrency: 4, newLaneHeldRows: 16 },
+        topologyPlanning: { rttReplanMinimumLayoutAgeMs: 15_000 },
         appliedEnvironmentOverrideNames: [
             'AUTH_ADMIN_CLIENT_IDS',
             'METERED_APP_NAME',
@@ -440,6 +441,29 @@ Deno.test('every committed profile holds sixteen AppInbox flight rows unless the
             RALLAR_APP_INBOX_NEW_LANE_HELD_ROWS: outOfRange
         }, 4));
         assert.equal(error.issues.some((issue) => issue.path === 'appInbox.newLaneHeldRows'), true, outOfRange);
+    }
+});
+
+Deno.test('every committed profile holds RTT-only replans for the overlay transition grace unless the environment selects another age', async () => {
+    for (const profile of ['dev', 'prod', 'prod-hardened', 'prod-in-memory'] as const) {
+        const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));
+        assert.equal(configuration.topology.planning.rttReplanMinimumLayoutAgeMs, 15_000, profile);
+    }
+    const selected = await readApiV1Configuration(readerInput({
+        ...validConfigurationEnvironment('prod-in-memory'),
+        RALLAR_RTC_TOPOLOGY_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS: '0'
+    }));
+    assert.equal(selected.topology.planning.rttReplanMinimumLayoutAgeMs, 0);
+    for (const outOfRange of ['-1', '120001']) {
+        const error = await captureConfigurationError(readerInput({
+            ...validConfigurationEnvironment(),
+            RALLAR_RTC_TOPOLOGY_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS: outOfRange
+        }));
+        assert.equal(
+            error.issues.some((issue) => issue.path === 'topology.planning.rttReplanMinimumLayoutAgeMs'),
+            true,
+            outOfRange
+        );
     }
 });
 

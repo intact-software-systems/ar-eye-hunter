@@ -484,6 +484,7 @@ function reconfigureRead(): GroupTopologyReconfigureRead {
             kindHysteresisWidths: { meshExitWidth: 1, treeExitWidth: 1 },
             rttReportingDegreeLimit: effective.degreeLimit,
             rttMeasurements: [],
+            rttReplanMinimumLayoutAgeMs: 15_000,
             replanning: 'auto',
             nowEpochMs: NOW_EPOCH_MS
         },

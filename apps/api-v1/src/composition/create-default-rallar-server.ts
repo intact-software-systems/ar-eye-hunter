@@ -194,7 +194,8 @@ function createConfiguredApiV1Runtime(
         meshMinSize: planning.meshMinSize,
         meshParamK: planning.meshParamK,
         meshExitWidth: planning.meshExitWidth,
-        treeExitWidth: planning.treeExitWidth
+        treeExitWidth: planning.treeExitWidth,
+        rttReplanMinimumLayoutAgeMs: planning.rttReplanMinimumLayoutAgeMs
     };
 
     return createApiV1Runtime({

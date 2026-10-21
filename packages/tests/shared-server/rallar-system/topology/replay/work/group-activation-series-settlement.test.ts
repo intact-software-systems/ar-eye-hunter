@@ -241,6 +241,7 @@ function createFixture(change: 'basis' | 'epoch' | 'same', managed: boolean) {
         kindHysteresisWidths: { meshExitWidth: 1, treeExitWidth: 1 },
         rttReportingDegreeLimit: 5,
         rttMeasurements: [],
+        rttReplanMinimumLayoutAgeMs: 15_000,
         replanning: 'auto',
         nowEpochMs: 2_000
     };

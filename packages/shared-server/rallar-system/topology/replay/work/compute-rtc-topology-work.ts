@@ -25,6 +25,7 @@ import type { ReconcileGroupTopologyResult } from '../../planning/group-topology
 import {
     type RtcOverlayTopologyMessageFacts
 } from '../../planning/materialize-rtc-overlay-topology-messages.ts';
+import { resolveRttReplanPromotion, type RttReplanPromotion } from '../../planning/resolve-rtt-replan-promotion.ts';
 import {
     computeRtcTopologyWorkWrite,
     type AcceptedRtcTopologyWork,
@@ -85,11 +86,16 @@ interface ComputeAcceptedTopologyMutationInput {
     readonly facts: RtcTopologyWorkFacts;
     readonly mutationRead: RtcTopologyMutationRead;
     readonly authority: GroupTopologyPlanningAuthority;
-    readonly planned: Extract<ReconcileGroupTopologyResult, { action: 'planned'; }>;
+    readonly planned: PlannedTopology;
     readonly inputFingerprint: string;
     readonly promotionRead: TopologyPromotionRead | null;
     readonly publicationExpireAtTimestamp: number | null;
+    readonly rttReplanPromotion: RttReplanPromotion | null;
 }
+
+type PlannedTopology = Extract<ReconcileGroupTopologyResult, { action: 'planned'; }>;
+
+type KeptRtcTopologyWork = Extract<AcceptedRtcTopologyWork, { decision: 'skipped-unchanged' | 'held-young-layout'; }>;
 
 interface ToTopologyPublicationInput {
     readonly envelope: RtcTopologyWorkEnvelope<PersistedRtcTopologyWork>;
@@ -210,20 +216,10 @@ function computeAcceptedRtcTopologyWork(
             criterionPetition: { authority, planned: computedTopology.current }
         });
     }
-    const unchangedGated = isChangeGatedGroupRevisionWork(work) || work.kind !== 'group-revision';
-    if (
-        unchangedGated && read.mutation.snapshot !== null && !computedTopology.changed &&
-        hasRequiredPresenceCoverage(read.mutation.snapshot.value, authority.group.causalRevision.presenceRevision)
-    ) {
-        return Either.ofRight({
-            decision: 'skipped-unchanged',
-            work,
-            group: authority.group,
-            inputFingerprint,
-            promotionRead,
-            criterionPetition: { authority, planned: read.mutation.snapshot.value },
-            planningObservation: computedTopology.planningObservation
-        });
+    const rttReplanPromotion = computeRttReplanPromotion(input, inputFingerprint);
+    const kept = computeKeptTopologyWork({ input, planned: computedTopology, inputFingerprint, rttReplanPromotion });
+    if (kept !== null) {
+        return Either.ofRight(kept);
     }
     return computeAcceptedTopologyMutation({
         facts,
@@ -232,8 +228,71 @@ function computeAcceptedRtcTopologyWork(
         planned: computedTopology,
         inputFingerprint,
         promotionRead,
-        publicationExpireAtTimestamp: input.publicationExpireAtTimestamp
+        publicationExpireAtTimestamp: input.publicationExpireAtTimestamp,
+        rttReplanPromotion
     });
+}
+
+/** Only an RTT refresh is judged by the layout's age; membership work always replans at once. */
+function computeRttReplanPromotion(
+    input: ComputeRtcTopologyWorkInput,
+    inputFingerprint: string
+): RttReplanPromotion | null {
+    const { authority, mutation, storedInputFingerprint } = input.read;
+    if (input.facts.workEnvelope.data.kind !== 'rtt-refresh') {
+        return null;
+    }
+    return resolveRttReplanPromotion({
+        stored: mutation.snapshot?.value ?? null,
+        storedInputFingerprint,
+        inputFingerprint,
+        presenceRevision: authority.group.causalRevision.presenceRevision,
+        minimumLayoutAgeMs: authority.rttReplanMinimumLayoutAgeMs,
+        nowEpochMs: authority.nowEpochMs
+    });
+}
+
+interface ComputeKeptTopologyWorkInput {
+    readonly input: ComputeRtcTopologyWorkInput;
+    readonly planned: PlannedTopology;
+    readonly inputFingerprint: string;
+    readonly rttReplanPromotion: RttReplanPromotion | null;
+}
+
+/** The stored layout stays when the plan equals it, or when the replan only follows RTT and the layout is young. */
+function computeKeptTopologyWork(keep: ComputeKeptTopologyWorkInput): KeptRtcTopologyWork | null {
+    const { authority, mutation, promotion: promotionRead } = keep.input.read;
+    const work = keep.input.facts.workEnvelope.data;
+    const stored = mutation.snapshot;
+    if (stored === null) {
+        return null;
+    }
+    const criterionPetition = { authority, planned: stored.value };
+    const unchangedGated = isChangeGatedGroupRevisionWork(work) || work.kind !== 'group-revision';
+    if (
+        unchangedGated && !keep.planned.changed &&
+        hasRequiredPresenceCoverage(stored.value, authority.group.causalRevision.presenceRevision)
+    ) {
+        return {
+            decision: 'skipped-unchanged',
+            work,
+            group: authority.group,
+            inputFingerprint: keep.inputFingerprint,
+            promotionRead,
+            criterionPetition,
+            planningObservation: keep.planned.planningObservation
+        };
+    }
+    return keep.rttReplanPromotion?.decision === 'hold'
+        ? {
+            decision: 'held-young-layout',
+            work,
+            group: authority.group,
+            promotionRead,
+            criterionPetition,
+            rttReplanPromotion: keep.rttReplanPromotion
+        }
+        : null;
 }
 
 function computeFingerprintSkip(
@@ -313,7 +372,8 @@ function computeAcceptedTopologyMutation(
         inputFingerprint,
         promotionRead,
         criterionPetition: { authority, planned: planned.snapshot },
-        planningObservation: planned.planningObservation
+        planningObservation: planned.planningObservation,
+        rttReplanPromotion: input.rttReplanPromotion
     });
 }
 
