@@ -34,6 +34,7 @@ import { EnqueuedType } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { validateGroupStateDeltaEnvelope, type GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type { GroupPresenceSummary, GroupRef } from '@shared/api/group-types.ts';
+import { RALLAR_ROUTE_ID_MAX_LENGTH } from '@shared/api/rallar-validation.ts';
 import {
     computeGroupPresenceSummaryEntry,
     decodeCanonicalGroupPresenceSummaryEntry
@@ -48,8 +49,11 @@ import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 import { createService } from './group-presence-test-runtime.ts';
 
-/** Enough connects of one group that their merged first delta outgrows one AL payload. */
-const LARGE_PAGE_CONNECTS = 120;
+/** Connects of one group, at the widest identifiers, whose merged first delta outgrows one AL payload (about 52 fit). */
+const LARGE_PAGE_CONNECTS = 64;
+
+/** That test boots its own PGlite and expands two pages of the widest connects; loaded CI runners run it ~3.5x slower. */
+const LARGE_PAGE_TEST_TIMEOUT_MS = 10_000;
 
 describe('group presence summary coalescing', () => {
     it('observes every committed delta with its own command and persisted outbox key', async () => {
@@ -287,7 +291,7 @@ describe('group presence summary coalescing', () => {
 
     it('bounds a coalesced page by the AL payload limit and completes the rest from the rows it released', async () => {
         const fixture = await createCoalescingFixture();
-        const seeded = await fixture.seedConnectedGroup('payload-bounded-room', LARGE_PAGE_CONNECTS);
+        const seeded = await fixture.seedConnectedGroup('payload-bounded-room', LARGE_PAGE_CONNECTS, 'widest');
         const pending = await fixture.enqueue(seeded.entries);
 
         await expect(fixture.process(pending[0]!)).resolves.toBeUndefined();
@@ -314,7 +318,7 @@ describe('group presence summary coalescing', () => {
             expect(new TextEncoder().encode(payload).byteLength).toBeLessThanOrEqual(AL_MESSAGE_RESOURCE_LIMITS.payloadBytes);
         }
         expect((await fixture.readSummary(seeded.ref)).activePrincipalCount).toBe(LARGE_PAGE_CONNECTS);
-    });
+    }, LARGE_PAGE_TEST_TIMEOUT_MS);
 });
 
 interface SeededConnectedGroup {
@@ -329,7 +333,12 @@ interface CoalescingFixture {
     readonly workPageReads: string[];
     readonly repositoryCalls: string[];
     /** Seeds the group's state and returns its summary work rows without queueing them. */
-    seedConnectedGroup(groupId: string, connectCount: number): Promise<SeededConnectedGroup>;
+    /** Widest identifiers make each connect's slice as large as the identifier bound allows, so fewer reach a payload. */
+    seedConnectedGroup(
+        groupId: string,
+        connectCount: number,
+        identifiers?: SeededIdentifierWidth
+    ): Promise<SeededConnectedGroup>;
     /** Queues rows and returns them as stored, which is what a reservation observes. */
     enqueue(entries: readonly ResourceEntry[]): Promise<readonly ResourceEntry[]>;
     /** Reserves the row from its stored status, NEW or due RETRY, and hands it to the worker; resolves with its outcome. */
@@ -433,7 +442,8 @@ async function createCoalescingFixture(
         resources,
         workPageReads: queue.workPageReads,
         repositoryCalls,
-        seedConnectedGroup: async (groupId, connectCount) => await seedConnectedGroup({ repository, groupId, connectCount, now }),
+        seedConnectedGroup: async (groupId, connectCount, identifiers = 'compact') =>
+            await seedConnectedGroup({ repository, groupId, connectCount, now, identifiers }),
         enqueue,
         process,
         processAlone: async (entry) => {
@@ -493,16 +503,20 @@ function createReservedSummaryProcessor(
     };
 }
 
+type SeededIdentifierWidth = 'compact' | 'widest';
+
 interface SeedConnectedGroupInput {
     readonly repository: PSqlRuntimeStateRepository;
     readonly groupId: string;
     readonly connectCount: number;
     readonly now: number;
+    readonly identifiers: SeededIdentifierWidth;
 }
 
-async function seedConnectedGroup(
-    { repository, groupId, connectCount, now }: SeedConnectedGroupInput
-): Promise<SeededConnectedGroup> {
+async function seedConnectedGroup(input: SeedConnectedGroupInput): Promise<SeededConnectedGroup> {
+    const { repository, connectCount, now } = input;
+    const widen = (identifier: string): string => input.identifiers === 'widest' ? identifier.padEnd(RALLAR_ROUTE_ID_MAX_LENGTH, '-') : identifier;
+    const groupId = widen(input.groupId);
     const runtime = new GroupBarrierRepository();
     const service = createService(runtime, now);
     await service.createGroup(SCOPE, {
@@ -514,17 +528,18 @@ async function seedConnectedGroup(
         createdByPrincipalId: 'owner',
         requestId: `create-${groupId}`
     });
-    const principalIds = Array.from({ length: connectCount }, (_, index) => `member-${index}`);
+    const principalIds = Array.from({ length: connectCount }, (_, index) => widen(`member-${index}`));
     for (const principalId of principalIds) {
         await service.upsertMember(SCOPE, groupId, principalId, {
             status: 'active',
             actorPrincipalId: 'owner',
             requestId: `activate-${groupId}-${principalId}`
         });
-        await service.connectPresenceSession(SCOPE, groupId, `${groupId}-${principalId}-session`, {
+        const connect = principalId.slice(0, 32);
+        await service.connectPresenceSession(SCOPE, groupId, widen(`${input.groupId}-${connect}-session`), {
             principalId,
-            generationId: `${groupId}-${principalId}-generation`,
-            connectionGenerationId: `${groupId}-${principalId}-ws-generation`,
+            generationId: widen(`${input.groupId}-${connect}-generation`),
+            connectionGenerationId: widen(`${input.groupId}-${connect}-ws-generation`),
             actorPrincipalId: principalId,
             expiresAtEpochMs: now + 60_000,
             requestId: `connect-${groupId}-${principalId}`
