@@ -574,7 +574,7 @@ function withInjectedTransactionFailure(
                             const parts = argumentsList[0];
                             const values = argumentsList.slice(1);
                             const text = isTemplateStringsArray(parts) ? parts.join(' ') : '';
-                            if (text.includes('insert into resource_inbox') && values.includes('WS_OUTBOX')) {
+                            if (isWsOutboxInsert(text, values)) {
                                 wsOutboxWrites += 1;
                             }
                             const fail = (stage === 'document' && text.includes('insert into crdt_documents')) ||
@@ -594,6 +594,15 @@ function withInjectedTransactionFailure(
                 });
         }
     });
+}
+
+/** The CRDT write inserts each outbox row with its own statement, whose rows travel as one recordset parameter. */
+function isWsOutboxInsert(text: string, values: readonly PSqlParameter[]): boolean {
+    return text.includes('insert into resource_inbox') &&
+        values.some((value) =>
+            Array.isArray(value) &&
+            value.some((row) => typeof row === 'object' && row !== null && 'typeId' in row && row.typeId === 'WS_OUTBOX')
+        );
 }
 
 function executeSql(
