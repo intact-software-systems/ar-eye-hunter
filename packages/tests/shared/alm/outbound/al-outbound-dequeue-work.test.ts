@@ -9,14 +9,23 @@ import {
 
 import { createRallarALOutboundDequeueTiming, toALOutboundDequeueTimingEvents } from '@shared-server/rallar-system/observability/al-outbound-dequeue-timing.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
+import { newALReceiptControlMessage } from '@shared/al-contracts/al-control.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
+import { toALOutboundSentMessageKey } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
-import type { ALOutboundDropReasonCode } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { ALOutboundMessageRuntime, type ALOutboundDropReasonCode } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     AL_OUTBOUND_WORK_PAGE_SIZE,
     computeALOutboundWorkEntry
 } from '@shared/alm/outbound/al-outbound-work-entry.ts';
+import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { ALOutboundDequeuedAdmission } from '@shared/alm/outbound/lane/al-outbound-dequeued-admission.ts';
+import {
+    createALOutboundReceiptWorkEvidence,
+    type ALOutboundReceiptWorkObservation
+} from '@shared/alm/outbound/lane/al-outbound-receipt-observation.ts';
+import { ALWorkBatchObservations } from '@shared/alm/work/al-work-batch-observations.ts';
 import {
     EntityStatus,
     InMemoryQueueBox,
@@ -36,9 +45,10 @@ import {
     createDefaultOutboundTestStores,
     drainEngine,
     peekOutboundWorkReadyAt,
-    runOutboundWorkTask
+    runOutboundWorkTask,
+    type OutboundTestStores
 } from '../outbound-runtime-test-fixture.ts';
-import type { OutboundTestPayload } from '../outbound-test-payload.ts';
+import { decodeOutboundTestPayload, type OutboundTestPayload } from '../outbound-test-payload.ts';
 
 const DEQUEUE_TYPE = 'WS_OUTBOX';
 
@@ -571,8 +581,7 @@ describe('AL outbound dequeue work', () => {
     it('fails a corrupt row of a dequeued group alone and charges the breaker once for it', async () => {
         const outbox = createOutboxQueue();
         const resilience = createDequeueResilience();
-        const failures = vi.spyOn(resilience, 'failure');
-        const successes = vi.spyOn(resilience, 'success');
+        const charges = recordBreakerCharges(resilience);
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
             dequeue: { types: new Set([DEQUEUE_TYPE]), resilience },
@@ -602,12 +611,155 @@ describe('AL outbound dequeue work', () => {
                 EntityStatus.COMPLETED,
                 EntityStatus.COMPLETED
             ]);
-            expect(failures).toHaveBeenCalledTimes(1);
-            expect(successes).toHaveBeenCalledTimes(3);
+            expect(charges).toEqual(['success', 'failure', 'success', 'success']);
         }
         finally {
             await runtime.dispose();
         }
+    });
+
+    it.each(
+        [
+            { authority: 'readable', label: 'a readable authority' },
+            { authority: 'unavailable', label: 'an unavailable authority' }
+        ] as const
+    )('fails only the row whose supersedence is corrupt in the group read, behind $label', async ({ authority }) => {
+        const outbox = createOutboxQueue();
+        const stores = createDefaultOutboundTestStores(outbox);
+        const resilience = createDequeueResilience();
+        const charges = recordBreakerCharges(resilience);
+        const messages = ['healthy-1', 'corrupt', 'healthy-2', 'healthy-3'].map(createDequeuedMessage);
+        await writeCorruptSentMessage(stores, messages[1]!.id.msgId);
+        const runtime = createDefaultOutboundTestRuntime({
+            outbox,
+            stores,
+            dequeue: { types: new Set([DEQUEUE_TYPE]), resilience },
+            readDequeueAuthority: async (msg) => {
+                if (authority === 'unavailable' && msg.route.resourceId === 'corrupt') {
+                    throw new Error('authority unavailable');
+                }
+                return undefined;
+            },
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+        });
+        const entries = messages.map((message) => QueueBoxUtilities.toResourceEntryFromMsg(message, DEQUEUE_TYPE, Temporal.Now.instant()));
+
+        try {
+            await runtime.ready();
+            for (const entry of entries) {
+                await outbox.enqueueIfAbsent(entry);
+            }
+            await runOutboundWorkTask(runtime);
+
+            // Corruption decides first: the authority failure alone would have retried the row.
+            expect(await Promise.all(entries.map(async (entry) => (await outbox.getItem(entry.key))?.status))).toEqual([
+                EntityStatus.COMPLETED,
+                EntityStatus.NON_RETRYABLE,
+                EntityStatus.COMPLETED,
+                EntityStatus.COMPLETED
+            ]);
+            expect(charges).toEqual(['success', 'failure', 'success', 'success']);
+        }
+        finally {
+            await runtime.dispose();
+        }
+    });
+
+    it('opens no supersedence session for a group whose every row the gate decided', async () => {
+        const outbox = createOutboxQueue();
+        const stores = createDefaultOutboundTestStores(outbox);
+        const resilience = createDequeueResilience(2);
+        // After the claim the store is closed: a session opened for nothing would reject with no reader.
+        const sessionsAfterClaim = recordSessionsAfter(stores, () => resilience.isNotAllowedThroughToDequeue());
+        const runtime = createDefaultOutboundTestRuntime({
+            outbox,
+            stores,
+            dequeue: { types: new Set([DEQUEUE_TYPE]), resilience },
+            // The breaker opens between the claim and the gate, so every front decides its row.
+            dequeueTiming: (observation) => {
+                if (observation.kind === 'reservation-returns') {
+                    for (let charge = 0; charge < 3; charge += 1) {
+                        resilience.failure();
+                    }
+                }
+            },
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+        });
+        const entries = ['gated-1', 'gated-2'].map((resourceId) =>
+            QueueBoxUtilities.toResourceEntryFromMsg(createDequeuedMessage(resourceId), DEQUEUE_TYPE, Temporal.Now.instant())
+        );
+
+        try {
+            await runtime.ready();
+            for (const entry of entries) {
+                await outbox.enqueueIfAbsent(entry);
+            }
+            await runOutboundWorkTask(runtime);
+
+            expect(await Promise.all(entries.map(async (entry) => (await outbox.getItem(entry.key))?.status)))
+                .not.toContain(EntityStatus.COMPLETED);
+            expect(sessionsAfterClaim).toEqual([]);
+        }
+        finally {
+            await runtime.dispose();
+        }
+    });
+
+    it.each(
+        [
+            { failing: 'authority', stage: 'dequeue-authority' },
+            { failing: 'supersedence', stage: 'dequeue-supersedence' }
+        ] as const
+    )('names the failed $failing read as the stage of a dequeued receipt', async ({ failing, stage }) => {
+        const outbox = createOutboxQueue();
+        const stores = createDefaultOutboundTestStores(outbox);
+        const engine = new InboxOutboxEngine();
+        const observations: ALOutboundReceiptWorkObservation[] = [];
+        const receipt = createDequeuedReceipt();
+        if (failing === 'supersedence') {
+            await writeCorruptSentMessage(stores, receipt.id.msgId);
+        }
+        const plan = (msg: ALMessage) => ({ msg, dropReasonCode: undefined, lane: 'durable' as const, preparedMessages: [] });
+        const runtime = new ALOutboundMessageRuntime<OutboundTestPayload>({
+            ...createDefaultALOutboundRuntimeResources({
+                decodePrepared: decodeOutboundTestPayload,
+                stores,
+                canonicalQueue: outbox,
+                queueEngine: engine
+            }),
+            carrier: 'ws',
+            dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
+            receiptWorkCapture: {
+                batchObservations: ALWorkBatchObservations,
+                createEvidence: createALOutboundReceiptWorkEvidence,
+                observer: (observation) => observations.push(observation)
+            },
+            readDequeueAuthority: async () => {
+                if (failing === 'authority') {
+                    throw new Error('authority unavailable');
+                }
+                return undefined;
+            },
+            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
+            readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
+            planOutgoingMessage: plan,
+            planDequeuedMessage: plan,
+            decodePreparedMessage: decodeOutboundTestPayload,
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true }),
+            afterDequeueAdmission: undefined,
+            planRepairMessage: undefined,
+            diagnostics: undefined,
+            settlements: undefined
+        });
+        onTestFinished(() => runtime.dispose());
+        await outbox.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(receipt, DEQUEUE_TYPE, Temporal.Now.instant()));
+
+        await runtime.ready();
+
+        await expect.poll(() => observations.length).toBe(1);
+        expect(observations[0]).toMatchObject({ receiptControlMsgId: receipt.id.msgId, stage });
     });
 
     it('advertises no readiness for a full page of expired work', async () => {
@@ -893,16 +1045,66 @@ function createTurnRecorder(): TurnRecorder {
     };
 }
 
-/** Records the turn of every supersedence read, of one message or of a group. */
+/** Records the turn of every group supersedence read. */
 function recordSupersedenceReads(store: ALOutboundAdmissionStore<OutboundTestPayload>, recorder: TurnRecorder): void {
-    const isMessageSuperseded = store.isMessageSuperseded.bind(store);
     const readMessageSupersedence = store.readMessageSupersedence.bind(store);
-    vi.spyOn(store, 'isMessageSuperseded').mockImplementation((msg) => {
-        recorder.record();
-        return isMessageSuperseded(msg);
-    });
     vi.spyOn(store, 'readMessageSupersedence').mockImplementation((messages) => {
         recorder.record();
         return readMessageSupersedence(messages);
     });
+}
+
+/** Every read session the backend refuses once `closed` holds, as a closed store refuses it. */
+function recordSessionsAfter(stores: OutboundTestStores, closed: () => boolean): readonly string[] {
+    const sessions: string[] = [];
+    const readWithin = stores.backend.readWithin.bind(stores.backend);
+    vi.spyOn(stores.backend, 'readWithin').mockImplementation((read) => {
+        if (!closed()) {
+            return readWithin(read);
+        }
+        sessions.push('refused');
+        return Promise.reject(new Error('store closed'));
+    });
+    return sessions;
+}
+
+/** Every breaker charge, in the order the rows' attempts made them. */
+function recordBreakerCharges(resilience: ResourceInboxResilience): readonly string[] {
+    const charges: string[] = [];
+    const success = resilience.success.bind(resilience);
+    const failure = resilience.failure.bind(resilience);
+    vi.spyOn(resilience, 'success').mockImplementation(() => {
+        charges.push('success');
+        success();
+    });
+    vi.spyOn(resilience, 'failure').mockImplementation(() => {
+        charges.push('failure');
+        failure();
+    });
+    return charges;
+}
+
+/** A sent-message row that fails to decode, so every read of the message's admission is corrupt. */
+async function writeCorruptSentMessage(stores: OutboundTestStores, msgId: string): Promise<void> {
+    await stores.backend.write(async (tx) => {
+        await tx.set(toALOutboundSentMessageKey(stores.admissionStore.namespace, msgId), 'corrupt', Date.now() + 60_000);
+    });
+}
+
+function createDequeuedReceipt(): ALMessage {
+    return {
+        ...newALReceiptControlMessage(
+            { v: 3, msgId: 'dequeued-receipt', senderId: 'server', ts: Date.now() },
+            {
+                msgId: 'subject',
+                originPeerId: 'origin',
+                phase: 'complete',
+                expectedRecipientPeerIds: ['recipient'],
+                confirmedRecipientPeerIds: ['recipient'],
+                snapshotVersion: 7,
+                observedAtEpochMs: 1000
+            }
+        ),
+        constraints: { expiresAtMs: Date.now() + 30_000 }
+    };
 }

@@ -4,25 +4,41 @@ import {
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
 import { createPSqlALOutboundRuntimeStores } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import { PSqlResourceInboxEntryReader } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-reader.ts';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    computeWsOutboxProvenanceDigest,
+    toWsOutboxProvenanceKey,
+    WS_OUTBOX_PROVENANCE_NAMESPACE,
+    WsOutboxProvenanceReader,
+    type WsOutboxProvenance
+} from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
+import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type {
     ALOutboundAdmissionStore,
     ALOutboundCommitBundle,
     ALOutboundPlanner
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundMessageRuntime
 } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import type { ALOutboundDequeuedAdmission } from '@shared/alm/outbound/lane/al-outbound-dequeued-admission.ts';
+import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { toKeyAsString, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
+import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
+import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import {
     createOutboundMessage,
@@ -31,6 +47,7 @@ import {
     runOutboundWorkTask
 } from '../../../shared/alm/outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from '../../../shared/alm/outbound-test-payload.ts';
+import { TestWebSocket } from '../../../shared/websocket/test-web-socket.ts';
 import {
     createPSqlAdmissionTestStorage,
     type PSqlAdmissionTestStorage
@@ -106,6 +123,34 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
         expect(counts()).toEqual({ autocommit: 35, transactions: 6, inTransaction: 74 });
     });
 
+    // Rows that read their admission, identity, proof and supersedence one after another, two rows at a time, cost
+    // 39 statements for ten rows. Read together they cost one statement per store and round: the stored rows and the
+    // identity rows, then the proofs.
+    it('reads the WS authority and supersedence of a dequeued group in one statement per store and round', async () => {
+        const storage = await createPSqlAdmissionTestStorage();
+        const counts = countPGliteStatements(storage.sql.raw);
+        const phases: Record<string, PGliteStatementCounts> = {};
+        const lane = createWsDequeueLane(storage, (observation) => {
+            if (observation.kind === 'admission-stage') {
+                phases[observation.stage] ??= counts();
+            }
+        });
+        const rows = await writeProvedWsRows(storage, 10);
+        for (const row of rows) {
+            await lane.stores.workQueue.enqueue(row);
+        }
+
+        await lane.engine.executeOnce();
+
+        await expect.poll(() => lane.native.sent.length).toBe(rows.length);
+        const start = phases['authority-read-start']!;
+        const end = phases['admission-commit-start']!;
+        expect({
+            autocommit: end.autocommit - start.autocommit,
+            transactions: end.transactions - start.transactions
+        }).toEqual({ autocommit: 3, transactions: 0 });
+    });
+
     it('commits each row alone when two rows of the group write one supersedence track', async () => {
         const storage = await createPSqlAdmissionTestStorage();
         const { runtime, outbox, admissionStore } = createDequeueLane(storage, SUPERSEDING_PLANNER);
@@ -140,6 +185,86 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
 });
 
 const NAMESPACE = 'dequeue-statements:outbound:admission';
+const WS_SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
+
+interface WsDequeueLane {
+    readonly stores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
+    readonly engine: InboxOutboxEngine;
+    readonly native: TestWebSocket;
+}
+
+/** A WS server whose outbound lane and producer proofs both live in the PGlite store. */
+function createWsDequeueLane(
+    storage: PSqlAdmissionTestStorage,
+    dequeueTiming: ALOutboundDequeuedAdmission.TimingSink
+): WsDequeueLane {
+    const stores = createPSqlALOutboundRuntimeStores({
+        repository: storage.repository,
+        namespace: 'ws-dequeue-statements',
+        nowMs: Date.now,
+        orderingTrackTtlMs: 60_000,
+        supersedenceTrackTtlMs: 60_000,
+        retention: undefined,
+        decodePrepared: decodeWsQueueBoxServerPreparedMessage
+    });
+    const proofs = new WsOutboxProvenanceReader({ repository: storage.repository, nowMs: Date.now });
+    const socket = new JsonWebSocketServer();
+    const native = new TestWebSocket('ws://peer');
+    native.open();
+    socket.addConnection(new ConnectionContext({ id: 'peer', socket: native }));
+    const engine = new InboxOutboxEngine();
+    const service = createDefaultWsQueueBoxServerService({
+        name: 'server',
+        inboundVolatileStores: undefined,
+        socket,
+        outbox: stores.workQueue,
+        outboundStores: stores,
+        queueEngine: engine,
+        dequeueTiming,
+        targetResolver: { resolveBroadcastRecipients: () => [{ peerId: 'peer', connectionId: 'peer' }] },
+        readAuthenticatedConnectionScope: () => ({ scope: WS_SCOPE, expiresAtEpochMs: Date.now() + 30_000 }),
+        readProducerProvenance: (message, entry) => proofs.readProducerProvenance(message, entry)
+    });
+    onTestFinished(async () => {
+        await Promise.all([service.dispose(), engine.stop()]);
+    });
+    return { stores, engine, native };
+}
+
+/** Raw WS rows to one connected peer, each with the producer proof its dequeue verifies. */
+async function writeProvedWsRows(storage: PSqlAdmissionTestStorage, count: number): Promise<ResourceEntry[]> {
+    const rows: ResourceEntry[] = [];
+    for (let index = 0; index < count; index += 1) {
+        const message = newALUnicastMessage(
+            'server',
+            { topicId: 'snapshot', resourceId: `page-${index}`, contextId: 'request' },
+            'peer',
+            'snapshot.v1',
+            {},
+            { ttlMs: 30_000, qos: { durability: { algo: 'local-outbox' } } }
+        );
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
+        const facts: Omit<WsOutboxProvenance, 'digest'> = {
+            version: 1,
+            producerKind: 'state-sync',
+            queueKey: entry.key,
+            typeId: entry.typeId,
+            messageId: message.id.msgId,
+            senderId: message.id.senderId,
+            expiresAtMs: entry.audit.expiryTs.epochMilliseconds,
+            target: { kind: 'scoped-unicast', peerId: 'peer', scope: WS_SCOPE, admittedAudience: ['peer'] }
+        };
+        const proof = { ...facts, digest: computeWsOutboxProvenanceDigest(entry, facts) };
+        await storage.repository.upsert(
+            WS_OUTBOX_PROVENANCE_NAMESPACE,
+            toWsOutboxProvenanceKey(entry.key),
+            JSON.stringify(proof),
+            proof.expiresAtMs
+        );
+        rows.push(entry);
+    }
+    return rows;
+}
 
 const SUPERSEDING_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
     ...OUTBOUND_TEST_SEND_PLANNER(msg, undefined),

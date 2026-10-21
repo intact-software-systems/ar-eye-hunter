@@ -39,6 +39,7 @@ import {
     createTransactionBoundPSqlRuntimeStateRepository,
     PSqlRuntimeStateRepository
 } from '../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import { readRuntimeStateKeyEntries } from '../../runtime-state/read-batch/read-runtime-state-key-entries.ts';
 import type { RuntimeStateEntry } from '../../runtime-state/runtime-state-repository.ts';
 import { PSqlAdmissionMutationCollector } from './p-sql-admission-mutation-collector.ts';
 
@@ -73,7 +74,7 @@ export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
         this.namespace = namespace;
         this.stateReads = new TurnBatchedReads({
             toKeyId: (key) => key,
-            readBatch: (keys) => readPSqlAdmissionStateEntries(this.repository, namespace, keys)
+            readBatch: (keys) => readRuntimeStateKeyEntries(this.repository, namespace, keys)
         });
         const workEntries = new PSqlResourceInboxEntryRepository(sql, () => new Date(this.nowMs()));
         this.workReads = new TurnBatchedReads({
@@ -243,22 +244,6 @@ async function writePSqlAdmissionWork(
         case 'hold-claimed':
             return await work.lockObserved(write.observation);
     }
-}
-
-/** One key reads its row alone; several share the repository's batch read, one selector per key. */
-async function readPSqlAdmissionStateEntries(
-    repository: PSqlRuntimeStateRepository,
-    namespace: string,
-    keys: readonly string[]
-): Promise<readonly (RuntimeStateEntry | undefined)[]> {
-    if (keys.length === 1) {
-        return [await repository.findEntry(namespace, keys[0]!)];
-    }
-    const selections = await repository.readRuntimeStateBatch(
-        keys.map((key, index) => ({ selectorId: String(index), kind: 'key', namespace, key }))
-    );
-    const entries = new Map(selections.map((selection) => [selection.selectorId, selection.entries[0]]));
-    return keys.map((_key, index) => entries.get(String(index)));
 }
 
 async function readPSqlAdmissionWorkEntries(

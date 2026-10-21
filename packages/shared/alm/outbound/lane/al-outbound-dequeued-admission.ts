@@ -30,7 +30,7 @@ import {
 } from './settle-al-outbound-claim.ts';
 
 /** How many rows of one dequeued batch read their gate and authority wait at once. */
-export const AL_OUTBOUND_DEQUEUED_READ_CONCURRENCY = 2;
+const AL_OUTBOUND_DEQUEUED_FRONT_CONCURRENCY = 2;
 
 export namespace ALOutboundDequeuedAdmission {
     export type TimingStage =
@@ -153,7 +153,7 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
     admitDequeuedMessages(
         members: readonly ALOutboundDequeuedAdmission.Member<TPrepared>[]
     ): readonly Promise<ALWorkAttemptResult>[] {
-        const gating = new BoundedConcurrencyAdmission({ maxConcurrent: AL_OUTBOUND_DEQUEUED_READ_CONCURRENCY });
+        const gating = new BoundedConcurrencyAdmission({ maxConcurrent: AL_OUTBOUND_DEQUEUED_FRONT_CONCURRENCY });
         const fronts = members.map((member) => gating.admit(() => this.readDequeuedFront(member)));
         const reads = this.readDequeuedDispatches(members, fronts);
         const commits = this.commitDequeuedDispatches(reads, members);
@@ -237,7 +237,7 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
         const supersedence = this.dependencies.admissionStore.readMessageSupersedence(reading.map(({ msg }) => msg));
         const reads = new Map(reading.map(({ member, msg }, position) => [
             member,
-            this.readDequeuedDispatch({ member, msg, superseded: toSettledSupersedence(supersedence, position) })
+            this.readDequeuedDispatch({ member, msg, superseded: readMemberSupersedence(supersedence, position) })
         ]));
         return members.map((member, index) =>
             passed[index]
@@ -246,15 +246,20 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
         );
     }
 
-    /** The row's authority reads beside its supersedence; a corrupt read fails the row first, before any other. */
+    /**
+     * The row's authority reads beside its supersedence; a corrupt read fails the row first, before any other. The
+     * row stays at its authority stage until the authority answers, so a failure names the read that failed first.
+     */
     private async readDequeuedDispatch(
         input: ALOutboundDequeuedReadInput<TPrepared>
     ): Promise<ALOutboundDequeuedRead<TPrepared>> {
         const { member, msg, superseded } = input;
         const { effect, evidence } = member;
         evidence?.recordStage('dequeue-authority');
-        const dequeueAuthority = this.readDequeuedAuthority(member, msg);
-        evidence?.recordStage('dequeue-supersedence');
+        const dequeueAuthority = this.readDequeuedAuthority(member, msg).then((authority) => {
+            evidence?.recordStage('dequeue-supersedence');
+            return authority;
+        });
         await settleAllInOrder<ALOutboundDequeueAuthority | boolean | undefined>(
             [dequeueAuthority, superseded],
             (failure) => failure instanceof ALAdmissionCorruptionError
@@ -454,7 +459,7 @@ interface ALOutboundDequeuedReadInput<TPrepared> {
 }
 
 /** One member's answer from the group's supersedence read: its own value, or its own failure. */
-async function toSettledSupersedence(
+async function readMemberSupersedence(
     supersedence: Promise<readonly PromiseSettledResult<boolean>[]>,
     position: number
 ): Promise<boolean> {

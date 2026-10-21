@@ -566,8 +566,10 @@ it.each(BACKEND_KINDS)('admits the replacement when the sink throws on its super
 
     expect(superseded).toEqual([old.id.msgId]);
     expect(admitted.verdict).toEqual({ kind: 'admitted', durable: true, queuedAttempts: 1 });
-    expect(await stores.admissionStore.isMessageSuperseded(old)).toBe(true);
-    expect(await stores.admissionStore.isMessageSuperseded(replacement)).toBe(false);
+    expect(await stores.admissionStore.readMessageSupersedence([old, replacement])).toEqual([
+        { status: 'fulfilled', value: true },
+        { status: 'fulfilled', value: false }
+    ]);
     expect(reported).toEqual(['AL outbound delivery settlement sink failed']);
 });
 

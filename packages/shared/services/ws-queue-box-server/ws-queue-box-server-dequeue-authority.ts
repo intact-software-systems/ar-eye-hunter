@@ -66,7 +66,8 @@ export namespace WsQueueBoxServerDequeueAuthority {
 
 /**
  * Classifies the observed queue row before the generic admission owner may create any facts. A row reads its
- * admission facts first and its captured policy or producer proof second, so rows read together share both rounds.
+ * admission facts first, then a producer row its proof (two rounds) or an admitted row its captured policy, whose
+ * stored row and identity read one after the other (three rounds); rows read together share every round.
  */
 export class WsQueueBoxServerDequeueAuthority {
     private readonly dependencies: WsQueueBoxServerDequeueAuthority.Dependencies;

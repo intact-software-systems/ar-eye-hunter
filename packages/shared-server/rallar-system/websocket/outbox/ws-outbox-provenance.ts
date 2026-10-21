@@ -27,6 +27,7 @@ import { toError } from '@shared/resilience/to-error.ts';
 import { TurnBatchedReads } from '@shared/resilience/turn-batched-reads.ts';
 import type { WsOutboxProducerAuthority } from '@shared/services/ws-queue-box-server/ws-queue-box-server-dequeue-authority.ts';
 
+import { readRuntimeStateKeyEntries } from '../../../runtime-state/read-batch/read-runtime-state-key-entries.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import { computeSha256CanonicalJson } from '../../protocol/canonical-json.ts';
 import { validateWsOutboxProvenanceTarget } from './validate-ws-outbox-provenance-target.ts';
@@ -114,7 +115,8 @@ export class WsOutboxProvenanceReader {
         this.dependencies = dependencies;
         this.proofReads = new TurnBatchedReads({
             toKeyId: (key) => key,
-            readBatch: (keys) => readWsOutboxProvenanceEntries(dependencies.repository, keys)
+            readBatch: (keys) =>
+                readRuntimeStateKeyEntries(dependencies.repository, WS_OUTBOX_PROVENANCE_NAMESPACE, keys)
         });
     }
 
@@ -176,26 +178,6 @@ export class WsOutboxProvenanceReader {
             throw new ALAdmissionCorruptionError(key, toError(cause));
         }
     }
-}
-
-/** One key reads its sidecar alone; several share the repository's batch read, one selector per key. */
-async function readWsOutboxProvenanceEntries(
-    repository: WsOutboxProvenanceReader.Dependencies['repository'],
-    keys: readonly string[]
-): Promise<readonly (RuntimeStateEntry | undefined)[]> {
-    if (keys.length === 1) {
-        return [await repository.findEntry(WS_OUTBOX_PROVENANCE_NAMESPACE, keys[0]!)];
-    }
-    const selections = await repository.readRuntimeStateBatch(
-        keys.map((key, index) => ({
-            selectorId: String(index),
-            kind: 'key',
-            namespace: WS_OUTBOX_PROVENANCE_NAMESPACE,
-            key
-        }))
-    );
-    const entries = new Map(selections.map((selection) => [selection.selectorId, selection.entries[0]]));
-    return keys.map((_key, index) => entries.get(String(index)));
 }
 
 export function toWsOutboxProvenanceKey(key: Key): string {

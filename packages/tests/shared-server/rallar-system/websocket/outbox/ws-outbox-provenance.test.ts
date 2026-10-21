@@ -2,8 +2,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
-    it,
-    vi
+    it
 } from 'vitest';
 
 import { toDomain } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
@@ -55,9 +54,20 @@ describe('row-bound WS producer provenance', () => {
         const repository = new FakeRuntimeStateRepository();
         const rows = await Promise.all(['proved-1', 'proved-2'].map((resourceId) => writeWorldFanoutProof(repository, resourceId)));
         const unproved = toWorldFanoutRow('unproved');
-        const findEntry = vi.spyOn(repository, 'findEntry');
-        const readBatch = vi.spyOn(repository, 'readRuntimeStateBatch');
-        const reader = new WsOutboxProvenanceReader({ repository, nowMs: Date.now });
+        const reads: string[] = [];
+        const reader = new WsOutboxProvenanceReader({
+            repository: {
+                findEntry: (namespace, key) => {
+                    reads.push('find');
+                    return repository.findEntry(namespace, key);
+                },
+                readRuntimeStateBatch: (selectors) => {
+                    reads.push(`batch:${selectors.length}`);
+                    return repository.readRuntimeStateBatch(selectors);
+                }
+            },
+            nowMs: Date.now
+        });
 
         const settled = await Promise.allSettled(
             [...rows, unproved].map(({ message, entry }) => reader.readProducerProvenance(message, entry))
@@ -72,9 +82,7 @@ describe('row-bound WS producer provenance', () => {
             }
         })));
         expect(settled[2]).toMatchObject({ status: 'rejected', reason: expect.any(ALAdmissionCorruptionError) });
-        expect(findEntry).not.toHaveBeenCalled();
-        expect(readBatch).toHaveBeenCalledTimes(1);
-        expect(readBatch.mock.calls[0]![0]).toHaveLength(3);
+        expect(reads).toEqual(['batch:3']);
     });
 
     it('verifies a CRDT world fanout as scoped subscriber-local delivery', async () => {

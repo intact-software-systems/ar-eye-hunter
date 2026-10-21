@@ -342,11 +342,10 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
         planner: ALOutboundPlanner<TPrepared>
     ) => Promise<ALOutboundRepairReadDto<TPrepared>>;
 
-    readonly isMessageSuperseded: (msg: ALMessage) => Promise<boolean>;
-
     /**
      * The supersedence of every message, read in one session: a backend that batches one turn's reads answers the
-     * group in one round. Each message settles alone, so a corrupt row fails only itself.
+     * group in one round, and no message opens no session. Each message settles alone, so a corrupt row fails only
+     * itself.
      */
     readonly readMessageSupersedence: (
         messages: readonly ALMessage[]
@@ -537,11 +536,10 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         return await this.backend.readWithin((session) => this.reads.readRepairMessage(session, msgId, planner));
     }
 
-    async isMessageSuperseded(msg: ALMessage): Promise<boolean> {
-        return await this.backend.readWithin((session) => this.reads.isMessageSuperseded(session, msg));
-    }
-
     async readMessageSupersedence(messages: readonly ALMessage[]): Promise<readonly PromiseSettledResult<boolean>[]> {
+        if (messages.length === 0) {
+            return [];
+        }
         return await this.backend.readWithin((session) =>
             Promise.allSettled(messages.map((msg) => this.reads.isMessageSuperseded(session, msg)))
         );

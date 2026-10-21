@@ -80,7 +80,7 @@ describe('WS first dequeue authority', () => {
             const canonical = admitted.entries[0]!;
             const newer: ALMessage = { ...older, id: { ...older.id, msgId: `${older.id.msgId}-newer` }, ordering: { seq: 2 } };
             expect((await fixture.service.enqueueOutboxIfAbsent(newer, { admittedAudience: [], recipientScope: SCOPE })).verdict.kind).toBe('admitted');
-            expect(await fixture.stores.admissionStore.isMessageSuperseded(older)).toBe(true);
+            expect(await fixture.stores.admissionStore.readMessageSupersedence([older])).toEqual([{ status: 'fulfilled', value: true }]);
             await fixture.engine.executeOnce();
             await expect.poll(async () => (await fixture.stores.workQueue.getItem(canonical.key))?.status).toBe(EntityStatus.COMPLETED);
             const completed = await fixture.stores.workQueue.getItem(canonical.key);
@@ -314,7 +314,6 @@ function recordGroupReadPhase(
     };
     const hasSentMessageAdmission = store.hasSentMessageAdmission.bind(store);
     const readDequeueAdmissionFacts = store.readDequeueAdmissionFacts.bind(store);
-    const isMessageSuperseded = store.isMessageSuperseded.bind(store);
     const readMessageSupersedence = store.readMessageSupersedence.bind(store);
     const readCapturedPolicy = store.readCapturedPolicy.bind(store);
     const commitBundle = store.commitBundle.bind(store);
@@ -326,10 +325,6 @@ function recordGroupReadPhase(
     vi.spyOn(store, 'readDequeueAdmissionFacts').mockImplementation(async (message, entry) => {
         await hold();
         return await readDequeueAdmissionFacts(message, entry);
-    });
-    vi.spyOn(store, 'isMessageSuperseded').mockImplementation(async (msg) => {
-        await hold();
-        return await isMessageSuperseded(msg);
     });
     vi.spyOn(store, 'readMessageSupersedence').mockImplementation(async (messages) => {
         await hold();
