@@ -10,8 +10,19 @@ import { toClientMutationSystemAuthority } from '@shared-server/rallar-system/cl
 import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import { toExpireClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-expire-client-session-mutation-input.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
+import { clientStatePrincipalStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-principal-storage-key.ts';
+import {
+    CLIENT_STATE_INSTANCES_NAMESPACE,
+    CLIENT_STATE_PRINCIPALS_NAMESPACE,
+    CLIENT_STATE_SESSIONS_NAMESPACE
+} from '@shared-server/rallar-system/client-state/persistence/client-state-runtime-namespaces.ts';
 import { toClientSessionExpiryCandidate } from '@shared-server/rallar-system/presence/session-expiry.ts';
 import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-client-state-event-store.ts';
+import type {
+    RuntimeStateReadBatchSelection,
+    RuntimeStateReadBatchSelector
+} from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
+import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { assertClientMutationMatchesRecompute } from '@shared-test/shared-server/assert-client-mutation-matches-recompute.ts';
 
 import { emptyRead, principalCommand } from './client-mutation-compute-test-fixtures.ts';
@@ -51,8 +62,8 @@ function deepFreeze<T>(value: T): T {
 }
 
 describe('client mutation stable-read concurrency', () => {
-    it('reads the principal guard and snapshot from one stable aggregate observation', async () => {
-        const runtime = new PrincipalChangeAfterFirstReadRepository();
+    it('reads the principal guard and its children in one batch statement, never in separate reads', async () => {
+        const runtime = new PrincipalReadRecordingRepository();
         await connect({ runtime, sessionId: 'session-a', generationId: 'generation-a', nowEpochMs: CLIENT_MUTATION_BASE_EPOCH_MS });
         const repository = createTestClientStateRepository(runtime);
         const session = await repository.findSession({
@@ -75,17 +86,50 @@ describe('client mutation stable-read concurrency', () => {
             },
             toClientMutationSystemAuthority('client-service')
         );
-
         runtime.armPrincipalChangeAfterRead();
+        runtime.clearRecordedReads();
+
         const read = await createClientStateService({
             runtimeRepository: runtime,
             clientStateEventStore: new InMemoryClientStateEventStore(),
             serviceId: 'client-service'
         }).read(command);
 
-        expect(read.principal).not.toBeNull();
-        expect(read.snapshot).not.toBeNull();
+        const principalKey = clientStatePrincipalStorageKey(clientMutationPrincipalRef('alice'));
+        const principalBatches = runtime.batchReads.filter((selectors) => selectors.some(({ namespace }) => namespace === CLIENT_STATE_PRINCIPALS_NAMESPACE));
+        expect(principalBatches).toHaveLength(1);
+        expect(principalBatches[0]).toEqual(expect.arrayContaining([
+            expect.objectContaining({ kind: 'key', namespace: CLIENT_STATE_PRINCIPALS_NAMESPACE, key: principalKey }),
+            expect.objectContaining({ kind: 'prefix', namespace: CLIENT_STATE_INSTANCES_NAMESPACE, keyPrefix: `${principalKey}:` }),
+            expect.objectContaining({ kind: 'prefix', namespace: CLIENT_STATE_SESSIONS_NAMESPACE, keyPrefix: `${principalKey}:` })
+        ]));
+        expect(runtime.clientStateEntryReads).toEqual([]);
         expect(read.snapshot?.stateRevision).toBe((read.principal?.entry.revision ?? -1) + 1);
         expect(read.snapshot?.principal).toEqual(read.principal?.value);
     });
 });
+
+/** Records the batch selectors and the single-row client-state reads a mutation read issues. */
+class PrincipalReadRecordingRepository extends PrincipalChangeAfterFirstReadRepository {
+    readonly batchReads: (readonly RuntimeStateReadBatchSelector[])[] = [];
+    readonly clientStateEntryReads: string[] = [];
+
+    clearRecordedReads(): void {
+        this.batchReads.length = 0;
+        this.clientStateEntryReads.length = 0;
+    }
+
+    override async readRuntimeStateBatch(
+        selectors: readonly RuntimeStateReadBatchSelector[]
+    ): Promise<readonly RuntimeStateReadBatchSelection[]> {
+        this.batchReads.push(selectors);
+        return await super.readRuntimeStateBatch(selectors);
+    }
+
+    override async findEntry(namespace: string, key: string): Promise<RuntimeStateEntry | undefined> {
+        if (namespace.startsWith('client-state:')) {
+            this.clientStateEntryReads.push(namespace);
+        }
+        return await super.findEntry(namespace, key);
+    }
+}

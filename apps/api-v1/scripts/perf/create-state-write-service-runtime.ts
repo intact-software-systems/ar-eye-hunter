@@ -31,6 +31,7 @@ import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resourc
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
+import defaults from '../../resources/configuration/defaults-config.json' with { type: 'json' };
 import { toApiV1PostgresClient } from '../../src/db/api-v1-database-lifecycle.ts';
 import {
     createInstrumentedStateWriteSql,
@@ -39,9 +40,6 @@ import {
 import { STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS } from './state-write-wait-options.ts';
 import { STATE_WRITE_REQUIRED_CONCURRENCY } from './state-write/api-v1-state-write-benchmark-options.ts';
 import type { StateWriteBenchmarkDiagnosticPhase } from './state-write/state-write-benchmark-diagnostics.ts';
-
-/** The committed default: the benchmark writes as the API server writes. */
-const STATE_WRITE_BENCHMARK_DISCONNECTED_SESSION_RETENTION_MS = 7 * 24 * 60 * 60 * 1_000;
 
 export interface StateWriteServiceRuntimeContext {
     sql: StateWriteSqlMetrics;
@@ -130,7 +128,7 @@ export function createStateWriteServiceRuntime(input: CreateStateWriteServiceRun
         },
         {
             serviceId,
-            disconnectedSessionRetentionMs: STATE_WRITE_BENCHMARK_DISCONNECTED_SESSION_RETENTION_MS,
+            disconnectedSessionRetentionMs: defaults.clientSessions.disconnectedRetentionMs,
             timing,
             options: STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS.client
         }

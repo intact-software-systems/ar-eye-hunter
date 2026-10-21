@@ -222,7 +222,7 @@ function createConfiguredApiV1Runtime(
         appInboxLaneBudgetPolicy: configuration.appInbox.laneBudgetPolicy,
         appInboxNewLaneConcurrency: configuration.appInbox.newLaneConcurrency,
         appInboxNewLaneHeldRows: configuration.appInbox.newLaneHeldRows,
-        disconnectedClientSessionRetentionMs: configuration.clientSessions.disconnectedRetentionMs,
+        disconnectedSessionRetentionMs: configuration.clientSessions.disconnectedRetentionMs,
         groupCapacity: {
             defaultMaxMembers: configuration.group.defaultMaxMembers
         },

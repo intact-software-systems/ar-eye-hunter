@@ -19,7 +19,7 @@ Deno.test('mutation runtime keeps one database identity and performs no construc
         appInboxLaneBudgetPolicy: 'fixed-retry-two',
         appInboxNewLaneConcurrency: 1,
         appInboxNewLaneHeldRows: 4,
-        disconnectedClientSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,
+        disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,
         groupCapacity: { defaultMaxMembers: 10 },
         groupFormationRecomputeDebounceMs: 250,
         groupFormationRecomputeMaxWaitMs: 1_000,

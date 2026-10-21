@@ -179,10 +179,13 @@ readers. The Deno Deploy preflight rejects `ENVIRONMENT` and
 | `RALLAR_RTC_TOPOLOGY_REPLAY`                         | No       | `enabled` | Durable topology replay lane. Supported values: `enabled`, `disabled`.                                                                                                                                                                                                 |
 | `RALLAR_API_QUEUE_WORKERS`                           | No       | `enabled` | Queue workers on this process. `disabled` requires `RALLAR_SQL_BACKEND=postgres`.                                                                                                                                                                                      |
 
-Startup also rejects `RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE` below the tree minimum,
-`RALLAR_RTC_TOPOLOGY_MESH_PARAM_K` above the degree limit, and
-`RALLAR_APP_INBOX_WAIT_RETRY_INTERVAL_MS` above the maximum retry interval, and
-`RALLAR_CLIENT_SESSION_DISCONNECTED_RETENTION_MS` above the auth session TTL.
+Startup also rejects:
+
+- `RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE` below the tree minimum;
+- `RALLAR_RTC_TOPOLOGY_MESH_PARAM_K` above the degree limit;
+- `RALLAR_APP_INBOX_WAIT_RETRY_INTERVAL_MS` above the maximum retry interval;
+- `RALLAR_CLIENT_SESSION_DISCONNECTED_RETENTION_MS` above the auth session TTL.
+
 `RALLAR_APP_INBOX_WAIT_JITTER_RATIO` must be a number from `0` through `1`.
 
 ### Black Box Operator Tokens

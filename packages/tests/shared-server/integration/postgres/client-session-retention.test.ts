@@ -6,6 +6,7 @@ import type { ClientAuthorisedWsSessionConnectAppInboxPayload } from '@shared-se
 import { toAuthorisedWsClientConnection } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 import { CLIENT_STATE_SESSIONS_NAMESPACE } from '@shared-server/rallar-system/client-state/persistence/client-state-runtime-namespaces.ts';
 import { clientStateSessionStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-session-storage-key.ts';
+import { toSessionPurgeAfterEpochMs } from '@shared-server/rallar-system/presence/session-expiry.ts';
 import { RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-runtime-namespaces.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { evictExpiredRuntimeStateRows } from '@shared-server/runtime-state/postgres/runtime-state-expiry-worker.ts';
@@ -46,6 +47,7 @@ describe('Postgres disconnected client session retention', () => {
             const expired = await connectAndDisconnect(harness, 'expired', harness.nowEpochMs - 8 * DAY_MS);
             const retained = await connectAndDisconnect(harness, 'retained', harness.nowEpochMs - 6 * DAY_MS);
 
+            // The production sweep over the shared test database: it removes only rows already past their expiry.
             await evictExpiredRuntimeStateRows({
                 repository: new PSqlRuntimeStateRepository(harness.sql),
                 excludedNamespaces: RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES
@@ -74,6 +76,7 @@ describe('Postgres disconnected client session retention', () => {
                 generationVersion: 2,
                 status: 'active'
             });
+            expect(replaced?.expireAtEpochMs).toBe(toSessionPurgeAfterEpochMs(connection.authSession.expiresAtEpochMs, null));
         });
     }, 60_000);
 });

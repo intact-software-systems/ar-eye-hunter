@@ -53,8 +53,8 @@ async function createTicketFixture(ticketExpiresAtEpochMs = NOW + 30_000): Promi
     };
 }
 
-/** The ticket and session rows the connect's point statement selects, read here one by one. */
-async function readAuthWsTicketConsumption(
+/** A fixture read of the ticket and session rows that the connect's point statement selects in production. */
+async function readTicketConsumptionFixture(
     sessions: AuthSessionRepository,
     claim: AuthWsTicketConsumptionClaim
 ): Promise<AuthWsTicketConsumptionRead> {
@@ -66,7 +66,7 @@ async function readAuthWsTicketConsumption(
 describe('WebSocket ticket consumption inside the authorised connect', () => {
     it('accepts a live ticket bound to the connecting session and deletes it by its read revision', async () => {
         const { sessions, claim } = await createTicketFixture();
-        const read = await readAuthWsTicketConsumption(sessions, claim);
+        const read = await readTicketConsumptionFixture(sessions, claim);
 
         expect(validateAuthWsTicketConsumption(claim, read)).toEqual([]);
         expect(computeAuthWsTicketConsumption(read)).toEqual({
@@ -79,7 +79,7 @@ describe('WebSocket ticket consumption inside the authorised connect', () => {
 
     it('rejects a consumed, unknown, expired or foreign ticket and a session the route did not read', async () => {
         const { sessions, session, claim } = await createTicketFixture();
-        const read = await readAuthWsTicketConsumption(sessions, claim);
+        const read = await readTicketConsumptionFixture(sessions, claim);
 
         expect(validateAuthWsTicketConsumption(claim, { ...read, ticket: null })).toEqual(['ticket-missing']);
         expect(validateAuthWsTicketConsumption({ ...claim, capturedAtEpochMs: NOW + 30_000 }, read)).toEqual([
@@ -102,7 +102,7 @@ describe('WebSocket ticket consumption inside the authorised connect', () => {
         const { sessions, session, claim } = await createTicketFixture();
         await sessions.putSession({ ...session, accessToken: 'rotated-token' });
 
-        expect(validateAuthWsTicketConsumption(claim, await readAuthWsTicketConsumption(sessions, claim))).toEqual([
+        expect(validateAuthWsTicketConsumption(claim, await readTicketConsumptionFixture(sessions, claim))).toEqual([
             'session-differs'
         ]);
     });

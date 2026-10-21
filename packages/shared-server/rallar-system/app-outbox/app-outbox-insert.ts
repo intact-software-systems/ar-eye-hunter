@@ -15,6 +15,24 @@ export interface AppOutboxInsert {
     readonly attempts: number;
 }
 
+/** One row of the multi-row outbox insert, named as the statement's recordset columns. */
+export interface AppOutboxInsertRow {
+    readonly resourceId: string;
+    readonly topicId: string;
+    readonly resource: string;
+    readonly typeId: string;
+    readonly status: string;
+    readonly contextId: string;
+    readonly systemDate: string;
+    readonly createdBy: string;
+    readonly createdAt: string;
+    readonly expiresAt: string;
+    readonly startedAt: string | null;
+    readonly finishedAt: string | null;
+    readonly nextAt: string | null;
+    readonly attempts: number;
+}
+
 interface AppOutboxInsertedRow {
     readonly ri_resource_id: string;
     readonly ri_topic_id: string;
@@ -151,7 +169,7 @@ function throwAppOutboxInsertConflict(computed: AppOutboxInsert): never {
     );
 }
 
-function toAppOutboxInsertRow(computed: AppOutboxInsert): object {
+function toAppOutboxInsertRow(computed: AppOutboxInsert): AppOutboxInsertRow {
     const { entry } = computed;
     return {
         resourceId: entry.key.resourceId,

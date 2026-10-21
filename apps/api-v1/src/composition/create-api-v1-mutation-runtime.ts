@@ -104,7 +104,7 @@ export interface CreateApiV1MutationRuntimeInput {
     readonly appInboxLaneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
     readonly appInboxNewLaneConcurrency: number;
     readonly appInboxNewLaneHeldRows: number;
-    readonly disconnectedClientSessionRetentionMs: number;
+    readonly disconnectedSessionRetentionMs: number;
     readonly groupCapacity: GroupPolicyCapacityConfig;
     readonly groupFormationRecomputeDebounceMs: number;
     readonly groupFormationRecomputeMaxWaitMs: number;
@@ -236,7 +236,7 @@ export function createApiV1MutationRuntime(
         }),
         createAppClientInboxService: createAppClientInboxServiceFactory({
             ...stateDependencies,
-            disconnectedSessionRetentionMs: input.disconnectedClientSessionRetentionMs
+            disconnectedSessionRetentionMs: input.disconnectedSessionRetentionMs
         }),
         createAppAuthInboxService: createAppAuthInboxServiceFactory({
             ...stateDependencies,

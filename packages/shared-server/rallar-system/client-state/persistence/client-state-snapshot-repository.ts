@@ -105,13 +105,13 @@ export class ClientStateSnapshotRepository extends ClientStateRepositoryReads {
             this.toChildSelector(ref, CLIENT_STATE_SESSIONS_NAMESPACE, `sessions:${index}`)
         ]));
         return uniqueRefs.flatMap((ref, index) => {
-            const [principal] = selections[index * 2].entries;
-            if (!principal) {
+            const [stored] = selections[index * 2].entries;
+            if (!stored) {
                 return [];
             }
-            this.findPrincipalEntryValue(principal, ref);
+            const principal = this.findPrincipalEntryValue(stored, ref).value;
             const sessions = selections[index * 2 + 1].entries.map((entry) => this.toSessionEntry(entry, ref).value);
-            return [toPrincipalAudienceSessions(ref, toActiveClientSessions(sessions))];
+            return [toPrincipalAudienceSessions(principal, toActiveClientSessions(sessions))];
         });
     }
 
@@ -132,9 +132,11 @@ export class ClientStateSnapshotRepository extends ClientStateRepositoryReads {
             });
         }
         const selections = await this.readLiveSelections([...selectors, ...input.companionSelectors]);
-        const [principal, instances, sessions, idempotency] = selections;
+        const [principal, instances, sessions] = selections;
         return {
-            idempotency: requestId === null ? undefined : this.toIdempotencyRead(idempotency, principalRef, requestId),
+            idempotency: requestId === null
+                ? undefined
+                : this.toIdempotencyRead(selections[3], principalRef, requestId),
             principalSnapshot: this.toPrincipalSnapshotRead(principalRef, { principal, instances, sessions }),
             instance: input.instanceRef ? this.toInstanceRead(instances, input.instanceRef) : undefined,
             session: input.sessionRef ? this.toSessionRead(sessions, input.sessionRef) : NO_ENTRY_READ,
@@ -204,12 +206,14 @@ export class ClientStateSnapshotRepository extends ClientStateRepositoryReads {
         });
     }
 
+    /** Client-state rows decode as client-state; a companion row of another feature keeps the store's own rule. */
     protected override async toLiveJsonEntryValue(
         namespace: string,
         entry: RuntimeStateEntry
     ): Promise<RuntimeStateEntryValue<JsonWireValue> | undefined> {
-        void namespace;
-        return await toLiveClientStateEntryValue(entry);
+        return CLIENT_STATE_NAMESPACES.has(namespace)
+            ? await toLiveClientStateEntryValue(entry)
+            : await super.toLiveJsonEntryValue(namespace, entry);
     }
 
     private async readLiveSelections(
@@ -299,6 +303,13 @@ export class ClientStateSnapshotRepository extends ClientStateRepositoryReads {
 }
 
 const NO_ENTRY_READ: RuntimeStateEntryRead<ClientSession> = { value: undefined, expiredEntry: undefined };
+
+const CLIENT_STATE_NAMESPACES: ReadonlySet<string> = new Set([
+    CLIENT_STATE_PRINCIPALS_NAMESPACE,
+    CLIENT_STATE_INSTANCES_NAMESPACE,
+    CLIENT_STATE_SESSIONS_NAMESPACE,
+    CLIENT_STATE_IDEMPOTENT_NAMESPACE
+]);
 
 function collectValuesByPrincipalId<T extends Readonly<{ principalId: string; }>>(
     values: readonly T[]

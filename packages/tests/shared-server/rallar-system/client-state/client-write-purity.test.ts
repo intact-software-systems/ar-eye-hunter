@@ -5,6 +5,7 @@ import {
 } from 'vitest';
 
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type { AppOutboxInsertRow } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import { writeClientMutation } from '@shared-server/rallar-system/client-state/mutation/write-client-mutation.ts';
 import { assertClientMutationMatchesRecompute } from '@shared-test/shared-server/assert-client-mutation-matches-recompute.ts';
@@ -68,7 +69,7 @@ function appliedSql(): PSqlSql {
         if (!('raw' in stringsOrValues) || !stringsOrValues.join('').includes('insert into resource_inbox')) {
             return Promise.resolve([{ revision: 0 }]);
         }
-        const rows = values[0] as readonly Readonly<{ resourceId: string; topicId: string; contextId: string; }>[];
+        const rows = values[0] as readonly AppOutboxInsertRow[];
         return Promise.resolve(rows.map((row) => ({
             ri_resource_id: row.resourceId,
             ri_topic_id: row.topicId,

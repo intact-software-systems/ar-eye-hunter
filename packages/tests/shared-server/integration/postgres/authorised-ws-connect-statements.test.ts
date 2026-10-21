@@ -72,6 +72,7 @@ describe('Postgres authorised WebSocket connect statements', () => {
                 statement.text.includes('runtime_state_store') &&
                 log.statements.indexOf(statement) < log.statements.indexOf(connectTransaction[0]!)
             );
+            // Runtime-state statements only, under the worker runtime's cache-less group read (no current-snapshot cache).
             expect(reads.length, reads.map(({ text }) => text.slice(0, 80)).join('\n')).toBeLessThanOrEqual(7);
             expect(countValueOccurrences(reads, AUTH_SESSIONS_BY_SESSION_NAMESPACE)).toBe(1);
             expect(connectTransaction.length, connectTransaction.map(({ text }) => text.slice(0, 80)).join('\n'))
