@@ -95,4 +95,18 @@ describe('held group snapshot causal revisions', () => {
     )('decides %s', (_case, current, incoming, expected) => {
         expect(isGroupSnapshotCausalRevisionCovered(current, incoming)).toBe(expected);
     });
+
+    it('covers the held snapshot itself without walking its content', () => {
+        const readKeys = new Set<PropertyKey>();
+        const same = new Proxy(createGroupSnapshot(3, ['session-a']), {
+            get: (target, key, receiver) => {
+                readKeys.add(key);
+                return Reflect.get(target, key, receiver);
+            }
+        });
+
+        expect(isGroupSnapshotCausalRevisionCovered(same, same)).toBe(true);
+        expect(decideGroupSnapshotCausalRevision(same, same)).toBe('duplicate');
+        expect([...readKeys]).toEqual(['causalRevision']);
+    });
 });

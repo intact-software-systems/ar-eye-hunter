@@ -1,10 +1,13 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
 
+// URI component coding leaves exactly these characters unchanged, so a value made of them is its own encoding.
+const uriComponentUnreservedPattern = /^[A-Za-z0-9\-_.!~*'()]+$/;
+
 function groupStateStorageKeyPart(name: string, value: string): string {
     if (typeof value !== 'string' || value.length === 0) {
         throw new TypeError(`Group-state storage key ${name} must be a non-empty string`);
     }
-    return `${name}=${encodeURIComponent(value)}`;
+    return `${name}=${toEncodedGroupStateStorageKeyValue(value)}`;
 }
 
 export function groupStateScopeStorageKey(
@@ -27,15 +30,7 @@ export function decodeGroupStateGroupStorageKey(storageKey: string): GroupRef {
     if (parts.length !== 3) {
         throw new TypeError('Group-state group storage key has invalid arity');
     }
-    const ref: GroupRef = {
-        applicationId: decodeGroupStateStorageKeyPart(parts[0], 'app'),
-        workspaceId: decodeGroupStateStorageKeyPart(parts[1], 'ws'),
-        groupId: decodeGroupStateStorageKeyPart(parts[2], 'group')
-    };
-    if (groupStateGroupStorageKey(ref) !== storageKey) {
-        throw new TypeError('Group-state group storage key is not canonical');
-    }
-    return ref;
+    return decodeGroupStateGroupStorageKeyParts(parts);
 }
 
 export function groupStateChildStorageKey(
@@ -53,37 +48,60 @@ export function groupStateChildStorageKeySuffix(partName: string, value: string)
 export function decodeGroupStateChildStorageKey<Name extends string>(
     storageKey: string,
     partName: string,
-    propertyName: Name,
-    canonicalKeyFor: (ref: GroupRef & Readonly<Record<Name, string>>) => string
+    propertyName: Name
 ): GroupRef & Readonly<Record<Name, string>> {
     const parts = storageKey.split(':');
     if (parts.length !== 4) {
         throw new TypeError(`Group-state ${partName} storage key has invalid arity`);
     }
-    const ref = decodeGroupStateGroupStorageKey(parts.slice(0, 3).join(':'));
+    const ref = decodeGroupStateGroupStorageKeyParts(parts);
     const value = decodeGroupStateStorageKeyPart(parts[3], partName);
-    const decoded = { ...ref, [propertyName]: value } as
-        & GroupRef
-        & Readonly<Record<Name, string>>;
-    if (canonicalKeyFor(decoded) !== storageKey) {
+    if (!isCanonicalGroupStateStorageKeyPart(parts[3], partName, value)) {
         throw new TypeError(`Group-state ${partName} storage key is not canonical`);
     }
-    return decoded;
+    return { ...ref, [propertyName]: value } as GroupRef & Readonly<Record<Name, string>>;
 }
 
-function decodeGroupStateStorageKeyPart(part: string | undefined, name: string): string {
-    const prefix = `${name}=`;
-    if (!part?.startsWith(prefix)) {
+function decodeGroupStateGroupStorageKeyParts(parts: readonly string[]): GroupRef {
+    const applicationId = decodeGroupStateStorageKeyPart(parts[0], 'app');
+    const workspaceId = decodeGroupStateStorageKeyPart(parts[1], 'ws');
+    const groupId = decodeGroupStateStorageKeyPart(parts[2], 'group');
+    const canonical = isCanonicalGroupStateStorageKeyPart(parts[0], 'app', applicationId) &&
+        isCanonicalGroupStateStorageKeyPart(parts[1], 'ws', workspaceId) &&
+        isCanonicalGroupStateStorageKeyPart(parts[2], 'group', groupId);
+    if (!canonical) {
+        throw new TypeError('Group-state group storage key is not canonical');
+    }
+    return { applicationId, workspaceId, groupId };
+}
+
+function decodeGroupStateStorageKeyPart(part: string, name: string): string {
+    if (!part.startsWith(`${name}=`)) {
         throw new TypeError(`Group-state storage key is missing ${name}`);
     }
-    try {
-        const value = decodeURIComponent(part.slice(prefix.length));
-        if (value.length === 0) {
-            throw new TypeError(`Group-state storage key ${name} must be a non-empty string`);
-        }
-        return value;
-    }
-    catch {
+    const value = toDecodedGroupStateStorageKeyValue(part.slice(name.length + 1));
+    if (value === null || value.length === 0) {
         throw new TypeError(`Group-state storage key has invalid ${name} encoding`);
     }
+    return value;
+}
+
+function toEncodedGroupStateStorageKeyValue(value: string): string {
+    return uriComponentUnreservedPattern.test(value) ? value : encodeURIComponent(value);
+}
+
+function toDecodedGroupStateStorageKeyValue(encoded: string): string | null {
+    if (uriComponentUnreservedPattern.test(encoded)) {
+        return encoded;
+    }
+    try {
+        return decodeURIComponent(encoded);
+    }
+    catch {
+        return null;
+    }
+}
+
+function isCanonicalGroupStateStorageKeyPart(part: string, name: string, value: string): boolean {
+    return part === groupStateStorageKeyPart(name, value);
 }

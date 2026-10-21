@@ -21,12 +21,7 @@ export function groupStatePresenceSessionStorageKeySuffix(sessionId: string): st
 export function decodeGroupStatePresenceSessionStorageKey(
     storageKey: string
 ): GroupSessionStorageRef {
-    return decodeGroupStateChildStorageKey(
-        storageKey,
-        'session',
-        'sessionId',
-        groupStatePresenceSessionStorageKey
-    );
+    return decodeGroupStateChildStorageKey(storageKey, 'session', 'sessionId');
 }
 
 export function groupStatePresenceAdmissionStorageKey(ref: GroupMemberStorageRef): string {
@@ -36,12 +31,7 @@ export function groupStatePresenceAdmissionStorageKey(ref: GroupMemberStorageRef
 export function decodeGroupStatePresenceAdmissionStorageKey(
     storageKey: string
 ): GroupMemberStorageRef {
-    return decodeGroupStateChildStorageKey(
-        storageKey,
-        'principal',
-        'principalId',
-        groupStatePresenceAdmissionStorageKey
-    );
+    return decodeGroupStateChildStorageKey(storageKey, 'principal', 'principalId');
 }
 
 export function groupStatePresenceSummaryStorageKey(ref: GroupRef): string {

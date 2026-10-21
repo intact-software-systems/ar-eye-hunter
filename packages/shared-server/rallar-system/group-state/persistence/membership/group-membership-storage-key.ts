@@ -17,10 +17,5 @@ export function groupStateMemberStorageKeySuffix(principalId: string): string {
 }
 
 export function decodeGroupStateMemberStorageKey(storageKey: string): GroupMemberStorageRef {
-    return decodeGroupStateChildStorageKey(
-        storageKey,
-        'member',
-        'principalId',
-        groupStateMemberStorageKey
-    );
+    return decodeGroupStateChildStorageKey(storageKey, 'member', 'principalId');
 }

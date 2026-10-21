@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 
 import { AppInboxType, toAppInboxCompletionAwaitability } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
@@ -15,12 +15,15 @@ import {
     decodeAuthorisedWsClientMutationResult,
     type AuthorisedWsClientMutationResult
 } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-result-codec.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import type { AuditStamp, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
+import { createTestGroup } from '../../../create-test-group.ts';
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createAppInboxTestResilience, TestResourceInbox, TestResourceInboxResults } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
@@ -29,6 +32,32 @@ import { putAuthorisedWsTestTicket } from './authorised-ws-test-ticket.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 const SERVICE_ID = 'server-12345678';
+const AUDIENCE_SCOPE = { applicationId: 'ar-eye-hunter', workspaceId: 'default' } as const;
+
+const groupSnapshotValidationCounts = vi.hoisted(() => new Map<string, number>());
+
+vi.mock('@shared/api/authoritative-state-validation.ts', async (importOriginal) => {
+    const original: typeof import('@shared/api/authoritative-state-validation.ts') = await importOriginal();
+    const countValidation = (snapshot: GroupSnapshot): void => {
+        const groupId = snapshot.group.groupId;
+        groupSnapshotValidationCounts.set(groupId, (groupSnapshotValidationCounts.get(groupId) ?? 0) + 1);
+    };
+    return {
+        ...original,
+        validateAuthoritativeGroupSnapshot: (
+            ...[snapshot, scope]: Parameters<typeof original.validateAuthoritativeGroupSnapshot>
+        ) => {
+            original.validateAuthoritativeGroupSnapshot(snapshot, scope);
+            countValidation(snapshot);
+        },
+        validateAuthoritativeGroupSnapshotList: (
+            ...[snapshots, scope]: Parameters<typeof original.validateAuthoritativeGroupSnapshotList>
+        ) => {
+            original.validateAuthoritativeGroupSnapshotList(snapshots, scope);
+            snapshots.forEach(countValidation);
+        }
+    };
+});
 
 it('awaits only the authorised websocket connect, which its upgrade route waits for', () => {
     // A cross-server relay never notifies a fire-and-forget completion, so a waiter on one
@@ -73,6 +102,32 @@ it('consumes the upgrade ticket in the connect transaction so a replayed ticket 
         serviceId: SERVICE_ID
     }).readSnapshot({ applicationId: DEFAULT_STATE_APPLICATION_ID, workspaceId: DEFAULT_STATE_WORKSPACE_ID, principalId: 'alice' });
     expect(snapshot?.activeSessions).toHaveLength(1);
+});
+
+it('validates each audience group snapshot once, where the connect read assembles it', async () => {
+    const queue = new TestResourceInbox();
+    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+    const results = new TestResourceInboxResults();
+    const authSession = issuedSession('alice', 'alice-ws-session');
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    const authSessions = new AuthSessionRepository(runtimeRepository);
+    await authSessions.putSession(authSession);
+    for (const groupId of ['room-one', 'room-two']) {
+        await seedAudienceGroup(runtimeRepository, groupId);
+    }
+    const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
+    const service = createAuthorisedWsService({ database, queue, reader, results, runtimeRepository });
+    groupSnapshotValidationCounts.clear();
+
+    const connected = await connectAuthorisedWs({ queue, reader, service }, {
+        authSession,
+        generationId: 'generation-audience',
+        ticketDigest: await putAuthorisedWsTestTicket(authSessions, authSession),
+        input: AUDIENCE_SCOPE
+    });
+
+    expect(requireRightSnapshot(connected).activeSessions).toHaveLength(1);
+    expect(Object.fromEntries(groupSnapshotValidationCounts)).toEqual({ 'room-one': 1, 'room-two': 1 });
 });
 
 it('rejects authorised websocket disconnect after durable auth revocation', async () => {
@@ -453,4 +508,36 @@ function requireQueuedConnect(entries: readonly ResourceEntry[], sessionId: stri
         throw new Error(`Expected a queued connect for ${sessionId}`);
     }
     return entry;
+}
+
+async function seedAudienceGroup(runtimeRepository: FakeRuntimeStateRepository, groupId: string): Promise<void> {
+    const groups = createTestGroupStateRepository(runtimeRepository);
+    await groups.putGroup(createTestGroup({ ...AUDIENCE_SCOPE, groupId, ownerPrincipalId: 'alice', activeMemberCount: 2 }));
+    for (const principalId of ['alice', 'bob']) {
+        await groups.putMember(activeMember(groupId, principalId));
+    }
+}
+
+function activeMember(groupId: string, principalId: string): GroupMember {
+    const audit: AuditStamp = {
+        atEpochMs: 1,
+        actor: { kind: 'service', serviceId: 'test' },
+        reason: null,
+        traceId: null,
+        requestId: null
+    };
+    return {
+        ...AUDIENCE_SCOPE,
+        groupId,
+        principalId,
+        role: principalId === 'alice' ? 'owner' : 'member',
+        status: 'active',
+        invitedByPrincipalId: null,
+        invitationExpiresAtEpochMs: null,
+        joined: audit,
+        left: null,
+        removed: null,
+        banned: null,
+        updated: audit
+    };
 }
