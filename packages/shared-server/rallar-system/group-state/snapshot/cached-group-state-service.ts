@@ -1,5 +1,6 @@
 import type { GroupRef, GroupScope, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { StateSnapshotObservation } from '@shared/repository/state-snapshot-revision.ts';
+import { compareRuntimeStateKeys } from '../../../runtime-state/read-batch/compare-runtime-state-keys.ts';
 import type { GroupStateService } from '../group-state-service-contracts.ts';
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
 
@@ -14,9 +15,9 @@ export type CachedGroupStateServiceCache = Readonly<{
     observe(snapshot: GroupSnapshot): StateSnapshotObservation;
 }>;
 
-export type CachedGroupStateServicePrincipalGroups = Readonly<{
+export interface CachedGroupStateServicePrincipalGroups {
     listSnapshotsForPrincipal(scope: GroupScope, principalId: string): Promise<readonly GroupSnapshot[]>;
-}>;
+}
 
 export type CachedGroupStateService =
     & GroupStateService
@@ -92,6 +93,6 @@ export function createCachedGroupStateService(
 function toGroupStorageKeyOrder(snapshots: readonly GroupSnapshot[]): readonly GroupSnapshot[] {
     return snapshots
         .map((snapshot) => ({ snapshot, key: groupStateGroupStorageKey(snapshot.group) }))
-        .sort((left, right) => left.key < right.key ? -1 : left.key > right.key ? 1 : 0)
+        .sort((left, right) => compareRuntimeStateKeys(left.key, right.key))
         .map(({ snapshot }) => snapshot);
 }

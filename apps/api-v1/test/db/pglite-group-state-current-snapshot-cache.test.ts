@@ -316,7 +316,8 @@ Deno.test('the cached principal group list answers in group-key order, as the sc
             cache: { findOrLoadByRef: (ref) => durable.readSnapshot(ref), observe: () => 'inserted' },
             current: durable,
             principalGroups: {
-                listSnapshotsForPrincipal: async (scope, principalId) => await seeded.repository.listSnapshotsForPrincipal(scope, principalId, seeded.cache)
+                listSnapshotsForPrincipal: async (groupScope, principalId) =>
+                    await seeded.repository.listSnapshotsForPrincipal(groupScope, principalId, seeded.cache)
             }
         });
 

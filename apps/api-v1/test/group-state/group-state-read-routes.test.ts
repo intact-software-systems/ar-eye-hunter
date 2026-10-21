@@ -473,25 +473,27 @@ Deno.test('a group list hydrates only snapshots the state-sync cache does not al
     const held = createGroupStateRouteSnapshot('room-held', ['alice']);
     const advanced = createGroupStateRouteSnapshot('room-advanced', ['alice']);
     const incomparable = createGroupStateRouteSnapshot('room-incomparable', ['alice']);
+    const conflicting = createGroupStateRouteSnapshot('room-conflicting', ['alice']);
     const heldByGroupId = new Map<string, GroupSnapshot>([
         ['room-held', structuredClone(held)],
         ['room-advanced', { ...advanced, causalRevision: { groupRevision: 0, presenceRevision: 0 } }],
-        ['room-incomparable', { ...incomparable, causalRevision: { groupRevision: 0, presenceRevision: 1 } }]
+        ['room-incomparable', { ...incomparable, causalRevision: { groupRevision: 0, presenceRevision: 1 } }],
+        ['room-conflicting', { ...conflicting, group: { ...conflicting.group, displayName: 'held at the same revision' } }]
     ]);
     const hydrated: StateSyncCacheHydrationInput[] = [];
     const service = (await createSeededGroupStateService([])).service;
     const app = createGroupListRouteApp(
-        { ...service, listSnapshots: () => Promise.resolve([held, advanced, incomparable]) },
+        { ...service, listSnapshots: () => Promise.resolve([held, advanced, incomparable, conflicting]) },
         { strictReadAuthorization: false, hydrated, findStateSyncGroupSnapshot: (ref) => heldByGroupId.get(ref.groupId) }
     );
 
     const response = await app.request(GROUPS_PATH);
 
     assert.equal(response.status, 200);
-    assert.equal((await response.json()).length, 3);
+    assert.equal((await response.json()).length, 4);
     assert.deepEqual(
         hydrated.map((input) => input.groups?.map((snapshot) => snapshot.group.groupId)),
-        [['room-advanced', 'room-incomparable']]
+        [['room-advanced', 'room-incomparable', 'room-conflicting']]
     );
 });
 

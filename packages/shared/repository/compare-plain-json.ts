@@ -1,95 +1,83 @@
-/** Any value JSON.stringify accepts, before its toJSON, omission and non-finite conversions. */
-export type JsonSerializableValue = string | number | boolean | bigint | symbol | object | null | undefined;
+/** A JSON tree that serializes as itself; an undefined record value is an absent key. */
+export type PlainJsonValue = string | number | boolean | null | readonly PlainJsonValue[] | PlainJsonRecord;
 
-export type JsonSerializableRecord = Readonly<Record<string, JsonSerializableValue>>;
-
-export type PlainJsonComparison = 'equal' | 'different' | 'not-plain';
-
-/** Decides plain JSON trees by structure; anything JSON would convert is left to the serialized comparison. */
-export function comparePlainJson(left: JsonSerializableValue, right: JsonSerializableValue): PlainJsonComparison {
-    const leftKind = toPlainJsonKind(left);
-    const rightKind = toPlainJsonKind(right);
-    if (leftKind === 'not-plain' || rightKind === 'not-plain') {
-        return 'not-plain';
-    }
-    if (leftKind !== rightKind) {
-        return 'different';
-    }
-    if (leftKind === 'array') {
-        return comparePlainJsonArrays(
-            left as readonly JsonSerializableValue[],
-            right as readonly JsonSerializableValue[]
-        );
-    }
-    if (leftKind === 'object') {
-        return comparePlainJsonObjects(left as JsonSerializableRecord, right as JsonSerializableRecord);
-    }
-    return left === right ? 'equal' : 'different';
+export interface PlainJsonRecord {
+    readonly [key: string]: PlainJsonValue | undefined;
 }
 
-function toPlainJsonKind(value: JsonSerializableValue): 'leaf' | 'array' | 'object' | 'not-plain' {
+/** Plain JSON only: no toJSON, no value JSON would omit or convert, no prototype but Object's or none. */
+export function isPlainJsonValue(value: unknown): value is PlainJsonValue {
     if (value === null || typeof value === 'string' || typeof value === 'boolean') {
-        return 'leaf';
+        return true;
     }
     if (typeof value === 'number') {
-        return Number.isFinite(value) ? 'leaf' : 'not-plain';
+        return Number.isFinite(value);
     }
     if (typeof value !== 'object' || 'toJSON' in value) {
-        return 'not-plain';
+        return false;
     }
     if (Array.isArray(value)) {
-        return 'array';
+        for (let index = 0; index < value.length; index += 1) {
+            if (!isPlainJsonValue(value[index])) {
+                return false;
+            }
+        }
+        return true;
     }
     const prototype = Object.getPrototypeOf(value);
-    return prototype === Object.prototype || prototype === null ? 'object' : 'not-plain';
+    return (prototype === Object.prototype || prototype === null) &&
+        Object.values(value).every((entry) => entry === undefined || isPlainJsonValue(entry));
 }
 
-function comparePlainJsonArrays(
-    left: readonly JsonSerializableValue[],
-    right: readonly JsonSerializableValue[]
-): PlainJsonComparison {
+/** Equal modulo key order, which is what equal serializations of two plain JSON trees mean. */
+export function arePlainJsonValuesEqual(left: PlainJsonValue, right: PlainJsonValue): boolean {
+    if (left === null || right === null || typeof left !== 'object' || typeof right !== 'object') {
+        return left === right;
+    }
+    if (isPlainJsonArray(left) || isPlainJsonArray(right)) {
+        return isPlainJsonArray(left) && isPlainJsonArray(right) && arePlainJsonArraysEqual(left, right);
+    }
+    return arePlainJsonRecordsEqual(left, right);
+}
+
+function isPlainJsonArray(value: PlainJsonValue): value is readonly PlainJsonValue[] {
+    return Array.isArray(value);
+}
+
+function arePlainJsonArraysEqual(left: readonly PlainJsonValue[], right: readonly PlainJsonValue[]): boolean {
     if (left.length !== right.length) {
-        return 'different';
+        return false;
     }
     for (let index = 0; index < left.length; index += 1) {
-        const entry = comparePlainJson(left[index], right[index]);
-        if (entry !== 'equal') {
-            return entry;
+        if (!arePlainJsonValuesEqual(left[index], right[index])) {
+            return false;
         }
     }
-    return 'equal';
+    return true;
 }
 
-function comparePlainJsonObjects(
-    left: JsonSerializableRecord,
-    right: JsonSerializableRecord
-): PlainJsonComparison {
+function arePlainJsonRecordsEqual(left: PlainJsonRecord, right: PlainJsonRecord): boolean {
     let leftCount = 0;
     for (const key of Object.keys(left)) {
-        if (left[key] === undefined) {
+        const value = left[key];
+        if (value === undefined) {
             continue;
         }
         leftCount += 1;
-        const entry = right[key] === undefined || !Object.hasOwn(right, key)
-            ? toMissingPlainJsonComparison(left[key])
-            : comparePlainJson(left[key], right[key]);
-        if (entry !== 'equal') {
-            return entry;
+        const other = Object.hasOwn(right, key) ? right[key] : undefined;
+        if (other === undefined || !arePlainJsonValuesEqual(value, other)) {
+            return false;
         }
     }
-    let rightCount = 0;
-    for (const key of Object.keys(right)) {
-        if (right[key] === undefined) {
-            continue;
-        }
-        if (toPlainJsonKind(right[key]) === 'not-plain') {
-            return 'not-plain';
-        }
-        rightCount += 1;
-    }
-    return leftCount === rightCount ? 'equal' : 'different';
+    return leftCount === countPresentKeys(right);
 }
 
-function toMissingPlainJsonComparison(present: JsonSerializableValue): PlainJsonComparison {
-    return toPlainJsonKind(present) === 'not-plain' ? 'not-plain' : 'different';
+function countPresentKeys(record: PlainJsonRecord): number {
+    let count = 0;
+    for (const key of Object.keys(record)) {
+        if (record[key] !== undefined) {
+            count += 1;
+        }
+    }
+    return count;
 }

@@ -4639,6 +4639,36 @@ moved or changed test.
         "requiredConstraint": "createPSqlCounterScope with timesBeginWait false performs exactly two clock reads per statement and none around begin; the begin-wait pair exists only when timing is on.",
         "failureRationale": "The committed rows, the counters and the phase lines are identical with or without the begin-wait pair, so only the clock-read count states the no-new-clock-work constraint directly."
       }
+    },
+    {
+      "id": "group-snapshot-equal-revision-structural-comparison",
+      "domain": "Group snapshot equal-revision decision cost",
+      "owner": "Rallar shared maintainers",
+      "summary": "An equal-revision group snapshot decision compares content without serializing or locale-sorting either side.",
+      "semanticCoverage": "packages/tests/shared/repository/group-state-snapshot-revision.test.ts#decides an equal revision with reordered content as a duplicate without serializing either side",
+      "coverageRelation": "The test decides a real equal-revision snapshot against a key-reordered copy, proves the duplicate decision, and observes JSON.stringify and String.prototype.localeCompare during that decision.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "JSON.stringify and String.prototype.localeCompare within the equal branch of decideGroupSnapshotCausalRevision",
+        "observableEffect": "API CPU on group list and point-read hydration and on state-sync observation: a sorted stringify of both snapshots per equal revision was the measured hosted cost.",
+        "requiredConstraint": "Zero serializations and zero locale comparisons for plain-JSON snapshots at one causal tuple.",
+        "failureRationale": "A reintroduced sorted-stringify comparison returns the same duplicate decision and restores the measured CPU cost with no functional symptom; only the absence at these ports distinguishes it."
+      }
+    },
+    {
+      "id": "json-content-equality-plain-tree-structural-comparison",
+      "domain": "JSON content equality cost for plain trees",
+      "owner": "Rallar shared maintainers",
+      "summary": "jsonEquals decides two plain JSON trees with reordered keys structurally, without serializing or locale-sorting either side.",
+      "semanticCoverage": "packages/tests/shared/repository/state-utils.test.ts#equates the same keys in a different order without serializing or sorting either side",
+      "coverageRelation": "The test compares two key-reordered plain trees through jsonEquals, proves they are equal, and observes JSON.stringify and String.prototype.localeCompare during that comparison.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "JSON.stringify and String.prototype.localeCompare within jsonEquals for plain JSON trees",
+        "observableEffect": "jsonEquals runs on every equal-revision snapshot comparison in browser and server caches; each sorted stringify is CPU proportional to the whole tree.",
+        "requiredConstraint": "Zero serializations and zero locale comparisons when both sides are plain JSON trees.",
+        "failureRationale": "The serialized fallback returns the same equality answer for plain trees, so the result alone cannot show that the structural path was taken; only the absence at these ports does."
+      }
     }
   ],
   "entries": [
@@ -10218,6 +10248,28 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The clock-read count against the statement count is the only direct witness that a timing-off transaction pays no begin-wait clock pair; the commit result, counters and phase lines are the same either way.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/app-inbox/handler/app-inbox-phase-executor-counters.test.ts#reads no clock around the transaction begin when timing is off, only the per-statement waits"
+    },
+    {
+      "id": "test-structure-coupling-a35c25690f2bb340",
+      "path": "packages/tests/shared/repository/group-state-snapshot-revision.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "group-snapshot-equal-revision-structural-comparison",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The zero-call count observes the serialization and locale-sort ports while the real decision returns duplicate for a reordered equal-revision snapshot; the decision would pass unchanged with the sorted-stringify comparison it replaced.",
+      "semanticCoverage": "packages/tests/shared/repository/group-state-snapshot-revision.test.ts#decides an equal revision with reordered content as a duplicate without serializing either side"
+    },
+    {
+      "id": "test-structure-coupling-cbbdf05fb0ebb7e0",
+      "path": "packages/tests/shared/repository/state-utils.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "json-content-equality-plain-tree-structural-comparison",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The zero-call count observes the serialization and locale-sort ports while the real jsonEquals equates two reordered plain trees; the equality answer would pass unchanged through the serialized fallback.",
+      "semanticCoverage": "packages/tests/shared/repository/state-utils.test.ts#equates the same keys in a different order without serializing or sorting either side"
     }
   ]
 }

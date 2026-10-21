@@ -1051,6 +1051,33 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'requireRecord',
         maximumMagnitude: 1
     }),
+    // JSON content equality and stable serialization accept any caller value, as JSON.stringify does: they narrow
+    // plain trees through isPlainJsonValue and hand everything else to the serializer's own conversion. The matcher
+    // keys on the owner function, so the one reviewed boundary is these four rows; a new owner needs its own review.
+    Object.freeze({
+        path: 'packages/shared/repository/state-utils.ts',
+        rule: 'boundary.unknown',
+        symbol: 'jsonEquals',
+        maximumMagnitude: 2
+    }),
+    Object.freeze({
+        path: 'packages/shared/repository/state-utils.ts',
+        rule: 'boundary.unknown',
+        symbol: 'stableJsonStringify',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared/repository/state-utils.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toStableJson',
+        maximumMagnitude: 2
+    }),
+    Object.freeze({
+        path: 'packages/shared/repository/state-utils.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toOrderedJson',
+        maximumMagnitude: 2
+    }),
     // Group mutation operation-input validation narrows raw request fields at
     // the HTTP/WS boundary. Both listed owners validate their unknown input
     // before any domain use, mirroring the persisted-JSON decoder entries below.

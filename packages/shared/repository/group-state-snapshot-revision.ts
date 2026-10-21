@@ -34,18 +34,24 @@ export function decideGroupSnapshotCausalRevision(
     if (order === 'incomparable') {
         return 'incomparable';
     }
-    if (
-        jsonEquals(toLeaseInsensitiveSnapshot(current), toLeaseInsensitiveSnapshot(incoming)) ||
-        isTuplePreservingGroupLivenessReduction(incoming, current) ||
-        isTuplePreservingGroupLivenessReduction(current, incoming)
-    ) {
+    if (isGroupSnapshotEqualRevisionDuplicate(current, incoming)) {
         return 'duplicate';
     }
 
     throw new StateSnapshotRevisionConflictError('Group', incoming.group.snapshotVersion);
 }
 
-/** The held snapshot is at or after the incoming causal tuple; an incomparable tuple is never covered. */
+/** Two snapshots at one causal tuple carry the same content apart from the liveness plane. */
+function isGroupSnapshotEqualRevisionDuplicate(current: GroupSnapshot, incoming: GroupSnapshot): boolean {
+    return jsonEquals(toLeaseInsensitiveSnapshot(current), toLeaseInsensitiveSnapshot(incoming)) ||
+        isTuplePreservingGroupLivenessReduction(incoming, current) ||
+        isTuplePreservingGroupLivenessReduction(current, incoming);
+}
+
+/**
+ * The held snapshot is after the incoming causal tuple, or at it with the same content. Different content at one
+ * tuple and an incomparable tuple are never covered, so the observation that rejects them still sees them.
+ */
 export function isGroupSnapshotCausalRevisionCovered(
     held: GroupSnapshot | undefined,
     incoming: GroupSnapshot
@@ -54,7 +60,7 @@ export function isGroupSnapshotCausalRevisionCovered(
         return false;
     }
     const order = compareGroupCausalRevision(readGroupCausalRevision(incoming), readGroupCausalRevision(held));
-    return order === 'equal' || order === 'dominated';
+    return order === 'dominated' || (order === 'equal' && isGroupSnapshotEqualRevisionDuplicate(held, incoming));
 }
 
 /** A current authoritative acquisition may advance leases without inventing a causal revision. */

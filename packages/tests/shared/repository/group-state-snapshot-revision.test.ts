@@ -7,7 +7,6 @@ import {
 } from 'vitest';
 
 import type { GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
-import type { JsonSerializableValue } from '@shared/repository/compare-plain-json.ts';
 import {
     decideGroupSnapshotCausalRevision,
     isGroupSnapshotCausalRevisionCovered
@@ -21,17 +20,28 @@ function withCausalRevision(snapshot: GroupSnapshot, causalRevision: GroupStateC
 }
 
 function withReversedKeys(snapshot: GroupSnapshot): GroupSnapshot {
-    return reverseKeys(structuredClone(snapshot)) as GroupSnapshot;
+    return JSON.parse(
+        JSON.stringify(snapshot),
+        (_key, value) =>
+            value !== null && typeof value === 'object' && !Array.isArray(value)
+                ? Object.fromEntries(Object.entries(value).reverse())
+                : value
+    ) as GroupSnapshot;
 }
 
-function reverseKeys(value: JsonSerializableValue): JsonSerializableValue {
-    if (Array.isArray(value)) {
-        return value.map(reverseKeys);
-    }
-    if (!value || typeof value !== 'object') {
-        return value;
-    }
-    return Object.fromEntries(Object.entries(value).reverse().map(([key, entry]) => [key, reverseKeys(entry)]));
+function withRenamedGroup(snapshot: GroupSnapshot): GroupSnapshot {
+    return { ...snapshot, group: { ...snapshot.group, displayName: `${snapshot.group.displayName} renamed` } };
+}
+
+function withRenewedLeases(snapshot: GroupSnapshot): GroupSnapshot {
+    return {
+        ...snapshot,
+        activeSessions: snapshot.activeSessions.map((session) => ({
+            ...session,
+            lastHeartbeatAtEpochMs: session.lastHeartbeatAtEpochMs + 1,
+            expiresAtEpochMs: session.expiresAtEpochMs + 1
+        }))
+    };
 }
 
 describe('group snapshot causal revision decisions', () => {
@@ -62,12 +72,9 @@ describe('group snapshot causal revision decisions', () => {
 
     it('still detects an equal revision with different content', () => {
         const current = createGroupSnapshot(3, ['session-a']);
-        const renamed: GroupSnapshot = {
-            ...current,
-            group: { ...current.group, displayName: `${current.group.displayName} renamed` }
-        };
 
-        expect(() => decideGroupSnapshotCausalRevision(current, renamed)).toThrow(StateSnapshotRevisionConflictError);
+        expect(() => decideGroupSnapshotCausalRevision(current, withRenamedGroup(current)))
+            .toThrow(StateSnapshotRevisionConflictError);
     });
 });
 
@@ -78,6 +85,8 @@ describe('held group snapshot causal revisions', () => {
         [
             ['nothing held', undefined, held, false],
             ['the same revision held', held, withReversedKeys(held), true],
+            ['the same revision held with renewed leases', held, withRenewedLeases(held), true],
+            ['the same revision held with different content', held, withRenamedGroup(held), false],
             ['a newer revision held', held, createGroupSnapshot(2, ['session-a']), true],
             ['an older revision held', held, createGroupSnapshot(4, ['session-a']), false],
             ['an incomparable revision held', held, withCausalRevision(held, { groupRevision: 4, presenceRevision: 0 }), false]

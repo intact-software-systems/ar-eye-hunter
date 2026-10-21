@@ -1,8 +1,4 @@
-import {
-    comparePlainJson,
-    type JsonSerializableRecord,
-    type JsonSerializableValue
-} from './compare-plain-json.ts';
+import { arePlainJsonValuesEqual, isPlainJsonValue } from './compare-plain-json.ts';
 
 export function arrayEquals<T>(left: readonly T[], right: readonly T[]): boolean {
     return (
@@ -10,16 +6,13 @@ export function arrayEquals<T>(left: readonly T[], right: readonly T[]): boolean
     );
 }
 
-export function jsonEquals<Left, Right>(leftValue: Left, rightValue: Right): boolean {
-    const left = leftValue as JsonSerializableValue;
-    const right = rightValue as JsonSerializableValue;
+export function jsonEquals(left: unknown, right: unknown): boolean {
     // One object is its own JSON content: a shared decode compares without serializing either side.
     if (left === right && typeof left === 'object' && left !== null) {
         return true;
     }
-    const plainComparison = comparePlainJson(left, right);
-    if (plainComparison !== 'not-plain') {
-        return plainComparison === 'equal';
+    if (isPlainJsonValue(left) && isPlainJsonValue(right)) {
+        return arePlainJsonValuesEqual(left, right);
     }
     // Content ordering follows conversion so toJSON observes the established projection.
     const leftJson = stableJsonStringify(left);
@@ -34,20 +27,20 @@ export function jsonEquals<Left, Right>(leftValue: Left, rightValue: Right): boo
         JSON.stringify(toOrderedJson(JSON.parse(rightJson), 'content'));
 }
 
-export function stableJsonStringify<Value>(value: Value): string {
+export function stableJsonStringify(value: unknown): string {
     return JSON.stringify(toStableJson(value));
 }
 
-export function toStableJson<Value>(value: Value): JsonSerializableValue {
+export function toStableJson(value: unknown): unknown {
     // ALM prepared fingerprints persist this ordering, including collation ties.
-    return toOrderedJson(value as JsonSerializableValue, 'persisted');
+    return toOrderedJson(value, 'persisted');
 }
 
 export function isDefined<T>(value: T | undefined): value is T {
     return value !== undefined;
 }
 
-function toOrderedJson(value: JsonSerializableValue, keyOrder: 'content' | 'persisted'): JsonSerializableValue {
+function toOrderedJson(value: unknown, keyOrder: 'content' | 'persisted'): unknown {
     if (Array.isArray(value)) {
         return value.map((entryValue) => toOrderedJson(entryValue, keyOrder));
     }
@@ -56,7 +49,7 @@ function toOrderedJson(value: JsonSerializableValue, keyOrder: 'content' | 'pers
     }
 
     return Object.fromEntries(
-        Object.entries(value as JsonSerializableRecord)
+        Object.entries(value)
             .sort(([left], [right]) => {
                 if (keyOrder === 'persisted') {
                     return left.localeCompare(right);
