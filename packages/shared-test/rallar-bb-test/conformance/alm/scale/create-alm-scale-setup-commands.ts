@@ -103,7 +103,7 @@ function createSignInCommand(input: AlmScaleRecipeInput, prefix: string): Rallar
         metadata: {
             purpose: 'Sign in under the setup allowance: a cohort registers serially on the API, ' +
                 'so the lazy sign-in must not spend the group requests\' allowance. ' +
-                'The read is the session\'s own client snapshot, one point read.'
+                'Under strict state reads the read is the session\'s own client snapshot, one point read.'
         },
         request: {
             method: 'GET',
