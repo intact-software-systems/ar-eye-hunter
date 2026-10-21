@@ -217,7 +217,7 @@ describe('ALM scale recipes', () => {
         expect(recipe.commands[0]).toMatchObject({
             kind: 'http.request',
             commandId: `alm-scale-${role}-sign-in`,
-            request: { method: 'GET', path: '/api/state/apps/scale-app/workspaces/scale-workspace/stats/me/realtime' },
+            request: { method: 'GET', path: '/api/state/apps/scale-app/workspaces/scale-workspace/clients' },
             response: { acceptedStatusCodes: [200] },
             timeoutMs: 45_000
         });

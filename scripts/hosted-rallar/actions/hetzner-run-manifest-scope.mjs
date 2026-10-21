@@ -13,9 +13,9 @@ const stateGroupPathPattern = new RegExp(
         String.raw`(?:/(?!requests(?:/|$))([^/]+))?(?=/|$)`
 );
 
-// A workspace-scoped self read carries application and workspace but no group segment.
+// A workspace-scoped client read carries application and workspace but no group segment.
 const stateWorkspaceReadPathPattern = new RegExp(
-    String.raw`^/api/state/apps/([^/]+)/workspaces/([^/]+)(?=/stats/me/realtime$)`
+    String.raw`^/api/state/apps/([^/]+)/workspaces/([^/]+)(?=/clients$)`
 );
 
 const identityFieldNames = new Set(['applicationId', 'workspaceId', 'groupId', 'roomId']);

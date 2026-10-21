@@ -607,11 +607,11 @@ describe('Hetzner materialization contracts and effects', () => {
             return requests.map((command) => command.kind === 'http.request' ? command.request.path : undefined);
         })).toEqual([
             [
-                `${scope}/stats/me/realtime`,
+                `${scope}/clients`,
                 `${scope}/groups/requests/alm-scale-director-ensure-group-{runtimeIdentity}`,
                 `${scope}/groups/${room}/members/{auth.clientId}/requests/alm-scale-director-ensure-member-{runtimeIdentity}`
             ],
-            [`${scope}/stats/me/realtime`]
+            [`${scope}/clients`]
         ]);
 
         const unknownPath = '/api/state/apps/rallar-server/workspaces/default/stats/summary';

@@ -153,10 +153,12 @@ one shared principal fans out a full snapshot to all of that principal's
 sessions on the serial AppInbox and stalls a 15-agent room join. The
 `RALLAR_BLACK_BOX_USERNAME` secret remains the operator credential for the
 controller smoke and other operator phases. The ALM scale recipes (19–21 and
-their diagnostic checkpoints) sign in as their first step, a read of
-`stats/me/realtime` under the 45-second setup allowance, because a cohort's
-registrations serialize on the API and must not consume the group requests'
-allowance (5 seconds plus 250 ms per participant, capped by the setup allowance).
+their diagnostic checkpoints) sign in as their first step, a read of the
+workspace's `clients` collection (the session's own client snapshot, one point
+read under strict state reads) under the 45-second setup allowance, because a
+cohort's registrations serialize on the API and must not consume the group
+requests' allowance (5 seconds plus 250 ms per participant, capped by the setup
+allowance).
 Only the director writes the group: it creates it under the default replanning,
 which plans once after the stream of joins (a 2-second replanning cap was tried
 and refuted hosted: every acceptance queued behind the joins and was superseded),
