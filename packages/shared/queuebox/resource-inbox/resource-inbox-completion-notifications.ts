@@ -1,5 +1,11 @@
 import { createDefaultTimers, type Timers } from '../../resilience/timers.ts';
 
+/**
+ * A waiter with a live completion subscription re-reads on a wake, or on this tick when a wake was lost. Well below
+ * any caller's HTTP allowance (the native fixtures allow 5 s), so one lost wake costs a tick, not the request.
+ */
+export const RESOURCE_INBOX_COMPLETION_SAFETY_TICK_MSECS = 1_000;
+
 export namespace ResourceInboxCompletionNotifications {
     export interface Identity {
         readonly topicId: string;
@@ -9,6 +15,7 @@ export namespace ResourceInboxCompletionNotifications {
 
     export interface Subscription {
         beginRead(): void;
+        /** Ends on a wake, at the instance-wide safety tick when it is due within the delay, or after the delay. */
         wait(delayMsecs: number): Promise<void>;
         close(): void;
     }
@@ -25,14 +32,19 @@ interface ResourceInboxCompletionWait {
     cancel: (() => void) | undefined;
 }
 
+interface ResourceInboxSafetyTickRound {
+    readonly dueAtMs: number;
+    cancel: (() => void) | undefined;
+}
+
 export class ResourceInboxCompletionNotifications {
     private readonly subscriptions = new Map<string, Set<ResourceInboxCompletionSubscription>>();
-    private readonly timers: Timers;
+    private readonly safetyTick: ResourceInboxSafetyTick;
     private readonly relay: ResourceInboxCompletionNotifications.Relay | undefined;
 
     /** Without a relay the process is the queue's only reader, so every waiter it could wake is its own. */
     constructor(timers: Timers, relay?: ResourceInboxCompletionNotifications.Relay) {
-        this.timers = timers;
+        this.safetyTick = new ResourceInboxSafetyTick(timers);
         this.relay = relay;
     }
 
@@ -43,9 +55,9 @@ export class ResourceInboxCompletionNotifications {
     subscribe(
         identity: ResourceInboxCompletionNotifications.Identity
     ): ResourceInboxCompletionNotifications.Subscription {
-        const key = toCompletionKey(identity);
+        const key = toResourceInboxCompletionKey(identity);
         const subscriptions = this.subscriptions.get(key) ?? new Set<ResourceInboxCompletionSubscription>();
-        const subscription = new ResourceInboxCompletionSubscription(this.timers, (closed) => {
+        const subscription = new ResourceInboxCompletionSubscription(this.safetyTick, (closed) => {
             subscriptions.delete(closed);
             if (subscriptions.size === 0) {
                 this.subscriptions.delete(key);
@@ -75,7 +87,7 @@ export class ResourceInboxCompletionNotifications {
     }
 
     private notifyLocal(key: ResourceInboxCompletionNotifications.Identity): boolean {
-        const subscriptions = this.subscriptions.get(toCompletionKey(key));
+        const subscriptions = this.subscriptions.get(toResourceInboxCompletionKey(key));
         for (const subscription of subscriptions ?? []) {
             subscription.notify();
         }
@@ -83,8 +95,77 @@ export class ResourceInboxCompletionNotifications {
     }
 }
 
-class ResourceInboxCompletionSubscription implements ResourceInboxCompletionNotifications.Subscription {
+/**
+ * One timer for every pending wait of the instance, so their safety re-reads land in one turn and can share one read.
+ * It runs only while a wait is parked on it; a wait that must end before the next tick keeps its own timer.
+ */
+class ResourceInboxSafetyTick {
     private readonly timers: Timers;
+    private readonly parked = new Set<() => void>();
+    private round: ResourceInboxSafetyTickRound | undefined;
+
+    constructor(timers: Timers) {
+        this.timers = timers;
+    }
+
+    /** Runs `settle` once, at the tick when it is due within `delayMs`, otherwise after `delayMs`; answers its cancel. */
+    schedule(settle: () => void, delayMs: number): () => void {
+        const nowMs = this.timers.nowMs();
+        const dueInMs = this.round === undefined
+            ? RESOURCE_INBOX_COMPLETION_SAFETY_TICK_MSECS
+            : this.round.dueAtMs - nowMs;
+        if (delayMs < dueInMs) {
+            return this.timers.schedule(settle, delayMs);
+        }
+        this.parked.add(settle);
+        try {
+            if (this.round === undefined) {
+                this.startRound(nowMs);
+            }
+        }
+        catch (error) {
+            this.unpark(settle);
+            throw error;
+        }
+        return () => this.unpark(settle);
+    }
+
+    private startRound(nowMs: number): void {
+        const round: ResourceInboxSafetyTickRound = {
+            dueAtMs: nowMs + RESOURCE_INBOX_COMPLETION_SAFETY_TICK_MSECS,
+            cancel: undefined
+        };
+        this.round = round;
+        round.cancel = this.timers.schedule(() => this.runRound(round), RESOURCE_INBOX_COMPLETION_SAFETY_TICK_MSECS);
+        if (this.round !== round) {
+            cancelQuietly(round.cancel);
+        }
+    }
+
+    private runRound(round: ResourceInboxSafetyTickRound): void {
+        if (this.round !== round) {
+            return;
+        }
+        this.round = undefined;
+        const settles = [...this.parked];
+        this.parked.clear();
+        settles.forEach((settle) => settle());
+    }
+
+    private unpark(settle: () => void): void {
+        const round = this.round;
+        if (!this.parked.delete(settle) || this.parked.size > 0 || round === undefined) {
+            return;
+        }
+        this.round = undefined;
+        if (round.cancel !== undefined) {
+            cancelQuietly(round.cancel);
+        }
+    }
+}
+
+class ResourceInboxCompletionSubscription implements ResourceInboxCompletionNotifications.Subscription {
+    private readonly safetyTick: ResourceInboxSafetyTick;
     private readonly unsubscribe: (subscription: ResourceInboxCompletionSubscription) => void;
     private generation = 0;
     private readGeneration = 0;
@@ -92,10 +173,10 @@ class ResourceInboxCompletionSubscription implements ResourceInboxCompletionNoti
     private closed = false;
 
     constructor(
-        timers: Timers,
+        safetyTick: ResourceInboxSafetyTick,
         unsubscribe: (subscription: ResourceInboxCompletionSubscription) => void
     ) {
-        this.timers = timers;
+        this.safetyTick = safetyTick;
         this.unsubscribe = unsubscribe;
     }
 
@@ -112,7 +193,7 @@ class ResourceInboxCompletionSubscription implements ResourceInboxCompletionNoti
             const pending: ResourceInboxCompletionWait = { resolve, cancel: undefined };
             this.pending = pending;
             try {
-                pending.cancel = this.timers.schedule(() => this.settle(pending), delayMsecs);
+                pending.cancel = this.safetyTick.schedule(() => this.settle(pending), delayMsecs);
             }
             catch (error) {
                 if (this.pending === pending) {
@@ -121,7 +202,7 @@ class ResourceInboxCompletionSubscription implements ResourceInboxCompletionNoti
                 throw error;
             }
             if (this.pending !== pending) {
-                this.cancelTimer(pending.cancel);
+                cancelQuietly(pending.cancel);
             }
             else if (this.closed || this.generation !== this.readGeneration) {
                 this.settle(pending);
@@ -153,22 +234,23 @@ class ResourceInboxCompletionSubscription implements ResourceInboxCompletionNoti
         this.pending = undefined;
         this.readGeneration = this.generation;
         if (pending.cancel !== undefined) {
-            this.cancelTimer(pending.cancel);
+            cancelQuietly(pending.cancel);
         }
         pending.resolve();
     }
+}
 
-    private cancelTimer(cancel: () => void): void {
-        try {
-            cancel();
-        }
-        catch {
-            // Failed cancellation leaves only a stale expiry; advisory completion still succeeds.
-        }
+function cancelQuietly(cancel: () => void): void {
+    try {
+        cancel();
+    }
+    catch {
+        // Failed cancellation leaves only a stale expiry; advisory completion still succeeds.
     }
 }
 
-function toCompletionKey(identity: ResourceInboxCompletionNotifications.Identity): string {
+/** The full identity of a completion as one string; distinct identities, separators included, never collide. */
+export function toResourceInboxCompletionKey(identity: ResourceInboxCompletionNotifications.Identity): string {
     return JSON.stringify([
         identity.topicId,
         identity.resourceId,

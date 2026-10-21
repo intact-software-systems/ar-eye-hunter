@@ -78,6 +78,32 @@ describe('GroupStateRepository authority fence', () => {
         expect(after!.snapshot.group).toEqual(before!.snapshot.group);
     });
 
+    it('rejects a guard whose stored group text holds negative zero or an overflowed number', async () => {
+        const runtime = new FakeRuntimeStateRepository();
+        const repository = createTestGroupStateRepository(runtime);
+        const { group, owner } = fixture();
+        await repository.insertGroup(group);
+        await repository.putMember(owner);
+        const guard = (await repository.readSnapshotWithAuthorityGuard(group))!.authorityGuard;
+        const storedText = guard.entry.value;
+
+        for (
+            const corruptText of [
+                storedText.replace('"presenceVersion":0', '"presenceVersion":-0'),
+                storedText.replace('"activeMemberCount":1', '"activeMemberCount":1e400'),
+                storedText.replace('"metadata":{}', '"metadata":{"score":-0}')
+            ]
+        ) {
+            expect(corruptText).not.toBe(storedText);
+            await expect(
+                repository.advanceAuthorityFence({ ...guard, entry: { ...guard.entry, value: corruptText } })
+            ).rejects.toMatchObject({
+                code: 'group-state-repository-invariant-corruption',
+                storageKey: guard.entry.key
+            });
+        }
+    });
+
     it('uses one dense batch read as the authority snapshot on capable repositories', async () => {
         const runtime = new BatchReadRuntimeStateRepository();
         const repository = createTestGroupStateRepository(runtime);

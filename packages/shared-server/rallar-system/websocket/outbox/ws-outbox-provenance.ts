@@ -24,9 +24,11 @@ import {
 } from '@shared/queuebox/ResourceEntry.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+import { TurnBatchedReads } from '@shared/resilience/turn-batched-reads.ts';
 import type { WsOutboxProducerAuthority } from '@shared/services/ws-queue-box-server/ws-queue-box-server-dequeue-authority.ts';
 
-import type { RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
+import { readRuntimeStateKeyEntries } from '../../../runtime-state/read-batch/read-runtime-state-key-entries.ts';
+import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import { computeSha256CanonicalJson } from '../../protocol/canonical-json.ts';
 import { validateWsOutboxProvenanceTarget } from './validate-ws-outbox-provenance-target.ts';
 
@@ -96,22 +98,31 @@ interface WsOutboxProvenanceValidation {
 
 export namespace WsOutboxProvenanceReader {
     export interface Dependencies {
-        readonly repository: Pick<RuntimeStateRepositoryLike, 'findEntry'>;
+        readonly repository: Pick<RuntimeStateRepositoryLike, 'findEntry' | 'readRuntimeStateBatch'>;
         readonly nowMs: () => number;
     }
 }
 
-/** Reads existing runtime-state sidecars; producer writes remain owned by their mutation transaction. */
+/**
+ * Reads existing runtime-state sidecars; producer writes remain owned by their mutation transaction. The proofs of
+ * rows read in one turn share one statement, so a dequeued group reads its proofs in one round.
+ */
 export class WsOutboxProvenanceReader {
     private readonly dependencies: WsOutboxProvenanceReader.Dependencies;
+    private readonly proofReads: TurnBatchedReads<string, RuntimeStateEntry | undefined>;
 
     constructor(dependencies: WsOutboxProvenanceReader.Dependencies) {
         this.dependencies = dependencies;
+        this.proofReads = new TurnBatchedReads({
+            toKeyId: (key) => key,
+            readBatch: (keys) =>
+                readRuntimeStateKeyEntries(dependencies.repository, WS_OUTBOX_PROVENANCE_NAMESPACE, keys)
+        });
     }
 
     async readProducerProvenance(message: ALMessage, entry: ResourceEntry): Promise<WsOutboxProducerAuthority> {
         const key = toWsOutboxProvenanceKey(entry.key);
-        const stored = await this.dependencies.repository.findEntry(WS_OUTBOX_PROVENANCE_NAMESPACE, key);
+        const stored = await this.proofReads.read(key);
         try {
             if (!stored || stored.key !== key) {
                 throw new TypeError('WS producer provenance is missing or in the wrong slot');

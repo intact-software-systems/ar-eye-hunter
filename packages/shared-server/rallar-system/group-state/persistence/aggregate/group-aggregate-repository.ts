@@ -217,7 +217,7 @@ function decodeGroupStateAuthorityGuard(
     let value: Group;
     try {
         value = decodeStoredGroupStateValue(
-            decodeJsonWireValue(JSON.parse(entry.value), 'Stored authority-fence group'),
+            JSON.parse(entry.value),
             guard.groupRef,
             entry.key,
             decodePersistedGroup,

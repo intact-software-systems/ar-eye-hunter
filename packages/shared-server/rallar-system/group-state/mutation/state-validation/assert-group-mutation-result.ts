@@ -1,10 +1,6 @@
 import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 
-import {
-    decodeJsonWireValue,
-    type JsonWireObject,
-    type JsonWireValue
-} from '../../../protocol/json-wire-identity.ts';
+import type { ValidationRecord, ValidationValue } from '../../../protocol/validation-value.ts';
 import {
     assertExactKeys,
     assertRequiredKeys,
@@ -12,6 +8,7 @@ import {
     requireNonEmptyString,
     requireNonNegativeSafeInteger,
     requirePositiveSafeInteger,
+    requireRecord,
     validateGroupRef
 } from '../../group-state-validation-primitives.ts';
 import { validateCausalRevision, validateScopedValue } from '../../persistence/validate-persisted-group.ts';
@@ -38,7 +35,7 @@ export function assertGroupMutationIdempotencyRecord(
     record: unknown,
     ref: GroupRef
 ): asserts record is GroupMutationIdempotencyRecord {
-    const value = decodeGroupMutationResultRecord(record, 'Stored group idempotency value');
+    const value = requireRecord(record, 'Stored group idempotency value');
     assertExactKeys(
         value,
         ['aggregateRef', 'requestId', 'commandHash', 'receipt'],
@@ -75,7 +72,7 @@ export function assertMutationReceipt(
     ref: GroupRef,
     label: string
 ): asserts value is GroupMutationReceipt {
-    const receipt = decodeGroupMutationResultRecord(value, label);
+    const receipt = requireRecord(value, label);
     assertExactKeys(receipt, MUTATION_RECEIPT_KEYS, label);
     assertRequiredKeys(receipt, MUTATION_RECEIPT_KEYS, label);
     const outcome = assertMutationReceiptIdentity(receipt, ref, label);
@@ -85,7 +82,7 @@ export function assertMutationReceipt(
 }
 
 function assertMutationReceiptIdentity(
-    receipt: JsonWireObject,
+    receipt: ValidationRecord,
     ref: GroupRef,
     label: string
 ): GroupMutationReceipt['outcome'] {
@@ -104,7 +101,7 @@ function assertMutationReceiptIdentity(
 }
 
 function assertMutationReceiptRevisions(
-    receipt: JsonWireObject,
+    receipt: ValidationRecord,
     label: string
 ): GroupStateCausalRevision {
     if (receipt.acceptedStorageRevision !== null) {
@@ -123,7 +120,7 @@ function assertMutationReceiptRevisions(
 }
 
 function assertMutationReceiptDetails(
-    receipt: JsonWireObject,
+    receipt: ValidationRecord,
     outcome: GroupMutationReceipt['outcome'],
     label: string
 ): readonly string[] {
@@ -159,14 +156,14 @@ function assertMutationReceiptDetails(
     return outboxIds;
 }
 
-export function assertCommandHash(value: JsonWireValue, label: string): asserts value is string {
+export function assertCommandHash(value: ValidationValue, label: string): asserts value is string {
     if (typeof value !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(value)) {
         throw new TypeError(`${label} is invalid`);
     }
 }
 
 interface AssertMutationReceiptOutcomeInput {
-    readonly receipt: JsonWireObject;
+    readonly receipt: ValidationRecord;
     readonly outcome: GroupMutationReceipt['outcome'];
     readonly causalRevision: GroupStateCausalRevision;
     readonly outboxIds: readonly string[];
@@ -198,7 +195,7 @@ function assertMutationReceiptOutcome({
 }
 
 interface AssertAppliedReceiptInput {
-    readonly receipt: JsonWireObject;
+    readonly receipt: ValidationRecord;
     readonly causalRevision: GroupStateCausalRevision;
     readonly outboxIds: readonly string[];
     readonly label: string;
@@ -226,7 +223,7 @@ function assertAppliedReceipt({
 // advance the group row as an authority fence without changing the group snapshot, while
 // reincarnation can restore a newer semantic revision.
 function assertNoOpReceipt(
-    receipt: JsonWireObject,
+    receipt: ValidationRecord,
     label: string
 ): void {
     requirePositiveSafeInteger(receipt.snapshotVersion, `${label} no-op snapshotVersion`);
@@ -236,7 +233,7 @@ function assertNoOpReceipt(
 }
 
 function assertRejectedReceipt(
-    receipt: JsonWireObject,
+    receipt: ValidationRecord,
     causalRevision: GroupStateCausalRevision,
     label: string
 ): void {
@@ -251,16 +248,4 @@ function assertRejectedReceipt(
         return;
     }
     requirePositiveSafeInteger(receipt.snapshotVersion, `${label} rejected snapshotVersion`);
-}
-
-function decodeGroupMutationResultRecord(value: unknown, label: string): JsonWireObject {
-    const decoded = decodeJsonWireValue(value, label);
-    if (!isJsonWireObject(decoded)) {
-        throw new TypeError(`${label} must be an object`);
-    }
-    return decoded;
-}
-
-function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

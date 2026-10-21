@@ -12,7 +12,8 @@ import type { RuntimeStateReadBatchLiveSelection } from '../../../runtime-state/
 import type { RuntimeStateReadBatchSelector } from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateEntryRead, RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
-import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
+
 export type ClientPrincipalSnapshotRead = Readonly<{
     principal: RuntimeStateEntryValue<ClientPrincipal>;
     snapshot: ClientSnapshot;
@@ -40,7 +41,7 @@ export type ClientMutationReceipt = Readonly<{
     commandId: string;
     requestId: string | null;
     commandHash: string;
-    aggregateRef: import('@shared/api/client-types.ts').ClientPrincipalRef;
+    aggregateRef: ClientPrincipalRef;
     outcome: 'applied' | 'no-op';
     attemptCount: number;
     acceptedStorageRevision: number | null;
@@ -79,10 +80,8 @@ export async function toLiveClientStateEntryValue(
         return undefined;
     }
     try {
-        return {
-            entry,
-            value: decodeJsonWireValue(JSON.parse(entry.value), 'Stored client-state value')
-        };
+        const value: JsonWireValue = JSON.parse(entry.value);
+        return { entry, value };
     }
     catch (error) {
         throw new ClientStateRepositoryInvariantCorruptionError(

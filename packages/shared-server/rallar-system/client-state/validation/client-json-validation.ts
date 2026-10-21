@@ -1,18 +1,19 @@
+import type { ValidationValue } from '../../protocol/validation-value.ts';
 import { rejectClientMutation } from './client-mutation-rejection.ts';
-import { decodeClientValidationRecord, type ClientValidationValue } from './client-record-validation.ts';
+import { decodeClientValidationRecord } from './client-record-validation.ts';
 
-export function requireJsonRecord(value: ClientValidationValue, label: string): void {
+export function requireJsonRecord(value: ValidationValue, label: string): void {
     decodeClientValidationRecord(value, label);
     requireJsonValue(value, label);
 }
 
-export function requireNullableJsonRecord(value: ClientValidationValue, label: string): void {
+export function requireNullableJsonRecord(value: ValidationValue, label: string): void {
     if (value !== null) {
         requireJsonRecord(value, label);
     }
 }
 
-function requireJsonValue(value: ClientValidationValue, label: string): void {
+function requireJsonValue(value: ValidationValue, label: string): void {
     if (value === null || typeof value === 'string' || typeof value === 'boolean') {
         return;
     }

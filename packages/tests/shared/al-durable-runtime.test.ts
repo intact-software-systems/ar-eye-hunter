@@ -158,8 +158,10 @@ describe('AL state retained across runtime recreation', () => {
 
         expect(secondEntry.key).not.toEqual(firstEntry.key);
         const admission = restartedStores.runtimeStores.admissionStore;
-        expect(await admission.isMessageSuperseded(firstPresence)).toBe(true);
-        expect(await admission.isMessageSuperseded(secondPresence)).toBe(false);
+        expect(await admission.readMessageSupersedence([firstPresence, secondPresence])).toEqual([
+            { status: 'fulfilled', value: true },
+            { status: 'fulfilled', value: false }
+        ]);
         expect((await admission.readSentMessage(firstPresence.id.msgId))?.msg.payload).toEqual(firstPresence.payload);
         expect((await admission.readSentMessage(secondPresence.id.msgId))?.msg.payload).toEqual(secondPresence.payload);
     });

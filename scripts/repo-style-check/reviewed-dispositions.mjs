@@ -1041,20 +1041,43 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'decodeClientValidationRecord'
     }),
-    // Group mutation operation-input validation narrows raw request fields at
-    // the HTTP/WS boundary. Both listed owners validate their unknown input
-    // before any domain use, mirroring the persisted-JSON decoder entries below.
+    // Group-state record admission is the raw-object boundary that eight persisted,
+    // command, fact and result validators share. It rejects non-objects and arrays before
+    // returning the named record vocabulary; renaming it to a decoder would pull
+    // every caller into closure, so its one unknown parameter stays reviewed here.
     Object.freeze({
-        path: 'packages/shared-server/rallar-system/group-state/mutation/command-validation/' +
-            'validate-group-mutation-operation-input.ts',
+        path: 'packages/shared-server/rallar-system/group-state/group-state-validation-primitives.ts',
         rule: 'boundary.unknown',
-        symbol: 'validateActivateGroupInput'
+        symbol: 'requireRecord',
+        maximumMagnitude: 1
+    }),
+    // JSON content equality and stable serialization accept any caller value, as JSON.stringify does: jsonEquals
+    // narrows plain trees through isPlainJsonValue and serializes anything else, and the stable serializers hand any
+    // caller value to the serializer's own conversion. The matcher keys on the owner function, so the one reviewed
+    // boundary is these four rows; a new owner needs its own review.
+    Object.freeze({
+        path: 'packages/shared/repository/state-utils.ts',
+        rule: 'boundary.unknown',
+        symbol: 'jsonEquals',
+        maximumMagnitude: 2
     }),
     Object.freeze({
-        path: 'packages/shared-server/rallar-system/group-state/mutation/command-validation/' +
-            'validate-group-mutation-operation-input.ts',
+        path: 'packages/shared/repository/state-utils.ts',
         rule: 'boundary.unknown',
-        symbol: 'isUnitIntervalNumber'
+        symbol: 'stableJsonStringify',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared/repository/state-utils.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toStableJson',
+        maximumMagnitude: 2
+    }),
+    Object.freeze({
+        path: 'packages/shared/repository/state-utils.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toOrderedJson',
+        maximumMagnitude: 2
     }),
     // RTC RTT persistence decoders own the untrusted persisted-JSON boundary.
     // Each listed owner validates or narrows its unknown input before domain use;

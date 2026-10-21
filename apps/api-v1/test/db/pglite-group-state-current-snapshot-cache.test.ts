@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 
+import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { canReadGroupSnapshot } from '@shared-server/rallar-system/group-state/policy/group-snapshot-visibility-policy.ts';
+import { createCachedGroupStateService } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
 import { GroupStateCurrentSnapshotCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-current-snapshot-cache.ts';
 import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-group-state-event-store.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
@@ -174,7 +177,7 @@ Deno.test('principal audience cache entries remain isolated by workspace', async
     }
 });
 
-Deno.test('a first read is one statement and a read of the unchanged group one revision probe (D289)', async () => {
+Deno.test('a first read is one statement and a read of the unchanged group one revision probe', async () => {
     const seeded = await seedCache();
     try {
         seeded.takeStatements();
@@ -191,7 +194,7 @@ Deno.test('a first read is one statement and a read of the unchanged group one r
     }
 });
 
-Deno.test('a write to the group, a member or a session moves the probe, and the next read is the written state in two statements (D289)', async () => {
+Deno.test('a write to the group, a member or a session moves the probe, and the next read is the written state in two statements', async () => {
     const seeded = await seedCache();
     try {
         await seeded.cache.readSnapshot(REF);
@@ -215,7 +218,7 @@ Deno.test('a write to the group, a member or a session moves the probe, and the 
     }
 });
 
-Deno.test('a removed member, session or group moves the probe as a shorter row set, and the next read shows the removal (D289)', async () => {
+Deno.test('a removed member, session or group moves the probe as a shorter row set, and the next read shows the removal', async () => {
     const seeded = await seedCache();
     try {
         const group = await seeded.repository.findGroup(REF);
@@ -239,13 +242,18 @@ Deno.test('a removed member, session or group moves the probe as a shorter row s
     }
 });
 
-Deno.test('a cached snapshot is read again, without the session, once a presence lease it shows has expired on the cache clock (D289)', async () => {
+Deno.test('a cached snapshot is read again, without the session, once a presence lease it shows has expired on the cache clock', async () => {
     const seeded = await seedCache();
     try {
         assert.equal((await seeded.cache.readSnapshot(REF))?.activeSessions.length, 1);
         seeded.setNow(SESSION_EXPIRES_AT_EPOCH_MS);
 
         assert.deepEqual((await seeded.cache.readSnapshot(REF))?.activeSessions, []);
+        assert.equal(seeded.fullReads(), 2);
+        // The ended session's row stays a day: the probe on the cache clock leaves it out, as the read did.
+        seeded.takeStatements();
+        assert.deepEqual((await seeded.cache.readSnapshot(REF))?.activeSessions, []);
+        assert.equal(seeded.takeStatements(), 1);
         assert.equal(seeded.fullReads(), 2);
     }
     finally {
@@ -288,6 +296,47 @@ Deno.test('a principal in 21 unchanged kept groups costs one version statement f
         assert.equal(seeded.runtime.versionReads, 1);
         assert.equal(seeded.runtime.versionedValueReads, 1, 'only the changed group is read again');
         assert.equal(seeded.takeStatements(), 6);
+    }
+    finally {
+        await seeded.close();
+    }
+});
+
+Deno.test('the cached principal group list answers in group-key order, as the scan and readability filter do', async () => {
+    const seeded = await seedCache();
+    try {
+        const scope = { applicationId: REF.applicationId, workspaceId: REF.workspaceId };
+        const longer = { ...REF, groupId: `${REF.groupId}-2` };
+        await seeded.repository.putGroup(groupFixture(longer, 'Longer room id'));
+        await seeded.repository.putMember({ ...createMember('alice', 'owner'), ...longer });
+        const durable = createGroupStateService({
+            runtimeRepository: seeded.runtime,
+            groupStateEventStore: new InMemoryGroupStateEventStore(),
+            serviceId: 'pglite-principal-group-list',
+            readPlannedLayoutRow: async () => null,
+            readAcceptedLayoutRow: async () => null
+        });
+        const service = createCachedGroupStateService({
+            durable,
+            cache: { findOrLoadByRef: (ref) => durable.readSnapshot(ref), observe: () => 'inserted' },
+            current: durable,
+            principalGroups: {
+                listSnapshotsForPrincipal: async (groupScope, principalId) =>
+                    await seeded.repository.listSnapshotsForPrincipal(groupScope, principalId, seeded.cache)
+            }
+        });
+
+        const memberIndexOrder = await seeded.repository.listSnapshotsForPrincipal(scope, 'alice', seeded.cache);
+        const listed = await service.listSnapshotsForPrincipal(scope, 'alice');
+        const scanned = (await durable.listSnapshots(scope))
+            .filter((snapshot) => canReadGroupSnapshot({ snapshot, actor: { principalId: 'alice' } }).allowed);
+
+        assert.deepEqual(memberIndexOrder.map((snapshot) => snapshot.group.groupId), [longer.groupId, REF.groupId]);
+        assert.deepEqual(listed.map((snapshot) => snapshot.group.groupId), [REF.groupId, longer.groupId]);
+        assert.deepEqual(
+            listed.map((snapshot) => snapshot.group.groupId),
+            scanned.map((snapshot) => snapshot.group.groupId)
+        );
     }
     finally {
         await seeded.close();

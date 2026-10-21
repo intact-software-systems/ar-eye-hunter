@@ -1,14 +1,11 @@
+import type { ValidationRecord } from '../protocol/validation-value.ts';
 import type {
     ClientMutationIdempotencyRecord,
     ClientMutationReceipt
 } from './persistence/client-state-persistence-contracts.ts';
 import { requireEnum } from './validation/client-enum-validation.ts';
 import { rejectClientMutation } from './validation/client-mutation-rejection.ts';
-import {
-    decodeClientValidationRecord,
-    requireExactKeys,
-    type ClientValidationRecord
-} from './validation/client-record-validation.ts';
+import { decodeClientValidationRecord, requireExactKeys } from './validation/client-record-validation.ts';
 import {
     requireNonEmptyString,
     requireNullableNonEmptyString,
@@ -52,7 +49,7 @@ export function validateClientMutationReceipt(
 }
 
 function validateClientMutationReceiptRevisions(
-    receipt: ClientValidationRecord,
+    receipt: ValidationRecord,
     label: string
 ): void {
     if (receipt.acceptedStorageRevision === null) {
@@ -68,7 +65,7 @@ function validateClientMutationReceiptRevisions(
 }
 
 function validateClientMutationReceiptOutcome(
-    receipt: ClientValidationRecord,
+    receipt: ValidationRecord,
     label: string
 ): void {
     requireNullableNonEmptyString(receipt.eventId, `${label}.eventId`);

@@ -141,6 +141,12 @@ export type ALOutboundOutgoingDecision<TPrepared> =
     | Readonly<{ kind: 'settled'; }>
     | Readonly<{ kind: 'commit'; bundle: ALOutboundCommitBundle<TPrepared>; }>;
 
+/** What a dequeued row's authority reads first: whether its admission is retained, and whether its canonical identity exists. */
+export interface ALOutboundDequeueAdmissionFacts {
+    readonly sentAdmission: boolean;
+    readonly canonicalIdentity: boolean;
+}
+
 /** A single send's decision, and the observation its commit fences when that commit writes. */
 export interface ALOutboundObservedDecision<TPrepared, TDecision> {
     readonly decision: TDecision;
@@ -336,13 +342,26 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
         planner: ALOutboundPlanner<TPrepared>
     ) => Promise<ALOutboundRepairReadDto<TPrepared>>;
 
-    readonly isMessageSuperseded: (msg: ALMessage) => Promise<boolean>;
+    /**
+     * The supersedence of every message, read in one session: a backend that batches one turn's reads answers the
+     * group in one round, and no message opens no session. Each message settles alone, so a corrupt row fails only
+     * itself.
+     */
+    readonly readMessageSupersedence: (
+        messages: readonly ALMessage[]
+    ) => Promise<readonly PromiseSettledResult<boolean>[]>;
 
     /** The supersedence check and then the receipt state of one canonical message, read in one session. */
     readonly readSendGuards: (message: ALMessage) => Promise<ALOutboundSendGuards>;
 
     /** True while the admission fact is retained, including after the canonical payload expired. */
     readonly hasSentMessageAdmission: (msgId: string) => Promise<boolean>;
+
+    /** A dequeued row's sent admission and its row's canonical identity, read together in one session. */
+    readonly readDequeueAdmissionFacts: (
+        message: ALMessage,
+        entry: ResourceEntry
+    ) => Promise<ALOutboundDequeueAdmissionFacts>;
 
     /** Missing or mismatched admission fails closed. */
     readonly readCapturedPolicy: (
@@ -357,7 +376,7 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
         seq: number
     ) => Promise<ALOutboundSentMessageSnapshot | undefined>;
 
-    /** The receipt state in its own session, beside the dequeue path's `isMessageSuperseded`; only tests read it. */
+    /** The receipt state in its own session; only tests read it. */
     readonly readReceiptState: (receipt: ALOutboundPendingAckRef) => Promise<ALOutboundPendingAckSnapshot | undefined>;
 
     readonly readPendingAck: (receipt: ALOutboundPendingAckRef) => Promise<ALOutboundPendingAckSnapshot | undefined>;
@@ -517,8 +536,13 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         return await this.backend.readWithin((session) => this.reads.readRepairMessage(session, msgId, planner));
     }
 
-    async isMessageSuperseded(msg: ALMessage): Promise<boolean> {
-        return await this.backend.readWithin((session) => this.reads.isMessageSuperseded(session, msg));
+    async readMessageSupersedence(messages: readonly ALMessage[]): Promise<readonly PromiseSettledResult<boolean>[]> {
+        if (messages.length === 0) {
+            return [];
+        }
+        return await this.backend.readWithin((session) =>
+            Promise.allSettled(messages.map((msg) => this.reads.isMessageSuperseded(session, msg)))
+        );
     }
 
     async readSendGuards(message: ALMessage): Promise<ALOutboundSendGuards> {
@@ -527,6 +551,15 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
 
     async hasSentMessageAdmission(msgId: string): Promise<boolean> {
         return await this.backend.readWithin((session) => this.reads.hasSentMessageAdmission(session, msgId));
+    }
+
+    async readDequeueAdmissionFacts(
+        message: ALMessage,
+        entry: ResourceEntry
+    ): Promise<ALOutboundDequeueAdmissionFacts> {
+        return await this.backend.readWithin((session) =>
+            this.reads.readDequeueAdmissionFacts(session, message, entry)
+        );
     }
 
     async readCapturedPolicy(message: ALMessage, entry: ResourceEntry): Promise<ALOutboundCapturedPolicy> {

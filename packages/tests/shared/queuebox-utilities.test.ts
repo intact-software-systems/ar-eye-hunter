@@ -8,6 +8,7 @@ import {
 } from 'vitest';
 
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { DequeueController } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { NotReadyException } from '@shared/queuebox/resource-inbox/not-ready-exception.ts';
 import type { ResourceInboxAttemptReleaseTelemetry } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
@@ -277,6 +278,43 @@ describe('QueueBoxUtilities', () => {
         expect(JSON.stringify(msg)).toBe(serialized);
     });
 
+    it('ends a draining pass\'s RETRY lane at its share, so a NEW row that arrived meanwhile runs in the next pass', async () => {
+        const queue = new InMemoryQueueBox();
+        const streamLength = 40;
+        const handled: string[] = [];
+        await queue.enqueue(toDueRetryEntry('stream-0'));
+        const onDequeued = async (entry: ResourceEntry): Promise<void> => {
+            handled.push(entry.key.resourceId);
+            const next = handled.filter((resourceId) => resourceId.startsWith('stream-')).length;
+            if (entry.key.resourceId.startsWith('stream-') && next < streamLength) {
+                // Each retried row brings the next one due, as a failed page releases its siblings.
+                await queue.enqueue(toDueRetryEntry(`stream-${next}`));
+            }
+            if (entry.key.resourceId === 'stream-0') {
+                await queue.enqueue({ ...toResourceEntry('work', {}), key: { topicId: 'work', resourceId: 'fresh', contextId: 'test' } });
+            }
+        };
+        const passClaims: number[] = [];
+
+        while (!handled.includes('fresh')) {
+            passClaims.push(
+                await QueueBoxUtilities.defaultDequeue({
+                    qbox: queue,
+                    typesToDequeue: new Set(['work']),
+                    newLaneClaimOrder: 'queue',
+                    resilience: toDrainingResilience(),
+                    onDequeuedDo: onDequeued,
+                    options: {}
+                })
+            );
+        }
+
+        expect(passClaims[0]).toBe(DequeueController.DRAINING_LANE_CLAIMS_PER_PASS);
+        expect(passClaims[0]).toBeLessThan(streamLength);
+        expect(handled.indexOf('fresh')).toBeLessThan(streamLength);
+        expect(handled.indexOf('fresh')).toBe(passClaims[0]);
+    });
+
     it('short-circuits defaultDequeue when resilience blocks dequeuing', async () => {
         const warnings: string[] = [];
         const warn = vi.spyOn(console, 'warn').mockImplementation((message) => {
@@ -321,3 +359,24 @@ describe('QueueBoxUtilities', () => {
         }
     });
 });
+
+function toDueRetryEntry(resourceId: string): ResourceEntry {
+    const entry = toResourceEntry('work', {});
+    return {
+        ...entry,
+        key: { topicId: 'work', resourceId, contextId: 'test' },
+        status: EntityStatus.RETRY,
+        dequeueAudit: { attempts: 1, nextTs: Temporal.Now.instant().subtract({ milliseconds: 1 }) }
+    };
+}
+
+function toDrainingResilience(): ResourceInboxResilience {
+    const duration = Temporal.Duration.from({ seconds: 10 });
+    return ResourceInboxResilience.createDefault({
+        circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
+        initialRate: 1,
+        maxRate: 10,
+        concurrencyIncreaseStep: 1,
+        concurrencyReduceStep: 1
+    });
+}

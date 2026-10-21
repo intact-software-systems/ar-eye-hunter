@@ -1,7 +1,9 @@
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-import type {
-    GroupPresenceSummaryReservationRead,
-    GroupPresenceSummaryWorkRead
+import {
+    computeGroupPresenceSummaryState,
+    type GroupPresenceSummaryExpansionInput,
+    type GroupPresenceSummaryReservationRead,
+    type GroupPresenceSummaryWorkRead
 } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-effects.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
@@ -77,8 +79,9 @@ export async function convergeSummaryForTest({
         event
     };
     const read = await readSummaryWork(work, command, nowEpochMs);
-    const computed = work.compute(command, read);
-    assertGroupPresenceSummaryWorkValid({ work, command, read, computed });
+    const expansion = toSummaryExpansion(command, read);
+    const computed = work.compute(expansion);
+    assertGroupPresenceSummaryWorkValid({ work, expansion, computed });
     await runtime.begin(async (transaction) => {
         if (computed.summary.outcome === 'no-op') {
             return;
@@ -100,18 +103,25 @@ export async function convergeSummaryForTest({
 
 interface AssertGroupPresenceSummaryWorkValidInput {
     readonly work: GroupPresenceSummaryWork;
-    readonly command: GroupPresenceSummaryWorkData;
-    readonly read: GroupPresenceSummaryWorkRead;
+    readonly expansion: GroupPresenceSummaryExpansionInput;
     readonly computed: ReturnType<GroupPresenceSummaryWork['compute']>;
 }
 
 function assertGroupPresenceSummaryWorkValid(
     input: AssertGroupPresenceSummaryWorkValidInput
 ): void {
-    const issue = input.work.validate(input.command, input.read, input.computed)[0];
+    const issue = input.work.validate(input.expansion, input.computed)[0];
     if (issue !== undefined) {
         throw issue.cause;
     }
+}
+
+/** One work row's expansion of its read, with the summary state its page would compute from that read. */
+export function toSummaryExpansion(
+    command: GroupPresenceSummaryWorkData,
+    read: GroupPresenceSummaryWorkRead
+): GroupPresenceSummaryExpansionInput {
+    return { work: command, read, state: computeGroupPresenceSummaryState(command, read) };
 }
 
 /** The single-item read: one work row expanded alone under its own reservation, as the delta and replan cases exercise it. */

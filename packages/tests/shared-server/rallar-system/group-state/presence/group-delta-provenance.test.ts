@@ -23,6 +23,7 @@ import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-w
 
 import { TestWebSocket } from '../../../../shared/websocket/test-web-socket.ts';
 import { createGroupDeltaProducer, type GroupDeltaProducerFixture } from './group-delta-producer-fixture.ts';
+import { toSummaryExpansion } from './group-presence-test-runtime.ts';
 
 interface GroupDeltaReceiverFixture {
     readonly reader: WsOutboxProvenanceReader;
@@ -97,7 +98,7 @@ describe('group presence delta producer provenance', () => {
                 [{ work, reservation: { key: producer.entry.key, expectedAttempts: 1 } }],
                 producer.now
             )).right ?? [];
-            const row = producer.worker.compute(work, read!).downstreamOutboxWrites[0]!.entry;
+            const row = producer.worker.compute(toSummaryExpansion(work, read!)).downstreamOutboxWrites[0]!.entry;
             await producer.repository.upsert(WS_OUTBOX_PROVENANCE_NAMESPACE, toWsOutboxProvenanceKey(row.key), 'existing-proof', producer.now + 60_000);
         }
         await expect(producer.worker.processReservedEntry(producer.message, producer.entry)).rejects.toBeDefined();
@@ -112,8 +113,8 @@ describe('group presence delta producer provenance', () => {
         await producer.worker.processReservedEntry(producer.message, producer.entry);
         const before = await producer.repository.findAllEntries(PRESENCE_SUMMARIES_NAMESPACE);
         const original = producer.worker.compute;
-        const computed = vi.spyOn(producer.worker, 'compute').mockImplementation(function (work, read) {
-            const result = original.call(producer.worker, work, read);
+        const computed = vi.spyOn(producer.worker, 'compute').mockImplementation(function (expansion) {
+            const result = original.call(producer.worker, expansion);
             expect(result.summaryWrite).toBeNull();
             expect(result.downstreamOutboxWrites).toHaveLength(1);
             return result;

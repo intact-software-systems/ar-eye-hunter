@@ -50,6 +50,41 @@ describe('row-bound WS producer provenance', () => {
         expect(keys[0]).toBe('v1:["a/b","c","d"]');
     });
 
+    it('reads the proofs of rows verified in one turn in one batch read, and a missing proof fails only its row', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const rows = await Promise.all(['proved-1', 'proved-2'].map((resourceId) => writeWorldFanoutProof(repository, resourceId)));
+        const unproved = toWorldFanoutRow('unproved');
+        const reads: string[] = [];
+        const reader = new WsOutboxProvenanceReader({
+            repository: {
+                findEntry: (namespace, key) => {
+                    reads.push('find');
+                    return repository.findEntry(namespace, key);
+                },
+                readRuntimeStateBatch: (selectors) => {
+                    reads.push(`batch:${selectors.length}`);
+                    return repository.readRuntimeStateBatch(selectors);
+                }
+            },
+            nowMs: Date.now
+        });
+
+        const settled = await Promise.allSettled(
+            [...rows, unproved].map(({ message, entry }) => reader.readProducerProvenance(message, entry))
+        );
+
+        expect(settled.slice(0, 2)).toEqual(rows.map(() => ({
+            status: 'fulfilled',
+            value: {
+                admittedAudience: undefined,
+                recipientScope: { applicationId: 'app', workspaceId: 'workspace' },
+                broadWorld: true
+            }
+        })));
+        expect(settled[2]).toMatchObject({ status: 'rejected', reason: expect.any(ALAdmissionCorruptionError) });
+        expect(reads).toEqual(['batch:3']);
+    });
+
     it('verifies a CRDT world fanout as scoped subscriber-local delivery', async () => {
         const message = newALBroadcastMessage(
             'server',
@@ -230,6 +265,38 @@ describe('row-bound WS producer provenance', () => {
             .toEqual({ admittedAudience: ['peer'], recipientScope: { applicationId: 'app', workspaceId: 'workspace' } });
     });
 });
+
+function toWorldFanoutRow(resourceId: string): Readonly<{ message: ALMessage; entry: ResourceEntry; }> {
+    const message = newALBroadcastMessage(
+        'server',
+        { topicId: 'app.crdt', resourceId, contextId: 'app' },
+        'world',
+        'rallar.crdt.update.v1',
+        {},
+        { ttlMs: 30_000 }
+    );
+    return { message, entry: QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant()) };
+}
+
+async function writeWorldFanoutProof(
+    repository: FakeRuntimeStateRepository,
+    resourceId: string
+): Promise<Readonly<{ message: ALMessage; entry: ResourceEntry; }>> {
+    const row = toWorldFanoutRow(resourceId);
+    const facts = {
+        version: 1 as const,
+        producerKind: 'crdt' as const,
+        queueKey: row.entry.key,
+        typeId: row.entry.typeId,
+        messageId: row.message.id.msgId,
+        senderId: row.message.id.senderId,
+        expiresAtMs: row.entry.audit.expiryTs.epochMilliseconds,
+        target: { kind: 'scoped-world-broadcast' as const, scope: { applicationId: 'app', workspaceId: 'workspace' } }
+    };
+    const proof = { ...facts, digest: computeWsOutboxProvenanceDigest(row.entry, facts) };
+    await repository.upsert(WS_OUTBOX_PROVENANCE_NAMESPACE, toWsOutboxProvenanceKey(row.entry.key), JSON.stringify(proof), proof.expiresAtMs);
+    return row;
+}
 
 async function createFixture(admittedAudience: readonly string[]): Promise<WsOutboxProvenanceFixture> {
     const message = newALUnicastMessage('server', { topicId: 'snapshot', contextId: 'request', resourceId: 'page' }, 'peer', 'snapshot.v1', {}, {

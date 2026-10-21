@@ -12,6 +12,7 @@ import type {
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
 import { hydrateStateSyncSnapshotCaches } from '@shared-server/rallar-system/state-sync/state-sync-cache-hydration.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { findGroupStateSnapshotByRef } from '@shared/repository/group-state-snapshots-repository.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 
 import type { ApiV1Runtime } from '../../composition/api-v1-runtime.ts';
@@ -48,6 +49,7 @@ export interface ApiV1StateSnapshotRouteRuntime {
         | 'listEvents'
         | 'listRecentEvents'
         | 'listSnapshots'
+        | 'listSnapshotsForPrincipal'
         | 'readCurrentSnapshot'
         | 'readSnapshot'
     >;
@@ -121,6 +123,7 @@ export function createStateSnapshotReadRouteRegistrars<Runtime extends ApiV1Stat
                     );
                 },
                 hydrateStateSyncSnapshotCaches,
+                findStateSyncGroupSnapshot: (ref) => findGroupStateSnapshotByRef(ref),
                 readGroupSnapshot: (ref, options) => runtime.groupRestSnapshotReadSelector.read(ref, options)
             }),
         graphGroupStateService: {

@@ -481,7 +481,8 @@ describe('createGroupRoomWsAuthorizer', () => {
                 findOrLoadByRef: (ref, options) => readThroughCache.findOrLoadByRef(ref, options),
                 observe: (snapshot) => readThroughCache.observe(snapshot)
             },
-            current: durableService
+            current: durableService,
+            principalGroups: groupRepository
         });
         const authorizer = createTestGroupRoomWsAuthorizer({
             readGroupSnapshot: (ref) => currentService.readCurrentSnapshot(ref)

@@ -1,7 +1,9 @@
 import {
+    afterEach,
     describe,
     expect,
-    it
+    it,
+    vi
 } from 'vitest';
 
 import {
@@ -147,6 +149,48 @@ describe('JSON content equality', () => {
     it('still refuses BigInt serialization', () => {
         expect(() => jsonEquals(1n, 1n)).toThrow(TypeError);
         expect(() => stableJsonStringify(1n)).toThrow(TypeError);
+    });
+});
+
+describe('JSON content equality of plain JSON trees', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('equates the same keys in a different order without serializing or sorting either side', () => {
+        const stringify = vi.spyOn(JSON, 'stringify');
+        const localeCompare = vi.spyOn(String.prototype, 'localeCompare');
+
+        expect(jsonEquals(
+            { group: { b: 2, a: [1, { y: 'y', x: null }] }, members: [], ok: true },
+            { ok: true, members: [], group: { a: [1, { x: null, y: 'y' }], b: 2 } }
+        )).toBe(true);
+        expect(stringify.mock.calls.length + localeCompare.mock.calls.length).toBe(0);
+    });
+
+    it.each([
+        ['a differing nested leaf', { group: { a: [1, { x: 'left' }] } }, { group: { a: [1, { x: 'right' }] } }, false],
+        ['an absent key and an undefined value', { a: 1, b: undefined }, { a: 1 }, true],
+        ['an added key', { a: 1 }, { a: 1, b: null }, false],
+        ['signed zero', { value: -0 }, { value: 0 }, true],
+        ['an integral float', { value: 1 }, { value: 1.0 }, true],
+        ['a number and its string', { value: 1 }, { value: '1' }, false],
+        ['an array and an object with index keys', [1], { 0: 1 }, false],
+        ['array lengths', [1, 2], [1], false],
+        ['null-prototype objects', Object.assign(Object.create(null) as object, { a: 1 }), { a: 1 }, true]
+    ])('decides %s as the serialized comparison does', (_case, left, right, expected) => {
+        expect(jsonEquals(left, right)).toBe(expected);
+    });
+
+    it.each([
+        ['a left key that JSON omits', { a: 1, f: () => 1 }, { a: 1 }, true],
+        ['a right key that JSON omits', { a: 1 }, { a: 1, s: Symbol('value') }, true],
+        ['a nested date', { at: new Date(0), a: 1 }, { a: 1, at: {} }, true],
+        ['a nested nonfinite number', [NaN], [null], true],
+        ['a nested toJSON method', { a: { toJSON: () => 'x' } }, { a: 'x' }, true],
+        ['a differing leaf beside a converted value', { a: 1, f: () => 1 }, { a: 2 }, false]
+    ])('leaves %s to the serialized comparison', (_case, left, right, expected) => {
+        expect(jsonEquals(left, right)).toBe(expected);
     });
 });
 

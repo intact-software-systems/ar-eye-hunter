@@ -27,7 +27,7 @@ import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
-import { createService, readSummaryWork } from './group-presence-test-runtime.ts';
+import { createService, readSummaryWork, toSummaryExpansion } from './group-presence-test-runtime.ts';
 
 const BASE_EPOCH_MS = Date.now();
 const PLANNED_IDENTITY: GroupLayoutIdentity = { groupRevision: 1, presenceRevision: 1, version: 1, state: 'active' };
@@ -159,7 +159,7 @@ describe('group presence summary replan hold', () => {
             ['makes the replan due at once when the present members fill the group\'s capacity', 2, EntityStatus.NEW],
             ['keeps the debounce while the group has no expected member count', undefined, EntityStatus.RETRY]
         ] as const
-    )('%s (D288)', async (name, fullAtMaxMembers, status) => {
+    )('%s', async (name, fullAtMaxMembers, status) => {
         const seeded = await seedScenario({
             groupId: `expected-count-${fullAtMaxMembers ?? 'unbounded'}`,
             policy: resolveGroupLifecyclePolicyPreset('optimistic'),
@@ -281,8 +281,9 @@ async function readComputedSummary(
         serviceId: 'summary-worker'
     });
     const read = await readSummaryWork(work, seeded.command, BASE_EPOCH_MS + 1_000);
-    const computed = work.compute(seeded.command, read);
-    expect(work.validate(seeded.command, read, computed)).toEqual([]);
+    const expansion = toSummaryExpansion(seeded.command, read);
+    const computed = work.compute(expansion);
+    expect(work.validate(expansion, computed)).toEqual([]);
     return computed;
 }
 

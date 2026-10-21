@@ -4639,6 +4639,81 @@ moved or changed test.
         "requiredConstraint": "createPSqlCounterScope with timesBeginWait false performs exactly two clock reads per statement and none around begin; the begin-wait pair exists only when timing is on.",
         "failureRationale": "The committed rows, the counters and the phase lines are identical with or without the begin-wait pair, so only the clock-read count states the no-new-clock-work constraint directly."
       }
+    },
+    {
+      "id": "group-snapshot-equal-revision-structural-comparison",
+      "domain": "Group snapshot equal-revision decision cost",
+      "owner": "Rallar shared maintainers",
+      "summary": "An equal-revision group snapshot decision compares content without serializing or locale-sorting either side.",
+      "semanticCoverage": "packages/tests/shared/repository/group-state-snapshot-revision.test.ts#decides an equal revision with reordered content as a duplicate without serializing either side",
+      "coverageRelation": "The test decides a real equal-revision snapshot against a key-reordered copy, proves the duplicate decision, and observes JSON.stringify and String.prototype.localeCompare during that decision.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "JSON.stringify and String.prototype.localeCompare within the equal branch of decideGroupSnapshotCausalRevision",
+        "observableEffect": "API CPU on group list and point-read hydration and on state-sync observation: a sorted stringify of both snapshots per equal revision was the measured hosted cost.",
+        "requiredConstraint": "Zero serializations and zero locale comparisons for plain-JSON snapshots at one causal tuple.",
+        "failureRationale": "A reintroduced sorted-stringify comparison returns the same duplicate decision and restores the measured CPU cost with no functional symptom; only the absence at these ports distinguishes it."
+      }
+    },
+    {
+      "id": "json-content-equality-plain-tree-structural-comparison",
+      "domain": "JSON content equality cost for plain trees",
+      "owner": "Rallar shared maintainers",
+      "summary": "jsonEquals decides two plain JSON trees with reordered keys structurally, without serializing or locale-sorting either side.",
+      "semanticCoverage": "packages/tests/shared/repository/state-utils.test.ts#equates the same keys in a different order without serializing or sorting either side",
+      "coverageRelation": "The test compares two key-reordered plain trees through jsonEquals, proves they are equal, and observes JSON.stringify and String.prototype.localeCompare during that comparison.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "JSON.stringify and String.prototype.localeCompare within jsonEquals for plain JSON trees",
+        "observableEffect": "jsonEquals runs on every equal-revision snapshot comparison in browser and server caches; each sorted stringify is CPU proportional to the whole tree.",
+        "requiredConstraint": "Zero serializations and zero locale comparisons when both sides are plain JSON trees.",
+        "failureRationale": "The serialized fallback returns the same equality answer for plain trees, so the result alone cannot show that the structural path was taken; only the absence at these ports does."
+      }
+    },
+    {
+      "id": "runtime-state-read-batch-validated-once-at-its-store",
+      "domain": "Runtime-state read batch validation cost",
+      "owner": "Rallar shared maintainers",
+      "summary": "One read batch is validated exactly once, at its store; the live-value resolver trusts the typed result.",
+      "semanticCoverage": "packages/tests/shared-server/runtime-state/read-batch/runtime-state-read-batch-validation-count.test.ts#validates a read once, at the repository, and resolves its live values without validating again",
+      "coverageRelation": "The test reads a batch through the Postgres repository from injected driver rows, resolves its live values, and counts the result validator across both steps.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "assertRuntimeStateReadBatchResult across PSqlRuntimeStateRepository.readRuntimeStateBatch and resolveRuntimeStateReadBatchLiveValues",
+        "observableEffect": "API main-thread CPU on every batch read of the WS connect, the snapshot reads and the mutation reads: a second validation per read was the measured hosted cost.",
+        "requiredConstraint": "Exactly one validation per read batch, performed by the store that produced it.",
+        "failureRationale": "A reintroduced validation in the resolver returns the same live values and rejects nothing new, so only the call count distinguishes it from the single-validation path."
+      }
+    },
+    {
+      "id": "topology-mutation-read-trusts-its-store-batch",
+      "domain": "Topology mutation read validation cost",
+      "owner": "Rallar shared maintainers",
+      "summary": "The topology mutation exact read validates its batch only at the store and trusts the typed result.",
+      "semanticCoverage": "packages/tests/shared-server/runtime-state/read-batch/runtime-state-read-batch-validation-count.test.ts#lets the topology mutation read trust its store's validated batch",
+      "coverageRelation": "The test runs the real topology mutation exact read over an in-memory store whose batch read validates its own result, and counts the result validator for that one read.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "assertRuntimeStateReadBatchResult within GroupTopologyConfigRepository.readMutationExactEntries",
+        "observableEffect": "API CPU on every topology config mutation read: a second validation repeats the per-entry selector and order checks the store already made.",
+        "requiredConstraint": "Exactly one validation for the topology mutation read batch, performed by the store.",
+        "failureRationale": "A reader-side validation of an already validated batch returns the same selections and the same read, so only the call count shows the duplicate work."
+      }
+    },
+    {
+      "id": "group-presence-summary-state-once-per-page",
+      "domain": "Presence summary page computation cost",
+      "owner": "Rallar server maintainers",
+      "summary": "A coalesced presence-summary page computes its summary and snapshot once and checks them once, however many rows the page carries.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/group-state/presence/group-presence-summary-coalescing.test.ts#computes a page's summary once and checks it once, however many rows the page carries",
+      "coverageRelation": "The test claims ten pending connects of one group as one page through the real worker on PGlite, proves ten committed deltas, and counts the summary computation across the page's expansions and their validation.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "computeGroupPresenceSummary within GroupPresenceSummaryWork.processReservedEntry for one claimed page",
+        "observableEffect": "API main-thread CPU on every presence-summary claim: recomputing the summary and snapshot per expansion and again per validation made a page of N rows cost O(N squared) in member assembly.",
+        "requiredConstraint": "Exactly two summary computations per page, one computing the shared state and one checking it, independent of the page's row count.",
+        "failureRationale": "Recomputing the shared state per expansion yields the same deltas and summary, so only the call count distinguishes the per-page computation from the per-row one."
+      }
     }
   ],
   "entries": [
@@ -10218,6 +10293,61 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The clock-read count against the statement count is the only direct witness that a timing-off transaction pays no begin-wait clock pair; the commit result, counters and phase lines are the same either way.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/app-inbox/handler/app-inbox-phase-executor-counters.test.ts#reads no clock around the transaction begin when timing is off, only the per-statement waits"
+    },
+    {
+      "id": "test-structure-coupling-a35c25690f2bb340",
+      "path": "packages/tests/shared/repository/group-state-snapshot-revision.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "group-snapshot-equal-revision-structural-comparison",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The zero-call count observes the serialization and locale-sort ports while the real decision returns duplicate for a reordered equal-revision snapshot; the decision would pass unchanged with the sorted-stringify comparison it replaced.",
+      "semanticCoverage": "packages/tests/shared/repository/group-state-snapshot-revision.test.ts#decides an equal revision with reordered content as a duplicate without serializing either side"
+    },
+    {
+      "id": "test-structure-coupling-cbbdf05fb0ebb7e0",
+      "path": "packages/tests/shared/repository/state-utils.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "json-content-equality-plain-tree-structural-comparison",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The zero-call count observes the serialization and locale-sort ports while the real jsonEquals equates two reordered plain trees; the equality answer would pass unchanged through the serialized fallback.",
+      "semanticCoverage": "packages/tests/shared/repository/state-utils.test.ts#equates the same keys in a different order without serializing or sorting either side"
+    },
+    {
+      "id": "test-structure-coupling-aaf05c55303555b8",
+      "path": "packages/tests/shared-server/runtime-state/read-batch/runtime-state-read-batch-validation-count.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "runtime-state-read-batch-validated-once-at-its-store",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The one-call count observes the validator while a real repository read is resolved to live values; the values are identical when the resolver validates again, which is the cost this boundary removes.",
+      "semanticCoverage": "packages/tests/shared-server/runtime-state/read-batch/runtime-state-read-batch-validation-count.test.ts#validates a read once, at the repository, and resolves its live values without validating again"
+    },
+    {
+      "id": "test-structure-coupling-a6a05068614f8c8e",
+      "path": "packages/tests/shared-server/runtime-state/read-batch/runtime-state-read-batch-validation-count.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "topology-mutation-read-trusts-its-store-batch",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The one-call count observes the validator during a real topology mutation read; the read result is identical when the reader validates the store's batch again, so only the count witnesses the single validation.",
+      "semanticCoverage": "packages/tests/shared-server/runtime-state/read-batch/runtime-state-read-batch-validation-count.test.ts#lets the topology mutation read trust its store's validated batch"
+    },
+    {
+      "id": "test-structure-coupling-73f3c2b19c07e1c4",
+      "path": "packages/tests/shared-server/rallar-system/group-state/presence/group-presence-summary-coalescing.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "group-presence-summary-state-once-per-page",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The two-call count observes the summary computation while a real page of ten rows commits ten deltas; the deltas are identical when each expansion recomputes the state, which is the cost this boundary removes.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/group-state/presence/group-presence-summary-coalescing.test.ts#computes a page's summary once and checks it once, however many rows the page carries"
     }
   ]
 }

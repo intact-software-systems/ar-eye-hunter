@@ -321,6 +321,13 @@ expiry eviction that finds its row moved by another writer leaves the row to tha
 from its snapshot (the inbound README's decision-surface section), so `ALOutboundControlAdmission.admit`
 never loses an acknowledgement to a throw out of `readControlAdmission` or its effect read.
 
+A dequeued batch (`ALOutboundDequeuedAdmission.admitDequeuedMessages`) reads the same way before its commit.
+Each row's gate and pending-authority wait run two rows at a time. Once every row has passed or been
+decided there, the rows that passed read together in one turn: every row's carrier authority, and the
+group's supersedence in one session (`readMessageSupersedence`), which reads nothing when no row passed.
+Each row settles its own two reads, a corrupt read first, so a corrupt row fails alone and is charged
+once, and the rest of the group commits without it.
+
 ## Canonical message storage
 
 [`al-outbound-canonical-message.ts`](./al-outbound-canonical-message.ts) owns the
@@ -1054,7 +1061,7 @@ message, or a predecessor the admission observed already replaced, states nothin
 the time a superseded predecessor's own queued work next runs, the lifecycle this settlement
 named is already terminal, so its own attempt-time and dequeue-time supersedence checks
 (read fresh in `writeAttemptedSend` through `admissionStore.readSendGuards` and in
-`readDequeuedAdmissionOutcome` through `admissionStore.isMessageSuperseded`) add nothing new:
+`admitDequeuedMessages` through `admissionStore.readMessageSupersedence`) add nothing new:
 dequeue completes the claim without sending and without a settlement of its own, and a
 `send-prepared` attempt still states its own `attempt-settled` (`outcome: 'superseded'`) but
 only as late evidence on a lifecycle a terminal settlement already closed.

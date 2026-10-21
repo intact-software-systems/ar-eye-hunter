@@ -1,3 +1,4 @@
+import type { ValidationValue } from '../../../protocol/validation-value.ts';
 import { assertPersistableClientStateEvent } from '../../../state-events/postgres/client-state-event-row-codec.ts';
 import { validateClientEvent } from '../../client-state-contract-validation.ts';
 import { assertCanonicalClientStateIdempotencyRecord } from '../../persistence/client-state-repository-reads.ts';
@@ -7,18 +8,14 @@ import {
     validatePersistedClientSession
 } from '../../persistence/validate-persisted-client-state.ts';
 import { ClientMutationRejectedError } from '../../validation/client-mutation-rejection.ts';
-import {
-    decodeClientValidationRecord,
-    requireExactKeys,
-    type ClientValidationValue
-} from '../../validation/client-record-validation.ts';
+import { decodeClientValidationRecord, requireExactKeys } from '../../validation/client-record-validation.ts';
 import { requireString } from '../../validation/client-string-validation.ts';
 import type {
     ClientMutationComputed,
     ClientMutationDomainWrite
 } from '../client-mutation-contracts.ts';
 
-export function assertClientPersistenceShape(value: ClientValidationValue): void {
+export function assertClientPersistenceShape(value: ValidationValue): void {
     const persistence = decodeClientValidationRecord(
         value,
         'Client mutation computed.persistence'
@@ -66,7 +63,7 @@ export function assertClientPersistenceRecords(
     assertClientPersistenceInput(computed);
 }
 
-function assertClientRuntimeWriteShape(value: ClientValidationValue, index: number): void {
+function assertClientRuntimeWriteShape(value: ValidationValue, index: number): void {
     const label = `Client mutation computed.persistence.runtimeWrites[${index}]`;
     const write = decodeClientValidationRecord(value, label);
     requireExactKeys(

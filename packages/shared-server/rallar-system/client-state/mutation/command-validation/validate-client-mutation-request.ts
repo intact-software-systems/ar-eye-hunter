@@ -6,15 +6,11 @@ import type {
     UpsertClientPrincipalRequest
 } from '@shared/api/state-types.ts';
 
+import type { ValidationRecord, ValidationValue } from '../../../protocol/validation-value.ts';
 import { requireOptionalEnum } from '../../validation/client-enum-validation.ts';
 import { requireJsonRecord } from '../../validation/client-json-validation.ts';
 import { rejectClientMutation } from '../../validation/client-mutation-rejection.ts';
-import {
-    decodeClientValidationRecord,
-    requireAllowedKeys,
-    type ClientValidationRecord,
-    type ClientValidationValue
-} from '../../validation/client-record-validation.ts';
+import { decodeClientValidationRecord, requireAllowedKeys } from '../../validation/client-record-validation.ts';
 import {
     requireNonEmptyString,
     requireOptionalNonEmptyString,
@@ -30,48 +26,26 @@ import {
     CLIENT_TRANSPORTS
 } from '../client-mutation-contracts.ts';
 
-export function validateClientMutationRequest(
-    operation: 'upsertPrincipal',
+interface ClientMutationRequestByOperation {
+    readonly upsertPrincipal: UpsertClientPrincipalRequest;
+    readonly upsertInstance: UpsertClientInstanceRequest;
+    readonly connectSession: ConnectClientSessionRequest;
+    readonly heartbeatSession: HeartbeatClientSessionRequest;
+    readonly disconnectSession: DisconnectClientSessionRequest;
+}
+
+export function validateClientMutationRequest<Operation extends keyof ClientMutationRequestByOperation>(
+    operation: Operation,
     request: unknown
-): asserts request is UpsertClientPrincipalRequest;
-export function validateClientMutationRequest(
-    operation: 'upsertInstance',
-    request: unknown
-): asserts request is UpsertClientInstanceRequest;
-export function validateClientMutationRequest(
-    operation: 'connectSession',
-    request: unknown
-): asserts request is ConnectClientSessionRequest;
-export function validateClientMutationRequest(
-    operation: 'heartbeatSession',
-    request: unknown
-): asserts request is HeartbeatClientSessionRequest;
-export function validateClientMutationRequest(
-    operation: 'disconnectSession',
-    request: unknown
-): asserts request is DisconnectClientSessionRequest;
-export function validateClientMutationRequest(
-    operation:
-        | 'upsertPrincipal'
-        | 'upsertInstance'
-        | 'connectSession'
-        | 'heartbeatSession'
-        | 'disconnectSession',
-    request: unknown
-): void {
+): asserts request is ClientMutationRequestByOperation[Operation] {
     const value = decodeClientValidationRecord(request, `Client ${operation} request`);
     validateOptionalActorInput(value);
     validateRequestOperation(operation, value);
 }
 
 function validateRequestOperation(
-    operation:
-        | 'upsertPrincipal'
-        | 'upsertInstance'
-        | 'connectSession'
-        | 'heartbeatSession'
-        | 'disconnectSession',
-    value: ClientValidationRecord
+    operation: keyof ClientMutationRequestByOperation,
+    value: ValidationRecord
 ): void {
     switch (operation) {
         case 'upsertPrincipal':
@@ -87,7 +61,7 @@ function validateRequestOperation(
     }
 }
 
-function validatePrincipalRequest(value: ClientValidationRecord): void {
+function validatePrincipalRequest(value: ValidationRecord): void {
     requireAllowedKeys({
         value,
         required: ['username'],
@@ -109,7 +83,7 @@ function validatePrincipalRequest(value: ClientValidationRecord): void {
     requireOptionalTimestamp(value.lastSeenAtEpochMs, 'Client principal lastSeenAtEpochMs');
 }
 
-function validateInstanceRequest(value: ClientValidationRecord): void {
+function validateInstanceRequest(value: ValidationRecord): void {
     requireAllowedKeys({
         value,
         required: [],
@@ -126,7 +100,7 @@ function validateInstanceRequest(value: ClientValidationRecord): void {
     }
 }
 
-function validateConnectRequest(value: ClientValidationRecord): void {
+function validateConnectRequest(value: ValidationRecord): void {
     requireAllowedKeys({
         value,
         required: ['generationId'],
@@ -143,7 +117,7 @@ function validateConnectRequest(value: ClientValidationRecord): void {
     validateConnectTimestampOrder(value);
 }
 
-function validateHeartbeatRequest(value: ClientValidationRecord): void {
+function validateHeartbeatRequest(value: ValidationRecord): void {
     requireAllowedKeys({
         value,
         required: ['generationId'],
@@ -161,7 +135,7 @@ function validateHeartbeatRequest(value: ClientValidationRecord): void {
     validateHeartbeatTimestampOrder(value);
 }
 
-function validateDisconnectRequest(value: ClientValidationRecord): void {
+function validateDisconnectRequest(value: ValidationRecord): void {
     requireAllowedKeys({
         value,
         required: ['generationId'],
@@ -175,7 +149,7 @@ function validateDisconnectRequest(value: ClientValidationRecord): void {
     validateDisconnectTimestampOrder(value);
 }
 
-function validateOptionalActorInput(input: ClientValidationRecord): void {
+function validateOptionalActorInput(input: ValidationRecord): void {
     requireOptionalNonEmptyString(input.actorPrincipalId, 'Client request actorPrincipalId');
     requireOptionalNonEmptyString(input.actorSessionId, 'Client request actorSessionId');
     requireOptionalString(input.reason, 'Client request reason');
@@ -183,11 +157,11 @@ function validateOptionalActorInput(input: ClientValidationRecord): void {
     requireOptionalNonEmptyString(input.requestId, 'Client request requestId');
 }
 
-function validateGenerationId(value: ClientValidationValue): void {
+function validateGenerationId(value: ValidationValue): void {
     requireNonEmptyString(value, 'Client session generationId');
 }
 
-function validateConnectTimestampOrder(input: ClientValidationRecord): void {
+function validateConnectTimestampOrder(input: ValidationRecord): void {
     const authenticatedAt = timestampValue(input.authenticatedAtEpochMs);
     const connectedAt = timestampValue(input.connectedAtEpochMs);
     const heartbeatAt = timestampValue(input.lastHeartbeatAtEpochMs);
@@ -207,7 +181,7 @@ function validateConnectTimestampOrder(input: ClientValidationRecord): void {
     }
 }
 
-function validateHeartbeatTimestampOrder(input: ClientValidationRecord): void {
+function validateHeartbeatTimestampOrder(input: ValidationRecord): void {
     const heartbeatAt = timestampValue(input.lastHeartbeatAtEpochMs);
     const expiresAt = timestampValue(input.expiresAtEpochMs);
     if (heartbeatAt !== undefined && expiresAt !== undefined && expiresAt < heartbeatAt) {
@@ -217,7 +191,7 @@ function validateHeartbeatTimestampOrder(input: ClientValidationRecord): void {
     }
 }
 
-function validateDisconnectTimestampOrder(input: ClientValidationRecord): void {
+function validateDisconnectTimestampOrder(input: ValidationRecord): void {
     const disconnectedAt = timestampValue(input.disconnectedAtEpochMs);
     const heartbeatAt = timestampValue(input.lastHeartbeatAtEpochMs);
     const expiresAt = timestampValue(input.expiresAtEpochMs);
@@ -233,7 +207,7 @@ function validateDisconnectTimestampOrder(input: ClientValidationRecord): void {
     }
 }
 
-function timestampValue(value: ClientValidationValue): number | undefined {
+function timestampValue(value: ValidationValue): number | undefined {
     return typeof value === 'number' ? value : undefined;
 }
 

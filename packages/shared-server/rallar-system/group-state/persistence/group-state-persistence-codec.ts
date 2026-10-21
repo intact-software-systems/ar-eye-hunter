@@ -16,12 +16,12 @@ import { validatePersistedGroup, validatePersistedGroupMember } from './validate
 
 export function decodePersistedGroup(value: unknown, ref: GroupRef): Group {
     validatePersistedGroup(value, ref);
-    return structuredClone(value);
+    return value;
 }
 
 export function decodePersistedGroupMember(value: unknown, ref: GroupRef): GroupMember {
     validatePersistedGroupMember(value, ref);
-    return structuredClone(value);
+    return value;
 }
 
 export function decodePersistedGroupPresenceSession(
@@ -29,7 +29,7 @@ export function decodePersistedGroupPresenceSession(
     ref: GroupRef
 ): GroupPresenceSession {
     validatePersistedGroupPresenceSession(value, ref);
-    return structuredClone(value);
+    return value;
 }
 
 export function decodePersistedGroupPresenceSummary(
@@ -37,7 +37,7 @@ export function decodePersistedGroupPresenceSummary(
     ref: GroupRef
 ): GroupPresenceSummary {
     validatePersistedGroupPresenceSummary(value, ref);
-    return structuredClone(value);
+    return value;
 }
 
 export function decodePersistedGroupPresenceAdmission(
@@ -45,5 +45,5 @@ export function decodePersistedGroupPresenceAdmission(
     ref: GroupRef
 ): GroupPresenceAdmission {
     validatePersistedGroupPresenceAdmission(value, ref);
-    return structuredClone(value);
+    return value;
 }

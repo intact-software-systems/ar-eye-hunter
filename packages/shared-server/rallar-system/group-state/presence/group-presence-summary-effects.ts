@@ -66,7 +66,7 @@ export interface GroupPresenceSummaryWorkRead {
     readonly topologyReplanPolicyFacts: TopologyReplanPolicyFacts;
 }
 
-/** The replan decision (product decision 2): queued work, or held by the replanning policy. */
+/** The replan decision: queued work, or held by the replanning policy. */
 export type TopologyReplanDecision =
     | Readonly<{ decision: 'enqueue'; work: ComputedCoalescedAppOutboxWork; }>
     | Readonly<{ decision: 'held-by-policy'; }>;
@@ -125,9 +125,15 @@ export interface ComputeGroupStateDeltaEnvelopeInput {
     readonly snapshot: GroupSnapshot;
 }
 
-export interface ValidateGroupPresenceSummaryComputedWorkInput {
+/** One expansion's work row and read, with the summary state of the page it belongs to. */
+export interface GroupPresenceSummaryExpansionInput {
     readonly work: GroupPresenceSummaryWorkData;
     readonly read: GroupPresenceSummaryWorkRead;
+    readonly state: GroupPresenceSummaryState;
+}
+
+export interface ValidateGroupPresenceSummaryComputedWorkInput {
+    readonly expansion: GroupPresenceSummaryExpansionInput;
     readonly computed: GroupPresenceSummaryComputedWork;
     readonly options: ComputeGroupPresenceSummaryWorkOptions;
 }
@@ -140,28 +146,20 @@ interface ToGroupPresenceSummaryOutboxInputInput {
     readonly options: ComputeGroupPresenceSummaryWorkOptions;
 }
 
+/**
+ * The summary a read yields and the snapshot assembled from it. Every expansion of one read shares both, so a page
+ * computes them once, checks them once, and hands them to each expansion.
+ */
+export interface GroupPresenceSummaryState {
+    readonly summary: GroupPresenceSummaryComputed;
+    readonly snapshot: GroupSnapshot;
+}
+
 export function computeGroupPresenceSummaryWork(
-    work: GroupPresenceSummaryWorkData,
-    read: GroupPresenceSummaryWorkRead,
+    expansion: GroupPresenceSummaryExpansionInput,
     options: ComputeGroupPresenceSummaryWorkOptions
 ): GroupPresenceSummaryComputedWork {
-    const summary = computeGroupPresenceSummary({
-        ref: work.aggregateRef,
-        read: read.presence,
-        nowEpochMs: read.nowEpochMs
-    });
-    const snapshot = assembleGroupStateSnapshot(
-        {
-            group: read.presence.group.value,
-            members: read.presence.members.map((member) => member.value),
-            summary: summary.summary,
-            authoritativeSessions: read.presence.presenceSessions.map((session) => session.value),
-            groupRevision: summary.summary.causalRevision.groupRevision,
-            observedAtEpochMs: summary.summary.computedAtEpochMs,
-            sessionLeaseFields: 'authoritative'
-        },
-        (storageKey, message) => new Error(`${message}: ${storageKey}`)
-    );
+    const { work, read, state: { summary, snapshot } } = expansion;
     const outboxInput = toGroupPresenceSummaryOutboxInput({
         work,
         read,
@@ -184,6 +182,46 @@ export function computeGroupPresenceSummaryWork(
             completedAt: new Date(read.nowEpochMs)
         }
     };
+}
+
+export function computeGroupPresenceSummaryState(
+    work: GroupPresenceSummaryWorkData,
+    read: Pick<GroupPresenceSummaryWorkRead, 'presence' | 'nowEpochMs'>
+): GroupPresenceSummaryState {
+    const summary = computeGroupPresenceSummary({
+        ref: work.aggregateRef,
+        read: read.presence,
+        nowEpochMs: read.nowEpochMs
+    });
+    const snapshot = assembleGroupStateSnapshot(
+        {
+            group: read.presence.group.value,
+            members: read.presence.members.map((member) => member.value),
+            summary: summary.summary,
+            authoritativeSessions: read.presence.presenceSessions.map((session) => session.value),
+            groupRevision: summary.summary.causalRevision.groupRevision,
+            observedAtEpochMs: summary.summary.computedAtEpochMs,
+            sessionLeaseFields: 'authoritative'
+        },
+        (storageKey, message) => new Error(`${message}: ${storageKey}`)
+    );
+    return { summary, snapshot };
+}
+
+/** The page's shared state against its recomputation from the read it was computed from. */
+export function validateGroupPresenceSummaryState(
+    work: GroupPresenceSummaryWorkData,
+    read: Pick<GroupPresenceSummaryWorkRead, 'presence' | 'nowEpochMs'>,
+    state: GroupPresenceSummaryState
+): readonly ComputedDataValidationIssue[] {
+    return validateComputedProjection(computeGroupPresenceSummaryState(work, read), state, 'state');
+}
+
+/** The revision a summary delta names as its predecessor: the stored summary's, or none before the first summary. */
+export function toGroupPresenceSummaryPredecessorCausalRevision(
+    presence: GroupPresenceSummaryRead
+): GroupStateCausalRevision | null {
+    return presence.current?.value.causalRevision ?? null;
 }
 
 function computeGroupPresenceSummaryWrite(
@@ -294,7 +332,7 @@ function toTopologyReplanTiming(input: ToTopologyReplanTimingInput): TopologyRep
     };
 }
 
-/** Whether this summary brings the present members up to the expected count from below it (D288). */
+/** Whether this summary brings the present members up to the expected count from below it. */
 function computeExpectedMembersArrived(
     snapshot: GroupSnapshot,
     previousSummary: GroupPresenceSummary | null,
@@ -313,11 +351,7 @@ function computeExpectedMembersArrived(
 export function validateGroupPresenceSummaryComputedWork(
     input: ValidateGroupPresenceSummaryComputedWorkInput
 ): readonly ComputedDataValidationIssue[] {
-    const expected = computeGroupPresenceSummaryWork(
-        input.work,
-        input.read,
-        input.options
-    );
+    const expected = computeGroupPresenceSummaryWork(input.expansion, input.options);
     return validateComputedProjection(expected, input.computed, 'computed');
 }
 
@@ -329,7 +363,7 @@ function toGroupPresenceSummaryOutboxInput(
         work,
         coalescedEvents: read.coalescedEvents,
         summary,
-        summaryPredecessorCausalRevision: read.presence.current?.value.causalRevision ?? null,
+        summaryPredecessorCausalRevision: toGroupPresenceSummaryPredecessorCausalRevision(read.presence),
         snapshot,
         audience: {
             kind: 'group',

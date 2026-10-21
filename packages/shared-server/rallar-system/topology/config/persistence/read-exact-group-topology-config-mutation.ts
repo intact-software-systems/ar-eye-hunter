@@ -8,7 +8,6 @@ import {
     type RuntimeStateReadBatchSelection,
     type RuntimeStateReadBatchSelector
 } from '../../../../runtime-state/read-batch/runtime-state-read-batch.ts';
-import { validateRuntimeStateReadBatchResult } from '../../../../runtime-state/read-batch/validate-runtime-state-read-batch-result.ts';
 import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-state-json-store.ts';
 import type {
     RuntimeStateEntry,
@@ -227,10 +226,7 @@ export async function readGroupTopologyMutationExactEntries(
     decoders: GroupTopologyMutationExactReadDecoders
 ): Promise<GroupTopologyMutationExactReadResult> {
     const selectors = createExactReadSelectors(locations);
-    const selections = validateRuntimeStateReadBatchResult(
-        selectors,
-        await repository.readRuntimeStateBatch(selectors)
-    );
+    const selections = await repository.readRuntimeStateBatch(selectors);
 
     prevalidateSelection(selections[0], decoders.invariant);
     prevalidateSelection(selections[1], decoders.config);

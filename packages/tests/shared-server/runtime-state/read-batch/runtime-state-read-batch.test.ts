@@ -1,8 +1,9 @@
 import type { PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import { assertRuntimeStateReadBatchResult } from '@shared-server/runtime-state/read-batch/assert-runtime-state-read-batch-result.ts';
+import { assertRuntimeStateReadBatchSelectors } from '@shared-server/runtime-state/read-batch/assert-runtime-state-read-batch-selectors.ts';
+import { compareRuntimeStateKeys } from '@shared-server/runtime-state/read-batch/compare-runtime-state-keys.ts';
 import { type RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
-import { validateRuntimeStateReadBatchResult } from '@shared-server/runtime-state/read-batch/validate-runtime-state-read-batch-result.ts';
-import { validateRuntimeStateReadBatchSelectors } from '@shared-server/runtime-state/read-batch/validate-runtime-state-read-batch-selectors.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { createPrefixSuffixReadBatchFixture } from '@shared-test/shared-server/prefix-suffix-read-batch-fixture.ts';
 import { describe, expect, it } from 'vitest';
@@ -36,10 +37,26 @@ const PRINCIPAL_MEMBERS = {
     keySuffix: ':member=alice'
 } as const satisfies RuntimeStateReadBatchSelector;
 
+const LIVE_SESSIONS = {
+    selectorId: 'live-sessions',
+    kind: 'prefix-containing',
+    namespace: 'client-state:sessions',
+    keyPrefix: 'app=app:ws=workspace:principal=alice:',
+    storedValueContains: { status: 'active', disconnectedAtEpochMs: null }
+} as const satisfies RuntimeStateReadBatchSelector;
+
+const UNPURGED_PRESENCE = {
+    selectorId: 'unpurged-presence',
+    kind: 'prefix-expiring-after',
+    namespace: 'group-state:sessions',
+    keyPrefix: `${ENTRY.key}:`,
+    expiringAfterTimestamp: 5_000
+} as const satisfies RuntimeStateReadBatchSelector;
+
 describe('runtime-state read batches', () => {
     it('accepts dense mandatory key and prefix selectors with caller-ordered results', () => {
-        expect(validateRuntimeStateReadBatchSelectors(SELECTORS)).toEqual(SELECTORS);
-        expect(validateRuntimeStateReadBatchResult(SELECTORS, [{
+        expect(assertRuntimeStateReadBatchSelectors(SELECTORS)).toEqual(SELECTORS);
+        expect(assertRuntimeStateReadBatchResult(SELECTORS, [{
             selectorId: 'group',
             entries: [ENTRY]
         }, {
@@ -64,13 +81,13 @@ describe('runtime-state read batches', () => {
         ['empty exact key', [{ ...SELECTORS[0], key: '' }]],
         ['empty prefix', [{ ...SELECTORS[1], keyPrefix: '' }]]
     ])('rejects %s', (_label, input) => {
-        expect(() => validateRuntimeStateReadBatchSelectors(input)).toThrow(
+        expect(() => assertRuntimeStateReadBatchSelectors(input)).toThrow(
             /runtime state read batch/iu
         );
     });
 
     it('accepts a prefix-suffix selector with exactly its declared fields', () => {
-        expect(validateRuntimeStateReadBatchSelectors([PRINCIPAL_MEMBERS])).toEqual([
+        expect(assertRuntimeStateReadBatchSelectors([PRINCIPAL_MEMBERS])).toEqual([
             PRINCIPAL_MEMBERS
         ]);
     });
@@ -89,7 +106,7 @@ describe('runtime-state read batches', () => {
         ],
         ['suffix selector carrying a prefix', [{ ...PRINCIPAL_MEMBERS, kind: 'suffix' }]]
     ])('rejects %s', (_label, input) => {
-        expect(() => validateRuntimeStateReadBatchSelectors(input)).toThrow(
+        expect(() => assertRuntimeStateReadBatchSelectors(input)).toThrow(
             /runtime state read batch/iu
         );
     });
@@ -100,7 +117,7 @@ describe('runtime-state read batches', () => {
         ['whose prefix and suffix overlap', 'app=app:ws=workspace:member=alice']
     ])('rejects a prefix-suffix result entry %s', (_label, key) => {
         expect(() =>
-            validateRuntimeStateReadBatchResult([PRINCIPAL_MEMBERS], [{
+            assertRuntimeStateReadBatchResult([PRINCIPAL_MEMBERS], [{
                 selectorId: 'principal-members',
                 entries: [{ ...ENTRY, key }]
             }])
@@ -128,18 +145,14 @@ describe('runtime-state read batches', () => {
         }))).toEqual(fixture.expectedSelections);
     });
 
-    it('rejects sparse selectors and sparse or mismatched results', () => {
+    it('rejects sparse selectors and mismatched results', () => {
         const sparseSelectors = new Array(2);
         sparseSelectors[0] = SELECTORS[0];
-        expect(() => validateRuntimeStateReadBatchSelectors(sparseSelectors))
+        expect(() => assertRuntimeStateReadBatchSelectors(sparseSelectors))
             .toThrow(/sparse|dense/iu);
 
-        const sparseResults = new Array(2);
-        sparseResults[0] = { selectorId: 'group', entries: [ENTRY] };
-        expect(() => validateRuntimeStateReadBatchResult(SELECTORS, sparseResults))
-            .toThrow(/sparse|dense/iu);
         expect(() =>
-            validateRuntimeStateReadBatchResult(SELECTORS, [{
+            assertRuntimeStateReadBatchResult(SELECTORS, [{
                 selectorId: 'members',
                 entries: []
             }, {
@@ -148,16 +161,16 @@ describe('runtime-state read batches', () => {
             }])
         ).toThrow(/caller order/iu);
         expect(() =>
-            validateRuntimeStateReadBatchResult(SELECTORS, [{
+            assertRuntimeStateReadBatchResult(SELECTORS, [{
                 selectorId: 'group',
                 entries: [ENTRY]
             }])
         ).toThrow(/expected 2/iu);
     });
 
-    it('rejects malformed entries, exact-result cardinality, and prefix mismatches', () => {
+    it('rejects exact-result cardinality and prefix mismatches', () => {
         expect(() =>
-            validateRuntimeStateReadBatchResult(SELECTORS, [{
+            assertRuntimeStateReadBatchResult(SELECTORS, [{
                 selectorId: 'group',
                 entries: [ENTRY, ENTRY]
             }, {
@@ -166,7 +179,7 @@ describe('runtime-state read batches', () => {
             }])
         ).toThrow(/exact key/iu);
         expect(() =>
-            validateRuntimeStateReadBatchResult(SELECTORS, [{
+            assertRuntimeStateReadBatchResult(SELECTORS, [{
                 selectorId: 'group',
                 entries: [ENTRY]
             }, {
@@ -175,7 +188,7 @@ describe('runtime-state read batches', () => {
             }])
         ).toThrow(/prefix/iu);
         expect(() =>
-            validateRuntimeStateReadBatchResult(SELECTORS, [{
+            assertRuntimeStateReadBatchResult(SELECTORS, [{
                 selectorId: 'group',
                 entries: [{ ...ENTRY, key: 'other' }]
             }, {
@@ -183,15 +196,6 @@ describe('runtime-state read batches', () => {
                 entries: []
             }])
         ).toThrow(/exact key/iu);
-        expect(() =>
-            validateRuntimeStateReadBatchResult(SELECTORS, [{
-                selectorId: 'group',
-                entries: [{ ...ENTRY, revision: -1 }]
-            }, {
-                selectorId: 'members',
-                entries: []
-            }])
-        ).toThrow(/revision/iu);
     });
 
     it('rejects duplicate or non-bytewise prefix result ordering', () => {
@@ -204,7 +208,7 @@ describe('runtime-state read batches', () => {
             ]
         ) {
             expect(() =>
-                validateRuntimeStateReadBatchResult(SELECTORS, [{
+                assertRuntimeStateReadBatchResult(SELECTORS, [{
                     selectorId: 'group',
                     entries: [ENTRY]
                 }, {
@@ -215,7 +219,151 @@ describe('runtime-state read batches', () => {
         }
     });
 
-    it('uses one fixed parameterized SELECT and returns one driver row per selected entry (D289)', async () => {
+    it('orders keys by code point, as C collation orders their UTF-8 bytes, astral characters after U+E000-U+FFFF', () => {
+        const keys = ['b', '\u{1F600}', '\uFFFF', 'a\u{10000}', '\uE000', 'a', 'a\uFFFD', ''];
+
+        expect([...keys].sort(compareRuntimeStateKeys)).toEqual(
+            [...keys].sort((left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right)))
+        );
+        expect(compareRuntimeStateKeys('\uE000', '\u{1F600}')).toBeLessThan(0);
+        expect(compareRuntimeStateKeys('\u{1F600}', '\uFFFF')).toBeGreaterThan(0);
+        expect(compareRuntimeStateKeys('prefix:a', 'prefix:a')).toBe(0);
+        expect(compareRuntimeStateKeys('prefix:', 'prefix:a')).toBeLessThan(0);
+    });
+
+    it('accepts a U+E000 key before an astral key and rejects them reversed', () => {
+        const privateUse = { ...ENTRY, key: `${ENTRY.key}:member=\uE000` };
+        const astral = { ...ENTRY, key: `${ENTRY.key}:member=\u{1F600}` };
+        const selection = (entries: readonly RuntimeStateEntry[]) => [
+            { selectorId: 'group', entries: [ENTRY] },
+            { selectorId: 'members', entries }
+        ];
+
+        expect(assertRuntimeStateReadBatchResult(SELECTORS, selection([privateUse, astral]))).toEqual(
+            selection([privateUse, astral])
+        );
+        expect(() => assertRuntimeStateReadBatchResult(SELECTORS, selection([astral, privateUse])))
+            .toThrow(/uniquely ordered/iu);
+    });
+
+    it('accepts value-containing and expiring-after prefix selectors with exactly their declared fields', () => {
+        expect(assertRuntimeStateReadBatchSelectors([LIVE_SESSIONS, UNPURGED_PRESENCE])).toEqual([
+            LIVE_SESSIONS,
+            UNPURGED_PRESENCE
+        ]);
+    });
+
+    it.each([
+        ['containment without fields', [{ ...LIVE_SESSIONS, storedValueContains: {} }]],
+        ['containment of a nested object', [{ ...LIVE_SESSIONS, storedValueContains: { status: { value: 'active' } } }]],
+        ['containment of an array', [{ ...LIVE_SESSIONS, storedValueContains: ['active'] }]],
+        ['containment carrying an expiry floor', [{ ...LIVE_SESSIONS, expiringAfterTimestamp: 1 }]],
+        ['containment without a prefix', [{ ...LIVE_SESSIONS, keyPrefix: '' }]],
+        ['an expiry floor that is not an integer', [{ ...UNPURGED_PRESENCE, expiringAfterTimestamp: 1.5 }]],
+        ['an expiry floor carrying a containment', [{ ...UNPURGED_PRESENCE, storedValueContains: { status: 'active' } }]],
+        ['an expiry floor without a prefix', [{ ...UNPURGED_PRESENCE, keyPrefix: '' }]]
+    ])('rejects %s', (_label, input) => {
+        expect(() => assertRuntimeStateReadBatchSelectors(input)).toThrow(/runtime state read batch/iu);
+    });
+
+    it('selects in memory only the prefix rows whose stored object holds the fields, and only rows expiring after the floor', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const sessionKey = (sessionId: string) => `${LIVE_SESSIONS.keyPrefix}session=${sessionId}`;
+        await repository.upsert(
+            LIVE_SESSIONS.namespace,
+            sessionKey('active'),
+            JSON.stringify({ status: 'active', disconnectedAtEpochMs: null }),
+            ENTRY.expireAtTimestamp
+        );
+        await repository.upsert(
+            LIVE_SESSIONS.namespace,
+            sessionKey('disconnected'),
+            JSON.stringify({ status: 'disconnected', disconnectedAtEpochMs: 2 }),
+            ENTRY.expireAtTimestamp
+        );
+        await repository.upsert(LIVE_SESSIONS.namespace, sessionKey('unset'), JSON.stringify({ status: 'active' }), ENTRY.expireAtTimestamp);
+        await repository.upsert(
+            LIVE_SESSIONS.namespace,
+            'app=app:ws=workspace:principal=bob:session=active',
+            JSON.stringify({ status: 'active', disconnectedAtEpochMs: null }),
+            ENTRY.expireAtTimestamp
+        );
+        await repository.upsert(UNPURGED_PRESENCE.namespace, `${UNPURGED_PRESENCE.keyPrefix}session=at-floor`, '{}', 5_000);
+        await repository.upsert(UNPURGED_PRESENCE.namespace, `${UNPURGED_PRESENCE.keyPrefix}session=after-floor`, '{}', 5_001);
+
+        const selections = await repository.readRuntimeStateBatch([LIVE_SESSIONS, UNPURGED_PRESENCE]);
+
+        expect(selections.map((selection) => selection.entries.map((entry) => entry.key))).toEqual([
+            [sessionKey('active')],
+            [`${UNPURGED_PRESENCE.keyPrefix}session=after-floor`]
+        ]);
+    });
+
+    it.each([
+        [
+            'misordered',
+            [toDriverRow(2, { ...ENTRY, key: `${ENTRY.key}:member=b` }), toDriverRow(2, { ...ENTRY, key: `${ENTRY.key}:member=a` })],
+            /uniquely ordered/iu
+        ],
+        [
+            'duplicated',
+            [toDriverRow(2, { ...ENTRY, key: `${ENTRY.key}:member=a` }), toDriverRow(2, { ...ENTRY, key: `${ENTRY.key}:member=a` })],
+            /uniquely ordered/iu
+        ],
+        ['foreign to its prefix selector', [toDriverRow(2, { ...ENTRY, key: 'app=app:ws=other:group=room:member=a' })], /does not match prefix/iu],
+        ['foreign to its exact selector', [toDriverRow(1, { ...ENTRY, key: 'other' })], /exact key does not match/iu],
+        ['of no selector', [toDriverRow(3, ENTRY)], /no selector at ordinal 3/iu],
+        ['carrying a negative revision', [toDriverRow(1, { ...ENTRY, revision: -1 })], /revision is invalid/iu],
+        ['carrying an unsafe expiry', [{ ...toDriverRow(1, ENTRY), expire_at_timestamp: '9007199254740993' }], /expiry is invalid/iu],
+        ['carrying an invalid update time', [{ ...toDriverRow(1, ENTRY), updated_timestamp: 'never' }], /updated timestamp is invalid/iu],
+        ['carrying no value', [{ ...toDriverRow(1, ENTRY), store_value: null }], /value must be a string/iu]
+    ])('rejects a database result %s at the repository', async (_label, rows, message) => {
+        const repository = new PSqlRuntimeStateRepository(captureSql([], rows));
+
+        await expect(repository.readRuntimeStateBatch(SELECTORS)).rejects.toThrow(message);
+        await expect(repository.readRuntimeStateBatchWithVersion(SELECTORS)).rejects.toThrow(message);
+    });
+
+    it('maps driver rows straight to entries, normalising the update time to milliseconds', async () => {
+        const repository = new PSqlRuntimeStateRepository(captureSql([], [{
+            ...toDriverRow(1, ENTRY),
+            updated_timestamp: '2026-07-21T02:00:00.123456+02:00'
+        }]));
+
+        await expect(repository.readRuntimeStateBatch([SELECTORS[0]])).resolves.toEqual([{
+            selectorId: 'group',
+            entries: [{ ...ENTRY, updatedTimestamp: '2026-07-21T00:00:00.123Z' }]
+        }]);
+    });
+
+    it('binds a value containment and an expiry floor as filters on the prefix range of the same statement', async () => {
+        const captured: CapturedQuery[] = [];
+
+        await new PSqlRuntimeStateRepository(captureSql(captured, [])).readRuntimeStateBatch([
+            LIVE_SESSIONS,
+            UNPURGED_PRESENCE
+        ]);
+
+        expect(captured).toHaveLength(1);
+        expect(captured[0].source).toContain('containing_entry.store_key collate "C" >= selector.key_prefix');
+        expect(captured[0].source).toContain('containing_entry.store_key collate "C" < selector.prefix_end');
+        expect(captured[0].source).toContain('containing_entry.store_value::jsonb @> selector.stored_value_contains');
+        expect(captured[0].source).toContain('expiring_entry.store_key collate "C" >= selector.key_prefix');
+        expect(captured[0].source).toContain(
+            'extract(epoch from expiring_entry.expire_at_ts) * 1000 > selector.expiring_after_timestamp'
+        );
+        expect(captured[0].values.find(Array.isArray)).toEqual([{
+            ...NO_SQL_SELECTOR_FIELDS,
+            ...LIVE_SESSIONS,
+            prefixEnd: 'app=app:ws=workspace:principal=alice;'
+        }, {
+            ...NO_SQL_SELECTOR_FIELDS,
+            ...UNPURGED_PRESENCE,
+            prefixEnd: `${ENTRY.key};`
+        }]);
+    });
+
+    it('uses one fixed parameterized SELECT and returns one driver row per selected entry', async () => {
         const memberEntry = { ...ENTRY, key: 'app=app:ws=workspace:group=room:member=alice' };
         const captured: CapturedQuery[] = [];
         const sql = captureSql(captured, [toDriverRow(1, ENTRY), toDriverRow(3, memberEntry)]);
@@ -274,7 +422,9 @@ describe('runtime-state read batches', () => {
                 keySuffix: null,
                 prefixEnd: null,
                 reversedSuffix: null,
-                reversedSuffixEnd: null
+                reversedSuffixEnd: null,
+                storedValueContains: null,
+                expiringAfterTimestamp: null
             },
             {
                 selectorId: 'members',
@@ -285,7 +435,9 @@ describe('runtime-state read batches', () => {
                 keySuffix: null,
                 prefixEnd: `${ENTRY.key};`,
                 reversedSuffix: null,
-                reversedSuffixEnd: null
+                reversedSuffixEnd: null,
+                storedValueContains: null,
+                expiringAfterTimestamp: null
             },
             {
                 selectorId: 'principal-members',
@@ -296,7 +448,9 @@ describe('runtime-state read batches', () => {
                 keySuffix: ':member=alice',
                 prefixEnd: 'app=app:ws=workspace;',
                 reversedSuffix: 'ecila=rebmem:',
-                reversedSuffixEnd: 'ecila=rebmem;'
+                reversedSuffixEnd: 'ecila=rebmem;',
+                storedValueContains: null,
+                expiringAfterTimestamp: null
             }
         ]);
     });
@@ -322,10 +476,23 @@ describe('runtime-state read batches', () => {
             keySuffix: ':session=a%3Ab',
             prefixEnd: null,
             reversedSuffix: 'bA3%a=noisses:',
-            reversedSuffixEnd: 'bA3%a=noisses;'
+            reversedSuffixEnd: 'bA3%a=noisses;',
+            storedValueContains: null,
+            expiringAfterTimestamp: null
         }]);
     });
 });
+
+const NO_SQL_SELECTOR_FIELDS = {
+    key: null,
+    keyPrefix: null,
+    keySuffix: null,
+    storedValueContains: null,
+    expiringAfterTimestamp: null,
+    prefixEnd: null,
+    reversedSuffix: null,
+    reversedSuffixEnd: null
+} as const;
 
 function toDriverRow(selectorOrdinal: number, entry: RuntimeStateEntry): PSqlRows[number] {
     return {

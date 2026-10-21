@@ -186,10 +186,9 @@ Deno.test('pending coalesced guards preserve changed content, type, and attempts
             const after = await repository.entries.findAnyByKey(expected.key);
             assert.deepEqual(after, before);
             assert.equal((await repository.entries.findAnyByKey(successor.key))?.resource, successor.resource);
-            await assert.rejects(
-                () => sql.begin((transaction) => writeCoalescedAppOutboxWork(transaction, computed)),
-                /App outbox insert did not create exactly one row/
-            );
+            const repeated = await sql.begin((transaction) => writeCoalescedAppOutboxWork(transaction, computed));
+            assert.equal(repeated, 'successor-present');
+            assert.equal((await repository.entries.findAnyByKey(successor.key))?.resource, successor.resource);
             assert.deepEqual(await repository.entries.findAnyByKey(expected.key), before);
         }
     });

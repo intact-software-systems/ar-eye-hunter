@@ -111,6 +111,27 @@ describe('AppInbox sampled result polls', () => {
         expect(events.find((event) => event.operation === 'wait-fallback')?.details?.elapsedMsecs).toBe(1);
     });
 
+    it.each(
+        [
+            [{ status: 'NEW', attempts: 0 } as const, 'App inbox entry is not complete: NEW'],
+            [{ status: 'RESERVED', attempts: 1 } as const, 'App inbox entry is not complete: RESERVED'],
+            [{ status: 'RETRY', attempts: 1 } as const, 'App inbox entry is not complete: RETRY'],
+            [undefined, 'App inbox entry is not complete: missing'],
+            [new Error('private read failure'), 'private read failure']
+        ] as const
+    )('names the pending observation %o in the retry it causes', async (observation, errorMessage) => {
+        vi.useFakeTimers();
+        const events: RallarTimingEvent[] = [];
+        const waiter = createWaiter([observation, { status: 'COMPLETED', attempts: 1 }], (event) => events.push(event), {
+            phaseTiming: true,
+            waitMaxElapsedMsecs: 100
+        });
+        const pending = waiter.waitForResult(enqueue, key, (value) => value);
+        await vi.runAllTimersAsync();
+        expect((await pending).right).toEqual({ accepted: true });
+        expect(events.filter((event) => event.operation === 'wait-retry').map((event) => event.details?.errorMessage)).toEqual([errorMessage]);
+    });
+
     it('keeps the same narrow read and completion with phase capture disabled', async () => {
         const events: RallarTimingEvent[] = [];
         const waiter = createWaiter({ status: 'COMPLETED', attempts: 1 }, (event) => events.push(event), { phaseTiming: false, waitMaxElapsedMsecs: 0 });

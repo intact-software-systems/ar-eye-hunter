@@ -1,12 +1,14 @@
-import type { JsonWireObject, JsonWireValue } from '../../rallar-system/protocol/json-wire-identity.ts';
 import type {
+    RuntimeStateReadBatchSelection,
     RuntimeStateReadBatchSelector,
     RuntimeStateReadBatchVersion
 } from '../read-batch/runtime-state-read-batch.ts';
+import type { RuntimeStateEntry } from '../runtime-state-repository.ts';
 
 const ROW_FIELD_SEPARATOR = '\u001f';
 const ROW_SEPARATOR = '\u001e';
 const SELECTOR_SEPARATOR = '\u001d';
+const DRIVER_INTEGER = /^-?(0|[1-9]\d*)$/u;
 
 /** One selected entry as the driver returns it; the integers travel as text so no driver rounds them. */
 export interface PSqlRuntimeStateReadBatchRow {
@@ -21,14 +23,16 @@ export interface PSqlRuntimeStateReadBatchRow {
     readonly row_version: string;
 }
 
-/** The driver rows grouped back into one selection per selector, in caller order, for the shared result validator. */
+/** The driver rows as typed entries, one selection per selector in caller order, for the shared result validator. */
 export function toRuntimeStateReadBatchSelections(
     selectors: readonly RuntimeStateReadBatchSelector[],
     rows: readonly PSqlRuntimeStateReadBatchRow[]
-): JsonWireValue {
+): readonly RuntimeStateReadBatchSelection[] {
     return toRowsBySelector(selectors, rows).map((selectorRows, index) => ({
         selectorId: selectors[index].selectorId,
-        entries: selectorRows.map(toRuntimeStateReadBatchEntry)
+        entries: selectorRows.map((row, entryIndex) =>
+            toRuntimeStateReadBatchEntry(row, `result ${index} entry ${entryIndex}`)
+        )
     }));
 }
 
@@ -94,20 +98,42 @@ function toRowsBySelector(
     return rowsBySelector;
 }
 
-function toRuntimeStateReadBatchEntry(row: PSqlRuntimeStateReadBatchRow): JsonWireObject {
+function toRuntimeStateReadBatchEntry(row: PSqlRuntimeStateReadBatchRow, label: string): RuntimeStateEntry {
+    if (typeof row.store_key !== 'string' || row.store_key.length === 0) {
+        throw invalidReadBatchRow(`${label} key must be a non-empty string`);
+    }
+    if (typeof row.store_value !== 'string') {
+        throw invalidReadBatchRow(`${label} value must be a string`);
+    }
+    const expireAtTimestamp = toDriverSafeInteger(row.expire_at_timestamp);
+    if (expireAtTimestamp === undefined) {
+        throw invalidReadBatchRow(`${label} expiry is invalid`);
+    }
+    const revision = toDriverSafeInteger(row.revision);
+    if (revision === undefined || revision < 0) {
+        throw invalidReadBatchRow(`${label} revision is invalid`);
+    }
+    const updatedEpochMs = Date.parse(row.updated_timestamp);
+    if (!Number.isFinite(updatedEpochMs)) {
+        throw invalidReadBatchRow(`${label} updated timestamp is invalid`);
+    }
     return {
         key: row.store_key,
         value: row.store_value,
-        expireAtTimestamp: toDriverInteger(row.expire_at_timestamp),
-        updatedTimestamp: row.updated_timestamp,
-        revision: toDriverInteger(row.revision)
+        expireAtTimestamp,
+        updatedTimestamp: new Date(updatedEpochMs).toISOString(),
+        revision
     };
 }
 
-function toDriverInteger(input: string): JsonWireValue {
-    if (!/^-?(0|[1-9]\d*)$/u.test(input)) {
-        return input;
+function toDriverSafeInteger(input: string): number | undefined {
+    if (!DRIVER_INTEGER.test(input)) {
+        return undefined;
     }
     const parsed = Number(input);
-    return Number.isSafeInteger(parsed) ? parsed : input;
+    return Number.isSafeInteger(parsed) && !Object.is(parsed, -0) ? parsed : undefined;
+}
+
+function invalidReadBatchRow(reason: string): Error {
+    return new Error(`Invalid runtime state read batch: ${reason}`);
 }

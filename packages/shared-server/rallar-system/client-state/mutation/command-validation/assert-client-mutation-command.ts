@@ -1,10 +1,7 @@
+import type { ValidationRecord } from '../../../protocol/validation-value.ts';
 import { requireEnum } from '../../validation/client-enum-validation.ts';
 import { rejectClientMutation } from '../../validation/client-mutation-rejection.ts';
-import {
-    decodeClientValidationRecord,
-    requireExactKeys,
-    type ClientValidationRecord
-} from '../../validation/client-record-validation.ts';
+import { decodeClientValidationRecord, requireExactKeys } from '../../validation/client-record-validation.ts';
 import {
     requireNonEmptyString,
     requireNullableNonEmptyString,
@@ -90,7 +87,7 @@ function assertClientMutationAuthority(authority: unknown): asserts authority is
     rejectClientMutation('Client mutation authority kind is invalid');
 }
 
-function assertIssuedSessionAuthority(value: ClientValidationRecord): void {
+function assertIssuedSessionAuthority(value: ValidationRecord): void {
     requireExactKeys(
         value,
         [

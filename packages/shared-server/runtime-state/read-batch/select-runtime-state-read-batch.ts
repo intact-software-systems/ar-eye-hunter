@@ -1,22 +1,26 @@
+import type { JsonWireObject, JsonWireValue } from '../../rallar-system/protocol/json-wire-identity.ts';
 import type { RuntimeStateEntry } from '../runtime-state-repository.ts';
+import { assertRuntimeStateReadBatchResult } from './assert-runtime-state-read-batch-result.ts';
+import { assertRuntimeStateReadBatchSelectors } from './assert-runtime-state-read-batch-selectors.ts';
+import { compareRuntimeStateKeys } from './compare-runtime-state-keys.ts';
 import { isRuntimeStateReadBatchKeySelected } from './is-runtime-state-read-batch-key-selected.ts';
 import type {
     RuntimeStateReadBatchSelection,
-    RuntimeStateReadBatchSelector
+    RuntimeStateReadBatchSelector,
+    RuntimeStateStoredValueFields
 } from './runtime-state-read-batch.ts';
-import { validateRuntimeStateReadBatchResult } from './validate-runtime-state-read-batch-result.ts';
-import { validateRuntimeStateReadBatchSelectors } from './validate-runtime-state-read-batch-selectors.ts';
 
 export interface RuntimeStateNamespacedEntry {
     readonly namespace: string;
     readonly entry: RuntimeStateEntry;
 }
 
+/** An in-memory store's batch read, selecting and filtering rows exactly as the Postgres statement does. */
 export function selectRuntimeStateReadBatch(
     entries: readonly RuntimeStateNamespacedEntry[],
     input: readonly RuntimeStateReadBatchSelector[]
 ): readonly RuntimeStateReadBatchSelection[] {
-    const selectors = validateRuntimeStateReadBatchSelectors(input);
+    const selectors = assertRuntimeStateReadBatchSelectors(input);
     const snapshot = entries.map(({ namespace, entry }) => ({
         namespace,
         entry: { ...entry }
@@ -25,25 +29,40 @@ export function selectRuntimeStateReadBatch(
         const selected = snapshot
             .filter(({ namespace, entry }) =>
                 namespace === selector.namespace &&
-                isRuntimeStateReadBatchKeySelected(selector, entry.key)
+                isRuntimeStateReadBatchKeySelected(selector, entry.key) &&
+                isRuntimeStateReadBatchRowSelected(selector, entry)
             )
             .map(({ entry }) => entry)
-            .sort((left, right) => compareUtf8(left.key, right.key));
+            .sort((left, right) => compareRuntimeStateKeys(left.key, right.key));
         return { selectorId: selector.selectorId, entries: selected };
     });
-    return validateRuntimeStateReadBatchResult(selectors, selections);
+    return assertRuntimeStateReadBatchResult(selectors, selections);
 }
 
-function compareUtf8(left: string, right: string): number {
-    const encoder = new TextEncoder();
-    const leftBytes = encoder.encode(left);
-    const rightBytes = encoder.encode(right);
-    const length = Math.min(leftBytes.length, rightBytes.length);
-    for (let index = 0; index < length; index += 1) {
-        const difference = leftBytes[index] - rightBytes[index];
-        if (difference !== 0) {
-            return difference;
-        }
+function isRuntimeStateReadBatchRowSelected(
+    selector: RuntimeStateReadBatchSelector,
+    entry: RuntimeStateEntry
+): boolean {
+    switch (selector.kind) {
+        case 'prefix-containing':
+            return isStoredValueContaining(entry.value, selector.storedValueContains);
+        case 'prefix-expiring-after':
+            return entry.expireAtTimestamp > selector.expiringAfterTimestamp;
+        case 'key':
+        case 'prefix':
+        case 'prefix-suffix':
+        case 'suffix':
+            return true;
     }
-    return leftBytes.length - rightBytes.length;
+}
+
+/** Postgres `store_value::jsonb @> fields` for scalar fields: the stored object holds each field with an equal value. */
+function isStoredValueContaining(storedValue: string, fields: RuntimeStateStoredValueFields): boolean {
+    const stored: JsonWireValue = JSON.parse(storedValue);
+    return isJsonWireObject(stored) &&
+        Object.entries(fields).every(([name, value]) => Object.hasOwn(stored, name) && stored[name] === value);
+}
+
+function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

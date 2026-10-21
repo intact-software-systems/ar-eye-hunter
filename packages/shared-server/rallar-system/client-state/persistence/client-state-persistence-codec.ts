@@ -20,7 +20,7 @@ export function decodePersistedClientPrincipal(
     expected: ClientPrincipalRef
 ): ClientPrincipal {
     validatePersistedClientPrincipal(value, expected);
-    return structuredClone(value);
+    return value;
 }
 
 export function decodePersistedClientInstance(
@@ -28,7 +28,7 @@ export function decodePersistedClientInstance(
     expected: ClientInstanceRef
 ): ClientInstance {
     validatePersistedClientInstance(value, expected);
-    return structuredClone(value);
+    return value;
 }
 
 export function decodePersistedClientSession(
@@ -36,7 +36,7 @@ export function decodePersistedClientSession(
     expected: ClientSessionRef
 ): ClientSession {
     validatePersistedClientSession(value, expected);
-    return structuredClone(value);
+    return value;
 }
 
 export function decodePersistedClientEvent(
@@ -44,5 +44,5 @@ export function decodePersistedClientEvent(
     expected: ClientPrincipalRef
 ): ClientEvent {
     validatePersistedClientEvent(value, expected);
-    return structuredClone(value);
+    return value;
 }

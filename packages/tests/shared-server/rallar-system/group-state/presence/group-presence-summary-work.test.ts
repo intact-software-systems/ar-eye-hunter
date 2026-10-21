@@ -163,7 +163,8 @@ describe('GroupPresenceSummaryWork canonical persisted command', () => {
             summary: { outcome: 'no-op' },
             summaryWrite: null,
             downstreamOutboxWrites: [computeAppOutboxInsert(entry)],
-            topologyReplan: { decision: 'held-by-policy' }
+            topologyReplan: { decision: 'held-by-policy' },
+            replanWrite: { write: 'none' }
         } as never)).rejects.toMatchObject({ code: 'resource-inbox-invariant-corruption' });
 
         expect(statements).toHaveLength(1);

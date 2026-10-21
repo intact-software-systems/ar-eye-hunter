@@ -2,11 +2,9 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { ALAdmissionCorruptionError } from '../../alm/al-admission-decoder.ts';
 import type { ALOutboundAdmissionStore } from '../../alm/outbound/admission/al-outbound-admission-store.ts';
 import type { ALOutboundCapturedPolicy } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
-import { toALOutboundIdentityKey } from '../../alm/outbound/al-outbound-canonical-message.ts';
 import type { ALOutboundDequeueAuthority } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import { EnqueuedType } from '../../api/api-config.ts';
 import type { StateScope } from '../../api/state-types.ts';
-import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { validateWsQueueBoxServerRecipientAuthority } from './scope/requires-ws-queue-box-server-recipient-scope.ts';
 import {
@@ -62,12 +60,15 @@ export type WsOutboxProducerProvenanceReader = (
 export namespace WsQueueBoxServerDequeueAuthority {
     export interface Dependencies {
         readonly admissionStore: ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>;
-        readonly outbox: QueueBoxResourceEntryRepository;
         readonly readProducerProvenance: WsOutboxProducerProvenanceReader | undefined;
     }
 }
 
-/** Classifies the observed queue row before the generic admission owner may create any facts. */
+/**
+ * Classifies the observed queue row before the generic admission owner may create any facts. A row reads its
+ * admission facts first, then a producer row its proof (two rounds) or an admitted row its captured policy, whose
+ * stored row and identity read one after the other (three rounds); rows read together share every round.
+ */
 export class WsQueueBoxServerDequeueAuthority {
     private readonly dependencies: WsQueueBoxServerDequeueAuthority.Dependencies;
 
@@ -76,11 +77,12 @@ export class WsQueueBoxServerDequeueAuthority {
     }
 
     async readDequeueAuthority(message: ALMessage, entry: ResourceEntry): Promise<ALOutboundDequeueAuthority> {
-        const { admissionStore, outbox, readProducerProvenance } = this.dependencies;
+        const { admissionStore, readProducerProvenance } = this.dependencies;
         if (entry.typeId !== EnqueuedType.WS_OUTBOX) {
             throw toDequeueCorruption(entry, 'Unexpected WS outbox row type');
         }
-        if (await admissionStore.hasSentMessageAdmission(message.id.msgId)) {
+        const facts = await admissionStore.readDequeueAdmissionFacts(message, entry);
+        if (facts.sentAdmission) {
             const policy = await this.readCapturedPolicy(message, entry);
             return {
                 admittedAudience: policy.admittedAudience,
@@ -89,7 +91,7 @@ export class WsQueueBoxServerDequeueAuthority {
                 sessionInvalidation: policy.sessionInvalidation
             };
         }
-        if (entry.key.topicId === 'AL_OUTBOUND_MESSAGE' || await outbox.getItem(toALOutboundIdentityKey(entry.key))) {
+        if (entry.key.topicId === 'AL_OUTBOUND_MESSAGE' || facts.canonicalIdentity) {
             throw toDequeueCorruption(entry, 'Canonical identity has no sent admission');
         }
         if (!readProducerProvenance || !isWsQueueBoxServerProducerRow(message, entry.key)) {

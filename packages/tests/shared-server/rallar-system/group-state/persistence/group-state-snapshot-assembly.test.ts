@@ -7,7 +7,6 @@ import {
     groupStatePresenceSessionStorageKey,
     groupStatePresenceSummaryStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
-import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { AuditStamp, Group, GroupMember } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
@@ -44,37 +43,6 @@ describe('GroupStateRepository persistence', () => {
             code: 'group-state-repository-invariant-corruption'
         });
     });
-    it('fails closed when a batch persistence result repeats an inactive member', async () => {
-        const runtime = new DuplicatingInactiveMemberRepository();
-        const repository = createTestGroupStateRepository(runtime);
-        const ref = groupRef('duplicate-invited-member');
-        const read = createSnapshotAssemblyMutationRead();
-        requireMutationGroupAndActor(read);
-        const group: Group = {
-            ...read.group.value,
-            ...ref
-        };
-        const owner: GroupMember = {
-            ...read.actorMember,
-            ...ref
-        };
-        const invited: GroupMember = {
-            ...memberFor('bob'),
-            ...ref,
-            status: 'invited',
-            joined: null,
-            left: null,
-            removed: null,
-            banned: null,
-            invitedByPrincipalId: 'alice',
-            invitationExpiresAtEpochMs: 10_000
-        };
-        await repository.putGroup(group);
-        await repository.putMember(owner);
-        await repository.putMember(invited);
-        await expect(repository.readSnapshot(ref)).rejects.toThrow(/not uniquely ordered/iu);
-    });
-
     it('rejects canonically keyed incomplete persisted rows at every public read boundary', async () => {
         const ref = {
             applicationId: 'incomplete-contract-app',
@@ -350,26 +318,6 @@ describe('GroupStateRepository persistence', () => {
         });
     });
 });
-
-class DuplicatingInactiveMemberRepository extends FakeRuntimeStateRepository {
-    override async readRuntimeStateBatch(
-        selectors: readonly RuntimeStateReadBatchSelector[]
-    ): Promise<readonly RuntimeStateReadBatchSelection[]> {
-        const selections = await super.readRuntimeStateBatch(selectors);
-        return selections.map((selection, index) => {
-            const selector = selectors[index];
-            if (selector?.kind !== 'prefix' || selector.namespace !== 'group-state:members') {
-                return selection;
-            }
-            const invitedEntry = selection.entries.find(
-                (entry) => JSON.parse(entry.value).principalId === 'bob'
-            );
-            return invitedEntry
-                ? { ...selection, entries: [...selection.entries, invitedEntry] }
-                : selection;
-        });
-    }
-}
 
 function requireMutationGroupAndActor(read: GroupMutationRead): asserts read is
     & GroupMutationRead

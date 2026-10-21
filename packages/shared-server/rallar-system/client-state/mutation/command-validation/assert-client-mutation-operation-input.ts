@@ -1,11 +1,8 @@
+import type { ValidationRecord, ValidationValue } from '../../../protocol/validation-value.ts';
 import { requireNullableEnum } from '../../validation/client-enum-validation.ts';
 import { requireNullableJsonRecord } from '../../validation/client-json-validation.ts';
 import { rejectClientMutation } from '../../validation/client-mutation-rejection.ts';
-import {
-    requireExactKeys,
-    type ClientValidationRecord,
-    type ClientValidationValue
-} from '../../validation/client-record-validation.ts';
+import { requireExactKeys } from '../../validation/client-record-validation.ts';
 import {
     requireNonEmptyString,
     requireNullableNonEmptyString,
@@ -28,8 +25,8 @@ import {
 
 type OperationInputValidation = Readonly<{
     operation: ClientMutationOperation;
-    input: ClientValidationRecord;
-    commandRoot: ClientValidationRecord;
+    input: ValidationRecord;
+    commandRoot: ValidationRecord;
 }>;
 
 export function assertClientMutationOperationInput(validation: OperationInputValidation): void {
@@ -102,7 +99,7 @@ function assertConnectInput(validation: OperationInputValidation): void {
     assertConnectTimestampOrder(validation.input);
 }
 
-function assertCommandConnectAdditions(input: ClientValidationRecord): void {
+function assertCommandConnectAdditions(input: ValidationRecord): void {
     requireNullableEnum(input.instancePlatform, CLIENT_PLATFORMS, 'Client connect instancePlatform');
     requireNullableString(input.instanceUserAgent, 'Client connect instanceUserAgent');
     requireNullableStringArray(input.instanceCapabilities, 'Client connect instanceCapabilities');
@@ -170,18 +167,18 @@ function assertSessionRoot(validation: OperationInputValidation): void {
     requireNonEmptyString(root.sessionId, 'Client session sessionId');
 }
 
-function assertActorInput(input: ClientValidationRecord): void {
+function assertActorInput(input: ValidationRecord): void {
     requireNullableNonEmptyString(input.actorPrincipalId, 'Client mutation actorPrincipalId');
     requireNullableNonEmptyString(input.actorSessionId, 'Client mutation actorSessionId');
     requireNullableString(input.reason, 'Client mutation reason');
     requireNullableString(input.traceId, 'Client mutation traceId');
 }
 
-function assertGenerationId(value: ClientValidationValue): void {
+function assertGenerationId(value: ValidationValue): void {
     requireNonEmptyString(value, 'Client session generationId');
 }
 
-function assertConnectTimestampOrder(input: ClientValidationRecord): void {
+function assertConnectTimestampOrder(input: ValidationRecord): void {
     const authenticatedAt = timestampValue(input.authenticatedAtEpochMs);
     const connectedAt = timestampValue(input.connectedAtEpochMs);
     const heartbeatAt = timestampValue(input.lastHeartbeatAtEpochMs);
@@ -201,7 +198,7 @@ function assertConnectTimestampOrder(input: ClientValidationRecord): void {
     }
 }
 
-function assertHeartbeatTimestampOrder(input: ClientValidationRecord): void {
+function assertHeartbeatTimestampOrder(input: ValidationRecord): void {
     const heartbeatAt = timestampValue(input.lastHeartbeatAtEpochMs);
     const expiresAt = timestampValue(input.expiresAtEpochMs);
     if (heartbeatAt !== undefined && expiresAt !== undefined && expiresAt < heartbeatAt) {
@@ -211,7 +208,7 @@ function assertHeartbeatTimestampOrder(input: ClientValidationRecord): void {
     }
 }
 
-function assertDisconnectTimestampOrder(input: ClientValidationRecord): void {
+function assertDisconnectTimestampOrder(input: ValidationRecord): void {
     const disconnectedAt = timestampValue(input.disconnectedAtEpochMs);
     const heartbeatAt = timestampValue(input.lastHeartbeatAtEpochMs);
     const expiresAt = timestampValue(input.expiresAtEpochMs);
@@ -227,7 +224,7 @@ function assertDisconnectTimestampOrder(input: ClientValidationRecord): void {
     }
 }
 
-function timestampValue(value: ClientValidationValue): number | undefined {
+function timestampValue(value: ValidationValue): number | undefined {
     return typeof value === 'number' ? value : undefined;
 }
 

@@ -62,7 +62,11 @@ import { FakeRuntimeStateRepository } from '../../../../runtime-state/test-suppo
 import { createAppInboxTestDatabase } from '../../../app-inbox/test-support/app-inbox-test-database.ts';
 import { GroupBarrierRepository } from '../../../group-state/group-state-concurrency-test-runtime.ts';
 import { groupRef, SCOPE } from '../../../group-state/mutation/group-mutation-test-runtime.ts';
-import { createService, readSummaryWork } from '../../../group-state/presence/group-presence-test-runtime.ts';
+import {
+    createService,
+    readSummaryWork,
+    toSummaryExpansion
+} from '../../../group-state/presence/group-presence-test-runtime.ts';
 
 interface CriterionSubmission {
     readonly command: GroupMutationCommand;
@@ -587,7 +591,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         await expect(handler.onMessage(retiredRttMessage, entry)).rejects.toBeInstanceOf(TypeError);
     });
 
-    it('completes group-revision work for a removed group without planning or publishing (D290)', async () => {
+    it('completes group-revision work for a removed group without planning or publishing', async () => {
         const queue = new InMemoryQueueBox();
         const outboxQueueReader = new OutboxQueueReader(queue);
         const runtimeRepository = new FakeRuntimeStateRepository();
@@ -922,8 +926,9 @@ async function computeLatestPresenceTopologyWork({
         event
     };
     const read = await readSummaryWork(worker, command, nowEpochMs);
-    const computed = worker.compute(command, read);
-    expect(worker.validate(command, read, computed)).toEqual([]);
+    const expansion = toSummaryExpansion(command, read);
+    const computed = worker.compute(expansion);
+    expect(worker.validate(expansion, computed)).toEqual([]);
     if (computed.topologyReplan.decision !== 'enqueue') {
         throw new Error('Expected automatic coalesced topology work');
     }

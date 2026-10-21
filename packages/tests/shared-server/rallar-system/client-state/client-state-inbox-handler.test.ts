@@ -241,6 +241,7 @@ describe('ClientStateInboxHandler phases', () => {
                     'transaction',
                     'commit',
                     'mutation.write',
+                    'wake',
                     'observe'
                 ]
                 : [
@@ -344,6 +345,29 @@ describe('ClientStateInboxHandler phases', () => {
             'observe',
             'observe'
         ]);
+    });
+
+    it('wakes the owning queue after an expiry page that writes its successor', async () => {
+        const fixture = createHandlerFixture({
+            generationClosed: false,
+            sessionPresent: true,
+            expiryCandidates: [expiryCandidate('session-1')],
+            nextAfterKey: 'next-session-page'
+        });
+        const input = { atEpochMs: NOW_EPOCH_MS, afterKey: null } as const;
+        const context = createContext<readonly ClientStateWritten[]>({
+            type: AppInboxType.CLIENT_EXPIRED_SESSIONS,
+            resourceId: 'expire-client-sessions-with-successor',
+            contextId: 'expire-client-sessions',
+            senderId: SERVICE_ID,
+            authority: toClientMutationSystemAuthority(SERVICE_ID),
+            data: input
+        });
+
+        await fixture.handler.processExpiredSessionCommands(context, input);
+
+        expect(fixture.continuationWriteCount()).toBe(1);
+        expect(fixture.actions.slice(-2)).toEqual(['observe', 'wake']);
     });
 
     it('bounds expiry writes per outer attempt and performs no inner conflict retry', async () => {

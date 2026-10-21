@@ -1,14 +1,11 @@
 import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 
-import {
-    decodeClientValidationRecord,
-    requireExactKeys,
-    type ClientValidationValue
-} from './client-record-validation.ts';
+import type { ValidationValue } from '../../protocol/validation-value.ts';
+import { decodeClientValidationRecord, requireExactKeys } from './client-record-validation.ts';
 import { requireNonEmptyString } from './client-string-validation.ts';
 
 export function validateClientPrincipalRef(
-    value: ClientValidationValue,
+    value: ValidationValue,
     label: string,
     exact = true
 ): ClientPrincipalRef {

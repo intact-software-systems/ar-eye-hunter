@@ -16,19 +16,22 @@ import {
 import { MAX_GROUP_CONCURRENT_EDGE_SETUPS } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import type { AuditStamp, Group, GroupMember, GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
-import { validateStoredGroupActivationStatus } from './validate-stored-group-activation-status.ts';
 
+import type { ValidationRecord } from '../../protocol/validation-value.ts';
 import {
     assertExactKeys,
     assertRequiredKeys,
     nullableNonEmptyString,
     nullablePositiveSafeInteger,
+    requireJsonSafe,
     requireNonEmptyString,
     requireNonNegativeSafeInteger,
     requireOneOf,
     requirePositiveSafeInteger,
     requireRecord
 } from '../group-state-validation-primitives.ts';
+import { requireUnitRate } from '../require-unit-rate.ts';
+import { validateStoredGroupActivationStatus } from './validate-stored-group-activation-status.ts';
 
 const STORED_GROUP_KEYS = [
     'applicationId',
@@ -86,8 +89,6 @@ const STORED_MEMBER_KEYS = [
     'invitationExpiresAtEpochMs'
 ] as const;
 
-type StoredGroupRecord = Readonly<Record<string, unknown>>;
-
 export function validateStoredGroup(group: unknown, ref: GroupRef): asserts group is Group {
     const value = requireRecord(group, 'Stored group value');
     assertExactKeys(value, STORED_GROUP_KEYS, 'Stored group value');
@@ -101,13 +102,23 @@ export function validateStoredGroup(group: unknown, ref: GroupRef): asserts grou
     requireOneOf(value.joinMode, ['invite-only', 'code', 'open'], 'Stored group joinMode');
     nullablePositiveSafeInteger(value.maxMembers, 'Stored group maxMembers');
     nullablePositiveSafeInteger(value.maxSessionsPerMember, 'Stored group maxSessionsPerMember');
-    requireRecord(value.metadata, 'Stored group metadata');
+    requireJsonSafe(requireRecord(value.metadata, 'Stored group metadata'), 'Stored group metadata');
     requirePositiveSafeInteger(value.activeMemberCount, 'Stored group activeMemberCount');
     requireNonEmptyString(value.ownerPrincipalId, 'Stored group ownerPrincipalId');
     requirePositiveSafeInteger(value.snapshotVersion, 'Stored group snapshotVersion');
     requirePositiveSafeInteger(value.metadataVersion, 'Stored group metadataVersion');
     requirePositiveSafeInteger(value.rosterVersion, 'Stored group rosterVersion');
     requireNonNegativeSafeInteger(value.presenceVersion, 'Stored group presenceVersion');
+    assertStoredGroupLifecycleAudits(value);
+    nullablePositiveSafeInteger(value.expiresAtEpochMs, 'Stored group expiresAtEpochMs');
+    nullablePositiveSafeInteger(value.emptySinceEpochMs, 'Stored group emptySinceEpochMs');
+    nullablePositiveSafeInteger(value.purgeAfterEpochMs, 'Stored group purgeAfterEpochMs');
+    requireOneOf(value.lifecycleState, GROUP_LIFECYCLE_STATES, 'Stored group lifecycleState');
+    assertStoredGroupFormation(value);
+    assertStoredGroupTransport(value);
+}
+
+function assertStoredGroupLifecycleAudits(value: ValidationRecord): void {
     validateAuditStamp(value.created, 'Stored group created');
     validateAuditStamp(value.updated, 'Stored group updated');
     if (value.archived !== null) {
@@ -125,36 +136,14 @@ export function validateStoredGroup(group: unknown, ref: GroupRef): asserts grou
     if (value.status === 'deleted' && value.deleted === null) {
         throw new TypeError('Stored deleted group is missing lifecycle audit');
     }
-    nullablePositiveSafeInteger(value.expiresAtEpochMs, 'Stored group expiresAtEpochMs');
-    nullablePositiveSafeInteger(value.emptySinceEpochMs, 'Stored group emptySinceEpochMs');
-    nullablePositiveSafeInteger(value.purgeAfterEpochMs, 'Stored group purgeAfterEpochMs');
-    requireOneOf(
-        value.lifecycleState,
-        GROUP_LIFECYCLE_STATES,
-        'Stored group lifecycleState'
-    );
+}
+
+function assertStoredGroupFormation(value: ValidationRecord): void {
     requireNonNegativeSafeInteger(value.formationEpoch, 'Stored group formationEpoch');
     requireNonNegativeSafeInteger(value.formationAttemptCount, 'Stored group formationAttemptCount');
     if (value.lastFormationOutcome !== null) {
-        const outcome = requireRecord(value.lastFormationOutcome, 'Stored group lastFormationOutcome');
-        assertExactKeys(outcome, FORMATION_OUTCOME_KEYS, 'Stored group lastFormationOutcome');
-        requireOneOf(
-            outcome.outcome,
-            ['activated', 'activated-degraded', 'below-floor'],
-            'Stored group lastFormationOutcome outcome'
-        );
-        if (
-            typeof outcome.observedRate !== 'number' ||
-            !Number.isFinite(outcome.observedRate) ||
-            outcome.observedRate < 0 ||
-            outcome.observedRate > 1
-        ) {
-            throw new TypeError('Stored group lastFormationOutcome observedRate must be within [0, 1]');
-        }
-        requirePositiveSafeInteger(outcome.atEpochMs, 'Stored group lastFormationOutcome atEpochMs');
-        requireNonNegativeSafeInteger(
-            outcome.formationEpoch,
-            'Stored group lastFormationOutcome formationEpoch'
+        assertStoredGroupFormationOutcome(
+            requireRecord(value.lastFormationOutcome, 'Stored group lastFormationOutcome')
         );
     }
     nullablePositiveSafeInteger(
@@ -170,6 +159,24 @@ export function validateStoredGroup(group: unknown, ref: GroupRef): asserts grou
     for (const principalId of value.formationElectorate) {
         requireNonEmptyString(principalId, 'Stored group formationElectorate entry');
     }
+}
+
+function assertStoredGroupFormationOutcome(outcome: ValidationRecord): void {
+    assertExactKeys(outcome, FORMATION_OUTCOME_KEYS, 'Stored group lastFormationOutcome');
+    requireOneOf(
+        outcome.outcome,
+        ['activated', 'activated-degraded', 'below-floor'],
+        'Stored group lastFormationOutcome outcome'
+    );
+    requireUnitRate(outcome.observedRate, 'Stored group lastFormationOutcome observedRate');
+    requirePositiveSafeInteger(outcome.atEpochMs, 'Stored group lastFormationOutcome atEpochMs');
+    requireNonNegativeSafeInteger(
+        outcome.formationEpoch,
+        'Stored group lastFormationOutcome formationEpoch'
+    );
+}
+
+function assertStoredGroupTransport(value: ValidationRecord): void {
     if (value.acceptedLayoutIdentity !== null) {
         validateStoredGroupLayoutIdentity(
             requireRecord(value.acceptedLayoutIdentity, 'Stored group acceptedLayoutIdentity'),
@@ -186,7 +193,7 @@ export function validateStoredGroup(group: unknown, ref: GroupRef): asserts grou
     }
 }
 
-function validateStoredGroupLayoutIdentity(identity: StoredGroupRecord, label: string): void {
+function validateStoredGroupLayoutIdentity(identity: ValidationRecord, label: string): void {
     assertExactKeys(identity, GROUP_LAYOUT_IDENTITY_KEYS, label);
     assertRequiredKeys(identity, GROUP_LAYOUT_IDENTITY_KEYS, label);
     for (const key of ['groupRevision', 'presenceRevision', 'version'] as const) {
@@ -195,7 +202,7 @@ function validateStoredGroupLayoutIdentity(identity: StoredGroupRecord, label: s
     requireOneOf(identity.state, GROUP_LAYOUT_IDENTITY_STATES, `${label} state`);
 }
 
-function validateStoredGroupMemberPolicy(memberPolicy: StoredGroupRecord): void {
+function validateStoredGroupMemberPolicy(memberPolicy: ValidationRecord): void {
     assertExactKeys(memberPolicy, GROUP_MEMBER_POLICY_KEYS, 'Stored group memberPolicy');
     assertRequiredKeys(memberPolicy, GROUP_MEMBER_POLICY_KEYS, 'Stored group memberPolicy');
     requirePositiveSafeInteger(
@@ -291,7 +298,7 @@ export function validateScopedValue(
 }
 
 export function validateScopedRecord(
-    value: StoredGroupRecord,
+    value: ValidationRecord,
     ref: GroupRef,
     label: string
 ): void {

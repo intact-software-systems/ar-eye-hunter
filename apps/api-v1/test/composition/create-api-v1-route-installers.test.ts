@@ -113,6 +113,7 @@ function createInput(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRunti
                 listEvents: rejectUnusedOperation,
                 listRecentEvents: rejectUnusedOperation,
                 listSnapshots: rejectUnusedOperation,
+                listSnapshotsForPrincipal: rejectUnusedOperation,
                 readCurrentSnapshot: rejectUnusedOperation,
                 readSnapshot: rejectUnusedOperation
             },

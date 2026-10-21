@@ -1,7 +1,9 @@
 import type { GroupRef, GroupScope, GroupSnapshot } from '@shared/api/group-types.ts';
+
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
-import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
+
 export type GroupStateAuthorityGuard = Readonly<{
     groupRef: GroupRef;
     entry: RuntimeStateEntry;
@@ -35,10 +37,8 @@ export async function toLiveGroupStateEntryValue(
         return undefined;
     }
     try {
-        return {
-            entry,
-            value: decodeJsonWireValue(JSON.parse(entry.value), 'Stored group-state value')
-        };
+        const value: JsonWireValue = JSON.parse(entry.value);
+        return { entry, value };
     }
     catch (error) {
         throw new GroupStateRepositoryInvariantCorruptionError(

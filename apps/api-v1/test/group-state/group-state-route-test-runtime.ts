@@ -44,6 +44,7 @@ export interface GroupStateRouteTestRuntimeInput {
         'hydrateStateSyncSnapshotCaches'
     ];
     readonly readGroupSnapshot?: GroupStateRouteDependencies['readGroupSnapshot'];
+    readonly findStateSyncGroupSnapshot?: GroupStateRouteDependencies['findStateSyncGroupSnapshot'];
     readonly strictReadAuthorization?: boolean;
     readonly installStateAuthentication?: boolean;
 }
@@ -105,6 +106,7 @@ export function createGroupStateRouteTestDependencies(
         nowEpochMs: input.nowEpochMs ?? (() => Date.now()),
         hydrateStateSyncSnapshotCaches: input.hydrateStateSyncSnapshotCaches ??
             (() => Promise.resolve({ clientSnapshotCount: 0, groupSnapshotCount: 0 })),
+        findStateSyncGroupSnapshot: input.findStateSyncGroupSnapshot ?? (() => undefined),
         readGroupSnapshot: input.readGroupSnapshot ?? (async (ref) => {
             const readSnapshot = input.groupService?.readCurrentSnapshot ??
                 input.groupService?.readSnapshot;
@@ -338,6 +340,7 @@ function createGroupStateRouteService(
     const readSnapshot = groupService?.readSnapshot ?? (() => Promise.resolve(undefined));
     return {
         listSnapshots: groupService?.listSnapshots ?? (() => Promise.resolve([])),
+        listSnapshotsForPrincipal: groupService?.listSnapshotsForPrincipal ?? (() => Promise.resolve([])),
         readSnapshot,
         readCurrentSnapshot: groupService?.readCurrentSnapshot ?? readSnapshot,
         listEvents: groupService?.listEvents ?? (() => Promise.resolve([])),

@@ -95,7 +95,31 @@ export async function writeAppOutboxInserts(
     if (computed.length === 0) {
         return;
     }
-    const inserted = await transaction<readonly AppOutboxInsertedRow[]>`
+    const inserted = await insertAbsentAppOutboxRows(transaction, computed);
+    if (inserted.length !== computed.length) {
+        const missing = computed.find(({ entry: { key } }) =>
+            !inserted.some((row) =>
+                row.ri_resource_id === key.resourceId && row.ri_topic_id === key.topicId &&
+                row.fk_ext_bank_id === key.contextId
+            )
+        );
+        throw new ResourceInboxInvariantCorruptionError(
+            (missing ?? computed[0]).entry.key,
+            'App outbox insert did not create exactly one row'
+        );
+    }
+}
+
+/** Whether the row was created; a row already stored under its key is left as it is. */
+export async function writeAppOutboxInsertIfAbsent(transaction: PSqlSql, computed: AppOutboxInsert): Promise<boolean> {
+    return (await insertAbsentAppOutboxRows(transaction, [computed])).length === 1;
+}
+
+async function insertAbsentAppOutboxRows(
+    transaction: PSqlSql,
+    computed: readonly AppOutboxInsert[]
+): Promise<readonly AppOutboxInsertedRow[]> {
+    return await transaction<readonly AppOutboxInsertedRow[]>`
         insert into resource_inbox (ri_resource_id, ri_topic_id, ri_resource, ri_type_id, ri_status, fk_ext_bank_id,
                                     system_date, created_by, created_ts, expire_ts, start_ts, end_ts, next_ts,
                                     ri_attempts)
@@ -109,18 +133,6 @@ export async function writeAppOutboxInserts(
         on conflict (fk_ext_bank_id, ri_resource_id, ri_topic_id) do nothing
         returning ri_row_id, ri_resource_id, ri_topic_id, fk_ext_bank_id
     `;
-    if (inserted.length !== computed.length) {
-        const missing = computed.find(({ entry: { key } }) =>
-            !inserted.some((row) =>
-                row.ri_resource_id === key.resourceId && row.ri_topic_id === key.topicId &&
-                row.fk_ext_bank_id === key.contextId
-            )
-        );
-        throw new ResourceInboxInvariantCorruptionError(
-            (missing ?? computed[0]).entry.key,
-            'App outbox insert did not create exactly one row'
-        );
-    }
 }
 
 function toAppOutboxInsertRow(computed: AppOutboxInsert): AppOutboxInsertRow {

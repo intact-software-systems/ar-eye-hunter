@@ -1,3 +1,5 @@
+import { arePlainJsonValuesEqual, isPlainJsonValue } from './compare-plain-json.ts';
+
 export function arrayEquals<T>(left: readonly T[], right: readonly T[]): boolean {
     return (
         left.length === right.length && left.every((value, index) => Object.is(value, right[index]))
@@ -8,6 +10,9 @@ export function jsonEquals(left: unknown, right: unknown): boolean {
     // One object is its own JSON content: a shared decode compares without serializing either side.
     if (left === right && typeof left === 'object' && left !== null) {
         return true;
+    }
+    if (isPlainJsonValue(left) && isPlainJsonValue(right)) {
+        return arePlainJsonValuesEqual(left, right);
     }
     // Content ordering follows conversion so toJSON observes the established projection.
     const leftJson = stableJsonStringify(left);
@@ -44,7 +49,7 @@ function toOrderedJson(value: unknown, keyOrder: 'content' | 'persisted'): unkno
     }
 
     return Object.fromEntries(
-        Object.entries(value as Record<string, unknown>)
+        Object.entries(value)
             .sort(([left], [right]) => {
                 if (keyOrder === 'persisted') {
                     return left.localeCompare(right);

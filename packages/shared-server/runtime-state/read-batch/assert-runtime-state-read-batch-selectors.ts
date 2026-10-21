@@ -1,7 +1,7 @@
 import { type JsonWireObject, type JsonWireValue } from '../../rallar-system/protocol/json-wire-identity.ts';
-import { type RuntimeStateReadBatchSelector } from './runtime-state-read-batch.ts';
+import type { RuntimeStateReadBatchSelector, RuntimeStateStoredValueFields } from './runtime-state-read-batch.ts';
 
-export function validateRuntimeStateReadBatchSelectors(
+export function assertRuntimeStateReadBatchSelectors(
     input: JsonWireValue | readonly RuntimeStateReadBatchSelector[]
 ): readonly RuntimeStateReadBatchSelector[] {
     const selectors = requireDenseArray(
@@ -58,10 +58,61 @@ function toRuntimeStateReadBatchSelector(
             keyPrefix: requireNonEmptyString(selector.keyPrefix, `${label} key prefix`)
         };
     }
+    if (selector.kind === 'prefix-containing' || selector.kind === 'prefix-expiring-after') {
+        return toRuntimeStateReadBatchFilteredPrefixSelector(input);
+    }
     if (selector.kind === 'prefix-suffix' || selector.kind === 'suffix') {
         return toRuntimeStateReadBatchSuffixSelector(input);
     }
     throw invalidReadBatch(`${label} kind is invalid`);
+}
+
+function toRuntimeStateReadBatchFilteredPrefixSelector(
+    input: RuntimeStateReadBatchSelectorInput
+): RuntimeStateReadBatchSelector {
+    const { selector, selectorId, namespace, label } = input;
+    const keyPrefix = requireNonEmptyString(selector.keyPrefix, `${label} key prefix`);
+    if (selector.kind === 'prefix-containing') {
+        requireExactKeys(selector, ['selectorId', 'kind', 'namespace', 'keyPrefix', 'storedValueContains'], label);
+        return {
+            selectorId,
+            kind: 'prefix-containing',
+            namespace,
+            keyPrefix,
+            storedValueContains: requireStoredValueFields(
+                selector.storedValueContains,
+                `${label} stored value containment`
+            )
+        };
+    }
+    requireExactKeys(selector, ['selectorId', 'kind', 'namespace', 'keyPrefix', 'expiringAfterTimestamp'], label);
+    const expiringAfterTimestamp = selector.expiringAfterTimestamp;
+    if (typeof expiringAfterTimestamp !== 'number' || !Number.isSafeInteger(expiringAfterTimestamp)) {
+        throw invalidReadBatch(`${label} expiry floor must be a safe integer`);
+    }
+    return { selectorId, kind: 'prefix-expiring-after', namespace, keyPrefix, expiringAfterTimestamp };
+}
+
+function requireStoredValueFields(
+    input: JsonWireValue | RuntimeStateStoredValueFields | undefined,
+    label: string
+): RuntimeStateStoredValueFields {
+    const fields = requireRecord(input, label);
+    const entries = Object.entries(fields);
+    if (entries.length === 0) {
+        throw invalidReadBatch(`${label} must name a field`);
+    }
+    if (!entries.every(([, value]) => isStoredScalar(value))) {
+        throw invalidReadBatch(`${label} fields must be strings, finite numbers, booleans or null`);
+    }
+    return { ...fields } as RuntimeStateStoredValueFields;
+}
+
+function isStoredScalar(value: JsonWireValue): boolean {
+    return value === null ||
+        typeof value === 'string' ||
+        typeof value === 'boolean' ||
+        (typeof value === 'number' && Number.isFinite(value));
 }
 
 function toRuntimeStateReadBatchSuffixSelector(
@@ -120,7 +171,7 @@ function requireDenseArray(
 }
 
 function requireRecord(
-    input: JsonWireValue | RuntimeStateReadBatchSelector | undefined,
+    input: JsonWireValue | RuntimeStateReadBatchSelector | RuntimeStateStoredValueFields | undefined,
     label: string
 ): JsonWireObject {
     if (!isJsonWireObject(input)) {
@@ -155,7 +206,7 @@ function requireNonEmptyString(input: JsonWireValue | undefined, label: string):
 }
 
 function isJsonWireObject(
-    value: JsonWireValue | RuntimeStateReadBatchSelector | undefined
+    value: JsonWireValue | RuntimeStateReadBatchSelector | RuntimeStateStoredValueFields | undefined
 ): value is JsonWireObject {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

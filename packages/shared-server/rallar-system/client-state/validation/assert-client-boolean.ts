@@ -1,8 +1,8 @@
+import type { ValidationValue } from '../../protocol/validation-value.ts';
 import { rejectClientMutation } from './client-mutation-rejection.ts';
-import type { ClientValidationValue } from './client-record-validation.ts';
 
 export function assertClientBoolean(
-    value: ClientValidationValue,
+    value: ValidationValue,
     label: string
 ): asserts value is boolean {
     if (typeof value !== 'boolean') {

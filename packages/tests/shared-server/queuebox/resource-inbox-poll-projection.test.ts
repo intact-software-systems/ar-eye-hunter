@@ -67,13 +67,21 @@ describe('resource inbox poll projection', () => {
         expect(await resources.transaction(async (transaction) => await transaction.entries.readStatusAndAttempts(key))).toBeUndefined();
     });
 
-    it('reads only status and attempts in one bounded exact-key SQL statement', async () => {
+    it('answers the distinct status reads of one turn with one statement returning only ordinal, status and attempts', async () => {
         const capture = createResourceInboxQueryCapture();
         const entries = new PSqlResourceInboxEntryRepository(capture.sql, () => new Date());
-        expect(await entries.readStatusAndAttempts(key)).toBeUndefined();
+        const other = { ...key, resourceId: 'request-2' };
+        expect(await Promise.all([entries.readStatusAndAttempts(key), entries.readStatusAndAttempts(key), entries.readStatusAndAttempts(other)]))
+            .toEqual([undefined, undefined, undefined]);
         expect(capture.queries).toEqual([{
-            query: 'select ri_status, ri_attempts from resource_inbox where ri_topic_id = and ri_resource_id = and fk_ext_bank_id = and expire_ts > limit 1',
-            values: ['AppInbox', 'request-1', 'context-1', expect.any(Date)]
+            query: 'select requested.key_ordinal::int as key_ordinal, resource_inbox.ri_status, resource_inbox.ri_attempts ' +
+                'from unnest( ::text[], ::text[], ::text[] ) ' +
+                'with ordinality as requested (context_id, resource_id, topic_id, key_ordinal) ' +
+                'join resource_inbox on resource_inbox.fk_ext_bank_id = requested.context_id ' +
+                'and resource_inbox.ri_resource_id = requested.resource_id ' +
+                'and resource_inbox.ri_topic_id = requested.topic_id ' +
+                'where resource_inbox.expire_ts >',
+            values: [['context-1', 'context-1'], ['request-1', 'request-2'], ['AppInbox', 'AppInbox'], expect.any(Date)]
         }]);
     });
 

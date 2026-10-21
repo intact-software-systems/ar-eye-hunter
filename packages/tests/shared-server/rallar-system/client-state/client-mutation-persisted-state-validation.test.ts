@@ -92,6 +92,25 @@ describe('client mutation persisted-state validation', () => {
         ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
     });
 
+    it('fails closed when stored client-state text holds negative zero or an overflowed number', async () => {
+        for (
+            const [namespace, field, corruptLiteral] of [
+                ['client-state:sessions', 'connectedAtEpochMs', '-0'],
+                ['client-state:sessions', 'lastHeartbeatAtEpochMs', '1e400'],
+                ['client-state:principals', 'metadata', '{"score":1e400}']
+            ] as const
+        ) {
+            const runtime = new AggregateBarrierRepository();
+            await connect({ runtime, sessionId: 'number-session', generationId: 'number-generation', nowEpochMs: CLIENT_MUTATION_BASE_EPOCH_MS });
+            await replacePersistedField(runtime, { namespace, field, corruptLiteral });
+
+            await expect(
+                createTestClientStateRepository(runtime).readSnapshot(clientMutationPrincipalRef('alice')),
+                `${namespace} ${field}`
+            ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
+        }
+    });
+
     it('fails closed when an active persisted session has no matching instance', async () => {
         const runtime = new AggregateBarrierRepository();
         await connect({ runtime, sessionId: 'orphan-session', generationId: 'orphan-generation', nowEpochMs: CLIENT_MUTATION_BASE_EPOCH_MS });
@@ -379,6 +398,32 @@ async function removePersistedWorkspaceId(
         namespace,
         entry.key,
         JSON.stringify(persistedWithoutWorkspaceId),
+        Number.MAX_SAFE_INTEGER
+    );
+}
+
+interface PersistedFieldReplacement {
+    readonly namespace: 'client-state:principals' | 'client-state:sessions';
+    readonly field: string;
+    readonly corruptLiteral: string;
+}
+
+async function replacePersistedField(
+    runtime: AggregateBarrierRepository,
+    replacement: PersistedFieldReplacement
+): Promise<void> {
+    const [entry] = await runtime.findAllEntries(replacement.namespace);
+    if (!entry) {
+        throw new Error(`Expected a stored client-state ${replacement.namespace} entry`);
+    }
+    const fieldPattern = new RegExp(`"${replacement.field}":(\\{\\}|-?\\d+)`);
+    if (!fieldPattern.test(entry.value)) {
+        throw new Error(`Expected stored ${replacement.namespace} to hold ${replacement.field}`);
+    }
+    await runtime.upsert(
+        replacement.namespace,
+        entry.key,
+        entry.value.replace(fieldPattern, `"${replacement.field}":${replacement.corruptLiteral}`),
         Number.MAX_SAFE_INTEGER
     );
 }

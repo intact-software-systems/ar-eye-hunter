@@ -499,14 +499,9 @@ Deno.test(
             assert.equal((await repository.entries.findAnyByKey(first.key))?.status, EntityStatus.RESERVED);
             assert.equal((await repository.entries.findByKey(successor.key))?.resource, successor.resource);
 
-            await assert.rejects(
-                async () => {
-                    await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, blockedWrite));
-                },
-                (error) =>
-                    error instanceof ResourceInboxInvariantCorruptionError &&
-                    error.code === 'resource-inbox-invariant-corruption'
-            );
+            const repeated = await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, blockedWrite));
+            assert.equal(repeated, 'successor-present');
+            assert.equal((await repository.entries.findByKey(successor.key))?.resource, successor.resource);
             assert.equal((await repository.entries.findAnyByKey(first.key))?.resource, second.resource);
             assert.equal((await repository.entries.findAnyByKey(first.key))?.status, EntityStatus.RESERVED);
             assert.equal((await repository.entries.findByKey(successor.key))?.resource, successor.resource);
@@ -516,14 +511,9 @@ Deno.test(
                 third,
                 { ...successor, resource: JSON.stringify({ different: true }) }
             );
-            await assert.rejects(
-                async () => {
-                    await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, conflictingSuccessorWrite));
-                },
-                (error) =>
-                    error instanceof ResourceInboxInvariantCorruptionError &&
-                    error.code === 'resource-inbox-invariant-corruption'
-            );
+            const conflicting = await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, conflictingSuccessorWrite));
+            assert.equal(conflicting, 'successor-present');
+            assert.equal((await repository.entries.findByKey(successor.key))?.resource, successor.resource);
         });
     }
 );

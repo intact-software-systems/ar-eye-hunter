@@ -56,7 +56,12 @@ export function createRoomStateTestRuntime(
             return durable.readCausalRevision(ref);
         }
     };
-    const service = createCachedGroupStateService({ durable: counted, cache, current: counted });
+    const service = createCachedGroupStateService({
+        durable: counted,
+        cache,
+        current: counted,
+        principalGroups: repository
+    });
     return { runtimeRepository, repository, groupStateService: service, cache, manager, reads };
 }
 

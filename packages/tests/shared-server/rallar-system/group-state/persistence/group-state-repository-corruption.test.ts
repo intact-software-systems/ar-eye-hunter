@@ -229,6 +229,31 @@ describe('GroupStateRepository persistence', () => {
         }
     });
 
+    it('rejects stored group text holding negative zero or an overflowed number', async () => {
+        const ref = {
+            applicationId: 'stored-number-app',
+            workspaceId: 'stored-number-workspace',
+            groupId: 'stored-number-group'
+        };
+        const key = groupStateGroupStorageKey(ref);
+        const storedText = JSON.stringify({ ...createCorruptionMutationRead().group!.value, ...ref });
+        for (
+            const corruptText of [
+                storedText.replace('"presenceVersion":0', '"presenceVersion":-0'),
+                storedText.replace('"activeMemberCount":1', '"activeMemberCount":1e400'),
+                storedText.replace('"metadata":{}', '"metadata":{"score":1e400}')
+            ]
+        ) {
+            expect(corruptText).not.toBe(storedText);
+            const runtime = new FakeRuntimeStateRepository();
+            await runtime.upsert('group-state:groups', key, corruptText, Number.MAX_SAFE_INTEGER);
+            await expect(createTestGroupStateRepository(runtime).findGroup(ref)).rejects.toMatchObject({
+                code: 'group-state-repository-invariant-corruption',
+                storageKey: key
+            });
+        }
+    });
+
     it('requires authoritative identity on compact idempotency reads', async () => {
         expectTypeOf<GroupMutationIdempotencyRecord>()
             .toHaveProperty('aggregateRef')
@@ -271,6 +296,48 @@ describe('GroupStateRepository persistence', () => {
                 : repository.findIdempotentGroupMutationReceiptEntry(ref, requestId);
             await expect(result).rejects.toMatchObject({
                 code: 'group-state-repository-invariant-corruption'
+            });
+        }
+    });
+
+    it('rejects stored idempotency text holding negative zero or an overflowed number', async () => {
+        const command = {
+            ...createMutationCommand(),
+            commandId: 'stored-number-receipt-command',
+            requestId: 'stored-number-receipt-command'
+        };
+        const ref = command.aggregateRef;
+        const computed = computeGroupMutation({
+            command,
+            read: createCorruptionMutationRead(),
+            facts: createMutationFacts()
+        });
+        if (computed.outcome !== 'write' || computed.idempotency === null) {
+            throw new Error('Expected an idempotent group write candidate');
+        }
+        const key = groupStateIdempotencyStorageKey(ref, command.requestId);
+        const storedText = JSON.stringify(computed.idempotency);
+        const readStored = async (text: string) => {
+            const runtime = new FakeRuntimeStateRepository();
+            await runtime.upsert('group-state:idempotent', key, text, Number.MAX_SAFE_INTEGER);
+            return await createTestGroupStateRepository(runtime).findIdempotentGroupMutationReceipt(
+                ref,
+                command.requestId
+            );
+        };
+
+        await expect(readStored(storedText)).resolves.toEqual(computed.idempotency);
+        for (
+            const corruptText of [
+                storedText.replace(/"presenceRevision":\d+/, '"presenceRevision":-0'),
+                storedText.replace(/"attemptCount":\d+/, '"attemptCount":-0'),
+                storedText.replace(/"snapshotVersion":\d+/, '"snapshotVersion":1e400')
+            ]
+        ) {
+            expect(corruptText).not.toBe(storedText);
+            await expect(readStored(corruptText)).rejects.toMatchObject({
+                code: 'group-state-repository-invariant-corruption',
+                storageKey: key
             });
         }
     });

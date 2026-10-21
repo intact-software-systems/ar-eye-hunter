@@ -4,7 +4,7 @@ import { VersionProbedReadThroughCache } from '@shared/cache/store-backed/versio
 import type { RuntimeStateReadBatchVersionReader } from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
 import type { GroupStateSnapshotRepository } from '../persistence/group-state-snapshot-repository.ts';
-import { readGroupStateAuthorityVersions } from '../persistence/read-group-state-authority.ts';
+import { readGroupStateSnapshotVersions } from '../persistence/read-group-state-authority.ts';
 
 export interface GroupStateCurrentSnapshotCacheDependencies {
     readonly repository: Pick<GroupStateSnapshotRepository, 'readVersionedSnapshot'>;
@@ -26,7 +26,7 @@ export class GroupStateCurrentSnapshotCache {
     public constructor(dependencies: GroupStateCurrentSnapshotCacheDependencies) {
         const { repository, versionReader, nowEpochMs } = dependencies;
         this.cache = new VersionProbedReadThroughCache({
-            readVersions: async (refs) => await readGroupStateAuthorityVersions(versionReader, refs),
+            readVersions: async (refs) => await readGroupStateSnapshotVersions(versionReader, refs, nowEpochMs()),
             readValue: async (ref) => {
                 const observedAtEpochMs = nowEpochMs();
                 const read = await repository.readVersionedSnapshot(versionReader, ref, observedAtEpochMs);

@@ -55,6 +55,7 @@ import {
     type ALOutboundPendingAckRef
 } from './al-outbound-admission-keys.ts';
 import type {
+    ALOutboundDequeueAdmissionFacts,
     ALOutboundMessageReadDto,
     ALOutboundOutgoingReadInput,
     ALOutboundPlanner,
@@ -250,6 +251,20 @@ export class ALOutboundAdmissionReads<TPrepared> {
         const stored = await this.readStoredMessage(session, msgId);
         this.assertSentMessageScope(msgId, stored);
         return stored !== undefined;
+    }
+
+    /** A dequeued row's sent admission and its row's canonical identity, read together. */
+    async readDequeueAdmissionFacts(
+        session: ALAdmissionReadSession,
+        message: ALMessage,
+        entry: ResourceEntry
+    ): Promise<ALOutboundDequeueAdmissionFacts> {
+        const [stored, identity] = await Promise.all([
+            this.readStoredMessage(session, message.id.msgId),
+            this.readQueueItem(session, toALOutboundIdentityKey(entry.key))
+        ]);
+        this.assertSentMessageScope(message.id.msgId, stored);
+        return { sentAdmission: stored !== undefined, canonicalIdentity: identity !== undefined };
     }
 
     async readCapturedPolicy(input: ReadALOutboundCapturedPolicyInput): Promise<ALOutboundCapturedPolicy> {

@@ -3,7 +3,8 @@ import {
     describe,
     expect,
     it,
-    onTestFinished
+    onTestFinished,
+    vi
 } from 'vitest';
 
 import {
@@ -21,6 +22,7 @@ import {
     toALOutboundMessageReference
 } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { AL_OUTBOUND_WORK_PAGE_SIZE } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -78,7 +80,7 @@ describe('WS first dequeue authority', () => {
             const canonical = admitted.entries[0]!;
             const newer: ALMessage = { ...older, id: { ...older.id, msgId: `${older.id.msgId}-newer` }, ordering: { seq: 2 } };
             expect((await fixture.service.enqueueOutboxIfAbsent(newer, { admittedAudience: [], recipientScope: SCOPE })).verdict.kind).toBe('admitted');
-            expect(await fixture.stores.admissionStore.isMessageSuperseded(older)).toBe(true);
+            expect(await fixture.stores.admissionStore.readMessageSupersedence([older])).toEqual([{ status: 'fulfilled', value: true }]);
             await fixture.engine.executeOnce();
             await expect.poll(async () => (await fixture.stores.workQueue.getItem(canonical.key))?.status).toBe(EntityStatus.COMPLETED);
             const completed = await fixture.stores.workQueue.getItem(canonical.key);
@@ -107,6 +109,33 @@ describe('WS first dequeue authority', () => {
             expect(fixture.native.sent).toEqual([]);
         }
     );
+
+    it('reads the authority and supersedence of a full dequeued group in two rounds', async () => {
+        const rounds = createReadRounds();
+        const stores = recordGroupReadPhase(
+            createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage }),
+            rounds
+        );
+        const fixture = createFixture(async () => {
+            await rounds.enter();
+            return { admittedAudience: ['peer'], recipientScope: SCOPE };
+        }, stores);
+        const entries = Array.from(
+            { length: AL_OUTBOUND_WORK_PAGE_SIZE },
+            (_, index) => QueueBoxUtilities.toResourceEntryFromMsg(createIndexedMessage(index), EnqueuedType.WS_OUTBOX, Temporal.Now.instant())
+        );
+        for (const entry of entries) {
+            await stores.workQueue.enqueue(entry);
+        }
+
+        await fixture.engine.executeOnce();
+
+        await expect.poll(() => fixture.native.sent.length).toBe(AL_OUTBOUND_WORK_PAGE_SIZE);
+        // Two rows at a time, each reading its admission, its proof and its supersedence in turn, took 24 rounds.
+        // The group reads its admission facts and supersedence in one round, and its proofs in the next.
+        expect(rounds.reads()).toBeGreaterThanOrEqual(2 * AL_OUTBOUND_WORK_PAGE_SIZE);
+        expect(rounds.rounds()).toBe(2);
+    });
 
     it('captures verified scoped unicast at the real dequeue boundary', async () => {
         const fixture = createFixture(async () => ({ admittedAudience: ['peer'], recipientScope: SCOPE }));
@@ -158,6 +187,11 @@ describe('WS first dequeue authority', () => {
         expect(fixture.native.sent).toEqual([]);
     });
 });
+
+function createIndexedMessage(index: number): ALMessage {
+    const route = { topicId: 'app.message', resourceId: `resource-${index}`, contextId: 'context' };
+    return newALUnicastMessage('server', route, 'peer', 'message.v1', {}, { ttlMs: 30_000, qos: { durability: { algo: 'local-outbox' } } });
+}
 
 function createMessage(mode: 'unicast' | 'broadcast'): ALMessage {
     const route = { topicId: 'app.message', resourceId: 'resource', contextId: 'context' };
@@ -231,4 +265,77 @@ async function writeCompetingAdmission(
     if (!computed.bundle || await stores.admissionStore.commitBundle(computed.bundle) !== 'committed') {
         throw new Error('Competing admission did not commit');
     }
+}
+
+interface ReadRounds {
+    enter(): Promise<void>;
+    reads(): number;
+    rounds(): number;
+}
+
+/**
+ * Holds every read until the next macrotask, as a batching backend answers one round's reads together: a read
+ * issued only after an earlier read answered starts the next round.
+ */
+function createReadRounds(): ReadRounds {
+    let reads = 0;
+    let rounds = 0;
+    let open: Promise<void> | undefined;
+    return {
+        enter: () => {
+            reads += 1;
+            if (open === undefined) {
+                rounds += 1;
+                open = new Promise((resolve) => {
+                    setTimeout(() => {
+                        open = undefined;
+                        resolve();
+                    }, 0);
+                });
+            }
+            return open;
+        },
+        reads: () => reads,
+        rounds: () => rounds
+    };
+}
+
+/** Holds every admission-store read of the dequeue read phase in its round, until the first commit. */
+function recordGroupReadPhase(
+    stores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>,
+    rounds: ReadRounds
+): ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage> {
+    const store = stores.admissionStore;
+    let committing = false;
+    const hold = async (): Promise<void> => {
+        if (!committing) {
+            await rounds.enter();
+        }
+    };
+    const readDequeueAdmissionFacts = store.readDequeueAdmissionFacts.bind(store);
+    const readMessageSupersedence = store.readMessageSupersedence.bind(store);
+    const readCapturedPolicy = store.readCapturedPolicy.bind(store);
+    const commitBundle = store.commitBundle.bind(store);
+    const commitBundles = store.commitBundles.bind(store);
+    vi.spyOn(store, 'readDequeueAdmissionFacts').mockImplementation(async (message, entry) => {
+        await hold();
+        return await readDequeueAdmissionFacts(message, entry);
+    });
+    vi.spyOn(store, 'readMessageSupersedence').mockImplementation(async (messages) => {
+        await hold();
+        return await readMessageSupersedence(messages);
+    });
+    vi.spyOn(store, 'readCapturedPolicy').mockImplementation(async (message, entry) => {
+        await hold();
+        return await readCapturedPolicy(message, entry);
+    });
+    vi.spyOn(store, 'commitBundle').mockImplementation(async (bundle, observation) => {
+        committing = true;
+        return await commitBundle(bundle, observation);
+    });
+    vi.spyOn(store, 'commitBundles').mockImplementation(async (bundles) => {
+        committing = true;
+        return await commitBundles(bundles);
+    });
+    return stores;
 }

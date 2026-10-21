@@ -183,6 +183,7 @@ export class ClientStateInboxHandler {
                 );
             case 'completed': {
                 const result = await this.writeAuthorisedConnectMutation(context, computed);
+                this.dependencies.wakeQueue?.();
                 await this.observeCommittedSnapshots(computed.committedSnapshots);
                 return result;
             }

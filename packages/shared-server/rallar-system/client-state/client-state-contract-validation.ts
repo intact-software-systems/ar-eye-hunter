@@ -7,6 +7,8 @@ import type {
 } from '@shared/api/client-types.ts';
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
 
+import type { RuntimeStateEntry } from '../../runtime-state/runtime-state-repository.ts';
+import type { ValidationRecord } from '../protocol/validation-value.ts';
 import {
     CLIENT_EVENT_TYPES,
     CLIENT_INSTANCE_STATUSES,
@@ -22,8 +24,7 @@ import { rejectClientMutation } from './validation/client-mutation-rejection.ts'
 import {
     decodeClientValidationRecord,
     requireAllowedKeys,
-    requireExactKeys,
-    type ClientValidationRecord
+    requireExactKeys
 } from './validation/client-record-validation.ts';
 import {
     requireNonEmptyString,
@@ -100,7 +101,7 @@ export function validateClientPrincipal(
 }
 
 function validateClientPrincipalLifecycle(
-    principal: ClientValidationRecord,
+    principal: ValidationRecord,
     label: string
 ): void {
     if (
@@ -206,7 +207,7 @@ interface ClientSessionTimestamps {
 }
 
 function validateClientSessionTimestamps(
-    session: ClientValidationRecord,
+    session: ValidationRecord,
     label: string
 ): ClientSessionTimestamps {
     const authenticatedAtEpochMs = session.authenticatedAtEpochMs;
@@ -230,7 +231,7 @@ function validateClientSessionTimestamps(
 }
 
 function validateClientSessionLifecycle(
-    session: ClientValidationRecord,
+    session: ValidationRecord,
     timestamps: ClientSessionTimestamps,
     label: string
 ): void {
@@ -263,7 +264,10 @@ function validateClientSessionLifecycle(
     }
 }
 
-export function validateClientRuntimeStateEntry(value: unknown, label: string): void {
+export function validateClientRuntimeStateEntry(
+    value: unknown,
+    label: string
+): asserts value is RuntimeStateEntry {
     const entry = decodeClientValidationRecord(value, label);
     requireExactKeys(
         entry,

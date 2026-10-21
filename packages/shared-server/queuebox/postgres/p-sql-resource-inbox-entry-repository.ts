@@ -1,12 +1,14 @@
 import { hasSameResourceEntryValue } from '@shared/queuebox/resource-entry-observations.ts';
+import { toResourceInboxCompletionKey } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
 import {
     EntityStatus,
     type Key,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
+import { TurnBatchedReads } from '@shared/resilience/turn-batched-reads.ts';
 
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
-import { PSqlResourceInboxEntryReader } from './p-sql-resource-inbox-entry-reader.ts';
+import { PSqlResourceInboxEntryReader, type ResourceInboxStatusRead } from './p-sql-resource-inbox-entry-reader.ts';
 import {
     lockObservedResourceInboxEntry,
     replaceObservedResourceInboxEntry,
@@ -41,12 +43,18 @@ export class ResourceInboxInvariantCorruptionError extends Error {
 export class PSqlResourceInboxEntryRepository {
     private readonly sql: PSqlSql;
     private readonly reader: PSqlResourceInboxEntryReader;
+    private readonly statusReads: TurnBatchedReads<Key, ResourceInboxStatusRead | undefined>;
     private readonly now: () => Date;
 
     constructor(sql: PSqlSql, now: () => Date) {
         this.sql = sql;
         this.now = now;
-        this.reader = new PSqlResourceInboxEntryReader(sql, now);
+        const reader = new PSqlResourceInboxEntryReader(sql, now);
+        this.reader = reader;
+        this.statusReads = new TurnBatchedReads<Key, ResourceInboxStatusRead | undefined>({
+            toKeyId: toResourceInboxCompletionKey,
+            readBatch: async (keys) => await reader.readStatusesAndAttempts(keys)
+        });
     }
 
     async write(entry: ResourceEntry): Promise<ResourceEntry> {
@@ -291,8 +299,16 @@ export class PSqlResourceInboxEntryRepository {
         return await this.reader.isAnyWithStatuses(statuses);
     }
 
+    /**
+     * Status reads issued in one turn, by any caller sharing this repository, are answered by one statement; a corrupt
+     * row fails only its own read, while a failed statement fails every read of its turn.
+     */
     async readStatusAndAttempts(key: Key): Promise<ResourceInboxStatusAndAttempts | undefined> {
-        return await this.reader.readStatusAndAttempts(key);
+        const read = await this.statusReads.read(key);
+        if (read?.left !== undefined) {
+            throw read.left;
+        }
+        return read?.right;
     }
 
     async upsert(entry: ResourceEntry): Promise<ResourceEntry> {
