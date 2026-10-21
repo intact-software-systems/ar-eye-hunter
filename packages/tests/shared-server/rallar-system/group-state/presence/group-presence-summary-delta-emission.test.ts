@@ -25,7 +25,7 @@ import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
-import { createService, readSummaryWork } from './group-presence-test-runtime.ts';
+import { createService, readSummaryWork, toSummaryExpansion } from './group-presence-test-runtime.ts';
 
 const BASE_EPOCH_MS = Date.now();
 
@@ -77,7 +77,7 @@ describe('group presence summary delta emission', () => {
             const scenario = await createConnectedScenario('emit-tampered-envelope');
             const { work, command, read, computed } = await computeSummaryWork(scenario);
 
-            expect(work.validate(command, read, computed)).toEqual([]);
+            expect(work.validate(toSummaryExpansion(command, read), computed)).toEqual([]);
 
             const tampered: GroupPresenceSummaryComputedWork = {
                 ...computed,
@@ -88,7 +88,7 @@ describe('group presence summary delta emission', () => {
                     ...computed.downstreamOutboxWrites.slice(1)
                 ]
             };
-            expect(work.validate(command, read, tampered)).not.toEqual([]);
+            expect(work.validate(toSummaryExpansion(command, read), tampered)).not.toEqual([]);
         }
     );
 
@@ -101,7 +101,7 @@ describe('group presence summary delta emission', () => {
             throw new Error('Expected computed downstream outbox write');
         }
 
-        const issues = work.validate(command, read, {
+        const issues = work.validate(toSummaryExpansion(command, read), {
             ...computed,
             downstreamOutboxWrites: [{
                 ...outboxWrite,
@@ -185,8 +185,8 @@ async function computeSummaryWork(scenario: ConnectedScenario): Promise<Computed
         event
     };
     const read = await readSummaryWork(work, command, BASE_EPOCH_MS + 1_000);
-    const computed = work.compute(command, read);
-    expect(work.validate(command, read, computed)).toEqual([]);
+    const computed = work.compute(toSummaryExpansion(command, read));
+    expect(work.validate(toSummaryExpansion(command, read), computed)).toEqual([]);
     return { work, command, read, computed };
 }
 

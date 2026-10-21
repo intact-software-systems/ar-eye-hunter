@@ -1,6 +1,7 @@
 import type { JsonWireObject, JsonWireValue } from '../../rallar-system/protocol/json-wire-identity.ts';
 import type { RuntimeStateEntry } from '../runtime-state-repository.ts';
 import { assertRuntimeStateReadBatchResult } from './assert-runtime-state-read-batch-result.ts';
+import { assertRuntimeStateReadBatchSelectors } from './assert-runtime-state-read-batch-selectors.ts';
 import { compareRuntimeStateKeys } from './compare-runtime-state-keys.ts';
 import { isRuntimeStateReadBatchKeySelected } from './is-runtime-state-read-batch-key-selected.ts';
 import type {
@@ -8,7 +9,6 @@ import type {
     RuntimeStateReadBatchSelector,
     RuntimeStateStoredValueFields
 } from './runtime-state-read-batch.ts';
-import { validateRuntimeStateReadBatchSelectors } from './validate-runtime-state-read-batch-selectors.ts';
 
 export interface RuntimeStateNamespacedEntry {
     readonly namespace: string;
@@ -20,7 +20,7 @@ export function selectRuntimeStateReadBatch(
     entries: readonly RuntimeStateNamespacedEntry[],
     input: readonly RuntimeStateReadBatchSelector[]
 ): readonly RuntimeStateReadBatchSelection[] {
-    const selectors = validateRuntimeStateReadBatchSelectors(input);
+    const selectors = assertRuntimeStateReadBatchSelectors(input);
     const snapshot = entries.map(({ namespace, entry }) => ({
         namespace,
         entry: { ...entry }

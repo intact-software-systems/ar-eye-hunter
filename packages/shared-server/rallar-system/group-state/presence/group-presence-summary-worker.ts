@@ -58,9 +58,9 @@ import {
 import {
     computeGroupPresenceSummaryPage,
     toGroupPresenceSummaryWorkReads,
-    type GroupPresenceSummaryPage,
     type GroupPresenceSummaryWorkItem
 } from './compute-group-presence-summary-page.ts';
+import type { GroupPresenceSummaryRead } from './compute-group-presence-summary.ts';
 import { decodeCanonicalGroupPresenceSummaryWork } from './decode-canonical-group-presence-summary-work.ts';
 import {
     computeGroupDeltaProvenance,
@@ -78,7 +78,11 @@ import {
     computeGroupPresenceSummaryWork,
     toTopologyReplanEnqueueFacts,
     validateGroupPresenceSummaryComputedWork,
+    validateGroupPresenceSummaryState,
+    type ComputeGroupPresenceSummaryWorkOptions,
     type GroupPresenceSummaryComputedWork,
+    type GroupPresenceSummaryExpansionInput,
+    type GroupPresenceSummaryState,
     type GroupPresenceSummaryWorkRead
 } from './group-presence-summary-effects.ts';
 import {
@@ -144,7 +148,7 @@ interface GroupPresenceSummaryPageOutcome {
 }
 
 /**
- * Another server summarised the group between this attempt's read and its write (D304). The next attempt reads the
+ * Another server summarised the group between this attempt's read and its write. The next attempt reads the
  * fresh rows and recomputes, so it cannot repeat the lost write: its retry is capped at this, not the queue's backoff,
  * which reaches 1–8 s from the sixth attempt. The early backoff stays shorter, and the attempt budget still bounds it.
  */
@@ -170,15 +174,22 @@ const REPLAN_PENDING: GroupPresenceSummaryWriteConflict = {
 export class GroupPresenceSummaryWork {
     private readonly now: () => number;
     private readonly options: GroupPresenceSummaryWorkOptions;
+    private readonly computeOptions: ComputeGroupPresenceSummaryWorkOptions;
 
     public constructor(options: GroupPresenceSummaryWorkOptions) {
         this.options = options;
         this.now = options.now;
+        this.computeOptions = {
+            serviceId: options.serviceId,
+            recomputeDebounceMs: options.recomputeDebounceMs,
+            recomputeMaxWaitMs: options.recomputeMaxWaitMs,
+            minimumLayoutAgeMs: GROUP_MINIMUM_LAYOUT_AGE_MS
+        };
     }
 
     /**
      * One read of the group serves every item of the same group; the items differ only in their
-     * reservation. Rows that contradict each other come back as a typed inconsistency (D295).
+     * reservation. Rows that contradict each other come back as a typed inconsistency.
      */
     public async read(
         items: readonly GroupPresenceSummaryWorkItem[],
@@ -186,11 +197,39 @@ export class GroupPresenceSummaryWork {
     ): Promise<Either<GroupPresenceSummaryReadInconsistency, readonly GroupPresenceSummaryWorkRead[]>> {
         const first = requireSameGroup(items);
         const ref = first.work.aggregateRef;
-        const repository = new GroupStateRepositoryReads(this.options.runtimeRepository);
         const [stored, coalescedTopologyEntry] = await Promise.all([
-            repository.readPresenceSummaryEntries(ref),
+            this.readSummaryPresence(ref),
             this.readCoalescedTopologyEntry(ref)
         ]);
+        return await stored.fold<
+            Promise<Either<GroupPresenceSummaryReadInconsistency, readonly GroupPresenceSummaryWorkRead[]>>
+        >(
+            async (inconsistency) => Either.ofLeft(inconsistency),
+            async (presence) =>
+                Either.ofRight(toGroupPresenceSummaryWorkReads(items, {
+                    nowEpochMs,
+                    presence,
+                    coalescedTopologyEntry,
+                    topologyReplanPolicyFacts: await this.readTopologyReplanPolicyFacts({
+                        work: first.work,
+                        group: presence.group.value,
+                        coalescedTopologyEntry,
+                        nowEpochMs
+                    })
+                }))
+        );
+    }
+
+    /**
+     * The group's summary rows, read as one consistent set; rows changed mid-read or contradicting each other are a
+     * typed inconsistency.
+     */
+    private async readSummaryPresence(
+        ref: GroupRef
+    ): Promise<Either<GroupPresenceSummaryReadInconsistency, GroupPresenceSummaryRead>> {
+        const stored = await new GroupStateRepositoryReads(this.options.runtimeRepository).readPresenceSummaryEntries(
+            ref
+        );
         if (stored.status === 'concurrent-change') {
             return Either.ofLeft({
                 code: 'group-presence-summary-concurrent-change',
@@ -209,21 +248,7 @@ export class GroupPresenceSummaryWork {
         };
         assertGroupPresenceSummaryRead(ref, presence);
         const inconsistency = validateGroupPresenceSummaryReadConsistency(presence)[0];
-        if (inconsistency !== undefined) {
-            return Either.ofLeft(inconsistency);
-        }
-        const topologyReplanPolicyFacts = await this.readTopologyReplanPolicyFacts({
-            work: first.work,
-            group: presence.group.value,
-            coalescedTopologyEntry,
-            nowEpochMs
-        });
-        return Either.ofRight(toGroupPresenceSummaryWorkReads(items, {
-            nowEpochMs,
-            presence,
-            coalescedTopologyEntry,
-            topologyReplanPolicyFacts
-        }));
+        return inconsistency === undefined ? Either.ofRight(presence) : Either.ofLeft(inconsistency);
     }
 
     private async readTopologyReplanPolicyFacts(
@@ -255,34 +280,15 @@ export class GroupPresenceSummaryWork {
         }
     }
 
-    public compute(
-        work: GroupPresenceSummaryWorkData,
-        read: GroupPresenceSummaryWorkRead
-    ): GroupPresenceSummaryComputedWork {
-        return computeGroupPresenceSummaryWork(work, read, {
-            serviceId: this.options.serviceId,
-            recomputeDebounceMs: this.options.recomputeDebounceMs,
-            recomputeMaxWaitMs: this.options.recomputeMaxWaitMs,
-            minimumLayoutAgeMs: GROUP_MINIMUM_LAYOUT_AGE_MS
-        });
+    public compute(expansion: GroupPresenceSummaryExpansionInput): GroupPresenceSummaryComputedWork {
+        return computeGroupPresenceSummaryWork(expansion, this.computeOptions);
     }
 
     public validate(
-        work: GroupPresenceSummaryWorkData,
-        read: GroupPresenceSummaryWorkRead,
+        expansion: GroupPresenceSummaryExpansionInput,
         computed: GroupPresenceSummaryComputedWork
     ): ReturnType<typeof validateGroupPresenceSummaryComputedWork> {
-        return validateGroupPresenceSummaryComputedWork({
-            work,
-            read,
-            computed,
-            options: {
-                serviceId: this.options.serviceId,
-                recomputeDebounceMs: this.options.recomputeDebounceMs,
-                recomputeMaxWaitMs: this.options.recomputeMaxWaitMs,
-                minimumLayoutAgeMs: GROUP_MINIMUM_LAYOUT_AGE_MS
-            }
-        });
+        return validateGroupPresenceSummaryComputedWork({ expansion, computed, options: this.computeOptions });
     }
 
     /** The observed-successor guard first, then the summary's compare-and-set, the deltas and the replan. */
@@ -327,15 +333,8 @@ export class GroupPresenceSummaryWork {
             throw new TypeError('Presence-summary queue processing requires a database');
         }
         const primary = decodeCanonicalGroupPresenceSummaryWork(message, entry);
-        const claimStartedAtMs = nowMs();
         const outbox = this.options.outboxQueueReader.outbox;
-        const claimed = await claimPendingGroupPresenceSummaryWork(outbox, entry);
-        this.recordPhase({
-            work: primary,
-            operation: 'claim',
-            details: { coalescedWorkCount: claimed.length + 1 },
-            startedAtMs: claimStartedAtMs
-        });
+        const claimed = await this.claimSiblings(primary, entry);
         try {
             const page = await this.expandItems(
                 database,
@@ -363,6 +362,22 @@ export class GroupPresenceSummaryWork {
         }
     }
 
+    /** The pending summary rows of the reserved row's group that this claim takes with it. */
+    private async claimSiblings(
+        primary: GroupPresenceSummaryWorkData,
+        entry: ResourceEntry
+    ): Promise<readonly ResourceEntry[]> {
+        const claimStartedAtMs = nowMs();
+        const claimed = await claimPendingGroupPresenceSummaryWork(this.options.outboxQueueReader.outbox, entry);
+        this.recordPhase({
+            work: primary,
+            operation: 'claim',
+            details: { coalescedWorkCount: claimed.length + 1 },
+            startedAtMs: claimStartedAtMs
+        });
+        return claimed;
+    }
+
     /** Reads the group once for every candidate, then expands and writes the page of them one AL payload can carry. */
     private async expandItems(
         database: PSqlSql,
@@ -386,26 +401,30 @@ export class GroupPresenceSummaryWork {
             (value) => value
         );
         const computeStartedAtMs = nowMs();
-        const page = this.computePage(candidates, candidateReads[0]!);
-        const reads = toGroupPresenceSummaryWorkReads(page.items, candidateReads[0]!);
-        const expansions = page.items.map((item, index) => this.expand(item.work, reads[index]!));
+        const candidateRead = candidateReads[0]!;
+        const state = this.expandState(primary, candidateRead);
+        const page = candidates.length === 1
+            ? { items: candidates, deferred: [] }
+            : computeGroupPresenceSummaryPage({ candidates, read: candidateRead, state });
+        const reads = toGroupPresenceSummaryWorkReads(page.items, candidateRead);
+        const expansions = page.items.map((item, index) =>
+            this.expand({ work: item.work, read: reads[index]!, state })
+        );
         const outcome = await this.writeExpansions(database, { primary, expansions, computeStartedAtMs });
         return { outcome, deferred: page.deferred };
     }
 
-    /** The whole claim when it fits one page; otherwise the reserved row and the earliest siblings that do. */
-    private computePage(
-        candidates: readonly GroupPresenceSummaryWorkItem[],
+    /** The summary and snapshot of the group read, computed and checked once for every expansion of its page. */
+    private expandState(
+        work: GroupPresenceSummaryWorkData,
         read: GroupPresenceSummaryWorkRead
-    ): GroupPresenceSummaryPage {
-        if (candidates.length === 1) {
-            return { items: candidates, deferred: [] };
+    ): GroupPresenceSummaryState {
+        const state = computeGroupPresenceSummaryState(work, read);
+        const issue = validateGroupPresenceSummaryState(work, read, state)[0];
+        if (issue !== undefined) {
+            throw issue.cause;
         }
-        return computeGroupPresenceSummaryPage({
-            candidates,
-            read,
-            state: computeGroupPresenceSummaryState(candidates[0]!.work, read)
-        });
+        return state;
     }
 
     private async writeExpansions(
@@ -427,20 +446,10 @@ export class GroupPresenceSummaryWork {
             details: effectDetails,
             startedAtMs: computeStartedAtMs
         });
-        const replanWrite = resolveGroupPresenceSummaryReplanWrite(
-            coalesced,
-            await this.readObservedReplanSuccessor(coalesced)
-        );
-        if (replanWrite.left?.queued === 'different-request') {
-            throw new ResourceInboxInvariantCorruptionError(
-                replanWrite.left.key,
-                'Stored replan successor is not the request its key names'
-            );
+        const pageWrite = await this.resolvePageWrite(coalesced);
+        if ('code' in pageWrite) {
+            return pageWrite;
         }
-        if (replanWrite.left !== undefined) {
-            return REPLAN_PENDING;
-        }
-        const pageWrite = { ...coalesced, replanWrite: replanWrite.right! };
         const proofs = expansions.flatMap((expansion) => computeGroupDeltaProvenance(expansion.computed));
         const outcome = await timeRallarAsync(
             this.options.timing,
@@ -456,6 +465,31 @@ export class GroupPresenceSummaryWork {
             this.finishWrittenExpansion(expansions, coalesced);
         }
         return outcome;
+    }
+
+    /**
+     * The page's writes with its replan resolved against the successor stored before the transaction: a successor
+     * naming another request is corruption, and one the replan must wait behind answers a pending replan.
+     */
+    private async resolvePageWrite(
+        coalesced: GroupPresenceSummaryCoalescedWrite
+    ): Promise<GroupPresenceSummaryWriteConflict | GroupPresenceSummaryPageWrite> {
+        const replanWrite = resolveGroupPresenceSummaryReplanWrite(
+            coalesced,
+            await this.readObservedReplanSuccessor(coalesced)
+        );
+        return replanWrite.fold<GroupPresenceSummaryWriteConflict | GroupPresenceSummaryPageWrite>(
+            (issue) => {
+                if (issue.queued === 'different-request') {
+                    throw new ResourceInboxInvariantCorruptionError(
+                        issue.key,
+                        'Stored replan successor is not the request its key names'
+                    );
+                }
+                return REPLAN_PENDING;
+            },
+            (write) => ({ ...coalesced, replanWrite: write })
+        );
     }
 
     /** After the transaction returns written, observe each output before waking its queue. */
@@ -500,16 +534,13 @@ export class GroupPresenceSummaryWork {
         }
     }
 
-    private expand(
-        work: GroupPresenceSummaryWorkData,
-        read: GroupPresenceSummaryWorkRead
-    ): GroupPresenceSummaryExpansion {
-        const computed = this.compute(work, read);
-        const issue = this.validate(work, read, computed)[0];
+    private expand(expansion: GroupPresenceSummaryExpansionInput): GroupPresenceSummaryExpansion {
+        const computed = this.compute(expansion);
+        const issue = this.validate(expansion, computed)[0];
         if (issue !== undefined) {
             throw issue.cause;
         }
-        return { work, read, computed };
+        return { work: expansion.work, read: expansion.read, computed };
     }
 
     private validateCoalesced(

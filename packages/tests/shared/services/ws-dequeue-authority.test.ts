@@ -312,16 +312,11 @@ function recordGroupReadPhase(
             await rounds.enter();
         }
     };
-    const hasSentMessageAdmission = store.hasSentMessageAdmission.bind(store);
     const readDequeueAdmissionFacts = store.readDequeueAdmissionFacts.bind(store);
     const readMessageSupersedence = store.readMessageSupersedence.bind(store);
     const readCapturedPolicy = store.readCapturedPolicy.bind(store);
     const commitBundle = store.commitBundle.bind(store);
     const commitBundles = store.commitBundles.bind(store);
-    vi.spyOn(store, 'hasSentMessageAdmission').mockImplementation(async (msgId) => {
-        await hold();
-        return await hasSentMessageAdmission(msgId);
-    });
     vi.spyOn(store, 'readDequeueAdmissionFacts').mockImplementation(async (message, entry) => {
         await hold();
         return await readDequeueAdmissionFacts(message, entry);

@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import {
@@ -11,6 +11,7 @@ import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/p
 import { toDomain, type ResourceInboxRow } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import { GroupStateRepositoryReads } from '@shared-server/rallar-system/group-state/persistence/group-state-repository-reads.ts';
 import * as GroupNamespaces from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
+import { computeGroupPresenceSummary } from '@shared-server/rallar-system/group-state/presence/compute-group-presence-summary.ts';
 import {
     GROUP_PRESENCE_SUMMARY_CONFLICT_RETRY_DELAY_MS,
     GroupPresenceSummaryWork
@@ -48,6 +49,11 @@ import { createPSqlAdmissionTestStorage } from '../../../al-runtime/postgres/cre
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 import { createService } from './group-presence-test-runtime.ts';
+
+vi.mock('@shared-server/rallar-system/group-state/presence/compute-group-presence-summary.ts', async (importOriginal) => {
+    const original = await importOriginal<typeof import('@shared-server/rallar-system/group-state/presence/compute-group-presence-summary.ts')>();
+    return { ...original, computeGroupPresenceSummary: vi.fn(original.computeGroupPresenceSummary) };
+});
 
 /** Connects of one group, at the widest identifiers, whose merged first delta outgrows one AL payload (about 52 fit). */
 const LARGE_PAGE_CONNECTS = 64;
@@ -129,6 +135,18 @@ describe('group presence summary coalescing', () => {
             activeSessionCount: referenceSummary.activeSessionCount
         });
         expect(await fixture.readCommittedDeltas(reference.ref)).toHaveLength(10);
+    });
+
+    it('computes a page\'s summary once and checks it once, however many rows the page carries', async () => {
+        const fixture = await createCoalescingFixture();
+        const seeded = await fixture.seedConnectedGroup('one-summary-room', 10);
+        const pending = await fixture.enqueue(seeded.entries);
+        vi.mocked(computeGroupPresenceSummary).mockClear();
+
+        await fixture.process(pending[0]!);
+
+        expect(await fixture.readCommittedDeltas(seeded.ref)).toHaveLength(10);
+        expect(computeGroupPresenceSummary).toHaveBeenCalledTimes(2);
     });
 
     it('scans the pending NEW and RETRY summary work of a claim through one work-page read', async () => {
@@ -332,8 +350,10 @@ interface CoalescingFixture {
     /** The work-page reads the worker's queue answered, in call order. */
     readonly workPageReads: string[];
     readonly repositoryCalls: string[];
-    /** Seeds the group's state and returns its summary work rows without queueing them. */
-    /** Widest identifiers make each connect's slice as large as the identifier bound allows, so fewer reach a payload. */
+    /**
+     * Seeds the group's state and returns its summary work rows without queueing them. Widest identifiers make each
+     * connect's slice as large as the identifier bound allows, so fewer reach a payload.
+     */
     seedConnectedGroup(
         groupId: string,
         connectCount: number,
@@ -431,13 +451,7 @@ async function createCoalescingFixture(
         wakeQueue
     });
     const process = createReservedSummaryProcessor(queue, worker);
-    const enqueue = async (entries: readonly ResourceEntry[]): Promise<readonly ResourceEntry[]> => {
-        const stored: ResourceEntry[] = [];
-        for (const entry of entries) {
-            stored.push(await resources.entries.write(entry));
-        }
-        return stored;
-    };
+    const enqueue = createStoredEntryEnqueuer(resources);
     return {
         resources,
         workPageReads: queue.workPageReads,
@@ -452,35 +466,54 @@ async function createCoalescingFixture(
             await process(stored!);
             return [...repositoryCalls];
         },
-        readSummary: async (ref) => {
-            const summary = await new GroupStateRepositoryReads(repository).findPresenceSummaryEntry(ref);
-            if (summary === undefined) {
-                throw new Error(`Missing presence summary: ${ref.groupId}`);
-            }
-            return summary.value;
-        },
+        readSummary: async (ref) => await readSummary(repository, ref),
         readCommittedDeltas: async (ref) => await readCommittedDeltas(sql, ref),
         readCommittedOutbox: async (ref) => await readCommittedOutbox(sql, ref),
         readTopologyRows: async (ref) => await readTopologyRows(sql, ref),
-        failStoredRow: async (key) => {
-            await sql`update resource_inbox set ri_status = ${EntityStatus.FAILED}, ri_attempts = 20,
-                    start_ts = now() at time zone 'UTC', end_ts = now() at time zone 'UTC', next_ts = null
-                where ri_topic_id = ${key.topicId} and ri_resource_id = ${key.resourceId}
-                  and fk_ext_bank_id = ${key.contextId}`;
-        },
-        replaceStoredResource: async (key, resource) => {
-            await sql`update resource_inbox set ri_resource = ${resource}
-                where ri_topic_id = ${key.topicId} and ri_resource_id = ${key.resourceId}
-                  and fk_ext_bank_id = ${key.contextId}`;
-        },
-        reserveTopologyHead: async (ref) => {
-            const head = toCoalescedGroupRevisionKey(ref);
-            await sql`update resource_inbox
-                set ri_status = ${EntityStatus.RESERVED}, ri_attempts = ri_attempts + 1,
-                    start_ts = now() at time zone 'UTC', next_ts = null
-                where ri_topic_id = ${head.topicId} and ri_resource_id = ${head.resourceId}
-                  and fk_ext_bank_id = ${head.contextId}`;
+        failStoredRow: async (key) => await failStoredRow(sql, key),
+        replaceStoredResource: async (key, resource) => await replaceStoredResource(sql, key, resource),
+        reserveTopologyHead: async (ref) => await reserveTopologyHead(sql, ref)
+    };
+}
+
+async function readSummary(repository: PSqlRuntimeStateRepository, ref: GroupRef): Promise<GroupPresenceSummary> {
+    const summary = await new GroupStateRepositoryReads(repository).findPresenceSummaryEntry(ref);
+    if (summary === undefined) {
+        throw new Error(`Missing presence summary: ${ref.groupId}`);
+    }
+    return summary.value;
+}
+
+async function failStoredRow(sql: PSqlSql, key: Key): Promise<void> {
+    await sql`update resource_inbox set ri_status = ${EntityStatus.FAILED}, ri_attempts = 20,
+            start_ts = now() at time zone 'UTC', end_ts = now() at time zone 'UTC', next_ts = null
+        where ri_topic_id = ${key.topicId} and ri_resource_id = ${key.resourceId}
+          and fk_ext_bank_id = ${key.contextId}`;
+}
+
+async function replaceStoredResource(sql: PSqlSql, key: Key, resource: string): Promise<void> {
+    await sql`update resource_inbox set ri_resource = ${resource}
+        where ri_topic_id = ${key.topicId} and ri_resource_id = ${key.resourceId}
+          and fk_ext_bank_id = ${key.contextId}`;
+}
+
+async function reserveTopologyHead(sql: PSqlSql, ref: GroupRef): Promise<void> {
+    const head = toCoalescedGroupRevisionKey(ref);
+    await sql`update resource_inbox
+        set ri_status = ${EntityStatus.RESERVED}, ri_attempts = ri_attempts + 1,
+            start_ts = now() at time zone 'UTC', next_ts = null
+        where ri_topic_id = ${head.topicId} and ri_resource_id = ${head.resourceId}
+          and fk_ext_bank_id = ${head.contextId}`;
+}
+
+/** Writes rows in order and answers them as stored. */
+function createStoredEntryEnqueuer(resources: PSqlResourceInboxRepository): CoalescingFixture['enqueue'] {
+    return async (entries) => {
+        const stored: ResourceEntry[] = [];
+        for (const entry of entries) {
+            stored.push(await resources.entries.write(entry));
         }
+        return stored;
     };
 }
 

@@ -1051,9 +1051,10 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'requireRecord',
         maximumMagnitude: 1
     }),
-    // JSON content equality and stable serialization accept any caller value, as JSON.stringify does: they narrow
-    // plain trees through isPlainJsonValue and hand everything else to the serializer's own conversion. The matcher
-    // keys on the owner function, so the one reviewed boundary is these four rows; a new owner needs its own review.
+    // JSON content equality and stable serialization accept any caller value, as JSON.stringify does: jsonEquals
+    // narrows plain trees through isPlainJsonValue and serializes anything else, and the stable serializers hand any
+    // caller value to the serializer's own conversion. The matcher keys on the owner function, so the one reviewed
+    // boundary is these four rows; a new owner needs its own review.
     Object.freeze({
         path: 'packages/shared/repository/state-utils.ts',
         rule: 'boundary.unknown',

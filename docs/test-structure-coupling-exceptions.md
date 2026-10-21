@@ -4699,6 +4699,21 @@ moved or changed test.
         "requiredConstraint": "Exactly one validation for the topology mutation read batch, performed by the store.",
         "failureRationale": "A reader-side validation of an already validated batch returns the same selections and the same read, so only the call count shows the duplicate work."
       }
+    },
+    {
+      "id": "group-presence-summary-state-once-per-page",
+      "domain": "Presence summary page computation cost",
+      "owner": "Rallar server maintainers",
+      "summary": "A coalesced presence-summary page computes its summary and snapshot once and checks them once, however many rows the page carries.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/group-state/presence/group-presence-summary-coalescing.test.ts#computes a page's summary once and checks it once, however many rows the page carries",
+      "coverageRelation": "The test claims ten pending connects of one group as one page through the real worker on PGlite, proves ten committed deltas, and counts the summary computation across the page's expansions and their validation.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "computeGroupPresenceSummary within GroupPresenceSummaryWork.processReservedEntry for one claimed page",
+        "observableEffect": "API main-thread CPU on every presence-summary claim: recomputing the summary and snapshot per expansion and again per validation made a page of N rows cost O(N squared) in member assembly.",
+        "requiredConstraint": "Exactly two summary computations per page, one computing the shared state and one checking it, independent of the page's row count.",
+        "failureRationale": "Recomputing the shared state per expansion yields the same deltas and summary, so only the call count distinguishes the per-page computation from the per-row one."
+      }
     }
   ],
   "entries": [
@@ -10322,6 +10337,17 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The one-call count observes the validator during a real topology mutation read; the read result is identical when the reader validates the store's batch again, so only the count witnesses the single validation.",
       "semanticCoverage": "packages/tests/shared-server/runtime-state/read-batch/runtime-state-read-batch-validation-count.test.ts#lets the topology mutation read trust its store's validated batch"
+    },
+    {
+      "id": "test-structure-coupling-73f3c2b19c07e1c4",
+      "path": "packages/tests/shared-server/rallar-system/group-state/presence/group-presence-summary-coalescing.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "group-presence-summary-state-once-per-page",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The two-call count observes the summary computation while a real page of ten rows commits ten deltas; the deltas are identical when each expansion recomputes the state, which is the cost this boundary removes.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/group-state/presence/group-presence-summary-coalescing.test.ts#computes a page's summary once and checks it once, however many rows the page carries"
     }
   ]
 }

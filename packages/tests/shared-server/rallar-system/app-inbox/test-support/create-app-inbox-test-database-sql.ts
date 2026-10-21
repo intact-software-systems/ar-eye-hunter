@@ -3,9 +3,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import type { PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import type { AppOutboxInsertRow } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
-import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
-import type { RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
-import { validateRuntimeStateReadBatchSelectors } from '@shared-server/runtime-state/read-batch/validate-runtime-state-read-batch-selectors.ts';
+import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { validateAuthoritativeClientEvent, validateAuthoritativeGroupEvent } from '@shared/api/authoritative-state-validation.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
@@ -125,7 +123,7 @@ async function executeRuntimeStateSql(
     if (conditionalMutation) {
         return conditionalMutation;
     }
-    return await executeRuntimeStateSelectionSql(input);
+    return undefined;
 }
 
 async function executeRuntimeStateWriteSql({
@@ -155,21 +153,6 @@ async function executeRuntimeStateWriteSql({
         return [];
     }
     return undefined;
-}
-
-async function executeRuntimeStateSelectionSql({
-    query,
-    runtime,
-    values
-}: AppInboxTestSqlExecution): Promise<PSqlRows | undefined> {
-    if (!query.includes('jsonb_array_elements') || !query.includes('as selections')) {
-        return undefined;
-    }
-    const repository = requireTransactionRuntime(runtime);
-    const selections = await repository.readRuntimeStateBatch(
-        readRuntimeStateSqlSelectors(values[0])
-    );
-    return [{ selections }];
 }
 
 function requireTransactionRuntime(runtime: AppInboxTestSqlExecution['runtime']) {
@@ -475,35 +458,6 @@ function toInstant(value: PSqlParameter): Temporal.Instant {
     }
     const text = value;
     return Temporal.Instant.from(text.endsWith('Z') ? text : `${text}Z`);
-}
-
-function readRuntimeStateSqlSelectors(
-    value: PSqlParameter
-): readonly RuntimeStateReadBatchSelector[] {
-    const decoded = decodeJsonWireValue(
-        typeof value === 'string' ? JSON.parse(value) : value,
-        'Runtime-state SQL selectors'
-    );
-    if (!Array.isArray(decoded)) {
-        throw new TypeError('Runtime-state SQL selectors must be an array');
-    }
-    // The SQL descriptor carries every selector field, null where its kind has none, plus the derived
-    // prefixEnd; the canonical selector keeps only the fields its kind declares.
-    return validateRuntimeStateReadBatchSelectors(
-        decoded.map((selector, index) =>
-            Object.fromEntries(
-                Object.entries(readJsonWireObject(selector, `Runtime-state SQL selector ${index}`))
-                    .filter(([field, fieldValue]) => fieldValue !== null && field !== 'prefixEnd')
-            )
-        )
-    );
-}
-
-function readJsonWireObject(value: JsonWireValue, label: string): JsonWireObject {
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-        throw new TypeError(`${label} must be an object`);
-    }
-    return value as JsonWireObject;
 }
 
 function readStringParameter(value: PSqlParameter, label: string): string {

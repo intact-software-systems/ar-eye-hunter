@@ -65,20 +65,8 @@ export class QueueBoxUtilities {
      * a claim retried within the same invocation counts again. The breaker hears each entry's verdict when it is
      * released, which with a standing flight may be after the invocation resolved.
      */
-    static async defaultDequeue(
-        {
-            qbox,
-            typesToDequeue,
-            resilience,
-            newLaneClaimOrder,
-            onDequeuedDo,
-            options,
-            readLaneBudgets,
-            workAdvertisement,
-            handlerObserver,
-            standingFlight
-        }: QueueBoxUtilities.DequeueInput
-    ): Promise<number> {
+    static async defaultDequeue(input: QueueBoxUtilities.DequeueInput): Promise<number> {
+        const { typesToDequeue, resilience, onDequeuedDo, handlerObserver } = input;
         if (resilience.isNotAllowedThroughToDequeue()) {
             console.warn(
                 'Dequeue blocked by an open circuit',
@@ -89,49 +77,29 @@ export class QueueBoxUtilities {
         }
 
         let claimedCount = 0;
-        await createDefaultResourceInboxDequeuer<ResourceInboxHandlerOutcome | undefined>({
-            repository: qbox,
+        const dequeuer = createDefaultResourceInboxDequeuer<ResourceInboxHandlerOutcome | undefined>({
+            repository: input.qbox,
             typesToDequeue: () => typesToDequeue,
-            newLaneClaimOrder,
+            newLaneClaimOrder: input.newLaneClaimOrder,
             maxToReserve: () => DequeueController.DEFAULT_MAX_NUM_TO_RESERVE,
             maxNumToDequeue: DequeueController.DRAINING_LANE_CLAIMS_PER_PASS,
-            readLaneBudgets,
-            workAdvertisement,
-            resilience: resilience,
-            options: options,
-            standingFlight
-        })
-            .onClaimedEntries((claimed) => {
-                claimedCount += claimed.size;
-                for (const attempt of claimed.values()) {
-                    handlerObserver?.onEntryClaimed(attempt);
-                }
-            })
-            .onFailedEntries((failures) => {
-                if ([...failures.values()].some((failure) => isOperationalDequeueFailure(failure.exception, options))) {
-                    resilience.failure();
-                }
-            })
-            .onCompletedEntries((completed) => {
-                // A typed rejection is a completed entry: the queue worked, so it is a resilience success. A conflict
-                // value is redelivered, neither a success nor an operational failure.
-                if (
-                    [...completed.values()].some((success) =>
-                        !(success.computedValue instanceof ResourceInboxHandlerRetryableConflict)
-                    )
-                ) {
-                    resilience.success();
-                }
-            })
-            .dequeueForCompute(async (_key, attempt) => {
-                handlerObserver?.onHandlerStarted(attempt);
-                try {
-                    return (await onDequeuedDo(attempt.entry, attempt.telemetry)) ?? undefined;
-                }
-                finally {
-                    handlerObserver?.onHandlerFinished(attempt);
-                }
-            });
+            readLaneBudgets: input.readLaneBudgets,
+            workAdvertisement: input.workAdvertisement,
+            resilience,
+            options: input.options,
+            standingFlight: input.standingFlight
+        });
+        await withDequeueOutcomeListeners(dequeuer, input, (claimed) => {
+            claimedCount += claimed;
+        }).dequeueForCompute(async (_key, attempt) => {
+            handlerObserver?.onHandlerStarted(attempt);
+            try {
+                return (await onDequeuedDo(attempt.entry, attempt.telemetry)) ?? undefined;
+            }
+            finally {
+                handlerObserver?.onHandlerFinished(attempt);
+            }
+        });
         return claimedCount;
     }
 
@@ -176,6 +144,41 @@ export class QueueBoxUtilities {
             db: undefined
         };
     }
+}
+
+/**
+ * Counts each pass's claims and tells the observer of every claimed entry, and gives the breaker each released
+ * batch's verdict: an operational failure fails it, and any entry completed as other than a conflict succeeds it.
+ */
+function withDequeueOutcomeListeners(
+    dequeuer: DequeueController<Key, ResourceInboxAttempt, ResourceInboxHandlerOutcome | undefined>,
+    input: QueueBoxUtilities.DequeueInput,
+    onClaimedCount: (claimed: number) => void
+): DequeueController<Key, ResourceInboxAttempt, ResourceInboxHandlerOutcome | undefined> {
+    const { resilience, options, handlerObserver } = input;
+    return dequeuer
+        .onClaimedEntries((claimed) => {
+            onClaimedCount(claimed.size);
+            for (const attempt of claimed.values()) {
+                handlerObserver?.onEntryClaimed(attempt);
+            }
+        })
+        .onFailedEntries((failures) => {
+            if ([...failures.values()].some((failure) => isOperationalDequeueFailure(failure.exception, options))) {
+                resilience.failure();
+            }
+        })
+        .onCompletedEntries((completed) => {
+            // A typed rejection is a completed entry: the queue worked, so it is a resilience success. A conflict
+            // value is redelivered, neither a success nor an operational failure.
+            if (
+                [...completed.values()].some((success) =>
+                    !(success.computedValue instanceof ResourceInboxHandlerRetryableConflict)
+                )
+            ) {
+                resilience.success();
+            }
+        });
 }
 
 /** A handler failure the queue cannot explain as not-ready or an expected conflict; a typed rejection is a value. */

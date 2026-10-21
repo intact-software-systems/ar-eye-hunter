@@ -1,9 +1,9 @@
 import type { PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { assertRuntimeStateReadBatchResult } from '@shared-server/runtime-state/read-batch/assert-runtime-state-read-batch-result.ts';
+import { assertRuntimeStateReadBatchSelectors } from '@shared-server/runtime-state/read-batch/assert-runtime-state-read-batch-selectors.ts';
 import { compareRuntimeStateKeys } from '@shared-server/runtime-state/read-batch/compare-runtime-state-keys.ts';
 import { type RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
-import { validateRuntimeStateReadBatchSelectors } from '@shared-server/runtime-state/read-batch/validate-runtime-state-read-batch-selectors.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { createPrefixSuffixReadBatchFixture } from '@shared-test/shared-server/prefix-suffix-read-batch-fixture.ts';
 import { describe, expect, it } from 'vitest';
@@ -55,7 +55,7 @@ const UNPURGED_PRESENCE = {
 
 describe('runtime-state read batches', () => {
     it('accepts dense mandatory key and prefix selectors with caller-ordered results', () => {
-        expect(validateRuntimeStateReadBatchSelectors(SELECTORS)).toEqual(SELECTORS);
+        expect(assertRuntimeStateReadBatchSelectors(SELECTORS)).toEqual(SELECTORS);
         expect(assertRuntimeStateReadBatchResult(SELECTORS, [{
             selectorId: 'group',
             entries: [ENTRY]
@@ -81,13 +81,13 @@ describe('runtime-state read batches', () => {
         ['empty exact key', [{ ...SELECTORS[0], key: '' }]],
         ['empty prefix', [{ ...SELECTORS[1], keyPrefix: '' }]]
     ])('rejects %s', (_label, input) => {
-        expect(() => validateRuntimeStateReadBatchSelectors(input)).toThrow(
+        expect(() => assertRuntimeStateReadBatchSelectors(input)).toThrow(
             /runtime state read batch/iu
         );
     });
 
     it('accepts a prefix-suffix selector with exactly its declared fields', () => {
-        expect(validateRuntimeStateReadBatchSelectors([PRINCIPAL_MEMBERS])).toEqual([
+        expect(assertRuntimeStateReadBatchSelectors([PRINCIPAL_MEMBERS])).toEqual([
             PRINCIPAL_MEMBERS
         ]);
     });
@@ -106,7 +106,7 @@ describe('runtime-state read batches', () => {
         ],
         ['suffix selector carrying a prefix', [{ ...PRINCIPAL_MEMBERS, kind: 'suffix' }]]
     ])('rejects %s', (_label, input) => {
-        expect(() => validateRuntimeStateReadBatchSelectors(input)).toThrow(
+        expect(() => assertRuntimeStateReadBatchSelectors(input)).toThrow(
             /runtime state read batch/iu
         );
     });
@@ -148,7 +148,7 @@ describe('runtime-state read batches', () => {
     it('rejects sparse selectors and mismatched results', () => {
         const sparseSelectors = new Array(2);
         sparseSelectors[0] = SELECTORS[0];
-        expect(() => validateRuntimeStateReadBatchSelectors(sparseSelectors))
+        expect(() => assertRuntimeStateReadBatchSelectors(sparseSelectors))
             .toThrow(/sparse|dense/iu);
 
         expect(() =>
@@ -247,7 +247,7 @@ describe('runtime-state read batches', () => {
     });
 
     it('accepts value-containing and expiring-after prefix selectors with exactly their declared fields', () => {
-        expect(validateRuntimeStateReadBatchSelectors([LIVE_SESSIONS, UNPURGED_PRESENCE])).toEqual([
+        expect(assertRuntimeStateReadBatchSelectors([LIVE_SESSIONS, UNPURGED_PRESENCE])).toEqual([
             LIVE_SESSIONS,
             UNPURGED_PRESENCE
         ]);
@@ -263,7 +263,7 @@ describe('runtime-state read batches', () => {
         ['an expiry floor carrying a containment', [{ ...UNPURGED_PRESENCE, storedValueContains: { status: 'active' } }]],
         ['an expiry floor without a prefix', [{ ...UNPURGED_PRESENCE, keyPrefix: '' }]]
     ])('rejects %s', (_label, input) => {
-        expect(() => validateRuntimeStateReadBatchSelectors(input)).toThrow(/runtime state read batch/iu);
+        expect(() => assertRuntimeStateReadBatchSelectors(input)).toThrow(/runtime state read batch/iu);
     });
 
     it('selects in memory only the prefix rows whose stored object holds the fields, and only rows expiring after the floor', async () => {

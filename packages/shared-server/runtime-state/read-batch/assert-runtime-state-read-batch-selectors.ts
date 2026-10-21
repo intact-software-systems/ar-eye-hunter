@@ -1,7 +1,7 @@
 import { type JsonWireObject, type JsonWireValue } from '../../rallar-system/protocol/json-wire-identity.ts';
 import type { RuntimeStateReadBatchSelector, RuntimeStateStoredValueFields } from './runtime-state-read-batch.ts';
 
-export function validateRuntimeStateReadBatchSelectors(
+export function assertRuntimeStateReadBatchSelectors(
     input: JsonWireValue | readonly RuntimeStateReadBatchSelector[]
 ): readonly RuntimeStateReadBatchSelector[] {
     const selectors = requireDenseArray(

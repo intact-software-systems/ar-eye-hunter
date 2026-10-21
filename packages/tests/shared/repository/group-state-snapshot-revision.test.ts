@@ -67,6 +67,7 @@ describe('group snapshot causal revision decisions', () => {
         const localeCompare = vi.spyOn(String.prototype, 'localeCompare');
 
         expect(decideGroupSnapshotCausalRevision(current, reordered)).toBe('duplicate');
+        expect(isGroupSnapshotCausalRevisionCovered(current, reordered)).toBe(true);
         expect(stringify.mock.calls.length + localeCompare.mock.calls.length).toBe(0);
     });
 

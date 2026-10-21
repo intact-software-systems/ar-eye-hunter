@@ -109,16 +109,16 @@ export function validateStoredGroup(group: unknown, ref: GroupRef): asserts grou
     requirePositiveSafeInteger(value.metadataVersion, 'Stored group metadataVersion');
     requirePositiveSafeInteger(value.rosterVersion, 'Stored group rosterVersion');
     requireNonNegativeSafeInteger(value.presenceVersion, 'Stored group presenceVersion');
-    validateStoredGroupLifecycleAudits(value);
+    assertStoredGroupLifecycleAudits(value);
     nullablePositiveSafeInteger(value.expiresAtEpochMs, 'Stored group expiresAtEpochMs');
     nullablePositiveSafeInteger(value.emptySinceEpochMs, 'Stored group emptySinceEpochMs');
     nullablePositiveSafeInteger(value.purgeAfterEpochMs, 'Stored group purgeAfterEpochMs');
     requireOneOf(value.lifecycleState, GROUP_LIFECYCLE_STATES, 'Stored group lifecycleState');
-    validateStoredGroupFormation(value);
-    validateStoredGroupTransport(value);
+    assertStoredGroupFormation(value);
+    assertStoredGroupTransport(value);
 }
 
-function validateStoredGroupLifecycleAudits(value: ValidationRecord): void {
+function assertStoredGroupLifecycleAudits(value: ValidationRecord): void {
     validateAuditStamp(value.created, 'Stored group created');
     validateAuditStamp(value.updated, 'Stored group updated');
     if (value.archived !== null) {
@@ -138,11 +138,11 @@ function validateStoredGroupLifecycleAudits(value: ValidationRecord): void {
     }
 }
 
-function validateStoredGroupFormation(value: ValidationRecord): void {
+function assertStoredGroupFormation(value: ValidationRecord): void {
     requireNonNegativeSafeInteger(value.formationEpoch, 'Stored group formationEpoch');
     requireNonNegativeSafeInteger(value.formationAttemptCount, 'Stored group formationAttemptCount');
     if (value.lastFormationOutcome !== null) {
-        validateStoredGroupFormationOutcome(
+        assertStoredGroupFormationOutcome(
             requireRecord(value.lastFormationOutcome, 'Stored group lastFormationOutcome')
         );
     }
@@ -161,7 +161,7 @@ function validateStoredGroupFormation(value: ValidationRecord): void {
     }
 }
 
-function validateStoredGroupFormationOutcome(outcome: ValidationRecord): void {
+function assertStoredGroupFormationOutcome(outcome: ValidationRecord): void {
     assertExactKeys(outcome, FORMATION_OUTCOME_KEYS, 'Stored group lastFormationOutcome');
     requireOneOf(
         outcome.outcome,
@@ -176,7 +176,7 @@ function validateStoredGroupFormationOutcome(outcome: ValidationRecord): void {
     );
 }
 
-function validateStoredGroupTransport(value: ValidationRecord): void {
+function assertStoredGroupTransport(value: ValidationRecord): void {
     if (value.acceptedLayoutIdentity !== null) {
         validateStoredGroupLayoutIdentity(
             requireRecord(value.acceptedLayoutIdentity, 'Stored group acceptedLayoutIdentity'),

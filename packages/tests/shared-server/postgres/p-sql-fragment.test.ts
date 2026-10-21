@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import { PSqlFragment } from '@shared-server/postgres/p-sql-fragment.ts';
 
@@ -19,6 +19,15 @@ describe('SQL fragments', () => {
         expect(strings.raw).toEqual([...strings]);
         expect(Object.hasOwn(strings, 'raw')).toBe(true);
         expect(values).toEqual(['NEW', 3, 1]);
+    });
+
+    it('types a statement\'s parameters by the values spliced into it, so a narrower query port accepts it', () => {
+        const row = PSqlFragment.identifier('candidate');
+        const predicate = PSqlFragment.of`${row}.ri_status is not null`;
+        const toStatement = (flag: boolean) => PSqlFragment.of`select * from resource_inbox candidate where ${predicate} and ${flag}`.toStatement();
+
+        expectTypeOf(toStatement).returns.toEqualTypeOf<[TemplateStringsArray, ...boolean[]]>();
+        expect(toStatement(true).slice(1)).toEqual([true]);
     });
 
     it('accepts only a plain identifier as text', () => {

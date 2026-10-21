@@ -22,7 +22,7 @@ import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import type { GroupStateTestService } from '../group-state-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
-import { convergeSummaryForTest, createService, readSummaryWork } from './group-presence-test-runtime.ts';
+import { convergeSummaryForTest, createService, readSummaryWork, toSummaryExpansion } from './group-presence-test-runtime.ts';
 
 const BASE_EPOCH_MS = Date.now();
 
@@ -155,7 +155,7 @@ describe('group-state delta envelope construction', () => {
         });
         const read = await readSummaryWork(work, command, BASE_EPOCH_MS + 1_000);
 
-        const computed = work.compute(command, read);
+        const computed = work.compute(toSummaryExpansion(command, read));
 
         expect(computed.summary.evaluatedAtEpochMs).toBe(BASE_EPOCH_MS + 1_000);
     });
@@ -262,8 +262,8 @@ async function computeSummaryWork(input: SummaryWorkInput): Promise<ComputedSumm
         event
     };
     const read = await readSummaryWork(work, command, BASE_EPOCH_MS + 1_000);
-    const computed = work.compute(command, read);
-    expect(work.validate(command, read, computed)).toEqual([]);
+    const computed = work.compute(toSummaryExpansion(command, read));
+    expect(work.validate(toSummaryExpansion(command, read), computed)).toEqual([]);
     return { command, read, computed };
 }
 

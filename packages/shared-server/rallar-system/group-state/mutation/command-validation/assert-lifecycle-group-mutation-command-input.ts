@@ -4,6 +4,7 @@ import {
     requireNonNegativeSafeInteger,
     requireOneOf
 } from '../../group-state-validation-primitives.ts';
+import { requireUnitRate } from '../../require-unit-rate.ts';
 import type { GroupLifecycleTransitionOperation } from '../group-mutation-contracts.ts';
 import { assertExpectedLayoutIdentity } from './assert-expected-layout-identity.ts';
 
@@ -45,25 +46,27 @@ export function assertLifecycleGroupMutationCommandInput({
         return;
     }
     if (operation === 'activateGroup') {
-        if (input.observedRate !== null && !isUnitIntervalNumber(input.observedRate)) {
-            throw new TypeError('Group activateGroup observedRate must be null or within [0, 1]');
-        }
-        if (input.degraded !== null && typeof input.degraded !== 'boolean') {
-            throw new TypeError('Group activateGroup degraded must be boolean or null');
-        }
-        assertNullableFormationEpoch(input, operation);
-        assertNullableExpectedLayout(input, operation);
+        assertActivateGroupInput(input);
         return;
     }
     if (operation === 'failGroupFormation') {
-        if (!isUnitIntervalNumber(input.observedRate)) {
-            throw new TypeError('Group failGroupFormation observedRate must be within [0, 1]');
-        }
+        requireUnitRate(input.observedRate, 'Group failGroupFormation observedRate');
         assertNullableFormationEpoch(input, operation);
         assertNullableExpectedLayout(input, operation);
         return;
     }
     assertNullableFormationEpoch(input, operation);
+}
+
+function assertActivateGroupInput(input: JsonWireObject): void {
+    if (input.observedRate !== null) {
+        requireUnitRate(input.observedRate, 'Group activateGroup observedRate');
+    }
+    if (input.degraded !== null && typeof input.degraded !== 'boolean') {
+        throw new TypeError('Group activateGroup degraded must be boolean or null');
+    }
+    assertNullableFormationEpoch(input, 'activateGroup');
+    assertNullableExpectedLayout(input, 'activateGroup');
 }
 
 function assertRequiredLayoutFence(input: JsonWireObject, operation: string): void {
@@ -93,8 +96,4 @@ function assertNullableExpectedLayout(input: JsonWireObject, operation: string):
         return;
     }
     assertExpectedLayoutIdentity(input, `Group ${operation} expectedLayout`);
-}
-
-function isUnitIntervalNumber(value: JsonWireObject[string]): value is number {
-    return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
 }

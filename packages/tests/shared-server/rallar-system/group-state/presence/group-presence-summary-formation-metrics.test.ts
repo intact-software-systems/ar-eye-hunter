@@ -24,6 +24,16 @@ import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/
 import { TestResourceInbox, TestResourceInboxResults } from '../../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../../app-inbox/test-support/app-inbox-test-database.ts';
 
+// The read is stubbed with no rows, so the page's shared summary state is stubbed with it.
+vi.mock('@shared-server/rallar-system/group-state/presence/group-presence-summary-effects.ts', async (importOriginal) => {
+    const original = await importOriginal<typeof import('@shared-server/rallar-system/group-state/presence/group-presence-summary-effects.ts')>();
+    return {
+        ...original,
+        computeGroupPresenceSummaryState: vi.fn(() => ({})),
+        validateGroupPresenceSummaryState: vi.fn(() => [])
+    };
+});
+
 const BASE_EPOCH_MS = Date.now();
 
 describe('GroupPresenceSummaryWork formation metrics', () => {

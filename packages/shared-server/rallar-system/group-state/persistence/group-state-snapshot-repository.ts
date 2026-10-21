@@ -62,6 +62,14 @@ export interface VersionedGroupSnapshot {
     readonly version: RuntimeStateReadBatchVersion | null;
 }
 
+/** One page group's children, as read before the group was read again. */
+interface GroupStateSnapshotPageCandidate {
+    readonly entry: GroupStateSnapshotPageGroup['entry'];
+    readonly members: readonly GroupMember[];
+    readonly summary: GroupPresenceSummary | undefined;
+    readonly sessions: readonly GroupPresenceSession[];
+}
+
 export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore {
     constructor(repository: RuntimeStateRepositoryLike) {
         super(repository);
@@ -132,27 +140,9 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
         const groupsAfterRaw = await this.listJsonEntryValues(GROUPS_NAMESPACE, keyPrefix);
         const groupsBefore = groupsBeforeRaw.map((stored) => canonicalStoredGroup(stored, scope));
         const groupsAfter = groupsAfterRaw.map((stored) => canonicalStoredGroup(stored, scope));
-        const members = memberEntriesRaw.map((stored) => {
-            assertDecodedGroupScope(
-                decodeStoredGroupStateKey(stored.entry.key, decodeGroupStateMemberStorageKey),
-                scope,
-                stored.entry.key
-            );
-            return canonicalStoredMember(stored).value;
-        });
-        const summaries = summaryEntriesRaw.map((stored) => {
-            const decoded = decodeStoredGroupStateKey(stored.entry.key, decodeGroupStateGroupStorageKey);
-            assertDecodedGroupScope(decoded, scope, stored.entry.key);
-            return canonicalStoredSummary(stored, decoded).value;
-        });
-        const sessions = sessionEntriesRaw.map((stored) => {
-            const decoded = decodeStoredGroupStateKey(
-                stored.entry.key,
-                decodeGroupStatePresenceSessionStorageKey
-            );
-            assertDecodedGroupScope(decoded, scope, stored.entry.key);
-            return canonicalStoredSession(stored).value;
-        });
+        const members = memberEntriesRaw.map((stored) => toScopeMember(stored, scope));
+        const summaries = summaryEntriesRaw.map((stored) => toScopeSummary(stored, scope));
+        const sessions = sessionEntriesRaw.map((stored) => toScopeSession(stored, scope));
         return {
             groupsBefore,
             groupsAfter,
@@ -168,20 +158,10 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
     ): Promise<GroupSnapshotPage> {
         const observedAtEpochMs = Date.now();
         const page = await this.readSnapshotPageGroups(scope, options);
-        const pageGroups = page.groups;
-        const candidates = await Promise.all(
-            pageGroups.map(async ({ entry, group }) => {
-                const [members, summary, sessions] = await Promise.all([
-                    this.listMembers(group),
-                    this.findPresenceSummaryEntry(group),
-                    this.readLivePresenceSessions(group, observedAtEpochMs)
-                ]);
-                return { entry, group, members, summary: summary?.value, sessions };
-            })
-        );
+        const candidates = await this.readSnapshotPageCandidates(page.groups, observedAtEpochMs);
         const groupsAfterRaw = await this.listJsonEntryValuesByKeys(
             GROUPS_NAMESPACE,
-            pageGroups.map(({ entry }) => entry.key)
+            page.groups.map(({ entry }) => entry.key)
         );
         const groupsAfter = groupsAfterRaw.map((stored) => canonicalStoredGroup(stored, scope));
         const afterByKey = new Map(groupsAfter.map((stored) => [stored.entry.key, stored]));
@@ -207,10 +187,27 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
         );
         return {
             snapshots: resolved.filter((snapshot): snapshot is GroupSnapshot => snapshot !== undefined),
-            scannedGroupCount: pageGroups.length,
+            scannedGroupCount: page.groups.length,
             hasMore: page.hasMore,
-            nextGroupKey: pageGroups.at(-1)?.entry.key
+            nextGroupKey: page.groups.at(-1)?.entry.key
         };
+    }
+
+    /** Each page group's children, read before the groups are read again to find the ones that changed meanwhile. */
+    private async readSnapshotPageCandidates(
+        pageGroups: readonly GroupStateSnapshotPageGroup[],
+        observedAtEpochMs: number
+    ): Promise<readonly GroupStateSnapshotPageCandidate[]> {
+        return await Promise.all(
+            pageGroups.map(async ({ entry, group }) => {
+                const [members, summary, sessions] = await Promise.all([
+                    this.listMembers(group),
+                    this.findPresenceSummaryEntry(group),
+                    this.readLivePresenceSessions(group, observedAtEpochMs)
+                ]);
+                return { entry, members, summary: summary?.value, sessions };
+            })
+        );
     }
 
     private async readSnapshotPageGroups(
@@ -375,4 +372,25 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
             (storageKey, message) => new GroupStateRepositoryInvariantCorruptionError(storageKey, message)
         );
     }
+}
+
+function toScopeMember(stored: RuntimeStateEntryValue<JsonWireValue>, scope: GroupScope): GroupMember {
+    assertDecodedGroupScope(
+        decodeStoredGroupStateKey(stored.entry.key, decodeGroupStateMemberStorageKey),
+        scope,
+        stored.entry.key
+    );
+    return canonicalStoredMember(stored).value;
+}
+
+function toScopeSummary(stored: RuntimeStateEntryValue<JsonWireValue>, scope: GroupScope): GroupPresenceSummary {
+    const decoded = decodeStoredGroupStateKey(stored.entry.key, decodeGroupStateGroupStorageKey);
+    assertDecodedGroupScope(decoded, scope, stored.entry.key);
+    return canonicalStoredSummary(stored, decoded).value;
+}
+
+function toScopeSession(stored: RuntimeStateEntryValue<JsonWireValue>, scope: GroupScope): GroupPresenceSession {
+    const decoded = decodeStoredGroupStateKey(stored.entry.key, decodeGroupStatePresenceSessionStorageKey);
+    assertDecodedGroupScope(decoded, scope, stored.entry.key);
+    return canonicalStoredSession(stored).value;
 }

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { runInPSqlTransaction } from '@shared-server/postgres/run-in-p-sql-transaction.ts';
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import { toDomain, type ResourceInboxRow } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import { writeAppOutboxInserts } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
@@ -117,6 +118,23 @@ describe('Postgres coalesced APP_OUTBOX work conflicts', () => {
         expect(await guardInTransaction({ ...observed!, resource: '{}' })).toBe(false);
     });
 
+    // Until the purge removes it, an expired head is absent to every reader yet still holds its key; the summary that
+    // read none answers its short conflict and retries, never a corruption failure.
+    postgresIt('reports an expired head that no reader sees but the purge has not removed as present, unchanged', async () => {
+        const ref = toRunGroupRef('expired-head');
+        const expired = computeRevisionWork(ref, null, 'automatic');
+        await writeInTransaction(expired);
+        await expireRevisionRows(ref);
+        const head = toCoalescedGroupRevisionKey(ref);
+        expect(await createPSqlResourceInboxRepository(requireSql(), () => new Date()).entries.findByKey(head)).toBeNull();
+
+        expect(await writeInTransaction(computeRevisionWork(ref, null, 'automatic'))).toBe('head-present');
+
+        const rows = await readRevisionRows(ref);
+        expect(rows).toHaveLength(1);
+        expect(rows[0]!.resource).toBe(expired.entryWrite.entry.resource);
+    });
+
     postgresIt('still reports a duplicate plain outbox insert as corruption', async () => {
         const ref = toRunGroupRef('plain-duplicate');
         const work = computeRevisionWork(ref, null, 'automatic');
@@ -156,6 +174,15 @@ describe('Postgres coalesced APP_OUTBOX work conflicts', () => {
             order by ri_row_id
         `;
         return rows.map(toDomain);
+    }
+
+    async function expireRevisionRows(ref: GroupRef): Promise<void> {
+        const head = toCoalescedGroupRevisionKey(ref);
+        await requireSql()`
+            update resource_inbox
+            set expire_ts = (now() - interval '1 minute') at time zone 'UTC'
+            where ri_topic_id = ${head.topicId} and fk_ext_bank_id = ${head.contextId}
+        `;
     }
 
     async function reserveHead(ref: GroupRef): Promise<ResourceEntry> {

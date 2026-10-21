@@ -1,5 +1,7 @@
+import { PSqlFragment } from '../../postgres/p-sql-fragment.ts';
 import type { PSqlRows } from '../../postgres/p-sql-sql.ts';
 import { assertRuntimeStateReadBatchResult } from '../read-batch/assert-runtime-state-read-batch-result.ts';
+import { assertRuntimeStateReadBatchSelectors } from '../read-batch/assert-runtime-state-read-batch-selectors.ts';
 import type {
     RuntimeStateReadBatchSelection,
     RuntimeStateReadBatchSelector,
@@ -7,7 +9,6 @@ import type {
     RuntimeStateStoredValueFields,
     RuntimeStateVersionedReadBatch
 } from '../read-batch/runtime-state-read-batch.ts';
-import { validateRuntimeStateReadBatchSelectors } from '../read-batch/validate-runtime-state-read-batch-selectors.ts';
 import { toExclusivePrefixEnd } from './runtime-state-sql-values.ts';
 import {
     toRuntimeStateReadBatchSelections,
@@ -40,6 +41,8 @@ const NO_SQL_SELECTOR_FIELDS = {
     reversedSuffixEnd: null
 } as const;
 
+const SELECTED_RUNTIME_STATE_ROWS = toSelectedRuntimeStateRows();
+
 export interface RuntimeStateReadBatchQuery {
     <Rows extends PSqlRows>(
         strings: TemplateStringsArray,
@@ -55,7 +58,7 @@ export async function readRuntimeStateBatch(
     sql: RuntimeStateReadBatchQuery,
     input: readonly RuntimeStateReadBatchSelector[]
 ): Promise<readonly RuntimeStateReadBatchSelection[]> {
-    const selectors = validateRuntimeStateReadBatchSelectors(input);
+    const selectors = assertRuntimeStateReadBatchSelectors(input);
     const rows = await selectRuntimeStateBatchRows(sql, selectors, true);
     return assertRuntimeStateReadBatchResult(selectors, toRuntimeStateReadBatchSelections(selectors, rows));
 }
@@ -69,7 +72,7 @@ export async function readRuntimeStateBatchWithVersion(
     sql: RuntimeStateReadBatchQuery,
     input: readonly RuntimeStateReadBatchSelector[]
 ): Promise<RuntimeStateVersionedReadBatch> {
-    const selectors = validateRuntimeStateReadBatchSelectors(input);
+    const selectors = assertRuntimeStateReadBatchSelectors(input);
     const rows = await selectRuntimeStateBatchRows(sql, selectors, true);
     return {
         selections: assertRuntimeStateReadBatchResult(selectors, toRuntimeStateReadBatchSelections(selectors, rows)),
@@ -86,7 +89,7 @@ export async function readRuntimeStateBatchVersion(
     sql: RuntimeStateReadBatchQuery,
     input: readonly RuntimeStateReadBatchSelector[]
 ): Promise<RuntimeStateReadBatchVersion | undefined> {
-    const selectors = validateRuntimeStateReadBatchSelectors(input);
+    const selectors = assertRuntimeStateReadBatchSelectors(input);
     return toRuntimeStateReadBatchVersion(selectors, await selectRuntimeStateBatchRows(sql, selectors, false));
 }
 
@@ -95,7 +98,7 @@ async function selectRuntimeStateBatchRows(
     selectors: readonly RuntimeStateReadBatchSelector[],
     includeValues: boolean
 ): Promise<readonly PSqlRuntimeStateReadBatchRow[]> {
-    return await sql<PSqlRuntimeStateReadBatchRow[]>`
+    const statement = PSqlFragment.of`
     select selector.selector_ordinal::int as selector_ordinal,
            matched.store_key,
            case when ${includeValues} then matched.store_value end as store_value,
@@ -118,102 +121,102 @@ async function selectRuntimeStateBatchRows(
       from jsonb_array_elements(${selectors.map(toSqlSelector)}::jsonb)
         with ordinality as descriptor(value, ordinality)
     ) selector
-    join lateral (
-      select exact_entry.store_key,
-             exact_entry.store_value,
-             exact_entry.expire_at_ts,
-             exact_entry.updated_ts,
-             exact_entry.revision,
-             exact_entry.xmin,
-             exact_entry.ctid
-      from runtime_state_store exact_entry
-      where selector.selector_kind = 'key'
-        and exact_entry.store_namespace = selector.store_namespace
-        and exact_entry.store_key = selector.store_key
-
-      union all
-
-      select prefix_entry.store_key,
-             prefix_entry.store_value,
-             prefix_entry.expire_at_ts,
-             prefix_entry.updated_ts,
-             prefix_entry.revision,
-             prefix_entry.xmin,
-             prefix_entry.ctid
-      from runtime_state_store prefix_entry
-      where selector.selector_kind = 'prefix'
-        and prefix_entry.store_namespace = selector.store_namespace
-        and prefix_entry.store_key collate "C" >= selector.key_prefix
-        and prefix_entry.store_key collate "C" < selector.prefix_end
-
-      union all
-
-      select containing_entry.store_key,
-             containing_entry.store_value,
-             containing_entry.expire_at_ts,
-             containing_entry.updated_ts,
-             containing_entry.revision,
-             containing_entry.xmin,
-             containing_entry.ctid
-      from runtime_state_store containing_entry
-      where selector.selector_kind = 'prefix-containing'
-        and containing_entry.store_namespace = selector.store_namespace
-        and containing_entry.store_key collate "C" >= selector.key_prefix
-        and containing_entry.store_key collate "C" < selector.prefix_end
-        and containing_entry.store_value::jsonb @> selector.stored_value_contains
-
-      union all
-
-      select expiring_entry.store_key,
-             expiring_entry.store_value,
-             expiring_entry.expire_at_ts,
-             expiring_entry.updated_ts,
-             expiring_entry.revision,
-             expiring_entry.xmin,
-             expiring_entry.ctid
-      from runtime_state_store expiring_entry
-      where selector.selector_kind = 'prefix-expiring-after'
-        and expiring_entry.store_namespace = selector.store_namespace
-        and expiring_entry.store_key collate "C" >= selector.key_prefix
-        and expiring_entry.store_key collate "C" < selector.prefix_end
-        and extract(epoch from expiring_entry.expire_at_ts) * 1000 > selector.expiring_after_timestamp
-
-      union all
-
-      select suffix_entry.store_key,
-             suffix_entry.store_value,
-             suffix_entry.expire_at_ts,
-             suffix_entry.updated_ts,
-             suffix_entry.revision,
-             suffix_entry.xmin,
-             suffix_entry.ctid
-      from runtime_state_store suffix_entry
-      where selector.selector_kind = 'prefix-suffix'
-        and suffix_entry.store_namespace = selector.store_namespace
-        and reverse(suffix_entry.store_key) collate "C" >= selector.reversed_suffix
-        and reverse(suffix_entry.store_key) collate "C" < selector.reversed_suffix_end
-        and suffix_entry.store_key collate "C" >= selector.key_prefix
-        and suffix_entry.store_key collate "C" < selector.prefix_end
-        and char_length(suffix_entry.store_key)
-          >= char_length(selector.key_prefix) + char_length(selector.key_suffix)
-
-      union all
-
-      select reversed_entry.store_key,
-             reversed_entry.store_value,
-             reversed_entry.expire_at_ts,
-             reversed_entry.updated_ts,
-             reversed_entry.revision,
-             reversed_entry.xmin,
-             reversed_entry.ctid
-      from runtime_state_store reversed_entry
-      where selector.selector_kind = 'suffix'
-        and reversed_entry.store_namespace = selector.store_namespace
-        and reverse(reversed_entry.store_key) collate "C" >= selector.reversed_suffix
-        and reverse(reversed_entry.store_key) collate "C" < selector.reversed_suffix_end
-    ) matched on true
+    join lateral (${SELECTED_RUNTIME_STATE_ROWS}) matched on true
     order by selector.selector_ordinal, matched.store_key collate "C"
   `;
+    return await sql<PSqlRuntimeStateReadBatchRow[]>(...statement.toStatement());
+}
+
+/** The rows of every selector kind, one union branch per kind; a selector joins only the branch of its own kind. */
+function toSelectedRuntimeStateRows(): PSqlFragment<never> {
+    return [
+        toKeySelectedRows(),
+        toPrefixSelectedRows(),
+        toPrefixContainingSelectedRows(),
+        toPrefixExpiringAfterSelectedRows(),
+        toPrefixSuffixSelectedRows(),
+        toSuffixSelectedRows()
+    ].reduce((union, rows) =>
+        PSqlFragment.of`${union}
+
+      union all
+${rows}`
+    );
+}
+
+function toKeySelectedRows(): PSqlFragment<never> {
+    const entry = PSqlFragment.identifier('exact_entry');
+    return PSqlFragment.of`${toSelectedEntryColumns(entry)}
+      where selector.selector_kind = 'key'
+        and ${entry}.store_namespace = selector.store_namespace
+        and ${entry}.store_key = selector.store_key`;
+}
+
+function toPrefixSelectedRows(): PSqlFragment<never> {
+    const entry = PSqlFragment.identifier('prefix_entry');
+    return PSqlFragment.of`${toSelectedEntryColumns(entry)}
+      where selector.selector_kind = 'prefix'
+        and ${entry}.store_namespace = selector.store_namespace
+        and ${toKeyPrefixRange(entry)}`;
+}
+
+function toPrefixContainingSelectedRows(): PSqlFragment<never> {
+    const entry = PSqlFragment.identifier('containing_entry');
+    return PSqlFragment.of`${toSelectedEntryColumns(entry)}
+      where selector.selector_kind = 'prefix-containing'
+        and ${entry}.store_namespace = selector.store_namespace
+        and ${toKeyPrefixRange(entry)}
+        and ${entry}.store_value::jsonb @> selector.stored_value_contains`;
+}
+
+function toPrefixExpiringAfterSelectedRows(): PSqlFragment<never> {
+    const entry = PSqlFragment.identifier('expiring_entry');
+    return PSqlFragment.of`${toSelectedEntryColumns(entry)}
+      where selector.selector_kind = 'prefix-expiring-after'
+        and ${entry}.store_namespace = selector.store_namespace
+        and ${toKeyPrefixRange(entry)}
+        and extract(epoch from ${entry}.expire_at_ts) * 1000 > selector.expiring_after_timestamp`;
+}
+
+function toPrefixSuffixSelectedRows(): PSqlFragment<never> {
+    const entry = PSqlFragment.identifier('suffix_entry');
+    return PSqlFragment.of`${toSelectedEntryColumns(entry)}
+      where selector.selector_kind = 'prefix-suffix'
+        and ${entry}.store_namespace = selector.store_namespace
+        and ${toReversedSuffixRange(entry)}
+        and ${toKeyPrefixRange(entry)}
+        and char_length(${entry}.store_key)
+          >= char_length(selector.key_prefix) + char_length(selector.key_suffix)`;
+}
+
+function toSuffixSelectedRows(): PSqlFragment<never> {
+    const entry = PSqlFragment.identifier('reversed_entry');
+    return PSqlFragment.of`${toSelectedEntryColumns(entry)}
+      where selector.selector_kind = 'suffix'
+        and ${entry}.store_namespace = selector.store_namespace
+        and ${toReversedSuffixRange(entry)}`;
+}
+
+function toSelectedEntryColumns(entry: PSqlFragment<never>): PSqlFragment<never> {
+    return PSqlFragment.of`
+      select ${entry}.store_key,
+             ${entry}.store_value,
+             ${entry}.expire_at_ts,
+             ${entry}.updated_ts,
+             ${entry}.revision,
+             ${entry}.xmin,
+             ${entry}.ctid
+      from runtime_state_store ${entry}`;
+}
+
+function toKeyPrefixRange(entry: PSqlFragment<never>): PSqlFragment<never> {
+    return PSqlFragment.of`${entry}.store_key collate "C" >= selector.key_prefix
+        and ${entry}.store_key collate "C" < selector.prefix_end`;
+}
+
+function toReversedSuffixRange(entry: PSqlFragment<never>): PSqlFragment<never> {
+    return PSqlFragment.of`reverse(${entry}.store_key) collate "C" >= selector.reversed_suffix
+        and reverse(${entry}.store_key) collate "C" < selector.reversed_suffix_end`;
 }
 
 function toSqlSelector(

@@ -38,7 +38,8 @@ import {
 } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import {
     createCachedGroupStateService,
-    type CachedGroupStateService
+    type CachedGroupStateService,
+    type CachedGroupStateServicePrincipalGroups
 } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
 import { GroupStateCurrentSnapshotCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-current-snapshot-cache.ts';
 import { GroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-snapshot-read-through-cache.ts';
@@ -83,7 +84,7 @@ import {
     type ApiMutationInboxFactories
 } from '../services/create-api-mutation-inbox-factories.ts';
 
-/** Groups whose current snapshot this server keeps between unchanged revisions (D289). */
+/** Groups whose current snapshot this server keeps between unchanged revisions. */
 const GROUP_CURRENT_SNAPSHOT_CACHE_MAX_ENTRIES = 512;
 
 export interface ApiV1MutationRuntimeResilience {
@@ -282,15 +283,20 @@ function createMutationGroupStateService(
         }),
         cache: resources.groupSnapshotCache,
         current: resources.groupCurrentSnapshotCache,
-        principalGroups: {
-            listSnapshotsForPrincipal: async (scope, principalId) =>
-                await resources.groupsRepository.listSnapshotsForPrincipal(
-                    scope,
-                    principalId,
-                    resources.groupCurrentSnapshotCache
-                )
-        }
+        principalGroups: toPrincipalGroups(resources)
     });
+}
+
+/** A principal's groups through the member index, assembled through the current-snapshot cache. */
+function toPrincipalGroups(resources: ApiV1MutationResources): CachedGroupStateServicePrincipalGroups {
+    return {
+        listSnapshotsForPrincipal: async (scope, principalId) =>
+            await resources.groupsRepository.listSnapshotsForPrincipal(
+                scope,
+                principalId,
+                resources.groupCurrentSnapshotCache
+            )
+    };
 }
 
 function createApiV1MutationResources(

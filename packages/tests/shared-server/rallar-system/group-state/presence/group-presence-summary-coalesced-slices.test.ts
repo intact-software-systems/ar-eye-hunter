@@ -12,7 +12,7 @@ import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
-import { createService, summaryReservationRead } from './group-presence-test-runtime.ts';
+import { createService, summaryReservationRead, toSummaryExpansion } from './group-presence-test-runtime.ts';
 
 const BASE_EPOCH_MS = Date.now();
 
@@ -174,8 +174,9 @@ async function expandBatch(
         BASE_EPOCH_MS + 10_000
     )).right ?? [];
     return commands.map((command, index) => {
-        const computed = work.compute(command, reads[index]!);
-        expect(work.validate(command, reads[index]!, computed)).toEqual([]);
+        const expansion = toSummaryExpansion(command, reads[index]!);
+        const computed = work.compute(expansion);
+        expect(work.validate(expansion, computed)).toEqual([]);
         return readDeltaEnvelope(computed.downstreamOutboxWrites[0]!.entry.resource);
     });
 }
