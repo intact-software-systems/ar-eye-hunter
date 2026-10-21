@@ -28,6 +28,7 @@ import {
 import type { ResourceInboxObservedReplacement } from './replace-observed-resource-inbox-entry.ts';
 import { requeueObservedResourceInboxDeliveryFailure } from './requeue-observed-resource-inbox-delivery-failure.ts';
 import {
+    parseTemporalPlainDateTime,
     rowsToMap,
     toDomain,
     toInstant,
@@ -141,10 +142,12 @@ export class PSqlResourceInboxReservationRepository {
     /**
      * Selects and starts processing the next eligible rows in one statement: the same rows
      * `findEntriesSkipLocked` would lock, carrying the lease and attempt `startProcessingEntity` gives.
-     * A context claim selects only its contexts' heads: each context's first eligible row in claim
-     * order, of a context its caller did not exclude. A row whose selected lifecycle was corrupt
-     * throws, so the caller's transaction rolls the claim back instead of repairing the row.
-     * `RETURNING` keeps no order, so the selection order is restored from the selected due time.
+     * A claim without RETRY takes rows in creation order, because row ids follow each session's cached
+     * sequence block rather than arrival; a claim with RETRY takes them in due order. A context claim
+     * selects only its contexts' heads: each context's first eligible row in claim order, of a context
+     * its caller did not exclude. A row whose selected lifecycle was corrupt throws, so the caller's
+     * transaction rolls the claim back instead of repairing the row. `RETURNING` keeps no order, so the
+     * claim order is restored from the returned creation time or the selected due time.
      */
     reserveEntriesSkipLocked(
         claim: PSqlResourceInboxReservationRepository.ReservationObservationClaim
@@ -167,13 +170,14 @@ export class PSqlResourceInboxReservationRepository {
             return capture ? { entries: new Map(), observations: [] } : new Map();
         }
         const eligibility = { typeIds: this.sql([...typeIds]), statusIds: this.sql([...statusIds]), maxAttempts };
-        const statement = toReservationStatement({ eligibility, contextClaim, maxToReserve, capture });
+        const order = resolveResourceInboxClaimOrder(statusIds);
+        const statement = toReservationStatement({ eligibility, order, contextClaim, maxToReserve, capture });
         const rows = await this.sql<ClaimedResourceInboxRow[]>(...statement.toStatement());
         for (const row of rows) {
             toDomain(toSelectedResourceInboxRow(row));
         }
 
-        const entries = rowsToMap([...rows].sort(compareClaimedRows));
+        const entries = rowsToMap([...rows].sort((left, right) => compareClaimedRows(order, left, right)));
         return capture
             ? {
                 entries,
@@ -364,23 +368,31 @@ function toSelectedResourceInboxRow(row: ClaimedResourceInboxRow): ResourceInbox
     };
 }
 
-/** The selection order: due instant first with unscheduled rows ahead, then row identity. */
-function compareClaimedRows(left: ClaimedResourceInboxRow, right: ClaimedResourceInboxRow): number {
-    const dueOrder = compareSelectedDueTs(left.selected_next_ts, right.selected_next_ts);
-    return dueOrder !== 0 ? dueOrder : compareRowIds(left.ri_row_id, right.ri_row_id);
+/** The order a claim takes its rows in: creation for a claim without RETRY, due time for one with it. */
+type ResourceInboxClaimOrder = 'creation' | 'due';
+
+function resolveResourceInboxClaimOrder(statusIds: ReadonlySet<EntityStatus>): ResourceInboxClaimOrder {
+    return statusIds.has(EntityStatus.RETRY) ? 'due' : 'creation';
 }
 
-function compareSelectedDueTs(left: string | null, right: string | null): number {
-    if (left === null || right === null) {
-        return left === right ? 0 : left === null ? -1 : 1;
-    }
-    return Temporal.Instant.compare(toInstant(left), toInstant(right));
+/** Creation time or due instant, with unscheduled rows ahead, then row identity. */
+function compareClaimedRows(
+    order: ResourceInboxClaimOrder,
+    left: ClaimedResourceInboxRow,
+    right: ClaimedResourceInboxRow
+): number {
+    const placeOrder = order === 'creation'
+        ? Temporal.PlainDateTime.compare(
+            parseTemporalPlainDateTime(left.created_ts),
+            parseTemporalPlainDateTime(right.created_ts)
+        )
+        : Math.sign(Number(toSelectedDueRank(left) - toSelectedDueRank(right)));
+    return placeOrder !== 0 ? placeOrder : Math.sign(Number(BigInt(left.ri_row_id) - BigInt(right.ri_row_id)));
 }
 
-function compareRowIds(left: bigint, right: bigint): number {
-    const leftId = BigInt(left);
-    const rightId = BigInt(right);
-    return leftId < rightId ? -1 : leftId > rightId ? 1 : 0;
+/** An unscheduled row ranks before every due instant, which is never before the epoch. */
+function toSelectedDueRank(row: ClaimedResourceInboxRow): bigint {
+    return row.selected_next_ts === null ? -1n : toInstant(row.selected_next_ts).epochNanoseconds;
 }
 
 function resolveResourceInboxWorkPosition(
@@ -426,16 +438,26 @@ interface ResourceInboxEligibility {
     readonly maxAttempts: number;
 }
 
+interface ResourceInboxContextHeadSelection {
+    readonly eligibility: ResourceInboxEligibility;
+    readonly order: ResourceInboxClaimOrder;
+    readonly contextClaim: ResourceInboxContextClaim;
+}
+
 interface ResourceInboxReservationStatement {
     readonly eligibility: ResourceInboxEligibility;
+    readonly order: ResourceInboxClaimOrder;
     readonly contextClaim: ResourceInboxContextClaim | undefined;
     readonly maxToReserve: number;
     readonly capture: boolean;
 }
 
 function toReservationStatement(
-    { eligibility, contextClaim, maxToReserve, capture }: ResourceInboxReservationStatement
+    { eligibility, order, contextClaim, maxToReserve, capture }: ResourceInboxReservationStatement
 ): PSqlFragment {
+    const contextHead = contextClaim === undefined
+        ? PSqlFragment.of``
+        : toContextHeadPredicate({ eligibility, order, contextClaim });
     return PSqlFragment.of`
             update resource_inbox
             set ri_status   = ${EntityStatus.RESERVED},
@@ -452,8 +474,8 @@ function toReservationStatement(
                        candidate.next_ts as selected_next_ts
                 from resource_inbox candidate
                 where ${toEligibleRowPredicate('candidate', eligibility)}
-                  ${contextClaim === undefined ? PSqlFragment.of`` : toContextHeadPredicate(eligibility, contextClaim)}
-                order by candidate.next_ts asc nulls first, candidate.ri_row_id asc
+                  ${contextHead}
+                order by ${toClaimOrderBy('candidate', order)}
                     for update of candidate skip locked
                 limit ${maxToReserve}
             ) as selected
@@ -500,16 +522,20 @@ function toEligibleRowPredicate(alias: 'candidate' | 'head', eligibility: Resour
  * The candidate is its context's first eligible row in claim order, and its context is not excluded. One sort of the
  * eligible rows names every context's head; a per-candidate probe for an eligible row ahead is quadratic in them.
  */
-function toContextHeadPredicate(
-    eligibility: ResourceInboxEligibility,
-    contextClaim: ResourceInboxContextClaim
-): PSqlFragment {
+function toContextHeadPredicate({ eligibility, order, contextClaim }: ResourceInboxContextHeadSelection): PSqlFragment {
     return PSqlFragment.of`
         and candidate.ri_row_id in (
             select distinct on (head.fk_ext_bank_id) head.ri_row_id
             from resource_inbox head
             where ${toEligibleRowPredicate('head', eligibility)}
               and head.fk_ext_bank_id <> all(${[...contextClaim.excludedContextIds]}::varchar[])
-            order by head.fk_ext_bank_id, head.next_ts asc nulls first, head.ri_row_id asc
+            order by head.fk_ext_bank_id, ${toClaimOrderBy('head', order)}
         )`;
+}
+
+function toClaimOrderBy(alias: 'candidate' | 'head', order: ResourceInboxClaimOrder): PSqlFragment {
+    const row = PSqlFragment.identifier(alias);
+    return order === 'creation'
+        ? PSqlFragment.of`${row}.created_ts asc, ${row}.ri_row_id asc`
+        : PSqlFragment.of`${row}.next_ts asc nulls first, ${row}.ri_row_id asc`;
 }

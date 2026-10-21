@@ -156,7 +156,7 @@ function createContextMessage(contextId: string, resourceId: string): ALMessage 
 }
 
 describe('PostgreSQL oldest-per-context claim', () => {
-    it('takes the row the queue order serves first in each context, and no ineligible row holds a context back', async () => {
+    it('takes each context\'s earliest created eligible row as its head, in creation order over row id, and no ineligible row holds a context back', async () => {
         storage = await createResourceInboxTestStorage('app_inbox_context_head');
         const sql = storage.sql;
         await seedResourceInboxRow(sql, { resourceId: 'due-delayed', status: EntityStatus.NEW, nextInSeconds: -5 });
@@ -174,6 +174,6 @@ describe('PostgreSQL oldest-per-context claim', () => {
             contextClaim: { excludedContextIds: new Set() }
         });
 
-        expect([...heads.values()].map((entry) => entry.key.resourceId)).toEqual(['unscheduled', 'live']);
+        expect([...heads.values()].map((entry) => entry.key.resourceId)).toEqual(['due-delayed', 'live']);
     });
 });

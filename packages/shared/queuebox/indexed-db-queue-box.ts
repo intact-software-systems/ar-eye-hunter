@@ -472,7 +472,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             const now = this.#now();
             // The index pages a claim in keyString order, not in readiness order; overdue rows that
             // ordering would strand are reached by reserveOverdueRetryEntries' own fairness pass.
-            const candidates = await this.#readReservationCandidates({
+            const read = await this.#readReservationCandidates({
                 db,
                 observations,
                 typeIds,
@@ -480,7 +480,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 maxToReadPerCombination: maxToReserve
             });
             const selection = computeIndexedDbReservation({
-                candidates,
+                candidates: observations === undefined ? toIndexedDbClaimOrder(read, statusIds) : read,
                 observations,
                 maxToReserve,
                 now,
@@ -883,6 +883,27 @@ interface ComputeIndexedDbReservationInput {
     readonly maxToReserve: number;
     readonly now: Temporal.Instant;
     readonly isReservable: (stored: StoredResourceEntry) => boolean;
+}
+
+/**
+ * A claim without RETRY takes the rows it read in creation order, then in the order read, so its oldest row goes first
+ * whichever work type or key the read reached first; a claim with RETRY keeps the order read. Creation compares to the
+ * millisecond: the creation clock's finer digits are not monotonic.
+ */
+function toIndexedDbClaimOrder(
+    candidates: readonly StoredResourceEntry[],
+    statusIds: ReadonlySet<EntityStatus>
+): readonly StoredResourceEntry[] {
+    if (statusIds.has(EntityStatus.RETRY)) {
+        return candidates;
+    }
+    return candidates
+        .map((stored) => ({
+            stored,
+            createdAtMs: Temporal.PlainDateTime.from(stored.audit.createdTs).toZonedDateTime('UTC').epochMilliseconds
+        }))
+        .sort((left, right) => left.createdAtMs - right.createdAtMs)
+        .map(({ stored }) => stored);
 }
 
 /** Turns one page of candidates into the rows a claim reserves and the rows its predicate refused. */

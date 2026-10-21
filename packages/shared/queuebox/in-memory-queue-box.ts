@@ -395,7 +395,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         const now = this.now();
         const claimedContexts = contextClaim === undefined ? undefined : new ResourceInboxClaimedContexts(contextClaim);
 
-        for (const candidate of observations?.values() ?? this.data.values()) {
+        for (const candidate of observations?.values() ?? this.getClaimCandidates(typeIds, statusIds)) {
             if (reserved.size >= maxToReserve) {
                 break;
             }
@@ -581,6 +581,25 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                 yield [key, entry];
             }
         }
+    }
+
+    /**
+     * The rows a claim looks at, in its claim order: a claim without RETRY takes them in creation order and then in
+     * insertion order, so a row stored early under an old key does not go ahead of older work; one with RETRY keeps
+     * insertion order. Creation compares to the millisecond: the creation clock's finer digits are not monotonic.
+     */
+    private getClaimCandidates(
+        typeIds: ReadonlySet<string>,
+        statusIds: ReadonlySet<EntityStatus>
+    ): Iterable<ResourceEntry> {
+        if (statusIds.has(EntityStatus.RETRY)) {
+            return this.data.values();
+        }
+        return [...this.data.values()]
+            .filter((entry) => typeIds.has(entry.typeId) && statusIds.has(entry.status))
+            .map((entry) => ({ entry, createdAtMs: entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds }))
+            .sort((left, right) => left.createdAtMs - right.createdAtMs)
+            .map(({ entry }) => entry);
     }
 
     private *getIndexedEntries(

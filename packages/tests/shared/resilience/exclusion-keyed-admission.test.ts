@@ -119,6 +119,85 @@ describe('exclusion keyed admission', () => {
         expect(await Promise.all(results)).toEqual(['group-1', 'free-1', 'free-2', 'group-2', 'other-1', 'free-3']);
     });
 
+    it('gives the next freed slot to a fresh keyed run waiting in turn once a same-key run waits behind it', async () => {
+        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, releasedKeyedRunsFirst: true });
+        const runs = createGatedRuns();
+
+        const results = [
+            admission.admit(undefined, runs.run('busy')),
+            admission.admit(undefined, runs.run('ws-1')),
+            admission.admit(undefined, runs.run('ws-2')),
+            admission.admit('scope:g:aggregate', runs.run('join-1'))
+        ];
+        await vi.waitFor(() => expect(runs.started).toEqual(['busy']));
+        // The join is now a chain head: the run behind it holds the chain's next turn.
+        results.push(admission.admit('scope:g:aggregate', runs.run('join-2')));
+        for (const name of ['busy', 'join-1', 'join-2', 'ws-1', 'ws-2']) {
+            await vi.waitFor(() => expect(runs.started.at(-1)).toBe(name));
+            runs.finish(name);
+        }
+
+        await Promise.all(results);
+        expect(runs.started).toEqual(['busy', 'join-1', 'join-2', 'ws-1', 'ws-2']);
+    });
+
+    it('keeps a lone fresh keyed run in turn behind the earlier keyless runs', async () => {
+        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, releasedKeyedRunsFirst: true });
+        const runs = createGatedRuns();
+
+        const results = [
+            admission.admit(undefined, runs.run('busy')),
+            admission.admit(undefined, runs.run('ws-1')),
+            admission.admit('scope:g:aggregate', runs.run('join')),
+            admission.admit('scope:h:aggregate', runs.run('other-join'))
+        ];
+        for (const name of ['busy', 'ws-1', 'join', 'other-join']) {
+            await vi.waitFor(() => expect(runs.started.at(-1)).toBe(name));
+            runs.finish(name);
+        }
+
+        await Promise.all(results);
+        expect(runs.started).toEqual(['busy', 'ws-1', 'join', 'other-join']);
+    });
+
+    it('gives a run that a prefix-keyed settlement released the next slot when a same-key run waits behind it', async () => {
+        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, releasedKeyedRunsFirst: true });
+        const runs = createGatedRuns();
+
+        const results = [
+            admission.admit('scope', runs.run('cleanup')),
+            admission.admit(undefined, runs.run('ws-ticket')),
+            admission.admit('scope:g:aggregate', runs.run('join-1')),
+            admission.admit('scope:g:aggregate', runs.run('join-2'))
+        ];
+        for (const name of ['cleanup', 'join-1', 'join-2', 'ws-ticket']) {
+            await vi.waitFor(() => expect(runs.started.at(-1)).toBe(name));
+            runs.finish(name);
+        }
+
+        await Promise.all(results);
+        expect(runs.started).toEqual(['cleanup', 'join-1', 'join-2', 'ws-ticket']);
+    });
+
+    it('keeps a chain head in turn when keyed runs do not go first', async () => {
+        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, releasedKeyedRunsFirst: false });
+        const runs = createGatedRuns();
+
+        const results = [
+            admission.admit(undefined, runs.run('busy')),
+            admission.admit(undefined, runs.run('ws-1')),
+            admission.admit('scope:g:aggregate', runs.run('join-1')),
+            admission.admit('scope:g:aggregate', runs.run('join-2'))
+        ];
+        for (const name of ['busy', 'ws-1', 'join-1', 'join-2']) {
+            await vi.waitFor(() => expect(runs.started.at(-1)).toBe(name));
+            runs.finish(name);
+        }
+
+        await Promise.all(results);
+        expect(runs.started).toEqual(['busy', 'ws-1', 'join-1', 'join-2']);
+    });
+
     it('runs a keyless run before the fresh distinct-key runs that arrive after it when keyed runs go first', async () => {
         const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, releasedKeyedRunsFirst: true });
         const runs = createGatedRuns();

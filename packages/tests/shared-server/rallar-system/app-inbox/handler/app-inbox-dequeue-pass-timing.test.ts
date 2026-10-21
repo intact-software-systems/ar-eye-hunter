@@ -68,6 +68,8 @@ describe('AppInboxDequeuePassTiming', () => {
                     executorWaitMs: 4,
                     lanesProbed: 'NEW,RETRY,FAIRNESS',
                     claimedInPass: 2,
+                    rowId: '1101',
+                    createdTs: '2026-07-22T12:00:00',
                     passWallMs: 8,
                     handlersMs: 5
                 }
@@ -141,6 +143,8 @@ describe('AppInboxDequeuePassTiming', () => {
                     executorWaitMs: 2,
                     lanesProbed: 'NEW',
                     claimedInPass: 1,
+                    rowId: '1101',
+                    createdTs: '2026-07-22T12:00:00',
                     passWallMs: 3,
                     handlersMs: 2
                 }
@@ -355,7 +359,8 @@ function createOutboxAttempt(resourceId: string, messageTypeId: string): Resourc
             createdTs,
             expiryTs: Temporal.Instant.from('2026-07-22T13:00:00Z')
         },
-        dequeueAudit: { attempts: 1, startTs: Temporal.Instant.from('2026-07-22T12:00:00Z') }
+        dequeueAudit: { attempts: 1, startTs: Temporal.Instant.from('2026-07-22T12:00:00Z') },
+        db: { id: '1101' }
     };
     return {
         entry,
@@ -386,7 +391,8 @@ function createAttempt(resourceId: string, selectedLane: Reservator): ResourceIn
             createdTs,
             expiryTs: Temporal.Instant.from('2026-07-22T13:00:00Z')
         },
-        dequeueAudit: { attempts: 1, startTs: Temporal.Instant.from('2026-07-22T12:00:00Z') }
+        dequeueAudit: { attempts: 1, startTs: Temporal.Instant.from('2026-07-22T12:00:00Z') },
+        db: { id: '1101' }
     };
     return {
         entry,

@@ -9,6 +9,7 @@ interface ClaimedRowFixture {
     readonly resourceId: string;
     /** A due RETRY row's selected due time, in either text form a driver returns; `null` is a NEW row. */
     readonly selectedNextTs: string | null;
+    readonly createdTs?: string;
 }
 
 describe('PSqlResourceInboxReservationRepository claim order', () => {
@@ -32,6 +33,27 @@ describe('PSqlResourceInboxReservationRepository claim order', () => {
         expect([...claimed.values()].map((entry) => entry.key.resourceId))
             .toEqual(['unscheduled-nine', 'unscheduled-ten', 'due-earlier', 'due-later']);
     });
+
+    it('orders a NEW claim by creation time, then by row identity, whatever block each row id came from', async () => {
+        // The later creation time is space-separated, the earlier one T-separated: as text the later one sorts first.
+        const rows = [
+            createClaimedRow({ rowId: 2n, resourceId: 'younger', selectedNextTs: null, createdTs: '2026-10-13 12:00:01.000000' }),
+            createClaimedRow({ rowId: 1101n, resourceId: 'older', selectedNextTs: null, createdTs: '2026-10-13T12:00:00.000000' }),
+            createClaimedRow({ rowId: 3n, resourceId: 'younger-tie-high', selectedNextTs: null, createdTs: '2026-10-13 12:00:01.000000' }),
+            createClaimedRow({ rowId: 1n, resourceId: 'younger-tie-low', selectedNextTs: null, createdTs: '2026-10-13 12:00:01.000000' })
+        ];
+        const repository = new PSqlResourceInboxReservationRepository(createClaimingSql(rows), () => new Date());
+
+        const claimed = await repository.reserveEntriesSkipLocked({
+            typeIds: new Set(['APP_INBOX']),
+            statusIds: new Set([EntityStatus.NEW]),
+            reservationInput: 4,
+            contextClaim: undefined
+        });
+
+        expect([...claimed.values()].map((entry) => entry.key.resourceId))
+            .toEqual(['older', 'younger-tie-low', 'younger', 'younger-tie-high']);
+    });
 });
 
 function createClaimedRow(fixture: ClaimedRowFixture): Record<string, PSqlParameter> {
@@ -45,7 +67,7 @@ function createClaimedRow(fixture: ClaimedRowFixture): Record<string, PSqlParame
         fk_ext_bank_id: 'context-1',
         system_date: '2026-10-13',
         created_by: 'server-1',
-        created_ts: '2026-10-13 12:00:00.000000',
+        created_ts: fixture.createdTs ?? '2026-10-13 12:00:00.000000',
         expire_ts: '2027-10-13 12:00:00.000000',
         start_ts: '2026-10-13 12:00:05.000000',
         end_ts: null,

@@ -213,6 +213,41 @@ describe('IndexedDbQueueBox', () => {
         expect(await queue.getItem(expired.key)).toBeUndefined();
     });
 
+    it('claims the older NEW row of two work types first, whichever type the claim reads first', async () => {
+        const queue = new IndexedDbQueueBox({
+            dbName: `indexeddb-claim-order-types-${crypto.randomUUID()}`,
+            observer: createPassThroughIndexedDbOperationObserver()
+        });
+        const createdTs = Temporal.Now.plainDateTimeISO();
+        await queue.enqueue(createEntry('first.type', 'younger', { createdTs }));
+        await queue.enqueue(createEntry('second.type', 'older', { createdTs: createdTs.subtract({ seconds: 10 }) }));
+        const claim = { typeIds: new Set(['first.type', 'second.type']), statusIds: new Set([EntityStatus.NEW]) };
+
+        const first = await queue.reserveEntries({ ...claim, reservationInput: 1 });
+        const second = await queue.reserveEntries({ ...claim, reservationInput: 1 });
+
+        expect([...first.values()].map((entry) => entry.key.resourceId)).toEqual(['older']);
+        expect([...second.values()].map((entry) => entry.key.resourceId)).toEqual(['younger']);
+    });
+
+    it('returns the NEW rows one claim read in creation order, not in key order', async () => {
+        const queue = new IndexedDbQueueBox({
+            dbName: `indexeddb-claim-order-keys-${crypto.randomUUID()}`,
+            observer: createPassThroughIndexedDbOperationObserver()
+        });
+        const createdTs = Temporal.Now.plainDateTimeISO();
+        await queue.enqueue(createEntry('chat.message.v1', 'a-younger', { createdTs }));
+        await queue.enqueue(createEntry('chat.message.v1', 'b-older', { createdTs: createdTs.subtract({ seconds: 10 }) }));
+
+        const claimed = await queue.reserveEntries({
+            typeIds: new Set(['chat.message.v1']),
+            statusIds: new Set([EntityStatus.NEW]),
+            reservationInput: 2
+        });
+
+        expect([...claimed.values()].map((entry) => entry.key.resourceId)).toEqual(['b-older', 'a-younger']);
+    });
+
     it('persists entries across queue instances and supports reserve/release flow', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'chat.message.v1';
@@ -1140,6 +1175,7 @@ function createEntry(
         attempts: number;
         resource: string;
         expiryTs: Temporal.Instant;
+        createdTs: Temporal.PlainDateTime;
     }> = {}
 ): ResourceEntry {
     return {
@@ -1153,7 +1189,7 @@ function createEntry(
         audit: {
             date: Temporal.Now.plainTimeISO(),
             createdBy: 'test',
-            createdTs: Temporal.Now.plainDateTimeISO(),
+            createdTs: options.createdTs ?? Temporal.Now.plainDateTimeISO(),
             expiryTs: options.expiryTs ?? NEVER_EXPIRE_TS
         },
         status: options.status ?? EntityStatus.NEW,

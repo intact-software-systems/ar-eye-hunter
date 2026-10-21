@@ -87,6 +87,8 @@ Deno.test('PGlite AppInbox dequeue pass reports its statements outside the handl
             executorWaitMs: passLines[0]?.details?.executorWaitMs,
             lanesProbed: 'NEW',
             claimedInPass: 1,
+            rowId: (await queueInbox.entries.findAnyByKey(enqueued.key))?.db?.id,
+            createdTs: (await queueInbox.entries.findAnyByKey(enqueued.key))?.audit.createdTs.toString(),
             passWallMs: passLines[0]?.details?.passWallMs,
             handlersMs: passLines[0]?.details?.handlersMs
         });
