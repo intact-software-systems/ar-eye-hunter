@@ -17,7 +17,8 @@ import {
     createClientInfo,
     createGroupSnapshot,
     createOverlayInfo,
-    createRtcConnectionHarness
+    createRtcConnectionHarness,
+    type RtcConnectionHarness
 } from './web-rtc-group-manager-test-fixture.ts';
 
 describe('WebRtcGroupManager', () => {
@@ -134,66 +135,42 @@ describe('WebRtcGroupManager', () => {
     });
 
     it('invalidates dial permission and keeps the established edge when presence leaves an unchanged accepted layout', async () => {
-        const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
-        const connection = createRtcConnectionHarness('self');
-        const manager = new WebRtcGroupManager(connection.service, {
-            groupCache: new LatestRepository<string, GroupSnapshot>(),
-            clientCache: new LatestRepository<string, ClientInfo>(),
-            acceptedOverlayCache
-        }, { overlayTransitionGraceMs: 0, onOverlayAdopted: async () => {} });
-        const group = createGroupSnapshot({
-            groupId: 'room',
-            membershipVersion: 1,
-            memberSessionIds: ['self', 'peer-a']
-        });
-        await acceptActiveLayoutGroup(manager, acceptedOverlayCache, group);
+        const { connection, manager, group } = await createAcceptedPresenceScenario('self', ['peer-a']);
         connection.nativePeer('peer-a').setConnected();
         expect(manager.isPeerDialAllowedByAnyGroup('peer-a')).toBe(true);
 
-        await manager.acceptGroupUpdate({
-            ...group,
-            group: { ...group.group, presenceVersion: 2 },
-            causalRevision: { groupRevision: 1, presenceRevision: 2 },
-            activeSessions: group.activeSessions.filter((session) => session.sessionId === 'self'),
-            onlineMemberCount: 1
-        });
+        await manager.acceptGroupUpdate(toPresenceUpdate(group, 2, ['self']));
 
         expect(manager.ownerGroupsOfPeer('peer-a')).toEqual(['room']);
         expect(manager.isPeerDialAllowedByAnyGroup('peer-a')).toBe(false);
-        expect(connection.knownPeerIds()).toEqual(['peer-a']);
         expect(connection.service.activePeerIds()).toEqual(['peer-a']);
     });
 
-    it('drops an unanswered dial when presence leaves and dials afresh when presence returns', async () => {
-        const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
-        const connection = createRtcConnectionHarness('self');
-        const manager = new WebRtcGroupManager(connection.service, {
-            groupCache: new LatestRepository<string, GroupSnapshot>(),
-            clientCache: new LatestRepository<string, ClientInfo>(),
-            acceptedOverlayCache
-        }, { overlayTransitionGraceMs: 0, onOverlayAdopted: async () => {} });
-        const group = createGroupSnapshot({ groupId: 'room', membershipVersion: 1, memberSessionIds: ['self', 'peer-a'] });
-        await acceptActiveLayoutGroup(manager, acceptedOverlayCache, group);
+    it('drops the offering side dial to a peer that leaves presence and dials afresh when presence returns', async () => {
+        const { connection, manager, group } = await createAcceptedPresenceScenario('self', ['peer-a', 'peer-b']);
         const strandedDial = connection.nativePeer('peer-a');
+        const presentPeerDial = connection.nativePeer('peer-b');
 
-        await manager.acceptGroupUpdate({
-            ...group,
-            group: { ...group.group, presenceVersion: 2 },
-            causalRevision: { groupRevision: 1, presenceRevision: 2 },
-            activeSessions: group.activeSessions.filter((session) => session.sessionId === 'self'),
-            onlineMemberCount: 1
-        });
+        await manager.acceptGroupUpdate(toPresenceUpdate(group, 2, ['self', 'peer-b']));
         // Signaling is live-only, so an offer to a session that left presence is never answered.
-        expect(connection.knownPeerIds()).toEqual([]);
+        expect(strandedDial.connectionState).toBe('closed');
+        expect(connection.service.inFlightPeerIds()).toEqual(['peer-b']);
+        expect(connection.nativePeer('peer-b')).toBe(presentPeerDial);
 
-        await manager.acceptGroupUpdate({
-            ...group,
-            group: { ...group.group, presenceVersion: 3 },
-            causalRevision: { groupRevision: 1, presenceRevision: 3 }
-        });
+        await manager.acceptGroupUpdate(toPresenceUpdate(group, 3, ['self', 'peer-a', 'peer-b']));
 
-        expect(connection.service.inFlightPeerIds()).toEqual(['peer-a']);
+        expect(connection.service.inFlightPeerIds()).toEqual(['peer-b', 'peer-a']);
         expect(connection.nativePeer('peer-a')).not.toBe(strandedDial);
+    });
+
+    it('keeps the answering side setup when the offering peer leaves presence', async () => {
+        const { connection, manager, group } = await createAcceptedPresenceScenario('a-self', ['z-peer']);
+        const answeringSetup = connection.nativePeer('z-peer');
+
+        await manager.acceptGroupUpdate(toPresenceUpdate(group, 2, ['a-self']));
+
+        expect(connection.service.inFlightPeerIds()).toEqual(['z-peer']);
+        expect(connection.nativePeer('z-peer')).toBe(answeringSetup);
     });
 
     it('reports global online state separately from group-scoped connectability', async () => {
@@ -1115,6 +1092,43 @@ describe('WebRtcGroupManager', () => {
         expect(rtcQBox.knownPeerIds()).toHaveLength(5);
     });
 });
+
+interface AcceptedPresenceScenario {
+    readonly connection: RtcConnectionHarness;
+    readonly manager: WebRtcGroupManager;
+    readonly group: GroupSnapshot;
+}
+
+async function createAcceptedPresenceScenario(
+    sessionId: string,
+    peerIds: readonly string[]
+): Promise<AcceptedPresenceScenario> {
+    const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
+    const connection = createRtcConnectionHarness(sessionId);
+    const manager = new WebRtcGroupManager(connection.service, {
+        groupCache: new LatestRepository<string, GroupSnapshot>(),
+        clientCache: new LatestRepository<string, ClientInfo>(),
+        acceptedOverlayCache
+    }, { overlayTransitionGraceMs: 0, onOverlayAdopted: async () => {} });
+    const group = createGroupSnapshot({ groupId: 'room', membershipVersion: 1, memberSessionIds: [sessionId, ...peerIds] });
+    await acceptActiveLayoutGroup(manager, acceptedOverlayCache, group);
+    return { connection, manager, group };
+}
+
+function toPresenceUpdate(
+    group: GroupSnapshot,
+    presenceRevision: number,
+    presentSessionIds: readonly string[]
+): GroupSnapshot {
+    const activeSessions = group.activeSessions.filter((session) => presentSessionIds.includes(session.sessionId));
+    return {
+        ...group,
+        group: { ...group.group, presenceVersion: presenceRevision },
+        causalRevision: { groupRevision: group.causalRevision.groupRevision, presenceRevision },
+        activeSessions,
+        onlineMemberCount: activeSessions.length
+    };
+}
 
 interface ReconciledPeerSelectionObservation extends WebRtcGroupPeerSelection {
     readonly knownPeerIds: readonly string[];
