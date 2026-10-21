@@ -26,6 +26,7 @@ import { createAppInboxTestResilience, TestResourceInbox, TestResourceInboxResul
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import { readCompletedAppInboxResult } from '../app-inbox/test-support/read-completed-app-inbox-result.ts';
 import { putAuthorisedWsTestTicket } from './authorised-ws-test-ticket.ts';
+import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 const SERVICE_ID = 'server-12345678';
 
@@ -352,11 +353,11 @@ function createAuthorisedWsService(input: CreateAuthorisedWsServiceInput): AppCl
                 runtimeRepository: input.runtimeRepository,
                 clientStateEventStore: input.database.clientEventStore,
                 serviceId: SERVICE_ID
-            }),
-            wsTickets: new AuthSessionRepository(input.runtimeRepository)
+            })
         },
         {
-            serviceId: SERVICE_ID
+            serviceId: SERVICE_ID,
+            disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
         }
     );
 }

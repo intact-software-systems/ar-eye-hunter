@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 
+import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/client-state/test-disconnected-session-retention.ts';
 import { createApiV1MutationRuntime } from '../../src/composition/create-api-v1-mutation-runtime.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 
@@ -18,6 +19,7 @@ Deno.test('mutation runtime keeps one database identity and performs no construc
         appInboxLaneBudgetPolicy: 'fixed-retry-two',
         appInboxNewLaneConcurrency: 1,
         appInboxNewLaneHeldRows: 4,
+        disconnectedClientSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,
         groupCapacity: { defaultMaxMembers: 10 },
         groupFormationRecomputeDebounceMs: 250,
         groupFormationRecomputeMaxWaitMs: 1_000,

@@ -24,6 +24,7 @@ import {
     validAuthoritySession,
     validPrincipalCommand
 } from './client-mutation-validation-test-fixtures.ts';
+import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 describe('client mutation validation', () => {
     it('preserves request validation order and exact rejection details', () => {
@@ -164,7 +165,8 @@ function validFacts(): ClientMutationFacts {
         eventId: 'event-1',
         commandHash: `sha256:${'0'.repeat(64)}`,
         attemptCount: 1,
-        expireAtEpochMs: 2_000
+        expireAtEpochMs: 2_000,
+        disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
     };
 }
 

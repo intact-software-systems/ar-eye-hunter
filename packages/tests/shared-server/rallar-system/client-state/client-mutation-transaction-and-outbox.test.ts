@@ -23,9 +23,9 @@ import {
     processAuthenticatedClientMutation,
     readEntries
 } from './app-client-inbox-mutation-test-harness.ts';
-import { createEmptyWsTicketReader } from './authorised-ws-test-ticket.ts';
 import { createRollbackHarness, processRollbackMutation } from './client-mutation-rollback-test-harness.ts';
 import { createClientMutationTransactionBoundaryFixture } from './create-client-mutation-transaction-boundary-fixture.ts';
+import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 const SCOPE = { applicationId: 'ar-eye-hunter', workspaceId: 'default' } as const;
 
@@ -189,11 +189,11 @@ function createRetryHarness(): RetryHarness {
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: results,
                 database,
-                clientStateService: createRetryClientState(state, durable),
-                wsTickets: createEmptyWsTicketReader()
+                clientStateService: createRetryClientState(state, durable)
             },
             {
                 serviceId: 'server-12345678',
+                disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,
                 timing: (event) => {
                     if (
                         event.operation === 'mutation.compute' ||

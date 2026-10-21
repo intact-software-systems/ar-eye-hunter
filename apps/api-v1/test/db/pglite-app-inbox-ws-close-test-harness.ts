@@ -31,6 +31,7 @@ import {
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { putAuthorisedWsTestTicket } from '../../../../packages/tests/shared-server/rallar-system/client-state/authorised-ws-test-ticket.ts';
+import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/client-state/test-disconnected-session-retention.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { waitForPGliteFirstRetryEligibility } from './pglite-app-inbox-test-runtime.ts';
@@ -66,11 +67,6 @@ interface PGliteStateInboxConsumers {
     readonly client: AppClientInboxService;
     readonly group: GroupStateInboxService;
 }
-interface PausedLifecycleRead {
-    readonly reached: Promise<void>;
-    readonly resume: () => void;
-}
-
 export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql): Promise<PGliteAppInboxWsCloseHarness> {
     const runtime = new PSqlRuntimeStateRepository(sql);
     const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date());
@@ -165,26 +161,6 @@ async function waitForNewPGliteQueueEntry(
     throw new Error('The authorised connect was not queued');
 }
 
-export function pauseNextPGliteLifecycleRead(
-    state: Pick<ClientStateService | GroupStateService, 'sessionGenerationLifecycle'>
-): PausedLifecycleRead {
-    const lifecycle = state.sessionGenerationLifecycle;
-    const originalRead = lifecycle.read.bind(lifecycle);
-    const reached = Promise.withResolvers<void>();
-    const resumed = Promise.withResolvers<void>();
-    let pause = true;
-    lifecycle.read = async (identity) => {
-        const read = await originalRead(identity);
-        if (pause) {
-            pause = false;
-            reached.resolve();
-            await resumed.promise;
-        }
-        return read;
-    };
-    return { reached: reached.promise, resume: resumed.resolve };
-}
-
 export async function assertPGliteQueuedTypes(
     sql: PGliteSql,
     types: readonly AppInboxType[]
@@ -236,11 +212,11 @@ function createPGliteStateInboxConsumers(input: PGliteStateInboxConsumerInput): 
             resourceInboxRepository: input.resourceInbox.entries,
             resourceInboxResultsRepository: input.resourceResults,
             database: input.sql,
-            clientStateService: input.clientState,
-            wsTickets: input.authSessions
+            clientStateService: input.clientState
         },
         {
             serviceId: 'pglite-close-test',
+            disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,
             timing: undefined,
             options: input.options
         }

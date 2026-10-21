@@ -46,6 +46,17 @@ export function toSessionPurgeAfterEpochMs(
     return logicalExpiry + STATE_SESSION_PURGE_GRACE_MSECS;
 }
 
+/** A session that ended keeps its row for at most the retention after it ended, never longer than it otherwise would. */
+export function toClientSessionPurgeAfterEpochMs(
+    session: Pick<ClientSession, 'expiresAtEpochMs' | 'disconnectedAtEpochMs'>,
+    disconnectedRetentionMs: number
+): number {
+    const purgeAfterEpochMs = toSessionPurgeAfterEpochMs(session.expiresAtEpochMs, session.disconnectedAtEpochMs);
+    return session.disconnectedAtEpochMs === null
+        ? purgeAfterEpochMs
+        : Math.min(purgeAfterEpochMs, session.disconnectedAtEpochMs + disconnectedRetentionMs);
+}
+
 export function isLogicallyActiveSession(
     expiresAtEpochMs: number,
     timestamp: number = Date.now()

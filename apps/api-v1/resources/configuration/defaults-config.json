@@ -45,6 +45,9 @@
       "webSocketTicket": 30
     }
   },
+  "clientSessions": {
+    "disconnectedRetentionMs": 604800000
+  },
   "stateApi": {
     "strictReadAuthorization": false,
     "rateLimits": {

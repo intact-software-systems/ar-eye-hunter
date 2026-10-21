@@ -14,7 +14,6 @@ import { createAppInboxClientRuntime } from '../../app-inbox/client/create-app-i
 import { AppInboxHandlerRegistry } from '../../app-inbox/handler/app-inbox-handler-registry.ts';
 import { createAppInboxHandlerRuntime } from '../../app-inbox/handler/app-inbox-handler-runtime.ts';
 import { writeAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
-import type { AuthWsTicketConsumptionReader } from '../../auth/ws-ticket/auth-ws-ticket-consumption.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
 import type {
     ClientExpiredSessionPageInput,
@@ -73,11 +72,12 @@ export namespace AppClientInboxService {
         readonly resourceInboxResultsRepository: AppInboxResultRepository;
         readonly database: PSqlSql;
         readonly clientStateService: ClientStateService;
-        readonly wsTickets: AuthWsTicketConsumptionReader;
     }
 
     export interface Config {
         readonly serviceId: string;
+        /** How long a session that ended keeps its row before the runtime-state expiry sweep removes it. */
+        readonly disconnectedSessionRetentionMs: number;
         readonly timing?: RallarTimingSink;
         readonly options?: AppInboxOptions;
         readonly wakeOwningQueue?: () => void;
@@ -122,7 +122,6 @@ export class AppClientInboxService {
         this.clientStateService = dependencies.clientStateService;
         this.handler = new ClientStateInboxHandler({
             mutationService: dependencies.clientStateService,
-            wsTickets: dependencies.wsTickets,
             sessionGenerationLifecycle: dependencies.clientStateService.sessionGenerationLifecycle,
             expiryCandidates: dependencies.clientStateService,
             expiryContinuationWriter: {
@@ -132,7 +131,8 @@ export class AppClientInboxService {
             transactionWriter: handlerRuntime.transactionWriter,
             mutationTiming: { sink: config.timing, serviceId: config.serviceId },
             wakeQueue: config.wakeOwningQueue,
-            serviceId: config.serviceId
+            serviceId: config.serviceId,
+            disconnectedSessionRetentionMs: config.disconnectedSessionRetentionMs
         });
         this.registerClientStateMessages();
         this.handlers.assertRegistrationComplete(CLIENT_STATE_INBOX_REGISTRATION_TYPES);

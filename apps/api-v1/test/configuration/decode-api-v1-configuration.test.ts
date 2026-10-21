@@ -252,6 +252,7 @@ Deno.test('configuration decoder validates every numeric policy boundary without
         ['authentication.rateLimits.registrationIp', 1],
         ['authentication.rateLimits.registrationUsername', 1],
         ['authentication.rateLimits.webSocketTicket', 1],
+        ['clientSessions.disconnectedRetentionMs', 1],
         ['stateApi.rateLimits.windowMs', 1],
         ['stateApi.rateLimits.request', 1],
         ['stateApi.rateLimits.eventList', 1],
@@ -654,6 +655,9 @@ function preserveCrossFieldValidity(
     input: MutableDecodeApiV1ConfigurationInput,
     path: string
 ): void {
+    if (path === 'authentication.sessionTtlMs') {
+        setPath(input.defaultsSource, 'clientSessions.disconnectedRetentionMs', 1);
+    }
     if (path === 'topology.planning.degreeLimit') {
         setPath(input.defaultsSource, 'topology.planning.meshParamK', 1);
     }
@@ -768,5 +772,44 @@ Deno.test('configuration decoder requires the AppInbox flight hold and bounds it
     assert.deepEqual(
         error.issues.map(({ path, environmentName, code }) => ({ path, environmentName, code })),
         [{ path: 'appInbox.newLaneHeldRows', environmentName: 'RALLAR_APP_INBOX_NEW_LANE_HELD_ROWS', code: 'held-rows-below-concurrency' }]
+    );
+});
+
+Deno.test('configuration decoder requires the disconnected client session retention and bounds it by the auth session TTL', () => {
+    assert.equal(decodeApiV1Configuration(validDecodeApiV1ConfigurationInput()).clientSessions.disconnectedRetentionMs, 604_800_000);
+    const unnamed = validDecodeApiV1ConfigurationInput();
+    const unnamedClientSessions = (unnamed.defaultsSource as MutableApiV1ConfigurationSourceObject).clientSessions;
+    delete (unnamedClientSessions as MutableApiV1ConfigurationSourceObject).disconnectedRetentionMs;
+    assert.deepEqual(
+        captureConfigurationError(() => decodeApiV1Configuration(unnamed)).issues.map(({ path, code }) => ({ path, code })),
+        [{ path: 'clientSessions.disconnectedRetentionMs', code: 'missing-property' }]
+    );
+
+    for (const [retentionMs, valid] of [[0, false], [1, true], [2_592_000_000, true], [2_592_000_001, false], [1.5, false]] as const) {
+        const input = validDecodeApiV1ConfigurationInput();
+        setPath(input.defaultsSource, 'authentication.sessionTtlMs', 2_592_000_000);
+        setPath(input.defaultsSource, 'clientSessions.disconnectedRetentionMs', retentionMs);
+        if (valid) {
+            assert.equal(decodeApiV1Configuration(input).clientSessions.disconnectedRetentionMs, retentionMs);
+            continue;
+        }
+        const error = captureConfigurationError(() => decodeApiV1Configuration(input));
+        assert.equal(
+            error.issues.some((issue) => issue.path === 'clientSessions.disconnectedRetentionMs'),
+            true,
+            `${retentionMs}`
+        );
+    }
+
+    const beyondSessionTtl = validDecodeApiV1ConfigurationInput();
+    setPath(beyondSessionTtl.environmentSource, 'clientSessions.disconnectedRetentionMs', 2_592_000_001);
+    const error = captureConfigurationError(() => decodeApiV1Configuration(beyondSessionTtl));
+    assert.deepEqual(
+        error.issues.map(({ path, environmentName, code }) => ({ path, environmentName, code })),
+        [{
+            path: 'clientSessions.disconnectedRetentionMs',
+            environmentName: 'RALLAR_CLIENT_SESSION_DISCONNECTED_RETENTION_MS',
+            code: 'retention-exceeds-session-ttl'
+        }]
     );
 });

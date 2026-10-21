@@ -443,6 +443,29 @@ Deno.test('every committed profile holds sixteen AppInbox flight rows unless the
     }
 });
 
+Deno.test('every committed profile keeps disconnected client sessions seven days unless the environment selects another retention', async () => {
+    for (const profile of ['dev', 'prod', 'prod-hardened', 'prod-in-memory'] as const) {
+        const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));
+        assert.equal(configuration.clientSessions.disconnectedRetentionMs, 7 * 24 * 60 * 60 * 1_000, profile);
+    }
+    const selected = await readApiV1Configuration(readerInput({
+        ...validConfigurationEnvironment('prod-in-memory'),
+        RALLAR_CLIENT_SESSION_DISCONNECTED_RETENTION_MS: '3600000'
+    }));
+    assert.equal(selected.clientSessions.disconnectedRetentionMs, 3_600_000);
+    for (const outOfRange of ['0', '2592000001']) {
+        const error = await captureConfigurationError(readerInput({
+            ...validConfigurationEnvironment(),
+            RALLAR_CLIENT_SESSION_DISCONNECTED_RETENTION_MS: outOfRange
+        }));
+        assert.equal(
+            error.issues.some((issue) => issue.path === 'clientSessions.disconnectedRetentionMs'),
+            true,
+            outOfRange
+        );
+    }
+});
+
 function readerInput(
     environmentValues: Record<string, string>,
     hardwareConcurrency = 4

@@ -3,7 +3,6 @@ import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { AuthPersistenceOperation } from '../mutation/auth-mutation-contracts.ts';
 import { writeAuthPersistenceOperation } from '../mutation/write-auth-mutation.ts';
-import type { AuthSessionRepository } from '../persistence/auth-session-repository.ts';
 import { WS_AUTH_TICKETS_NAMESPACE } from '../persistence/auth-storage-keys.ts';
 import type { PersistedAuthSession } from '../persistence/persisted-auth-session.ts';
 import type { PersistedWebSocketTicket } from '../persistence/persisted-auth-ticket.ts';
@@ -23,11 +22,6 @@ export interface AuthWsTicketConsumptionRead {
     readonly session: RuntimeStateEntryValue<PersistedAuthSession> | null;
 }
 
-export type AuthWsTicketConsumptionReader = Pick<
-    AuthSessionRepository,
-    'readWebSocketTicketByDigestEntry' | 'findSessionBySessionIdEntry'
->;
-
 export type AuthWsTicketConsumptionIssue =
     | 'ticket-missing'
     | 'ticket-expired'
@@ -37,15 +31,6 @@ export type AuthWsTicketConsumptionIssue =
     | 'session-expired';
 
 export type AuthWsTicketConsumption = Extract<AuthPersistenceOperation, { kind: 'delete'; }>;
-
-export async function readAuthWsTicketConsumption(
-    reader: AuthWsTicketConsumptionReader,
-    claim: AuthWsTicketConsumptionClaim
-): Promise<AuthWsTicketConsumptionRead> {
-    const ticket = await reader.readWebSocketTicketByDigestEntry(claim.ticketDigest);
-    const session = await reader.findSessionBySessionIdEntry(claim.sessionId);
-    return { ticket: ticket.value ?? null, session: session ?? null };
-}
 
 export function validateAuthWsTicketConsumption(
     claim: AuthWsTicketConsumptionClaim,

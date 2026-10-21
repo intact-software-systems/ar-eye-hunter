@@ -7,6 +7,8 @@ import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-
 import type { ClientEvent } from '@shared/api/client-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
+import { toAppOutboxInsertParameterRows } from '../app-inbox/test-support/create-app-inbox-test-database-sql.ts';
+
 const OUTBOX_BY_RUNTIME = new WeakMap<object, Map<string, ResourceEntry>>();
 const OUTBOX_FAILURES_BY_RUNTIME = new WeakMap<object, number>();
 
@@ -155,14 +157,21 @@ async function appendClientStateEvent(input: ClientStateTestSqlInput): Promise<P
     if (typeof eventJson !== 'string') {
         throw new Error('Client state event JSON is required');
     }
-    const event: unknown = JSON.parse(eventJson);
-    validateClientEvent(event, 'Client state test transaction event');
+    const event = decodeClientStateTestEvent(JSON.parse(eventJson));
     await input.eventStore.appendClientEvent(event);
     return [{ event_id: event.eventId }];
 }
 
+function decodeClientStateTestEvent(value: unknown): ClientEvent {
+    validateClientEvent(value, 'Client state test transaction event');
+    return value;
+}
+
 function insertClientStateTestOutbox(input: ClientStateTestSqlInput): PSqlRows {
-    const entry = toEntry(input.values);
+    return toAppOutboxInsertParameterRows(input.query, input.values).flatMap((values) => insertClientStateTestOutboxEntry(input, toEntry(values)));
+}
+
+function insertClientStateTestOutboxEntry(input: ClientStateTestSqlInput, entry: ResourceEntry): PSqlRows {
     const identity = input.runtimeRepository as object;
     const failures = OUTBOX_FAILURES_BY_RUNTIME.get(identity) ?? 0;
     if (failures > 0) {

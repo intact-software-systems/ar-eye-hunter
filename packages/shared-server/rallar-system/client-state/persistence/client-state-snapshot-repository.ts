@@ -1,15 +1,22 @@
 import type {
+    ClientInstance,
+    ClientInstanceRef,
     ClientPresenceSnapshot,
     ClientPrincipalRef,
     ClientScope,
+    ClientSession,
+    ClientSessionRef,
     ClientSnapshot
 } from '@shared/api/client-types.ts';
 import { toClientSnapshotLastSeenAtEpochMs } from '@shared/api/group-client-views.ts';
 
-import { resolveRuntimeStateReadBatchLiveValues } from '../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
+import {
+    resolveRuntimeStateReadBatchLiveValues,
+    type RuntimeStateReadBatchLiveSelection
+} from '../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
 import type { RuntimeStateReadBatchSelector } from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
 import { toRuntimeStateReadBatchSelectedKey } from '../../../runtime-state/read-batch/to-runtime-state-read-batch-selected-key.ts';
-import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import type { RuntimeStateEntryRead, RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { ClientStateEventStore } from '../../state-events/client-state-event-store.ts';
@@ -20,14 +27,33 @@ import {
 } from '../../state-sync/state-sync-principal-audience.ts';
 import { toClientPresenceState } from '../client-presence-state.ts';
 import { assembleClientStateSnapshot, toActiveClientSessions } from './assemble-client-state-snapshot.ts';
-import { toLiveClientStateEntryValue, type ClientPrincipalSnapshotRead } from './client-state-persistence-contracts.ts';
+import { clientStateIdempotencyStorageKey } from './client-state-idempotency-storage-key.ts';
+import { clientStateInstanceStorageKey } from './client-state-instance-storage-key.ts';
+import {
+    toLiveClientStateEntryValue,
+    type ClientMutationIdempotencyRecord,
+    type ClientMutationStateBatch,
+    type ClientMutationStateBatchInput,
+    type ClientPrincipalSnapshotRead
+} from './client-state-persistence-contracts.ts';
 import { clientStatePrincipalStorageKey } from './client-state-principal-storage-key.ts';
 import { ClientStateRepositoryReads } from './client-state-repository-reads.ts';
 import {
+    CLIENT_STATE_IDEMPOTENT_NAMESPACE,
+    CLIENT_STATE_INSTANCES_NAMESPACE,
     CLIENT_STATE_PRINCIPALS_NAMESPACE,
     CLIENT_STATE_SESSIONS_NAMESPACE
 } from './client-state-runtime-namespaces.ts';
 import { clientStateScopeStorageKeyPrefix } from './client-state-scope-storage-key.ts';
+import { clientStateSessionStorageKey } from './client-state-session-storage-key.ts';
+
+type LiveSelection = RuntimeStateReadBatchLiveSelection<JsonWireValue>;
+
+interface PrincipalChildSelections {
+    readonly principal: LiveSelection;
+    readonly instances: LiveSelection;
+    readonly sessions: LiveSelection;
+}
 
 export class ClientStateSnapshotRepository extends ClientStateRepositoryReads {
     constructor(repository: RuntimeStateRepositoryLike, events: ClientStateEventStore) {
@@ -66,6 +92,7 @@ export class ClientStateSnapshotRepository extends ClientStateRepositoryReads {
         return snapshots.filter((snapshot): snapshot is ClientSnapshot => snapshot !== undefined);
     }
 
+    /** Every co-member's principal and sessions from one statement, so each principal agrees with its sessions. */
     async readAudienceSessionsForPrincipals(
         refs: readonly ClientPrincipalRef[]
     ): Promise<readonly PrincipalAudienceSessions[]> {
@@ -73,69 +100,46 @@ export class ClientStateSnapshotRepository extends ClientStateRepositoryReads {
         if (uniqueRefs.length === 0) {
             return [];
         }
-        const principalSelectors: RuntimeStateReadBatchSelector[] = uniqueRefs.map((ref, index) => ({
-            selectorId: `principal:${index}`,
-            kind: 'key',
-            namespace: CLIENT_STATE_PRINCIPALS_NAMESPACE,
-            key: clientStatePrincipalStorageKey(ref)
-        }));
-        const sessionSelectors: RuntimeStateReadBatchSelector[] = uniqueRefs.map((ref, index) => ({
-            selectorId: `sessions:${index}`,
-            kind: 'prefix',
-            namespace: CLIENT_STATE_SESSIONS_NAMESPACE,
-            keyPrefix: this.childKeyPrefix(clientStatePrincipalStorageKey(ref))
-        }));
-        const beforeSelections = await this.readLiveAudienceSelections([...principalSelectors, ...sessionSelectors]);
-        const afterSelections = await this.readLiveAudienceSelections(principalSelectors);
-        const audience = await Promise.all(uniqueRefs.map(async (ref, index) => {
-            const after = afterSelections[index][0];
-            if (!after) {
-                return undefined;
+        const selections = await this.readLiveSelections(uniqueRefs.flatMap((ref, index) => [
+            this.toPrincipalSelector(ref, `principal:${index}`),
+            this.toChildSelector(ref, CLIENT_STATE_SESSIONS_NAMESPACE, `sessions:${index}`)
+        ]));
+        return uniqueRefs.flatMap((ref, index) => {
+            const [principal] = selections[index * 2].entries;
+            if (!principal) {
+                return [];
             }
-            const principal = this.findPrincipalEntryValue(after, ref);
-            const before = beforeSelections[index][0];
-            if (!before || before.entry.revision !== principal.entry.revision) {
-                return await this.readStableAudienceSessions(ref);
-            }
-            return toPrincipalAudienceSessions(
-                ref,
-                toActiveClientSessions(
-                    beforeSelections[uniqueRefs.length + index].map((entry) => this.toSessionEntry(entry, ref).value)
-                )
-            );
-        }));
-        return audience.filter((sessions): sessions is PrincipalAudienceSessions => sessions !== undefined);
-    }
-
-    private async readStableAudienceSessions(
-        ref: ClientPrincipalRef
-    ): Promise<PrincipalAudienceSessions | undefined> {
-        return await readStableStateSnapshot({
-            snapshotKey: clientStatePrincipalStorageKey(ref),
-            readAggregate: async () => await this.findPrincipalEntry(ref),
-            readChildren: async () => {
-                const sessions = await this.listClientSessionEntries(
-                    this.childKeyPrefix(clientStatePrincipalStorageKey(ref)),
-                    ref
-                );
-                return [sessions.map((entry) => entry.value), null] as const;
-            },
-            assemble: (_principal, sessions) => toPrincipalAudienceSessions(ref, toActiveClientSessions(sessions))
+            this.findPrincipalEntryValue(principal, ref);
+            const sessions = selections[index * 2 + 1].entries.map((entry) => this.toSessionEntry(entry, ref).value);
+            return [toPrincipalAudienceSessions(ref, toActiveClientSessions(sessions))];
         });
     }
 
-    private async readLiveAudienceSelections(
-        selectors: readonly RuntimeStateReadBatchSelector[]
-    ): Promise<readonly (readonly RuntimeStateEntryValue<JsonWireValue>[])[]> {
-        const resolved = await resolveRuntimeStateReadBatchLiveValues(
-            selectors,
-            await this.repository.readRuntimeStateBatch(selectors),
-            async (namespace, entry) => await this.toLiveJsonEntryValue(namespace, entry)
-        );
-        if (resolved.status === 'changed') {
-            throw new StateSnapshotReadConflictError(toRuntimeStateReadBatchSelectedKey(selectors[0]));
+    /** A mutation's principal snapshot, instance, session and receipt, with the companion rows, from one statement. */
+    async readMutationState(input: ClientMutationStateBatchInput): Promise<ClientMutationStateBatch> {
+        const { principalRef, requestId } = input;
+        const selectors = [
+            this.toPrincipalSelector(principalRef, 'principal'),
+            this.toChildSelector(principalRef, CLIENT_STATE_INSTANCES_NAMESPACE, 'instances'),
+            this.toChildSelector(principalRef, CLIENT_STATE_SESSIONS_NAMESPACE, 'sessions')
+        ];
+        if (requestId !== null) {
+            selectors.push({
+                selectorId: 'idempotency',
+                kind: 'key',
+                namespace: CLIENT_STATE_IDEMPOTENT_NAMESPACE,
+                key: clientStateIdempotencyStorageKey(principalRef, requestId)
+            });
         }
-        return resolved.selections.map((selection) => selection.entries);
+        const selections = await this.readLiveSelections([...selectors, ...input.companionSelectors]);
+        const [principal, instances, sessions, idempotency] = selections;
+        return {
+            idempotency: requestId === null ? undefined : this.toIdempotencyRead(idempotency, principalRef, requestId),
+            principalSnapshot: this.toPrincipalSnapshotRead(principalRef, { principal, instances, sessions }),
+            instance: input.instanceRef ? this.toInstanceRead(instances, input.instanceRef) : undefined,
+            session: input.sessionRef ? this.toSessionRead(sessions, input.sessionRef) : NO_ENTRY_READ,
+            companions: selections.slice(selectors.length)
+        };
     }
 
     async readPresenceSnapshot(ref: ClientPrincipalRef): Promise<ClientPresenceSnapshot | undefined> {
@@ -207,7 +211,94 @@ export class ClientStateSnapshotRepository extends ClientStateRepositoryReads {
         void namespace;
         return await toLiveClientStateEntryValue(entry);
     }
+
+    private async readLiveSelections(
+        selectors: readonly RuntimeStateReadBatchSelector[]
+    ): Promise<readonly LiveSelection[]> {
+        const resolved = await resolveRuntimeStateReadBatchLiveValues(
+            selectors,
+            await this.repository.readRuntimeStateBatch(selectors),
+            async (namespace, entry) => await this.toLiveJsonEntryValue(namespace, entry)
+        );
+        if (resolved.status === 'changed') {
+            throw new StateSnapshotReadConflictError(toRuntimeStateReadBatchSelectedKey(selectors[0]));
+        }
+        return resolved.selections;
+    }
+
+    private toPrincipalSelector(ref: ClientPrincipalRef, selectorId: string): RuntimeStateReadBatchSelector {
+        return {
+            selectorId,
+            kind: 'key',
+            namespace: CLIENT_STATE_PRINCIPALS_NAMESPACE,
+            key: clientStatePrincipalStorageKey(ref)
+        };
+    }
+
+    private toChildSelector(
+        ref: ClientPrincipalRef,
+        namespace: string,
+        selectorId: string
+    ): RuntimeStateReadBatchSelector {
+        return {
+            selectorId,
+            kind: 'prefix',
+            namespace,
+            keyPrefix: this.childKeyPrefix(clientStatePrincipalStorageKey(ref))
+        };
+    }
+
+    private toPrincipalSnapshotRead(
+        ref: ClientPrincipalRef,
+        selections: PrincipalChildSelections
+    ): ClientPrincipalSnapshotRead | undefined {
+        const [stored] = selections.principal.entries;
+        if (!stored) {
+            return undefined;
+        }
+        const principal = this.findPrincipalEntryValue(stored, ref);
+        const instances = selections.instances.entries.map((entry) => this.toInstanceEntry(entry, ref).value);
+        const sessions = selections.sessions.entries.map((entry) => this.toSessionEntry(entry, ref).value);
+        return {
+            principal,
+            snapshot: assembleClientStateSnapshot({
+                principal: principal.value,
+                instances,
+                activeSessions: toActiveClientSessions(sessions),
+                stateRevision: principal.entry.revision + 1
+            })
+        };
+    }
+
+    private toIdempotencyRead(
+        selection: LiveSelection,
+        ref: ClientPrincipalRef,
+        requestId: string
+    ): RuntimeStateEntryValue<ClientMutationIdempotencyRecord> | undefined {
+        const [stored] = selection.entries;
+        return stored ? this.toIdempotencyEntry(stored, { ...ref, requestId }) : undefined;
+    }
+
+    private toInstanceRead(
+        instances: LiveSelection,
+        ref: ClientInstanceRef
+    ): RuntimeStateEntryValue<ClientInstance> | undefined {
+        const key = clientStateInstanceStorageKey(ref);
+        const stored = instances.entries.find((entry) => entry.entry.key === key);
+        return stored ? this.toInstanceEntry(stored, ref) : undefined;
+    }
+
+    private toSessionRead(sessions: LiveSelection, ref: ClientSessionRef): RuntimeStateEntryRead<ClientSession> {
+        const key = clientStateSessionStorageKey(ref);
+        const stored = sessions.entries.find((entry) => entry.entry.key === key);
+        return {
+            value: stored ? this.toSessionEntry(stored, ref) : undefined,
+            expiredEntry: sessions.expiredEntries.find((entry) => entry.key === key)
+        };
+    }
 }
+
+const NO_ENTRY_READ: RuntimeStateEntryRead<ClientSession> = { value: undefined, expiredEntry: undefined };
 
 function collectValuesByPrincipalId<T extends Readonly<{ principalId: string; }>>(
     values: readonly T[]

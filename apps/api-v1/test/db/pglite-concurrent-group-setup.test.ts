@@ -18,6 +18,7 @@ import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 
+import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/client-state/test-disconnected-session-retention.ts';
 import defaults from '../../resources/configuration/defaults-config.json' with { type: 'json' };
 import { createApiV1MutationRuntime, type ApiV1MutationRuntime } from '../../src/composition/create-api-v1-mutation-runtime.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
@@ -128,6 +129,7 @@ function createGroupSetupMutation(sql: PGliteSql): ApiV1MutationRuntime {
         appInboxLaneBudgetPolicy: 'fixed-retry-two',
         appInboxNewLaneConcurrency: 1,
         appInboxNewLaneHeldRows: 4,
+        disconnectedClientSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,
         groupCapacity: { defaultMaxMembers: defaults.group.defaultMaxMembers },
         groupFormationRecomputeDebounceMs: defaults.topology.recompute.formationDebounceMs,
         groupFormationRecomputeMaxWaitMs: defaults.topology.recompute.formationMaxWaitMs,

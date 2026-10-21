@@ -61,14 +61,19 @@ export function createTimedClientStateService(
     if (!input.timing) {
         return input.service;
     }
+    const timing = { sink: input.timing, serviceId: input.serviceId };
     return {
         ...input.service,
         read: (command) =>
-            timeClientStateReadPhase({
-                timing: { sink: input.timing, serviceId: input.serviceId },
-                command,
-                operation: 'mutation.read'
-            }, () => input.service.read(command))
+            timeClientStateReadPhase(
+                { timing, command, operation: 'mutation.read' },
+                () => input.service.read(command)
+            ),
+        readAuthorisedWsConnect: (connect) =>
+            timeClientStateReadPhase(
+                { timing, command: connect.command, operation: 'mutation.read' },
+                () => input.service.readAuthorisedWsConnect(connect)
+            )
     };
 }
 

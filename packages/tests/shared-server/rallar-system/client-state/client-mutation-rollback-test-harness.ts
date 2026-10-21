@@ -24,6 +24,7 @@ import { TestResourceInbox, TestResourceInboxResults } from '../app-inbox/test-s
 import type { AppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import { createAutoAuthorizingClientStateService, processAppInbox } from './app-client-inbox-mutation-test-harness.ts';
+import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 const SCOPE: StateScope = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
 
@@ -85,11 +86,11 @@ export async function createRollbackHarness(): Promise<RollbackHarness> {
                 runtimeRepository,
                 database,
                 { eventStore }
-            ),
-            wsTickets: new AuthSessionRepository(runtimeRepository)
+            )
         },
         {
-            serviceId: 'server-12345678'
+            serviceId: 'server-12345678',
+            disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
         }
     );
     return { key, queue, reader, results, service, rollbackAssertions: () => observation.assertions };

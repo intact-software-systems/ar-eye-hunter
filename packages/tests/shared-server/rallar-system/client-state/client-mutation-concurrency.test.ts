@@ -21,6 +21,7 @@ import {
     PrincipalChangeAfterFirstReadRepository
 } from './client-mutation-concurrency-test-runtime.ts';
 import { clientMutationPrincipalRef } from './client-mutation-validation-test-fixtures.ts';
+import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 describe('client mutation pure retry compute', () => {
     it('is deterministic and does not mutate a frozen command or read', () => {
@@ -69,7 +70,8 @@ describe('client mutation stable-read concurrency', () => {
                 serviceId: 'client-service',
                 eventId: 'stable-client-read-event',
                 attemptCount: 1,
-                expireAtEpochMs: session.expiresAtEpochMs + 60_000
+                expireAtEpochMs: session.expiresAtEpochMs + 60_000,
+                disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
             },
             toClientMutationSystemAuthority('client-service')
         );

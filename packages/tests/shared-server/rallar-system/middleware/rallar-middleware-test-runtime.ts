@@ -18,6 +18,7 @@ import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { TestResourceInbox, TestResourceInboxResults } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
+import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../client-state/test-disconnected-session-retention.ts';
 
 const TEST_SERVICE_ID = 'rallar-middleware-test';
 
@@ -178,11 +179,11 @@ export function createRallarMiddlewareTestRuntime(
                     resourceInboxRepository: inbox,
                     resourceInboxResultsRepository: results,
                     database,
-                    clientStateService,
-                    wsTickets: authSessions
+                    clientStateService
                 },
                 {
                     serviceId: TEST_SERVICE_ID,
+                    disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,
                     wakeOwningQueue: factoryInput.wakeQueueEngine
                 }
             );

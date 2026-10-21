@@ -32,6 +32,7 @@ import type {
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
+import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../rallar-system/client-state/test-disconnected-session-retention.ts';
 import type {
     PostgresAppInboxWorkerTrace,
     TopologyReadBarrierPrimitive
@@ -100,8 +101,8 @@ export function createPostgresAppInboxWorkerServices(
     };
     const handlerOptions = { serviceId: input.serviceId, timing: undefined, options: inboxOptions };
     const client = new AppClientInboxService(
-        { ...inboxDependencies, clientStateService: clientState, wsTickets: authSessions },
-        handlerOptions
+        { ...inboxDependencies, clientStateService: clientState },
+        { ...handlerOptions, disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS }
     );
     const group = new GroupStateInboxService({
         ...inboxDependencies,

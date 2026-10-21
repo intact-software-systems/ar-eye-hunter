@@ -6,9 +6,9 @@ import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persis
 import { authTicketDigestKey, WS_AUTH_TICKETS_NAMESPACE } from '@shared-server/rallar-system/auth/persistence/auth-storage-keys.ts';
 import {
     computeAuthWsTicketConsumption,
-    readAuthWsTicketConsumption,
     validateAuthWsTicketConsumption,
-    type AuthWsTicketConsumptionClaim
+    type AuthWsTicketConsumptionClaim,
+    type AuthWsTicketConsumptionRead
 } from '@shared-server/rallar-system/auth/ws-ticket/auth-ws-ticket-consumption.ts';
 
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
@@ -51,6 +51,16 @@ async function createTicketFixture(ticketExpiresAtEpochMs = NOW + 30_000): Promi
             capturedAtEpochMs: NOW
         }
     };
+}
+
+/** The ticket and session rows the connect's point statement selects, read here one by one. */
+async function readAuthWsTicketConsumption(
+    sessions: AuthSessionRepository,
+    claim: AuthWsTicketConsumptionClaim
+): Promise<AuthWsTicketConsumptionRead> {
+    const ticket = await sessions.readWebSocketTicketByDigestEntry(claim.ticketDigest);
+    const session = await sessions.findSessionBySessionIdEntry(claim.sessionId);
+    return { ticket: ticket.value ?? null, session: session ?? null };
 }
 
 describe('WebSocket ticket consumption inside the authorised connect', () => {

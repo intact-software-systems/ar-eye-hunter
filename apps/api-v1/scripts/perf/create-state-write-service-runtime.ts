@@ -40,6 +40,9 @@ import { STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS } from './state-write-wait-opti
 import { STATE_WRITE_REQUIRED_CONCURRENCY } from './state-write/api-v1-state-write-benchmark-options.ts';
 import type { StateWriteBenchmarkDiagnosticPhase } from './state-write/state-write-benchmark-diagnostics.ts';
 
+/** The committed default: the benchmark writes as the API server writes. */
+const STATE_WRITE_BENCHMARK_DISCONNECTED_SESSION_RETENTION_MS = 7 * 24 * 60 * 60 * 1_000;
+
 export interface StateWriteServiceRuntimeContext {
     sql: StateWriteSqlMetrics;
     timingEvents: RallarTimingEvent[];
@@ -123,11 +126,11 @@ export function createStateWriteServiceRuntime(input: CreateStateWriteServiceRun
     const client = new AppClientInboxService(
         {
             ...appInboxDependencies,
-            clientStateService: clientState,
-            wsTickets: new AuthSessionRepository(runtimeRepository)
+            clientStateService: clientState
         },
         {
             serviceId,
+            disconnectedSessionRetentionMs: STATE_WRITE_BENCHMARK_DISCONNECTED_SESSION_RETENTION_MS,
             timing,
             options: STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS.client
         }

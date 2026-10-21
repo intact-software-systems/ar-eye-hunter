@@ -18,6 +18,8 @@ import type { ClientStateEventStore } from '../state-events/client-state-event-s
 import type { StateEventListQuery } from '../state-events/state-event-listing.ts';
 import type { WsSessionGenerationLifecycleService } from '../websocket/ws-session-generation-lifecycle.ts';
 import type {
+    ClientAuthorisedWsConnectRead,
+    ClientAuthorisedWsConnectReadInput,
     ClientMutationCommand,
     ClientMutationComputed,
     ClientMutationComputedWrite,
@@ -76,6 +78,7 @@ export type ClientStateService = Readonly<{
         query: StateEventListQuery
     ): Promise<StateEventPage<ClientEvent>>;
     read(command: ClientMutationCommand): Promise<ClientMutationRead>;
+    readAuthorisedWsConnect(input: ClientAuthorisedWsConnectReadInput): Promise<ClientAuthorisedWsConnectRead>;
     write(
         transaction: PSqlSql,
         computed: ClientMutationComputedWrite
@@ -86,7 +89,7 @@ export type ClientStateService = Readonly<{
     observeSnapshot(snapshot: ClientSnapshot): Promise<ClientSnapshot>;
 }>;
 
-export type ClientStateMutationService = Pick<ClientStateService, 'read' | 'write'>;
+export type ClientStateMutationService = Pick<ClientStateService, 'read' | 'readAuthorisedWsConnect' | 'write'>;
 
 export type ClientStateServiceDependencies = Readonly<{
     runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;

@@ -10,6 +10,7 @@ import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middl
 import type { RallarAlmReceiptDiagnosticsRecorder } from '@shared-server/rallar-system/observability/alm-receipt-diagnostics.ts';
 import type { AppInboxCompletionNoticeChannel } from '@shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.ts';
 
+import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/client-state/test-disconnected-session-retention.ts';
 import type { ApiV1Runtime } from '../../src/composition/api-v1-runtime.ts';
 import type { ApiV1MutationRuntime } from '../../src/composition/create-api-v1-mutation-runtime.ts';
 import {
@@ -232,6 +233,7 @@ function createInput(events: string[]): CreateApiV1RuntimeInput {
         appInboxLaneBudgetPolicy: 'fixed-retry-two',
         appInboxNewLaneConcurrency: 1,
         appInboxNewLaneHeldRows: 4,
+        disconnectedClientSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,
         groupCapacity: { defaultMaxMembers: 10 },
         groupFormationRecomputeDebounceMs: 250,
         groupFormationRecomputeMaxWaitMs: 1_000,

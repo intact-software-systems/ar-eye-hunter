@@ -37,6 +37,7 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { assertGroupPresenceSummaryAppToWsLifecycle } from '../../../../packages/tests/shared-server/rallar-system/app-outbox/postgres/worker-outbox-lifecycle-assertions.ts';
+import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/client-state/test-disconnected-session-retention.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import {
     readPGliteAppInboxFailure,
@@ -733,7 +734,8 @@ Deno.test(
                         serviceId: 'pglite-client-service',
                         eventId: `${commandId}-event`,
                         attemptCount: 1,
-                        expireAtEpochMs: FUTURE_MS
+                        expireAtEpochMs: FUTURE_MS,
+                        disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
                     },
                     toClientMutationIssuedSessionAuthority(authority, scope, 'upsertPrincipal')
                 );

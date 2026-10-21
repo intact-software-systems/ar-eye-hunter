@@ -82,6 +82,11 @@ export interface ApiV1AuthenticationConfiguration {
     readonly rateLimits: ApiV1AuthenticationRateLimits;
 }
 
+export interface ApiV1ClientSessionsConfiguration {
+    /** How long a disconnected client session row stays readable before the runtime-state expiry sweep removes it. */
+    readonly disconnectedRetentionMs: number;
+}
+
 export interface ApiV1StateApiRateLimits {
     readonly windowMs: number;
     readonly request: number;
@@ -260,6 +265,7 @@ export interface ApiV1Configuration {
     readonly publicApi: ApiV1PublicApiConfiguration;
     readonly database: ApiV1DatabaseConfiguration;
     readonly authentication: ApiV1AuthenticationConfiguration;
+    readonly clientSessions: ApiV1ClientSessionsConfiguration;
     readonly stateApi: ApiV1StateApiConfiguration;
     readonly group: ApiV1GroupConfiguration;
     readonly topology: ApiV1TopologyConfiguration;

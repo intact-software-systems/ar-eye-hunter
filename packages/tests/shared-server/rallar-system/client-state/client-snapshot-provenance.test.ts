@@ -56,8 +56,8 @@ import {
     processAppInbox,
     requireRightSnapshot
 } from './app-client-inbox-mutation-test-harness.ts';
-import { createEmptyWsTicketReader } from './authorised-ws-test-ticket.ts';
 import { connectCommand, emptyRead } from './client-mutation-compute-test-fixtures.ts';
+import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 vi.mock('@shared/api/state-snapshot-page.ts', async (importOriginal) => {
     const original = await importOriginal<typeof import('@shared/api/state-snapshot-page.ts')>();
@@ -541,9 +541,8 @@ function createProducer(options: { readonly collideOnRequestId?: string; readonl
         resourceInboxRepository: queue,
         resourceInboxResultsRepository: results,
         database,
-        clientStateService: clientState,
-        wsTickets: createEmptyWsTicketReader()
-    }, { serviceId: 'producer-server' });
+        clientStateService: clientState
+    }, { serviceId: 'producer-server', disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS });
     return { repository, database, service, reader, state, clientState, now: Date.now() };
 }
 

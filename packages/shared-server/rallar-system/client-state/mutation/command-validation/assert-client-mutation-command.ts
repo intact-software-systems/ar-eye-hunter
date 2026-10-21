@@ -12,7 +12,12 @@ import {
 } from '../../validation/client-string-validation.ts';
 import { requirePositiveSafeInteger, requireTimestamp } from '../../validation/client-timestamp-validation.ts';
 import { validateClientPrincipalRef } from '../../validation/validate-client-principal-ref.ts';
-import { CLIENT_MUTATION_OPERATIONS, type ClientMutationCommand } from '../client-mutation-contracts.ts';
+import {
+    CLIENT_MUTATION_OPERATIONS,
+    type ClientMutationAuthority,
+    type ClientMutationCommand,
+    type ClientMutationFacts
+} from '../client-mutation-contracts.ts';
 import { assertClientMutationOperationInput } from './assert-client-mutation-operation-input.ts';
 
 export function assertClientMutationCommand(
@@ -34,7 +39,7 @@ export function assertClientMutationCommand(
     });
 }
 
-export function assertClientMutationFacts(facts: unknown): void {
+export function assertClientMutationFacts(facts: unknown): asserts facts is ClientMutationFacts {
     const value = decodeClientValidationRecord(facts, 'Client mutation facts');
     requireExactKeys(
         value,
@@ -44,7 +49,8 @@ export function assertClientMutationFacts(facts: unknown): void {
             'eventId',
             'commandHash',
             'attemptCount',
-            'expireAtEpochMs'
+            'expireAtEpochMs',
+            'disconnectedSessionRetentionMs'
         ],
         'Client mutation facts'
     );
@@ -54,12 +60,16 @@ export function assertClientMutationFacts(facts: unknown): void {
     requireSha256(value.commandHash, 'Client mutation facts.commandHash');
     requirePositiveSafeInteger(value.attemptCount, 'Client mutation facts.attemptCount');
     requireTimestamp(value.expireAtEpochMs, 'Client mutation facts.expireAtEpochMs');
+    requirePositiveSafeInteger(
+        value.disconnectedSessionRetentionMs,
+        'Client mutation facts.disconnectedSessionRetentionMs'
+    );
     if (value.expireAtEpochMs <= value.nowEpochMs) {
         rejectClientMutation('Client mutation facts.expireAtEpochMs must follow nowEpochMs');
     }
 }
 
-function assertClientMutationAuthority(authority: unknown): void {
+function assertClientMutationAuthority(authority: unknown): asserts authority is ClientMutationAuthority {
     const value = decodeClientValidationRecord(authority, 'Client mutation authority');
     if (value.kind === 'issued-session') {
         assertIssuedSessionAuthority(value);

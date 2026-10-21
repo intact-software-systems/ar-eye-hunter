@@ -59,10 +59,21 @@ describe('client mutation write purity', () => {
     });
 });
 
+/** Applies every statement: a runtime row returns its revision and each outbox row returns its identity. */
 function appliedSql(): PSqlSql {
     const sql = (
-        _stringsOrValues: TemplateStringsArray | readonly PSqlParameter[],
-        ..._values: readonly PSqlParameter[]
-    ): Promise<readonly Readonly<{ revision: number; }>[]> | object => Promise.resolve([{ revision: 0 }]);
+        stringsOrValues: TemplateStringsArray | readonly PSqlParameter[],
+        ...values: readonly PSqlParameter[]
+    ): Promise<readonly object[]> | object => {
+        if (!('raw' in stringsOrValues) || !stringsOrValues.join('').includes('insert into resource_inbox')) {
+            return Promise.resolve([{ revision: 0 }]);
+        }
+        const rows = values[0] as readonly Readonly<{ resourceId: string; topicId: string; contextId: string; }>[];
+        return Promise.resolve(rows.map((row) => ({
+            ri_resource_id: row.resourceId,
+            ri_topic_id: row.topicId,
+            fk_ext_bank_id: row.contextId
+        })));
+    };
     return sql as PSqlSql;
 }

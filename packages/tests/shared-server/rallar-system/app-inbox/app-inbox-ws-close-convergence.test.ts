@@ -27,6 +27,7 @@ import {
 import {
     createAppInboxWsCloseHarness as createHarness,
     createAuthorisedWsCloseFacts as closeFacts,
+    pauseNextAuthorisedWsConnectRead,
     pauseNextLifecycleRead,
     type AppInboxWsCloseHarness,
     type AuthorisedWsCloseFacts
@@ -47,7 +48,7 @@ describe('AppInbox websocket close convergence', () => {
             }
         });
         const facts = closeFacts(harness.authSession, 'client-interleaved-close', 5);
-        const pause = pauseNextLifecycleRead(harness.clientState);
+        const pause = pauseNextAuthorisedWsConnectRead(harness.clientState);
 
         const connectEntry = await harness.startAuthorisedWsConnect({
             authSession: facts.authSession,
