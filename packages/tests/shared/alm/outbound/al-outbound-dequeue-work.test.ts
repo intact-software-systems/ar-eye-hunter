@@ -9,6 +9,8 @@ import {
 
 import { createRallarALOutboundDequeueTiming, toALOutboundDequeueTimingEvents } from '@shared-server/rallar-system/observability/al-outbound-dequeue-timing.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
+import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
+import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type { ALOutboundDropReasonCode } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     AL_OUTBOUND_WORK_PAGE_SIZE,
@@ -524,6 +526,90 @@ describe('AL outbound dequeue work', () => {
         }).not.toBe(EntityStatus.NEW);
     });
 
+    it('reads the authority and supersedence of a full dequeued page in one turn', async () => {
+        const outbox = createOutboxQueue();
+        const stores = createDefaultOutboundTestStores(outbox);
+        const authorityReads = createTurnRecorder();
+        const supersedenceReads = createTurnRecorder();
+        recordSupersedenceReads(stores.admissionStore, supersedenceReads);
+        const runtime = createDefaultOutboundTestRuntime({
+            outbox,
+            stores,
+            dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
+            readDequeueAuthority: async () => {
+                authorityReads.record();
+                return undefined;
+            },
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+        });
+        const entries = Array.from(
+            { length: AL_OUTBOUND_WORK_PAGE_SIZE },
+            (_, index) => QueueBoxUtilities.toResourceEntryFromMsg(createDequeuedMessage(`page-${index}`), DEQUEUE_TYPE, Temporal.Now.instant())
+        );
+
+        try {
+            await runtime.ready();
+            for (const entry of entries) {
+                await outbox.enqueueIfAbsent(entry);
+            }
+            await runOutboundWorkTask(runtime);
+
+            for (const entry of entries) {
+                expect((await outbox.getItem(entry.key))?.status).toBe(EntityStatus.COMPLETED);
+            }
+            // Two rows at a time took eight turns for the authority and eight more for the supersedence.
+            expect(authorityReads.reads()).toBe(AL_OUTBOUND_WORK_PAGE_SIZE);
+            expect(authorityReads.turns()).toBe(1);
+            expect(supersedenceReads.turns()).toBe(1);
+        }
+        finally {
+            await runtime.dispose();
+        }
+    });
+
+    it('fails a corrupt row of a dequeued group alone and charges the breaker once for it', async () => {
+        const outbox = createOutboxQueue();
+        const resilience = createDequeueResilience();
+        const failures = vi.spyOn(resilience, 'failure');
+        const successes = vi.spyOn(resilience, 'success');
+        const runtime = createDefaultOutboundTestRuntime({
+            outbox,
+            dequeue: { types: new Set([DEQUEUE_TYPE]), resilience },
+            readDequeueAuthority: async (msg, entry) => {
+                if (msg.route.resourceId === 'corrupt') {
+                    throw new ALAdmissionCorruptionError(JSON.stringify(entry.key), new TypeError('corrupt row'));
+                }
+                return undefined;
+            },
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+        });
+        const entries = ['healthy-1', 'corrupt', 'healthy-2', 'healthy-3'].map((resourceId) =>
+            QueueBoxUtilities.toResourceEntryFromMsg(createDequeuedMessage(resourceId), DEQUEUE_TYPE, Temporal.Now.instant())
+        );
+
+        try {
+            await runtime.ready();
+            for (const entry of entries) {
+                await outbox.enqueueIfAbsent(entry);
+            }
+            await runOutboundWorkTask(runtime);
+
+            expect(await Promise.all(entries.map(async (entry) => (await outbox.getItem(entry.key))?.status))).toEqual([
+                EntityStatus.COMPLETED,
+                EntityStatus.NON_RETRYABLE,
+                EntityStatus.COMPLETED,
+                EntityStatus.COMPLETED
+            ]);
+            expect(failures).toHaveBeenCalledTimes(1);
+            expect(successes).toHaveBeenCalledTimes(3);
+        }
+        finally {
+            await runtime.dispose();
+        }
+    });
+
     it('advertises no readiness for a full page of expired work', async () => {
         const stores = createDefaultOutboundTestStores();
         const expiredAtMs = Date.now() - 1_000;
@@ -779,3 +865,44 @@ it('keeps simultaneous owner reservations separate and reports an empty claim wi
     await runOutboundWorkTask(owner.runtime);
     expect(events.filter((event) => event.operation === 'work-batch')).toHaveLength(1);
 });
+
+interface TurnRecorder {
+    record(): void;
+    reads(): number;
+    turns(): number;
+}
+
+/** Counts reads and the synchronous turns they were issued in, as a turn-batched backend would group them. */
+function createTurnRecorder(): TurnRecorder {
+    let reads = 0;
+    let turns = 0;
+    let open = false;
+    return {
+        record: () => {
+            reads += 1;
+            if (!open) {
+                open = true;
+                turns += 1;
+                queueMicrotask(() => {
+                    open = false;
+                });
+            }
+        },
+        reads: () => reads,
+        turns: () => turns
+    };
+}
+
+/** Records the turn of every supersedence read, of one message or of a group. */
+function recordSupersedenceReads(store: ALOutboundAdmissionStore<OutboundTestPayload>, recorder: TurnRecorder): void {
+    const isMessageSuperseded = store.isMessageSuperseded.bind(store);
+    const readMessageSupersedence = store.readMessageSupersedence.bind(store);
+    vi.spyOn(store, 'isMessageSuperseded').mockImplementation((msg) => {
+        recorder.record();
+        return isMessageSuperseded(msg);
+    });
+    vi.spyOn(store, 'readMessageSupersedence').mockImplementation((messages) => {
+        recorder.record();
+        return readMessageSupersedence(messages);
+    });
+}

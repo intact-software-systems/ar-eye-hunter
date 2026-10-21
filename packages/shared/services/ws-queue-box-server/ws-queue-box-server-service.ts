@@ -265,7 +265,6 @@ export class WsQueueBoxServerService {
         });
         this.dequeueAuthority = new WsQueueBoxServerDequeueAuthority({
             admissionStore: this.admissionStore,
-            outbox: this.outbox,
             readProducerProvenance: dependencies.readProducerProvenance
         });
         this.outboundRuntime = this.createOutboundRuntime(dependencies);

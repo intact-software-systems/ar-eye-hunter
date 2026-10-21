@@ -79,26 +79,19 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
         expect(await readSenderVersion(storage)).toBe(1);
     });
 
-    // A server's pool has five connections: a batch whose rows read at once held all of them and starved the
-    // AppInbox and the presence summary on the same server, while reading strictly one row at a time gave up the
-    // shared statements of rows read in one turn (D287). Two at a time keeps both.
-    it('reads the dequeued rows of one batch two at a time and shares the statements of rows read together', async () => {
+    // A server's pool has five connections: a batch whose rows each read alone and at once would hold all of them and
+    // starve the AppInbox and the presence summary on the same server. Reads issued in one turn share one statement per
+    // store, so the batch reads every row's supersedence together and holds one connection for it.
+    it('reads the supersedence of every dequeued row of one batch in one statement', async () => {
         const storage = await createPSqlAdmissionTestStorage();
         const { runtime, sent, outbox, admissionStore } = createDequeueLane(storage);
         await runOutboundWorkTask(runtime);
         const rows = await enqueueRows(outbox, 10);
-        let inFlight = 0;
-        let maxInFlight = 0;
-        const isMessageSuperseded = admissionStore.isMessageSuperseded.bind(admissionStore);
-        vi.spyOn(admissionStore, 'isMessageSuperseded').mockImplementation(async (msg) => {
-            inFlight += 1;
-            maxInFlight = Math.max(maxInFlight, inFlight);
-            try {
-                return await isMessageSuperseded(msg);
-            }
-            finally {
-                inFlight -= 1;
-            }
+        const supersedenceGroups: number[] = [];
+        const readMessageSupersedence = admissionStore.readMessageSupersedence.bind(admissionStore);
+        vi.spyOn(admissionStore, 'readMessageSupersedence').mockImplementation(async (messages) => {
+            supersedenceGroups.push(messages.length);
+            return await readMessageSupersedence(messages);
         });
         const counts = countPGliteStatements(storage.sql.raw);
 
@@ -106,10 +99,11 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
         await runOutboundWorkTask(runtime);
 
         expect(sent.map((message) => message.id.msgId).sort()).toEqual(rows.map(toMsgId).sort());
-        expect(maxInFlight).toBe(2);
-        // Serial decision reads cost 57 autocommit statements after the front reads were already paired.
-        // Serial commit observations cost 47 before the group read them all at once.
-        expect(counts()).toEqual({ autocommit: 39, transactions: 6, inTransaction: 74 });
+        expect(supersedenceGroups).toEqual([10]);
+        // Rows read two at a time cost 39 autocommit statements: five supersedence reads instead of one.
+        // Serial decision reads cost 57 after the front reads were already paired, and serial commit
+        // observations 47 before the group read them all at once.
+        expect(counts()).toEqual({ autocommit: 35, transactions: 6, inTransaction: 74 });
     });
 
     it('commits each row alone when two rows of the group write one supersedence track', async () => {
