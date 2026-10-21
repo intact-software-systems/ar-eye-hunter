@@ -519,7 +519,7 @@ describe('direct resource outbox writes', () => {
         ]);
     });
 
-    it('rejects an identical coalesced insert won after its read', async () => {
+    it('reports a coalesced head another writer inserted after its read, and leaves that head as it is', async () => {
         const database = createResourceInboxDatabase();
         const computed = createCoalescedTopologyWork(null, CREATED_AT_EPOCH_MS);
         const first = computed.entryWrite.entry;
@@ -532,7 +532,7 @@ describe('direct resource outbox writes', () => {
                 database.sql,
                 async (transaction) => await writeCoalescedAppOutboxWork(transaction, computed)
             )
-        ).rejects.toMatchObject({ code: 'resource-inbox-invariant-corruption' });
+        ).resolves.toEqual({ outcome: 'head-present' });
         expect(database.rows.get(toRowKey(first))?.ri_resource).toBe(first.resource);
     });
 

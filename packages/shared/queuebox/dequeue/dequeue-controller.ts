@@ -52,6 +52,12 @@ interface ReserveIntoFlightInput<K, V, T> {
 
 export class DequeueController<K, V, T> {
     public static readonly DEFAULT_MAX_NUM_TO_DEQUEUE = 1000;
+    /**
+     * The rows one lane of a draining pass claims before the pass moves on to the next lane. A lane whose rows keep
+     * coming due would otherwise hold the pass, and the work of the lanes after it, until the dequeue bound; at its share
+     * the pass serves NEW, FAIRNESS, RETRY and TIMEOUT in turn, and a lane left with work is reached by the next pass.
+     */
+    public static readonly DRAINING_LANE_CLAIMS_PER_PASS = 8;
     public static readonly DEFAULT_MAX_NUM_TO_RESERVE = 1;
 
     private static readonly DEFAULT_RETURN_DEQUEUED_ENTRIES = false;

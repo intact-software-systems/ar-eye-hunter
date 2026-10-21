@@ -94,7 +94,7 @@ export class QueueBoxUtilities {
             typesToDequeue: () => typesToDequeue,
             newLaneClaimOrder,
             maxToReserve: () => DequeueController.DEFAULT_MAX_NUM_TO_RESERVE,
-            maxNumToDequeue: DequeueController.DEFAULT_MAX_NUM_TO_DEQUEUE,
+            maxNumToDequeue: DequeueController.DRAINING_LANE_CLAIMS_PER_PASS,
             readLaneBudgets,
             workAdvertisement,
             resilience: resilience,

@@ -7,11 +7,17 @@ import {
     type PSqlResourceInboxRepository
 } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import { toDomain, type ResourceInboxRow } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import { GroupStateRepositoryReads } from '@shared-server/rallar-system/group-state/persistence/group-state-repository-reads.ts';
 import * as GroupNamespaces from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
-import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
+import {
+    GROUP_PRESENCE_SUMMARY_CONFLICT_RETRY_DELAY_MS,
+    GroupPresenceSummaryWork
+} from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
+import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
+import { toCoalescedGroupRevisionKey } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type {
     RuntimeStateReadBatchSelection,
@@ -19,6 +25,7 @@ import type {
 } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { validateGroupStateDeltaEnvelope, type GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type { GroupPresenceSummary, GroupRef } from '@shared/api/group-types.ts';
@@ -26,13 +33,17 @@ import {
     computeGroupPresenceSummaryEntry,
     decodeCanonicalGroupPresenceSummaryEntry
 } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { ResourceInboxHandlerRetryableConflict } from '@shared/queuebox/resource-inbox/resource-inbox-handler-outcome.ts';
+import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { createPSqlAdmissionTestStorage } from '../../../al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 import { createService } from './group-presence-test-runtime.ts';
+
+/** Enough connects of one group that their merged first delta outgrows one AL payload. */
+const LARGE_PAGE_CONNECTS = 120;
 
 describe('group presence summary coalescing', () => {
     it('observes every committed delta with its own command and persisted outbox key', async () => {
@@ -132,6 +143,105 @@ describe('group presence summary coalescing', () => {
         expect(await fixture.readCommittedDeltas(first.ref)).toHaveLength(3);
         expect(await fixture.readCommittedDeltas(second.ref)).toHaveLength(0);
     });
+
+    it('completes a summary whose replan successor at the same causal revision is already queued behind a reserved head', async () => {
+        const fixture = await createCoalescingFixture();
+        const seeded = await fixture.seedConnectedGroup('queued-successor-room', 3);
+        await fixture.processAlone(seeded.entries[0]!);
+        await fixture.reserveTopologyHead(seeded.ref);
+        await fixture.processAlone(seeded.entries[1]!);
+        const queuedSuccessor = (await fixture.readTopologyRows(seeded.ref))[1]!;
+        const [third] = await fixture.enqueue([seeded.entries[2]!]);
+
+        await expect(fixture.process(third!)).resolves.toBeUndefined();
+
+        expect((await fixture.resources.entries.findByKey(third!.key))?.status).toBe(EntityStatus.COMPLETED);
+        const topology = await fixture.readTopologyRows(seeded.ref);
+        expect(topology.map((row) => row.status)).toEqual([EntityStatus.RESERVED, queuedSuccessor.status]);
+        expect(topology[1]!.key.resourceId).toBe(queuedSuccessor.key.resourceId);
+        expect(topology[1]!.resource).toBe(queuedSuccessor.resource);
+    });
+
+    it('still fails a summary as corruption when the row under its successor key is not that replan request', async () => {
+        const fixture = await createCoalescingFixture();
+        const seeded = await fixture.seedConnectedGroup('foreign-successor-room', 3);
+        await fixture.processAlone(seeded.entries[0]!);
+        await fixture.reserveTopologyHead(seeded.ref);
+        await fixture.processAlone(seeded.entries[1]!);
+        const queuedSuccessor = (await fixture.readTopologyRows(seeded.ref))[1]!;
+        await fixture.replaceStoredResource(queuedSuccessor.key, '{"foreign":true}');
+        const [third] = await fixture.enqueue([seeded.entries[2]!]);
+
+        await expect(fixture.process(third!)).rejects.toBeInstanceOf(ResourceInboxInvariantCorruptionError);
+
+        expect((await fixture.readTopologyRows(seeded.ref))[1]!.resource).toBe('{"foreign":true}');
+    });
+
+    it('answers a short typed conflict when another writer queued the replan head after this summary read none', async () => {
+        const fixture = await createCoalescingFixture(undefined, undefined, { blind: true });
+        const seeded = await fixture.seedConnectedGroup('lost-head-room', 2);
+        await fixture.processAlone(seeded.entries[0]!);
+        const [second] = await fixture.enqueue([seeded.entries[1]!]);
+
+        const outcome = await fixture.process(second!);
+
+        expect(outcome).toBeInstanceOf(ResourceInboxHandlerRetryableConflict);
+        expect(outcome?.code).toBe('group-presence-summary-replan-changed');
+        expect(outcome?.retryDelayMs).toBe(GROUP_PRESENCE_SUMMARY_CONFLICT_RETRY_DELAY_MS);
+        expect(await fixture.readCommittedDeltas(seeded.ref)).toHaveLength(1);
+    });
+
+    it('coalesces the due siblings a failed page released together with the next row it claims', async () => {
+        const headRead = { blind: true };
+        const fixture = await createCoalescingFixture(undefined, undefined, headRead);
+        const seeded = await fixture.seedConnectedGroup('released-siblings-room', 4);
+        await fixture.processAlone(seeded.entries[0]!);
+        const pending = await fixture.enqueue(seeded.entries.slice(1));
+        expect(await fixture.process(pending[0]!)).toBeInstanceOf(ResourceInboxHandlerRetryableConflict);
+        const released = await Promise.all(pending.slice(1).map(async (entry) => await fixture.resources.entries.findByKey(entry.key)));
+        expect(released.map((entry) => entry?.status)).toEqual([EntityStatus.RETRY, EntityStatus.RETRY]);
+        headRead.blind = false;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+
+        await expect(fixture.process(released[0]!)).resolves.toBeUndefined();
+
+        for (const entry of released) {
+            expect((await fixture.resources.entries.findByKey(entry!.key))?.status, entry!.key.resourceId).toBe(
+                EntityStatus.COMPLETED
+            );
+        }
+    });
+
+    it('bounds a coalesced page by the AL payload limit and completes the rest from the rows it released', async () => {
+        const fixture = await createCoalescingFixture();
+        const seeded = await fixture.seedConnectedGroup('payload-bounded-room', LARGE_PAGE_CONNECTS);
+        const pending = await fixture.enqueue(seeded.entries);
+
+        await expect(fixture.process(pending[0]!)).resolves.toBeUndefined();
+
+        const afterFirstPage = await Promise.all(pending.map(async (entry) => (await fixture.resources.entries.findByKey(entry.key))!));
+        const completed = afterFirstPage.filter((entry) => entry.status === EntityStatus.COMPLETED);
+        const released = afterFirstPage.filter((entry) => entry.status === EntityStatus.RETRY);
+        expect(completed.length).toBeGreaterThan(1);
+        expect(released.length).toBe(LARGE_PAGE_CONNECTS - completed.length);
+        expect(released.length).toBeGreaterThan(0);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+
+        await expect(fixture.process(released[0]!)).resolves.toBeUndefined();
+
+        for (const entry of pending) {
+            expect((await fixture.resources.entries.findByKey(entry.key))?.status, entry.key.resourceId).toBe(
+                EntityStatus.COMPLETED
+            );
+        }
+        const committed = await fixture.readCommittedOutbox(seeded.ref);
+        expect(committed).toHaveLength(LARGE_PAGE_CONNECTS);
+        for (const entry of committed) {
+            const payload = decodePersistedALMessage(entry.resource).payload.resource;
+            expect(new TextEncoder().encode(payload).byteLength).toBeLessThanOrEqual(AL_MESSAGE_RESOURCE_LIMITS.payloadBytes);
+        }
+        expect((await fixture.readSummary(seeded.ref)).activePrincipalCount).toBe(LARGE_PAGE_CONNECTS);
+    });
 });
 
 interface SeededConnectedGroup {
@@ -147,24 +257,49 @@ interface CoalescingFixture {
     seedConnectedGroup(groupId: string, connectCount: number): Promise<SeededConnectedGroup>;
     /** Queues rows and returns them as stored, which is what a reservation observes. */
     enqueue(entries: readonly ResourceEntry[]): Promise<readonly ResourceEntry[]>;
-    process(entry: ResourceEntry): Promise<void>;
+    /** Reserves the row from its stored status, NEW or due RETRY, and hands it to the worker; resolves with its outcome. */
+    process(entry: ResourceEntry): Promise<ResourceInboxHandlerRetryableConflict | undefined>;
     /** Queues and expands one row while no sibling is pending; returns the repository calls the expansion made. */
     processAlone(entry: ResourceEntry): Promise<readonly string[]>;
     readSummary(ref: GroupRef): Promise<GroupPresenceSummary>;
     readCommittedDeltas(ref: GroupRef): Promise<readonly GroupStateDeltaEnvelope[]>;
     readCommittedOutbox(ref: GroupRef): Promise<readonly ResourceEntry[]>;
+    /** The group's coalesced replan rows, head first, in insertion order. */
+    readTopologyRows(ref: GroupRef): Promise<readonly ResourceEntry[]>;
+    /** Marks the group's replan head as claimed by a topology worker, as a recompute in flight leaves it. */
+    reserveTopologyHead(ref: GroupRef): Promise<void>;
+    /** Overwrites a stored row's resource, as a row of another request under the same key would read. */
+    replaceStoredResource(key: Key, resource: string): Promise<void>;
+}
+
+/** Reads no replan head, as a summary whose read ran before another writer queued it. */
+class HeadBlindQueueBox extends PSqlQueueBox {
+    private readonly headRead: Readonly<{ blind: boolean; }>;
+
+    constructor(resources: PSqlResourceInboxRepository, headRead: Readonly<{ blind: boolean; }>) {
+        super(resources, Temporal.Now.instant);
+        this.headRead = headRead;
+    }
+
+    override async getItem(key: Key): Promise<ResourceEntry | undefined> {
+        return this.headRead.blind && key.topicId === APP_OUTBOX_RTC_TOPOLOGY_TOPIC ? undefined : await super.getItem(key);
+    }
 }
 
 async function createCoalescingFixture(
     timingEvents?: RallarTimingEvent[],
-    wakeQueue?: () => void
+    wakeQueue?: () => void,
+    /** Present, the worker's replan-head reads see no head while it says so. */
+    headRead?: Readonly<{ blind: boolean; }>
 ): Promise<CoalescingFixture> {
     const { sql } = await createPSqlAdmissionTestStorage();
     const now = Date.now();
     const repository = new RecordingRuntimeStateRepository(sql);
     const repositoryCalls = repository.calls;
     const resources = createPSqlResourceInboxRepository(sql, () => new Date(now));
-    const queue = new PSqlQueueBox(resources, Temporal.Now.instant);
+    const queue = headRead === undefined
+        ? new PSqlQueueBox(resources, Temporal.Now.instant)
+        : new HeadBlindQueueBox(resources, headRead);
     const worker = new GroupPresenceSummaryWork({
         database: sql,
         runtimeRepository: repository,
@@ -204,7 +339,21 @@ async function createCoalescingFixture(
             return summary.value;
         },
         readCommittedDeltas: async (ref) => await readCommittedDeltas(sql, ref),
-        readCommittedOutbox: async (ref) => await readCommittedOutbox(sql, ref)
+        readCommittedOutbox: async (ref) => await readCommittedOutbox(sql, ref),
+        readTopologyRows: async (ref) => await readTopologyRows(sql, ref),
+        replaceStoredResource: async (key, resource) => {
+            await sql`update resource_inbox set ri_resource = ${resource}
+                where ri_topic_id = ${key.topicId} and ri_resource_id = ${key.resourceId}
+                  and fk_ext_bank_id = ${key.contextId}`;
+        },
+        reserveTopologyHead: async (ref) => {
+            const head = toCoalescedGroupRevisionKey(ref);
+            await sql`update resource_inbox
+                set ri_status = ${EntityStatus.RESERVED}, ri_attempts = ri_attempts + 1,
+                    start_ts = now() at time zone 'UTC', next_ts = null
+                where ri_topic_id = ${head.topicId} and ri_resource_id = ${head.resourceId}
+                  and fk_ext_bank_id = ${head.contextId}`;
+        }
     };
 }
 
@@ -212,18 +361,18 @@ async function createCoalescingFixture(
 function createReservedSummaryProcessor(
     queue: PSqlQueueBox,
     worker: GroupPresenceSummaryWork
-): (entry: ResourceEntry) => Promise<void> {
+): CoalescingFixture['process'] {
     return async (entry) => {
         const reserved = [...(await queue.reserveEntries({
             typeIds: new Set([EnqueuedType.APP_OUTBOX]),
-            statusIds: new Set([EntityStatus.NEW]),
+            statusIds: new Set([entry.status]),
             reservationInput: 1,
             observedEntries: [entry]
         })).values()][0];
         if (reserved === undefined) {
             throw new Error(`Expected to reserve ${entry.key.resourceId}`);
         }
-        await worker.processReservedEntry(decodePersistedALMessage(reserved.resource), reserved);
+        return await worker.processReservedEntry(decodePersistedALMessage(reserved.resource), reserved);
     };
 }
 
@@ -342,4 +491,12 @@ async function readCommittedOutbox(sql: PSqlSql, ref: GroupRef): Promise<readonl
 function decodeGroupStateDeltaEnvelope(value: unknown): GroupStateDeltaEnvelope {
     validateGroupStateDeltaEnvelope(value);
     return value;
+}
+
+async function readTopologyRows(sql: PSqlSql, ref: GroupRef): Promise<readonly ResourceEntry[]> {
+    const head = toCoalescedGroupRevisionKey(ref);
+    const rows = await sql<ResourceInboxRow[]>`select * from resource_inbox
+        where ri_topic_id = ${head.topicId} and fk_ext_bank_id = ${head.contextId}
+        order by ri_row_id`;
+    return rows.map(toDomain);
 }

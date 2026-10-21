@@ -2,6 +2,7 @@ import { Temporal } from '@js-temporal/polyfill';
 
 import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
 import type {
     ClientEvent,
@@ -136,6 +137,13 @@ export function computeGroupStateSyncEntries(
         }).map(({ entry }) => entry);
     });
 }
+
+/** Whether an effect's payload fits the AL payload bound its state-sync message is decoded against. */
+export function isWithinStateSyncPayloadLimit(payload: ComputedGroupStateSyncEffect['payload']): boolean {
+    return UTF8_ENCODER.encode(JSON.stringify(payload)).byteLength <= AL_MESSAGE_RESOURCE_LIMITS.payloadBytes;
+}
+
+const UTF8_ENCODER = new TextEncoder();
 
 type ComputedStateSync = ComputedClientStateSync | ComputedGroupStateSync;
 type ComputedStateSyncEffect =

@@ -18,6 +18,7 @@ import {
 } from '@shared/api/group-types.ts';
 import {
     EntityStatus,
+    isFailed,
     type Key,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
@@ -320,6 +321,43 @@ export function mergeRtcTopologyGroupRevisionWork(
             reasons: [...new Set([...previous.reasons, ...next.reasons])]
         }
     };
+}
+
+/**
+ * How a successor already stored under this request's successor key stands to the request. The key names the room and
+ * the source causal revision, so a stored row of the same room and revision already asks for that revision's replan:
+ * an automatic request adds nothing to it, and its earlier due time stands. A commanded request must rebuild, which a
+ * stored automatic row may not, and no request may rest on a row that failed for good; both wait for the head to
+ * settle, whose revival then carries them. A stored row of another room or revision under the same key is not that
+ * request.
+ */
+export type QueuedRtcTopologySuccessor = 'serves-request' | 'request-waits-for-head' | 'different-request';
+
+export function resolveQueuedRtcTopologySuccessor(
+    computed: ComputedCoalescedAppOutboxWork,
+    stored: ResourceEntry
+): QueuedRtcTopologySuccessor {
+    const requested = readPreviousCoalescedGroupRevisionWork(computed.successorWrite.entry).envelope.data;
+    let queued: CoalescedAppOutboxWorkData<RtcTopologyGroupRevisionWork>;
+    try {
+        queued = readPreviousCoalescedGroupRevisionWork(stored).envelope.data;
+    }
+    catch {
+        return 'different-request';
+    }
+    if (
+        queued.overlayId !== requested.overlayId ||
+        compareGroupCausalRevision(queued.sourceGroupStateCausalRevision, requested.sourceGroupStateCausalRevision) !==
+            'equal'
+    ) {
+        return 'different-request';
+    }
+    if (isFailed(stored.status)) {
+        return 'request-waits-for-head';
+    }
+    return requested.origin === 'automatic' || queued.origin === 'commanded'
+        ? 'serves-request'
+        : 'request-waits-for-head';
 }
 
 function toRtcTopologyCoalescedGroupRevisionSuccessorResourceId(

@@ -17,7 +17,8 @@ import {
 } from '../../queuebox/postgres/resource-inbox-coalesced-replacement.ts';
 import {
     computeAppOutboxInsert,
-    writeAppOutboxInsert,
+    readAppOutboxRow,
+    writeAppOutboxInsertIfAbsent,
     type AppOutboxInsert
 } from './app-outbox-insert.ts';
 
@@ -94,22 +95,38 @@ export function computeCoalescedAppOutboxWork(
     };
 }
 
+/**
+ * What the coalesced write found. A head inserted by another writer since this one read none is a lost race: nothing
+ * is written and a fresh attempt merges into it. A successor already stored under its causal identity was queued by an
+ * earlier request; it is left as it is, and the caller decides whether it serves this request.
+ */
+export type CoalescedAppOutboxWorkWrite =
+    | Readonly<{ outcome: 'written'; }>
+    | Readonly<{ outcome: 'head-present'; }>
+    | Readonly<{ outcome: 'successor-present'; stored: ResourceEntry; }>;
+
 export async function writeCoalescedAppOutboxWork(
     transaction: PSqlSql,
     computed: ComputedCoalescedAppOutboxWork
-): Promise<void> {
+): Promise<CoalescedAppOutboxWorkWrite> {
     if (computed.operation === 'insert') {
-        await writeAppOutboxInsert(transaction, computed.entryWrite);
-        return;
+        return await writeAppOutboxInsertIfAbsent(transaction, computed.entryWrite)
+            ? { outcome: 'written' }
+            : { outcome: 'head-present' };
     }
-
-    if (computed.operation === 'write-successor') {
-        await writeAppOutboxInsert(transaction, computed.successorWrite);
-        return;
+    if (
+        computed.operation !== 'write-successor' &&
+        await writeResourceInboxCoalescedReplacement(transaction, computed.replacement) !== null
+    ) {
+        return { outcome: 'written' };
     }
-    if (await writeResourceInboxCoalescedReplacement(transaction, computed.replacement) === null) {
-        await writeAppOutboxInsert(transaction, computed.successorWrite);
+    if (await writeAppOutboxInsertIfAbsent(transaction, computed.successorWrite)) {
+        return { outcome: 'written' };
     }
+    return {
+        outcome: 'successor-present',
+        stored: await readAppOutboxRow(transaction, computed.successorWrite.entry.key)
+    };
 }
 
 function toCoalescedWriteOperation(
