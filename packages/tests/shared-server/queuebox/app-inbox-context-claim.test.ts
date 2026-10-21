@@ -160,11 +160,14 @@ describe('PostgreSQL oldest-per-context claim', () => {
         storage = await createResourceInboxTestStorage('app_inbox_context_head');
         const sql = storage.sql;
         await seedResourceInboxRow(sql, { resourceId: 'due-delayed', status: EntityStatus.NEW, nextInSeconds: -5 });
+        await seedResourceInboxRow(sql, { resourceId: 'queued', status: EntityStatus.NEW });
         await seedResourceInboxRow(sql, { resourceId: 'unscheduled', status: EntityStatus.NEW });
         await seedResourceInboxRow(sql, { resourceId: 'pending', status: EntityStatus.NEW, nextInSeconds: 60 });
         await seedResourceInboxRow(sql, { resourceId: 'expired', status: EntityStatus.NEW, expired: true });
         await seedResourceInboxRow(sql, { resourceId: 'live', status: EntityStatus.NEW });
         await sql`update resource_inbox set fk_ext_bank_id = 'context-2' where ri_resource_id in ('expired', 'live')`;
+        // Row-id order would take 'due-delayed' and due order 'queued'; 'unscheduled', inserted after both, was created first.
+        await sql`update resource_inbox set created_ts = created_ts - interval '1 second' where ri_resource_id = 'unscheduled'`;
         const queue = new PSqlQueueBox(createPSqlResourceInboxRepository(sql, () => new Date()), Temporal.Now.instant);
 
         const heads = await queue.reserveEntries({
@@ -174,6 +177,6 @@ describe('PostgreSQL oldest-per-context claim', () => {
             contextClaim: { excludedContextIds: new Set() }
         });
 
-        expect([...heads.values()].map((entry) => entry.key.resourceId)).toEqual(['due-delayed', 'live']);
+        expect([...heads.values()].map((entry) => entry.key.resourceId)).toEqual(['unscheduled', 'live']);
     });
 });

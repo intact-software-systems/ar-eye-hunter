@@ -39,6 +39,10 @@ import {
     resolveResourceEntryObservedWrites,
     toResourceEntrySnapshot
 } from './resource-entry-observations.ts';
+import {
+    resolveResourceInboxClaimOrder,
+    toCreationOrderedEntries
+} from './resource-inbox/resource-inbox-claim-order.ts';
 import { ResourceInboxClaimedContexts } from './resource-inbox/resource-inbox-claimed-contexts.ts';
 import { toUnavailableReservationObservation } from './resource-inbox/resource-inbox-reservation-observation.ts';
 import { ResourceInboxResilience } from './resource-inbox/resource-inbox-resilience.ts';
@@ -584,22 +588,20 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     /**
-     * The rows a claim looks at, in its claim order: a claim without RETRY takes them in creation order and then in
-     * insertion order, so a row stored early under an old key does not go ahead of older work; one with RETRY keeps
-     * insertion order. Creation compares to the millisecond: the creation clock's finer digits are not monotonic.
+     * The rows a claim looks at, in its claim order; creation ties keep insertion order, so a row stored early under an
+     * old key does not go ahead of older work. A due-order claim keeps insertion order.
      */
     private getClaimCandidates(
         typeIds: ReadonlySet<string>,
         statusIds: ReadonlySet<EntityStatus>
     ): Iterable<ResourceEntry> {
-        if (statusIds.has(EntityStatus.RETRY)) {
+        if (resolveResourceInboxClaimOrder(statusIds) === 'due') {
             return this.data.values();
         }
-        return [...this.data.values()]
-            .filter((entry) => typeIds.has(entry.typeId) && statusIds.has(entry.status))
-            .map((entry) => ({ entry, createdAtMs: entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds }))
-            .sort((left, right) => left.createdAtMs - right.createdAtMs)
-            .map(({ entry }) => entry);
+        return toCreationOrderedEntries(
+            [...this.data.values()].filter((entry) => typeIds.has(entry.typeId) && statusIds.has(entry.status)),
+            (entry) => entry.audit.createdTs
+        );
     }
 
     private *getIndexedEntries(

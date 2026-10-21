@@ -12,7 +12,7 @@ export namespace ExclusionKeyedAdmission {
          * continuously fed same-key chain therefore holds one slot for as long as it is fed, and with as many such
          * chains as slots, runs waiting in turn wait until one chain drains.
          */
-        readonly releasedKeyedRunsFirst: boolean;
+        readonly keyedChainsFirst: boolean;
     }
 }
 
@@ -39,12 +39,12 @@ interface KeyedRun {
  */
 export class ExclusionKeyedAdmission {
     private readonly slots: BoundedConcurrencyAdmission;
-    private readonly keyedRunsFirst: boolean;
+    private readonly keyedChainsFirst: boolean;
     private readonly unsettled = new Set<KeyedRun>();
 
     constructor(config: ExclusionKeyedAdmission.Config) {
         this.slots = new BoundedConcurrencyAdmission({ maxConcurrent: config.maxConcurrent });
-        this.keyedRunsFirst = config.releasedKeyedRunsFirst;
+        this.keyedChainsFirst = config.keyedChainsFirst;
     }
 
     admit<T>(exclusionKey: string | undefined, run: () => Promise<T>): Promise<T> {
@@ -79,7 +79,7 @@ export class ExclusionKeyedAdmission {
     }
 
     private attachChainSuccessor(earlier: KeyedRun, successor: KeyedRun): void {
-        if (!this.keyedRunsFirst || earlier.exclusionKey !== successor.exclusionKey) {
+        if (!this.keyedChainsFirst || earlier.exclusionKey !== successor.exclusionKey) {
             return;
         }
         earlier.isChainHead = true;
@@ -96,7 +96,7 @@ export class ExclusionKeyedAdmission {
                 successor.unsettledPredecessors -= 1;
                 if (successor.unsettledPredecessors === 0) {
                     const goesFirst = successor.exclusionKey === keyed.exclusionKey || successor.isChainHead;
-                    successor.waitForSlot(this.keyedRunsFirst && goesFirst ? 'preferred' : 'in-turn');
+                    successor.waitForSlot(this.keyedChainsFirst && goesFirst ? 'preferred' : 'in-turn');
                 }
             }
         }

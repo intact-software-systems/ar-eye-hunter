@@ -18,9 +18,10 @@ export namespace BoundedConcurrencyAdmission {
 
 /**
  * Admits runs with at most the bound in flight; a run keeps its slot until it settles. Waiting runs of one priority
- * are admitted in arrival order, and a waiting preferred run goes before every waiting in-turn run. Nothing ages an
- * in-turn run: while preferred runs keep arriving faster than slots free, in-turn runs wait, so a caller that prefers
- * runs bounds their supply, for example by preferring only runs that a same-key run's settlement released.
+ * are admitted in arrival order, and a waiting preferred run, whether it asked to be preferred or was promoted while
+ * waiting in turn, goes before every waiting in-turn run. Nothing ages an in-turn run: while preferred runs keep
+ * arriving faster than slots free, in-turn runs wait, so a caller that prefers or promotes runs must bound how many it
+ * prefers at once.
  */
 export class BoundedConcurrencyAdmission {
     private readonly maxConcurrent: number;
@@ -45,6 +46,7 @@ export class BoundedConcurrencyAdmission {
         run: () => Promise<T>,
         priority: BoundedConcurrencyAdmission.Priority
     ): BoundedConcurrencyAdmission.PromotableAdmission<T> {
+        // The executor runs synchronously, so takeSlot is the resolving closure before anything can call it.
         let takeSlot = () => {};
         const admitted = new Promise<void>((resolve) => {
             takeSlot = () => {

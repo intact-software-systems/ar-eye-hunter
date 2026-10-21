@@ -41,7 +41,7 @@ export namespace DequeueLaneFlight {
          * later entry with its key waits behind, takes a freed compute slot ahead of every entry waiting in turn; any
          * other entry asks for its slot in turn.
          */
-        readonly releasedKeyedRunsFirst: boolean;
+        readonly keyedChainsFirst: boolean;
         /** An entry computes after every earlier unsettled entry whose exclusion key overlaps its own. */
         readonly toExclusionKey: ((key: K, value: V) => string | undefined) | undefined;
         /**
@@ -83,7 +83,7 @@ export class DequeueLaneFlight<K, V, T> {
         this.input = input;
         this.admission = new ExclusionKeyedAdmission({
             maxConcurrent: input.maxConcurrentComputes,
-            releasedKeyedRunsFirst: input.releasedKeyedRunsFirst
+            keyedChainsFirst: input.keyedChainsFirst
         });
     }
 

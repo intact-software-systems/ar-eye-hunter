@@ -142,7 +142,7 @@ export class InboxQueueReader {
             : new DequeueLaneFlight({
                 maxConcurrentComputes: this.newLaneConcurrency,
                 maxUnreleased: this.newLaneHeldRows,
-                releasedKeyedRunsFirst: true,
+                keyedChainsFirst: true,
                 toExclusionKey: dequeueOptions.toComputeExclusionKey,
                 releaseFailureClock: this.nowEpochMs,
                 retainSettlement: (settlement) => this.retainFlightSettlement(settlement)

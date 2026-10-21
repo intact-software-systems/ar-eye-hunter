@@ -8,7 +8,7 @@ type ScriptedLane = typeof Reservator.NEW | typeof Reservator.RETRY | typeof Res
 interface StandingLaneInput {
     readonly maxConcurrentComputes: number;
     readonly maxUnreleased: number;
-    readonly releasedKeyedRunsFirst?: boolean;
+    readonly keyedChainsFirst?: boolean;
     /** The rows each reservation of a lane returns, or the error it rejects with, in call order; past the script, none. */
     readonly reservations: Readonly<Partial<Record<ScriptedLane, readonly (readonly string[] | Error)[]>>>;
     readonly exclusionKeys?: Readonly<Record<string, string>>;
@@ -96,7 +96,7 @@ describe('DequeueController standing flight', () => {
         const lane = createStandingLane({
             maxConcurrentComputes: 1,
             maxUnreleased: 4,
-            releasedKeyedRunsFirst: true,
+            keyedChainsFirst: true,
             reservations: { NEW: [['keyed-1', 'free', 'other', 'keyed-2']] },
             exclusionKeys: { 'keyed-1': 'app:group-1', 'keyed-2': 'app:group-1', other: 'app:group-2' }
         });
@@ -314,7 +314,7 @@ function createStandingLane(input: StandingLaneInput, admitsReservation: () => b
     const flight = new DequeueLaneFlight<string, string, string>({
         maxConcurrentComputes: input.maxConcurrentComputes,
         maxUnreleased: input.maxUnreleased,
-        releasedKeyedRunsFirst: input.releasedKeyedRunsFirst ?? true,
+        keyedChainsFirst: input.keyedChainsFirst ?? true,
         toExclusionKey: (key) => input.exclusionKeys?.[key],
         releaseFailureClock: input.releaseFailureClock,
         retainSettlement: (settlement) => retained.push(settlement)

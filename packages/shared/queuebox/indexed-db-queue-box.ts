@@ -63,6 +63,10 @@ import {
     resolveResourceEntryObservation,
     resolveResourceInboxWorkPageRequest
 } from './resource-entry-observations.ts';
+import {
+    resolveResourceInboxClaimOrder,
+    toCreationOrderedEntries
+} from './resource-inbox/resource-inbox-claim-order.ts';
 import { toUnavailableReservationObservation } from './resource-inbox/resource-inbox-reservation-observation.ts';
 import { ResourceInboxResilience } from './resource-inbox/resource-inbox-resilience.ts';
 import {
@@ -886,24 +890,16 @@ interface ComputeIndexedDbReservationInput {
 }
 
 /**
- * A claim without RETRY takes the rows it read in creation order, then in the order read, so its oldest row goes first
- * whichever work type or key the read reached first; a claim with RETRY keeps the order read. Creation compares to the
- * millisecond: the creation clock's finer digits are not monotonic.
+ * The rows a claim read, in its claim order; creation ties keep the order read, so its oldest row goes first whichever
+ * work type or key the read reached first. A due-order claim keeps the order read.
  */
 function toIndexedDbClaimOrder(
     candidates: readonly StoredResourceEntry[],
     statusIds: ReadonlySet<EntityStatus>
 ): readonly StoredResourceEntry[] {
-    if (statusIds.has(EntityStatus.RETRY)) {
-        return candidates;
-    }
-    return candidates
-        .map((stored) => ({
-            stored,
-            createdAtMs: Temporal.PlainDateTime.from(stored.audit.createdTs).toZonedDateTime('UTC').epochMilliseconds
-        }))
-        .sort((left, right) => left.createdAtMs - right.createdAtMs)
-        .map(({ stored }) => stored);
+    return resolveResourceInboxClaimOrder(statusIds) === 'due'
+        ? candidates
+        : toCreationOrderedEntries(candidates, (stored) => Temporal.PlainDateTime.from(stored.audit.createdTs));
 }
 
 /** Turns one page of candidates into the rows a claim reserves and the rows its predicate refused. */

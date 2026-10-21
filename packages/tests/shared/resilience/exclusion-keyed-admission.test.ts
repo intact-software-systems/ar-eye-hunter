@@ -11,7 +11,7 @@ interface GatedRuns {
 
 describe('exclusion keyed admission', () => {
     it('runs a keyed run after every earlier run whose key equals, prefixes or extends its own', async () => {
-        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 4, releasedKeyedRunsFirst: false });
+        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 4, keyedChainsFirst: false });
         const runs = createGatedRuns();
 
         const scoped = admission.admit('app:group', runs.run('scoped'));
@@ -36,7 +36,7 @@ describe('exclusion keyed admission', () => {
     });
 
     it('holds at most the bound in flight and gives a waiting keyed run no slot', async () => {
-        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 2, releasedKeyedRunsFirst: false });
+        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 2, keyedChainsFirst: false });
         const runs = createGatedRuns();
 
         const first = admission.admit('group', runs.run('first'));
@@ -56,7 +56,7 @@ describe('exclusion keyed admission', () => {
     });
 
     it('releases the runs ordered behind a failed run and rejects only the failed one', async () => {
-        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, releasedKeyedRunsFirst: false });
+        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, keyedChainsFirst: false });
         const runs = createGatedRuns();
         const failure = new Error('handler failed');
 
@@ -73,7 +73,7 @@ describe('exclusion keyed admission', () => {
     });
 
     it('admits runs without an earlier overlapping run in arrival order, keyed or not', async () => {
-        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, releasedKeyedRunsFirst: false });
+        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, keyedChainsFirst: false });
         const runs = createGatedRuns();
 
         const results = [
@@ -91,7 +91,7 @@ describe('exclusion keyed admission', () => {
     });
 
     it('gives a freed slot to a keyed run its predecessor released ahead of waiting runs, and a fresh keyed run waits in turn', async () => {
-        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 2, releasedKeyedRunsFirst: true });
+        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 2, keyedChainsFirst: true });
         const runs = createGatedRuns();
 
         const results = [
@@ -120,7 +120,7 @@ describe('exclusion keyed admission', () => {
     });
 
     it('gives the next freed slot to a fresh keyed run waiting in turn once a same-key run waits behind it', async () => {
-        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, releasedKeyedRunsFirst: true });
+        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, keyedChainsFirst: true });
         const runs = createGatedRuns();
 
         const results = [
@@ -142,7 +142,7 @@ describe('exclusion keyed admission', () => {
     });
 
     it('keeps a lone fresh keyed run in turn behind the earlier keyless runs', async () => {
-        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, releasedKeyedRunsFirst: true });
+        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, keyedChainsFirst: true });
         const runs = createGatedRuns();
 
         const results = [
@@ -161,7 +161,7 @@ describe('exclusion keyed admission', () => {
     });
 
     it('gives a run that a prefix-keyed settlement released the next slot when a same-key run waits behind it', async () => {
-        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, releasedKeyedRunsFirst: true });
+        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, keyedChainsFirst: true });
         const runs = createGatedRuns();
 
         const results = [
@@ -180,7 +180,7 @@ describe('exclusion keyed admission', () => {
     });
 
     it('keeps a chain head in turn when keyed runs do not go first', async () => {
-        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, releasedKeyedRunsFirst: false });
+        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, keyedChainsFirst: false });
         const runs = createGatedRuns();
 
         const results = [
@@ -199,7 +199,7 @@ describe('exclusion keyed admission', () => {
     });
 
     it('runs a keyless run before the fresh distinct-key runs that arrive after it when keyed runs go first', async () => {
-        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, releasedKeyedRunsFirst: true });
+        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, keyedChainsFirst: true });
         const runs = createGatedRuns();
         const sessionNames = Array.from({ length: 10 }, (_, index) => `presence-${index}`);
 
@@ -218,7 +218,7 @@ describe('exclusion keyed admission', () => {
     });
 
     it('lets a keyless run go before the runs a prefix-keyed run released when it settled', async () => {
-        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, releasedKeyedRunsFirst: true });
+        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, keyedChainsFirst: true });
         const runs = createGatedRuns();
         const joinNames = Array.from({ length: 6 }, (_, index) => `join-${index}`);
 
@@ -238,7 +238,7 @@ describe('exclusion keyed admission', () => {
     });
 
     it('runs a keyless run during a storm of scope cleanups and in-scope connects', async () => {
-        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 2, releasedKeyedRunsFirst: true });
+        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 2, keyedChainsFirst: true });
         const runs = createGatedRuns();
 
         const results = [admission.admit(undefined, runs.run('busy')), admission.admit('scope', runs.run('cleanup-0'))];
@@ -259,7 +259,7 @@ describe('exclusion keyed admission', () => {
     });
 
     it('keeps arrival order across keyed and keyless runs when keyed runs do not go first', async () => {
-        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, releasedKeyedRunsFirst: false });
+        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, keyedChainsFirst: false });
         const runs = createGatedRuns();
 
         const results = [

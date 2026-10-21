@@ -10,6 +10,10 @@ import {
 } from '@shared/queuebox/queue-box-types.ts';
 import { resolveResourceInboxWorkPageRequest } from '@shared/queuebox/resource-entry-observations.ts';
 import {
+    resolveResourceInboxClaimOrder,
+    type ResourceInboxClaimOrder
+} from '@shared/queuebox/resource-inbox/resource-inbox-claim-order.ts';
+import {
     EntityStatus,
     type Key,
     type ResourceEntry
@@ -142,12 +146,12 @@ export class PSqlResourceInboxReservationRepository {
     /**
      * Selects and starts processing the next eligible rows in one statement: the same rows
      * `findEntriesSkipLocked` would lock, carrying the lease and attempt `startProcessingEntity` gives.
-     * A claim without RETRY takes rows in creation order, because row ids follow each session's cached
-     * sequence block rather than arrival; a claim with RETRY takes them in due order. A context claim
-     * selects only its contexts' heads: each context's first eligible row in claim order, of a context
-     * its caller did not exclude. A row whose selected lifecycle was corrupt throws, so the caller's
-     * transaction rolls the claim back instead of repairing the row. `RETURNING` keeps no order, so the
-     * claim order is restored from the returned creation time or the selected due time.
+     * Rows are taken in their `ResourceInboxClaimOrder`; creation order matters here because row ids
+     * follow each session's cached sequence block rather than arrival. A context claim selects only its
+     * contexts' heads: each context's first eligible row in claim order, of a context its caller did not
+     * exclude. A row whose selected lifecycle was corrupt throws, so the caller's transaction rolls the
+     * claim back instead of repairing the row. `RETURNING` keeps no order, so the claim order is restored
+     * from the returned creation time or the selected due time.
      */
     reserveEntriesSkipLocked(
         claim: PSqlResourceInboxReservationRepository.ReservationObservationClaim
@@ -366,13 +370,6 @@ function toSelectedResourceInboxRow(row: ClaimedResourceInboxRow): ResourceInbox
         end_ts: row.selected_end_ts,
         next_ts: row.selected_next_ts
     };
-}
-
-/** The order a claim takes its rows in: creation for a claim without RETRY, due time for one with it. */
-type ResourceInboxClaimOrder = 'creation' | 'due';
-
-function resolveResourceInboxClaimOrder(statusIds: ReadonlySet<EntityStatus>): ResourceInboxClaimOrder {
-    return statusIds.has(EntityStatus.RETRY) ? 'due' : 'creation';
 }
 
 /** Creation time or due instant, with unscheduled rows ahead, then row identity. */
