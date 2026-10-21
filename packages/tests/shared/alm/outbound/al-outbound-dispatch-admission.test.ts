@@ -8,9 +8,12 @@ import {
 
 import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import type { ALAdmissionReadSession } from '@shared/alm/al-admission-work-backend.ts';
 import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
 import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { TurnBatchedReads } from '@shared/resilience/turn-batched-reads.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import {
@@ -23,7 +26,14 @@ import { decodeOutboundTestPayload, type OutboundTestPayload } from '../outbound
 interface DispatchFixture {
     readonly admission: ALOutboundDispatchAdmission<OutboundTestPayload>;
     readonly store: ALOutboundAdmissionStore<OutboundTestPayload>;
+    readonly backend: InMemoryAdmissionBackend;
     readonly diagnostics: ALOutboundRuntimeDiagnosticsEvent[];
+}
+
+/** The reads one `readWithin` session issued, by store round, and whether a group commit opened it. */
+interface RecordedReadSession {
+    readonly openedByCommit: boolean;
+    readonly roundSizes: number[];
 }
 
 afterEach(() => vi.restoreAllMocks());
@@ -42,7 +52,42 @@ function createDispatchFixture(): DispatchFixture {
         diagnostics: (event) => diagnostics.push(event),
         settlements: () => {}
     });
-    return { admission, store: stores.admissionStore, diagnostics };
+    return { admission, store: stores.admissionStore, backend: stores.backend, diagnostics };
+}
+
+/**
+ * Each session's reads of one turn answer together as one store round, as the server backend's
+ * turn-batched statement answers them; a read issued after a round began waits for the next.
+ */
+function recordReadRounds(backend: InMemoryAdmissionBackend, isCommitting: () => boolean): RecordedReadSession[] {
+    const sessions: RecordedReadSession[] = [];
+    const readWithin = backend.readWithin.bind(backend);
+    vi.spyOn(backend, 'readWithin').mockImplementation((read) => {
+        const recorded: RecordedReadSession = { openedByCommit: isCommitting(), roundSizes: [] };
+        sessions.push(recorded);
+        return readWithin((session) => read(toRecordingReadSession(session, recorded)));
+    });
+    return sessions;
+}
+
+function toRecordingReadSession(session: ALAdmissionReadSession, recorded: RecordedReadSession): ALAdmissionReadSession {
+    let issued = 0;
+    const rounds = new TurnBatchedReads<number, number>({
+        toKeyId: String,
+        readBatch: async (reads) => {
+            recorded.roundSizes.push(reads.length);
+            return reads;
+        }
+    });
+    const inRound = async <V>(read: () => Promise<V>): Promise<V> => {
+        await rounds.read(issued++);
+        return await read();
+    };
+    return {
+        readWork: (key) => inRound(() => session.readWork(key)),
+        read: (key, decode) => inRound(() => session.read(key, decode)),
+        list: (prefix, decode) => inRound(() => session.list(prefix, decode))
+    };
 }
 
 function toDispatch(msg: ALMessage): ALOutboundDispatchAdmission.Input<OutboundTestPayload> {
@@ -239,6 +284,40 @@ it('serializes each sender in arrival order, releases failure, and forgets idle 
     finally {
         release.resolve();
         await Promise.allSettled([firstResult, ...next]);
+        admission.dispose();
+    }
+});
+
+it('reads the commit observations of a sixteen-member group in at most two store rounds', async () => {
+    const { admission, store, backend } = createDispatchFixture();
+    let committing = false;
+    const commitBundles = store.commitBundles.bind(store);
+    vi.spyOn(store, 'commitBundles').mockImplementation(async (bundles) => {
+        committing = true;
+        try {
+            return await commitBundles(bundles);
+        }
+        finally {
+            committing = false;
+        }
+    });
+    const sessions = recordReadRounds(backend, () => committing);
+    const messages = Array.from({ length: 16 }, (_, index) => ({
+        ...createOutboundMessage(`member-${index}`),
+        targets: { mode: 'unicast' as const, toPeerId: `peer-${index}` }
+    }));
+
+    try {
+        const results = await admission.commitAllSettled(messages.map(toDispatch));
+
+        expect(results.map((result) => result.status === 'fulfilled' && result.value.committed)).toEqual(messages.map(() => true));
+        const observations = sessions.filter((session) => session.openedByCommit);
+        expect(observations).toHaveLength(1);
+        // Every member's observation reads are still issued: they share rounds instead of queueing one member behind the next.
+        expect(observations[0]!.roundSizes.reduce((sum, size) => sum + size, 0)).toBe(16 * 3);
+        expect(observations[0]!.roundSizes.length).toBeLessThanOrEqual(2);
+    }
+    finally {
         admission.dispose();
     }
 });

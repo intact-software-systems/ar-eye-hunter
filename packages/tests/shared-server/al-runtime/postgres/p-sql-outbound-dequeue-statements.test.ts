@@ -108,7 +108,8 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
         expect(sent.map((message) => message.id.msgId).sort()).toEqual(rows.map(toMsgId).sort());
         expect(maxInFlight).toBe(2);
         // Serial decision reads cost 57 autocommit statements after the front reads were already paired.
-        expect(counts()).toEqual({ autocommit: 47, transactions: 6, inTransaction: 74 });
+        // Serial commit observations cost 47 before the group read them all at once.
+        expect(counts()).toEqual({ autocommit: 39, transactions: 6, inTransaction: 74 });
     });
 
     it('commits each row alone when two rows of the group write one supersedence track', async () => {

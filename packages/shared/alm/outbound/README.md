@@ -313,8 +313,10 @@ already had, and the store catches it at its public boundary and returns the typ
 `'conflict'` result. A single send (`readOutgoingDecision`) reads its decision surface, decides on
 it, and reads the effect rows and canonical pair its bundle's commit fences in one readonly session,
 so its commit opens only the write phase's fence snapshot and the write; `commitBundle` without that
-observation, and a group's `commitBundles`, read it in a readonly session of their own first. Every
-observation is re-read inside the write, however old it is. Only a write conflicts. A read chain's
+observation, and a group's `commitBundles`, read it in a readonly session of their own first; a group
+reads the observations of all its bundles at once, so a backend that batches one turn's reads answers
+the group in the rounds of one member rather than one member after another. Every observation is
+re-read inside the write, however old it is. Only a write conflicts. A read chain's
 expiry eviction that finds its row moved by another writer leaves the row to that writer and answers
 from its snapshot (the inbound README's decision-surface section), so `ALOutboundControlAdmission.admit`
 never loses an acknowledgement to a throw out of `readControlAdmission` or its effect read.

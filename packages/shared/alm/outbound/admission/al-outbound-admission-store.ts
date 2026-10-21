@@ -10,6 +10,7 @@ import type { StateScope } from '../../../api/state-types.ts';
 import { PersistenceWriteExpiredError } from '../../../persistence/persistence-write-deadline.ts';
 import { hasSameResourceEntryValue } from '../../../queuebox/resource-entry-observations.ts';
 import { toKeyAsString, type Key, type ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
+import { settleAll } from '../../../resilience/settle-all.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import type {
     ALAdmissionReadSession,
@@ -606,14 +607,12 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         // the canonical pair it may write. The conditional write re-reads its own fences separately.
         // Joining two reads costs this callback a microtask turn that handing the session straight
         // to a chain does not, which is a budget a settled batch is measured in -- spend it here,
-        // where the commit is what the caller is waiting for, and nowhere on the read path.
-        const observed = await this.backend.readWithin(async (session) => {
-            const reads: ALOutboundCommitObservation<TPrepared>[] = [];
-            for (const bundle of writing) {
-                reads.push(await this.readCommitObservation(session, bundle));
-            }
-            return reads;
-        });
+        // where the commit is what the caller is waiting for, and nowhere on the read path. Every bundle
+        // reads at once, so a backend that batches one turn's reads answers the group in its rounds,
+        // not one member's; every read settles before the session closes.
+        const observed = await this.backend.readWithin((session) =>
+            settleAll(writing.map((bundle) => this.readCommitObservation(session, bundle)))
+        );
         return await this.commitObserved(writing, observed, nowMs);
     }
 
