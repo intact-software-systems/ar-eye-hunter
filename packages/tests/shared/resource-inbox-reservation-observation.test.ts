@@ -17,7 +17,7 @@ import {
     resolveResourceInboxReservationObservation,
     type ResourceInboxReservationObservation
 } from '@shared/queuebox/resource-inbox/resource-inbox-reservation-observation.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, toKeyAsString, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import '../setup-browser-indexeddb.ts';
 
@@ -132,11 +132,10 @@ describe('retry observation decoding and association', () => {
         const first = { ...entry, status: EntityStatus.NEW, dequeueAudit: { attempts: 0 } };
         const second = { ...first, key: { ...first.key, resourceId: 'second' } };
         const queue = new InMemoryQueueBox(new Map([[first.key, first], [second.key, second]]), () => Temporal.Instant.from('2026-01-01T00:00:01Z'));
+        // The selection fails once the store has reserved the first row, whatever lookups the claim made before that.
         class FailingStatusSelection extends Set<EntityStatus> {
-            private lookups = 0;
             override has(status: EntityStatus): boolean {
-                this.lookups += 1;
-                if (this.lookups === 2) {
+                if (queue.peek(toKeyAsString(first.key))?.status === EntityStatus.RESERVED) {
                     throw new Error('selection failed');
                 }
                 return super.has(status);
