@@ -100,7 +100,7 @@ export class GroupStateTestMutationExecutor {
         const commandHash = computeMutationCommandDigest(
             decodeJsonWireValue(command, 'Group maintenance command')
         );
-        const read = await readGroupMutation(this.repository(), command);
+        const { read } = await readGroupMutation(this.repository(), command, null);
         const facts: GroupMutationFacts = {
             nowEpochMs: atEpochMs,
             expireAtEpochMs: TEST_OUTBOX_EXPIRE_AT_EPOCH_MS,

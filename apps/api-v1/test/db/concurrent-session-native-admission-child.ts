@@ -3,14 +3,13 @@ import assert from 'node:assert/strict';
 import { PSqlResourceInboxEntryReader } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-reader.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { decodePersistedAppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure-decoding.ts';
-import { toPhysicalAppInboxQueueKey } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
-import { encodeAppInboxCommand } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import {
     decodeGroupStateInboxDurableResult,
     requireGroupMutationReceipt,
     requireGroupStateWritten
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
+import { toAuthenticatedGroupMutationQueueKey } from '@shared-server/rallar-system/group-state/inbox/to-authenticated-group-mutation-queue-key.ts';
 import { decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
@@ -237,11 +236,7 @@ function assertNativeGroupHttpResult(result: NativeGroupRequestResult): void {
 async function assertNativeGroupDurableResult(observation: NativeGroupDurableResultObservation): Promise<void> {
     const { queueEntries, queueResults, result } = observation;
     const enqueue = toGroupStateCommand(result.command);
-    const key = toPhysicalAppInboxQueueKey({
-        ...enqueue,
-        resourceId: result.command.request.requestId,
-        data: encodeAppInboxCommand(enqueue.data, 'Observed group command')
-    });
+    const key = toAuthenticatedGroupMutationQueueKey({ ...enqueue, resourceId: result.command.request.requestId });
     const queued = await queueEntries.findAnyByKey(key);
     const durable = await queueResults.findAnyByKey(key);
     const requestId = result.command.request.requestId;
@@ -355,11 +350,7 @@ async function assertNativeGroupSessionAuthority(observation: NativeGroupSession
     assert.equal(failure.code, 'authorization-denied');
     assert.equal(failure.status, 403);
     const enqueue = toGroupStateCommand(response.command);
-    const key = toPhysicalAppInboxQueueKey({
-        ...enqueue,
-        resourceId: response.command.request.requestId,
-        data: encodeAppInboxCommand(enqueue.data, 'Observed unauthorized command')
-    });
+    const key = toAuthenticatedGroupMutationQueueKey({ ...enqueue, resourceId: response.command.request.requestId });
     assert.equal(await queueEntries.findAnyByKey(key), null, 'Unauthorized presence must not enqueue');
     assert.equal(await queueResults.findAnyByKey(key), null, 'Unauthorized presence must not create a result');
     assert.deepEqual(

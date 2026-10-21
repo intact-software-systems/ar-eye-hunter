@@ -12,23 +12,25 @@ describe('convergent group and presence state', () => {
     it('converges concurrent omitted join-code rotations on the winning receipt', async () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'concurrent-default-code-room');
+        const request = { actorPrincipalId: 'alice', requestId: 'concurrent-default-code' };
         runtime.armGroupReadBarrier(2);
 
-        const results = await Promise.all([
-            createService(runtime, BASE_EPOCH_MS + 2_000).rotateGroupJoinCode(
-                SCOPE,
-                'concurrent-default-code-room',
-                { actorPrincipalId: 'alice', requestId: 'concurrent-default-code' }
-            ),
-            createService(runtime, BASE_EPOCH_MS + 3_000).rotateGroupJoinCode(
-                SCOPE,
-                'concurrent-default-code-room',
-                { actorPrincipalId: 'alice', requestId: 'concurrent-default-code' }
-            )
+        const attempts = await Promise.allSettled([
+            createService(runtime, BASE_EPOCH_MS + 2_000).rotateGroupJoinCode(SCOPE, 'concurrent-default-code-room', request),
+            createService(runtime, BASE_EPOCH_MS + 3_000).rotateGroupJoinCode(SCOPE, 'concurrent-default-code-room', request)
         ]);
-        const [first, second] = results.map(requireJoinCodeResult);
+        const won = attempts.flatMap((attempt) => (attempt.status === 'fulfilled' ? [attempt.value] : []));
+        expect(attempts.filter((attempt) => attempt.status === 'rejected')).toEqual([
+            expect.objectContaining({ reason: expect.any(RuntimeStateWriteConflictError) })
+        ]);
+        // The loser's next queue delivery is a fresh attempt that replays the winner's receipt.
+        const replayed = await createService(runtime, BASE_EPOCH_MS + 4_000, 2).rotateGroupJoinCode(
+            SCOPE,
+            'concurrent-default-code-room',
+            request
+        );
 
-        expect(second).toEqual(first);
+        expect(won.map(requireJoinCodeResult)).toEqual([requireJoinCodeResult(replayed)]);
         expect(
             (
                 await createTestGroupStateRepository(runtime).findIdempotentGroupMutationReceipt(
@@ -120,27 +122,22 @@ describe('convergent group and presence state', () => {
     it('allows only one semantic command for a concurrent shared request id', async () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'same-request-race');
+        const requests = ['Winner A', 'Winner B'].map((displayName) => ({
+            displayName,
+            actorPrincipalId: 'alice',
+            requestId: 'shared-semantic-request'
+        }));
         runtime.armGroupReadBarrier(2);
-        const results = await Promise.allSettled([
-            createService(runtime, 2_000).updateGroup(SCOPE, 'same-request-race', {
-                displayName: 'Winner A',
-                actorPrincipalId: 'alice',
-                requestId: 'shared-semantic-request'
-            }),
-            createService(runtime, 2_001).updateGroup(SCOPE, 'same-request-race', {
-                displayName: 'Winner B',
-                actorPrincipalId: 'alice',
-                requestId: 'shared-semantic-request'
-            })
-        ]);
+        const results = await Promise.allSettled(
+            requests.map((request, index) => createService(runtime, 2_000 + index).updateGroup(SCOPE, 'same-request-race', request))
+        );
+        const lost = results.findIndex((result) => result.status === 'rejected');
         expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
-        expect(
-            results.filter(
-                (result) =>
-                    result.status === 'rejected' &&
-                    result.reason instanceof GroupMutationIdempotencyConflictError
-            )
-        ).toHaveLength(1);
+        expect(results[lost]).toMatchObject({ reason: expect.any(RuntimeStateWriteConflictError) });
+        // The loser's fresh attempt reads the winner's receipt and rejects its different semantic command.
+        await expect(
+            createService(runtime, 2_000 + lost, 2).updateGroup(SCOPE, 'same-request-race', requests[lost])
+        ).rejects.toBeInstanceOf(GroupMutationIdempotencyConflictError);
         expect(['Winner A', 'Winner B']).toContain(
             (await requireSnapshot(runtime, 'same-request-race')).group.displayName
         );

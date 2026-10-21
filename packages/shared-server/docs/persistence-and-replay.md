@@ -114,8 +114,7 @@ that has not claimed its deadline by committing when it falls due is abandoned a
 a retryable `app-inbox-attempt-deadline-exceeded` failure with a
 `handler-deadline-expired` timing event, so the serial lane serves its next entry
 and the entry follows the retry path. The abandoned handler's own commit then
-loses the claim and rolls back, its pre-transaction authority write is refused
-(`requireUnexpiredAttempt`), and it records no late queue-retry line. A handler
+loses the claim and rolls back, and it records no late queue-retry line. A handler
 that claimed its deadline and still ran past what remained of its lease, such as a
 slow commit, is reported as a `handler-outran-lease` timing event.
 

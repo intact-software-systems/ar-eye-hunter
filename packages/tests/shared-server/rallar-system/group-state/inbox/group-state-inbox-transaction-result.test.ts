@@ -176,12 +176,6 @@ describe('group-state AppInbox transaction result boundary', () => {
             }
         };
         const handler = new GroupStateInboxHandler({
-            captureAuthenticatedMutationIngress: async () => {
-                throw new Error('Inactive presence fixture must already be internal.');
-            },
-            persistMutationIngress: async () => {
-                throw new Error('Inactive presence fixture must not persist mutation ingress.');
-            },
             mutationService: {
                 read: async () => {
                     throw new Error('Inactive presence discards its group mutation read');
@@ -225,7 +219,6 @@ describe('group-state AppInbox transaction result boundary', () => {
                 }
             },
             transactionWriter,
-            lanePhaseTiming: undefined,
             publicationTiming: undefined,
             wakeQueue: () => actions.push('wake')
         });

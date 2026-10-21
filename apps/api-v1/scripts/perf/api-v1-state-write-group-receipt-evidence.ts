@@ -1,5 +1,4 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 
 import { type AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -7,6 +6,7 @@ import { toGroupAppInboxOperation } from '@shared-server/rallar-system/app-inbox
 import { toDescriptorCommand } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import type { GroupMutationDescriptor } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { decodeGroupMutationDescriptor } from '@shared-server/rallar-system/group-state/inbox/decode-group-state-inbox-authority.ts';
+import { toAuthenticatedGroupMutationQueueKey } from '@shared-server/rallar-system/group-state/inbox/to-authenticated-group-mutation-queue-key.ts';
 import {
     toGroupMutationDescriptorTargetIdentity
 } from '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
@@ -244,7 +244,7 @@ function resolveScopedGroupCommandIdentity(
 }
 
 function toScopedGroupCommandQueueKey(expectation: ScopedGroupCommandExpectation): Key {
-    return toAppQueueKey({
+    return toAuthenticatedGroupMutationQueueKey({
         topicId: expectation.topicId,
         resourceId: expectation.requestId,
         contextId: expectation.logicalContextId

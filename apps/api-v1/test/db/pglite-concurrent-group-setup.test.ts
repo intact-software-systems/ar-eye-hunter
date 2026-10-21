@@ -8,9 +8,9 @@ import {
 import { requireApiAuthSession } from '@shared-server/http/request-auth-service.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
+import { toAuthenticatedGroupMutationQueueKey } from '@shared-server/rallar-system/group-state/inbox/to-authenticated-group-mutation-queue-key.ts';
 import { registerApplicationQueueReaderTasks } from '@shared-server/rallar-system/middleware/rallar-middleware-queue-registration.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus, type Key } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -190,7 +190,7 @@ function createGroupSetupApp(mutation: ApiV1MutationRuntime, groupInbox: GroupSt
             assert.ok(enqueue.resourceId);
             assert.ok(enqueue.topicId);
             assert.ok(enqueue.contextId);
-            requestKeys.set(enqueue.resourceId, toAppQueueKey({ topicId: enqueue.topicId, resourceId: enqueue.resourceId, contextId: enqueue.contextId }));
+            requestKeys.set(enqueue.resourceId, toAuthenticatedGroupMutationQueueKey(enqueue));
             const result = await groupInbox.processAuthenticatedGroupEntryUntilCompletion(enqueue, authority);
             return result.fold((failure) => {
                 throw toApiMutationRouteFailure(failure);

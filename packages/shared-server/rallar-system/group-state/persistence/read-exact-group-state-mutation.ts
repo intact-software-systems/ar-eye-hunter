@@ -14,6 +14,11 @@ import {
 import { type RuntimeStateReadBatchSelector } from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
+import { AUTH_SESSIONS_BY_SESSION_NAMESPACE, authSessionKey } from '../../auth/persistence/auth-storage-keys.ts';
+import {
+    decodePersistedAuthSession,
+    type PersistedAuthSession
+} from '../../auth/persistence/persisted-auth-session.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
 import { groupStateGroupStorageKey } from './aggregate/group-aggregate-storage-keys.ts';
@@ -44,6 +49,8 @@ export type GroupStateMutationExactReadInput = Readonly<{
     includeLifecyclePolicy: boolean;
     /** The whole roster and every session as well, so the group's snapshot comes from the same statement. */
     includeGroupSnapshot: boolean;
+    /** The authenticated session the attempt re-checks, selected by the same statement; null for internal authority. */
+    authSessionId: string | null;
     requestIds: readonly string[];
     memberPrincipalIds: readonly string[];
     presenceSessionIds: readonly string[];
@@ -61,6 +68,11 @@ export type GroupStateMutationExactSnapshot =
     | Readonly<{ status: 'unread'; }>
     | Readonly<{ status: 'read'; snapshot: GroupSnapshot | undefined; }>;
 
+/** The authenticated session row an exact read selected; unread when the input named no session. */
+export type GroupStateMutationExactAuthSession =
+    | Readonly<{ status: 'unread'; }>
+    | Readonly<{ status: 'read'; session: PersistedAuthSession | undefined; }>;
+
 /** The rows one exact read selected, all from the same statement. */
 export interface GroupStateMutationExactEntries {
     readonly status: 'stable';
@@ -73,6 +85,7 @@ export interface GroupStateMutationExactEntries {
     readonly admissions: readonly ExactEntry<string, GroupPresenceAdmission>[];
     readonly lifecyclePolicy: GroupLifecyclePolicyRead | null;
     readonly groupSnapshot: GroupStateMutationExactSnapshot;
+    readonly authSession: GroupStateMutationExactAuthSession;
 }
 
 export type GroupStateMutationExactReadResult =
@@ -107,7 +120,7 @@ export type GroupStateMutationExactReadDecoders = Readonly<{
 type IdentitySlotKind = 'idempotency' | 'member' | 'presence' | 'admission';
 
 type ReadSlot =
-    | Readonly<{ kind: 'group' | 'presence-summary' | 'lifecycle-policy' | 'roster' | 'sessions'; }>
+    | Readonly<{ kind: 'group' | 'presence-summary' | 'lifecycle-policy' | 'roster' | 'sessions' | 'auth-session'; }>
     | Readonly<{ kind: IdentitySlotKind; identity: string; }>;
 
 interface SlotSelection {
@@ -186,8 +199,28 @@ function toExactReadResult(
                     sessions: findSlotSelection(selections, 'sessions')?.entries ?? []
                 })
             }
-            : { status: 'unread' }
+            : { status: 'unread' },
+        authSession: input.authSessionId === null
+            ? { status: 'unread' }
+            : {
+                status: 'read',
+                session: toAuthSession(input.authSessionId, findSlotSelection(selections, 'auth-session')?.entries[0])
+            }
     };
+}
+
+function toAuthSession(
+    sessionId: string,
+    entry: RuntimeStateEntryValue<JsonWireValue> | undefined
+): PersistedAuthSession | undefined {
+    if (entry === undefined) {
+        return undefined;
+    }
+    const session = decodePersistedAuthSession(entry.value);
+    if (session.sessionId !== sessionId) {
+        throw new TypeError('Persisted auth session id identity differs');
+    }
+    return session;
 }
 
 function findSlotSelection(
@@ -227,6 +260,17 @@ function createSelectors(
     };
     addAggregateSelectors(input, add);
     addIdentitySelectors(input, identities, add);
+    if (input.authSessionId !== null) {
+        add(
+            {
+                selectorId: 'auth-session',
+                kind: 'key',
+                namespace: AUTH_SESSIONS_BY_SESSION_NAMESPACE,
+                key: authSessionKey(input.authSessionId)
+            },
+            { kind: 'auth-session' }
+        );
+    }
     return { selectors, slots };
 }
 

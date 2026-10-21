@@ -11,6 +11,7 @@ import { toPhysicalAppInboxQueueKey } from '@shared-server/rallar-system/app-inb
 import { AppInboxCommandClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-command-client.ts';
 import { AppInboxQueueEntryWriter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-queue-entry-writer.ts';
 import type { AppInboxResultWaiter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-result-waiter.ts';
+import { toAuthenticatedGroupMutationQueueKey } from '@shared-server/rallar-system/group-state/inbox/to-authenticated-group-mutation-queue-key.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { decodeJsonWireText, type JsonWireObject } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
@@ -47,7 +48,7 @@ const config = {
     physicalKey: {
         resourceId: 'PRIVATE:config:1',
         topicId: 'GROUP_UPDATE',
-        contextId: 'PRIVATE-application-PR-b08hzzfx65w9'
+        contextId: 'PRIVATE-application:PRIVATE-workspace:group-1'
     }
 };
 
@@ -501,7 +502,7 @@ describe('state-write diagnostic projection', () => {
 
         for (const [ordinal, event] of events.entries()) {
             const enqueue = enqueues[ordinal]!;
-            const physicalKey = toPhysicalAppInboxQueueKey({ ...enqueue, resourceId: enqueue.resourceId! });
+            const physicalKey = toQueuedPhysicalKey(enqueue);
             const contradictions: readonly RallarTimingEvent[] = [
                 { ...event, details: { ...event.details, resourceId: 'PRIVATE-wrong' } },
                 { ...event, details: { ...event.details, contextId: 'PRIVATE-wrong' } },
@@ -548,7 +549,7 @@ describe('state-write diagnostic projection', () => {
             ...event,
             component: 'app-inbox-phase',
             operation: 'transaction',
-            details: { ...event.details, ...persistedKeys[ordinal]! }
+            details: { ...event.details, ...toQueuedPhysicalKey(enqueues[ordinal]!) }
         }));
         const physical = computeStateWriteDiagnosticPhase({ ...logicalPhase, timingEvents: physicalEvents }, budget, 65_536);
         expect(physical.complete).toBe(true);
@@ -825,3 +826,10 @@ describe('state-write diagnostic projection', () => {
         expect(readRecords(capped.serialized).filter((record) => record.record === 'command')).toHaveLength(2);
     });
 });
+
+/** The key each command is queued under: an authenticated group command is reserved under its strict key. */
+function toQueuedPhysicalKey(enqueue: AppInboxEnqueueInput): Key {
+    return enqueue.type === AppInboxType.GROUP_UPDATE
+        ? toAuthenticatedGroupMutationQueueKey(enqueue)
+        : toPhysicalAppInboxQueueKey({ ...enqueue, resourceId: enqueue.resourceId! });
+}

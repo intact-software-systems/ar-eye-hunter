@@ -17,7 +17,7 @@ import {
 } from './group-state-inbox-test-runtime.ts';
 
 describe('GroupStateInboxService authority capture and retry', () => {
-    it('keeps captured facts and finishes on redelivery after a conditional write conflicts', async () => {
+    it('keeps the enqueue-time facts and finishes on redelivery after a conditional write conflicts', async () => {
         const harness = await createAuthorityHarness(['owner']);
         let capturedResource: string | undefined;
         harness.runtimeRepository.beforeConditionalWrite = async () => {
@@ -57,7 +57,7 @@ describe('GroupStateInboxService authority capture and retry', () => {
         await expect(pending).resolves.toMatchObject({ right: { status: 'created' } });
         expect(capturedResource).toBeDefined();
         expect((await harness.queue.getItem(original.key))?.resource).toBe(capturedResource);
-        expect(original.resource).not.toBe(capturedResource);
+        expect(original.resource).toBe(capturedResource);
         expect((await harness.repository.readSnapshot({ ...SCOPE, groupId: 'authority-retry' }))?.group.displayName)
             .toBe('Authority retry');
     });

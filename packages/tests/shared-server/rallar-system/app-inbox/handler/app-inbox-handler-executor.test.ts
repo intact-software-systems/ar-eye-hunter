@@ -12,7 +12,6 @@ import {
     type AppInboxMessageContext
 } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { DEFAULT_APP_INBOX_ATTEMPT_DEADLINE_MARGIN_MS } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
-import { AppInboxReservationClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-reservation-client.ts';
 import {
     computeAppInboxCompletion,
     validateAppInboxCompletion
@@ -23,9 +22,10 @@ import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbo
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import type { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { ResourceInboxHandlerEntryError } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
-import { EntityStatus, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, toKeyAsString, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { ClaimableDeadlineClaim } from '@shared/resilience/run-with-claimable-deadline.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -39,25 +39,19 @@ import {
     toRegisteredHandlerIdentityResource,
     waitForRegisteredHandlerEntry
 } from '../test-support/app-inbox-transaction-test-runtime.ts';
-import { createAppInboxQueueMessageFixture } from '../test-support/create-app-inbox-queue-message-fixture.ts';
 
 describe('AppInboxHandlerExecutor registered handler finalization', () => {
     it('redelivers a message with captured authority after a later conditional write conflicts', async () => {
         const timing: RallarTimingEvent[] = [];
         let now = Temporal.Instant.from('2000-01-01T00:00:00Z');
         const harness = createRegisteredHandlerHarness({ timing: (event) => timing.push(event), now: () => now });
-        const reservations = new AppInboxReservationClient({
-            creationNow: Temporal.Now.instant,
-            createMessage: createAppInboxQueueMessageFixture,
-            repository: harness.queue
-        }, { serviceId: 'server-1' });
         const facts = { eventId: 'stable-event', observedAtEpochMs: 1234 };
         harness.service.onStateMessage(AppInboxType.GROUP_CREATE, async (_data, context) => {
             if (context.entry.dequeueAudit.attempts === 1) {
                 const original = context.entry.resource;
                 Object.freeze(context.entry);
                 Object.freeze(context);
-                const entry = await reservations.persistAuthority(context, facts);
+                const entry = await replaceQueuedAuthority(harness.queue, context, facts);
                 expect(context.entry.resource).toBe(original);
                 throw new ResourceInboxHandlerEntryError(entry, new AppInboxReservationConflictError(entry.key));
             }
@@ -86,14 +80,9 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
     it('hands a conditional write conflict from the mutation transaction to the lane as a retryable value, not a thrown error with a stack', async () => {
         let now = Temporal.Instant.from('2000-01-01T00:00:00Z');
         const harness = createRegisteredHandlerHarness({ now: () => now });
-        const reservations = new AppInboxReservationClient({
-            creationNow: Temporal.Now.instant,
-            createMessage: createAppInboxQueueMessageFixture,
-            repository: harness.queue
-        }, { serviceId: 'server-1' });
         harness.service.onStateMessage(AppInboxType.GROUP_CREATE, async (_data, context) => {
             if (context.entry.dequeueAudit.attempts === 1) {
-                const entry = await reservations.persistAuthority(context, { eventId: 'stable-event' });
+                const entry = await replaceQueuedAuthority(harness.queue, context, { eventId: 'stable-event' });
                 try {
                     return await harness.service.commit(context, { status: 'accepted' }, async () => {
                         throw new RuntimeStateWriteConflictError();
@@ -136,13 +125,8 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
 
     it('preserves terminal rejection classification after authority is persisted', async () => {
         const harness = createRegisteredHandlerHarness();
-        const reservations = new AppInboxReservationClient({
-            creationNow: Temporal.Now.instant,
-            createMessage: createAppInboxQueueMessageFixture,
-            repository: harness.queue
-        }, { serviceId: 'server-1' });
         harness.service.onStateMessage(AppInboxType.GROUP_CREATE, async (_data, context) => {
-            const entry = await reservations.persistAuthority(context, { eventId: 'stable-event' });
+            const entry = await replaceQueuedAuthority(harness.queue, context, { eventId: 'stable-event' });
             throw new ResourceInboxHandlerEntryError(entry, new TypeError('Malformed domain value'));
         });
         const pending = harness.service.enqueueAndWait(harness.enqueue);
@@ -640,37 +624,6 @@ describe('AppInboxHandlerExecutor attempt deadline', () => {
         expect(claim.harness.database.state.results.size).toBe(0);
     });
 
-    it('refuses a pre-transaction write of an attempt abandoned at its deadline', async () => {
-        const timers = createManualTimers(0);
-        const claim = createDirectExecutorClaim({ nowEpochMs: () => 1_000, timers });
-        const started = createSignal();
-        const persistAllowed = createSignal();
-        let lateRequirement: Promise<void> | undefined;
-        const execution = claim.executor.execute({
-            ...claim.input,
-            registration: {
-                ...claim.input.registration,
-                handle: async (_command, context) => {
-                    claim.writer.requireUnexpiredAttempt(context);
-                    started.resolve();
-                    await persistAllowed.promise;
-                    lateRequirement = Promise.resolve().then(() => claim.writer.requireUnexpiredAttempt(context));
-                    await lateRequirement;
-                    return null;
-                }
-            }
-        });
-        const outcome = toSettledOutcome(execution);
-        await started.promise;
-
-        await timers.advance(DEADLINE_MS);
-        expect(await readWithin(outcome, 1_000)).toMatchObject({ code: 'app-inbox-attempt-deadline-exceeded' });
-        persistAllowed.resolve();
-        await vi.waitFor(() => expect(lateRequirement).toBeDefined());
-
-        await expect(lateRequirement).rejects.toMatchObject({ code: 'app-inbox-attempt-deadline-exceeded' });
-    });
-
     it('commits a terminal failure that precedes the attempt context under the attempt deadline', async () => {
         const claim = createDirectExecutorClaim({ nowEpochMs: () => 1_000 });
         const begunDeadlines: ClaimableDeadlineClaim[] = [];
@@ -809,4 +762,21 @@ function isJsonWireObject(value: JsonWireValue): value is Readonly<{
     readonly [key: string]: JsonWireValue;
 }> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** A handler write outside its transaction: it replaces the reserved row's authority only while the row is unchanged. */
+async function replaceQueuedAuthority(
+    queue: Pick<InMemoryQueueBox, 'replaceIfObserved'>,
+    context: AppInboxMessageContext<JsonWireValue>,
+    authority: JsonWireValue
+): Promise<ResourceEntry> {
+    const message = {
+        ...context.message,
+        payload: { ...context.message.payload, resource: JSON.stringify({ ...context.enqueue, authority }) }
+    };
+    const replaced = await queue.replaceIfObserved(context.entry, { ...context.entry, resource: JSON.stringify(message) });
+    if (replaced === null) {
+        throw new AppInboxReservationConflictError(context.entry.key);
+    }
+    return replaced;
 }

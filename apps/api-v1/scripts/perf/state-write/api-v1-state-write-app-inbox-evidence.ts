@@ -9,6 +9,7 @@ import {
 import {
     toAuthenticatedClientMutationContextId
 } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
+import { toAuthenticatedGroupMutationQueueKey } from '@shared-server/rallar-system/group-state/inbox/to-authenticated-group-mutation-queue-key.ts';
 import {
     decodeJsonWireValue,
     type JsonWireObject,
@@ -94,7 +95,7 @@ export function toStateWriteAppInboxExpectations(
             topicId,
             logicalResourceId: command.commandId,
             logicalContextId: toStateWriteBenchmarkGroupContextId(scope, groupId)
-        })];
+        }, command.kind === 'topology-source' ? toAppQueueKey : toAuthenticatedGroupMutationQueueKey)];
     });
 }
 
@@ -184,12 +185,14 @@ function toSingleOperationTopic(
     }
 }
 
+/** A group command's reservation keeps its identity verbatim; the queue writer's commands shorten theirs. */
 function toExpectation(
-    identity: Omit<StateWriteAppInboxExpectation, 'physicalKey'>
+    identity: Omit<StateWriteAppInboxExpectation, 'physicalKey'>,
+    toPhysicalKey: (key: Key) => Key = toAppQueueKey
 ): StateWriteAppInboxExpectation {
     return {
         ...identity,
-        physicalKey: toAppQueueKey({
+        physicalKey: toPhysicalKey({
             topicId: identity.topicId,
             resourceId: identity.logicalResourceId,
             contextId: identity.logicalContextId

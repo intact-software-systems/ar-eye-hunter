@@ -1,5 +1,5 @@
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
-import type { PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/persisted-auth-session.ts';
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import {
     groupStateMaintenanceRequestId,
@@ -23,7 +23,6 @@ import type {
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
-import { persistAuthSession } from '../auth/auth-test-fixtures.ts';
 import { GroupStateTestMutationExecutor, type GroupStateTestMutationResult } from './group-state-test-mutation-executor.ts';
 
 type GroupStateTestMutationMethod = (
@@ -122,7 +121,7 @@ export function authSession({
 export function createTestGroupStateRuntime(
     dependencies: TestGroupStateServiceDependencies
 ): TestGroupStateRuntime {
-    const issued = new Map<string, PersistedAuthSession>();
+    const authSessions = new AuthSessionRepository(dependencies.runtimeRepository);
     const now = dependencies.now ?? (() => Date.now());
     const randomId = dependencies.randomId ?? (() => crypto.randomUUID());
     const eventStoreFor = resolveGroupStateEventStoreFactory(dependencies);
@@ -135,9 +134,7 @@ export function createTestGroupStateRuntime(
         readPlannedLayoutRow: dependencies.readPlannedLayoutRow ?? (async () => null),
         readAcceptedLayoutRow: dependencies.readAcceptedLayoutRow ?? (async () => null),
         timing: dependencies.timing,
-        authSessionRepository: {
-            findBySessionId: (sessionId) => Promise.resolve(issued.get(sessionId))
-        }
+        authSessionRepository: authSessions
     });
     const repositoryFor = (runtime: RuntimeStateOptimisticTransactionalRepositoryLike) => createTestGroupStateRepository(runtime, eventStoreFor(runtime));
     const mutationExecutor = new GroupStateTestMutationExecutor({
@@ -150,7 +147,7 @@ export function createTestGroupStateRuntime(
     const attemptCount = dependencies.attemptCount ?? 1;
     const service = createAuthenticatedTestGroupStateService({
         durable,
-        issued,
+        authSessions,
         mutationExecutor,
         attemptCount
     });
@@ -182,14 +179,14 @@ function resolveGroupStateEventStoreFactory(
 
 interface CreateAuthenticatedTestGroupStateServiceInput {
     readonly durable: GroupStateService;
-    readonly issued: Map<string, PersistedAuthSession>;
+    readonly authSessions: AuthSessionRepository;
     readonly mutationExecutor: GroupStateTestMutationExecutor;
     readonly attemptCount: number;
 }
 
 function createAuthenticatedTestGroupStateService({
     durable,
-    issued,
+    authSessions,
     mutationExecutor,
     attemptCount
 }: CreateAuthenticatedTestGroupStateServiceInput): GroupStateTestService {
@@ -217,7 +214,7 @@ function createAuthenticatedTestGroupStateService({
                     ? String(args[2])
                     : String(request.actorSessionId ?? `${principalId}-session`);
                 const authority = createTestAuthSession(principalId, sessionId);
-                issued.set(authority.sessionId, await persistAuthSession(authority));
+                await authSessions.putSession(authority);
                 return await mutationExecutor.executeAuthenticated(
                     descriptor,
                     authority,

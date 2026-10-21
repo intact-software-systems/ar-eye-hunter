@@ -3,6 +3,7 @@ import { readRallarGroupDirectorAppointment } from '@shared/api/group-director.t
 import type { RuntimeStateEntry } from '../../../../runtime-state/runtime-state-repository.ts';
 import { GroupStateRepository } from '../../persistence/group-state-repository.ts';
 import type {
+    GroupStateMutationExactAuthSession,
     GroupStateMutationExactEntries,
     GroupStateMutationExactSnapshot
 } from '../../persistence/read-exact-group-state-mutation.ts';
@@ -18,18 +19,21 @@ interface ReadExactGroupMutationInput {
     readonly repository: GroupStateRepository;
     readonly command: GroupMutationCommand;
     readonly includeGroupSnapshot: boolean;
+    readonly authSessionId: string | null;
 }
 
-/** An exact mutation read and the group snapshot assembled from the same statement, when asked for. */
+/** An exact mutation read, and the group snapshot and authenticated session selected by the same statement when asked for. */
 export interface ExactGroupMutationRead {
     readonly read: GroupMutationRead;
     readonly groupSnapshot: GroupStateMutationExactSnapshot;
+    readonly authSession: GroupStateMutationExactAuthSession;
 }
 
 export async function readExactGroupMutation({
     repository,
     command,
-    includeGroupSnapshot
+    includeGroupSnapshot,
+    authSessionId
 }: ReadExactGroupMutationInput): Promise<ExactGroupMutationRead | null> {
     const actorPrincipalId = command.input.actorPrincipalId;
     const targetPrincipalId = resolveGroupMutationTargetPrincipalId(command);
@@ -41,13 +45,18 @@ export async function readExactGroupMutation({
         includePresenceSummary: true,
         includeLifecyclePolicy: readsGroupLifecyclePolicy(command.operation),
         includeGroupSnapshot,
+        authSessionId,
         requestIds: idempotencyKey === null ? [] : [idempotencyKey],
         memberPrincipalIds: uniqueDefined([actorPrincipalId, targetPrincipalId]),
         presenceSessionIds: uniqueDefined([targetSessionId]),
         admissionPrincipalIds: uniqueDefined([targetPrincipalId])
     });
     return read.status === 'stable'
-        ? { read: assembleExactGroupMutationRead(command, read), groupSnapshot: read.groupSnapshot }
+        ? {
+            read: assembleExactGroupMutationRead(command, read),
+            groupSnapshot: read.groupSnapshot,
+            authSession: read.authSession
+        }
         : null;
 }
 

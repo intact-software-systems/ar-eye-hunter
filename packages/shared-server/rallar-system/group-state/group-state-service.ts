@@ -7,6 +7,8 @@ import {
     captureGroupMutationIngress,
     GroupMutationAuthorizationError,
     readAndVerifyLiveGroupMutationSession,
+    requireGroupMutationAuthorityProof,
+    verifyLiveGroupMutationSession,
     type GroupMutationAuthorityDependencies
 } from './group-mutation-authority.ts';
 import { toExpiryCommand, toSessionCleanupCommand } from './group-presence-mutation-command.ts';
@@ -34,6 +36,7 @@ import { validateGroupMutation } from './mutation/state-validation/validate-grou
 import { writeGroupMutation } from './mutation/write/write-group-mutation.ts';
 import { GroupConnectTriggerLatchRepository } from './persistence/group-connect-trigger-latch-repository.ts';
 import { GroupStateRepository } from './persistence/group-state-repository.ts';
+import type { GroupStateMutationExactAuthSession } from './persistence/read-exact-group-state-mutation.ts';
 import { readGroupSessionCleanupCandidates } from './presence/group-session-cleanup.ts';
 
 export class GroupMutationIdempotencyConflictError extends Error {
@@ -72,7 +75,7 @@ export function createGroupStateRuntime(
     const owners: GroupStateRuntimeOwners = {
         dependencies,
         repositoryFor,
-        authorityDependencies: createAuthorityDependencies({ dependencies, repositoryFor, now, randomId }),
+        authorityDependencies: createAuthorityDependencies({ dependencies, now, randomId }),
         captureInternalMutationIngress: createInternalMutationIngressCapture(dependencies)
     };
     const service: GroupStateService = {
@@ -109,21 +112,19 @@ interface GroupStateRuntimeOwners {
 
 interface CreateAuthorityDependenciesInput {
     readonly dependencies: GroupStateServiceDependencies;
-    readonly repositoryFor: GroupStateRepositoryFactory;
     readonly now: () => number;
     readonly randomId: () => string;
 }
 
 function createAuthorityDependencies(
-    { dependencies, repositoryFor, now, randomId }: CreateAuthorityDependenciesInput
+    { dependencies, now, randomId }: CreateAuthorityDependenciesInput
 ): GroupMutationAuthorityDependencies {
     return {
         authSessionRepository: dependencies.authSessionRepository,
         now,
         randomId,
         serviceId: dependencies.serviceId,
-        capacity: dependencies.capacity,
-        readCausalRevision: async (ref) => await repositoryFor(dependencies.runtimeRepository).readCausalRevision(ref)
+        capacity: dependencies.capacity
     };
 }
 
@@ -273,8 +274,12 @@ async function readGroupMutationAttempt(
     owners: GroupStateRuntimeOwners,
     ingress: GroupStateMutationCommand
 ): Promise<GroupMutationRead> {
-    await readAndVerifyGroupMutationAuthority(owners, ingress);
-    const read = await readGroupMutation(owners.repositoryFor(owners.dependencies.runtimeRepository), ingress.command);
+    const { read, authSession } = await readGroupMutation(
+        owners.repositoryFor(owners.dependencies.runtimeRepository),
+        ingress.command,
+        resolveGroupMutationAuthSessionId(ingress)
+    );
+    await verifyGroupMutationAttemptSession(owners, ingress, authSession);
     return await readGroupMutationFences(owners, ingress, read);
 }
 
@@ -282,21 +287,19 @@ async function readGroupMutationAttemptWithSnapshot(
     owners: GroupStateRuntimeOwners,
     ingress: GroupStateMutationCommand
 ): Promise<GroupMutationSnapshotRead> {
-    await readAndVerifyGroupMutationAuthority(owners, ingress);
-    const { read, currentSnapshot } = await readGroupMutationWithSnapshot(
+    const { read, currentSnapshot, authSession } = await readGroupMutationWithSnapshot(
         owners.repositoryFor(owners.dependencies.runtimeRepository),
-        ingress.command
+        ingress.command,
+        resolveGroupMutationAuthSessionId(ingress)
     );
+    await verifyGroupMutationAttemptSession(owners, ingress, authSession);
     return { read: await readGroupMutationFences(owners, ingress, read), currentSnapshot };
 }
 
-async function readAndVerifyGroupMutationAuthority(
-    owners: GroupStateRuntimeOwners,
-    ingress: GroupStateMutationCommand
-): Promise<void> {
+/** The session an authenticated attempt re-checks; internal authority carries none and must name none. */
+function resolveGroupMutationAuthSessionId(ingress: GroupStateMutationCommand): string | null {
     if (ingress.facts.internalAuthority === 'none') {
-        await readAndVerifyLiveGroupMutationSession(owners.authorityDependencies, ingress);
-        return;
+        return requireGroupMutationAuthorityProof(ingress).sessionId;
     }
     if (
         ingress.authorityProof !== null ||
@@ -307,6 +310,27 @@ async function readAndVerifyGroupMutationAuthority(
             'Internal group mutation authority is malformed.'
         );
     }
+    return null;
+}
+
+/** An exact read carried the session row; a sequential read re-checks it with its own read. */
+async function verifyGroupMutationAttemptSession(
+    owners: GroupStateRuntimeOwners,
+    ingress: GroupStateMutationCommand,
+    authSession: GroupStateMutationExactAuthSession
+): Promise<void> {
+    if (ingress.facts.internalAuthority !== 'none') {
+        return;
+    }
+    if (authSession.status === 'unread') {
+        await readAndVerifyLiveGroupMutationSession(owners.authorityDependencies, ingress);
+        return;
+    }
+    verifyLiveGroupMutationSession(
+        requireGroupMutationAuthorityProof(ingress),
+        authSession.session,
+        owners.authorityDependencies.now()
+    );
 }
 
 async function readGroupMutationFences(
