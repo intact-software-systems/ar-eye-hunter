@@ -141,6 +141,70 @@ describe('exclusion keyed admission', () => {
         expect(runs.started).toEqual(['busy', 'join-1', 'join-2', 'ws-1', 'ws-2']);
     });
 
+    it('gives the next freed slot to a prefix-keyed run waiting in turn once a run with an extension of its key waits behind it', async () => {
+        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, keyedChainsFirst: true });
+        const runs = createGatedRuns();
+
+        const results = [
+            admission.admit(undefined, runs.run('busy')),
+            admission.admit(undefined, runs.run('ws-1')),
+            admission.admit(undefined, runs.run('ws-2')),
+            admission.admit('scope:g', runs.run('activation'))
+        ];
+        await vi.waitFor(() => expect(runs.started).toEqual(['busy']));
+        // The activation now blocks the group's joins, so it holds the next turn; the joins form their own chain.
+        results.push(admission.admit('scope:g:aggregate', runs.run('join-1')));
+        results.push(admission.admit('scope:g:aggregate', runs.run('join-2')));
+        for (const name of ['busy', 'activation', 'join-1', 'join-2', 'ws-1', 'ws-2']) {
+            await vi.waitFor(() => expect(runs.started.at(-1)).toBe(name));
+            runs.finish(name);
+        }
+
+        await Promise.all(results);
+        expect(runs.started).toEqual(['busy', 'activation', 'join-1', 'join-2', 'ws-1', 'ws-2']);
+    });
+
+    it('gives the next freed slot to a run waiting in turn once a scope-wide run waits behind it', async () => {
+        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, keyedChainsFirst: true });
+        const runs = createGatedRuns();
+
+        const results = [
+            admission.admit(undefined, runs.run('busy')),
+            admission.admit(undefined, runs.run('ws-1')),
+            admission.admit('scope:g:aggregate', runs.run('join'))
+        ];
+        await vi.waitFor(() => expect(runs.started).toEqual(['busy']));
+        results.push(admission.admit('scope', runs.run('cleanup')));
+        for (const name of ['busy', 'join', 'ws-1', 'cleanup']) {
+            await vi.waitFor(() => expect(runs.started.at(-1)).toBe(name));
+            runs.finish(name);
+        }
+
+        await Promise.all(results);
+        // The cleanup was released by a run of another key and has nothing behind it, so it asks in turn.
+        expect(runs.started).toEqual(['busy', 'join', 'ws-1', 'cleanup']);
+    });
+
+    it('keeps a keyed run in turn when the run behind it has a sibling key that only shares its text prefix', async () => {
+        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, keyedChainsFirst: true });
+        const runs = createGatedRuns();
+
+        const results = [
+            admission.admit(undefined, runs.run('busy')),
+            admission.admit(undefined, runs.run('ws-1')),
+            admission.admit('scope:g', runs.run('activation'))
+        ];
+        await vi.waitFor(() => expect(runs.started).toEqual(['busy']));
+        results.push(admission.admit('scope:gx:aggregate', runs.run('sibling-join')));
+        for (const name of ['busy', 'ws-1', 'activation', 'sibling-join']) {
+            await vi.waitFor(() => expect(runs.started.at(-1)).toBe(name));
+            runs.finish(name);
+        }
+
+        await Promise.all(results);
+        expect(runs.started).toEqual(['busy', 'ws-1', 'activation', 'sibling-join']);
+    });
+
     it('keeps a lone fresh keyed run in turn behind the earlier keyless runs', async () => {
         const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, keyedChainsFirst: true });
         const runs = createGatedRuns();

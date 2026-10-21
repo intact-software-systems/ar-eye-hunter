@@ -1,4 +1,3 @@
-import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
 import { timeRallarAsync, type RallarTimingDetails, type RallarTimingSink } from '../../observability/timing.ts';
@@ -8,20 +7,14 @@ import type { AppInboxFailure } from '../app-inbox-failure.ts';
 import type { NormalizedAppInboxOptions } from '../app-inbox-options.ts';
 import { assertMatchingAppInboxEnqueue } from '../assert-matching-app-inbox-command.ts';
 import { toLogicalAppInboxCommand } from '../logical-app-inbox-command.ts';
+import type { AppInboxQueueEntryWriter } from './app-inbox-queue-entry-writer.ts';
 import type { AppInboxReservationClient } from './app-inbox-reservation-client.ts';
 import type { AppInboxResultWaiter } from './app-inbox-result-waiter.ts';
 
 export namespace AppInboxCommandClient {
-    export interface QueueEntryWriter {
-        enqueue(enqueue: AppInboxEnqueueInput): Promise<ResourceEntry>;
-    }
+    export type QueueEntryWriter = Pick<AppInboxQueueEntryWriter, 'writeIfAbsent'>;
 
     export interface ResultWaiter {
-        waitForResult<Result>(
-            enqueue: AppInboxEnqueueInput,
-            key: Key,
-            decodeResult: AppInboxResultWaiter.ResultDecoder<Result>
-        ): Promise<Either<AppInboxFailure, Result>>;
         waitForReservedResult<Result>(
             reservation: AppInboxReservationClient.MaterializedReservation,
             decodeResult: AppInboxResultWaiter.ResultDecoder<Result>
@@ -82,11 +75,11 @@ export class AppInboxCommandClient {
         decodeResult: AppInboxResultWaiter.ResultDecoder<Result>
     ): Promise<Either<AppInboxFailure, Result>> {
         return await this.timeCommand(enqueue, async () => {
-            const entry = await this.timeEnqueue(
+            const { entry, winner } = await this.timeEnqueue(
                 enqueue,
-                async () => await this.queueEntryWriter.enqueue(enqueue)
+                async () => await this.queueEntryWriter.writeIfAbsent(enqueue)
             );
-            return await this.resultWaiter.waitForResult(enqueue, entry.key, decodeResult);
+            return await this.resultWaiter.waitForReservedResult({ enqueue, key: entry.key, winner }, decodeResult);
         });
     }
 

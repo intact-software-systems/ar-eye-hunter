@@ -1,3 +1,4 @@
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
@@ -22,6 +23,17 @@ export namespace AppInboxQueueEntryWriter {
         readonly defaultTopicId: string;
         readonly wakeOwningQueue?: () => void;
     }
+
+    /** The entry its key keeps, and whether this write created it. */
+    export interface Written {
+        readonly entry: ResourceEntry;
+        readonly winner: boolean;
+    }
+}
+
+interface AppInboxWrittenMessage {
+    readonly entry: ResourceEntry;
+    readonly message: ALMessage;
 }
 
 export class AppInboxQueueEntryWriter {
@@ -44,17 +56,33 @@ export class AppInboxQueueEntryWriter {
         this.wakeOwningQueue = config.wakeOwningQueue;
     }
 
+    /** Writes the command's entry and wakes the owning queue, for a caller that does not wait for its completion. */
     async enqueue(enqueue: AppInboxEnqueueInput): Promise<ResourceEntry> {
+        const { entry } = await this.writeMessage(enqueue);
+        this.wakeOwningQueue?.();
+        return entry;
+    }
+
+    /**
+     * Writes the command's entry without waking the owning queue: the waiter subscribes to its completion first and
+     * wakes the queue only for an entry this write created.
+     */
+    async writeIfAbsent(enqueue: AppInboxEnqueueInput): Promise<AppInboxQueueEntryWriter.Written> {
+        const { entry, message } = await this.writeMessage(enqueue);
+        // A message carries a fresh id, so only an entry this write created keeps its serialized message; anything
+        // else reads as kept by an earlier write, which costs the waiter no more than a first read.
+        return { entry, winner: entry.resource === JSON.stringify(message) };
+    }
+
+    private async writeMessage(enqueue: AppInboxEnqueueInput): Promise<AppInboxWrittenMessage> {
         const key = this.createKey(enqueue);
         const receivedIdentity = serializeCanonicalMutationCommand(
             toLogicalAppInboxCommand(enqueue)
         );
-        const entry = await this.inboxQueueReader.enqueueIfAbsent(
-            this.createMessage({ key, enqueue, serviceId: this.serviceId })
-        );
-        this.wakeOwningQueue?.();
+        const message = this.createMessage({ key, enqueue, serviceId: this.serviceId });
+        const entry = await this.inboxQueueReader.enqueueIfAbsent(message);
         assertMatchingAppInboxCommand(entry, enqueue, receivedIdentity);
-        return entry;
+        return { entry, message };
     }
 
     private createKey(enqueue: AppInboxEnqueueInput): Key {

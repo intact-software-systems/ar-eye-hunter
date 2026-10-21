@@ -6,11 +6,11 @@ export namespace ExclusionKeyedAdmission {
         /**
          * Whether a keyed run that the settlement of an earlier run with the same key released, or a chain head that a
          * later run with its key waits behind, takes a freed slot ahead of every run waiting in turn; otherwise all wait
-         * in turn. A chain head waiting in turn goes ahead the moment its successor attaches. A lone keyed run with no
-         * unsettled predecessor, or one whose last predecessor had a prefix or extension of its key, waits in turn, so
-         * one settlement prefers at most the runs of its own key and the chain heads among the runs it released. A
-         * continuously fed same-key chain therefore holds one slot for as long as it is fed, and with as many such
-         * chains as slots, runs waiting in turn wait until one chain drains.
+         * in turn. A keyed run waiting in turn goes ahead the moment a later run whose key overlaps its own attaches
+         * behind it. A lone keyed run with no unsettled predecessor, or one whose last predecessor had a prefix or
+         * extension of its key, waits in turn until then, so one settlement prefers at most the runs of its own key and
+         * the chain heads among the runs it released. A continuously fed same-key chain therefore holds one slot for as
+         * long as it is fed, and with as many such chains as slots, runs waiting in turn wait until one chain drains.
          */
         readonly keyedChainsFirst: boolean;
     }
@@ -35,7 +35,7 @@ interface KeyedRun {
  * that scope. A run without a key waits only for a slot, and a failed run releases the runs behind it like a settled
  * one. A settling run lines up the runs it released before its slot frees, so a released run of the same key can take
  * that slot; a keyed run that waited on no predecessor, or that a different key released, asks for its slot in turn
- * unless it is a chain head, and is moved ahead once a run with its key attaches behind it.
+ * unless it is a chain head, and is moved ahead once a run it blocks attaches behind it.
  */
 export class ExclusionKeyedAdmission {
     private readonly slots: BoundedConcurrencyAdmission;
@@ -78,11 +78,17 @@ export class ExclusionKeyedAdmission {
         });
     }
 
+    /**
+     * Takes an overlapping successor. A run already waiting in turn for its slot goes ahead; only a same-key successor
+     * makes it a chain head, which its release prefers.
+     */
     private attachChainSuccessor(earlier: KeyedRun, successor: KeyedRun): void {
-        if (!this.keyedChainsFirst || earlier.exclusionKey !== successor.exclusionKey) {
+        if (!this.keyedChainsFirst) {
             return;
         }
-        earlier.isChainHead = true;
+        if (earlier.exclusionKey === successor.exclusionKey) {
+            earlier.isChainHead = true;
+        }
         earlier.prefer?.();
     }
 

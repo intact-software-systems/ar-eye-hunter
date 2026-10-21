@@ -47,11 +47,24 @@ type AppInboxQueueObservation =
 /** A winner wrote the entry it waits for, so its first observation is its wake or safety tick, not a read. */
 type AppInboxFirstObservation = 'read' | 'wait';
 
+/** Why a read of the wait runs: its first read, or what ended the wait before it. */
+type AppInboxReadTrigger = 'first' | ResourceInboxCompletionNotifications.WakeReason;
+
+/** The trigger of the wait's next read; a wait without a subscription re-reads after its own delay. */
+interface AppInboxWaitProgress {
+    nextTrigger: AppInboxReadTrigger;
+}
+
+/** A terminal entry: the result row its wake read, or a terminal status whose result row is read next. */
+type AppInboxTerminalObservation<Result> =
+    | { readonly readRow: 'result'; readonly result: Either<AppInboxFailure, Result>; }
+    | { readonly readRow: 'status'; };
+
 interface AppInboxSubscribedWait<Result> {
     readonly enqueue: AppInboxEnqueueInput;
     readonly key: Key;
     readonly decodeResult: AppInboxResultWaiter.ResultDecoder<Result>;
-    /** This wait's reservation created the entry, so the entry was not terminal when the wait subscribed. */
+    /** This wait's reservation or write created the entry, so the entry was not terminal when the wait subscribed. */
     readonly winner: boolean;
 }
 
@@ -72,6 +85,14 @@ class AppInboxEntryPendingError extends Error {
         super(`App inbox entry is not complete: ${observation}`);
         this.name = 'AppInboxEntryPendingError';
     }
+}
+
+/** One read of the wait: what caused it and which row it reads. */
+interface AppInboxPoll {
+    readonly enqueue: AppInboxEnqueueInput;
+    readonly key: Key;
+    readonly trigger: AppInboxReadTrigger;
+    readonly readRow: 'result' | 'status';
 }
 
 interface AppInboxWaitPhase<Result> {
@@ -129,14 +150,7 @@ export class AppInboxResultWaiter {
         this.wakeOwningQueue = config.wakeOwningQueue;
     }
 
-    async waitForResult<Result>(
-        enqueue: AppInboxEnqueueInput,
-        key: Key,
-        decodeResult: AppInboxResultWaiter.ResultDecoder<Result>
-    ): Promise<Either<AppInboxFailure, Result>> {
-        return await this.waitSubscribed({ enqueue, key, decodeResult, winner: false });
-    }
-
+    /** Waits for the entry its key holds; a winner's reservation or write created that entry. */
     async waitForReservedResult<Result>(
         reservation: AppInboxReservationClient.MaterializedReservation,
         decodeResult: AppInboxResultWaiter.ResultDecoder<Result>
@@ -169,8 +183,12 @@ export class AppInboxResultWaiter {
         read: AppInboxCompletedResultRead<Result>
     ): Promise<Either<AppInboxFailure, Result>> {
         const { enqueue, key, decodeResult } = read;
-        if (!(await this.waitForCompletion(read))) {
+        const terminal = await this.waitForCompletion(read);
+        if (terminal === undefined) {
             return Either.ofLeft(toUnavailableAppInboxFailure());
+        }
+        if (terminal.readRow === 'result') {
+            return terminal.result;
         }
         return await this.timePhase({
             operation: 'read-result',
@@ -193,30 +211,15 @@ export class AppInboxResultWaiter {
                 message: 'App inbox entry result was not found'
             }));
         }
-        if (result.status === EntityStatus.FAILED || result.status === EntityStatus.NON_RETRYABLE) {
-            return Either.ofLeft(decodePersistedAppInboxFailure(result.resource));
-        }
-        if (result.status !== EntityStatus.COMPLETED) {
-            return Either.ofLeft(toUnavailableAppInboxFailure());
-        }
-        try {
-            const parsed = decodeJsonWireValue(
-                JSON.parse(result.resource),
-                'Persisted AppInbox result'
-            );
-            return Either.ofRight(decodeResult(parsed));
-        }
-        catch {
-            return Either.ofLeft(toTerminalAppInboxFailure({
-                code: 'app-inbox-result-corrupt',
-                status: 500,
-                message: 'Persisted AppInbox result is corrupt'
-            }));
-        }
+        return toAppInboxResult(result, decodeResult);
     }
 
-    private async waitForCompletion<Result>(read: AppInboxCompletedResultRead<Result>): Promise<boolean> {
-        const { enqueue, key, subscription } = read;
+    /** Answers the terminal observation, or nothing once the wait's budget is spent. */
+    private async waitForCompletion<Result>(
+        read: AppInboxCompletedResultRead<Result>
+    ): Promise<AppInboxTerminalObservation<Result> | undefined> {
+        const { enqueue, key } = read;
+        const progress: AppInboxWaitProgress = { nextTrigger: 'first' };
         try {
             return await this.timePhase({
                 operation: 'wait-completion',
@@ -224,8 +227,8 @@ export class AppInboxResultWaiter {
                 key,
                 action: async () =>
                     await tryWithPolicy(
-                        this.createCompletionAttempt(read),
-                        this.toWaitPolicy(enqueue, key, subscription)
+                        this.createCompletionAttempt(read, progress),
+                        this.toWaitPolicy(read, progress)
                     ),
                 details: { waitMaxElapsedMsecs: this.options.waitMaxElapsedMsecs }
             });
@@ -235,21 +238,58 @@ export class AppInboxResultWaiter {
                 throw error;
             }
             this.recordWaitFallback(enqueue, key, error);
-            return false;
+            return undefined;
         }
     }
 
-    private createCompletionAttempt<Result>(read: AppInboxCompletedResultRead<Result>): () => Promise<boolean> {
+    /** A completion of the waiter's own key reads the result row, the only authority; any other read, the status. */
+    private createCompletionAttempt<Result>(
+        read: AppInboxCompletedResultRead<Result>,
+        progress: AppInboxWaitProgress
+    ): () => Promise<AppInboxTerminalObservation<Result>> {
         const { enqueue, key, subscription } = read;
         let unread = read.firstObservation === 'wait';
         return async () => {
+            const trigger = progress.nextTrigger;
+            progress.nextTrigger = 'delay';
             if (unread) {
                 unread = false;
                 throw new AppInboxEntryPendingError('unread');
             }
             subscription?.beginRead();
-            return await this.readCompletionPoll(enqueue, key);
+            if (trigger === 'completion') {
+                return await this.readWokenResult(read, trigger);
+            }
+            return await this.readCompletionPoll(enqueue, key, trigger);
         };
+    }
+
+    /** A wake whose result row is missing still settles on the entry's status, as any other read does. */
+    private async readWokenResult<Result>(
+        read: AppInboxCompletedResultRead<Result>,
+        trigger: AppInboxReadTrigger
+    ): Promise<AppInboxTerminalObservation<Result>> {
+        const { enqueue, key } = read;
+        const poll = { enqueue, key, trigger, readRow: 'result' } as const;
+        let result: ResourceEntry | undefined;
+        try {
+            result = await this.resultRepository.findByKey(key);
+        }
+        catch (error) {
+            this.recordPoll(poll, { queueObservation: 'read-failure' });
+            throw error;
+        }
+        if (result === undefined) {
+            this.recordPoll(poll, { queueObservation: 'missing' });
+            return await this.readCompletionPoll(enqueue, key, trigger);
+        }
+        const observed = { status: result.status, attempts: result.dequeueAudit.attempts };
+        const queueObservation = toAppInboxQueueObservation(observed);
+        this.recordPoll(poll, { queueObservation, attempts: observed.attempts });
+        if (!isTerminalAppInboxStatus(observed)) {
+            throw new AppInboxEntryPendingError(queueObservation);
+        }
+        return { readRow: 'result', result: toAppInboxResult(result, read.decodeResult) };
     }
 
     private recordWaitFallback(enqueue: AppInboxEnqueueInput, key: Key, error: TryWithExhaustedError): void {
@@ -274,31 +314,33 @@ export class AppInboxResultWaiter {
         });
     }
 
-    private async readCompletionPoll(enqueue: AppInboxEnqueueInput, key: Key): Promise<boolean> {
+    private async readCompletionPoll<Result>(
+        enqueue: AppInboxEnqueueInput,
+        key: Key,
+        trigger: AppInboxReadTrigger
+    ): Promise<AppInboxTerminalObservation<Result>> {
+        const poll = { enqueue, key, trigger, readRow: 'status' } as const;
         let observed: ResourceInboxStatusAndAttempts | undefined;
         try {
             observed = await this.statusRepository.readStatusAndAttempts(key);
         }
         catch (error) {
-            this.recordPoll(enqueue, key, { queueObservation: 'read-failure' });
+            this.recordPoll(poll, { queueObservation: 'read-failure' });
             throw error;
         }
         const queueObservation = toAppInboxQueueObservation(observed);
-        this.recordPoll(enqueue, key, {
+        this.recordPoll(poll, {
             queueObservation,
             ...(observed === undefined ? {} : { attempts: observed.attempts })
         });
-        if (
-            observed?.status !== EntityStatus.COMPLETED &&
-            observed?.status !== EntityStatus.FAILED &&
-            observed?.status !== EntityStatus.NON_RETRYABLE
-        ) {
+        if (!isTerminalAppInboxStatus(observed)) {
             throw new AppInboxEntryPendingError(queueObservation);
         }
-        return true;
+        return { readRow: 'status' };
     }
 
-    private recordPoll(enqueue: AppInboxEnqueueInput, key: Key, details: RallarTimingDetails): void {
+    /** One line per observation, naming the row read and what caused the read. */
+    private recordPoll(poll: AppInboxPoll, observation: RallarTimingDetails): void {
         if (!this.options.phaseTiming) {
             return;
         }
@@ -308,19 +350,24 @@ export class AppInboxResultWaiter {
                 component: 'app-inbox-phase',
                 operation: 'wait-poll',
                 serviceId: this.serviceId,
-                requestId: enqueue.resourceId,
-                details: { ...toAppInboxTimingDetails(enqueue, key), ...details }
+                requestId: poll.enqueue.resourceId,
+                details: {
+                    ...toAppInboxTimingDetails(poll.enqueue, poll.key),
+                    ...observation,
+                    trigger: poll.trigger,
+                    readRow: poll.readRow
+                }
             },
-            status: details.queueObservation === 'read-failure' ? 'error' : 'ok',
+            status: observation.queueObservation === 'read-failure' ? 'error' : 'ok',
             durationMs: 0
         });
     }
 
-    private toWaitPolicy(
-        enqueue: AppInboxEnqueueInput,
-        key: Key,
-        subscription: ResourceInboxCompletionNotifications.Subscription | undefined
+    private toWaitPolicy<Result>(
+        read: AppInboxCompletedResultRead<Result>,
+        progress: AppInboxWaitProgress
     ): TryWithPolicy {
+        const { enqueue, key, subscription } = read;
         const labelled = TryWithPolicy.defaults()
             .label(`app-inbox:${key.topicId}:${key.resourceId}`)
             .maxElapsedMsecs(this.options.waitMaxElapsedMsecs);
@@ -351,7 +398,12 @@ export class AppInboxResultWaiter {
                 });
             });
         }
-        return subscription ? policy.waitBeforeRetry((context) => subscription.wait(context.delayMsecs)) : policy;
+        if (!subscription) {
+            return policy;
+        }
+        return policy.waitBeforeRetry(async (context) => {
+            progress.nextTrigger = await subscription.wait(context.delayMsecs);
+        });
     }
 
     /** A wake ends the wait early; the safety tick, cut to what remains of the budget, is the only timed re-read. */
@@ -388,6 +440,39 @@ export class AppInboxResultWaiter {
             },
             phase.action
         );
+    }
+}
+
+function isTerminalAppInboxStatus(observed: ResourceInboxStatusAndAttempts | undefined): boolean {
+    return observed?.status === EntityStatus.COMPLETED ||
+        observed?.status === EntityStatus.FAILED ||
+        observed?.status === EntityStatus.NON_RETRYABLE;
+}
+
+/** The answer a result row carries; a row that is not terminal leaves the command unavailable. */
+function toAppInboxResult<Result>(
+    result: ResourceEntry,
+    decodeResult: AppInboxResultWaiter.ResultDecoder<Result>
+): Either<AppInboxFailure, Result> {
+    if (result.status === EntityStatus.FAILED || result.status === EntityStatus.NON_RETRYABLE) {
+        return Either.ofLeft(decodePersistedAppInboxFailure(result.resource));
+    }
+    if (result.status !== EntityStatus.COMPLETED) {
+        return Either.ofLeft(toUnavailableAppInboxFailure());
+    }
+    try {
+        const parsed = decodeJsonWireValue(
+            JSON.parse(result.resource),
+            'Persisted AppInbox result'
+        );
+        return Either.ofRight(decodeResult(parsed));
+    }
+    catch {
+        return Either.ofLeft(toTerminalAppInboxFailure({
+            code: 'app-inbox-result-corrupt',
+            status: 500,
+            message: 'Persisted AppInbox result is corrupt'
+        }));
     }
 }
 

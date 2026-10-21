@@ -352,7 +352,7 @@ describe('handler-finalized ResourceInbox success', () => {
         expect(outcome?.left).toBeUndefined();
         expect(outcome?.right?.value.entry).toEqual(committed);
         expect(await queue.getItem(enqueued.key)).toEqual(committed);
-        await expect(completion.wait(1_000)).resolves.toBeUndefined();
+        await expect(completion.wait(1_000)).resolves.toBe('completion');
         expect(announced).toEqual(['handler-finalized']);
     });
 });

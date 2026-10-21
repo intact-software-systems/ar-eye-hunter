@@ -77,10 +77,11 @@ describe('Committed AppInbox completion publication', () => {
             options
         });
         let returned = false;
-        const pending = client.resultWaiter.waitForResult(harness.context.enqueue, harness.entry.key, (value) => value).then((result) => {
-            returned = true;
-            return result;
-        });
+        const pending = client.resultWaiter.waitForReservedResult({ enqueue: harness.context.enqueue, key: harness.entry.key, winner: false }, (value) => value)
+            .then((result) => {
+                returned = true;
+                return result;
+            });
         await vi.advanceTimersByTimeAsync(0);
         const computed = computeAppInboxCompletion({
             ...handler.transactionWriter.readCompletionFacts(harness.context),

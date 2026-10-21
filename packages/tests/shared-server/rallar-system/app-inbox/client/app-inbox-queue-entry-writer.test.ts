@@ -89,6 +89,22 @@ describe('AppInbox durable enqueue', () => {
         expect(duplicate).toEqual(first);
         expect(wakeSignals).toBe(2);
     });
+
+    it('leaves the wake to the waiter and reports whether its write created the entry', async () => {
+        const queue = new TestResourceInbox(new Map());
+        let wakeSignals = 0;
+        const service = createService(queue, () => {
+            wakeSignals += 1;
+        });
+
+        const created = await service.writeIfAbsent(COMMAND);
+        const replayed = await service.writeIfAbsent(COMMAND);
+
+        expect(created.winner).toBe(true);
+        expect(replayed).toEqual({ entry: created.entry, winner: false });
+        expect(created.entry).toEqual(await queue.getItem(created.entry.key));
+        expect(wakeSignals).toBe(0);
+    });
 });
 
 function createService(
