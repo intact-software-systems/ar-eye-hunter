@@ -37,21 +37,86 @@ export async function replaceObservedResourceInboxEntry(
     return await sql<ResourceInboxRow[]>(...statement.toStatement());
 }
 
-/** Locks the row until the transaction ends while it still holds the observation; no row means it moved. */
-export async function lockObservedResourceInboxEntry(
-    sql: PSqlSql,
-    observation: ResourceInboxObservation
-): Promise<readonly Pick<ResourceInboxRow, 'ri_row_id'>[]> {
-    const statement = PSqlFragment.of`
-        select ri_row_id
-        from resource_inbox
-        where ${toObservedResourceInboxRowPredicate(observation)}
-        for update
-    `;
-    return await sql<Pick<ResourceInboxRow, 'ri_row_id'>[]>(...statement.toStatement());
+/** One observation of the multi-row lock, named as the statement's recordset columns. */
+interface ResourceInboxObservationRow {
+    readonly position: number;
+    readonly rowId: string;
+    readonly topicId: string;
+    readonly resourceId: string;
+    readonly contextId: string;
+    readonly typeId: string;
+    readonly resource: string;
+    readonly status: string;
+    readonly systemDate: string;
+    readonly createdBy: string;
+    readonly createdAt: string;
+    readonly expiresAt: string;
+    readonly startedAt: string | null;
+    readonly finishedAt: string | null;
+    readonly nextAt: string | null;
+    readonly attempts: number;
 }
 
-/** Every column of the observed row, and a row still live: the compare of the replace and of the lock alike. */
+/**
+ * Locks, in the order given and until the transaction ends, every row that still holds its observation; a row
+ * missing from the answer moved.
+ */
+export async function lockObservedResourceInboxEntries(
+    sql: PSqlSql,
+    observations: readonly ResourceInboxObservation[]
+): Promise<readonly Pick<ResourceInboxRow, 'ri_row_id'>[]> {
+    return await sql<Pick<ResourceInboxRow, 'ri_row_id'>[]>`
+        select resource_inbox.ri_row_id
+        from jsonb_to_recordset(${observations.map(toObservationRow)}::jsonb)
+            as observed(position integer, "rowId" bigint, "topicId" text, "resourceId" text, "contextId" text,
+                        "typeId" text, resource text, status text, "systemDate" text, "createdBy" text,
+                        "createdAt" text, "expiresAt" text, "startedAt" text, "finishedAt" text, "nextAt" text,
+                        attempts bigint)
+        join resource_inbox
+          on resource_inbox.ri_row_id = observed."rowId"
+         and resource_inbox.ri_topic_id = observed."topicId"
+         and resource_inbox.ri_resource_id = observed."resourceId"
+         and resource_inbox.fk_ext_bank_id = observed."contextId"
+         and resource_inbox.ri_type_id = observed."typeId"
+         and resource_inbox.ri_resource = observed.resource
+         and resource_inbox.ri_status = observed.status
+         and resource_inbox.system_date = observed."systemDate"::date
+         and resource_inbox.created_by = observed."createdBy"
+         and resource_inbox.created_ts = observed."createdAt"::timestamp(6)
+         and resource_inbox.expire_ts = observed."expiresAt"::timestamp(6)
+         and resource_inbox.start_ts is not distinct from observed."startedAt"::timestamp(6)
+         and resource_inbox.end_ts is not distinct from observed."finishedAt"::timestamp(6)
+         and resource_inbox.next_ts is not distinct from observed."nextAt"::timestamp(6)
+         and resource_inbox.ri_attempts = observed.attempts
+         and resource_inbox.expire_ts > (now() at time zone 'UTC')
+        order by observed.position
+        for update of resource_inbox
+    `;
+}
+
+function toObservationRow(observation: ResourceInboxObservation, position: number): ResourceInboxObservationRow {
+    const { expected } = observation;
+    return {
+        position,
+        rowId: observation.expectedRowId.toString(),
+        topicId: expected.entry.key.topicId,
+        resourceId: expected.entry.key.resourceId,
+        contextId: expected.entry.key.contextId,
+        typeId: expected.entry.typeId,
+        resource: expected.entry.resource,
+        status: expected.entry.status,
+        systemDate: expected.systemDate,
+        createdBy: expected.entry.audit.createdBy,
+        createdAt: expected.createdTimestamp,
+        expiresAt: expected.expiryTimestamp,
+        startedAt: expected.startTimestamp,
+        finishedAt: expected.endTimestamp,
+        nextAt: expected.nextTimestamp,
+        attempts: expected.attempts
+    };
+}
+
+/** Every column of the observed row, and a row still live: the compare of the replace. */
 function toObservedResourceInboxRowPredicate(observation: ResourceInboxObservation): PSqlFragment {
     const { expected, expectedRowId } = observation;
     return PSqlFragment.of`ri_row_id = ${expectedRowId}

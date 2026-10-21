@@ -752,7 +752,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
                 }
                 this.effectStore.writeEffects(tx, effects);
                 await this.mutations.writeStateWrites(tx, mutations);
-                await tx.set(versionKey, version, versionExpireAt);
+                await tx.setFence(versionKey, version, versionExpireAt);
                 return 'committed';
             }, computeALOutboundGroupExecutionExpiry(candidates));
         }

@@ -77,7 +77,7 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
 
         expect(sent.map((message) => message.id.msgId)).toEqual([decodePersistedALMessage(row.resource).id.msgId]);
         expect(readKeys().filter((key) => key === toKeyAsString(row.key))).toEqual([]);
-        expect(counts()).toEqual({ autocommit: 8, transactions: 5, inTransaction: 10 });
+        expect(counts()).toEqual({ autocommit: 8, transactions: 5, inTransaction: 7 });
     });
 
     // Committing every dequeued row alone costs ten admission transactions and ten sender versions.
@@ -119,8 +119,9 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
         expect(supersedenceGroups).toEqual([10]);
         // Rows read two at a time cost 39 autocommit statements: five supersedence reads instead of one.
         // Serial decision reads cost 57 after the front reads were already paired, and serial commit
-        // observations 47 before the group read them all at once.
-        expect(counts()).toEqual({ autocommit: 35, transactions: 6, inTransaction: 74 });
+        // observations 47 before the group read them all at once. Commits that wrote one row per statement cost 56
+        // statements inside their transactions.
+        expect(counts()).toEqual({ autocommit: 27, transactions: 6, inTransaction: 8 });
     });
 
     // Rows that read their admission, identity, proof and supersedence one after another, two rows at a time, cost
@@ -149,6 +150,34 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
             autocommit: end.autocommit - start.autocommit,
             transactions: end.transactions - start.transactions
         }).toEqual({ autocommit: 3, transactions: 0 });
+    });
+
+    // Written one row per statement, the group's transaction costs 81 statements for 16 rows: 33 state rows (an owner
+    // and a sent row per message, and the version), 16 holds on the claimed rows and 32 queue rows (an identity row and
+    // an own-work row per message).
+    it('commits a dequeued WS group in one statement per kind of write', async () => {
+        const storage = await createPSqlAdmissionTestStorage();
+        const counts = countPGliteStatements(storage.sql.raw);
+        const phases: Record<string, PGliteStatementCounts> = {};
+        const lane = createWsDequeueLane(storage, (observation) => {
+            if (observation.kind === 'admission-stage') {
+                phases[observation.stage] ??= counts();
+            }
+        });
+        const rows = await writeProvedWsRows(storage, 16);
+        for (const row of rows) {
+            await lane.stores.workQueue.enqueue(row);
+        }
+
+        await lane.engine.executeOnce();
+
+        await expect.poll(() => lane.native.sent.length).toBe(rows.length);
+        const start = phases['admission-commit-start']!;
+        const end = phases['admission-commit-end']!;
+        expect({
+            transactions: end.transactions - start.transactions,
+            inTransaction: end.inTransaction - start.inTransaction
+        }).toEqual({ transactions: 1, inTransaction: 3 });
     });
 
     it('commits each row alone when two rows of the group write one supersedence track', async () => {

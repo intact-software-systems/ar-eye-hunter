@@ -1,4 +1,7 @@
-import { PSqlAdmissionMutationCollector } from '@shared-server/al-runtime/postgres/p-sql-admission-mutation-collector.ts';
+import {
+    PSqlAdmissionMutationCollector,
+    writePSqlAdmissionState
+} from '@shared-server/al-runtime/postgres/p-sql-admission-mutation-collector.ts';
 import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
@@ -156,7 +159,7 @@ Deno.test('PGlite auth and AL production writers roll back sibling conditional m
         });
         await admission.set('sibling-a', { value: 'a' }, FUTURE_MS);
         await admission.set('sibling-b', { value: 'b' }, FUTURE_MS);
-        const mutations = admission.mutations();
+        const computed = admission.computeStateWrite(undefined)!;
         await runtime.insertIfAbsent(
             'al-admission-rollback',
             'sibling-b',
@@ -164,7 +167,7 @@ Deno.test('PGlite auth and AL production writers roll back sibling conditional m
             FUTURE_MS
         );
         await assert.rejects(
-            () => runtime.begin((transaction) => admission.writeMutations(transaction, mutations)),
+            () => runtime.begin((transaction) => writePSqlAdmissionState(transaction, computed)),
             RuntimeStateWriteConflictError
         );
         assert.equal(

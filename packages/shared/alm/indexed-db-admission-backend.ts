@@ -472,6 +472,11 @@ class IndexedDbAdmissionWriteBuffer implements ALAdmissionWorkWriteContext {
         });
     }
 
+    /** One IndexedDB transaction fences every observed row at once, so its fence is a row like any other. */
+    async setFence<V>(key: string, value: V, expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP): Promise<void> {
+        await this.set(key, value, expireAtTimestamp);
+    }
+
     async remove(key: string): Promise<void> {
         this.#usedMetadata = true;
         await this.#observeRevision(key);

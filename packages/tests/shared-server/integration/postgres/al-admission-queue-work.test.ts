@@ -525,8 +525,8 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         const deadline = Date.now() + 60_000;
         let nowMs = deadline - 100;
         const { backend, other, entry } = await createStorage(() => nowMs);
-        const insert = PSqlResourceInboxEntryRepository.prototype.tryWriteComputedIfAbsentOrReplaceExpired;
-        const spy = vi.spyOn(PSqlResourceInboxEntryRepository.prototype, 'tryWriteComputedIfAbsentOrReplaceExpired')
+        const insert = PSqlResourceInboxEntryRepository.prototype.tryWriteAllComputedIfAbsentOrReplaceExpired;
+        const spy = vi.spyOn(PSqlResourceInboxEntryRepository.prototype, 'tryWriteAllComputedIfAbsentOrReplaceExpired')
             .mockImplementation(async function (this: PSqlResourceInboxEntryRepository, values) {
                 const result = await insert.call(this, values);
                 nowMs = deadline + (offset ?? 1);

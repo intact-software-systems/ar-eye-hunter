@@ -8,6 +8,7 @@ import {
 } from 'vitest';
 
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
+import type { PSqlParameter } from '@shared-server/postgres/p-sql-sql.ts';
 import { PSqlResourceInboxEntryReader } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-reader.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import {
@@ -16,7 +17,7 @@ import {
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 
-import { createPSqlAdmissionTestStorage } from './create-p-sql-admission-test-storage.ts';
+import { createPSqlAdmissionTestStorage, type PSqlAdmissionTestStorage } from './create-p-sql-admission-test-storage.ts';
 
 describe('AL admission persistence-ready queue work', () => {
     afterEach(() => vi.restoreAllMocks());
@@ -156,6 +157,109 @@ describe('AL admission persistence-ready queue work', () => {
         }
     );
 
+    it('writes the named fence first and every other state row as its effect, in one statement', async () => {
+        const { sql } = await createPSqlAdmissionTestStorage();
+        const backend = new PSqlAdmissionWorkBackend({ sql, namespace: 'admission', nowMs: Date.now });
+        await backend.write(async (write) => await write.set('version', 0));
+        const statements = recordPGliteTransactionStatements(sql.raw);
+
+        await backend.write(async (write) => {
+            await write.set('effect:a', 'a');
+            await write.setFence('version', 1);
+            await write.set('effect:b', 'b');
+        });
+
+        const stateWrites = statements().filter(({ query }) => query.includes('runtime_state_store'));
+        expect(stateWrites).toHaveLength(1);
+        expect(statements()[0]).toBe(stateWrites[0]);
+        expect(stateWrites[0]!.params[0]).toMatchObject({ operation: 'update', key: 'version', expectedRevision: 0 });
+        expect(await backend.read('version', (value) => value)).toBe(1);
+        expect(await backend.read('effect:a', (value) => value)).toBe('a');
+        expect(await backend.read('effect:b', (value) => value)).toBe('b');
+    });
+
+    it('writes none of a commit whose fence moved after the commit read it', async () => {
+        const { sql } = await createPSqlAdmissionTestStorage();
+        const backend = new PSqlAdmissionWorkBackend({ sql, namespace: 'admission', nowMs: Date.now });
+        await backend.write(async (write) => await write.set('version', 0));
+        const entry = createEntry();
+
+        await expect(backend.write(async (write) => {
+            await write.read('version', (value) => value);
+            await write.readWork(entry.key);
+            // Another commit of the same sender lands between this commit's read and its write.
+            await sql`update runtime_state_store set revision = revision + 1 where store_key = 'version'`;
+            await write.set('effect:a', 'a');
+            await write.setFence('version', 1);
+            write.writeWork(entry);
+        })).rejects.toBeInstanceOf(ALAdmissionBackendConflictError);
+
+        expect(await backend.read('version', (value) => value)).toBe(0);
+        expect(await backend.read('effect:a', (value) => value)).toBeUndefined();
+        expect(await backend.workQueue.getItem(entry.key)).toBeUndefined();
+    });
+
+    it('holds every claimed row and inserts every new row of a commit in one statement each', async () => {
+        const { sql } = await createPSqlAdmissionTestStorage();
+        const backend = new PSqlAdmissionWorkBackend({ sql, namespace: 'admission', nowMs: Date.now });
+        const claimed = await claimEntries(backend, ['held-1', 'held-2', 'held-3']);
+        const inserted = ['new-1', 'new-2', 'new-3'].map(createEntryOf);
+        const statements = recordPGliteTransactionStatements(sql.raw);
+
+        await backend.write(async (write) => {
+            await Promise.all(claimed.map((entry) => write.readClaimedWork(entry)));
+            await Promise.all(inserted.map((entry) => write.readWork(entry.key)));
+            await write.setFence('version', 1);
+            inserted.forEach((entry) => write.writeWork(entry));
+        });
+
+        expect(statements().map(({ query }) => toStatementKind(query))).toEqual(['state', 'hold', 'insert']);
+        for (const entry of inserted) {
+            expect(await backend.workQueue.getItem(entry.key)).toMatchObject({ resource: 'computed message' });
+        }
+    });
+
+    it('conflicts the whole commit when one of several held claimed rows moved after its claim', async () => {
+        const { sql } = await createPSqlAdmissionTestStorage();
+        const backend = new PSqlAdmissionWorkBackend({ sql, namespace: 'admission', nowMs: Date.now });
+        const claimed = await claimEntries(backend, ['held-1', 'held-2', 'held-3']);
+        await sql`update resource_inbox set ri_attempts = ri_attempts + 1 where ri_resource_id = 'held-2'`;
+
+        await expect(backend.write(async (write) => {
+            await Promise.all(claimed.map((entry) => write.readClaimedWork(entry)));
+            await write.setFence('version', 1);
+        })).rejects.toBeInstanceOf(ALAdmissionBackendConflictError);
+
+        expect(await backend.read('version', (value) => value)).toBeUndefined();
+    });
+
+    it('replaces an expired row in place of a new one, and conflicts on a live row written since the read', async () => {
+        const { sql } = await createPSqlAdmissionTestStorage();
+        const backend = new PSqlAdmissionWorkBackend({ sql, namespace: 'admission', nowMs: Date.now });
+        const expired = createEntryOf('expired');
+        await backend.workQueue.enqueue({
+            ...expired,
+            resource: 'expired message',
+            audit: { ...expired.audit, expiryTs: Temporal.Instant.from('2000-01-01T00:00:00Z') }
+        });
+        const raced = createEntryOf('raced');
+
+        await backend.write(async (write) => {
+            expect(await write.readWork(expired.key)).toBeUndefined();
+            write.writeWork(expired);
+        });
+        await expect(backend.write(async (write) => {
+            await write.readWork(raced.key);
+            await backend.workQueue.enqueue({ ...raced, resource: 'racing message' });
+            await write.set('effect:a', 'a');
+            write.writeWork(raced);
+        })).rejects.toBeInstanceOf(ALAdmissionBackendConflictError);
+
+        expect((await backend.workQueue.getItem(expired.key))?.resource).toBe('computed message');
+        expect((await backend.workQueue.getItem(raced.key))?.resource).toBe('racing message');
+        expect(await backend.read('effect:a', (value) => value)).toBeUndefined();
+    });
+
     it('commits two concurrent writes on disjoint keys, neither fencing the other', async () => {
         const { sql } = await createPSqlAdmissionTestStorage();
         const backend = new PSqlAdmissionWorkBackend({ sql, namespace: 'admission', nowMs: Date.now });
@@ -175,6 +279,51 @@ describe('AL admission persistence-ready queue work', () => {
         expect(await backend.read('admitted:second', (value) => value)).toBe('second');
     });
 });
+
+interface PGliteTransactionStatement {
+    readonly query: string;
+    readonly params: readonly PSqlParameter[];
+}
+
+/** Every statement PGlite runs inside a transaction, with its parameters, in the order it ran. */
+function recordPGliteTransactionStatements(raw: PSqlAdmissionTestStorage['sql']['raw']): () => readonly PGliteTransactionStatement[] {
+    const statements: PGliteTransactionStatement[] = [];
+    const transaction = raw.transaction.bind(raw);
+    vi.spyOn(raw, 'transaction').mockImplementation((callback) =>
+        transaction((tx) => {
+            const txQuery = tx.query.bind(tx);
+            return callback(Object.assign(Object.create(tx), {
+                query: (...args: Parameters<typeof tx.query>) => {
+                    statements.push({ query: args[0], params: args[1] ?? [] });
+                    return txQuery(...args);
+                }
+            }));
+        })
+    );
+    return () => statements;
+}
+
+function toStatementKind(query: string): string {
+    if (query.includes('runtime_state_store')) {
+        return 'state';
+    }
+    return /^\s*insert into resource_inbox/u.test(query) ? 'insert' : /for update/u.test(query) ? 'hold' : query;
+}
+
+async function claimEntries(backend: PSqlAdmissionWorkBackend, resourceIds: readonly string[]): Promise<ResourceEntry[]> {
+    for (const resourceId of resourceIds) {
+        await backend.workQueue.enqueue(createEntryOf(resourceId));
+    }
+    const claimed = [...(await backend.workQueue.reserveEntries({
+        typeIds: new Set(['alm-work']),
+        statusIds: new Set([EntityStatus.NEW]),
+        reservationInput: resourceIds.length
+    })).values()];
+    if (claimed.length !== resourceIds.length) {
+        throw new Error('Expected every enqueued entry to be claimed');
+    }
+    return claimed;
+}
 
 async function claimEntry(backend: PSqlAdmissionWorkBackend): Promise<ResourceEntry> {
     await backend.workQueue.enqueue(createEntry());
@@ -198,8 +347,12 @@ function toReleaseDelayMs(released: ResourceEntry): number {
 }
 
 function createEntry(): ResourceEntry {
+    return createEntryOf('first');
+}
+
+function createEntryOf(resourceId: string): ResourceEntry {
     return {
-        key: { topicId: 'alm-work', resourceId: 'first', contextId: 'admission' },
+        key: { topicId: 'alm-work', resourceId, contextId: 'admission' },
         typeId: 'alm-work',
         resource: 'computed message',
         status: EntityStatus.NEW,

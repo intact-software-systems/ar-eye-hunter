@@ -76,6 +76,11 @@ export class InMemoryAdmissionWorkWriteBuffer implements ALAdmissionWorkWriteCon
         this.pending.set(key, { key, value, expireAtTimestamp: decodeALAdmissionNumber(expireAtTimestamp) });
     }
 
+    /** The map applies a commit at once, so its fence is a row like any other. */
+    async setFence<V>(key: string, value: V, expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP): Promise<void> {
+        await this.set(key, value, expireAtTimestamp);
+    }
+
     async remove(key: string): Promise<void> {
         this.pending.remove(key);
     }

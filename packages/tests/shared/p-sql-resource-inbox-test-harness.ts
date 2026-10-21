@@ -114,6 +114,9 @@ function executeResourceInboxQuery(input: ResourceInboxQueryExecution): PSqlRows
 }
 
 function executeResourceInboxInsert(input: ResourceInboxQueryExecution): PSqlRows {
+    if (input.query.includes('from jsonb_to_recordset(')) {
+        return executeResourceInboxInserts(input);
+    }
     const incoming = toRowFromInsert(input.values, input.state.nextRowId);
     const key = toCompositeKey(incoming);
     const existing = input.state.rows.get(key);
@@ -139,6 +142,37 @@ function executeResourceInboxInsert(input: ResourceInboxQueryExecution): PSqlRow
         : toMutableResourceInboxContent(existing, incoming);
     input.state.rows.set(key, updated);
     return [cloneRow(updated)];
+}
+
+/** The multi-row insert: each recordset row applied as the single-row statement applies its parameters. */
+function executeResourceInboxInserts(input: ResourceInboxQueryExecution): PSqlRows {
+    const inserts = input.values[0];
+    if (!Array.isArray(inserts)) {
+        throw new TypeError('resource inbox inserts must be a recordset array');
+    }
+    const columns = [
+        'resourceId',
+        'topicId',
+        'resource',
+        'typeId',
+        'status',
+        'contextId',
+        'systemDate',
+        'createdBy',
+        'createdAt',
+        'expiresAt',
+        'startedAt',
+        'finishedAt',
+        'nextAt',
+        'attempts'
+    ];
+    return inserts.flatMap((insert: Readonly<Record<string, PSqlParameter>>) =>
+        executeResourceInboxInsert({
+            ...input,
+            query: input.query.replace('from jsonb_to_recordset(', 'from recordset('),
+            values: columns.map((column) => insert[column])
+        })
+    );
 }
 
 function toMutableResourceInboxContent(existing: ResourceInboxRow, incoming: ResourceInboxRow): ResourceInboxRow {

@@ -41,7 +41,11 @@ import {
 } from '../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { readRuntimeStateKeyEntries } from '../../runtime-state/read-batch/read-runtime-state-key-entries.ts';
 import type { RuntimeStateEntry } from '../../runtime-state/runtime-state-repository.ts';
-import { PSqlAdmissionMutationCollector } from './p-sql-admission-mutation-collector.ts';
+import {
+    PSqlAdmissionMutationCollector,
+    writePSqlAdmissionState,
+    type PSqlAdmissionStateWrite
+} from './p-sql-admission-mutation-collector.ts';
 
 export namespace PSqlAdmissionWorkBackend {
     export interface Input {
@@ -118,23 +122,15 @@ export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
             readWork: (key) => this.workReads.read(key)
         });
         const result = await fn(collector);
-        const mutations = collector.mutations();
-        const workWrites = collector.workWrites();
+        const computed = collector.computeCommit();
         requireLivePersistenceWrite(executionExpiresAtMs, this.nowMs());
-        if (mutations.length === 0 && workWrites.every((write) => write.kind === 'hold-claimed')) {
+        if (!hasPSqlAdmissionWrites(computed)) {
             return result;
         }
         try {
             await this.sql.begin(async (sql) => {
                 requireLivePersistenceWrite(executionExpiresAtMs, this.nowMs());
-                const transaction = createTransactionBoundPSqlRuntimeStateRepository(sql);
-                const work = new PSqlResourceInboxEntryRepository(sql, () => new Date(this.nowMs()));
-                await collector.writeMutations(transaction, mutations);
-                for (const write of workWrites) {
-                    if (!await writePSqlAdmissionWork(work, write)) {
-                        throw new ALAdmissionBackendConflictError('AL admission work write conflicted');
-                    }
-                }
+                await writePSqlAdmissionCommit(sql, computed, () => new Date(this.nowMs()));
                 requireLivePersistenceWrite(executionExpiresAtMs, this.nowMs());
             });
         }
@@ -160,10 +156,13 @@ export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
     }
 }
 
-type PSqlAdmissionWorkWrite =
-    | { readonly kind: 'insert'; readonly values: ResourceInboxEntryInsertValues; }
-    | { readonly kind: 'replace'; readonly computed: ResourceInboxObservedReplacement; }
-    | { readonly kind: 'hold-claimed'; readonly observation: ResourceInboxObservation; };
+/** A commit's state rows and the work rows it holds, inserts and replaces, all computed before it begins. */
+interface PSqlAdmissionCommit {
+    readonly state: PSqlAdmissionStateWrite | undefined;
+    readonly holds: readonly ResourceInboxObservation[];
+    readonly inserts: readonly ResourceInboxEntryInsertValues[];
+    readonly replacements: readonly ResourceInboxObservedReplacement[];
+}
 
 namespace PSqlAdmissionWorkWriteBuffer {
     export interface Input {
@@ -177,6 +176,7 @@ class PSqlAdmissionWorkWriteBuffer extends PSqlAdmissionMutationCollector implem
     private readonly workObservations = new Map<string, ResourceEntry | undefined>();
     private readonly claimedSlots = new Map<string, ResourceEntry>();
     private readonly pendingWork = new Map<string, ResourceEntry>();
+    private fenceKey: string | undefined;
 
     constructor(input: PSqlAdmissionWorkWriteBuffer.Input) {
         super(input.collector);
@@ -215,34 +215,62 @@ class PSqlAdmissionWorkWriteBuffer extends PSqlAdmissionMutationCollector implem
         this.pendingWork.set(key, toResourceEntrySnapshot(entry));
     }
 
-    /** A hold on each claimed row the commit does not rewrite, then every pending write. */
-    workWrites(): readonly PSqlAdmissionWorkWrite[] {
-        const holds: PSqlAdmissionWorkWrite[] = [...this.claimedSlots]
-            .filter(([key]) => !this.pendingWork.has(key))
-            .map(([, claimed]) => ({ kind: 'hold-claimed', observation: computeResourceInboxObservation(claimed) }));
-        return [
-            ...holds,
-            ...[...this.pendingWork].map(([key, entry]): PSqlAdmissionWorkWrite => {
-                const expected = this.workObservations.get(key);
-                return expected === undefined
-                    ? { kind: 'insert', values: computeResourceInboxEntryInsertValues(entry) }
-                    : { kind: 'replace', computed: computeResourceInboxObservedReplacement(expected, entry) };
-            })
-        ];
+    async setFence<V>(key: string, value: V, expireAtTimestamp?: number): Promise<void> {
+        if (this.fenceKey !== undefined && this.fenceKey !== key) {
+            throw new TypeError('An admission commit is fenced on one row');
+        }
+        this.fenceKey = key;
+        await this.set(key, value, expireAtTimestamp);
+    }
+
+    /** A hold on each claimed row the commit does not rewrite, then every pending write against its observed slot. */
+    computeCommit(): PSqlAdmissionCommit {
+        const pending = [...this.pendingWork].map(([key, entry]) => ({
+            entry,
+            expected: this.workObservations.get(key)
+        }));
+        return {
+            state: this.computeStateWrite(this.fenceKey),
+            holds: [...this.claimedSlots]
+                .filter(([key]) => !this.pendingWork.has(key))
+                .map(([, claimed]) => computeResourceInboxObservation(claimed)),
+            inserts: pending.flatMap(({ entry, expected }) =>
+                expected === undefined ? [computeResourceInboxEntryInsertValues(entry)] : []
+            ),
+            replacements: pending.flatMap(({ entry, expected }) =>
+                expected === undefined ? [] : [computeResourceInboxObservedReplacement(expected, entry)]
+            )
+        };
     }
 }
 
-async function writePSqlAdmissionWork(
-    work: PSqlResourceInboxEntryRepository,
-    write: PSqlAdmissionWorkWrite
-): Promise<boolean> {
-    switch (write.kind) {
-        case 'insert':
-            return await work.tryWriteComputedIfAbsentOrReplaceExpired(write.values) !== null;
-        case 'replace':
-            return await work.writeObservedReplacement(write.computed) !== null;
-        case 'hold-claimed':
-            return await work.lockObserved(write.observation);
+function hasPSqlAdmissionWrites(computed: PSqlAdmissionCommit): boolean {
+    return computed.state !== undefined || computed.inserts.length > 0 || computed.replacements.length > 0;
+}
+
+/**
+ * The state rows first, their fence before every other row, then one statement for every held claim and one for
+ * every new work row; a row that moved since its observation rolls the commit back as a conflict.
+ */
+async function writePSqlAdmissionCommit(
+    sql: PSqlSql,
+    computed: PSqlAdmissionCommit,
+    now: () => Date
+): Promise<void> {
+    if (computed.state !== undefined) {
+        await writePSqlAdmissionState(createTransactionBoundPSqlRuntimeStateRepository(sql), computed.state);
+    }
+    const work = new PSqlResourceInboxEntryRepository(sql, now);
+    if (
+        !await work.lockAllObserved(computed.holds) ||
+        !await work.tryWriteAllComputedIfAbsentOrReplaceExpired(computed.inserts)
+    ) {
+        throw new ALAdmissionBackendConflictError('AL admission work write conflicted');
+    }
+    for (const replacement of computed.replacements) {
+        if (await work.writeObservedReplacement(replacement) === null) {
+            throw new ALAdmissionBackendConflictError('AL admission work write conflicted');
+        }
     }
 }
 

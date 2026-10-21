@@ -4,7 +4,10 @@ import {
     it
 } from 'vitest';
 
-import { PSqlAdmissionMutationCollector } from '@shared-server/al-runtime/postgres/p-sql-admission-mutation-collector.ts';
+import {
+    PSqlAdmissionMutationCollector,
+    writePSqlAdmissionState
+} from '@shared-server/al-runtime/postgres/p-sql-admission-mutation-collector.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
@@ -35,8 +38,8 @@ describe('PostgreSQL admission mutation collector validated reads', () => {
             { key: 'version:peer-1', value: { senderId: 'peer-1', version: 1 } },
             { key: 'version:peer-2', value: { senderId: 'peer-2', version: 2 } }
         ]);
-        const mutations = collector.mutations();
-        await repository.begin((transaction) => collector.writeMutations(transaction, mutations));
+        const computed = collector.computeStateWrite(undefined)!;
+        await repository.begin((transaction) => writePSqlAdmissionState(transaction, computed));
         expect((await repository.findEntry('admission', 'version:peer-2'))?.value).toBe('{"senderId":"peer-2","version":2}');
     });
 
@@ -117,8 +120,8 @@ describe('PostgreSQL admission mutation collector validated reads', () => {
         expect(await collector.read('version:peer-1', decodeSenderVersion)).toBeUndefined();
         expect(await collector.list('version:', decodeSenderVersion)).toEqual([]);
         await collector.set('version:peer-1', { senderId: 'peer-1', version: 2 });
-        const mutations = collector.mutations();
-        await repository.begin((transaction) => collector.writeMutations(transaction, mutations));
+        const computed = collector.computeStateWrite(undefined)!;
+        await repository.begin((transaction) => writePSqlAdmissionState(transaction, computed));
         expect(await collector.read('version:peer-1', decodeSenderVersion)).toEqual({ senderId: 'peer-1', version: 2 });
 
         await repository.upsert('admission', 'version:peer-2', '{"senderId":"wrong","version":1}', 1);
@@ -138,8 +141,8 @@ describe('PostgreSQL admission mutation collector validated reads', () => {
 
         expect(await collector.read('version:peer-1', decodeSenderVersion)).toBeUndefined();
         await repository.upsert('admission', 'version:peer-1', '{"senderId":"peer-1","version":2}', NEVER_EXPIRE_AT_TIMESTAMP);
-        const mutations = collector.mutations();
-        await expect(repository.begin((transaction) => collector.writeMutations(transaction, mutations))).rejects.toBeInstanceOf(
+        const computed = collector.computeStateWrite(undefined)!;
+        await expect(repository.begin((transaction) => writePSqlAdmissionState(transaction, computed))).rejects.toBeInstanceOf(
             RuntimeStateWriteConflictError
         );
         expect((await repository.findEntry('admission', 'version:peer-1'))?.value).toBe('{"senderId":"peer-1","version":2}');
@@ -159,8 +162,8 @@ describe('PostgreSQL admission mutation collector validated reads', () => {
         };
 
         await collector.set('version:peer-1', { senderId: 'peer-1', version: 1 });
-        const mutations = collector.mutations();
-        await expect(repository.begin((transaction) => collector.writeMutations(transaction, mutations))).rejects.toBe(unavailable);
+        const computed = collector.computeStateWrite(undefined)!;
+        await expect(repository.begin((transaction) => writePSqlAdmissionState(transaction, computed))).rejects.toBe(unavailable);
         expect(await repository.findAllEntries('admission')).toEqual([]);
     });
 });
