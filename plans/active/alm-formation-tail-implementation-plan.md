@@ -5,9 +5,11 @@
 Reduce measured WS outbox formation-tail delay without changing its event protocol.
 Bounded admission reads are the first implemented repair, the group-audience cache
 (#675) the second, formation tail 2 (#687) cut the setup admission and handler
-waits, and formation tail 3 (#689) removes the AppInbox pass barrier and the
-presence share of the group chain. The parent V1c plan's full ≤2 s formation-tail
-target remains open.
+waits, formation tail 3 (#689) removed the AppInbox pass barrier and the
+presence share of the group chain, and formation tail 4 (#690) orders NEW claims
+by creation, lets a fed chain's head go first and takes round trips off the join
+and the WS connect. The parent V1c plan's full ≤2 s formation-tail target
+remains open.
 
 ## Global constraints
 
@@ -502,6 +504,151 @@ No workload exhausted a retry, and the identical-main positions drift by at most
 both adjacent hot contrasts favour the head, and hot statements fall
 59,880.5 → 55,199 per run with conflicts −3.9 % and attempts −1.6 %, reversing
 #687's +2.6 %.
+
+### Formation tail 4: creation-order claims, chain heads, enqueue-time ingress and a cheaper connect (PR #690)
+
+Two read-only surveys of main after #689 read its timing-on hosted 50 (design
+proposal §1.16, decisions D332–D349). The hosted joins are no-ops whose cost
+grows 117 ms per concurrent handler; the group-key chain sat idle 10.884 s while
+a claimed join waited for a slot; NEW claims followed the `CACHE 100` sequence's
+id blocks, so tickets waited 14–17 s; the WS connect made about 14 read and 9
+transaction round trips; the outbound worker read a commit group's observations
+one member at a time; and disconnected sessions stayed 30 days. Eight repairs
+landed at their owners, each RED first, under the maintainer's rulings R1–R4,
+and a ninth came from the local Postgres ALM lane. Postgres tests run on the
+local container on a fresh database or their own run-id rows; the local numbers
+below use the memory API.
+
+1. **Creation-order NEW claims** (R1; `p-sql-resource-inbox-reservation-repository.ts`,
+   `resource-inbox-claim-order.ts`, `in-memory-queue-box.ts`,
+   `indexed-db-queue-box.ts`). NEW claims and the context head order by
+   `created_ts, ri_row_id`; RETRY keeps due order. RED on Postgres with two
+   sessions holding two sequence blocks: `expected [ 'younger' ] to deeply equal
+   [ 'older' ]`, for the queue-order and the context-head claim; the same in
+   memory and IndexedDB. GREEN: the claim-order and queuebox suites, 20 files and
+   148 tests on Postgres. The local `EXPLAIN` scans `resource_inbox_ix` with no
+   sort.
+2. **Chain heads first** (R2; `bounded-concurrency-admission.ts`,
+   `exclusion-keyed-admission.ts`). A keyed run waiting in turn is promoted once a
+   same-key successor attaches. RED: `expected 'ws-1' to be 'join-1'`; at flight
+   level a chain head behind twelve slow keyless rows did not start at the first
+   settlement. GREEN: both, with D328's ticket-before-presence and prefix fan-out
+   tests kept green. The option is renamed `keyedChainsFirst`.
+3. **Ingress at enqueue, decisions at the attempt** (R3;
+   `group-state-inbox-service.ts`, `app-inbox-command-client.ts`,
+   `group-state-inbox-handler.ts`, `to-group-mutation-attempt-facts.ts`). The
+   route reserves through `reserveMaterializedAndWaitForResult`; the lane neither
+   captures nor persists. RED: `expected [] to have a length of 1` (no
+   reservation at enqueue). GREEN: a forced conflict retry reuses the enqueue-time
+   event id, hash and instant at attempt 2. `attemptAtEpochMs` carries every
+   decision and window; RED with the anchors reverted: `expected 1792567545083
+   to be 1792567552083`, exactly the 7 s lane wait early; a group that expired
+   while its update was queued was accepted.
+4. **A cheaper join** (`group-mutation-authority.ts`,
+   `read-exact-group-state-mutation.ts`, `resource-inbox-result-replacement.ts`).
+   The capture reads nothing (RED: `The ingress capture must not read the causal
+   revision`); the session row joins the batch (RED: four namespaced reads
+   against one; the expired-session denial applied the join); the replacement
+   returns `ris_row_id` (RED: `expected [ 'ris_row_id', …(10) ]`).
+5. **The strict queue key and one session store**
+   (`to-authenticated-group-mutation-queue-key.ts`, `group-state-service.ts`).
+   The producer-less authority paths are removed.
+6. **The connect's statements** (`client-state-snapshot-repository.ts`,
+   `read-client-mutation.ts`, `write-client-mutation.ts`,
+   `app-outbox-insert.ts`). RED on Postgres: `expected 15 to be less than or
+   equal to 7`; with the per-row outbox loop restored, `expected 7 to be less
+   than or equal to 5`. GREEN: 7 reads before `BEGIN` and 5 in the transaction.
+7. **Seven-day retention** (R4; `decode-api-v1-configuration.ts`,
+   `defaults-config.json`, `session-expiry.ts`). RED: the session disconnected
+   8 days ago was still present after the sweep. GREEN: purged at 8 days, kept
+   at 6, the generation fence intact inside the window.
+8. **Batched commit observations** (`al-outbound-admission-store.ts`). RED:
+   `expected 16 to be less than or equal to 2`. GREEN: 48 reads in 2 rounds; the
+   PGlite statement pin moves 47 → 39.
+9. **Absent-peer dials dropped** (D349, pre-existing on main;
+   `webrtc-outbound-dialing.ts`, `web-rtc-group-manager.ts`). The lane's
+   `delivery-reload` scenario failed on the head and on main: a surviving peer
+   redialed a reloaded session that had no socket, live-only signaling dropped
+   the offer, and the stranded dial waited out the 30 s establishment timeout.
+   A reconcile pass now drops the offering side's in-flight dial to a peer that
+   lost presence, so it is redialed fresh when presence returns. RED: `expected
+   [ 'peer-a' ] to deeply equal []`; the review's role guard, RED against the
+   unguarded code: `expected [] to deeply equal [ 'z-peer' ]` (the answering
+   side keeps its setup). GREEN: 24 dialer and connection files, 356 tests; the
+   five `over rtc (full)` lane families 5/5 on a fresh database. Open: a leave
+   and a return observed in one reconcile pass still keep the stranded dial.
+
+The test isolation rule landed beside them (D347): the retention test left 18
+WS_OUTBOX rows that the receipt worker test claimed, failing it 1 run in 10. Both
+new Postgres tests now delete their run-id rows and assert none is left.
+
+The medium-scale gate passes on `cb4d83f00`, `947c3e281`, `e5a51d662`,
+`42f33fede` and `b7deaceaa` (2,842 passed, 0 failed each; 108.2 / 128.7 / 133.9
+/ 126.0 / 132.4 s against 132.1 s on the #689 head). The local cluster profile
+passes 12/12 on `947c3e281`. Local 15, 30 and 50 pass on `b7deaceaa` (47.9 s,
+52.8 s and 1.1 min of test time). Local 50 with AppInbox phase timing, the #689
+head `e6f4d1b63` → this head (memory API; not a hosted measurement):
+
+| Command type                   | Queue age p50 / p95 / max, #689 head (s) |      On this head (s) | Handler p50, #689 head → this head (ms) |
+| ------------------------------ | ---------------------------------------: | --------------------: | --------------------------------------: |
+| `CLIENT_AUTHORISED_WS_CONNECT` |                    0.059 / 0.190 / 0.386 | 0.192 / 0.971 / 0.971 |                             37.1 → 35.0 |
+| `GROUP_JOIN`                   |                    0.032 / 0.200 / 0.200 | 0.041 / 0.176 / 0.176 |                             15.4 → 10.2 |
+| `GROUP_PRESENCE_CONNECT`       |                    0.040 / 0.491 / 0.500 | 0.051 / 0.408 / 0.413 |                             51.5 → 31.3 |
+| `AUTH_WS_TICKET_ISSUE`         |                    0.125 / 0.179 / 0.194 | 0.119 / 0.169 / 0.187 |                            14.3 → 13.85 |
+| `AUTH_SESSION_ISSUE`           |                    0.080 / 0.127 / 0.129 | 0.052 / 0.104 / 0.114 |                             18.8 → 21.6 |
+
+Over the setup window (6.483 → 5.442 s) the summed handler time falls 6.386 →
+4.673 s; passes 29 → 26, claimed per pass p50 4 → 7, occupancy 0.246 → 0.215.
+The WS connect now waits behind older rows and chain heads.
+
+The local Postgres ALM lane on a fresh isolated database passes 14 of 15 on
+`b7deaceaa`. The failure, `baseline family over rtc (full)` at
+`delivery-reload`, reproduces alone on a fresh database at the head and on main
+`0ef6528ed`; repair 9 (D349) fixes it, and the five `over rtc (full)` families
+pass 5/5 with it. The full lane on the final head `15e3cc2ce`: 15/15 on `15e3cc2ce` (fresh isolated database, 34.3 min).
+
+Hosted acceptance on production `b7deaceaa` (uninstrumented, persistent hosted
+Postgres), each with 0 failed agents, reconnects or errors: 15 passes at
+14.397 s (run 39577268234; #689 14.658 s); 30 at 27.541 s (run 39578018218;
+27.537 s); 50 at 46.463 s (run 39579322729; #689's single run 43.123 s),
+connected → accepted 0.514 s (0.605 s), room join p95 / max 20.135 / 20.930 s
+(23.735 / 28.079 s). On the final head `15e3cc2ce` a hosted 50 passes at
+49.784 s (run 39590786842), inside this session's A-B-B-A leg range
+47.893–52.828 s; the unguarded `3e789c664` run's 55.763 s did not persist.
+
+Frozen native-50 A-B-B-A, main `0ef6528ed` against the head (timing off): the
+whole formation meets the rule, B2 − A1 −1.764 s and B3 − A4 −4.935 s,
+symmetric −3.349 s (−6.5 %) against a +2.603 s baseline drift. Not met: the
+end of formation +0.269 s, SDK connect +0.618 s, room join −1.124 s (B2 − A1
+flat at +0.004 s) and RTC readiness −0.030 s. Main deployed `e981de1ed`
+(`0ef6528ed` plus #685, off the formation path). A4 was re-dispatched after a
+control-plane checkout network failure, so it is not back-to-back with B3.
+
+Timing-on hosted 50 on the head (run 39584426299; instrumented, not acceptance;
+against the #689 run 39505125464):
+
+| Acceptance figure                                    | Target                                      |                     #689 head |                              This head |
+| ---------------------------------------------------- | ------------------------------------------- | ----------------------------: | -------------------------------------: |
+| (a) Ticket wait before the handler, p50 / p95        | No ticket over 2 s for a sub-second handler |              0.907 / 16.550 s |  0.640 / 0.878 s, max 0.922 s: **met** |
+| (b) Chain idle while a claimed join waits for a slot | Under 1 s                                   | 10.884 s of a 42.683 s window |  0.273 s of a 39.065 s window: **met** |
+| (c) WS connect handler p50, beside three others      | Under 1.2 s                                 |                       1.979 s | 1.734 s (overall 1.726 s): **not met** |
+| (d) Group-key chain without presence                 | Under 15 s                                  |      21.491 s, joins 19.464 s |  18.496 s, joins 17.378 s: **not met** |
+
+The chain's idle time moved rather than vanished: 10.337 s idle with a join
+arrived and not yet claimed (#689 1.166 s), while the flight held about 10.5
+claimed WS connects; the flight saturated by WS connects is the next owner.
+Occupancy 0.721 → 0.568; passes 120 → 89; connect commit → first page settled
+26.667 → 26.354 s p50; no ticket, connect, join, presence or session row
+claimed after a younger row.
+
+The CPU/GC capture (run 39586289916): the API main thread is busy 92.7 % of
+the 61.8 s setup window; GC 4.5 % by the trace pause sum, 9.8 % by the
+profiler; the top cost is `structuredClone` in the persisted-state decoders,
+7.9 %; the queuebox code 0.7 %. The next owner is per-handler CPU on the
+saturated thread (the decoders' clone, the WS connect handler), not the lane.
+The state-write comparison on the head (its runtime exercises the per-pass
+path at K = 1, D329): the label run could not run, because the candidate's
+perf harness needs branch-only APIs; the local A-B-B-A bench: fresh migrated database per leg, order main, head, head, main, three measured runs each (`sw-ft4d`, 2026-10-21). Control main vs main: no regression flagged (hot 48.4 → 51.0 mutations/s, +5 %). Main-1 vs head-1: no regression flagged; uncontended 229.3 → 245.6 (+7.1 %), shared 201.3 → 214.5 (+6.6 %), hot 48.4 → 50.3 (+3.9 %), p99 hot 3.343 → 3.196 s, statements −15 % uncontended and shared, flat on hot, no exhausted retries. Main-2 vs head-2: hot flagged, 51.0 → 39.0 (−23.5 %), uncontended and shared flat. The two head legs differ by 25 % on hot between themselves (50.3 and 39.0), more than either contrast, so the hot verdict is inconclusive on this machine; uncontended and shared pass. Three earlier attempts on the shared database were invalid: bench residue made every leg slower than the last, main included.
 
 ## Hosted formation evidence
 
@@ -1412,23 +1559,33 @@ timing-on hosted 50 located and took presence off the group's serial chain; its
 A–B–B–A verifies the whole-formation benefit in both contrasts (−12.378 and
 −6.344 s; symmetric −9.361 s, −15.6 %), with the end of formation flat and SDK
 connect unchanged (D330), and its timing-on hosted 50 names the join chain as the
-next owner (D331). The maintainer's performance, scalability, QueueBox
-responsiveness and fault-tolerance requirements continue to govern both product and
-shared-test code. Use `performance-analysis`, `rallar-code-writing`, `rallar-realtime`,
+next owner (D331). Formation tail 4 (#690) took the two owners that run named:
+NEW claims follow creation order (R1), a fed chain's head takes the next slot
+(R2), group commands capture their ingress at enqueue (R3), and the join and the
+WS connect lose round trips (the connect makes 7 statements before `BEGIN`, not
+fifteen). Disconnected sessions leave after 7 days (R4), and an outbound commit group
+reads its observations in one round. Its hosted verdict is in the section above.
+The maintainer's performance, scalability, QueueBox responsiveness and
+fault-tolerance requirements continue to govern both product and shared-test code. Use `performance-analysis`, `rallar-code-writing`, `rallar-realtime`,
 `rallar-testing`, `adaptive-plan-execution`, and `publishing-plan-progress`; add the
 existing Hetzner operations skill before any hosted measurement.
 
-1. **The join chain** (D331). The group-key chain is strictly serial, 21.5 s at
-   50 hosted, of which the 50 joins are 19.5 s; the join handler slowed
-   0.167 → 0.310 s p50 under the flight and the join's enqueue → handler start
-   rose 5.5 → 11.3 s p50. Measure the join handler's cost on Postgres first: the
-   batched read's plan and statements under K = 4 contention (`beginWaitMs`
-   15.25 / 136.15 ms p50 / p95 in the window). Then measure the serial
-   `G:aggregate` chain and what shortens it; only coalescing joins cuts its
-   length, at high risk.
-2. **SDK connect**, unchanged by this slice (A–B–B–A symmetric +0.807 s;
-   contrasts −2.634 and +4.247 s): attribute the connect path's wait and
-   handler time on one timing-on run before selecting a repair.
+1. **The outbound durable worker's flight** (D337, D346). WS outbound delivery
+   still runs on one durable worker, one batch of up to 16 at a time; a
+   connect's own pages first settled 26.667 s p50 after its commit on #689, and
+   a 16-member group took 7.442 s to commit. #690 batched only the group's
+   observation reads. Top up the durable worker's batch on a free slot with the
+   existing `DequeueLaneFlight`, as the AppInbox flight does (D321), keeping
+   per-sender commit order, receipts, delivery expiry and retry. Measure connect
+   commit → first page settled and the connected-barrier wait on one timing-on
+   hosted 50.
+2. **The connect path after the upgrade.** Upgrade end → `connected` was
+   3.390 s p50 on #689 against 2.408 s, and no WS delivery gates it. Measure,
+   then select: coalesced completion polls (one status read per safety tick for
+   every waiting key instead of one per waiter; 33–41 reads/s in the hot
+   stretch), and the after-upgrade REST reads (the workspace-wide groups and
+   clients list scans, 0.610 and 0.435 s p50 on the server), which the 7-day
+   retention (D345) should already shrink.
 3. **The flight across instances and the connect burst's fault tolerance.**
    Per-context order holds per instance only, and the flight makes a peer's claim
    of a context's next row routine (two-reader Postgres test: 14 → 40–50 of 50
@@ -1440,16 +1597,16 @@ existing Hetzner operations skill before any hosted measurement.
    FAIRNESS and TIMEOUT candidate reads past excluded rows, unreachable today
    because no browser reader passes exclusions.
 4. **The remaining per-command and per-session costs**, each measured before it is
-   selected: a cache for the co-member client read (0.263 s on #687, the largest
-   WS-connect read); the initial outbound WS delivery after the upgrade (2.406 s
-   for every agent); the PBKDF2 admission bound on the hosted core count (a login
-   spent 6.254 s before its inbox row existed); one CPU/GC capture (event-loop lag
-   maximum 144.5 ms per second, median); a commit that requests a head read of the
-   ALM inbound RETRY page so a re-dued offer lands in the committed batch; the
-   hosted plumbing for turning routine browser diagnostics off; and
+   selected: `AppInboxResultRepository.replace` returning `Promise<void>` (about
+   30 fixtures); one name for the join's session read
+   (`GroupMutationAuthSessionRead`); a cache for the co-member client read; the
+   PBKDF2 admission bound on the hosted core count (a login spent 6.254 s before
+   its inbox row existed on #687); a commit that requests a head read of the ALM
+   inbound RETRY page so a re-dued offer lands in the committed batch; the hosted
+   plumbing for turning routine browser diagnostics off; and
    `stateWriteProductionPhaseDuration`, which keys on `mutation.<phase>` and so
-   never sees the group-state read lines. Also read `beginWaitMs` under the
-   flight on Postgres before the pool is revisited (D325).
+   never sees the group-state read lines. Also read `beginWaitMs` before the pool
+   is revisited (D325).
 
 The local Postgres ALM lane runs on a fresh isolated database (15/15 on main in
 35.0 min) and is part of the Postgres coverage. The physical commit→browser ≤ 2 s
