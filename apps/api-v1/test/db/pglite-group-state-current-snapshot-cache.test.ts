@@ -177,7 +177,7 @@ Deno.test('principal audience cache entries remain isolated by workspace', async
     }
 });
 
-Deno.test('a first read is one statement and a read of the unchanged group one revision probe (D289)', async () => {
+Deno.test('a first read is one statement and a read of the unchanged group one revision probe', async () => {
     const seeded = await seedCache();
     try {
         seeded.takeStatements();
@@ -194,7 +194,7 @@ Deno.test('a first read is one statement and a read of the unchanged group one r
     }
 });
 
-Deno.test('a write to the group, a member or a session moves the probe, and the next read is the written state in two statements (D289)', async () => {
+Deno.test('a write to the group, a member or a session moves the probe, and the next read is the written state in two statements', async () => {
     const seeded = await seedCache();
     try {
         await seeded.cache.readSnapshot(REF);
@@ -218,7 +218,7 @@ Deno.test('a write to the group, a member or a session moves the probe, and the 
     }
 });
 
-Deno.test('a removed member, session or group moves the probe as a shorter row set, and the next read shows the removal (D289)', async () => {
+Deno.test('a removed member, session or group moves the probe as a shorter row set, and the next read shows the removal', async () => {
     const seeded = await seedCache();
     try {
         const group = await seeded.repository.findGroup(REF);
@@ -242,13 +242,18 @@ Deno.test('a removed member, session or group moves the probe as a shorter row s
     }
 });
 
-Deno.test('a cached snapshot is read again, without the session, once a presence lease it shows has expired on the cache clock (D289)', async () => {
+Deno.test('a cached snapshot is read again, without the session, once a presence lease it shows has expired on the cache clock', async () => {
     const seeded = await seedCache();
     try {
         assert.equal((await seeded.cache.readSnapshot(REF))?.activeSessions.length, 1);
         seeded.setNow(SESSION_EXPIRES_AT_EPOCH_MS);
 
         assert.deepEqual((await seeded.cache.readSnapshot(REF))?.activeSessions, []);
+        assert.equal(seeded.fullReads(), 2);
+        // The ended session's row stays a day: the probe on the cache clock leaves it out, as the read did.
+        seeded.takeStatements();
+        assert.deepEqual((await seeded.cache.readSnapshot(REF))?.activeSessions, []);
+        assert.equal(seeded.takeStatements(), 1);
         assert.equal(seeded.fullReads(), 2);
     }
     finally {

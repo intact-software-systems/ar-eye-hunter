@@ -303,10 +303,7 @@ export function encodeRuntimeStateJsonValue(value: object): string {
     return serialized;
 }
 
-/**
- * A stored row is trusted as written: `encodeRuntimeStateJsonValue` checked it before the write, and parsing its text
- * yields only plain JSON values.
- */
+/** The write side, `encodeRuntimeStateJsonValue`, is the only producer of stored text and checks it, so a read does not walk it again. */
 function decodeRuntimeStateJsonValue(serialized: string): JsonWireValue {
     return JSON.parse(serialized);
 }

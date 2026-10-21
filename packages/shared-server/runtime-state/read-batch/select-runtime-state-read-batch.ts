@@ -1,5 +1,6 @@
 import type { JsonWireObject, JsonWireValue } from '../../rallar-system/protocol/json-wire-identity.ts';
 import type { RuntimeStateEntry } from '../runtime-state-repository.ts';
+import { assertRuntimeStateReadBatchResult } from './assert-runtime-state-read-batch-result.ts';
 import { compareRuntimeStateKeys } from './compare-runtime-state-keys.ts';
 import { isRuntimeStateReadBatchKeySelected } from './is-runtime-state-read-batch-key-selected.ts';
 import type {
@@ -7,7 +8,6 @@ import type {
     RuntimeStateReadBatchSelector,
     RuntimeStateStoredValueFields
 } from './runtime-state-read-batch.ts';
-import { validateRuntimeStateReadBatchResult } from './validate-runtime-state-read-batch-result.ts';
 import { validateRuntimeStateReadBatchSelectors } from './validate-runtime-state-read-batch-selectors.ts';
 
 export interface RuntimeStateNamespacedEntry {
@@ -36,7 +36,7 @@ export function selectRuntimeStateReadBatch(
             .sort((left, right) => compareRuntimeStateKeys(left.key, right.key));
         return { selectorId: selector.selectorId, entries: selected };
     });
-    return validateRuntimeStateReadBatchResult(selectors, selections);
+    return assertRuntimeStateReadBatchResult(selectors, selections);
 }
 
 function isRuntimeStateReadBatchRowSelected(
@@ -48,7 +48,10 @@ function isRuntimeStateReadBatchRowSelected(
             return isStoredValueContaining(entry.value, selector.storedValueContains);
         case 'prefix-expiring-after':
             return entry.expireAtTimestamp > selector.expiringAfterTimestamp;
-        default:
+        case 'key':
+        case 'prefix':
+        case 'prefix-suffix':
+        case 'suffix':
             return true;
     }
 }

@@ -7,7 +7,7 @@ import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } fr
  * The one check of a store's typed result against the selectors it already validated: one selection per selector in
  * caller order, each entry inside its selector, keys unique and in C order. Readers of the result trust it.
  */
-export function validateRuntimeStateReadBatchResult(
+export function assertRuntimeStateReadBatchResult(
     selectors: readonly RuntimeStateReadBatchSelector[],
     selections: readonly RuntimeStateReadBatchSelection[]
 ): readonly RuntimeStateReadBatchSelection[] {
@@ -19,12 +19,12 @@ export function validateRuntimeStateReadBatchResult(
         if (selections[index].selectorId !== selector.selectorId) {
             throw invalidReadBatch(`${label} does not preserve caller order`);
         }
-        validateSelectionEntries(selector, selections[index].entries, label);
+        assertSelectionEntries(selector, selections[index].entries, label);
     });
     return selections;
 }
 
-function validateSelectionEntries(
+function assertSelectionEntries(
     selector: RuntimeStateReadBatchSelector,
     entries: readonly RuntimeStateEntry[],
     label: string

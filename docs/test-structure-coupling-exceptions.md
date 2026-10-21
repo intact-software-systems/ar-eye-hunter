@@ -4669,6 +4669,36 @@ moved or changed test.
         "requiredConstraint": "Zero serializations and zero locale comparisons when both sides are plain JSON trees.",
         "failureRationale": "The serialized fallback returns the same equality answer for plain trees, so the result alone cannot show that the structural path was taken; only the absence at these ports does."
       }
+    },
+    {
+      "id": "runtime-state-read-batch-validated-once-at-its-store",
+      "domain": "Runtime-state read batch validation cost",
+      "owner": "Rallar shared maintainers",
+      "summary": "One read batch is validated exactly once, at its store; the live-value resolver trusts the typed result.",
+      "semanticCoverage": "packages/tests/shared-server/runtime-state/read-batch/runtime-state-read-batch-validation-count.test.ts#validates a read once, at the repository, and resolves its live values without validating again",
+      "coverageRelation": "The test reads a batch through the Postgres repository from injected driver rows, resolves its live values, and counts the result validator across both steps.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "assertRuntimeStateReadBatchResult across PSqlRuntimeStateRepository.readRuntimeStateBatch and resolveRuntimeStateReadBatchLiveValues",
+        "observableEffect": "API main-thread CPU on every batch read of the WS connect, the snapshot reads and the mutation reads: a second validation per read was the measured hosted cost.",
+        "requiredConstraint": "Exactly one validation per read batch, performed by the store that produced it.",
+        "failureRationale": "A reintroduced validation in the resolver returns the same live values and rejects nothing new, so only the call count distinguishes it from the single-validation path."
+      }
+    },
+    {
+      "id": "topology-mutation-read-trusts-its-store-batch",
+      "domain": "Topology mutation read validation cost",
+      "owner": "Rallar shared maintainers",
+      "summary": "The topology mutation exact read validates its batch only at the store and trusts the typed result.",
+      "semanticCoverage": "packages/tests/shared-server/runtime-state/read-batch/runtime-state-read-batch-validation-count.test.ts#lets the topology mutation read trust its store's validated batch",
+      "coverageRelation": "The test runs the real topology mutation exact read over an in-memory store whose batch read validates its own result, and counts the result validator for that one read.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "assertRuntimeStateReadBatchResult within GroupTopologyConfigRepository.readMutationExactEntries",
+        "observableEffect": "API CPU on every topology config mutation read: a second validation repeats the per-entry selector and order checks the store already made.",
+        "requiredConstraint": "Exactly one validation for the topology mutation read batch, performed by the store.",
+        "failureRationale": "A reader-side validation of an already validated batch returns the same selections and the same read, so only the call count shows the duplicate work."
+      }
     }
   ],
   "entries": [
@@ -10270,6 +10300,28 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The zero-call count observes the serialization and locale-sort ports while the real jsonEquals equates two reordered plain trees; the equality answer would pass unchanged through the serialized fallback.",
       "semanticCoverage": "packages/tests/shared/repository/state-utils.test.ts#equates the same keys in a different order without serializing or sorting either side"
+    },
+    {
+      "id": "test-structure-coupling-aaf05c55303555b8",
+      "path": "packages/tests/shared-server/runtime-state/read-batch/runtime-state-read-batch-validation-count.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "runtime-state-read-batch-validated-once-at-its-store",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The one-call count observes the validator while a real repository read is resolved to live values; the values are identical when the resolver validates again, which is the cost this boundary removes.",
+      "semanticCoverage": "packages/tests/shared-server/runtime-state/read-batch/runtime-state-read-batch-validation-count.test.ts#validates a read once, at the repository, and resolves its live values without validating again"
+    },
+    {
+      "id": "test-structure-coupling-a6a05068614f8c8e",
+      "path": "packages/tests/shared-server/runtime-state/read-batch/runtime-state-read-batch-validation-count.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "topology-mutation-read-trusts-its-store-batch",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The one-call count observes the validator during a real topology mutation read; the read result is identical when the reader validates the store's batch again, so only the count witnesses the single validation.",
+      "semanticCoverage": "packages/tests/shared-server/runtime-state/read-batch/runtime-state-read-batch-validation-count.test.ts#lets the topology mutation read trust its store's validated batch"
     }
   ]
 }

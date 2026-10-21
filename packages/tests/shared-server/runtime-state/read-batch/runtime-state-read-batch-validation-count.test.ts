@@ -1,13 +1,16 @@
 import type { PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import { assertRuntimeStateReadBatchResult } from '@shared-server/runtime-state/read-batch/assert-runtime-state-read-batch-result.ts';
 import { resolveRuntimeStateReadBatchLiveValues } from '@shared-server/runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
 import type { RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
-import { validateRuntimeStateReadBatchResult } from '@shared-server/runtime-state/read-batch/validate-runtime-state-read-batch-result.ts';
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('@shared-server/runtime-state/read-batch/validate-runtime-state-read-batch-result.ts', async (importOriginal) => {
-    const original = await importOriginal<typeof import('@shared-server/runtime-state/read-batch/validate-runtime-state-read-batch-result.ts')>();
-    return { validateRuntimeStateReadBatchResult: vi.fn(original.validateRuntimeStateReadBatchResult) };
+import { FakeRuntimeStateRepository } from '../test-support/fake-runtime-state-repository.ts';
+
+vi.mock('@shared-server/runtime-state/read-batch/assert-runtime-state-read-batch-result.ts', async (importOriginal) => {
+    const original = await importOriginal<typeof import('@shared-server/runtime-state/read-batch/assert-runtime-state-read-batch-result.ts')>();
+    return { assertRuntimeStateReadBatchResult: vi.fn(original.assertRuntimeStateReadBatchResult) };
 });
 
 const KEY = 'app=app:ws=workspace:group=room';
@@ -30,7 +33,7 @@ describe('runtime-state read batch validation', () => {
             toDriverRow(1, KEY),
             toDriverRow(2, `${KEY}:member=alice`)
         ]));
-        vi.mocked(validateRuntimeStateReadBatchResult).mockClear();
+        vi.mocked(assertRuntimeStateReadBatchResult).mockClear();
 
         const resolved = await resolveRuntimeStateReadBatchLiveValues(
             SELECTORS,
@@ -39,7 +42,20 @@ describe('runtime-state read batch validation', () => {
         );
 
         expect(resolved.status).toBe('stable');
-        expect(validateRuntimeStateReadBatchResult).toHaveBeenCalledTimes(1);
+        expect(assertRuntimeStateReadBatchResult).toHaveBeenCalledTimes(1);
+    });
+
+    it('lets the topology mutation read trust its store\'s validated batch', async () => {
+        const repository = new GroupTopologyConfigRepository(new FakeRuntimeStateRepository());
+        vi.mocked(assertRuntimeStateReadBatchResult).mockClear();
+
+        const read = await repository.readMutationExactEntries(
+            { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
+            'request-1'
+        );
+
+        expect(read.status).toBe('stable');
+        expect(assertRuntimeStateReadBatchResult).toHaveBeenCalledTimes(1);
     });
 });
 

@@ -1,8 +1,8 @@
 import type { PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import { assertRuntimeStateReadBatchResult } from '@shared-server/runtime-state/read-batch/assert-runtime-state-read-batch-result.ts';
 import { compareRuntimeStateKeys } from '@shared-server/runtime-state/read-batch/compare-runtime-state-keys.ts';
 import { type RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
-import { validateRuntimeStateReadBatchResult } from '@shared-server/runtime-state/read-batch/validate-runtime-state-read-batch-result.ts';
 import { validateRuntimeStateReadBatchSelectors } from '@shared-server/runtime-state/read-batch/validate-runtime-state-read-batch-selectors.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { createPrefixSuffixReadBatchFixture } from '@shared-test/shared-server/prefix-suffix-read-batch-fixture.ts';
@@ -56,7 +56,7 @@ const UNPURGED_PRESENCE = {
 describe('runtime-state read batches', () => {
     it('accepts dense mandatory key and prefix selectors with caller-ordered results', () => {
         expect(validateRuntimeStateReadBatchSelectors(SELECTORS)).toEqual(SELECTORS);
-        expect(validateRuntimeStateReadBatchResult(SELECTORS, [{
+        expect(assertRuntimeStateReadBatchResult(SELECTORS, [{
             selectorId: 'group',
             entries: [ENTRY]
         }, {
@@ -117,7 +117,7 @@ describe('runtime-state read batches', () => {
         ['whose prefix and suffix overlap', 'app=app:ws=workspace:member=alice']
     ])('rejects a prefix-suffix result entry %s', (_label, key) => {
         expect(() =>
-            validateRuntimeStateReadBatchResult([PRINCIPAL_MEMBERS], [{
+            assertRuntimeStateReadBatchResult([PRINCIPAL_MEMBERS], [{
                 selectorId: 'principal-members',
                 entries: [{ ...ENTRY, key }]
             }])
@@ -152,7 +152,7 @@ describe('runtime-state read batches', () => {
             .toThrow(/sparse|dense/iu);
 
         expect(() =>
-            validateRuntimeStateReadBatchResult(SELECTORS, [{
+            assertRuntimeStateReadBatchResult(SELECTORS, [{
                 selectorId: 'members',
                 entries: []
             }, {
@@ -161,7 +161,7 @@ describe('runtime-state read batches', () => {
             }])
         ).toThrow(/caller order/iu);
         expect(() =>
-            validateRuntimeStateReadBatchResult(SELECTORS, [{
+            assertRuntimeStateReadBatchResult(SELECTORS, [{
                 selectorId: 'group',
                 entries: [ENTRY]
             }])
@@ -170,7 +170,7 @@ describe('runtime-state read batches', () => {
 
     it('rejects exact-result cardinality and prefix mismatches', () => {
         expect(() =>
-            validateRuntimeStateReadBatchResult(SELECTORS, [{
+            assertRuntimeStateReadBatchResult(SELECTORS, [{
                 selectorId: 'group',
                 entries: [ENTRY, ENTRY]
             }, {
@@ -179,7 +179,7 @@ describe('runtime-state read batches', () => {
             }])
         ).toThrow(/exact key/iu);
         expect(() =>
-            validateRuntimeStateReadBatchResult(SELECTORS, [{
+            assertRuntimeStateReadBatchResult(SELECTORS, [{
                 selectorId: 'group',
                 entries: [ENTRY]
             }, {
@@ -188,7 +188,7 @@ describe('runtime-state read batches', () => {
             }])
         ).toThrow(/prefix/iu);
         expect(() =>
-            validateRuntimeStateReadBatchResult(SELECTORS, [{
+            assertRuntimeStateReadBatchResult(SELECTORS, [{
                 selectorId: 'group',
                 entries: [{ ...ENTRY, key: 'other' }]
             }, {
@@ -208,7 +208,7 @@ describe('runtime-state read batches', () => {
             ]
         ) {
             expect(() =>
-                validateRuntimeStateReadBatchResult(SELECTORS, [{
+                assertRuntimeStateReadBatchResult(SELECTORS, [{
                     selectorId: 'group',
                     entries: [ENTRY]
                 }, {
@@ -239,10 +239,10 @@ describe('runtime-state read batches', () => {
             { selectorId: 'members', entries }
         ];
 
-        expect(validateRuntimeStateReadBatchResult(SELECTORS, selection([privateUse, astral]))).toEqual(
+        expect(assertRuntimeStateReadBatchResult(SELECTORS, selection([privateUse, astral]))).toEqual(
             selection([privateUse, astral])
         );
-        expect(() => validateRuntimeStateReadBatchResult(SELECTORS, selection([astral, privateUse])))
+        expect(() => assertRuntimeStateReadBatchResult(SELECTORS, selection([astral, privateUse])))
             .toThrow(/uniquely ordered/iu);
     });
 

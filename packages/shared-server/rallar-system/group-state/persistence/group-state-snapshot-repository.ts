@@ -51,7 +51,6 @@ import { decodeGroupStatePresenceSessionStorageKey } from './presence/group-pres
 import {
     readGroupStateAuthorityBatch,
     readVersionedGroupStateSnapshotBatch,
-    toGroupStateSnapshotSelectors,
     toLivePresenceSessionsSelector,
     type GroupStateAuthorityBatchRead
 } from './read-group-state-authority.ts';
@@ -280,11 +279,12 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
         ref: GroupRef,
         observedAtEpochMs: number
     ): Promise<VersionedGroupSnapshot | undefined> {
-        const batch = await readVersionedGroupStateSnapshotBatch(
+        const batch = await readVersionedGroupStateSnapshotBatch({
             reader,
-            toGroupStateSnapshotSelectors(ref, observedAtEpochMs),
-            async (namespace, entry) => await this.toLiveJsonEntryValue(namespace, entry)
-        );
+            ref,
+            observedAtEpochMs,
+            toLiveEntryValue: async (namespace, entry) => await this.toLiveJsonEntryValue(namespace, entry)
+        });
         if (batch.read.status === 'stable') {
             const stable = this.toStableAuthoritativeSnapshot(ref, batch.read, observedAtEpochMs);
             return stable === undefined ? undefined : { snapshot: stable.snapshot, version: batch.version ?? null };

@@ -1,4 +1,5 @@
 import type { PSqlRows } from '../../postgres/p-sql-sql.ts';
+import { assertRuntimeStateReadBatchResult } from '../read-batch/assert-runtime-state-read-batch-result.ts';
 import type {
     RuntimeStateReadBatchSelection,
     RuntimeStateReadBatchSelector,
@@ -6,7 +7,6 @@ import type {
     RuntimeStateStoredValueFields,
     RuntimeStateVersionedReadBatch
 } from '../read-batch/runtime-state-read-batch.ts';
-import { validateRuntimeStateReadBatchResult } from '../read-batch/validate-runtime-state-read-batch-result.ts';
 import { validateRuntimeStateReadBatchSelectors } from '../read-batch/validate-runtime-state-read-batch-selectors.ts';
 import { toExclusivePrefixEnd } from './runtime-state-sql-values.ts';
 import {
@@ -57,7 +57,7 @@ export async function readRuntimeStateBatch(
 ): Promise<readonly RuntimeStateReadBatchSelection[]> {
     const selectors = validateRuntimeStateReadBatchSelectors(input);
     const rows = await selectRuntimeStateBatchRows(sql, selectors, true);
-    return validateRuntimeStateReadBatchResult(selectors, toRuntimeStateReadBatchSelections(selectors, rows));
+    return assertRuntimeStateReadBatchResult(selectors, toRuntimeStateReadBatchSelections(selectors, rows));
 }
 
 /**
@@ -72,7 +72,7 @@ export async function readRuntimeStateBatchWithVersion(
     const selectors = validateRuntimeStateReadBatchSelectors(input);
     const rows = await selectRuntimeStateBatchRows(sql, selectors, true);
     return {
-        selections: validateRuntimeStateReadBatchResult(selectors, toRuntimeStateReadBatchSelections(selectors, rows)),
+        selections: assertRuntimeStateReadBatchResult(selectors, toRuntimeStateReadBatchSelections(selectors, rows)),
         version: toRuntimeStateReadBatchVersion(selectors, rows)
     };
 }

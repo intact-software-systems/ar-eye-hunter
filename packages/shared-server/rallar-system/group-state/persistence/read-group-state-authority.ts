@@ -34,7 +34,7 @@ type GroupStateLiveEntryValue = (
     entry: RuntimeStateEntry
 ) => Promise<RuntimeStateEntryValue<JsonWireValue> | undefined>;
 
-export interface VersionedGroupStateAuthorityBatchRead {
+export interface VersionedGroupStateSnapshotBatchRead {
     readonly read: GroupStateAuthorityBatchRead;
     /** The version of the rows the read came from; undefined when it found none. */
     readonly version: RuntimeStateReadBatchVersion | undefined;
@@ -53,15 +53,21 @@ export async function readGroupStateAuthorityBatch(
     );
 }
 
-/** A group snapshot's rows, `toGroupStateSnapshotSelectors`, with the version of exactly those rows, from one statement. */
+export interface ReadVersionedGroupStateSnapshotBatchInput {
+    readonly reader: RuntimeStateReadBatchVersionReader;
+    readonly ref: GroupRef;
+    readonly observedAtEpochMs: number;
+    readonly toLiveEntryValue: GroupStateLiveEntryValue;
+}
+
+/** A group snapshot's rows at the instant, with the version of exactly those rows, from one statement. */
 export async function readVersionedGroupStateSnapshotBatch(
-    reader: RuntimeStateReadBatchVersionReader,
-    selectors: readonly RuntimeStateReadBatchSelector[],
-    toLiveEntryValue: GroupStateLiveEntryValue
-): Promise<VersionedGroupStateAuthorityBatchRead> {
-    const batch = await reader.readRuntimeStateBatchWithVersion(selectors);
+    input: ReadVersionedGroupStateSnapshotBatchInput
+): Promise<VersionedGroupStateSnapshotBatchRead> {
+    const selectors = toGroupStateSnapshotSelectors(input.ref, input.observedAtEpochMs);
+    const batch = await input.reader.readRuntimeStateBatchWithVersion(selectors);
     return {
-        read: await toGroupStateAuthorityBatchRead(selectors, batch.selections, toLiveEntryValue),
+        read: await toGroupStateAuthorityBatchRead(selectors, batch.selections, input.toLiveEntryValue),
         version: batch.version
     };
 }
@@ -104,7 +110,7 @@ export async function readGroupStateSnapshotVersions(
  * after its lease ends or it disconnects, so a row purged no later than a lease ending now shows no live session. The
  * mutation reads keep every row, which their cleanup needs.
  */
-export function toGroupStateSnapshotSelectors(
+function toGroupStateSnapshotSelectors(
     ref: GroupRef,
     observedAtEpochMs: number
 ): readonly RuntimeStateReadBatchSelector[] {
@@ -144,7 +150,10 @@ export function toGroupPresenceSummarySelectors(ref: GroupRef): readonly Runtime
     ];
 }
 
-/** The group, its roster, its presence summary and its sessions: the rows a group snapshot is assembled from. */
+/**
+ * Every row of the group's authority: the group, its roster, its presence summary and all its presence sessions, which
+ * the mutation, authority-guard and presence-summary reads need. A snapshot reads `toGroupStateSnapshotSelectors`.
+ */
 export function toGroupStateAuthoritySelectors(ref: GroupRef): readonly RuntimeStateReadBatchSelector[] {
     const groupKey = groupStateGroupStorageKey(ref);
     const childPrefix = `${groupKey}:`;
