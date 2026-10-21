@@ -54,7 +54,10 @@ import {
     toLivePresenceSessionsSelector,
     type GroupStateAuthorityBatchRead
 } from './read-group-state-authority.ts';
-import { readGroupStateSnapshotsForPrincipal } from './read-group-state-snapshots-for-principal.ts';
+import {
+    readGroupStateSnapshotsForPrincipal,
+    type GroupStatePrincipalSnapshotList
+} from './read-group-state-snapshots-for-principal.ts';
 
 /** A snapshot and the version of exactly the stored rows it was assembled from; null when it came from several reads. */
 export interface VersionedGroupSnapshot {
@@ -116,6 +119,15 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
         principalId: string,
         currentSnapshots?: Pick<GroupStateCurrentSnapshotCache, 'readSnapshots'>
     ): Promise<readonly GroupSnapshot[]> {
+        return (await this.readSnapshotListForPrincipal(scope, principalId, currentSnapshots)).snapshots;
+    }
+
+    /** The principal's groups with the statements the read issued, for a caller that records them. */
+    async readSnapshotListForPrincipal(
+        scope: GroupScope,
+        principalId: string,
+        currentSnapshots: Pick<GroupStateCurrentSnapshotCache, 'readSnapshots'> | undefined
+    ): Promise<GroupStatePrincipalSnapshotList> {
         return await readGroupStateSnapshotsForPrincipal({
             repository: this.repository,
             scope,

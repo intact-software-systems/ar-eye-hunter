@@ -1,5 +1,7 @@
 import type { PSqlExecutorCounters, PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 
+import type { PostgresStatementCensus } from './postgres-statement-census.ts';
+
 /** The postgres.js surface this adapter forwards: a template call returns a thenable, a values call a query fragment. */
 export interface PostgresSqlSource {
     <Result>(strings: TemplateStringsArray, ...values: readonly PSqlParameter[]): PromiseLike<Result>;
@@ -30,6 +32,12 @@ interface PostgresExecutorCounterState {
     executorWaitMs: number;
 }
 
+/** What every handle of one client records into: its counters, and the census while timing is on. */
+interface PostgresStatementRecording {
+    readonly counters: PostgresExecutorCounterState;
+    readonly census: PostgresStatementCensus | undefined;
+}
+
 type PostgresTransactionSql = PSqlSql & {
     savepoint<T>(write: (transaction: PSqlSql) => Promise<T>): Promise<T>;
 };
@@ -39,17 +47,21 @@ interface PostgresCountingSql {
     (values: readonly PSqlParameter[]): object;
 }
 
-export function createPostgresSqlClient(client: PostgresSqlClientSource): PostgresSql {
-    const counters: PostgresExecutorCounterState = { statements: 0, executorWaitMs: 0 };
-    const sql = createCountingSql(client, counters);
+/** The census, when given, records every statement of the client and of the transactions it opens. */
+export function createPostgresSqlClient(
+    client: PostgresSqlClientSource,
+    census: PostgresStatementCensus | undefined
+): PostgresSql {
+    const recording: PostgresStatementRecording = { counters: { statements: 0, executorWaitMs: 0 }, census };
+    const sql = createCountingSql(client, recording);
     return Object.assign(sql, {
         begin: async <T>(write: (transaction: PSqlSql) => Promise<T>): Promise<T> =>
             await unwrapTransactionResult(
                 client.begin(async (transaction) => ({
-                    value: await write(createTransactionSql(transaction, counters))
+                    value: await write(createTransactionSql(transaction, recording))
                 }))
             ),
-        getExecutorCounters: (): PSqlExecutorCounters => ({ ...counters }),
+        getExecutorCounters: (): PSqlExecutorCounters => ({ ...recording.counters }),
         notify: (channel: string, payload: string) => client.notify(channel, payload),
         listen: (channel: string, onMessage: (payload: string) => void | Promise<void>) =>
             client.listen(channel, onMessage),
@@ -59,17 +71,17 @@ export function createPostgresSqlClient(client: PostgresSqlClientSource): Postgr
 
 function createTransactionSql(
     transaction: PostgresTransactionSqlSource,
-    counters: PostgresExecutorCounterState
+    recording: PostgresStatementRecording
 ): PostgresTransactionSql {
-    const sql = createCountingSql(transaction, counters);
+    const sql = createCountingSql(transaction, recording);
     const savepoint = async <T>(write: (nested: PSqlSql) => Promise<T>): Promise<T> =>
         await unwrapTransactionResult(
-            transaction.savepoint(async (nested) => ({ value: await write(createTransactionSql(nested, counters)) }))
+            transaction.savepoint(async (nested) => ({ value: await write(createTransactionSql(nested, recording)) }))
         );
     return Object.assign(sql, {
         begin: savepoint,
         savepoint,
-        getExecutorCounters: (): PSqlExecutorCounters => ({ ...counters })
+        getExecutorCounters: (): PSqlExecutorCounters => ({ ...recording.counters })
     });
 }
 
@@ -83,8 +95,9 @@ async function unwrapTransactionResult<T>(result: Promise<Readonly<{ value: T; }
 
 function createCountingSql(
     source: PostgresSqlSource,
-    counters: PostgresExecutorCounterState
+    recording: PostgresStatementRecording
 ): PostgresCountingSql {
+    const { counters, census } = recording;
     function sql<Result>(strings: TemplateStringsArray, ...values: readonly PSqlParameter[]): Promise<Result>;
     function sql(values: readonly PSqlParameter[]): object;
     function sql<Result>(
@@ -97,7 +110,9 @@ function createCountingSql(
         counters.statements += 1;
         const calledAt = performance.now();
         return Promise.resolve(source<Result>(stringsOrValues, ...values)).finally(() => {
-            counters.executorWaitMs += performance.now() - calledAt;
+            const executorWaitMs = performance.now() - calledAt;
+            counters.executorWaitMs += executorWaitMs;
+            census?.record({ strings: stringsOrValues, values, executorWaitMs });
         });
     }
     return sql;

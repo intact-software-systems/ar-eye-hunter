@@ -11,6 +11,7 @@ import { startApiProcess } from './runtime/api-process-startup.ts';
 import {
     stopApiOnRtcTopologyDeliveryHealthFailure
 } from './runtime/rtc-topology/rtc-topology-delivery-health-shutdown.ts';
+import { myServerId } from './runtime/runtime-identity.ts';
 import { installApiHttpMiddleware } from './services/install-api-http-middleware.ts';
 import { createApiTimingSink } from './services/timing-service.ts';
 
@@ -33,7 +34,10 @@ console.log(JSON.stringify({
 }));
 const databaseLifecycle = await createDefaultApiV1DatabaseLifecycle({
     database: configuration.database,
-    pgliteEvidence: configuration.blackBox.pgliteEvidence
+    pgliteEvidence: configuration.blackBox.pgliteEvidence,
+    statementCensus: configuration.observability.timingLogs
+        ? { timing: createApiTimingSink(configuration.observability), serviceId: myServerId }
+        : undefined
 });
 const rallar = await createDefaultRallarServer({
     configuration,

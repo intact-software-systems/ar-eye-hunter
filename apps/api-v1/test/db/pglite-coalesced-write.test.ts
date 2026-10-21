@@ -200,10 +200,13 @@ async function withCoalescedSql(run: (sql: PSqlSql) => Promise<void>): Promise<v
         await withPGliteSql(run);
         return;
     }
-    const sql = toApiV1PostgresClient(postgres(databaseUrl, {
-        max: 1,
-        types: { timestampWithoutTimeZone: createPostgresTimestampWithoutTimeZoneTextType() }
-    }));
+    const sql = toApiV1PostgresClient(
+        postgres(databaseUrl, {
+            max: 1,
+            types: { timestampWithoutTimeZone: createPostgresTimestampWithoutTimeZoneTextType() }
+        }),
+        undefined
+    );
     try {
         await run(sql);
     }

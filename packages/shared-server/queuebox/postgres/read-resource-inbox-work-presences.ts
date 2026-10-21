@@ -52,7 +52,7 @@ export async function readResourceInboxWorkPresences(
         return reads.map(() => NO_WORK_PRESENCE);
     }
     const statement = probed
-        .map(({ read, ordinal }) => toWorkPresenceSelect(sql, read, ordinal))
+        .map(({ read, ordinal }) => toWorkPresenceSelect(read, ordinal))
         .reduce((joined, select) =>
             PSqlFragment.of`${joined}
             union all ${select}`
@@ -68,34 +68,35 @@ export async function readResourceInboxWorkPresences(
     });
 }
 
-function toWorkPresenceSelect(sql: PSqlSql, read: ResourceInboxWorkPresenceRead, ordinal: number): PSqlFragment {
+function toWorkPresenceSelect(read: ResourceInboxWorkPresenceRead, ordinal: number): PSqlFragment {
     const { typeIds, maxAttempts, reservationLeaseMs, finalizationStaleAfterMs, staleDueThresholdMs } = read;
+    const typeIdList = [...typeIds];
     const finalizationTypeId = typeIds.has(EnqueuedType.APP_INBOX) ? EnqueuedType.APP_INBOX : null;
     return PSqlFragment.of`
             select
                 ${ordinal}::int as read_ordinal,
                 exists(select 1 from resource_inbox
-                    where ri_type_id in ${sql([...typeIds])}
+                    where ri_type_id = any(${typeIdList}::text[])
                       and ri_status = ${EntityStatus.NEW}
                       and expire_ts > (now() at time zone 'UTC')
                       and ri_attempts < ${maxAttempts}
                       and start_ts is null
                       and (next_ts is null or next_ts <= (now() at time zone 'UTC'))) as has_new,
                 exists(select 1 from resource_inbox
-                    where ri_type_id in ${sql([...typeIds])}
+                    where ri_type_id = any(${typeIdList}::text[])
                       and ri_status = ${EntityStatus.RETRY}
                       and expire_ts > (now() at time zone 'UTC')
                       and ri_attempts < ${maxAttempts}
                       and next_ts <= (now() at time zone 'UTC')) as has_due_retry,
                 exists(select 1 from resource_inbox
-                    where ri_type_id in ${sql([...typeIds])}
+                    where ri_type_id = any(${typeIdList}::text[])
                       and ri_status = ${EntityStatus.RETRY}
                       and expire_ts > (now() at time zone 'UTC')
                       and ri_attempts < ${maxAttempts}
                       and next_ts <= (now() - (${staleDueThresholdMs} * interval '1 millisecond')) at time zone 'UTC'
                 ) as has_overdue_retry,
                 exists(select 1 from resource_inbox
-                    where ri_type_id in ${sql([...typeIds])}
+                    where ri_type_id = any(${typeIdList}::text[])
                       and ri_status = ${EntityStatus.RESERVED}
                       and expire_ts > (now() at time zone 'UTC')
                       and ri_attempts < ${maxAttempts}

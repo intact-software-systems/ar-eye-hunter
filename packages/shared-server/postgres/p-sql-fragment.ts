@@ -4,6 +4,13 @@ import type { PSqlParameter } from './p-sql-sql.ts';
 type PSqlFragmentPartValue<Part> = Part extends PSqlFragment<infer Value> ? Value : Part;
 
 /**
+ * One strings array per distinct statement text, for the life of the process. postgres.js keeps an origin error per
+ * strings array and never evicts it, so a fresh array per call would grow that cache by the statement text each call;
+ * a statement's text is fixed and its parameters vary, so this holds one entry per statement shape.
+ */
+const STATEMENT_STRINGS_BY_TEXT = new Map<string, TemplateStringsArray>();
+
+/**
  * A piece of SQL text with its own parameters. The `PSqlSql` port accepts only template calls, so a fragment is
  * spliced into a statement's template text, and its parameters stay parameters, before the one call. A fragment is
  * typed by the parameters it carries, so a statement of text-only fragments and one flag carries only that flag.
@@ -11,10 +18,13 @@ type PSqlFragmentPartValue<Part> = Part extends PSqlFragment<infer Value> ? Valu
 export class PSqlFragment<Value extends PSqlParameter = PSqlParameter> {
     readonly strings: readonly string[];
     readonly values: readonly Value[];
+    /** The text's identity, each part prefixed by its length so that no two splits of one text share it. */
+    private readonly textKey: string;
 
     private constructor(strings: readonly string[], values: readonly Value[]) {
         this.strings = strings;
         this.values = values;
+        this.textKey = strings.map((text) => `${text.length}:${text}`).join('');
     }
 
     /** A tagged template whose interpolations are parameters, or fragments spliced in place. */
@@ -48,9 +58,20 @@ export class PSqlFragment<Value extends PSqlParameter = PSqlParameter> {
         return new PSqlFragment<never>([name], []);
     }
 
-    /** The template call arguments: `sql(...fragment.toStatement())`. */
+    /** The template call arguments: `sql(...fragment.toStatement())`; equal text yields the identical strings array. */
     toStatement(): [TemplateStringsArray, ...Value[]] {
-        const strings: TemplateStringsArray = Object.assign([...this.strings], { raw: [...this.strings] });
-        return [strings, ...this.values];
+        return [readStatementStrings(this.textKey, this.strings), ...this.values];
     }
+}
+
+function readStatementStrings(textKey: string, texts: readonly string[]): TemplateStringsArray {
+    const kept = STATEMENT_STRINGS_BY_TEXT.get(textKey);
+    if (kept !== undefined) {
+        return kept;
+    }
+    const strings: TemplateStringsArray = Object.freeze(
+        Object.assign([...texts], { raw: Object.freeze([...texts]) })
+    );
+    STATEMENT_STRINGS_BY_TEXT.set(textKey, strings);
+    return strings;
 }

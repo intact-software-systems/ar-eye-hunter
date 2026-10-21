@@ -44,7 +44,7 @@ export async function seedCompleteState(
     scope: StateScope,
     workload: (typeof WORKLOADS)[number]
 ): Promise<void> {
-    const pgSql = toApiV1PostgresClient(sql);
+    const pgSql = toApiV1PostgresClient(sql, undefined);
     const runtimeRepository = new PSqlRuntimeStateRepository(pgSql);
     const authSessionRepository = new AuthSessionRepository(runtimeRepository);
     const runtime = createStateWriteServiceRuntime({

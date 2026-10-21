@@ -155,7 +155,7 @@ export class PSqlResourceInboxEntryReader {
         const rows = await this.sql<{ one: number; }[]>`
             select 1 as one
             from resource_inbox
-            where ri_status in ${this.sql([...statuses])}
+            where ri_status = any(${[...statuses]}::text[])
               and expire_ts > ${now}
             limit 1
         `;

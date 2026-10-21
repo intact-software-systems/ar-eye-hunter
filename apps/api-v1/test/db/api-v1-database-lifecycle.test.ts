@@ -13,21 +13,25 @@ import {
     type ApiV1PostgresClientInput,
     type CreateApiV1DatabaseLifecycleInput
 } from '../../src/db/api-v1-database-lifecycle.ts';
+import { PostgresStatementCensus } from '../../src/db/postgres-statement-census.ts';
 
 Deno.test('PostgreSQL client adapter counts the statements of a complete current client and forwards its lifecycle', async () => {
     const events: string[] = [];
     const client = fakePostgresClient(7, events);
 
-    const adapted = toApiV1PostgresClient(client);
+    const adapted = toApiV1PostgresClient(client, undefined);
     await adapted`select 1`;
     await adapted.end();
     assert.deepEqual(adapted.getExecutorCounters?.()?.statements, 1);
     assert.deepEqual(events, ['postgres:close:7']);
     assert.throws(
         () =>
-            toApiV1PostgresClient(Object.assign(() => Promise.resolve([]), {
-                begin: () => Promise.resolve()
-            })),
+            toApiV1PostgresClient(
+                Object.assign(() => Promise.resolve([]), {
+                    begin: () => Promise.resolve()
+                }),
+                undefined
+            ),
         /required API-v1 capabilities/u
     );
 });
@@ -46,12 +50,14 @@ Deno.test('database lifecycle constructs PostgreSQL application and listener poo
         {
             connectionUrl: 'postgres://user:secret@database.test/rallar?search_path=tenant',
             max: 7,
-            idleTimeoutSeconds: 23
+            idleTimeoutSeconds: 23,
+            census: undefined
         },
         {
             connectionUrl: 'postgres://user:secret@database.test/rallar?search_path=tenant',
             max: 2,
-            idleTimeoutSeconds: 0
+            idleTimeoutSeconds: 0,
+            census: undefined
         }
     ]);
     assert.equal(lifecycle.database, clients[0]);
@@ -172,6 +178,21 @@ Deno.test('PostgreSQL URL translation moves only the Prisma schema query to sear
     );
 });
 
+Deno.test('with timing on, the application pool alone records into a statement census, which stops with the lifecycle', async () => {
+    const events: string[] = [];
+    const poolInputs: ApiV1PostgresClientInput[] = [];
+    const lifecycle = await createApiV1DatabaseLifecycle(
+        {
+            ...toApiV1DatabaseLifecycleInput(postgresConfiguration(), { mode: 'disabled', pollIntervalMs: 25 }),
+            statementCensus: { timing: () => undefined, serviceId: 'server-1' }
+        },
+        fakeOperations({ events, clients: [], poolInputs })
+    );
+
+    assert.deepEqual(poolInputs.map((pool) => [pool.max, pool.census instanceof PostgresStatementCensus]), [[7, true], [2, false]]);
+    await lifecycle.close();
+});
+
 interface FakeOperationsInput {
     readonly events: string[];
     readonly clients?: ApiV1PostgresClient[];
@@ -279,7 +300,7 @@ function toApiV1DatabaseLifecycleInput(
     database: ApiV1DatabaseConfiguration,
     pgliteEvidence: ApiV1PGliteEvidenceConfiguration
 ): CreateApiV1DatabaseLifecycleInput {
-    return { database, pgliteEvidence };
+    return { database, pgliteEvidence, statementCensus: undefined };
 }
 
 function postgresConfiguration(): ApiV1DatabaseConfiguration {

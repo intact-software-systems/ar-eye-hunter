@@ -104,7 +104,7 @@ export function createStateWriteServiceRuntime(input: CreateStateWriteServiceRun
     const { sql, serviceId, context, timing } = input;
     const nowEpochMs = Date.now;
     const instrumentedSql = createInstrumentedStateWriteSql({
-        sql: toApiV1PostgresClient(sql),
+        sql: toApiV1PostgresClient(sql, undefined),
         metrics: context.sql,
         timing
     });

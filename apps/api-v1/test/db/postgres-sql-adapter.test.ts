@@ -9,6 +9,7 @@ import {
     type PostgresSqlSource,
     type PostgresTransactionSqlSource
 } from '../../src/db/postgres-sql-adapter.ts';
+import { PostgresStatementCensus } from '../../src/db/postgres-statement-census.ts';
 
 interface RecordedCall {
     readonly handle: 'root' | 'transaction' | 'savepoint';
@@ -24,7 +25,7 @@ interface FakePostgresClient {
 
 Deno.test('Postgres SQL client counts every statement of its root and transaction handles on one executor and forwards the client capabilities', async () => {
     const fake = createFakePostgresClient();
-    const sql = createPostgresSqlClient(fake.client);
+    const sql = createPostgresSqlClient(fake.client, undefined);
 
     assert.deepEqual(sql.getExecutorCounters(), { statements: 0, executorWaitMs: 0 });
     assert.deepEqual(await sql<readonly Record<string, number>[]>`select ${1} as one`, [{ one: 1 }]);
@@ -56,7 +57,7 @@ Deno.test('Postgres SQL client counts every statement of its root and transactio
 
 Deno.test('a counter scope over the Postgres client credits only its own statements, inside its transaction and savepoint, and carries none of the client lifecycle', async () => {
     const fake = createFakePostgresClient();
-    const sql = createPostgresSqlClient(fake.client);
+    const sql = createPostgresSqlClient(fake.client, undefined);
     const scoped = createPSqlCounterScope(sql, { timesBeginWait: true });
     const other = createPSqlCounterScope(sql, { timesBeginWait: true });
 
@@ -83,6 +84,41 @@ Deno.test('a counter scope over the Postgres client credits only its own stateme
         ['savepoint', 'insert into rows values (?)', [5]]
     ]);
     assert.deepEqual(['end', 'notify', 'listen', 'close'].filter((name) => name in scoped), []);
+});
+
+Deno.test('with a census, every statement of the root, transaction and savepoint handles is recorded under its shape', async () => {
+    const fake = createFakePostgresClient();
+    const census = new PostgresStatementCensus();
+    const sql = createPostgresSqlClient(fake.client, census);
+
+    await sql`select ${'abc'} as one`;
+    await sql`select ${'de'} as one`;
+    await sql.begin(async (transaction) => {
+        await transaction`update   rows
+            set value = ${[1, 2]}`;
+        const savepointSql = transaction as PSqlSql & { savepoint<T>(write: (sql: PSqlSql) => Promise<T>): Promise<T>; };
+        await savepointSql.savepoint(async (nested) => {
+            await nested`update   rows
+            set value = ${7}`;
+        });
+    });
+
+    const shapes = census.takeShapes();
+    assert.deepEqual(
+        shapes.map(({ shape, count, parameterChars }) => [shape, count, parameterChars]).sort(),
+        [['select ? as one', 2, 5], ['update rows set value = ?', 2, 6]]
+    );
+    assert.ok(shapes.every((shape) => shape.executorWaitMs >= 0));
+    assert.deepEqual(census.takeShapes(), [], 'a take empties the census');
+});
+
+Deno.test('without a census the client records nothing beside its counters', async () => {
+    const fake = createFakePostgresClient();
+    const sql = createPostgresSqlClient(fake.client, undefined);
+
+    await sql`select ${1} as one`;
+
+    assert.equal(sql.getExecutorCounters().statements, 1);
 });
 
 function createFakePostgresClient(): FakePostgresClient {

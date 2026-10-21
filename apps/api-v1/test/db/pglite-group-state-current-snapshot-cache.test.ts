@@ -32,6 +32,8 @@ class AudienceReadRuntime extends PSqlRuntimeStateRepository {
     valueRows = 0;
     versionReads = 0;
     versionedValueReads = 0;
+    /** Runs once, after the next principal member selection has read its rows. */
+    afterMemberSelection: (() => Promise<void>) | undefined;
 
     override async readRuntimeStateBatchVersion(selectors: readonly RuntimeStateReadBatchSelector[]) {
         this.versionReads += 1;
@@ -41,6 +43,11 @@ class AudienceReadRuntime extends PSqlRuntimeStateRepository {
     override async readRuntimeStateBatch(selectors: readonly RuntimeStateReadBatchSelector[]) {
         const selections = await super.readRuntimeStateBatch(selectors);
         this.valueRows += selections.reduce((count, selection) => count + selection.entries.length, 0);
+        const afterMemberSelection = this.afterMemberSelection;
+        if (afterMemberSelection !== undefined && selectors[0]?.kind === 'prefix-suffix') {
+            this.afterMemberSelection = undefined;
+            await afterMemberSelection();
+        }
         return selections;
     }
 
@@ -101,13 +108,13 @@ Deno.test('a principal audience observes revoked membership and expired presence
     }
 });
 
-Deno.test('a group changed during its cached audience read falls back to current authority', async () => {
+Deno.test('a group changed after its snapshot was read is listed as read while the principal member row stands', async () => {
     const seeded = await seedCache();
     try {
         const snapshots = await seeded.repository.listSnapshotsForPrincipal(REF, 'alice', {
             readSnapshots: async (refs) => {
                 const before = await seeded.cache.readSnapshots(refs);
-                const group = before[0]?.group;
+                const group = before.snapshots[0]?.group;
                 assert.ok(group);
                 await seeded.repository.putMember(createMember('bob', 'member'));
                 await seeded.repository.putGroup({ ...group, activeMemberCount: 2 });
@@ -115,22 +122,42 @@ Deno.test('a group changed during its cached audience read falls back to current
             }
         });
 
-        assert.deepEqual(snapshots[0].members.map((member) => member.principalId), ['alice', 'bob']);
+        assert.deepEqual(snapshots[0].members.map((member) => member.principalId), ['alice']);
     }
     finally {
         await seeded.close();
     }
 });
 
-Deno.test('revocation during a cached audience read is excluded by the second membership selection', async () => {
+Deno.test('a principal member row that moved between the two selections is read again from current authority', async () => {
     const seeded = await seedCache();
     try {
+        const stale = await seeded.cache.readSnapshots([REF]);
+        seeded.runtime.afterMemberSelection = async () => {
+            await seeded.repository.putMember({ ...createMember('alice', 'owner'), invitedByPrincipalId: 'nobody' });
+        };
+
         const snapshots = await seeded.repository.listSnapshotsForPrincipal(REF, 'alice', {
-            readSnapshots: async (refs) => {
-                const before = await seeded.cache.readSnapshots(refs);
-                await seeded.repository.removeMember({ ...REF, principalId: 'alice' });
-                return before;
-            }
+            readSnapshots: async () => stale
+        });
+
+        assert.equal(snapshots[0].members[0]?.invitedByPrincipalId, 'nobody');
+    }
+    finally {
+        await seeded.close();
+    }
+});
+
+Deno.test('revocation committed between the two selections excludes the group', async () => {
+    const seeded = await seedCache();
+    try {
+        const stale = await seeded.cache.readSnapshots([REF]);
+        seeded.runtime.afterMemberSelection = async () => {
+            await seeded.repository.removeMember({ ...REF, principalId: 'alice' });
+        };
+
+        const snapshots = await seeded.repository.listSnapshotsForPrincipal(REF, 'alice', {
+            readSnapshots: async () => stale
         });
 
         assert.deepEqual(snapshots, []);
@@ -280,8 +307,8 @@ Deno.test('a principal in 21 unchanged kept groups costs one version statement f
         assert.deepEqual(kept, warm);
         assert.equal(seeded.runtime.versionReads, 1, 'one version statement probes every kept group');
         assert.equal(seeded.runtime.versionedValueReads, 0);
-        // Two membership selections before and two after, around the one probe.
-        assert.equal(seeded.takeStatements(), 5);
+        // The member selection before the probe and the one alongside it; no group row reads.
+        assert.equal(seeded.takeStatements(), 3);
 
         const changed = refs[7]!;
         const group = await seeded.repository.findGroup(changed);
@@ -295,7 +322,7 @@ Deno.test('a principal in 21 unchanged kept groups costs one version statement f
         assert.equal(afterChange.find((snapshot) => snapshot.group.groupId === changed.groupId)?.group.displayName, 'renamed');
         assert.equal(seeded.runtime.versionReads, 1);
         assert.equal(seeded.runtime.versionedValueReads, 1, 'only the changed group is read again');
-        assert.equal(seeded.takeStatements(), 6);
+        assert.equal(seeded.takeStatements(), 4);
     }
     finally {
         await seeded.close();
