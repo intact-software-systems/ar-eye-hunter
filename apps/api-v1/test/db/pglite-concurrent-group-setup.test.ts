@@ -200,6 +200,7 @@ function createGroupSetupApp(mutation: ApiV1MutationRuntime, groupInbox: GroupSt
         groupDefaultMaxMembers: defaults.group.defaultMaxMembers,
         nowEpochMs: () => Date.now(),
         hydrateStateSyncSnapshotCaches: () => Promise.resolve({ clientSnapshotCount: 0, groupSnapshotCount: 0 }),
+        findStateSyncGroupSnapshot: () => undefined,
         readGroupSnapshot: async (ref) => {
             const snapshot = await mutation.groupsRepository.readSnapshot(ref);
             return snapshot ? { status: 'found', source: 'durable', snapshot } : { status: 'not-found', source: 'durable' };

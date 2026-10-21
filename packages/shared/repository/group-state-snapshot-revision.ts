@@ -45,6 +45,18 @@ export function decideGroupSnapshotCausalRevision(
     throw new StateSnapshotRevisionConflictError('Group', incoming.group.snapshotVersion);
 }
 
+/** The held snapshot is at or after the incoming causal tuple; an incomparable tuple is never covered. */
+export function isGroupSnapshotCausalRevisionCovered(
+    held: GroupSnapshot | undefined,
+    incoming: GroupSnapshot
+): boolean {
+    if (!held) {
+        return false;
+    }
+    const order = compareGroupCausalRevision(readGroupCausalRevision(incoming), readGroupCausalRevision(held));
+    return order === 'equal' || order === 'dominated';
+}
+
 /** A current authoritative acquisition may advance leases without inventing a causal revision. */
 export function isGroupSnapshotSessionLeaseAdvance(current: GroupSnapshot, acquired: GroupSnapshot): boolean {
     if (!jsonEquals(toLeaseInsensitiveSnapshot(current), toLeaseInsensitiveSnapshot(acquired))) {

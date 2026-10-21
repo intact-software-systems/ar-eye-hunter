@@ -8,6 +8,7 @@ import {
     type StateEventListQuery
 } from '@shared-server/rallar-system/state-events/state-event-listing.ts';
 import type { GroupEvent, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { isGroupSnapshotCausalRevisionCovered } from '@shared/repository/group-state-snapshot-revision.ts';
 
 import { readGroupSnapshotPointQuery } from '../routes/state-snapshot-read/state-snapshot-read-query.ts';
 import { writeGroupSnapshotHeaders } from '../routes/state-snapshot-read/state-snapshot-read-response.ts';
@@ -52,13 +53,12 @@ async function readGroupSnapshotList(
     authorization: GroupStateRouteAuthorization
 ): Promise<Response> {
     try {
+        const scope = toGroupStateRouteScope(context);
         const authSession = await authorization.readStrictAuthSession(context.req);
         const snapshots = authSession
-            ? (await dependencies.groupStateService.listSnapshots(toGroupStateRouteScope(context)))
+            ? (await dependencies.groupStateService.listSnapshotsForPrincipal(scope, authSession.clientId))
                 .filter((snapshot) => isGroupStateRouteSnapshotReadable(snapshot, authSession.clientId))
-            : await dependencies.groupStateService.listSnapshots(
-                toGroupStateRouteScope(context)
-            );
+            : await dependencies.groupStateService.listSnapshots(scope);
         hydrateGroupSnapshots(dependencies, snapshots);
 
         return context.json(snapshots);
@@ -199,8 +199,11 @@ async function readGroupEventPage(
 
 function hydrateGroupSnapshots(
     dependencies: GroupStateRouteDependencies,
-    groups: readonly GroupSnapshot[]
+    snapshots: readonly GroupSnapshot[]
 ): void {
+    const groups = snapshots.filter((snapshot) =>
+        !isGroupSnapshotCausalRevisionCovered(dependencies.findStateSyncGroupSnapshot(snapshot.group), snapshot)
+    );
     if (groups.length === 0) {
         return;
     }

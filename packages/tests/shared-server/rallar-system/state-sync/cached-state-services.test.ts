@@ -27,7 +27,8 @@ describe('cached state services', () => {
                 findOrLoadByRef: rejectUnexpectedCacheAccess,
                 observe: rejectUnexpectedCacheAccess
             },
-            current: durable
+            current: durable,
+            principalGroups: { listSnapshotsForPrincipal: rejectUnexpectedAsyncOperation }
         });
 
         expect('createGroup' in service).toBe(false);
@@ -48,7 +49,8 @@ describe('cached state services', () => {
                 findOrLoadByRef: rejectUnexpectedCacheAccess,
                 observe: rejectUnexpectedCacheAccess
             },
-            current: durable
+            current: durable,
+            principalGroups: { listSnapshotsForPrincipal: rejectUnexpectedAsyncOperation }
         });
 
         const result = await service.readCurrentSnapshot(revisioned.group);
@@ -64,7 +66,8 @@ describe('cached state services', () => {
                 findOrLoadByRef: rejectUnexpectedCacheAccess,
                 observe: rejectUnexpectedCacheAccess
             },
-            current: durable
+            current: durable,
+            principalGroups: { listSnapshotsForPrincipal: rejectUnexpectedAsyncOperation }
         });
 
         expect('connectPresenceSession' in service).toBe(false);
@@ -87,7 +90,8 @@ describe('cached state services', () => {
                     throw conflict;
                 }
             },
-            current: durable
+            current: durable,
+            principalGroups: { listSnapshotsForPrincipal: rejectUnexpectedAsyncOperation }
         });
 
         await expect(service.observeSnapshot(snapshot)).rejects.toBe(conflict);

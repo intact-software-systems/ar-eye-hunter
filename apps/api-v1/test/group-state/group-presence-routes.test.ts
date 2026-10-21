@@ -426,6 +426,7 @@ function createPresenceResponseService(
 ) {
     return {
         listSnapshots: () => Promise.resolve([]),
+        listSnapshotsForPrincipal: () => Promise.resolve([]),
         readSnapshot: () => Promise.resolve(undefined),
         readCurrentSnapshot: () => {
             onCurrentSnapshotRead();

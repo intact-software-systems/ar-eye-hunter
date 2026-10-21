@@ -42,6 +42,7 @@ import type { GroupAdmissionQuota } from '../services/group-admission-rate-limit
 export type GroupStateRouteService = Pick<
     CachedGroupStateService,
     | 'listSnapshots'
+    | 'listSnapshotsForPrincipal'
     | 'readSnapshot'
     | 'listEvents'
     | 'listRecentEvents'
@@ -325,6 +326,7 @@ export interface GroupStateRouteDependencies {
     readonly hydrateStateSyncSnapshotCaches: (
         input: StateSyncCacheHydrationInput
     ) => Promise<StateSyncCacheHydrationResult>;
+    readonly findStateSyncGroupSnapshot: (ref: GroupRef) => GroupSnapshot | undefined;
     readonly readGroupSnapshot: (
         ref: GroupRef,
         options: GroupStateSnapshotReadOptions & Readonly<{ strictMode?: boolean; }>

@@ -109,7 +109,8 @@ describe('GroupStateSnapshotReadThroughCache', () => {
                 findOrLoadByRef: (groupRef, options) => cache.findOrLoadByRef(groupRef, options),
                 observe: (snapshot) => cache.observe(snapshot)
             },
-            current: durable
+            current: durable,
+            principalGroups: repository
         });
 
         const stored = await repository.findPresenceEntry({

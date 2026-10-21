@@ -91,17 +91,19 @@ export async function createAuthorityHarness(
         now: () => nowEpochMs,
         timing: options.timing
     });
+    const repository = createTestGroupStateRepository(runtimeRepository, database.groupEventStore);
     const groupStateService = options.snapshotCache
         ? createCachedGroupStateService({
             durable: durableGroupStateService,
             cache: options.snapshotCache,
-            current: durableGroupStateService
+            current: durableGroupStateService,
+            principalGroups: repository
         })
         : durableGroupStateService;
     return {
         nowEpochMs,
         runtimeRepository,
-        repository: createTestGroupStateRepository(runtimeRepository, database.groupEventStore),
+        repository,
         authSessions,
         groupStateService,
         service: createAuthorityAppInboxService({

@@ -100,7 +100,8 @@ function createCachedRouteAuthority(harness: AuthorityHarness): CachedRouteAutho
     const service = createCachedGroupStateService({
         durable: harness.groupStateService,
         cache,
-        current: harness.groupStateService
+        current: harness.groupStateService,
+        principalGroups: harness.repository
     });
     return {
         service,

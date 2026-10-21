@@ -281,7 +281,15 @@ function createMutationGroupStateService(
             }
         }),
         cache: resources.groupSnapshotCache,
-        current: resources.groupCurrentSnapshotCache
+        current: resources.groupCurrentSnapshotCache,
+        principalGroups: {
+            listSnapshotsForPrincipal: async (scope, principalId) =>
+                await resources.groupsRepository.listSnapshotsForPrincipal(
+                    scope,
+                    principalId,
+                    resources.groupCurrentSnapshotCache
+                )
+        }
     });
 }
 

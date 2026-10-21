@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 
+import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { canReadGroupSnapshot } from '@shared-server/rallar-system/group-state/policy/group-snapshot-visibility-policy.ts';
+import { createCachedGroupStateService } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
 import { GroupStateCurrentSnapshotCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-current-snapshot-cache.ts';
 import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-group-state-event-store.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
@@ -288,6 +291,46 @@ Deno.test('a principal in 21 unchanged kept groups costs one version statement f
         assert.equal(seeded.runtime.versionReads, 1);
         assert.equal(seeded.runtime.versionedValueReads, 1, 'only the changed group is read again');
         assert.equal(seeded.takeStatements(), 6);
+    }
+    finally {
+        await seeded.close();
+    }
+});
+
+Deno.test('the cached principal group list answers in group-key order, as the scan and readability filter do', async () => {
+    const seeded = await seedCache();
+    try {
+        const scope = { applicationId: REF.applicationId, workspaceId: REF.workspaceId };
+        const longer = { ...REF, groupId: `${REF.groupId}-2` };
+        await seeded.repository.putGroup(groupFixture(longer, 'Longer room id'));
+        await seeded.repository.putMember({ ...createMember('alice', 'owner'), ...longer });
+        const durable = createGroupStateService({
+            runtimeRepository: seeded.runtime,
+            groupStateEventStore: new InMemoryGroupStateEventStore(),
+            serviceId: 'pglite-principal-group-list',
+            readPlannedLayoutRow: async () => null,
+            readAcceptedLayoutRow: async () => null
+        });
+        const service = createCachedGroupStateService({
+            durable,
+            cache: { findOrLoadByRef: (ref) => durable.readSnapshot(ref), observe: () => 'inserted' },
+            current: durable,
+            principalGroups: {
+                listSnapshotsForPrincipal: async (scope, principalId) => await seeded.repository.listSnapshotsForPrincipal(scope, principalId, seeded.cache)
+            }
+        });
+
+        const memberIndexOrder = await seeded.repository.listSnapshotsForPrincipal(scope, 'alice', seeded.cache);
+        const listed = await service.listSnapshotsForPrincipal(scope, 'alice');
+        const scanned = (await durable.listSnapshots(scope))
+            .filter((snapshot) => canReadGroupSnapshot({ snapshot, actor: { principalId: 'alice' } }).allowed);
+
+        assert.deepEqual(memberIndexOrder.map((snapshot) => snapshot.group.groupId), [longer.groupId, REF.groupId]);
+        assert.deepEqual(listed.map((snapshot) => snapshot.group.groupId), [REF.groupId, longer.groupId]);
+        assert.deepEqual(
+            listed.map((snapshot) => snapshot.group.groupId),
+            scanned.map((snapshot) => snapshot.group.groupId)
+        );
     }
     finally {
         await seeded.close();
