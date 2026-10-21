@@ -169,6 +169,7 @@ function createTransactionBoundaryExecution(
         ),
         transactionWriter,
         publicationTiming: undefined,
+        nowEpochMs: () => NOW_EPOCH_MS,
         wakeQueue: () => {
             wakeCount += 1;
         },

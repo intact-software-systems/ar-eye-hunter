@@ -134,7 +134,7 @@ describe('group-state service timing contract', () => {
 });
 
 describe('group mutation lane phase timing', () => {
-    it('records the ingress capture before its enqueue phase completes and leaves the lane no capture or persist phase', async () => {
+    it('captures the ingress before its enqueue spans start and leaves the lane no capture or persist phase', async () => {
         const timingEvents: RallarTimingEvent[] = [];
         const harness = await createAuthorityHarness(['owner', 'alice'], {
             serviceOptions: { phaseTiming: true },
@@ -159,9 +159,17 @@ describe('group mutation lane phase timing', () => {
             .map((event) => event.operation);
         expect(phaseOrder).not.toContain('ingress-capture');
         expect(phaseOrder).not.toContain('ingress-persist');
-        expect(order.indexOf('group-state-service:captureAppInboxMutationIngress')).toBeGreaterThanOrEqual(0);
-        expect(order.indexOf('group-state-service:captureAppInboxMutationIngress'))
-            .toBeLessThan(order.indexOf('app-inbox-phase:enqueue'));
+        const capture = connectEvents.find((event) => event.operation === 'captureAppInboxMutationIngress');
+        const spans = connectEvents.filter((event) =>
+            event.requestId === 'connect-alice' &&
+            (event.operation === 'enqueue' || event.operation === 'enqueueAndWaitForResult')
+        );
+        expect(capture).toBeDefined();
+        expect(spans.map((event) => event.operation).sort()).toEqual(['enqueue', 'enqueueAndWaitForResult']);
+        for (const span of spans) {
+            // A line's end is a whole wall-clock millisecond and its duration a monotonic one, hence the 1 ms slack.
+            expect(capture?.atEpochMs).toBeLessThanOrEqual(span.atEpochMs - span.durationMs + 1);
+        }
         expect(phaseOrder.indexOf('enqueue')).toBeLessThan(phaseOrder.indexOf('transaction'));
         expect(connectEvents.find((event) => event.operation === 'enqueue')).toEqual({
             type: 'rallar.timing',

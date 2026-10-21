@@ -9,8 +9,8 @@ import type {
 import { requireNonNegativeSafeInteger } from '../group-state-validation-primitives.ts';
 import { assertGroupMutationCommand } from '../mutation/command-validation/assert-group-mutation-command.ts';
 import { assertGroupMutationRequest } from '../mutation/command-validation/group-mutation-request-validation.ts';
-import type { GroupMutationCommand, GroupMutationFacts } from '../mutation/group-mutation-contracts.ts';
-import { assertGroupMutationFacts } from '../mutation/state-validation/assert-group-mutation-facts.ts';
+import type { GroupMutationCommand, GroupMutationIngressFacts } from '../mutation/group-mutation-contracts.ts';
+import { assertGroupMutationIngressFacts } from '../mutation/state-validation/assert-group-mutation-facts.ts';
 
 const INGRESS_KEYS = [
     'authorityProof',
@@ -159,7 +159,7 @@ export function decodeGroupMutationDescriptor(
 
 function decodeGroupMutationIngressFacts(
     value: JsonWireValue | undefined
-): Omit<GroupMutationFacts, 'attemptCount'> {
+): GroupMutationIngressFacts {
     const facts = requireJsonWireObject(value, 'Group mutation ingress facts');
     requireExactKeys(
         facts,
@@ -177,9 +177,8 @@ function decodeGroupMutationIngressFacts(
         ],
         'Group mutation ingress facts'
     );
-    const withAttemptCount = { ...facts, attemptCount: 1 };
-    const decodedFacts = withAttemptCount as GroupMutationFacts;
-    assertGroupMutationFacts(decodedFacts);
+    const decodedFacts: GroupMutationIngressFacts = facts as JsonWireObject & GroupMutationIngressFacts;
+    assertGroupMutationIngressFacts(decodedFacts);
     return {
         nowEpochMs: decodedFacts.nowEpochMs,
         expireAtEpochMs: decodedFacts.expireAtEpochMs,
@@ -236,7 +235,7 @@ function decodeGroupMutationOperation(
 
 function assertIngressAuthorityFacts(
     authorityProof: GroupMutationAuthorityProof | null,
-    facts: Omit<GroupMutationFacts, 'attemptCount'>
+    facts: GroupMutationIngressFacts
 ): void {
     if (authorityProof === null) {
         if (facts.internalAuthority === 'none' || facts.authenticatedAuthority !== null) {

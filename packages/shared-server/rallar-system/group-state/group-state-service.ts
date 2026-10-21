@@ -27,6 +27,7 @@ import { assertGroupMutationCommand } from './mutation/command-validation/assert
 import type {
     GroupMutationCommand,
     GroupMutationFacts,
+    GroupMutationIngressFacts,
     GroupMutationRead,
     GroupMutationSnapshotRead
 } from './mutation/group-mutation-contracts.ts';
@@ -118,7 +119,7 @@ function createAuthorityDependencies(
     { dependencies, authSessions, now, randomId }: CreateAuthorityDependenciesInput
 ): GroupMutationAuthorityDependencies {
     return {
-        authSessionRepository: authSessions,
+        authSessions,
         now,
         randomId,
         serviceId: dependencies.serviceId,
@@ -134,7 +135,7 @@ function createInternalMutationIngressCapture(
         const commandHash = computeMutationCommandDigest(
             decodeJsonWireValue(command, 'Internal group mutation command')
         );
-        const facts: Omit<GroupMutationFacts, 'attemptCount'> = {
+        const facts: GroupMutationIngressFacts = {
             nowEpochMs: atEpochMs,
             expireAtEpochMs: GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS,
             serviceId: dependencies.serviceId,
@@ -148,9 +149,8 @@ function createInternalMutationIngressCapture(
         };
         // Run the capability matrix during ingress capture: a command a mode cannot
         // execute fails at the call site, never as a poison row the queue
-        // retries into a terminal failure. attemptCount is a placeholder the
-        // matrix never reads.
-        assertGroupMutationAuthority(command, { ...facts, attemptCount: 1 });
+        // retries into a terminal failure.
+        assertGroupMutationAuthority(command, facts);
         const causalToken = computeSha256CanonicalJson({ command, facts });
         return {
             authorityProof: null,

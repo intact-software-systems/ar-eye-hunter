@@ -78,6 +78,7 @@ export class GroupStateInboxService {
     private readonly groupStateInboxHandler: GroupStateInboxHandler;
     private readonly wakeQueue?: () => void;
     private readonly serviceId: string;
+    private readonly nowEpochMs: () => number;
 
     public readonly groupStateService: GroupStateService;
 
@@ -110,6 +111,7 @@ export class GroupStateInboxService {
         this.groupStateService = dependencies.groupStateService;
         this.wakeQueue = config.wakeOwningQueue;
         this.serviceId = config.serviceId;
+        this.nowEpochMs = config.options?.nowEpochMs ?? Date.now;
         this.groupStateInboxHandler = new GroupStateInboxHandler({
             mutationService: this.groupStateService,
             sessionGenerationLifecycle: this.groupStateService.sessionGenerationLifecycle,
@@ -119,7 +121,8 @@ export class GroupStateInboxService {
                 ? undefined
                 : { sink: config.timing, serviceId: config.serviceId },
             wakeQueue: this.wakeQueue,
-            formationMetrics: config.formationMetrics
+            formationMetrics: config.formationMetrics,
+            nowEpochMs: this.nowEpochMs
         });
         this.registerMessageHandlers();
         this.handlers.assertRegistrationComplete(GROUP_MUTATION_INBOX_TYPES);
@@ -271,6 +274,7 @@ export class GroupStateInboxService {
                 await writeGroupSessionCleanup({
                     facts: payload,
                     attemptCount: context.entry.dequeueAudit.attempts,
+                    laneNowEpochMs: this.nowEpochMs(),
                     context,
                     groupStateService: this.groupStateService,
                     transactionWriter: this.transactionWriter,

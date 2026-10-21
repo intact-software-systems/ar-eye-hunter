@@ -404,6 +404,7 @@ function createMutationRead(): GroupMutationRead {
 function createMutationFacts(): GroupMutationFacts {
     return {
         nowEpochMs: 2_000,
+        attemptAtEpochMs: 2_000,
         expireAtEpochMs: 253_402_300_799_999,
         serviceId: 'group-service',
         eventId: 'event-1',

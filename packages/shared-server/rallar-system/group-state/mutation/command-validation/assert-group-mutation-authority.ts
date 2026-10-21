@@ -1,9 +1,9 @@
-import type { GroupMutationCommand, GroupMutationFacts } from '../group-mutation-contracts.ts';
+import type { GroupMutationCommand, GroupMutationIngressFacts } from '../group-mutation-contracts.ts';
 import { assertGroupMutationJoinCodeFacts } from './assert-group-mutation-join-code-facts.ts';
 
 export function assertGroupMutationAuthority(
     command: GroupMutationCommand,
-    facts: GroupMutationFacts
+    facts: GroupMutationIngressFacts
 ): void {
     assertGroupMutationJoinCodeFacts(command, facts);
     const authority = facts.authenticatedAuthority;
@@ -31,7 +31,7 @@ export function assertGroupMutationAuthority(
 // Internal producers hold only their own capability; reserved modes fail closed.
 function assertInternalMutationAuthority(
     command: GroupMutationCommand,
-    facts: GroupMutationFacts
+    facts: GroupMutationIngressFacts
 ): void {
     if (facts.authenticatedAuthority !== null) {
         throw new TypeError('Internal group mutation cannot use authenticated authority facts');

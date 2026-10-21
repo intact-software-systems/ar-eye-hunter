@@ -477,13 +477,14 @@ export const GROUP_MUTATION_INTERNAL_AUTHORITY_MODES = [
     'activation-status'
 ] as const;
 
-export interface GroupMutationFacts {
+/** The facts captured once at ingress; every attempt and replay of the command reuses them. */
+export interface GroupMutationIngressFacts {
+    /** The ingress instant: the command's own time, for its event, audit stamps, outbox rows and skew checks. */
     readonly nowEpochMs: number;
     readonly expireAtEpochMs: number;
     readonly serviceId: string;
     readonly eventId: string;
     readonly commandHash: string;
-    readonly attemptCount: number;
     readonly resolvedJoinCode: string | null;
     readonly joinCodeVerifier: string | null;
     readonly internalAuthority: (typeof GROUP_MUTATION_INTERNAL_AUTHORITY_MODES)[number];
@@ -495,6 +496,16 @@ export interface GroupMutationFacts {
             sessionId: string;
         }>
         | null;
+}
+
+/** The ingress facts and what each attempt samples for itself. */
+export interface GroupMutationFacts extends GroupMutationIngressFacts {
+    readonly attemptCount: number;
+    /**
+     * The lane's clock when this attempt began, never before the ingress instant: it anchors every window the
+     * attempt opens, so a queue wait does not shorten them.
+     */
+    readonly attemptAtEpochMs: number;
 }
 
 export type GroupGuardCandidate =

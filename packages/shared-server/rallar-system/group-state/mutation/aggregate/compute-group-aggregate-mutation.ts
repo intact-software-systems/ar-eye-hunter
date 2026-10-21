@@ -204,7 +204,7 @@ export function computeDirector(
     const appointment = createRallarGroupDirectorAppointment({
         session: { clientId: principalId, sessionId },
         previous: readRallarGroupDirectorFromSnapshot(snapshot),
-        now: facts.nowEpochMs,
+        now: facts.attemptAtEpochMs,
         heartbeatTtlMs: command.input.heartbeatTtlMs
     });
     const next: Group = {

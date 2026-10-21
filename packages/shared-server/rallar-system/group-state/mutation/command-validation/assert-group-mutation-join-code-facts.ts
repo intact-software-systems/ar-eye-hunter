@@ -1,8 +1,8 @@
-import type { GroupMutationCommand, GroupMutationFacts } from '../group-mutation-contracts.ts';
+import type { GroupMutationCommand, GroupMutationIngressFacts } from '../group-mutation-contracts.ts';
 
 export function assertGroupMutationJoinCodeFacts(
     command: GroupMutationCommand,
-    facts: GroupMutationFacts
+    facts: GroupMutationIngressFacts
 ): void {
     if (command.operation === 'rotateGroupJoinCode') {
         if (facts.resolvedJoinCode === null || facts.joinCodeVerifier === null) {

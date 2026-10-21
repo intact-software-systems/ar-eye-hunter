@@ -312,7 +312,7 @@ describe('applyPlannedLayout through the durable service', () => {
                 authorityProof: null,
                 descriptor: null,
                 command: ingress.command,
-                facts: { ...ingress.facts, attemptCount: 1 }
+                facts: { ...ingress.facts, attemptCount: 1, attemptAtEpochMs: ingress.facts.nowEpochMs }
             };
         };
         return { service, captureIngress };

@@ -454,7 +454,7 @@ Deno.test(
             );
             const command = {
                 ...ingress,
-                facts: { ...ingress.facts, attemptCount: 1 }
+                facts: { ...ingress.facts, attemptCount: 1, attemptAtEpochMs: ingress.facts.nowEpochMs }
             };
             const read = await service.read(command);
             const computed = service.compute(command, read);

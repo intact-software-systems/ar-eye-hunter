@@ -393,7 +393,7 @@ class PresenceConvergenceFixture {
             authorityProof: null,
             descriptor: null,
             command: ingress.command,
-            facts: { ...ingress.facts, attemptCount: 1 }
+            facts: { ...ingress.facts, attemptCount: 1, attemptAtEpochMs: ingress.facts.nowEpochMs }
         };
         const read = await this.service.read(mutation);
         const computed = this.service.compute(mutation, read);

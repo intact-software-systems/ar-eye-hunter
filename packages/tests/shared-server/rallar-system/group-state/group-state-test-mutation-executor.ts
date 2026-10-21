@@ -19,6 +19,7 @@ import { toGroupMutationRejectionError } from '@shared-server/rallar-system/grou
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { readGroupMutation } from '@shared-server/rallar-system/group-state/mutation/read/read-group-mutation.ts';
 import { assertGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation.ts';
+import { toGroupMutationAttemptFacts } from '@shared-server/rallar-system/group-state/mutation/to-group-mutation-attempt-facts.ts';
 import { GroupLifecyclePolicyRepository } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { computeMutationCommandDigest, decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
@@ -68,7 +69,7 @@ export class GroupStateTestMutationExecutor {
             authorityProof: ingress.authorityProof,
             descriptor: ingress.descriptor,
             command: ingress.command,
-            facts: { ...ingress.facts, attemptCount }
+            facts: toGroupMutationAttemptFacts(ingress.facts, attemptCount, ingress.facts.nowEpochMs)
         };
         const read = await this.dependencies.durableService.read(command);
         const computed = this.dependencies.durableService.compute(command, read);
@@ -103,6 +104,7 @@ export class GroupStateTestMutationExecutor {
         const { read } = await readGroupMutation(this.repository(), command, null);
         const facts: GroupMutationFacts = {
             nowEpochMs: atEpochMs,
+            attemptAtEpochMs: atEpochMs,
             expireAtEpochMs: TEST_OUTBOX_EXPIRE_AT_EPOCH_MS,
             serviceId: this.dependencies.serviceId,
             eventId: this.dependencies.randomId(),

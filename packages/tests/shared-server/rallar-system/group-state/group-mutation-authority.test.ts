@@ -46,7 +46,7 @@ describe('group mutation ingress capture', () => {
 /** Capture is pure over its command input: every repository it could reach fails the test. */
 function createReadlessDependencies(): GroupMutationAuthorityDependencies {
     return {
-        authSessionRepository: {
+        authSessions: {
             findBySessionId: async () => {
                 throw new Error('The ingress capture must not read the auth session');
             }

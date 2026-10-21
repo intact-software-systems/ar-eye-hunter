@@ -54,6 +54,7 @@ function updateCommand(): Extract<GroupMutationCommand, { operation: 'updateGrou
 function authenticatedFacts(): GroupMutationFacts {
     return {
         nowEpochMs: 1_000,
+        attemptAtEpochMs: 1_000,
         expireAtEpochMs: 2_000,
         serviceId: 'test-service',
         eventId: 'event-1',

@@ -78,7 +78,7 @@ export function computeGroupConnectTrigger(input: ComputeGroupConnectTriggerInpu
     // `immediate` carries no floor at all rather than this node's clock: it
     // has no timer leg, so a publication petitioned from a node whose clock
     // lags this one must not be gated out with nothing left to wake it.
-    return latchAwaitingPublication(input, delayMs === 0 ? 0 : facts.nowEpochMs + delayMs);
+    return latchAwaitingPublication(input, delayMs === 0 ? 0 : facts.attemptAtEpochMs + delayMs);
 }
 
 /**

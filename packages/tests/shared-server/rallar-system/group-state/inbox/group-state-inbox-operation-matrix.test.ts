@@ -26,7 +26,6 @@ import {
     RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE,
     RtcTopologySnapshotRepository
 } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
-import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { describe, expect, it } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
@@ -38,6 +37,7 @@ import {
     runOperationMatrix,
     type OperationMatrixCase
 } from './group-state-inbox-operation-matrix-runtime.ts';
+import { connectPlannedSnapshot } from './group-state-inbox-planned-layout-fixtures.ts';
 import { createAuthorityHarness, processAuthenticated, SCOPE } from './group-state-inbox-test-runtime.ts';
 
 /**
@@ -929,33 +929,3 @@ describe('GroupStateInboxService authenticated authority', () => {
         30_000
     );
 });
-
-function connectPlannedSnapshot(
-    groupId: string,
-    identity: Readonly<{
-        groupRevision: number;
-        presenceRevision: number;
-        version: number;
-        state: 'active' | 'removed';
-    }>
-) {
-    const groupRef = { ...SCOPE, groupId };
-    return {
-        sourceGroupStateCausalRevision: {
-            groupRevision: identity.groupRevision,
-            presenceRevision: identity.presenceRevision
-        },
-        state: identity.state,
-        overlayId: toScopedOverlayId(groupRef),
-        groupRef,
-        name: groupId,
-        topology: 'tree' as const,
-        activeSessionIds: [],
-        nextHopsBySessionId: {},
-        degreeLimit: 1,
-        version: identity.version,
-        createdByClientId: 'owner',
-        createdAtEpochMs: 1,
-        updatedAtEpochMs: 2
-    };
-}

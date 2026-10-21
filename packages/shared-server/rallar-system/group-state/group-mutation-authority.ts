@@ -20,14 +20,14 @@ import {
     type GroupStateMutationCommand
 } from './group-state-service-contracts.ts';
 import { assertGroupMutationCommand } from './mutation/command-validation/assert-group-mutation-command.ts';
-import { type GroupMutationCommand, type GroupMutationFacts } from './mutation/group-mutation-contracts.ts';
+import { type GroupMutationCommand, type GroupMutationIngressFacts } from './mutation/group-mutation-contracts.ts';
 import { hmacSha256Hex } from './mutation/group-state-crypto.ts';
 import { toScopedGroupMutationCommandId } from './scoped-group-mutation-command-id.ts';
 import { toLifecycleMutationCommand } from './to-lifecycle-mutation-command.ts';
 import { toTransportMutationCommand } from './to-transport-mutation-command.ts';
 
 export interface GroupMutationAuthorityDependencies {
-    readonly authSessionRepository: Pick<AuthSessionPersistence, 'findBySessionId'>;
+    readonly authSessions: Pick<AuthSessionPersistence, 'findBySessionId'>;
     readonly now: () => number;
     readonly randomId: () => string;
     readonly serviceId: string;
@@ -97,7 +97,7 @@ async function captureAuthorizedGroupMutationIngress(
         decodeJsonWireValue(materialized.semanticCommand, 'Group semantic mutation command')
     );
     const resolvedJoinCode = resolveCommandJoinCode(command, commandHash);
-    const facts: Omit<GroupMutationFacts, 'attemptCount'> = {
+    const facts: GroupMutationIngressFacts = {
         nowEpochMs: dependencies.now(),
         expireAtEpochMs: GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS,
         serviceId: dependencies.serviceId,
@@ -173,11 +173,11 @@ function reuseGroupMutationAuthorityProof(
 }
 
 export async function readAndVerifyLiveGroupMutationSession(
-    dependencies: Pick<GroupMutationAuthorityDependencies, 'authSessionRepository' | 'now'>,
+    dependencies: Pick<GroupMutationAuthorityDependencies, 'authSessions' | 'now'>,
     ingress: GroupStateMutationCommand
 ): Promise<void> {
     const proof = requireGroupMutationAuthorityProof(ingress);
-    const session = await dependencies.authSessionRepository.findBySessionId(proof.sessionId);
+    const session = await dependencies.authSessions.findBySessionId(proof.sessionId);
     verifyLiveGroupMutationSession(proof, session, dependencies.now());
 }
 

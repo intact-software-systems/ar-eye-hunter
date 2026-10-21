@@ -220,7 +220,8 @@ describe('group-state AppInbox transaction result boundary', () => {
             },
             transactionWriter,
             publicationTiming: undefined,
-            wakeQueue: () => actions.push('wake')
+            wakeQueue: () => actions.push('wake'),
+            nowEpochMs: () => 2_000
         });
         const authority: GroupMutationIngress = {
             authorityProof: {

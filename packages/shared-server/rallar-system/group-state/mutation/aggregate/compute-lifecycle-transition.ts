@@ -246,7 +246,7 @@ function computeNextLifecycleGroup(
         lifecycleState: outcome.nextState,
         formationEpoch: outcome.nextFormationEpoch,
         establishmentStartedAtEpochMs: beginsEstablishment
-            ? facts.nowEpochMs
+            ? facts.attemptAtEpochMs
             : command.operation === 'failGroupFormation'
             ? null
             : stored.establishmentStartedAtEpochMs,

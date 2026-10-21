@@ -75,7 +75,10 @@ have separate owners:
 - `AppInboxCommandClient` coordinates ordinary enqueue-and-wait calls, and
   reserve-and-wait calls whose volatile facts the winning reservation stores:
   authenticated group commands capture their ingress facts at enqueue,
-  including the enqueue-instant timestamp, and every attempt reuses them;
+  including the enqueue-instant timestamp, and every attempt reuses them,
+  while each attempt samples its own lane instant (`attemptAtEpochMs`) to
+  start the windows it opens: formation establishment, formation and
+  connect-trigger timers, and a director appointment;
 - `AppInboxResultWaiter` polls completion state and decodes the typed durable
   result;
 - `AppInboxHandlerRegistry` registers exact command decoders and handlers;

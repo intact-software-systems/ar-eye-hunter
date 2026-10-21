@@ -31,6 +31,7 @@ import type {
     GroupMutationRead
 } from '../mutation/group-mutation-contracts.ts';
 import { toGroupMutationRejectionError } from '../mutation/group-mutation-result.ts';
+import { toGroupMutationAttemptFacts } from '../mutation/to-group-mutation-attempt-facts.ts';
 import {
     readAndComputeGroupPresenceConnect,
     type InactiveGroupPresenceResult
@@ -74,6 +75,8 @@ export interface GroupStateInboxHandlerDependencies {
     readonly publicationTiming: GroupStateInboxTiming | undefined;
     readonly wakeQueue?: () => void;
     readonly formationMetrics?: GroupFormationGroupMutationSink;
+    /** The lane's clock: each attempt samples its own instant from it. */
+    readonly nowEpochMs: () => number;
 }
 
 interface CommitGroupStateMutationInput {
@@ -115,10 +118,11 @@ export class GroupStateInboxHandler {
             authorityProof: ingress.authorityProof,
             descriptor: ingress.descriptor,
             command: ingress.command,
-            facts: {
-                ...ingress.facts,
-                attemptCount: context.entry.dequeueAudit.attempts
-            }
+            facts: toGroupMutationAttemptFacts(
+                ingress.facts,
+                context.entry.dequeueAudit.attempts,
+                this.dependencies.nowEpochMs()
+            )
         };
         if (command.command.operation === 'connectPresence') {
             return await this.processPresenceConnect(context, command);

@@ -47,6 +47,7 @@ import type {
     GroupMutationComputed,
     GroupMutationComputedWrite,
     GroupMutationFacts,
+    GroupMutationIngressFacts,
     GroupMutationRead,
     GroupMutationReceipt,
     GroupMutationSnapshotRead
@@ -139,7 +140,7 @@ export interface GroupMutationIngress {
     readonly authorityProof: GroupMutationAuthorityProof | null;
     readonly descriptor: GroupMutationDescriptor | null;
     readonly command: GroupMutationCommand;
-    readonly facts: Omit<GroupMutationFacts, 'attemptCount'>;
+    readonly facts: GroupMutationIngressFacts;
     readonly causalToken: string;
     readonly queueResourceId: string;
 }

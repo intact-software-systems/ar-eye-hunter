@@ -47,7 +47,7 @@ describe('state-write persisted command evidence', () => {
 
 async function createQueuedJoin(): Promise<AppInboxEnqueueInput> {
     const dependencies = {
-        authSessionRepository: { findBySessionId: async () => undefined },
+        authSessions: { findBySessionId: async () => undefined },
         now: () => NOW_EPOCH_MS,
         randomId: () => 'evidence-random-id',
         serviceId: 'evidence-service'
