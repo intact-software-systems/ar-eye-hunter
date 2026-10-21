@@ -81,7 +81,7 @@ class AudienceReadRepository extends FakeRuntimeStateRepository {
         const clientScopePrefix = 'app=app-1:ws=workspace-1:';
         for (const selector of selectors) {
             if (
-                selector.kind === 'prefix' &&
+                'keyPrefix' in selector && selector.kind !== 'prefix-suffix' &&
                 (
                     (selector.namespace.startsWith('group-state:') &&
                         selector.keyPrefix === groupScopePrefix) ||
@@ -193,6 +193,32 @@ describe('client mutation principal audience read', () => {
         })).toEqual(['alice-session', 'bob-session', 'carol-session', 'dave-session']);
         // Three co-member principals and their three active sessions, from one statement and with no reread guard.
         expect(runtime.coMemberRowsPerBatch).toEqual([6]);
+    });
+
+    it('reads only a co-member\'s connected sessions, never the disconnected ones it retains', async () => {
+        const runtime = new CoMemberRowCountingRepository();
+        const { groups, clients } = await seedHeartbeatAudience(runtime, ['bob']);
+        for (let index = 0; index < 40; index += 1) {
+            await clients.insertSession({
+                ...session({ principalId: 'bob', sessionId: `bob-closed-session-${index}`, expiresAtEpochMs: 4_000_000_000_000 }),
+                status: 'disconnected',
+                disconnectedAtEpochMs: 2,
+                disconnectReason: 'closed'
+            });
+        }
+        runtime.coMemberRowsPerBatch.length = 0;
+
+        const read = await readClientMutation({
+            repository: clients,
+            groupRepository: groups,
+            command: principalCommand('retained-disconnected-sessions'),
+            audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
+        });
+
+        expect(read.audienceCoMemberSessions.map((sessions) => sessions.activeSessions.map(({ sessionId }) => sessionId)))
+            .toEqual([['bob-session']]);
+        // Bob's principal and his one connected session, from one statement.
+        expect(runtime.coMemberRowsPerBatch).toEqual([2]);
     });
 
     it('takes a co-member principal and its sessions from one statement and leaves a later write to its own fan-out', async () => {

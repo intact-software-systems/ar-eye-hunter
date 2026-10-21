@@ -8,6 +8,7 @@ import type {
 } from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
+import { toSessionPurgeAfterEpochMs } from '../../presence/session-expiry.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { groupStateGroupStorageKey } from './aggregate/group-aggregate-storage-keys.ts';
 import {
@@ -52,13 +53,12 @@ export async function readGroupStateAuthorityBatch(
     );
 }
 
-/** The same batch read with the version of exactly the rows it returned, from one statement. */
-export async function readVersionedGroupStateAuthorityBatch(
+/** A group snapshot's rows, `toGroupStateSnapshotSelectors`, with the version of exactly those rows, from one statement. */
+export async function readVersionedGroupStateSnapshotBatch(
     reader: RuntimeStateReadBatchVersionReader,
-    ref: GroupRef,
+    selectors: readonly RuntimeStateReadBatchSelector[],
     toLiveEntryValue: GroupStateLiveEntryValue
 ): Promise<VersionedGroupStateAuthorityBatchRead> {
-    const selectors = toGroupStateAuthoritySelectors(ref);
     const batch = await reader.readRuntimeStateBatchWithVersion(selectors);
     return {
         read: await toGroupStateAuthorityBatchRead(selectors, batch.selections, toLiveEntryValue),
@@ -86,14 +86,49 @@ async function toGroupStateAuthorityBatchRead(
 }
 
 /**
- * The version of exactly the rows `readGroupStateAuthorityBatch` reads, for each group, without their values and in
+ * The version of exactly the rows a snapshot read at the instant reads, for each group, without their values and in
  * one read.
  */
-export async function readGroupStateAuthorityVersions(
+export async function readGroupStateSnapshotVersions(
     reader: RuntimeStateReadBatchVersionReader,
-    refs: readonly GroupRef[]
+    refs: readonly GroupRef[],
+    observedAtEpochMs: number
 ): Promise<readonly (RuntimeStateReadBatchVersion['version'] | undefined)[]> {
-    return await reader.readRuntimeStateBatchVersions(refs.map(toGroupStateAuthoritySelectors));
+    return await reader.readRuntimeStateBatchVersions(
+        refs.map((ref) => toGroupStateSnapshotSelectors(ref, observedAtEpochMs))
+    );
+}
+
+/**
+ * The authority rows, but only the presence sessions whose lease outlasts the instant: a session's row stays until a day
+ * after its lease ends or it disconnects, so a row purged no later than a lease ending now shows no live session. The
+ * mutation reads keep every row, which their cleanup needs.
+ */
+export function toGroupStateSnapshotSelectors(
+    ref: GroupRef,
+    observedAtEpochMs: number
+): readonly RuntimeStateReadBatchSelector[] {
+    const [group, members, summary] = toGroupStateAuthoritySelectors(ref);
+    return [
+        group,
+        members,
+        summary,
+        toLivePresenceSessionsSelector(`${groupStateGroupStorageKey(ref)}:`, observedAtEpochMs)
+    ];
+}
+
+/** The presence sessions under the key prefix, a group's or a scope's, whose lease outlasts the instant. */
+export function toLivePresenceSessionsSelector(
+    keyPrefix: string,
+    observedAtEpochMs: number
+): RuntimeStateReadBatchSelector {
+    return {
+        selectorId: 'presence-sessions',
+        kind: 'prefix-expiring-after',
+        namespace: SESSIONS_NAMESPACE,
+        keyPrefix,
+        expiringAfterTimestamp: toSessionPurgeAfterEpochMs(observedAtEpochMs)
+    };
 }
 
 /** The authority selectors and the group's presence admissions, which the presence summary also reads. */

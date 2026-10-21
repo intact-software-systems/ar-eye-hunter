@@ -8,6 +8,8 @@ export function isRuntimeStateReadBatchKeySelected(
         case 'key':
             return key === selector.key;
         case 'prefix':
+        case 'prefix-containing':
+        case 'prefix-expiring-after':
             return key.startsWith(selector.keyPrefix);
         case 'prefix-suffix':
             // The prefix and the suffix must not share characters, matching the SQL length bound.

@@ -1,5 +1,6 @@
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { decodeJsonWireValue, type JsonWireValue } from '../rallar-system/protocol/json-wire-identity.ts';
+import { compareRuntimeStateKeys } from './read-batch/compare-runtime-state-keys.ts';
 import type { RuntimeStateReadBatchSelector } from './read-batch/runtime-state-read-batch.ts';
 import {
     isRuntimeStateConditionalRepositoryLike,
@@ -126,15 +127,15 @@ export class RuntimeStateJsonStore {
         namespace: string,
         keyPrefix?: string
     ): Promise<readonly RuntimeStateEntryValue<JsonWireValue>[]> {
-        const entries = await this.listEntries(namespace, keyPrefix);
-        const values: RuntimeStateEntryValue<JsonWireValue>[] = [];
-        for (const entry of entries) {
-            const value = await this.toLiveJsonEntryValue(namespace, entry);
-            if (value !== undefined) {
-                values.push(value);
-            }
-        }
-        return values;
+        return await this.toLiveJsonEntryValues(namespace, await this.listEntries(namespace, keyPrefix));
+    }
+
+    /** The live values of the rows one selector selects, in key order. */
+    protected async listSelectedJsonEntryValues(
+        selector: RuntimeStateReadBatchSelector
+    ): Promise<readonly RuntimeStateEntryValue<JsonWireValue>[]> {
+        const [selection] = await this.repository.readRuntimeStateBatch([selector]);
+        return await this.toLiveJsonEntryValues(selector.namespace, selection.entries);
     }
 
     protected async listJsonEntryValuesByKeys(
@@ -146,7 +147,7 @@ export class RuntimeStateJsonStore {
         }
 
         const selectors: readonly RuntimeStateReadBatchSelector[] = [...new Set(keys)]
-            .sort(compareUtf8)
+            .sort(compareRuntimeStateKeys)
             .map((key, index) => ({
                 selectorId: `key:${index}`,
                 kind: 'key',
@@ -155,14 +156,7 @@ export class RuntimeStateJsonStore {
             }));
         const entries = (await this.repository.readRuntimeStateBatch(selectors))
             .flatMap((selection) => selection.entries);
-        const values: RuntimeStateEntryValue<JsonWireValue>[] = [];
-        for (const entry of entries) {
-            const value = await this.toLiveJsonEntryValue(namespace, entry);
-            if (value !== undefined) {
-                values.push(value);
-            }
-        }
-        return values;
+        return await this.toLiveJsonEntryValues(namespace, entries);
     }
 
     protected async listEntriesPage(
@@ -256,6 +250,20 @@ export class RuntimeStateJsonStore {
         return selection.entries;
     }
 
+    private async toLiveJsonEntryValues(
+        namespace: string,
+        entries: readonly RuntimeStateEntry[]
+    ): Promise<readonly RuntimeStateEntryValue<JsonWireValue>[]> {
+        const values: RuntimeStateEntryValue<JsonWireValue>[] = [];
+        for (const entry of entries) {
+            const value = await this.toLiveJsonEntryValue(namespace, entry);
+            if (value !== undefined) {
+                values.push(value);
+            }
+        }
+        return values;
+    }
+
     protected async toLiveJsonValue(
         namespace: string,
         entry: RuntimeStateEntry
@@ -295,23 +303,10 @@ export function encodeRuntimeStateJsonValue(value: object): string {
     return serialized;
 }
 
+/**
+ * A stored row is trusted as written: `encodeRuntimeStateJsonValue` checked it before the write, and parsing its text
+ * yields only plain JSON values.
+ */
 function decodeRuntimeStateJsonValue(serialized: string): JsonWireValue {
-    return decodeJsonWireValue(
-        JSON.parse(serialized),
-        'Stored runtime state value'
-    );
-}
-
-function compareUtf8(left: string, right: string): number {
-    const encoder = new TextEncoder();
-    const leftBytes = encoder.encode(left);
-    const rightBytes = encoder.encode(right);
-    const length = Math.min(leftBytes.length, rightBytes.length);
-    for (let index = 0; index < length; index += 1) {
-        const difference = leftBytes[index] - rightBytes[index];
-        if (difference !== 0) {
-            return difference;
-        }
-    }
-    return leftBytes.length - rightBytes.length;
+    return JSON.parse(serialized);
 }

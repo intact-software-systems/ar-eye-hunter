@@ -42,8 +42,7 @@ import {
 import {
     GROUPS_NAMESPACE,
     MEMBERS_NAMESPACE,
-    PRESENCE_SUMMARIES_NAMESPACE,
-    SESSIONS_NAMESPACE
+    PRESENCE_SUMMARIES_NAMESPACE
 } from './group-state-runtime-namespaces.ts';
 import { canonicalStoredMember } from './membership/group-membership-repository.ts';
 import { decodeGroupStateMemberStorageKey } from './membership/group-membership-storage-key.ts';
@@ -51,7 +50,9 @@ import { canonicalStoredSession, canonicalStoredSummary } from './presence/group
 import { decodeGroupStatePresenceSessionStorageKey } from './presence/group-presence-storage-keys.ts';
 import {
     readGroupStateAuthorityBatch,
-    readVersionedGroupStateAuthorityBatch,
+    readVersionedGroupStateSnapshotBatch,
+    toGroupStateSnapshotSelectors,
+    toLivePresenceSessionsSelector,
     type GroupStateAuthorityBatchRead
 } from './read-group-state-authority.ts';
 import { readGroupStateSnapshotsForPrincipal } from './read-group-state-snapshots-for-principal.ts';
@@ -81,7 +82,7 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
 
     async listSnapshots(scope: GroupScope): Promise<readonly GroupSnapshot[]> {
         const observedAtEpochMs = Date.now();
-        const read = await this.readScopeSnapshot(scope);
+        const read = await this.readScopeSnapshot(scope, observedAtEpochMs);
         const beforeByKey = new Map(read.groupsBefore.map((stored) => [stored.entry.key, stored]));
         const snapshots = await Promise.all(
             read.groupsAfter.map(async (stored) => {
@@ -118,13 +119,16 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
         });
     }
 
-    private async readScopeSnapshot(scope: GroupScope): Promise<GroupStateScopeSnapshotRead> {
+    private async readScopeSnapshot(
+        scope: GroupScope,
+        observedAtEpochMs: number
+    ): Promise<GroupStateScopeSnapshotRead> {
         const keyPrefix = `${groupStateScopeStorageKey(scope)}:`;
         const groupsBeforeRaw = await this.listJsonEntryValues(GROUPS_NAMESPACE, keyPrefix);
         const [memberEntriesRaw, summaryEntriesRaw, sessionEntriesRaw] = await Promise.all([
             this.listJsonEntryValues(MEMBERS_NAMESPACE, keyPrefix),
             this.listJsonEntryValues(PRESENCE_SUMMARIES_NAMESPACE, keyPrefix),
-            this.listJsonEntryValues(SESSIONS_NAMESPACE, keyPrefix)
+            this.listSelectedJsonEntryValues(toLivePresenceSessionsSelector(keyPrefix, observedAtEpochMs))
         ]);
         const groupsAfterRaw = await this.listJsonEntryValues(GROUPS_NAMESPACE, keyPrefix);
         const groupsBefore = groupsBeforeRaw.map((stored) => canonicalStoredGroup(stored, scope));
@@ -171,7 +175,7 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
                 const [members, summary, sessions] = await Promise.all([
                     this.listMembers(group),
                     this.findPresenceSummaryEntry(group),
-                    this.listPresenceSessions(group)
+                    this.readLivePresenceSessions(group, observedAtEpochMs)
                 ]);
                 return { entry, group, members, summary: summary?.value, sessions };
             })
@@ -276,9 +280,9 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
         ref: GroupRef,
         observedAtEpochMs: number
     ): Promise<VersionedGroupSnapshot | undefined> {
-        const batch = await readVersionedGroupStateAuthorityBatch(
+        const batch = await readVersionedGroupStateSnapshotBatch(
             reader,
-            ref,
+            toGroupStateSnapshotSelectors(ref, observedAtEpochMs),
             async (namespace, entry) => await this.toLiveJsonEntryValue(namespace, entry)
         );
         if (batch.read.status === 'stable') {
@@ -314,6 +318,16 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
             }),
             authorityGuard: toGroupStateAuthorityGuard(ref, stored)
         };
+    }
+
+    private async readLivePresenceSessions(
+        ref: GroupRef,
+        observedAtEpochMs: number
+    ): Promise<readonly GroupPresenceSession[]> {
+        const stored = await this.listSelectedJsonEntryValues(
+            toLivePresenceSessionsSelector(`${groupStateGroupStorageKey(ref)}:`, observedAtEpochMs)
+        );
+        return stored.map((entry) => canonicalStoredSession(entry, ref).value);
     }
 
     /** The several-statement read that retries until the aggregate is unchanged around its children. */

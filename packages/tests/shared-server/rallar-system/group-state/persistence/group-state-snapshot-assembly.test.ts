@@ -8,6 +8,7 @@ import {
     groupStatePresenceSummaryStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
+import { validateRuntimeStateReadBatchResult } from '@shared-server/runtime-state/read-batch/validate-runtime-state-read-batch-result.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { AuditStamp, Group, GroupMember } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
@@ -44,7 +45,7 @@ describe('GroupStateRepository persistence', () => {
             code: 'group-state-repository-invariant-corruption'
         });
     });
-    it('fails closed when a batch persistence result repeats an inactive member', async () => {
+    it('fails closed at the store when its batch result repeats an inactive member', async () => {
         const runtime = new DuplicatingInactiveMemberRepository();
         const repository = createTestGroupStateRepository(runtime);
         const ref = groupRef('duplicate-invited-member');
@@ -356,18 +357,21 @@ class DuplicatingInactiveMemberRepository extends FakeRuntimeStateRepository {
         selectors: readonly RuntimeStateReadBatchSelector[]
     ): Promise<readonly RuntimeStateReadBatchSelection[]> {
         const selections = await super.readRuntimeStateBatch(selectors);
-        return selections.map((selection, index) => {
-            const selector = selectors[index];
-            if (selector?.kind !== 'prefix' || selector.namespace !== 'group-state:members') {
-                return selection;
-            }
-            const invitedEntry = selection.entries.find(
-                (entry) => JSON.parse(entry.value).principalId === 'bob'
-            );
-            return invitedEntry
-                ? { ...selection, entries: [...selection.entries, invitedEntry] }
-                : selection;
-        });
+        return validateRuntimeStateReadBatchResult(
+            selectors,
+            selections.map((selection, index) => {
+                const selector = selectors[index];
+                if (selector?.kind !== 'prefix' || selector.namespace !== 'group-state:members') {
+                    return selection;
+                }
+                const invitedEntry = selection.entries.find(
+                    (entry) => JSON.parse(entry.value).principalId === 'bob'
+                );
+                return invitedEntry
+                    ? { ...selection, entries: [...selection.entries, invitedEntry] }
+                    : selection;
+            })
+        );
     }
 }
 

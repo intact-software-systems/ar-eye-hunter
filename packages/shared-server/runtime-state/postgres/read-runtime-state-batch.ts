@@ -1,9 +1,10 @@
 import type { PSqlRows } from '../../postgres/p-sql-sql.ts';
-import {
-    type RuntimeStateReadBatchSelection,
-    type RuntimeStateReadBatchSelector,
-    type RuntimeStateReadBatchVersion,
-    type RuntimeStateVersionedReadBatch
+import type {
+    RuntimeStateReadBatchSelection,
+    RuntimeStateReadBatchSelector,
+    RuntimeStateReadBatchVersion,
+    RuntimeStateStoredValueFields,
+    RuntimeStateVersionedReadBatch
 } from '../read-batch/runtime-state-read-batch.ts';
 import { validateRuntimeStateReadBatchResult } from '../read-batch/validate-runtime-state-read-batch-result.ts';
 import { validateRuntimeStateReadBatchSelectors } from '../read-batch/validate-runtime-state-read-batch-selectors.ts';
@@ -21,12 +22,23 @@ interface PSqlRuntimeStateReadBatchSelector {
     readonly key: string | null;
     readonly keyPrefix: string | null;
     readonly keySuffix: string | null;
+    readonly storedValueContains: RuntimeStateStoredValueFields | null;
+    readonly expiringAfterTimestamp: number | null;
     readonly prefixEnd: string | null;
     readonly reversedSuffix: string | null;
     readonly reversedSuffixEnd: string | null;
 }
 
-const NO_SQL_SELECTOR_BOUNDS = { prefixEnd: null, reversedSuffix: null, reversedSuffixEnd: null } as const;
+const NO_SQL_SELECTOR_FIELDS = {
+    key: null,
+    keyPrefix: null,
+    keySuffix: null,
+    storedValueContains: null,
+    expiringAfterTimestamp: null,
+    prefixEnd: null,
+    reversedSuffix: null,
+    reversedSuffixEnd: null
+} as const;
 
 export interface RuntimeStateReadBatchQuery {
     <Rows extends PSqlRows>(
@@ -37,7 +49,7 @@ export interface RuntimeStateReadBatchQuery {
 
 /**
  * One statement for every selector, returned as one row per selected entry in caller order and C key
- * order (D289): an aggregated JSON document would re-escape every stored value inside one string.
+ * order: an aggregated JSON document would re-escape every stored value inside one string.
  */
 export async function readRuntimeStateBatch(
     sql: RuntimeStateReadBatchQuery,
@@ -50,7 +62,7 @@ export async function readRuntimeStateBatch(
 
 /**
  * The selection with the version of exactly the rows it returned, from the same statement and so the same
- * database snapshot (D289): a value assembled from these rows is current for as long as a probe reports this
+ * database snapshot: a value assembled from these rows is current for as long as a probe reports this
  * version.
  */
 export async function readRuntimeStateBatchWithVersion(
@@ -67,7 +79,7 @@ export async function readRuntimeStateBatchWithVersion(
 
 /**
  * The same selection without the stored values, reduced to the identity of every selected row
- * version (D289): any write of a selected row, a delete and re-insert included, writes a new row
+ * version: any write of a selected row, a delete and re-insert included, writes a new row
  * version, so equal versions mean no selected row was written in between.
  */
 export async function readRuntimeStateBatchVersion(
@@ -98,6 +110,8 @@ async function selectRuntimeStateBatchRows(
              descriptor.value ->> 'key' as store_key,
              descriptor.value ->> 'keyPrefix' as key_prefix,
              descriptor.value ->> 'keySuffix' as key_suffix,
+             descriptor.value -> 'storedValueContains' as stored_value_contains,
+             (descriptor.value ->> 'expiringAfterTimestamp')::numeric as expiring_after_timestamp,
              descriptor.value ->> 'prefixEnd' as prefix_end,
              descriptor.value ->> 'reversedSuffix' as reversed_suffix,
              descriptor.value ->> 'reversedSuffixEnd' as reversed_suffix_end
@@ -131,6 +145,38 @@ async function selectRuntimeStateBatchRows(
         and prefix_entry.store_namespace = selector.store_namespace
         and prefix_entry.store_key collate "C" >= selector.key_prefix
         and prefix_entry.store_key collate "C" < selector.prefix_end
+
+      union all
+
+      select containing_entry.store_key,
+             containing_entry.store_value,
+             containing_entry.expire_at_ts,
+             containing_entry.updated_ts,
+             containing_entry.revision,
+             containing_entry.xmin,
+             containing_entry.ctid
+      from runtime_state_store containing_entry
+      where selector.selector_kind = 'prefix-containing'
+        and containing_entry.store_namespace = selector.store_namespace
+        and containing_entry.store_key collate "C" >= selector.key_prefix
+        and containing_entry.store_key collate "C" < selector.prefix_end
+        and containing_entry.store_value::jsonb @> selector.stored_value_contains
+
+      union all
+
+      select expiring_entry.store_key,
+             expiring_entry.store_value,
+             expiring_entry.expire_at_ts,
+             expiring_entry.updated_ts,
+             expiring_entry.revision,
+             expiring_entry.xmin,
+             expiring_entry.ctid
+      from runtime_state_store expiring_entry
+      where selector.selector_kind = 'prefix-expiring-after'
+        and expiring_entry.store_namespace = selector.store_namespace
+        and expiring_entry.store_key collate "C" >= selector.key_prefix
+        and expiring_entry.store_key collate "C" < selector.prefix_end
+        and extract(epoch from expiring_entry.expire_at_ts) * 1000 > selector.expiring_after_timestamp
 
       union all
 
@@ -175,30 +221,20 @@ function toSqlSelector(
 ): PSqlRuntimeStateReadBatchSelector {
     switch (selector.kind) {
         case 'key':
-            return { ...selector, ...NO_SQL_SELECTOR_BOUNDS, keyPrefix: null, keySuffix: null };
+            return { ...NO_SQL_SELECTOR_FIELDS, ...selector };
         case 'prefix':
-            return {
-                ...selector,
-                ...NO_SQL_SELECTOR_BOUNDS,
-                key: null,
-                keySuffix: null,
-                prefixEnd: toExclusivePrefixEnd(selector.keyPrefix)
-            };
+        case 'prefix-containing':
+        case 'prefix-expiring-after':
+            return { ...NO_SQL_SELECTOR_FIELDS, ...selector, prefixEnd: toExclusivePrefixEnd(selector.keyPrefix) };
         case 'prefix-suffix':
             return {
+                ...NO_SQL_SELECTOR_FIELDS,
                 ...selector,
                 ...toReversedSuffixBounds(selector.keySuffix),
-                key: null,
                 prefixEnd: toExclusivePrefixEnd(selector.keyPrefix)
             };
         case 'suffix':
-            return {
-                ...selector,
-                ...toReversedSuffixBounds(selector.keySuffix),
-                key: null,
-                keyPrefix: null,
-                prefixEnd: null
-            };
+            return { ...NO_SQL_SELECTOR_FIELDS, ...selector, ...toReversedSuffixBounds(selector.keySuffix) };
     }
 }
 

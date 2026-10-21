@@ -92,7 +92,10 @@ export class ClientStateSnapshotRepository extends ClientStateRepositoryReads {
         return snapshots.filter((snapshot): snapshot is ClientSnapshot => snapshot !== undefined);
     }
 
-    /** Every co-member's principal and sessions from one statement, so each principal agrees with its sessions. */
+    /**
+     * Every co-member's principal and connected sessions from one statement, so each principal agrees with its
+     * sessions; the disconnected sessions a principal retains stay in the store.
+     */
     async readAudienceSessionsForPrincipals(
         refs: readonly ClientPrincipalRef[]
     ): Promise<readonly PrincipalAudienceSessions[]> {
@@ -102,7 +105,7 @@ export class ClientStateSnapshotRepository extends ClientStateRepositoryReads {
         }
         const selections = await this.readLiveSelections(uniqueRefs.flatMap((ref, index) => [
             this.toPrincipalSelector(ref, `principal:${index}`),
-            this.toChildSelector(ref, CLIENT_STATE_SESSIONS_NAMESPACE, `sessions:${index}`)
+            this.toConnectedSessionsSelector(ref, `sessions:${index}`)
         ]));
         return uniqueRefs.flatMap((ref, index) => {
             const [stored] = selections[index * 2].entries;
@@ -252,6 +255,16 @@ export class ClientStateSnapshotRepository extends ClientStateRepositoryReads {
         };
     }
 
+    private toConnectedSessionsSelector(ref: ClientPrincipalRef, selectorId: string): RuntimeStateReadBatchSelector {
+        return {
+            selectorId,
+            kind: 'prefix-containing',
+            namespace: CLIENT_STATE_SESSIONS_NAMESPACE,
+            keyPrefix: this.childKeyPrefix(clientStatePrincipalStorageKey(ref)),
+            storedValueContains: CONNECTED_SESSION_FIELDS
+        };
+    }
+
     private toPrincipalSnapshotRead(
         ref: ClientPrincipalRef,
         selections: PrincipalChildSelections
@@ -303,6 +316,11 @@ export class ClientStateSnapshotRepository extends ClientStateRepositoryReads {
 }
 
 const NO_ENTRY_READ: RuntimeStateEntryRead<ClientSession> = { value: undefined, expiredEntry: undefined };
+
+const CONNECTED_SESSION_FIELDS = {
+    status: 'active',
+    disconnectedAtEpochMs: null
+} as const satisfies Partial<Record<keyof ClientSession, string | null>>;
 
 const CLIENT_STATE_NAMESPACES: ReadonlySet<string> = new Set([
     CLIENT_STATE_PRINCIPALS_NAMESPACE,

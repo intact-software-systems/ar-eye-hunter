@@ -6,6 +6,8 @@ export function toRuntimeStateReadBatchSelectedKey(selector: RuntimeStateReadBat
         case 'key':
             return selector.key;
         case 'prefix':
+        case 'prefix-containing':
+        case 'prefix-expiring-after':
         case 'prefix-suffix':
             return selector.keyPrefix;
         case 'suffix':

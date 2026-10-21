@@ -1,6 +1,7 @@
 import type { PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
+import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
 import {
     createDensePrefixSuffixReadBatchFixture,
     createPrefixSuffixReadBatchFixture
@@ -9,8 +10,9 @@ import assert from 'node:assert/strict';
 import { createApiV1TestPGliteDatabaseLifecycle } from './api-v1-test-pglite-database.ts';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
+const FLOOR_MS = Date.parse('2030-01-01T00:00:00.000Z');
 
-Deno.test('PGlite returns dense runtime-state key and prefix selections as one driver row per selected entry (D289)', async () => {
+Deno.test('PGlite returns dense runtime-state key and prefix selections as one driver row per selected entry', async () => {
     const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
     const sql = lifecycle.database;
     const namespace = `read-batch-${crypto.randomUUID()}`;
@@ -91,7 +93,7 @@ Deno.test('PGlite selects a dense workspace\'s prefix-suffix matches exactly as 
     }
 });
 
-Deno.test('PGlite probes a version of exactly the rows a batch reads that every write of one of them moves (D289)', async () => {
+Deno.test('PGlite probes a version of exactly the rows a batch reads that every write of one of them moves', async () => {
     const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
     const namespace = `read-batch-${crypto.randomUUID()}`;
     const repository = new PSqlRuntimeStateRepository(lifecycle.database);
@@ -152,6 +154,51 @@ Deno.test('PGlite probes every selector group in one statement, each group repor
         assert.deepEqual(versions, ownVersions);
         assert.equal(versions[1], undefined);
         assert.deepEqual(await repository.readRuntimeStateBatchVersions([]), []);
+    }
+    finally {
+        await lifecycle.close();
+    }
+});
+
+Deno.test('PGlite filters a prefix range by stored-value containment and an expiry floor as the in-memory selection does', async () => {
+    const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
+    const namespace = `read-batch-${crypto.randomUUID()}`;
+    const driverRowCounts: number[] = [];
+    const seed = new PSqlRuntimeStateRepository(lifecycle.database);
+    const repository = new PSqlRuntimeStateRepository(observeDriverRowCounts(lifecycle.database, driverRowCounts));
+    const selectors: readonly RuntimeStateReadBatchSelector[] = [{
+        selectorId: 'live-sessions',
+        kind: 'prefix-containing',
+        namespace,
+        keyPrefix: 'principal=alice:',
+        storedValueContains: { status: 'active', disconnectedAtEpochMs: null }
+    }, {
+        selectorId: 'unpurged-presence',
+        kind: 'prefix-expiring-after',
+        namespace,
+        keyPrefix: 'presence:',
+        expiringAfterTimestamp: FLOOR_MS
+    }];
+
+    try {
+        for (let index = 0; index < 40; index += 1) {
+            await seed.upsert(namespace, `principal=alice:session=closed-${index}`, '{"status":"disconnected","disconnectedAtEpochMs":2}', FUTURE_MS);
+        }
+        await seed.upsert(namespace, 'principal=alice:session=open', '{"status":"active","disconnectedAtEpochMs":null}', FUTURE_MS);
+        await seed.upsert(namespace, 'principal=alice:session=unset', '{"status":"active"}', FUTURE_MS);
+        await seed.upsert(namespace, 'principal=bob:session=open', '{"status":"active","disconnectedAtEpochMs":null}', FUTURE_MS);
+        await seed.upsert(namespace, 'presence:at-floor', '{}', FLOOR_MS);
+        await seed.upsert(namespace, 'presence:after-floor', '{}', FLOOR_MS + 1);
+
+        const selections = await repository.readRuntimeStateBatch(selectors);
+
+        assert.deepEqual(toSelectionKeys(selections), [
+            { selectorId: 'live-sessions', keys: ['principal=alice:session=open'] },
+            { selectorId: 'unpurged-presence', keys: ['presence:after-floor'] }
+        ]);
+        assert.deepEqual(driverRowCounts, [2]);
+        const stored = (await seed.findAllEntries(namespace)).map((entry) => ({ namespace, entry }));
+        assert.deepEqual(selectRuntimeStateReadBatch(stored, selectors), selections);
     }
     finally {
         await lifecycle.close();

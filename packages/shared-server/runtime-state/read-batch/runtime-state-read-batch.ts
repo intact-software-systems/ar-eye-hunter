@@ -22,6 +22,27 @@ export interface RuntimeStateReadBatchPrefixSuffixSelector {
     readonly keySuffix: string;
 }
 
+/** Scalar fields a stored JSON object holds, compared as Postgres `jsonb @>` compares them. */
+export type RuntimeStateStoredValueFields = Readonly<Record<string, string | number | boolean | null>>;
+
+/** Every key with the prefix whose stored value is a JSON object holding each of the fields. */
+export interface RuntimeStateReadBatchPrefixContainingSelector {
+    readonly selectorId: string;
+    readonly kind: 'prefix-containing';
+    readonly namespace: string;
+    readonly keyPrefix: string;
+    readonly storedValueContains: RuntimeStateStoredValueFields;
+}
+
+/** Every key with the prefix whose row expires after the instant. */
+export interface RuntimeStateReadBatchPrefixExpiringAfterSelector {
+    readonly selectorId: string;
+    readonly kind: 'prefix-expiring-after';
+    readonly namespace: string;
+    readonly keyPrefix: string;
+    readonly expiringAfterTimestamp: number;
+}
+
 /** Every key in the namespace that ends with the suffix, served by an index over the reversed key. */
 export interface RuntimeStateReadBatchSuffixSelector {
     readonly selectorId: string;
@@ -33,6 +54,8 @@ export interface RuntimeStateReadBatchSuffixSelector {
 export type RuntimeStateReadBatchSelector =
     | RuntimeStateReadBatchKeySelector
     | RuntimeStateReadBatchPrefixSelector
+    | RuntimeStateReadBatchPrefixContainingSelector
+    | RuntimeStateReadBatchPrefixExpiringAfterSelector
     | RuntimeStateReadBatchPrefixSuffixSelector
     | RuntimeStateReadBatchSuffixSelector;
 

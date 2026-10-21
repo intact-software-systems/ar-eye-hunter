@@ -71,7 +71,7 @@ describe('runtime-state conditional writes', () => {
         expect(store.retryDelays).toEqual([]);
     });
 
-    it('rejects parsed values that are not valid JSON wire values', async () => {
+    it('parses a stored value without walking it again: the write side owns the JSON-safety check', async () => {
         const repository = new FakeRuntimeStateRepository();
         const store = new ExposedRuntimeStateJsonStore(repository);
         await repository.insertIfAbsent(
@@ -81,9 +81,9 @@ describe('runtime-state conditional writes', () => {
             NEVER_EXPIRE_AT_TIMESTAMP
         );
 
-        await expect(store.read('state', 'non-finite')).rejects.toThrow(
-            'Stored runtime state value must be JSON-safe'
-        );
+        await expect(store.read('state', 'non-finite')).resolves.toEqual({ value: Infinity });
+        await expect(store.insert('state', 'unrepresentable', { toJSON: () => undefined }, NEVER_EXPIRE_AT_TIMESTAMP))
+            .rejects.toThrow('Runtime state value cannot be represented as JSON');
     });
 
     it('serializes once and delegates protected JSON writes conditionally', async () => {

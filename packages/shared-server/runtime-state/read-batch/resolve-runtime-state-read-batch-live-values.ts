@@ -1,7 +1,6 @@
 import type { RuntimeStateEntryValue } from '../runtime-state-json-store.ts';
 import type { RuntimeStateEntry } from '../runtime-state-repository.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from './runtime-state-read-batch.ts';
-import { validateRuntimeStateReadBatchResult } from './validate-runtime-state-read-batch-result.ts';
 
 export type RuntimeStateReadBatchLiveSelection<T> = Readonly<{
     selectorId: string;
@@ -16,15 +15,15 @@ export type RuntimeStateReadBatchLiveResult<T> =
     }>
     | Readonly<{ status: 'changed'; }>;
 
+/** The live values of a batch its repository already validated against these selectors, in the same order. */
 export async function resolveRuntimeStateReadBatchLiveValues<T>(
     selectors: readonly RuntimeStateReadBatchSelector[],
-    input: readonly RuntimeStateReadBatchSelection[],
+    selections: readonly RuntimeStateReadBatchSelection[],
     toLiveEntryValue: (
         namespace: string,
         entry: RuntimeStateEntry
     ) => Promise<RuntimeStateEntryValue<T> | undefined>
 ): Promise<RuntimeStateReadBatchLiveResult<T>> {
-    const selections = validateRuntimeStateReadBatchResult(selectors, input);
     const resolved = await Promise.all(selections.map(async (selection, index) => {
         const entries: RuntimeStateEntryValue<T>[] = [];
         const expiredEntries: RuntimeStateEntry[] = [];
