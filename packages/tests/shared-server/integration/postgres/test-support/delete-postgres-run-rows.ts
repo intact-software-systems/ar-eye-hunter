@@ -20,8 +20,8 @@ export const NO_POSTGRES_RUN_ROWS: PostgresRunRowCounts = {
 };
 
 /**
- * Removes every row a test wrote under its run id, which its scope, sessions and tickets carry in a key, an identity
- * column or the stored value: queued work such as NEW `WS_OUTBOX` rows would otherwise be claimed by a later test.
+ * Removes every row a test wrote under its run id, which its scope (application or workspace), sessions and tickets
+ * carry in a key, an identity column or the stored value: queued work such as NEW `WS_OUTBOX` rows would otherwise be claimed by a later test.
  */
 export async function deletePostgresRunRows(sql: PSqlSql, runId: string): Promise<void> {
     const pattern = `%${runId}%`;
@@ -34,8 +34,8 @@ export async function deletePostgresRunRows(sql: PSqlSql, runId: string): Promis
         where ris_resource like ${pattern} or ris_resource_id like ${pattern} or fk_ext_bank_id like ${pattern}
     `;
     await sql`delete from runtime_state_store where store_key like ${pattern} or store_value like ${pattern}`;
-    await sql`delete from client_state_events where workspace_key like ${pattern}`;
-    await sql`delete from group_state_events where workspace_key like ${pattern}`;
+    await sql`delete from client_state_events where application_id like ${pattern} or workspace_key like ${pattern}`;
+    await sql`delete from group_state_events where application_id like ${pattern} or workspace_key like ${pattern}`;
 }
 
 export async function readPostgresRunRowCounts(sql: PSqlSql, runId: string): Promise<PostgresRunRowCounts> {
@@ -51,8 +51,10 @@ export async function readPostgresRunRowCounts(sql: PSqlSql, runId: string): Pro
                    or fk_ext_bank_id like ${pattern})::int as "resourceInboxResults",
                (select count(*) from runtime_state_store
                 where store_key like ${pattern} or store_value like ${pattern})::int as "runtimeState",
-               (select count(*) from client_state_events where workspace_key like ${pattern})::int as "clientEvents",
-               (select count(*) from group_state_events where workspace_key like ${pattern})::int as "groupEvents"
+               (select count(*) from client_state_events
+                where application_id like ${pattern} or workspace_key like ${pattern})::int as "clientEvents",
+               (select count(*) from group_state_events
+                where application_id like ${pattern} or workspace_key like ${pattern})::int as "groupEvents"
     `;
     if (counts === undefined) {
         throw new Error('The run row count returned no row');

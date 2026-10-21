@@ -5,8 +5,9 @@ import { EntityStatus } from '../ResourceEntry.ts';
 /**
  * The order a claim takes its rows in. A claim without RETRY takes them in creation order, because a store's row
  * identity or key order need not follow arrival; a claim with RETRY takes them in due order. Entries store their
- * creation time to the whole millisecond, and rows created in one millisecond keep arrival order: insertion order in
- * memory and in IndexedDB, row id in PostgreSQL.
+ * creation time to the whole millisecond, so creation order is millisecond order. Rows created in one millisecond tie,
+ * and a tie falls to insertion order in memory and in IndexedDB and to row id in PostgreSQL; row ids from different
+ * connections need not follow arrival, so arrival within one millisecond is not ordered there.
  */
 export type ResourceInboxClaimOrder = 'creation' | 'due';
 
