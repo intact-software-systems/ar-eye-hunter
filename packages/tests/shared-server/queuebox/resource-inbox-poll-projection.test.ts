@@ -67,15 +67,20 @@ describe('resource inbox poll projection', () => {
         expect(await resources.transaction(async (transaction) => await transaction.entries.readStatusAndAttempts(key))).toBeUndefined();
     });
 
-    it('answers the status reads of one turn with one statement of only key, status and attempts', async () => {
+    it('answers the distinct status reads of one turn with one statement returning only ordinal, status and attempts', async () => {
         const capture = createResourceInboxQueryCapture();
         const entries = new PSqlResourceInboxEntryRepository(capture.sql, () => new Date());
         const other = { ...key, resourceId: 'request-2' };
-        expect(await Promise.all([entries.readStatusAndAttempts(key), entries.readStatusAndAttempts(other)])).toEqual([undefined, undefined]);
+        expect(await Promise.all([entries.readStatusAndAttempts(key), entries.readStatusAndAttempts(key), entries.readStatusAndAttempts(other)]))
+            .toEqual([undefined, undefined, undefined]);
         expect(capture.queries).toEqual([{
-            query: 'select ri_topic_id, ri_resource_id, fk_ext_bank_id, ri_status, ri_attempts from resource_inbox ' +
-                'where (fk_ext_bank_id, ri_resource_id, ri_topic_id) in ( select * from unnest( ::text[], ::text[], ::text[] ) ) ' +
-                'and expire_ts >',
+            query: 'select requested.key_ordinal::int as key_ordinal, resource_inbox.ri_status, resource_inbox.ri_attempts ' +
+                'from unnest( ::text[], ::text[], ::text[] ) ' +
+                'with ordinality as requested (context_id, resource_id, topic_id, key_ordinal) ' +
+                'join resource_inbox on resource_inbox.fk_ext_bank_id = requested.context_id ' +
+                'and resource_inbox.ri_resource_id = requested.resource_id ' +
+                'and resource_inbox.ri_topic_id = requested.topic_id ' +
+                'where resource_inbox.expire_ts >',
             values: [['context-1', 'context-1'], ['request-1', 'request-2'], ['AppInbox', 'AppInbox'], expect.any(Date)]
         }]);
     });

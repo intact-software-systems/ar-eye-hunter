@@ -708,7 +708,7 @@ interface StatusTable {
     readonly readStatus: AppInboxResultWaiter.StatusRepository['readStatusAndAttempts'];
 }
 
-/** The Postgres entries repository over a scripted table: its status statement answers the rows present by resource id. */
+/** The Postgres entries repository over a scripted table: its status statement answers present rows by key position. */
 function createStatusTable(): StatusTable {
     const table = { rows: new Map<string, StatusTableRow>(), statements: [] as number[], failing: false };
     function sql<Result>(strings: TemplateStringsArray, ...values: readonly PSqlParameter[]): Promise<Result>;
@@ -720,20 +720,14 @@ function createStatusTable(): StatusTable {
         if (!Object.hasOwn(stringsOrValues, 'raw')) {
             return stringsOrValues;
         }
-        const [contextIds, resourceIds, topicIds] = values as [string[], string[], string[]];
+        const resourceIds = values[1] as string[];
         table.statements.push(resourceIds.length);
         if (table.failing) {
             return Promise.reject(new Error('status statement failed'));
         }
         const rows = resourceIds.flatMap((resourceId, index) => {
             const row = table.rows.get(resourceId);
-            return row === undefined ? [] : [{
-                ri_topic_id: topicIds[index],
-                ri_resource_id: resourceId,
-                fk_ext_bank_id: contextIds[index],
-                ri_status: row.status,
-                ri_attempts: BigInt(row.attempts)
-            }];
+            return row === undefined ? [] : [{ key_ordinal: index + 1, ri_status: row.status, ri_attempts: BigInt(row.attempts) }];
         });
         return Promise.resolve(rows as Result);
     }

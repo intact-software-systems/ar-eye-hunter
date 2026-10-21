@@ -1,4 +1,3 @@
-import { toResourceInboxCompletionKey } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
 import {
     toKeyAsString,
     type EntityStatus,
@@ -22,10 +21,10 @@ const MAX_ROWS_TO_RETURN = 50;
 /** One key's live row decoded, or the corruption that row holds. */
 export type ResourceInboxStatusRead = Either<ResourceInboxRowCorruptionError, ResourceInboxStatusAndAttempts>;
 
-type ResourceInboxStatusRow = Pick<
-    ResourceInboxRow,
-    'ri_topic_id' | 'ri_resource_id' | 'fk_ext_bank_id' | 'ri_status' | 'ri_attempts'
->;
+/** One live row of a status batch, located by the 1-based position of its key in the batch. */
+interface ResourceInboxStatusRow extends Pick<ResourceInboxRow, 'ri_status' | 'ri_attempts'> {
+    readonly key_ordinal: number;
+}
 
 export class PSqlResourceInboxEntryReader {
     private readonly sql: PSqlSql;
@@ -166,7 +165,8 @@ export class PSqlResourceInboxEntryReader {
 
     /**
      * The live status and attempts of each key, in key order, `undefined` without a live row: one statement on the
-     * unique key however many keys. A corrupt row fails only its own key.
+     * unique key however many keys, whose rows carry the key's position instead of the key. A corrupt row fails only
+     * its own key.
      */
     async readStatusesAndAttempts(keys: readonly Key[]): Promise<readonly (ResourceInboxStatusRead | undefined)[]> {
         if (keys.length === 0) {
@@ -174,26 +174,23 @@ export class PSqlResourceInboxEntryReader {
         }
         const now = this.now();
         const rows = await this.sql<ResourceInboxStatusRow[]>`
-            select ri_topic_id, ri_resource_id, fk_ext_bank_id, ri_status, ri_attempts
-            from resource_inbox
-            where (fk_ext_bank_id, ri_resource_id, ri_topic_id) in (
-                select * from unnest(
-                    ${keys.map((key) => key.contextId)}::text[],
-                    ${keys.map((key) => key.resourceId)}::text[],
-                    ${keys.map((key) => key.topicId)}::text[]
-                )
-            )
-              and expire_ts > ${now}
+            select requested.key_ordinal::int as key_ordinal, resource_inbox.ri_status, resource_inbox.ri_attempts
+            from unnest(
+                ${keys.map((key) => key.contextId)}::text[],
+                ${keys.map((key) => key.resourceId)}::text[],
+                ${keys.map((key) => key.topicId)}::text[]
+            ) with ordinality as requested (context_id, resource_id, topic_id, key_ordinal)
+            join resource_inbox
+              on resource_inbox.fk_ext_bank_id = requested.context_id
+             and resource_inbox.ri_resource_id = requested.resource_id
+             and resource_inbox.ri_topic_id = requested.topic_id
+            where resource_inbox.expire_ts > ${now}
         `;
-        const found = new Map(rows.map((row) => [
-            toResourceInboxCompletionKey({
-                topicId: row.ri_topic_id,
-                resourceId: row.ri_resource_id,
-                contextId: row.fk_ext_bank_id
-            }),
-            toResourceInboxStatusRead(row)
-        ]));
-        return keys.map((key) => found.get(toResourceInboxCompletionKey(key)));
+        const reads: (ResourceInboxStatusRead | undefined)[] = keys.map(() => undefined);
+        for (const row of rows) {
+            reads[Number(row.key_ordinal) - 1] = toResourceInboxStatusRead(row);
+        }
+        return reads;
     }
 }
 

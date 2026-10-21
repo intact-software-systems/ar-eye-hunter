@@ -39,6 +39,26 @@ describe('Postgres resource inbox status batch read', () => {
         });
     });
 
+    postgresIt('answers repeated and distinct keys of one turn in order from rows that carry no key columns', async () => {
+        await withStorage(async (storage) => {
+            const reserved = await seedResourceInboxRow(storage.sql, { resourceId: 'reserved', status: EntityStatus.RESERVED, attempts: 1 });
+            const completed = await seedResourceInboxRow(storage.sql, { resourceId: 'completed', status: EntityStatus.COMPLETED, attempts: 2 });
+            const results: object[][] = [];
+            const entries = new PSqlResourceInboxEntryRepository(toResultRecordingSql(storage.sql, results), () => new Date());
+
+            expect(await Promise.all([completed, reserved, completed].map((key) => entries.readStatusAndAttempts(key)))).toEqual([
+                { status: 'COMPLETED', attempts: 2 },
+                { status: 'RESERVED', attempts: 1 },
+                { status: 'COMPLETED', attempts: 2 }
+            ]);
+            expect(results).toHaveLength(1);
+            expect(results[0].map((row) => Object.keys(row).sort())).toEqual([
+                ['key_ordinal', 'ri_attempts', 'ri_status'],
+                ['key_ordinal', 'ri_attempts', 'ri_status']
+            ]);
+        });
+    });
+
     postgresIt('fails only the read of a corrupt row and answers the others of its statement', async () => {
         await withStorage(async (storage) => {
             const healthy = await seedResourceInboxRow(storage.sql, { resourceId: 'healthy', status: EntityStatus.RESERVED, attempts: 1 });
@@ -94,6 +114,25 @@ async function withStorage(verify: (storage: ResourceInboxTestStorage) => Promis
     finally {
         await storage.close();
     }
+}
+
+/** Keeps each template statement's result rows. */
+function toResultRecordingSql(source: PSqlSql, results: object[][]): PSqlSql {
+    function recording<Result>(strings: TemplateStringsArray, ...values: readonly PSqlParameter[]): Promise<Result>;
+    function recording(values: readonly PSqlParameter[]): object;
+    function recording<Result>(
+        stringsOrValues: TemplateStringsArray | readonly PSqlParameter[],
+        ...values: readonly PSqlParameter[]
+    ): Promise<Result> | object {
+        if (!Object.hasOwn(stringsOrValues, 'raw')) {
+            return source(stringsOrValues as readonly PSqlParameter[]);
+        }
+        return source<object[]>(stringsOrValues as TemplateStringsArray, ...values).then((rows) => {
+            results.push([...rows]);
+            return rows as Result;
+        });
+    }
+    return Object.assign(recording, { begin: source.begin.bind(source) });
 }
 
 /** Runs each statement under `explain` instead, keeps the plan text, and answers no rows. */
