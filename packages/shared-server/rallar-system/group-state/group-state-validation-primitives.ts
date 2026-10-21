@@ -1,19 +1,7 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
 
 import type { JsonWireValue } from '../protocol/json-wire-identity.ts';
-
-export type GroupStateValidationValue =
-    | null
-    | boolean
-    | number
-    | string
-    | readonly GroupStateValidationValue[]
-    | GroupStateValidationRecord
-    | undefined;
-
-export interface GroupStateValidationRecord {
-    readonly [key: string]: GroupStateValidationValue;
-}
+import type { ValidationRecord } from '../protocol/validation-value.ts';
 
 export function assertExactKeys(value: object, allowed: readonly string[], label: string): void {
     const allowedSet = new Set(allowed);
@@ -44,11 +32,11 @@ export function requireOneOf<Allowed extends string>(
     }
 }
 
-export function requireRecord(value: unknown, label: string): GroupStateValidationRecord {
+export function requireRecord(value: unknown, label: string): ValidationRecord {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         throw new TypeError(`${label} must be an object`);
     }
-    return value as GroupStateValidationRecord;
+    return value as ValidationRecord;
 }
 
 export function requireNonEmptyString(value: unknown, label: string): asserts value is string {

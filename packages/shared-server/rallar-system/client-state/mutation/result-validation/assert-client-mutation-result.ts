@@ -1,5 +1,6 @@
 import { validateAuthoritativeClientSnapshot } from '@shared/api/authoritative-state-validation.ts';
 
+import type { ValidationRecord, ValidationValue } from '../../../protocol/validation-value.ts';
 import {
     validateClientMutationIdempotencyRecordValue,
     validateClientMutationReceipt
@@ -12,12 +13,7 @@ import {
 } from '../../client-state-contract-validation.ts';
 import { assertClientBoolean } from '../../validation/assert-client-boolean.ts';
 import { rejectClientMutation } from '../../validation/client-mutation-rejection.ts';
-import {
-    decodeClientValidationRecord,
-    requireExactKeys,
-    type ClientValidationRecord,
-    type ClientValidationValue
-} from '../../validation/client-record-validation.ts';
+import { decodeClientValidationRecord, requireExactKeys } from '../../validation/client-record-validation.ts';
 import { requireSha256 } from '../../validation/client-string-validation.ts';
 import { requireTimestamp } from '../../validation/client-timestamp-validation.ts';
 import { validateClientPrincipalRef } from '../../validation/validate-client-principal-ref.ts';
@@ -46,7 +42,7 @@ export function assertClientMutationResult(
     }
 }
 
-function assertReplayResult(value: ClientValidationRecord): void {
+function assertReplayResult(value: ValidationRecord): void {
     requireExactKeys(value, ['outcome', 'receipt', 'snapshot', 'event'], 'Client mutation computed');
     validateClientMutationReceipt(value.receipt, 'Client mutation computed.receipt');
     validateAuthoritativeClientSnapshot(value.snapshot);
@@ -55,7 +51,7 @@ function assertReplayResult(value: ClientValidationRecord): void {
     }
 }
 
-function assertNoOpResult(value: ClientValidationRecord): void {
+function assertNoOpResult(value: ValidationRecord): void {
     assertClientBoolean(value.persistIdempotency, 'Client mutation computed.persistIdempotency');
     requireExactKeys(
         value,
@@ -88,7 +84,7 @@ function assertNoOpResult(value: ClientValidationRecord): void {
     }
 }
 
-function assertIdempotencyConflictResult(value: ClientValidationRecord): void {
+function assertIdempotencyConflictResult(value: ValidationRecord): void {
     requireExactKeys(
         value,
         ['outcome', 'existingCommandHash', 'receivedCommandHash'],
@@ -98,7 +94,7 @@ function assertIdempotencyConflictResult(value: ClientValidationRecord): void {
     requireSha256(value.receivedCommandHash, 'Client mutation computed.receivedCommandHash');
 }
 
-function assertAppliedWriteResult(value: ClientValidationRecord): void {
+function assertAppliedWriteResult(value: ValidationRecord): void {
     requireExactKeys(
         value,
         [
@@ -168,9 +164,9 @@ function assertAppliedWriteResult(value: ClientValidationRecord): void {
 }
 
 function validateConditionalCandidate(
-    value: ClientValidationValue,
+    value: ValidationValue,
     label: string
-): ClientValidationRecord {
+): ValidationRecord {
     const candidate = decodeClientValidationRecord(value, label);
     switch (candidate.operation) {
         case 'none':

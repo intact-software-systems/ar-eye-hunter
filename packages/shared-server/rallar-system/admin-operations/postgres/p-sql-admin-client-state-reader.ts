@@ -6,10 +6,8 @@ import { decodeClientPrincipalStorageKey } from '../../client-state/persistence/
 import { clientStateScopeStorageKeyPrefix } from '../../client-state/persistence/client-state-scope-storage-key.ts';
 import { decodeClientSessionStorageKey } from '../../client-state/persistence/client-state-session-storage-key.ts';
 import { clientStateWorkspaceStorageKey } from '../../client-state/persistence/client-state-workspace-storage-key.ts';
-import {
-    decodeClientValidationRecord,
-    type ClientValidationRecord
-} from '../../client-state/validation/client-record-validation.ts';
+import { decodeClientValidationRecord } from '../../client-state/validation/client-record-validation.ts';
+import type { ValidationRecord } from '../../protocol/validation-value.ts';
 
 import { decodePSqlAdminCount, type PSqlAdminCountRow } from './decode-p-sql-admin-count.ts';
 
@@ -22,7 +20,7 @@ interface RuntimeStateRow {
 
 interface CanonicalClientSessionRow {
     readonly ref: ClientSessionRef;
-    readonly value: ClientValidationRecord;
+    readonly value: ValidationRecord;
 }
 
 export namespace PSqlAdminClientStateReader {
@@ -211,7 +209,7 @@ function isCanonicalClientPrincipalRow(row: RuntimeStateRow): boolean {
 }
 
 function hasMatchingClientPrincipalIdentity(
-    value: ClientValidationRecord,
+    value: ValidationRecord,
     ref: ClientPrincipalRef
 ): boolean {
     return value.applicationId === ref.applicationId &&
@@ -220,7 +218,7 @@ function hasMatchingClientPrincipalIdentity(
 }
 
 function hasMatchingClientSessionIdentity(
-    value: ClientValidationRecord,
+    value: ValidationRecord,
     ref: ClientSessionRef
 ): boolean {
     return hasMatchingClientPrincipalIdentity(value, ref) &&
@@ -232,11 +230,11 @@ function toClientPrincipalIdentity(ref: ClientPrincipalRef): string {
     return JSON.stringify([ref.applicationId, ref.workspaceId, ref.principalId]);
 }
 
-function isFutureEpochMs(value: ClientValidationRecord[string], nowEpochMs: number): boolean {
+function isFutureEpochMs(value: ValidationRecord[string], nowEpochMs: number): boolean {
     return typeof value === 'number' && Number.isFinite(value) && value > nowEpochMs;
 }
 
-function decodeClientRuntimeStateValue(storeValue: string): ClientValidationRecord | undefined {
+function decodeClientRuntimeStateValue(storeValue: string): ValidationRecord | undefined {
     try {
         return decodeClientValidationRecord(JSON.parse(storeValue), 'Admin client runtime state');
     }

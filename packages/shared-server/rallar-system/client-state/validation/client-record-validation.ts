@@ -1,22 +1,10 @@
+import type { ValidationRecord } from '../../protocol/validation-value.ts';
 import { rejectClientMutation } from './client-mutation-rejection.ts';
-
-export type ClientValidationValue =
-    | null
-    | boolean
-    | number
-    | string
-    | readonly ClientValidationValue[]
-    | ClientValidationRecord
-    | undefined;
-
-export interface ClientValidationRecord {
-    readonly [key: string]: ClientValidationValue;
-}
 
 export function decodeClientValidationRecord(
     value: unknown,
     label: string
-): ClientValidationRecord {
+): ValidationRecord {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
         rejectClientMutation(`${label} must be a plain object`);
     }
@@ -24,18 +12,18 @@ export function decodeClientValidationRecord(
     if (prototype !== Object.prototype && prototype !== null) {
         rejectClientMutation(`${label} must be a plain object`);
     }
-    return value as ClientValidationRecord;
+    return value as ValidationRecord;
 }
 
 interface RequireAllowedKeysInput {
-    readonly value: ClientValidationRecord;
+    readonly value: ValidationRecord;
     readonly required: readonly string[];
     readonly allowed: readonly string[];
     readonly label: string;
 }
 
 export function requireExactKeys(
-    value: ClientValidationRecord,
+    value: ValidationRecord,
     keys: readonly string[],
     label: string
 ): void {

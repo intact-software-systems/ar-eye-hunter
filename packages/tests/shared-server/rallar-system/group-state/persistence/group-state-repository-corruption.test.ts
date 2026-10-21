@@ -300,6 +300,48 @@ describe('GroupStateRepository persistence', () => {
         }
     });
 
+    it('rejects stored idempotency text holding negative zero or an overflowed number', async () => {
+        const command = {
+            ...createMutationCommand(),
+            commandId: 'stored-number-receipt-command',
+            requestId: 'stored-number-receipt-command'
+        };
+        const ref = command.aggregateRef;
+        const computed = computeGroupMutation({
+            command,
+            read: createCorruptionMutationRead(),
+            facts: createMutationFacts()
+        });
+        if (computed.outcome !== 'write' || computed.idempotency === null) {
+            throw new Error('Expected an idempotent group write candidate');
+        }
+        const key = groupStateIdempotencyStorageKey(ref, command.requestId);
+        const storedText = JSON.stringify(computed.idempotency);
+        const readStored = async (text: string) => {
+            const runtime = new FakeRuntimeStateRepository();
+            await runtime.upsert('group-state:idempotent', key, text, Number.MAX_SAFE_INTEGER);
+            return await createTestGroupStateRepository(runtime).findIdempotentGroupMutationReceipt(
+                ref,
+                command.requestId
+            );
+        };
+
+        await expect(readStored(storedText)).resolves.toEqual(computed.idempotency);
+        for (
+            const corruptText of [
+                storedText.replace(/"presenceRevision":\d+/, '"presenceRevision":-0'),
+                storedText.replace(/"attemptCount":\d+/, '"attemptCount":-0'),
+                storedText.replace(/"snapshotVersion":\d+/, '"snapshotVersion":1e400')
+            ]
+        ) {
+            expect(corruptText).not.toBe(storedText);
+            await expect(readStored(corruptText)).rejects.toMatchObject({
+                code: 'group-state-repository-invariant-corruption',
+                storageKey: key
+            });
+        }
+    });
+
     it('rejects a guarded-batch receipt descriptor whose identity differs from its slot', () => {
         const command = {
             ...createMutationCommand(),

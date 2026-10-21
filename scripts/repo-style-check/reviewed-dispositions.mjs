@@ -1041,8 +1041,8 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'decodeClientValidationRecord'
     }),
-    // Group-state record admission is the raw-object boundary that seven persisted,
-    // command and fact validators share. It rejects non-objects and arrays before
+    // Group-state record admission is the raw-object boundary that eight persisted,
+    // command, fact and result validators share. It rejects non-objects and arrays before
     // returning the named record vocabulary; renaming it to a decoder would pull
     // every caller into closure, so its one unknown parameter stays reviewed here.
     Object.freeze({

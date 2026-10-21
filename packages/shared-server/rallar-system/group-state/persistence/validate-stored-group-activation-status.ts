@@ -4,14 +4,15 @@ import {
     GROUP_EVIDENCE_WATERMARK_KEYS
 } from '@shared/api/group-lifecycle/activation-status/group-activation-status.ts';
 
+import type { ValidationRecord } from '../../protocol/validation-value.ts';
 import {
     assertExactKeys,
     assertRequiredKeys,
     requireNonNegativeSafeInteger,
     requireOneOf,
-    requireRecord,
-    type GroupStateValidationRecord
+    requireRecord
 } from '../group-state-validation-primitives.ts';
+import { requireUnitRate } from '../require-unit-rate.ts';
 
 /**
  * The stored observed status, validated whole. It lives beside the group
@@ -23,8 +24,8 @@ import {
  * them from drifting.
  */
 export function validateStoredGroupActivationStatus(
-    activationStatus: GroupStateValidationRecord,
-    validateLayoutIdentity: (identity: GroupStateValidationRecord, label: string) => void
+    activationStatus: ValidationRecord,
+    validateLayoutIdentity: (identity: ValidationRecord, label: string) => void
 ): void {
     assertExactKeys(activationStatus, GROUP_ACTIVATION_STATUS_KEYS, 'Stored group activationStatus');
     assertRequiredKeys(activationStatus, GROUP_ACTIVATION_STATUS_KEYS, 'Stored group activationStatus');
@@ -33,13 +34,7 @@ export function validateStoredGroupActivationStatus(
         GROUP_ACTIVATION_CONDITIONS,
         'Stored group activationStatus condition'
     );
-    const coverageRate = activationStatus.coverageRate;
-    if (
-        typeof coverageRate !== 'number' || !Number.isFinite(coverageRate) || Object.is(coverageRate, -0) ||
-        coverageRate < 0 || coverageRate > 1
-    ) {
-        throw new TypeError('Stored group activationStatus coverageRate must be a rate between 0 and 1');
-    }
+    requireUnitRate(activationStatus.coverageRate, 'Stored group activationStatus coverageRate');
     requireNonNegativeSafeInteger(
         activationStatus.formationEpoch,
         'Stored group activationStatus formationEpoch'
