@@ -21,6 +21,7 @@ describe('V1d growth verdict document', () => {
                     churnFailedRunIds: ['churn-004']
                 },
                 workloadIssues: ['the manifest runner ended failed, not passed', 'churn iterations failed: churn-004'],
+                followUps: ['18 app_data_store (postgres tables.app_data_store)'],
                 rows: [
                     {
                         surfaceId: 8,
@@ -45,13 +46,26 @@ describe('V1d growth verdict document', () => {
                         max: null,
                         outcome: 'unclassified',
                         reason: 'no class'
+                    },
+                    {
+                        surfaceId: 18,
+                        surface: 'app_data_store',
+                        reader: 'postgres tables.app_data_store',
+                        growthClass: 'unbounded',
+                        bound: 'none: rows expire only when read',
+                        firstPlateau: { atElapsedMs: 0, value: 0 },
+                        slopePerHour: 0,
+                        max: 0,
+                        outcome: 'unbounded-unexercised',
+                        reason: 'never grew during the run'
                     }
                 ]
             }
         });
 
         expect(markdown).toContain(
-            '**FAIL**: 2 readings: 0 pass, 0 declared, 1 fail, 0 insufficient, 0 no-data, 1 unclassified.'
+            '**FAIL**: 3 readings: 0 pass, 0 declared, 1 fail, 0 insufficient, 0 no-data, 1 unclassified, ' +
+                '1 unbounded-unexercised.'
         );
         expect(markdown).toContain(
             'Workload: the manifest ran from 0.3 min to 79 min of the window (its stream runs inside it); runner failed; ' +
@@ -59,6 +73,9 @@ describe('V1d growth verdict document', () => {
         );
         expect(markdown).toContain('- the manifest runner ended failed, not passed');
         expect(markdown).toContain('- churn iterations failed: churn-004');
+        expect(markdown).toContain(
+            '## Follow-ups: unbounded surfaces the workload never grew\n\n- 18 app_data_store (postgres tables.app_data_store)'
+        );
         expect(markdown).toContain(
             '| 8 | idempotent rows | postgres runtimeState.byNamespace.group-state:idempotent | ttl-within-run | ' +
                 '31 min: 4200 | 12000 | 7200 | ttl 1800 s + sweep 60 s | fail |'

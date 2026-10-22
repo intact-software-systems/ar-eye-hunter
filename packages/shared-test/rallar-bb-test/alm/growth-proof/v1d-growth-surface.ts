@@ -27,9 +27,9 @@ export interface V1dGrowthReader {
 /**
  * How a surface may grow during the run, and the bound its predicate holds it to.
  * - `durable`: one row per entity; its growth may not exceed `rowsPerEntity` per entity the entity reader counts new.
- * - `declared-append-only`: a history the maintainer accepted as declared and reported; its growth is reported, never
+ * - `declared-append-only`: a durable-by-design history R3 declares and reports; its growth is reported, never
  *   passed or failed.
- * - `unbounded`: nothing bounds it; it fails every run until it gets a bound.
+ * - `unbounded`: nothing bounds it; it fails a run in which it grows, and is a follow-up when it never grew.
  */
 export type V1dGrowthClassification =
     | Readonly<{ growthClass: 'count-capped'; cap: number; }>

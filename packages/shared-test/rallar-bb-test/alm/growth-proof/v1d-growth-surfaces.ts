@@ -13,10 +13,8 @@ const RUNTIME_STATE_SWEEP_MS = MINUTE_MS;
 const AL_REPOSITORY_TTL_MS = HOUR_MS;
 const AL_VOLATILE_INBOUND_COUNTED_LIFETIME_MS = 30_000;
 const AL_ORDERING_TRACKS_PER_STORE = 256;
-const AL_DELIVERED_MARKERS_PER_SENDER = 256;
+const AL_DELIVERED_MARKERS_PER_STORE = 256;
 const BROWSER_INBOUND_STORES = 2;
-/** Every other agent of manifest 23's 15 may send to a page. */
-const GROWTH_PROOF_SENDERS_PER_PAGE = 14;
 
 const HEAP: V1dGrowthClassification = { growthClass: 'heap' };
 /** The committed `appInbox.finishedRetentionMs` default; the run keeps it, so these rows grow for its whole length. */
@@ -421,11 +419,11 @@ export const V1D_GROWTH_SURFACES: readonly V1dGrowthSurface[] = [
     {
         id: 49,
         name:
-            'browser delivered markers (256 per sender per inbound store; 2 stores; 14 senders, manifest 23\'s other agents)',
+            'browser delivered markers (one cap of 256 per inbound store, every sender\'s together; 2 stores per page)',
         owner: 'packages/shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts',
         classification: {
             growthClass: 'count-capped',
-            cap: AL_DELIVERED_MARKERS_PER_SENDER * BROWSER_INBOUND_STORES * GROWTH_PROOF_SENDERS_PER_PAGE
+            cap: AL_DELIVERED_MARKERS_PER_STORE * BROWSER_INBOUND_STORES
         },
         readers: [toBrowserReading('rallar', 'alm', 'deliveredMarkers')]
     },

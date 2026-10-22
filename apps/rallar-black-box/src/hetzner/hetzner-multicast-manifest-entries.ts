@@ -65,7 +65,7 @@ export function createDiagnosticRtcMessagesPrincipal50Agent60m20hzTreeEntry(): H
 }
 
 /**
- * The local growth proof's workload: one hour of principal multicast over a tree sized to the cohort, every agent
+ * The local growth proof's workload: 78 minutes of principal multicast over a tree sized to the cohort, every agent
  * reading its stats, the ALM ledger among them, every 30 s while the stream runs.
  */
 export function createRtcMessagesPrincipal15Agent78m2hzTreeEntry(): HetznerDistributedManifestEntry {

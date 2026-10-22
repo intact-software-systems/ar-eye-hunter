@@ -46,7 +46,7 @@ export function computeDurableAssessment(bound: V1dDurableBound, input: V1dGrowt
     };
 }
 
-/** A history the maintainer accepted: its hourly growth and the day it projects at the run's rate, never judged. */
+/** A history R3 declares and reports: its hourly growth and the day it projects at the run's rate, never judged. */
 export function computeDeclaredAppendOnlyAssessment(
     history: string,
     series: readonly V1dGrowthSeriesPoint[]
@@ -68,6 +68,7 @@ export function computeDeclaredAppendOnlyAssessment(
     };
 }
 
+/** An unbounded surface fails when it grows; one flat throughout the run is unexercised, a follow-up. */
 export function computeUnboundedAssessment(
     missingBound: string,
     series: readonly V1dGrowthSeriesPoint[]
@@ -78,12 +79,15 @@ export function computeUnboundedAssessment(
         return toV1dGrowthNoData(bound);
     }
     const slopePerHour = computeV1dGrowthSlopePerHour(series, 0);
+    const grew = max > series[0]!.value;
     return {
         bound,
         firstPlateau: computeV1dGrowthPlateau(series, 0),
         slopePerHour,
         max,
-        outcome: 'fail',
-        reason: `no bound (${missingBound}); grew ${toV1dGrowthRounded(slopePerHour ?? 0)}/h over the run`
+        outcome: grew ? 'fail' : 'unbounded-unexercised',
+        reason: grew
+            ? `no bound (${missingBound}); grew ${toV1dGrowthRounded(slopePerHour ?? 0)}/h over the run`
+            : `no bound (${missingBound}); the workload never grew it, so nothing proves it bounded`
     };
 }
