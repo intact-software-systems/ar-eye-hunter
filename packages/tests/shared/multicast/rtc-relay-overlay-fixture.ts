@@ -17,7 +17,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import * as shared from '@shared/mod.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
-import { toRateLimiter } from '@shared/resilience/Resilience.ts';
+import { toRateLimiter } from '@shared/resilience/rate-limiter.ts';
 import {
     createPassThroughTransportFaultPort,
     type TransportFaultPort

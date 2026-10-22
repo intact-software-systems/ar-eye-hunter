@@ -33,7 +33,7 @@ import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
 import { toCircuitBreaker, type CircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
-import { toRateLimiter, type RateLimiter } from '@shared/resilience/Resilience.ts';
+import { toRateLimiter, type RateLimiter } from '@shared/resilience/rate-limiter.ts';
 import type { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import {

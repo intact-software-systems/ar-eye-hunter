@@ -4,7 +4,7 @@ import { EnqueuedType } from '../api/api-config.ts';
 import type { Unsubscribe } from '../cache/RepositoryInterfaces.ts';
 import { SynchronousNotifications } from '../cache/synchronous-notifications.ts';
 import type { PersistenceSetItemOptions } from '../persistence/PersistenceProvider.ts';
-import { RateLimiter } from '../resilience/Resilience.ts';
+import { RateLimiter } from '../resilience/rate-limiter.ts';
 import {
     computeResourceInboxRelease,
     toValidatedResourceInboxReleases

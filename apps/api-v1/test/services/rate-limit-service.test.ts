@@ -1,5 +1,5 @@
 import { readRateLimiter, readRequestClientKey } from '@shared-server/http/rate-limit-service.ts';
-import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/Resilience.ts';
+import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/rate-limiter.ts';
 import assert from 'node:assert/strict';
 
 Deno.test('readRateLimiter caches a limiter by namespace, key, and policy', async () => {

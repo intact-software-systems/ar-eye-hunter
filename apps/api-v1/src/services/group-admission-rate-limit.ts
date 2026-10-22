@@ -1,6 +1,6 @@
 import { readRateLimiter } from '@shared-server/http/rate-limit-service.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { RateLimiterPolicy } from '@shared/resilience/Resilience.ts';
+import { RateLimiterPolicy } from '@shared/resilience/rate-limiter.ts';
 import type { ApiV1GroupAdmissionConfiguration } from '../configuration/api-v1-configuration.ts';
 
 export type GroupAdmissionRateLimitFamily = 'join-admission' | 'presence-connect';

@@ -21,7 +21,7 @@ import {
 } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
-import { SlidingWindowCounter } from '@shared/resilience/Resilience.ts';
+import { SlidingWindowCounter } from '@shared/resilience/sliding-window-counter.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 afterEach(() => {

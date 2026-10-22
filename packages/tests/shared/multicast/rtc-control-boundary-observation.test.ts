@@ -28,7 +28,7 @@ import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
 import { toCircuitBreaker, type CircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
-import { toRateLimiter, type RateLimiter } from '@shared/resilience/Resilience.ts';
+import { toRateLimiter, type RateLimiter } from '@shared/resilience/rate-limiter.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import {
     createDefaultWebRtcRxStreamerService,

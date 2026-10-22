@@ -21,7 +21,7 @@ import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { toRateLimiter } from '@shared/resilience/Resilience.ts';
+import { toRateLimiter } from '@shared/resilience/rate-limiter.ts';
 import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { createDefaultWebRtcRxStreamerService, WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';

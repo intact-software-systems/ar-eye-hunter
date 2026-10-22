@@ -1,5 +1,5 @@
 import type { CircuitBreaker } from '../resilience/circuit-breaker.ts';
-import type { RateLimiter } from '../resilience/Resilience.ts';
+import type { RateLimiter } from '../resilience/rate-limiter.ts';
 import { Command, NullValueError } from './Command.ts';
 
 export type PullSupplier<T> = (

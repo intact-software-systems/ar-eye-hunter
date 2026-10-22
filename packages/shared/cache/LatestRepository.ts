@@ -1,4 +1,4 @@
-import { RateLimiter } from '../resilience/Resilience.ts';
+import { RateLimiter } from '../resilience/rate-limiter.ts';
 import { startExpiredEntryEviction, type ExpiredEntryEvictionOptions } from './ExpiredEntryEviction.ts';
 import { LatestValue, LatestValueOptions, ValueValidityChecker } from './LatestValue.ts';
 import { PushKeyedValues, type ReadableKeyedValues, type UpdateIfNewerOptions } from './RepositoryInterfaces.ts';

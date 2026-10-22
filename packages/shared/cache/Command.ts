@@ -1,5 +1,5 @@
 import { CircuitBreaker } from '../resilience/circuit-breaker.ts';
-import { RateLimiter } from '../resilience/Resilience.ts';
+import { RateLimiter } from '../resilience/rate-limiter.ts';
 
 export type LoanedValueSupplier<T> = (
     signal?: AbortSignal

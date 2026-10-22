@@ -42,7 +42,7 @@ import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
-import { toRateLimiter } from '@shared/resilience/Resilience.ts';
+import { toRateLimiter } from '@shared/resilience/rate-limiter.ts';
 import type { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import type { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import {
