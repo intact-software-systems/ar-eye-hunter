@@ -136,8 +136,8 @@ plan is removed with its delivery; the PR owns validation and review evidence.
 
 ## Slice 1: Quick Join
 
-Implemented in [PR #697](https://github.com/intact-software-systems/ar-eye-hunter/pull/697), awaiting
-validation and maintainer merge. `rallar.rooms.quickJoin()` admits the caller to a suitable existing
+Implemented and validated in [PR #697](https://github.com/intact-software-systems/ar-eye-hunter/pull/697),
+awaiting maintainer merge. `rallar.rooms.quickJoin()` admits the caller to a suitable existing
 room through one authoritative AppInbox operation. Its REST endpoint is
 `POST …/groups/quick-join/requests/:requestId`; selection accepts `kind`, `q`, and `includeEmpty` with
 the directory's defaults. Candidates are open rooms in the exact scope, excluding existing active
