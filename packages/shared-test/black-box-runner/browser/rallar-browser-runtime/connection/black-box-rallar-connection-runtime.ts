@@ -161,7 +161,8 @@ export class BlackBoxRallarConnectionRuntime {
                 rallar.isConnected()
                     ? {
                         ...rallar.messages.readUsage(),
-                        orderingTracks: rallar.diagnostics.orderingTracks.getOrderingTracks()
+                        orderingTracks: rallar.diagnostics.inboundStoreCounts.getOrderingTracks(),
+                        deliveredMarkers: rallar.diagnostics.inboundStoreCounts.getDeliveredMarkers()
                     }
                     : undefined,
             readCongestionCounters: async () =>

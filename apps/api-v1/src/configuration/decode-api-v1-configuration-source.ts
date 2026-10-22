@@ -173,7 +173,13 @@ const CONFIGURATION_KEYS_BY_PATH: Readonly<Record<string, ReadonlySet<string>>> 
         'reconnectBatchWindowMs',
         'consumerRetentionMs'
     ]),
-    appInbox: new Set(['phaseTiming', 'newLaneConcurrency', 'newLaneHeldRows', 'completionWait']),
+    appInbox: new Set([
+        'phaseTiming',
+        'newLaneConcurrency',
+        'newLaneHeldRows',
+        'completionWait',
+        'finishedRetentionMs'
+    ]),
     'appInbox.completionWait': new Set([
         'maxElapsedMs',
         'retryIntervalMs',
@@ -186,7 +192,7 @@ const CONFIGURATION_KEYS_BY_PATH: Readonly<Record<string, ReadonlySet<string>>> 
     blackBox: new Set(['operatorToken', 'pgliteEvidence']),
     'blackBox.operatorToken': new Set(['mode', 'allowedClientIds', 'ttlMs']),
     'blackBox.pgliteEvidence': new Set(['mode', 'directory', 'pollIntervalMs']),
-    observability: new Set(['timingLogs', 'startupSummary'])
+    observability: new Set(['timingLogs', 'heapSampleIntervalMs', 'startupSummary'])
 };
 
 const ENVIRONMENT_NAME_BY_PATH: Readonly<Record<string, string>> = {
@@ -233,6 +239,7 @@ const ENVIRONMENT_NAME_BY_PATH: Readonly<Record<string, string>> = {
     'appInbox.completionWait.retryIntervalMs': 'RALLAR_APP_INBOX_WAIT_RETRY_INTERVAL_MS',
     'appInbox.completionWait.maxRetryIntervalMs': 'RALLAR_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MS',
     'appInbox.completionWait.jitterRatio': 'RALLAR_APP_INBOX_WAIT_JITTER_RATIO',
+    'appInbox.finishedRetentionMs': 'RALLAR_APP_INBOX_FINISHED_RETENTION_MS',
     'ice.mode': 'RALLAR_ICE_MODE',
     'ice.rateLimit.requests': 'RALLAR_ICE_RATE_LIMIT_REQUESTS',
     'ice.appName': 'METERED_APP_NAME',

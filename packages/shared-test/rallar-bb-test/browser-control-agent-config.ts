@@ -38,6 +38,8 @@ export interface RallarBlackBoxBootstrapConfig {
     readonly heartbeatIntervalMs: number;
     /** Zero turns periodic stats off. */
     readonly statsIntervalMs: number;
+    /** Zero, the default, turns the page's browser census off. */
+    readonly browserCensusIntervalMs: number;
     /** Absent when the agent sends its final report only over the control WebSocket. */
     readonly finalReportUploadUrl?: string;
     readonly environment: string;
@@ -170,12 +172,14 @@ function resolveControlReportingBootstrap(
     fragment: URLSearchParams
 ): Pick<
     RallarBlackBoxBootstrapConfig,
-    'controlToken' | 'heartbeatIntervalMs' | 'statsIntervalMs' | 'finalReportUploadUrl'
+    'controlToken' | 'heartbeatIntervalMs' | 'statsIntervalMs' | 'browserCensusIntervalMs' | 'finalReportUploadUrl'
 > {
     return {
         controlToken: fragment.get('controlToken')?.trim() || resolveLaunchText(sources, 'controlToken'),
         heartbeatIntervalMs: settings.heartbeatIntervalMs ?? RALLAR_BLACK_BOX_CLIENT_DEFAULTS.heartbeatIntervalMs,
         statsIntervalMs: settings.statsIntervalMs ?? RALLAR_BLACK_BOX_CLIENT_DEFAULTS.statsIntervalMs,
+        browserCensusIntervalMs: settings.browserCensusIntervalMs ??
+            RALLAR_BLACK_BOX_CLIENT_DEFAULTS.browserCensusIntervalMs,
         finalReportUploadUrl: resolveLaunchText(sources, 'reportUploadUrl')
     };
 }

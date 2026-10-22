@@ -18,6 +18,7 @@ import {
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { createVolatileALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import type {
     ALInboundRuntimeStores,
     ALVolatileInboundRuntimeStores
@@ -139,7 +140,8 @@ async function createRelayServer(
         nowMs: Date.now,
         orderingTrackTtlMs: 60_000,
         supersedenceTrackTtlMs: 60_000,
-        retention: undefined
+        retention: undefined,
+        maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
     });
     const volatile = createVolatileALInboundRuntimeStores({ namespace: 'server-ws-qbox:relay-lane:volatile' }, undefined);
     const socket = new JsonWebSocketServer();

@@ -6,10 +6,12 @@ import type { ALOutboundCapturedPolicyTiming } from '@shared/alm/outbound/admiss
 
 import type { ClientRestSnapshotReadSelector } from '@shared-server/rallar-system/client-state/snapshot/client-rest-snapshot-read-selector.ts';
 import type { GroupRestSnapshotReadSelector } from '@shared-server/rallar-system/group-state/snapshot/group-rest-snapshot-read-selector.ts';
+import { GroupStateCurrentSnapshotCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-current-snapshot-cache.ts';
 import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/rallar-middleware-runtime.ts';
 import type { RallarAlmReceiptDiagnosticsRecorder } from '@shared-server/rallar-system/observability/alm-receipt-diagnostics.ts';
 import type { AppInboxCompletionNoticeChannel } from '@shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/client-state/test-disconnected-session-retention.ts';
 import type { ApiV1Runtime } from '../../src/composition/api-v1-runtime.ts';
 import type { ApiV1MutationRuntime } from '../../src/composition/create-api-v1-mutation-runtime.ts';
@@ -197,6 +199,21 @@ Deno.test('runtime construction hands one receipt recorder to the middleware and
     assert.equal(handedRecorders[0], handedRecorders[1]);
 });
 
+Deno.test('runtime construction hands the mutation runtime\'s group audience cache to the admin runtime', () => {
+    const groupCurrentSnapshotCache: GroupStateCurrentSnapshotCache = Object.create(GroupStateCurrentSnapshotCache.prototype);
+    const handed: GroupStateCurrentSnapshotCache[] = [];
+    constructApiV1Runtime(createInput([]), {
+        ...createOperations([]),
+        createMutationRuntime: () => ({ ...MUTATION_RUNTIME, groupCurrentSnapshotCache }),
+        requireRuntime: (input) => {
+            handed.push(input.groupCurrentSnapshotCache);
+            return COMPLETE_RUNTIME;
+        }
+    });
+
+    assert.deepEqual(handed, [groupCurrentSnapshotCache]);
+});
+
 Deno.test('runtime construction hands one completion notice channel to the relaying mutation runtime and the middleware', () => {
     const operations = createOperations([]);
     const handed: Array<AppInboxCompletionNoticeChannel | undefined> = [];
@@ -254,6 +271,7 @@ function createInput(events: string[]): CreateApiV1RuntimeInput {
         appInboxOptions: { nowEpochMs: () => 1_000 },
         appInboxNewLaneConcurrency: 1,
         appInboxNewLaneHeldRows: 4,
+        appInboxFinishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,
         groupCapacity: { defaultMaxMembers: 10 },
         groupFormationRecomputeDebounceMs: 250,

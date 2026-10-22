@@ -17,6 +17,7 @@ import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-con
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import {
     createALInboundAdmissionStore,
     type ALInboundAdmissionRead,
@@ -50,7 +51,8 @@ describe('PSql admission optimistic retry', () => {
             orderingTrackTtlMs: 60_000,
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention(),
-            maxOrderingTracks: undefined
+            maxOrderingTracks: undefined,
+            maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
         });
         const message = createInboundMessage('inbound-conflict');
         conflictNextInboundCommit({ storage, namespace, msg: message, nowMs: Date.now });
@@ -82,7 +84,8 @@ describe('PSql admission optimistic retry', () => {
             orderingTrackTtlMs: 60_000,
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention(),
-            maxOrderingTracks: undefined
+            maxOrderingTracks: undefined,
+            maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
         });
         const message = createInboundMessage('inbound-error');
         vi.spyOn(sql, 'begin').mockRejectedValueOnce(new Error('inbound storage unavailable'));
@@ -106,7 +109,11 @@ describe('PSql admission optimistic retry', () => {
     it('retains an inbound apply-time CAS loss for fresh admission after restart', async () => {
         const storage = await createPSqlAdmissionTestStorage();
         const namespace = 'psql-test:inbound:runtime-retry';
-        const options = { namespace, repository: storage.repository };
+        const options = {
+            namespace,
+            repository: storage.repository,
+            maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
+        };
         const stores = createDefaultPSqlALInboundRuntimeStores(options);
         const store = stores.admissionStore;
         const deliveredMessageIds: string[] = [];

@@ -5,9 +5,11 @@ import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-ap
 import type { RallarServerApplication } from '@shared-server/rallar-server/rallar-server-application.ts';
 import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
+import type { GroupStateCurrentSnapshotCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-current-snapshot-cache.ts';
 import { createServerPublishRoomAudienceReader } from '@shared-server/rallar-system/websocket/read-server-publish-room-audience.ts';
 import type { RallarServerWsRouterOptions } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import type { AdminOperationsCacheSizes } from '@shared/api/admin-operations-types.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import type { ApiV1Configuration } from '../configuration/api-v1-configuration.ts';
@@ -24,6 +26,7 @@ import {
 } from '../runtime/runtime-identity.ts';
 import { createRuntimeStateExpiryLifecycle } from '../services/runtime-state-expiry-startup.ts';
 import { startEventLoopLagTiming } from '../services/start-event-loop-lag-timing.ts';
+import { resolveExposedGarbageCollector, startHeapSampleTiming } from '../services/start-heap-sample-timing.ts';
 import {
     createApiTimingSink,
     toApiAppInboxServiceOptions,
@@ -135,19 +138,25 @@ function constructDefaultRallarServer(
     });
 }
 
-/** The process timing sink and its optional event-loop sampler share one lifecycle owner. */
+/** The process timing sink and its optional event-loop and heap samplers share one lifecycle owner. */
 function startConfiguredApiTiming(
     observability: ApiV1Configuration['observability'],
     backgroundTasks: ApiV1BackgroundTaskLifecycle
 ): RallarTimingSink {
     const timing = createApiTimingSink(observability);
+    const timers = createDefaultTimers();
     if (observability.timingLogs) {
-        backgroundTasks.register(startEventLoopLagTiming({
-            timers: createDefaultTimers(),
-            timing,
-            serviceId: myServerId
-        }));
+        backgroundTasks.register(startEventLoopLagTiming({ timers, timing, serviceId: myServerId }));
     }
+    backgroundTasks.register(startHeapSampleTiming({
+        timers,
+        timing: toTimingOnSink(observability, timing),
+        serviceId: myServerId,
+        intervalMs: observability.heapSampleIntervalMs,
+        collectGarbage: resolveExposedGarbageCollector(globalThis),
+        readMemoryUsage: Deno.memoryUsage,
+        readUptimeMs: () => performance.now()
+    }));
     return timing;
 }
 
@@ -224,6 +233,7 @@ function createConfiguredApiV1Runtime(
         appInboxOptions: toApiAppInboxServiceOptions(configuration.appInbox),
         appInboxNewLaneConcurrency: configuration.appInbox.newLaneConcurrency,
         appInboxNewLaneHeldRows: configuration.appInbox.newLaneHeldRows,
+        appInboxFinishedRetentionMs: configuration.appInbox.finishedRetentionMs,
         disconnectedSessionRetentionMs: configuration.clientSessions.disconnectedRetentionMs,
         groupCapacity: {
             defaultMaxMembers: configuration.group.defaultMaxMembers
@@ -287,6 +297,7 @@ function createDefaultApiV1AdminServices(
         readGroupFormationMetrics: runtime.groupFormationMetrics.readMetrics,
         resetGroupFormationMetrics: runtime.groupFormationMetrics.resetMetrics,
         readAlmReceipts: runtime.almReceiptDiagnostics.readDiagnostics,
+        readCacheSizes: () => toApiV1CacheSizes(runtime.groupCurrentSnapshotCache),
         crdtAdminRepository: crdtLogRepository,
         topologyQuery: topology.topologyQuery,
         clientStateService: runtime.clientStateService,
@@ -297,6 +308,12 @@ function createDefaultApiV1AdminServices(
     });
 
     return { admin, crdtAdminMutations };
+}
+
+/** The group audience cache owns the process's one version-probed read-through cache, so both read its size. */
+function toApiV1CacheSizes(groupAudience: Pick<GroupStateCurrentSnapshotCache, 'size'>): AdminOperationsCacheSizes {
+    const groupAudienceSnapshots = groupAudience.size();
+    return { groupAudienceSnapshots, versionProbedReads: groupAudienceSnapshots };
 }
 
 interface DefaultApiV1RouteInstallersInput {

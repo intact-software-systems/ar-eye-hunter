@@ -14,6 +14,7 @@ import {
     InMemoryAdmissionBackend,
     type ALAdmissionMemoryState
 } from '@shared/alm/al-admission-backend.ts';
+import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -1113,7 +1114,8 @@ function createInboundBackedStores(namespace: string, state: ALAdmissionMemorySt
                 orderingTrackTtlMs: 5 * 60_000,
                 supersedenceTrackTtlMs: 5 * 60_000,
                 retention: normalizeALRuntimeStoreRetention(),
-                maxOrderingTracks: undefined
+                maxOrderingTracks: undefined,
+                maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
             }),
             workQueue: backend.workQueue
         }

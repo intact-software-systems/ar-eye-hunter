@@ -11,6 +11,7 @@ import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundMessageAdmission } from '@shared/alm/inbound/al-inbound-message-admission.ts';
 import { decodeALDeadlinedMessage } from '@shared/alm/inbound/al-inbound-message-deadline.ts';
@@ -36,7 +37,8 @@ it.each(['entry', 'observation', 'mutation'] as const)('uses original D after aw
                 orderingTrackTtlMs: 60_000,
                 supersedenceTrackTtlMs: 60_000,
                 retention: normalizeALRuntimeStoreRetention(),
-                maxOrderingTracks: undefined
+                maxOrderingTracks: undefined,
+                maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
             });
             const planner: ALInboundMessageRuntime.Dependencies['planIncomingMessage'] = (msg, source, observations) =>
                 planALMessageHandling(msg, {

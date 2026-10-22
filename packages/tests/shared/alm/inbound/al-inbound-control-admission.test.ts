@@ -16,6 +16,7 @@ import type { ALAdmissionDecoder } from '@shared/alm/al-admission-decoder.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import {
     createALInboundAdmissionStore,
     type ALInboundAdmissionStore,
@@ -62,7 +63,8 @@ function createFixture() {
         orderingTrackTtlMs: 60_000,
         supersedenceTrackTtlMs: 60_000,
         retention: normalizeALRuntimeStoreRetention(),
-        maxOrderingTracks: undefined
+        maxOrderingTracks: undefined,
+        maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
     });
     const stores = { admissionStore, workQueue: state.workQueue };
     return {

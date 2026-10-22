@@ -36,6 +36,7 @@ export interface CreateApiV1AdminOperationUseCasesInput {
     readonly readGroupFormationMetrics: RallarGroupFormationMetricsRecorder['readMetrics'];
     readonly resetGroupFormationMetrics: RallarGroupFormationMetricsRecorder['resetMetrics'];
     readonly readAlmReceipts: RallarAlmReceiptDiagnosticsRecorder['readDiagnostics'];
+    readonly readCacheSizes: ReadAdminRealtime.Options['readCacheSizes'];
     readonly crdtAdminRepository: RallarCrdtAdminReadRepository;
     readonly appAdminInboxService: PruneApiAdminExpiredData.Options['appAdminInbox'];
     readonly crdtAdminMutations: CrdtAdminMutations;
@@ -63,7 +64,8 @@ export function createApiV1AdminOperationUseCases(
         readWebSocketStatus: input.readWebSocketStatus,
         readRtcTopologyMetrics: input.readRtcTopologyMetrics,
         readGroupFormationMetrics: input.readGroupFormationMetrics,
-        readAlmReceipts: input.readAlmReceipts
+        readAlmReceipts: input.readAlmReceipts,
+        readCacheSizes: input.readCacheSizes
     });
     const operations: AdminOperationUseCases = {
         overview: new ReadAdminOverview({

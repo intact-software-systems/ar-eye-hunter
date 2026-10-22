@@ -8,15 +8,18 @@ import { decodeALVolatileSessionReport, decodeCount } from './decode-al-volatile
 export function decodeRallarBlackBoxTestAlmUsage(
     value: unknown
 ): Either<readonly string[], RallarBlackBoxTestAlmUsage> {
-    const orderingTracks = decodeCount(decodeRecord(value).orderingTracks);
+    const record = decodeRecord(value);
+    const orderingTracks = decodeCount(record.orderingTracks);
+    const deliveredMarkers = decodeCount(record.deliveredMarkers);
+    const countIssues = [
+        ...(orderingTracks === undefined ? ['orderingTracks is not a count'] : []),
+        ...(deliveredMarkers === undefined ? ['deliveredMarkers is not a count'] : [])
+    ];
     return decodeALVolatileSessionReport(value).fold(
-        (issues) =>
-            Either.ofLeft<readonly string[], RallarBlackBoxTestAlmUsage>(
-                orderingTracks === undefined ? [...issues, 'orderingTracks is not a count'] : issues
-            ),
+        (issues) => Either.ofLeft<readonly string[], RallarBlackBoxTestAlmUsage>([...issues, ...countIssues]),
         (report) =>
-            orderingTracks === undefined
-                ? Either.ofLeft(['orderingTracks is not a count'])
-                : Either.ofRight({ ...report, orderingTracks })
+            orderingTracks === undefined || deliveredMarkers === undefined
+                ? Either.ofLeft(countIssues)
+                : Either.ofRight({ ...report, orderingTracks, deliveredMarkers })
     );
 }

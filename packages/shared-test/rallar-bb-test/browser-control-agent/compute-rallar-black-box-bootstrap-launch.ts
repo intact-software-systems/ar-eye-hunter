@@ -7,7 +7,9 @@ import {
 } from '../../black-box-runner/fixtures/browser-diagnostics-recording.ts';
 
 import {
+    isRallarBlackBoxBrowserCensusIntervalMs,
     isRallarBlackBoxProviderMode,
+    RALLAR_BLACK_BOX_BROWSER_CENSUS_INTERVAL_EXPECTATION,
     RALLAR_BLACK_BOX_PROVIDER_MODES,
     type RallarBlackBoxProviderMode
 } from '../client-defaults.ts';
@@ -43,6 +45,7 @@ export interface RallarBlackBoxBootstrapLaunchSettings {
     readonly autoConnect: boolean | undefined;
     readonly heartbeatIntervalMs: number | undefined;
     readonly statsIntervalMs: number | undefined;
+    readonly browserCensusIntervalMs: number | undefined;
     readonly transport: RallarBlackBoxBootstrapTransport | undefined;
     readonly routineBrowserDiagnostics: RallarBlackBoxRoutineBrowserDiagnostics | undefined;
     readonly rtcCaptureMode: RtcSignalingDiagnostics.CaptureMode | undefined;
@@ -108,6 +111,14 @@ const AUTH_STORAGE_READER: LaunchSettingReader<AuthSessionStorageKind> = {
     expectation: `one of ${AUTH_STORAGE_KINDS.join(', ')}`,
     toValue: (text) => AUTH_STORAGE_KINDS.find((kind) => kind === text.toLowerCase())
 };
+const BROWSER_CENSUS_INTERVAL_READER: LaunchSettingReader<number> = {
+    setting: 'browserCensusIntervalMs',
+    expectation: RALLAR_BLACK_BOX_BROWSER_CENSUS_INTERVAL_EXPECTATION,
+    toValue: (text) =>
+        NON_NEGATIVE_INTEGER.test(text) && isRallarBlackBoxBrowserCensusIntervalMs(Number(text))
+            ? Number(text)
+            : undefined
+};
 const RUNNER_AGENT_COUNT_READER: LaunchSettingReader<number> = {
     setting: 'runnerAgentCount',
     expectation: 'a positive integer',
@@ -125,6 +136,7 @@ export function computeRallarBlackBoxBootstrapLaunch(
         autoConnect: toLaunchSettingReading(sources, toBooleanReader('autoConnect')),
         heartbeatIntervalMs: toLaunchSettingReading(sources, toIntervalReader('heartbeatIntervalMs')),
         statsIntervalMs: toLaunchSettingReading(sources, toIntervalReader('statsIntervalMs')),
+        browserCensusIntervalMs: toLaunchSettingReading(sources, BROWSER_CENSUS_INTERVAL_READER),
         transport: toLaunchSettingReading(sources, TRANSPORT_READER),
         routineBrowserDiagnostics: toLaunchSettingReading(sources, ROUTINE_BROWSER_DIAGNOSTICS_READER),
         rtcCaptureMode: toCaptureModeLaunchReading(sources),
@@ -144,6 +156,7 @@ export function computeRallarBlackBoxBootstrapLaunch(
             autoConnect: readings.autoConnect.value,
             heartbeatIntervalMs: readings.heartbeatIntervalMs.value,
             statsIntervalMs: readings.statsIntervalMs.value,
+            browserCensusIntervalMs: readings.browserCensusIntervalMs.value,
             transport: readings.transport.value,
             routineBrowserDiagnostics: readings.routineBrowserDiagnostics.value,
             rtcCaptureMode: readings.rtcCaptureMode.value,

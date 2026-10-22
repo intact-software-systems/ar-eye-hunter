@@ -14,6 +14,7 @@ import {
     createTestALOutboundWorkPort
 } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import type {
     ALInboundAdmissionRead,
     ALInboundAdmissionStore,
@@ -104,7 +105,8 @@ describe('PostgreSQL inbound admission', () => {
             orderingTrackTtlMs: 5 * 60_000,
             supersedenceTrackTtlMs: 5 * 60_000,
             retention: normalizeALRuntimeStoreRetention(),
-            maxOrderingTracks: undefined
+            maxOrderingTracks: undefined,
+            maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
         });
 
         const candidate = {
@@ -142,7 +144,8 @@ describe('PostgreSQL inbound admission', () => {
             orderingTrackTtlMs: 5 * 60_000,
             supersedenceTrackTtlMs: 5 * 60_000,
             retention: normalizeALRuntimeStoreRetention(),
-            maxOrderingTracks: undefined
+            maxOrderingTracks: undefined,
+            maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
         });
         const expireAtTimestamp = Date.now() + 60_000;
 

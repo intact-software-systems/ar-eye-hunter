@@ -14,6 +14,7 @@ import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { computeALInboundAdmission } from '@shared/alm/inbound/admission/compute-al-inbound-admission.ts';
+import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import { createALInboundAdmissionStore, type ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
@@ -239,7 +240,8 @@ async function createStores(): Promise<readonly [ALInboundRuntimeStores, ALInbou
                 nowMs: Date.now,
                 ...configuration,
                 backend: firstBackend,
-                maxOrderingTracks: undefined
+                maxOrderingTracks: undefined,
+                maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
             }),
             workQueue: firstBackend.workQueue
         },
@@ -248,7 +250,8 @@ async function createStores(): Promise<readonly [ALInboundRuntimeStores, ALInbou
                 nowMs: Date.now,
                 ...configuration,
                 backend: secondBackend,
-                maxOrderingTracks: undefined
+                maxOrderingTracks: undefined,
+                maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
             }),
             workQueue: secondBackend.workQueue
         }

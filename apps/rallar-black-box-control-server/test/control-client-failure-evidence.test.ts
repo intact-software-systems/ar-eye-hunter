@@ -876,6 +876,8 @@ class ControlClientWire implements RallarBlackBoxControlWebSocket {
             fetch: () => Promise.reject(new Error('This fixture does not upload reports.')),
             heartbeatIntervalMs: 60_000,
             statsIntervalMs: 0,
+            browserCensusIntervalMs: 0,
+            readBrowserCensus: async () => ({}),
             reconnectBaseMs: 600,
             reconnectMaxMs: 5_000,
             maxFrameBytes: RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES

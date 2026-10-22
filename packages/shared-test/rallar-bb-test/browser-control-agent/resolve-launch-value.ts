@@ -25,6 +25,7 @@ export const LAUNCH_ENVIRONMENT_KEYS = {
     controlToken: 'VITE_RALLAR_CONTROL_TOKEN',
     heartbeatIntervalMs: 'VITE_RALLAR_HEARTBEAT_INTERVAL_MS',
     statsIntervalMs: 'VITE_RALLAR_STATS_INTERVAL_MS',
+    browserCensusIntervalMs: 'VITE_RALLAR_BROWSER_CENSUS_INTERVAL_MS',
     reportUploadUrl: 'VITE_RALLAR_REPORT_UPLOAD_URL',
     environment: 'VITE_RALLAR_ENVIRONMENT',
     apiBaseUrl: 'VITE_RALLAR_API_BASE_URL',

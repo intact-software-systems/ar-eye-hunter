@@ -1,5 +1,6 @@
 import type {
     AdminOperationsAlmReceiptDiagnostics,
+    AdminOperationsCacheSizes,
     AdminOperationsRealtimeResponse
 } from '@shared/api/admin-operations-types.ts';
 import type { RallarGroupFormationMetrics } from '@shared/rtc/group-formation-metrics.ts';
@@ -17,6 +18,7 @@ export namespace ReadAdminRealtime {
         readonly readRtcTopologyMetrics: () => object;
         readonly readGroupFormationMetrics: () => RallarGroupFormationMetrics;
         readonly readAlmReceipts: () => AdminOperationsAlmReceiptDiagnostics;
+        readonly readCacheSizes: () => AdminOperationsCacheSizes;
     }
 }
 
@@ -61,6 +63,10 @@ export class ReadAdminRealtime {
             },
             almReceipts: {
                 diagnostics: this.options.readAlmReceipts(),
+                processLocal: true
+            },
+            caches: {
+                ...this.options.readCacheSizes(),
                 processLocal: true
             }
         });

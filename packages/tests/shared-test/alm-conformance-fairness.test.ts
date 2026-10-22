@@ -133,7 +133,8 @@ describe('own-share-under-inbound', () => {
         inbound: { admissions: 26, bytes: 28_800 },
         limits: { ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 20 },
         overloaded: false,
-        orderingTracks: 0
+        orderingTracks: 0,
+        deliveredMarkers: 0
     };
 
     it.each(FAIRNESS_CARRIERS['own-share-under-inbound'])(
@@ -289,7 +290,8 @@ describe('churn-bounded-tracks', () => {
         inbound: { admissions: 300, bytes: 180_000 },
         limits: AL_VOLATILE_SESSION_LIMITS,
         overloaded: false,
-        orderingTracks: 256
+        orderingTracks: 256,
+        deliveredMarkers: 256
     };
 
     it('opens 280 tracks with one send each, paced, and leaves; the receiver then holds exactly the cap of ordering snapshots', async () => {

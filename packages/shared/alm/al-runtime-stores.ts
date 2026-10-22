@@ -15,6 +15,10 @@ import type { ALRuntimeStoreRetentionConfig } from './ALStoreRetention.ts';
 import { DEFAULT_AL_REPOSITORY_TTL_MS, normalizeALRuntimeStoreRetention } from './ALStoreRetention.ts';
 import type { ALCheckpointWriter } from './checkpoint/al-checkpoint-writer.ts';
 import { ALCheckpoint, type ALCheckpointStorage } from './checkpoint/al-checkpoint.ts';
+import {
+    AL_INBOUND_MAX_DELIVERED_MARKERS,
+    type ALInboundDeliveredMarkersReport
+} from './inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import type { ALInboundOrderingTracksReport } from './inbound/admission/evict-al-inbound-ordering-tracks-past-cap.ts';
 import { evictTerminalVolatileInboundMessages } from './inbound/admission/evict-terminal-volatile-inbound-messages.ts';
 import {
@@ -81,6 +85,10 @@ export interface CreateInMemoryALRuntimeStoresInput {
     readonly maxOrderingTracks: number | undefined;
     /** Where an inbound pair states its ordering snapshots (D191); absent where nothing reads the count. */
     readonly reportOrderingTracks?: ALInboundOrderingTracksReport;
+    /** The most delivered markers an inbound pair keeps per sender. */
+    readonly maxDeliveredMarkers: number;
+    /** Where an inbound pair states its delivered markers; absent where nothing reads the count. */
+    readonly reportDeliveredMarkers?: ALInboundDeliveredMarkersReport;
 }
 
 export interface CreateInMemoryALOutboundRuntimeStoresInput<TPrepared> extends CreateInMemoryALRuntimeStoresInput {
@@ -126,6 +134,9 @@ export interface CreateDefaultALRuntimeStoresInput {
     /** Absent, an inbound pair keeps every track until its TTL; only the browser's pairs pass a cap (D191). */
     readonly maxOrderingTracks?: number;
     readonly reportOrderingTracks?: ALInboundOrderingTracksReport;
+    /** Absent, an inbound pair keeps the committed default, `AL_INBOUND_MAX_DELIVERED_MARKERS`. */
+    readonly maxDeliveredMarkers?: number;
+    readonly reportDeliveredMarkers?: ALInboundDeliveredMarkersReport;
 }
 
 const DEFAULT_NAMESPACE = 'al-runtime';
@@ -236,7 +247,9 @@ function toIndexedDbALInboundRuntimeStores(
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
             retention: normalizeALRuntimeStoreRetention(input.retention),
             maxOrderingTracks: input.maxOrderingTracks,
-            reportOrderingTracks: input.reportOrderingTracks
+            reportOrderingTracks: input.reportOrderingTracks,
+            maxDeliveredMarkers: input.maxDeliveredMarkers,
+            reportDeliveredMarkers: input.reportDeliveredMarkers
         }),
         workQueue: backend.workQueue
     };
@@ -418,7 +431,9 @@ function toInMemoryALInboundAdmissionStoreInput(
         supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
         retention: normalizeALRuntimeStoreRetention(input.retention),
         maxOrderingTracks: input.maxOrderingTracks,
-        reportOrderingTracks: input.reportOrderingTracks
+        reportOrderingTracks: input.reportOrderingTracks,
+        maxDeliveredMarkers: input.maxDeliveredMarkers,
+        reportDeliveredMarkers: input.reportDeliveredMarkers
     };
 }
 
@@ -453,7 +468,9 @@ function toDefaultInMemoryInput(
         supersedenceTrackTtlMs: options.supersedenceTrackTtlMs ?? 5 * 60_000,
         retention: options.retention,
         maxOrderingTracks: options.maxOrderingTracks,
-        reportOrderingTracks: options.reportOrderingTracks
+        reportOrderingTracks: options.reportOrderingTracks,
+        maxDeliveredMarkers: options.maxDeliveredMarkers ?? AL_INBOUND_MAX_DELIVERED_MARKERS,
+        reportDeliveredMarkers: options.reportDeliveredMarkers
     };
 }
 

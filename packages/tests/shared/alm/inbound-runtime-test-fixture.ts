@@ -15,6 +15,7 @@ import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backe
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { computeALInboundAdmission } from '@shared/alm/inbound/admission/compute-al-inbound-admission.ts';
+import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import {
     createALInboundAdmissionStore,
     type ALInboundAdmissionRead,
@@ -89,6 +90,10 @@ export interface CreateInboundTestStoresInput {
     readonly maxOrderingTracks?: number;
     /** Hears each count a capped store states after a new track; absent, the store states nothing. */
     readonly reportOrderingTracks?: (tracks: number) => void;
+    /** The store's delivered-marker cap; absent, the committed default both sides run with. */
+    readonly maxDeliveredMarkers?: number;
+    /** Hears each marker count the store states after a new marker; absent, the store states nothing. */
+    readonly reportDeliveredMarkers?: (markers: number) => void;
 }
 
 export interface InboundTestBackendStores {
@@ -119,7 +124,9 @@ export function createInboundTestBackendStores(input: CreateInboundTestStoresInp
                 supersedenceTrackTtlMs: 60_000,
                 retention: normalizeALRuntimeStoreRetention(),
                 maxOrderingTracks: input.maxOrderingTracks,
-                reportOrderingTracks: input.reportOrderingTracks
+                reportOrderingTracks: input.reportOrderingTracks,
+                maxDeliveredMarkers: input.maxDeliveredMarkers ?? AL_INBOUND_MAX_DELIVERED_MARKERS,
+                reportDeliveredMarkers: input.reportDeliveredMarkers
             }),
             workQueue: backend.workQueue
         }

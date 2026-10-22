@@ -185,6 +185,11 @@
             "diagnostics": {
               "capacity": 256
             }
+          },
+          "caches": {
+            "processLocal": true,
+            "groupAudienceSnapshots": "integer",
+            "versionProbedReads": "integer"
           }
         }
       }

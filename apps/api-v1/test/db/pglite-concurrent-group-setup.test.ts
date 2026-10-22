@@ -127,6 +127,7 @@ function createGroupSetupMutation(sql: PGliteSql): ApiV1MutationRuntime {
         },
         appInboxNewLaneConcurrency: 1,
         appInboxNewLaneHeldRows: 4,
+        appInboxFinishedRetentionMs: defaults.appInbox.finishedRetentionMs,
         disconnectedSessionRetentionMs: defaults.clientSessions.disconnectedRetentionMs,
         groupCapacity: { defaultMaxMembers: defaults.group.defaultMaxMembers },
         groupFormationRecomputeDebounceMs: defaults.topology.recompute.formationDebounceMs,

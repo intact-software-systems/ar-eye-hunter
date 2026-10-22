@@ -2308,8 +2308,11 @@ Read routes:
 - `GET /api/admin/operations/queues` returns QueueBox and app-inbox result row
   counts by type/status plus expiry pressure.
 - `GET /api/admin/operations/realtime` returns process-local WebSocket status,
-  RTC topology metrics, and group-formation metrics. Responses include a warning because these metrics
-  are process-local in multi-server deployments.
+  RTC topology metrics, group-formation metrics, the ALM receipt diagnostics (`almReceipts`), and the
+  in-memory cache sizes (`caches.groupAudienceSnapshots`, the groups whose current snapshot the group
+  audience cache keeps, and `caches.versionProbedReads`, the values every version-probed read-through
+  cache keeps). Responses include a warning because these metrics are process-local in multi-server
+  deployments.
 - `GET /api/admin/operations/state` and
   `GET /api/admin/operations/state/apps/:applicationId/workspaces/:workspaceId`
   return client, group, and state-event aggregates.

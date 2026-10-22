@@ -459,7 +459,12 @@ describe('SDK recipe execution across actual control consumers', () => {
     it('publishes an owned RTC child result before the held control root completes', async () => {
         const { page, runtime, events } = createCaptureApplicationRuntime();
         vi.stubGlobal('WebSocket', SimulatedWebSocket);
-        const client = createDefaultRallarBlackBoxControlClient({ runtime, heartbeatIntervalMs: 10_000, statsIntervalMs: 0 });
+        const client = createDefaultRallarBlackBoxControlClient({
+            runtime,
+            heartbeatIntervalMs: 10_000,
+            statsIntervalMs: 0,
+            browserCensusIntervalMs: 0
+        });
         const service = createCaptureController();
         const rootId = 'owned-progress-root';
         client.connect({ url: 'ws://owned-progress.test/control', runId: 'owned-progress', agentId: 'progress-agent', completedCommandIds: [] });

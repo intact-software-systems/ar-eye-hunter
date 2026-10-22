@@ -19,6 +19,41 @@ export interface RallarBlackBoxTestAlmUsage extends ALVolatileSessionReport {
     readonly orderingTracks: number;
 }
 
+export interface RallarBlackBoxIndexedDbStoreCensus {
+    readonly name: string;
+    readonly rows: number;
+}
+
+export interface RallarBlackBoxIndexedDbDatabaseCensus {
+    readonly name: string;
+    readonly version: number;
+    readonly stores: readonly RallarBlackBoxIndexedDbStoreCensus[];
+}
+
+export interface RallarBlackBoxIndexedDbCensus {
+    readonly databases: readonly RallarBlackBoxIndexedDbDatabaseCensus[];
+    /** Databases the page listed but could not count: deleted since the listing, or failing to open or count. */
+    readonly uncounted: readonly string[];
+}
+
+/** Chromium's `performance.memory`, quantized unless the browser runs with `--enable-precise-memory-info`. */
+export interface RallarBlackBoxPageHeap {
+    readonly usedJSHeapSize: number;
+    readonly totalJSHeapSize: number;
+    readonly jsHeapSizeLimit: number;
+}
+
+/**
+ * The page's storage and heap. Two readings can be absent: `indexedDb` where the page has no IndexedDB or no
+ * `indexedDB.databases()` to list it, and `pageHeap` outside Chromium, the one runtime with `performance.memory`.
+ * Chromium without `--enable-precise-memory-info` still answers, but in coarse buckets no heap slope can be read from.
+ */
+export interface RallarBlackBoxBrowserCensus {
+    /** Every database of the page's origin, which the headless worker gives each agent a browser context of its own for. */
+    readonly indexedDb?: RallarBlackBoxIndexedDbCensus;
+    readonly pageHeap?: RallarBlackBoxPageHeap;
+}
+
 export interface RallarBlackBoxTestStatsSnapshot {
     readonly resultRetention: { readonly retainedResults: number; readonly releasedResults: number; };
     readonly eventHistory: RallarBlackBoxEventHistory;
@@ -63,6 +98,11 @@ export interface RallarBlackBoxTestStatsSnapshot {
          */
         congestion?: ALCongestionCounters;
     }>;
+    /**
+     * The page's census, present only in the stats the control client sends every `browserCensusIntervalMs` while the
+     * census is on; absent from every other stats, from the `stats` command's result and from the final report.
+     */
+    readonly browser?: RallarBlackBoxBrowserCensus;
     readonly load?: Readonly<{
         loopCount: number;
         latestLoopCommandId?: string;

@@ -64,6 +64,62 @@ export function createDiagnosticRtcMessagesPrincipal50Agent60m20hzTreeEntry(): H
     });
 }
 
+/**
+ * The local growth proof's workload: one hour of principal multicast over a tree sized to the cohort, every agent
+ * reading its stats, the ALM ledger among them, every 30 s while the stream runs.
+ */
+export function createRtcMessagesPrincipal15Agent60m2hzTreeEntry(): HetznerDistributedManifestEntry {
+    return createManifestEntry({
+        filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[22],
+        title: 'RTC messages principal 15-agent 60m 2 Hz tree',
+        description: 'One principal headless sender multicasts RTC messages at 2 Hz to 14 receivers for 60 minutes ' +
+            'through a forced tree, every agent reading its ALM ledger every 30 s. 2 Hz keeps the hour at 7,200 ' +
+            'frames, inside the 10,000-frame bound the agents enforce on one rtc.stream.',
+        distributedRunId: 'hetzner-rtc-messages-principal-15-agent-60m-2hz-tree',
+        recipes: createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes({
+            participantCount: 15,
+            durationSeconds: 3_600,
+            rateHz: 2,
+            minReceiveRatio: 0.95,
+            group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
+            readyTimeoutMs: 45_000,
+            midStreamStatsIntervalMs: 30_000,
+            stream: {
+                progressEveryMs: 30_000,
+                sampleEvery: 100,
+                drainTimeoutMs: 30_000,
+                maxDroppedFrames: 360,
+                maxP95SendDurationMs: 2_500,
+                maxP99SendDurationMs: 4_000
+            }
+        }),
+        agentCount: 15,
+        profiles: ['rtc', 'messages.rtc', 'principal', 'multicast', 'tree', 'long', 'growth-proof', 'extended'],
+        live: true,
+        targetAgentIds: toControllerAgentIds(15),
+        targetPolicyMode: 'role-map',
+        rolePattern: 'one-sender-many-receivers',
+        mainline: false,
+        diagnostic: false,
+        expectedFailure: false,
+        stress: true,
+        barrier: true,
+        groupAssertions: [],
+        metadata: toMulticastManifestMetadata({
+            topologyProfile: 'tree',
+            treeMeshMinSize: 16,
+            participantCount: 15,
+            senderCount: 1,
+            durationSeconds: 3_600,
+            rateHz: 2,
+            minReceiveRatio: 0.95,
+            receiverExpectedFrames: 7_200,
+            recommendedTerminalTimeoutSeconds: 4_500,
+            catalogProfiles: []
+        })
+    });
+}
+
 export function createDiagnosticRtcMessagesAllPeer50Agent30s20hzTreeEntry(): HetznerDistributedManifestEntry {
     return createManifestEntry({
         filePath:

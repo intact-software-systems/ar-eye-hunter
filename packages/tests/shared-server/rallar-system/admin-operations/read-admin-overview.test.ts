@@ -56,7 +56,8 @@ describe('ReadAdminOverview', () => {
                     },
                     rtcTopology: { metrics: { recomputeCount: 2 }, processLocal: true },
                     groupFormation: { processLocal: true },
-                    almReceipts: { diagnostics: { capacity: 256, messages: [] }, processLocal: true }
+                    almReceipts: { diagnostics: { capacity: 256, messages: [] }, processLocal: true },
+                    caches: { groupAudienceSnapshots: 0, versionProbedReads: 0, processLocal: true }
                 })
         });
 

@@ -169,7 +169,7 @@ export function createBlackBoxRallarDiagnosticsPorts(
             : undefined,
         signalingDiagnostics: (event) => publishBlackBoxRallarSignalingDiagnostic(diagnostics, event),
         storage: (event) => {
-            effects.orderingTracks.observe(event);
+            effects.inboundStoreCounts.observe(event);
             if (almDiagnostics) {
                 publishBlackBoxRallarStorageDiagnostic(diagnostics, event);
             }

@@ -3,7 +3,11 @@ import {
     type RallarBlackBoxRoutineBrowserDiagnostics
 } from '@shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts';
 import { parseEventHistoryLaunch } from '@shared-test/rallar-bb-test/browser-control-agent/parse-event-history-launch.ts';
-import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '@shared-test/rallar-bb-test/client-defaults.ts';
+import {
+    isRallarBlackBoxBrowserCensusIntervalMs,
+    RALLAR_BLACK_BOX_BROWSER_CENSUS_INTERVAL_EXPECTATION,
+    RALLAR_BLACK_BOX_CLIENT_DEFAULTS
+} from '@shared-test/rallar-bb-test/client-defaults.ts';
 import type { RallarBlackBoxEventHistoryPolicy } from '@shared-test/rallar-bb-test/runtime/event-history.ts';
 import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
@@ -50,6 +54,8 @@ export interface HeadlessWorkerConfig {
     /** Absent when the worker inherits the SDK host capture default. */
     readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
     readonly statsIntervalMs?: number;
+    /** Zero, the default, turns every agent page's browser census off. */
+    readonly browserCensusIntervalMs: number;
     readonly heartbeatIntervalMs?: number;
     readonly controlToken?: string;
     readonly controlReadToken?: string;
@@ -296,6 +302,7 @@ function readHeadlessWorkerPageEnvironment(
     | 'routineBrowserDiagnostics'
     | 'rtcCaptureMode'
     | 'statsIntervalMs'
+    | 'browserCensusIntervalMs'
     | 'heartbeatIntervalMs'
 > {
     return {
@@ -328,6 +335,7 @@ function readHeadlessWorkerPageEnvironment(
             (parsed) => parsed.mode
         ),
         statsIntervalMs: optionalPositiveIntegerEnv(env, 'RALLAR_BLACK_BOX_STATS_INTERVAL_MS'),
+        browserCensusIntervalMs: browserCensusIntervalEnv(env),
         heartbeatIntervalMs: optionalPositiveIntegerEnv(env, 'RALLAR_BLACK_BOX_HEARTBEAT_INTERVAL_MS')
     };
 }
@@ -495,6 +503,7 @@ function applyHeadlessWorkerRallarLaunchParams(params: URLSearchParams, input: H
 }
 
 function applyHeadlessWorkerFleetReportingParams(params: URLSearchParams, input: HeadlessWorkerAgentUrlInput): void {
+    params.set('browserCensusIntervalMs', String(input.browserCensusIntervalMs));
     setOptionalParam(
         params,
         'statsIntervalMs',
@@ -665,6 +674,19 @@ function optionalPositiveIntegerEnv(
     const parsed = Number.parseInt(raw, 10);
     if (!Number.isInteger(parsed) || parsed < 1) {
         throw new Error(`${key} must be a positive integer. Received: ${raw}`);
+    }
+    return parsed;
+}
+
+function browserCensusIntervalEnv(env: Readonly<Record<string, string | undefined>>): number {
+    const key = 'RALLAR_BLACK_BOX_BROWSER_CENSUS_INTERVAL_MS';
+    const raw = envValue(env, key);
+    if (!raw) {
+        return RALLAR_BLACK_BOX_CLIENT_DEFAULTS.browserCensusIntervalMs;
+    }
+    const parsed = /^\d+$/.test(raw) ? Number(raw) : Number.NaN;
+    if (!isRallarBlackBoxBrowserCensusIntervalMs(parsed)) {
+        throw new Error(`${key} must be ${RALLAR_BLACK_BOX_BROWSER_CENSUS_INTERVAL_EXPECTATION}. Received: ${raw}`);
     }
     return parsed;
 }

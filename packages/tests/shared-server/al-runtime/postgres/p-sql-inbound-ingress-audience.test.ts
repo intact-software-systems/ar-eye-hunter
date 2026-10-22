@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 
 import { createPSqlALInboundRuntimeStores } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
+import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 
 import {
     createInboundTestMessage,
@@ -18,7 +19,8 @@ it('answers the audience a WS client message was frozen to over PostgreSQL, and 
         namespace: 'psql-ingress-audience',
         orderingTrackTtlMs: 60_000,
         supersedenceTrackTtlMs: 60_000,
-        retention: undefined
+        retention: undefined,
+        maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
     });
     const fixture = createInboundTestRuntime({
         stores,

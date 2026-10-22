@@ -14,6 +14,7 @@ import {
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
+import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { toALOutboundSentMessageKey } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import { captureALOutboundPolicy } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
@@ -33,7 +34,7 @@ vi.mock(import('@shared/alm/inbound/al-inbound-admission-store.ts'), async (impo
     return { ...original, createALInboundAdmissionStore: vi.fn(original.createALInboundAdmissionStore) };
 });
 
-it('constructs the WS server\'s shared inbound store without an ordering-track cap', () => {
+it('constructs the WS server\'s shared inbound store without an ordering-track cap, with its marker cap', () => {
     // Construction issues no statement, so a store that is never read needs no database.
     const sql = {} as PSqlSql;
 
@@ -43,11 +44,12 @@ it('constructs the WS server\'s shared inbound store without an ordering-track c
         namespace: 'server-ws-qbox:uncapped',
         orderingTrackTtlMs: 60_000,
         supersedenceTrackTtlMs: 60_000,
-        retention: undefined
+        retention: undefined,
+        maxDeliveredMarkers: 300
     });
 
     expect(vi.mocked(createALInboundAdmissionStore)).toHaveBeenCalledWith(
-        expect.objectContaining({ maxOrderingTracks: undefined })
+        expect.objectContaining({ maxOrderingTracks: undefined, maxDeliveredMarkers: 300 })
     );
 });
 
@@ -70,7 +72,8 @@ it('forwards enabled timing through the real server factory only to outbound cap
     const enabledName = 'captured-policy-timed';
     configureServerWsQBoxALRuntimeStores(enabledName, {
         repository: storage.repository,
-        capturedPolicyTiming: { createOwner }
+        capturedPolicyTiming: { createOwner },
+        maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
     });
 
     const inbound = resolveServerWsQBoxALInboundRuntimeStores(enabledName);
@@ -95,7 +98,10 @@ it('forwards enabled timing through the real server factory only to outbound cap
     clockSampled = false;
 
     const disabledName = 'captured-policy-untimed';
-    configureServerWsQBoxALRuntimeStores(disabledName, { repository: storage.repository });
+    configureServerWsQBoxALRuntimeStores(disabledName, {
+        repository: storage.repository,
+        maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
+    });
     const disabledOutbound = resolveServerWsQBoxALOutboundRuntimeStores(disabledName);
     const disabled = await seedCapturedPolicyRead(storage, disabledName, disabledOutbound.workQueue);
     await expect(disabledOutbound.admissionStore.readCapturedPolicy(disabled.message, disabled.entry))
