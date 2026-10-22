@@ -31,7 +31,7 @@ export interface CreateApiV1AdminOperationUseCasesInput {
     readonly serviceId: string;
     readonly timing: RallarTimingSink;
     readonly readWebSocketStatus: () => RallarServerWsStatus;
-    readonly readRtcTopologyMetrics: () => object;
+    readonly readRtcTopologyMetrics: ReadAdminRealtime.Options['readRtcTopologyMetrics'];
     readonly resetRtcTopologyMetrics: () => void;
     readonly readGroupFormationMetrics: RallarGroupFormationMetricsRecorder['readMetrics'];
     readonly resetGroupFormationMetrics: RallarGroupFormationMetricsRecorder['resetMetrics'];

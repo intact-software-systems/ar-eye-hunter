@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { ResetAdminMetrics } from '@shared-server/rallar-system/admin-operations/reset-admin-metrics.ts';
 import { emptyGroupFormationMetrics } from '@shared-server/rallar-system/observability/formation-metrics.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
+import { createRtcTopologyAdminMetrics } from './test-support/create-rtc-topology-admin-metrics.ts';
 
 const NOW_EPOCH_MS = 1_700_000_000_000;
 
@@ -10,7 +11,7 @@ describe('ResetAdminMetrics', () => {
     it('resets only the requested metric owner and records explicit timing facts', async () => {
         const events: RallarTimingEvent[] = [];
         const resets: string[] = [];
-        let topologyMetrics = { recomputeCount: 2 };
+        let topologyMetrics = createRtcTopologyAdminMetrics({ topologyUpdateCount: 2 });
         const resetMetrics = new ResetAdminMetrics({
             nowEpochMs: () => NOW_EPOCH_MS,
             serverId: 'test-server',
@@ -19,7 +20,7 @@ describe('ResetAdminMetrics', () => {
                 read: () => topologyMetrics,
                 reset: () => {
                     resets.push('rtc-topology');
-                    topologyMetrics = { recomputeCount: 0 };
+                    topologyMetrics = createRtcTopologyAdminMetrics();
                 }
             },
             groupFormation: {
@@ -44,8 +45,8 @@ describe('ResetAdminMetrics', () => {
             operation: 'metrics.reset',
             status: 'completed',
             changed: true,
-            before: { rtcTopology: { recomputeCount: 2 } },
-            after: { rtcTopology: { recomputeCount: 0 } }
+            before: { rtcTopology: createRtcTopologyAdminMetrics({ topologyUpdateCount: 2 }) },
+            after: { rtcTopology: createRtcTopologyAdminMetrics() }
         });
         expect(events).toHaveLength(1);
         expect(events[0]).toMatchObject({
@@ -63,6 +64,29 @@ describe('ResetAdminMetrics', () => {
                 operationStatus: 'completed'
             }
         });
+    });
+
+    it('reports only the requested category in the before and after snapshots', async () => {
+        const formationMetrics = emptyGroupFormationMetrics();
+        const resetMetrics = new ResetAdminMetrics({
+            nowEpochMs: () => NOW_EPOCH_MS,
+            rtcTopology: {
+                read: () => createRtcTopologyAdminMetrics(),
+                reset: () => {}
+            },
+            groupFormation: {
+                read: () => formationMetrics,
+                reset: () => {}
+            }
+        });
+
+        const result = await resetMetrics.execute({
+            adminSession: createAdminSession(),
+            request: { categories: ['group-formation'] }
+        });
+
+        expect(result.before).toEqual({ groupFormation: formationMetrics });
+        expect(result.after).toEqual({ groupFormation: formationMetrics });
     });
 });
 

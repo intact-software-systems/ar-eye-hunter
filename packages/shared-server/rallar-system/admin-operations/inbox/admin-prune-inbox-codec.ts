@@ -1,26 +1,17 @@
 import {
     ADMIN_PRUNE_EXPIRED_CATEGORIES,
     type AdminPruneExpiredCategory,
-    type AdminPruneExpiredRequest
+    type AdminPruneExpiredCategoryResult,
+    type AdminPruneExpiredRequest,
+    type AdminPruneExpiredResultResponse
 } from '@shared/api/admin-operations-types.ts';
 import type { RallarCrdtJsonValue } from '@shared/crdt/mod.ts';
 
 import type { AdminPruneAppData, AdminPruneCommand } from './admin-prune-command-codec.ts';
 
-export interface AdminPruneEnqueueResult {
-    readonly generatedAtEpochMs: number;
+export interface AdminPruneEnqueueResult extends AdminPruneExpiredResultResponse {
     readonly serverId: string;
     readonly warnings: readonly [];
-    readonly operation: 'maintenance.prune-expired';
-    readonly status: 'dry-run' | 'queued' | 'completed';
-    readonly changed: boolean;
-    readonly jobId: string;
-    readonly results: readonly Readonly<{
-        category: AdminPruneExpiredCategory;
-        expiredRows: number;
-        deletedRows: number;
-        dryRun: boolean;
-    }>[];
 }
 
 export interface AdminPruneNormalizedRequest {
@@ -159,7 +150,7 @@ function readAppData(value: AdminPruneExpiredRequest['appData']): AdminPruneAppD
 
 function decodeAdminPruneCategoryResult(
     value: RallarCrdtJsonValue
-): AdminPruneEnqueueResult['results'][number] {
+): AdminPruneExpiredCategoryResult {
     const result = requireExactRecord(
         value,
         ['category', 'expiredRows', 'deletedRows', 'dryRun'],

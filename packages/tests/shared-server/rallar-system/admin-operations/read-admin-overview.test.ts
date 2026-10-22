@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { ReadAdminOverview } from '@shared-server/rallar-system/admin-operations/read-admin-overview.ts';
+import { createRtcTopologyAdminMetrics } from './test-support/create-rtc-topology-admin-metrics.ts';
 
 const NOW_EPOCH_MS = 1_700_000_000_000;
 
 describe('ReadAdminOverview', () => {
     it('projects one overview from the named admin read use cases', async () => {
+        const topologyMetrics = createRtcTopologyAdminMetrics({ topologyUpdateCount: 2 });
         const readOverview = new ReadAdminOverview({
             nowEpochMs: () => NOW_EPOCH_MS,
             serverId: 'test-server',
@@ -54,7 +56,7 @@ describe('ReadAdminOverview', () => {
                         connectionIds: ['closed-1', 'open-1'],
                         openConnectionIds: ['open-1']
                     },
-                    rtcTopology: { metrics: { recomputeCount: 2 }, processLocal: true },
+                    rtcTopology: { metrics: topologyMetrics, processLocal: true },
                     groupFormation: { processLocal: true },
                     almReceipts: { diagnostics: { capacity: 256, messages: [] }, processLocal: true },
                     caches: { groupAudienceSnapshots: 0, processLocal: true },
@@ -69,6 +71,7 @@ describe('ReadAdminOverview', () => {
             serverId: 'test-server',
             health: { status: 'ok' },
             websocket: { connectionCount: 2, openConnectionCount: 1 },
+            realtime: { topologyMetrics },
             queues: { queuedRows: 4, resultRows: 3, expiredRows: 3 },
             state: { activeSessions: 2, activeGroups: 1 },
             crdt: { documents: 5, updates: 8, snapshots: 2, storedUpdateBytes: 128 },

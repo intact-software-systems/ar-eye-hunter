@@ -4,8 +4,8 @@ import type {
     AdminOperationsRealtimeResponse
 } from '@shared/api/admin-operations-types.ts';
 import type { RallarGroupFormationMetrics } from '@shared/rtc/group-formation-metrics.ts';
+import type { RtcTopologyAdminMetrics } from '@shared/rtc/rtc-topology-admin-metrics.ts';
 
-import { decodeJsonWireValue } from '../protocol/json-wire-identity.ts';
 import type { RallarServerWsStatus } from '../websocket/router/rallar-server-ws-status.ts';
 import type { AdminOperationReadRequest } from './admin-operation-request.ts';
 import { createAdminOperationBaseResponse } from './admin-operation-response.ts';
@@ -15,7 +15,7 @@ export namespace ReadAdminRealtime {
         readonly nowEpochMs: () => number;
         readonly serverId?: string;
         readonly readWebSocketStatus: () => RallarServerWsStatus;
-        readonly readRtcTopologyMetrics: () => object;
+        readonly readRtcTopologyMetrics: () => RtcTopologyAdminMetrics;
         readonly readGroupFormationMetrics: () => RallarGroupFormationMetrics;
         readonly readAlmReceipts: () => AdminOperationsAlmReceiptDiagnostics;
         readonly readCacheSizes: () => AdminOperationsCacheSizes;
@@ -48,10 +48,7 @@ export class ReadAdminRealtime {
             }),
             websocket: toAdminWebSocketReading(this.options.readWebSocketStatus()),
             rtcTopology: {
-                metrics: decodeJsonWireValue(
-                    this.options.readRtcTopologyMetrics(),
-                    'RTC topology metrics'
-                ),
+                metrics: this.options.readRtcTopologyMetrics(),
                 processLocal: true
             },
             groupFormation: {

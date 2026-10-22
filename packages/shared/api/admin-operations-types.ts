@@ -1,6 +1,7 @@
 import type { ALReceiptMode } from '../al-contracts/al-policy.ts';
 import type { ALDeliverySettlement } from '../alm/delivery/al-delivery-lifecycle.ts';
 import type { RallarGroupFormationMetrics } from '../rtc/group-formation-metrics.ts';
+import type { RtcTopologyAdminMetrics } from '../rtc/rtc-topology-admin-metrics.ts';
 import type { GroupTopologyConfigPatch } from './graph-topology-management-types.ts';
 import type { GroupRef } from './group-types.ts';
 import type { StateScope } from './state-types.ts';
@@ -67,7 +68,7 @@ export type AdminOperationsOverviewResponse =
             expiredRows: number;
         }>;
         realtime?: Readonly<{
-            topologyMetrics?: unknown;
+            topologyMetrics: RtcTopologyAdminMetrics;
             groupFormationMetrics?: RallarGroupFormationMetrics;
         }>;
         state?: Readonly<{
@@ -142,7 +143,7 @@ export type AdminOperationsRealtimeResponse =
             openConnectionIds: readonly string[];
         }>;
         rtcTopology: Readonly<{
-            metrics?: unknown;
+            metrics: RtcTopologyAdminMetrics;
             processLocal: boolean;
         }>;
         groupFormation: Readonly<{
@@ -242,13 +243,36 @@ export type AdminPruneExpiredRequest = Readonly<{
     reason?: string;
 }>;
 
-export type AdminOperationResultResponse =
-    & AdminOperationBaseResponse
-    & Readonly<{
-        operation: string;
-        status: AdminOperationResultStatus;
-        changed: boolean;
-        before?: unknown;
-        after?: unknown;
-        results?: readonly unknown[];
-    }>;
+export interface AdminMetricsResetSnapshot {
+    readonly rtcTopology?: RtcTopologyAdminMetrics;
+    readonly groupFormation?: RallarGroupFormationMetrics;
+}
+
+/** `before` and `after` carry exactly the categories the request reset. */
+export interface AdminMetricsResetResultResponse extends AdminOperationBaseResponse {
+    readonly operation: 'metrics.reset';
+    readonly status: 'completed';
+    readonly changed: boolean;
+    readonly before: AdminMetricsResetSnapshot;
+    readonly after: AdminMetricsResetSnapshot;
+}
+
+export type AdminPruneExpiredCategoryResult = Readonly<{
+    category: AdminPruneExpiredCategory;
+    expiredRows: number;
+    deletedRows: number;
+    dryRun: boolean;
+}>;
+
+export interface AdminPruneExpiredResultResponse {
+    readonly generatedAtEpochMs: number;
+    readonly serverId: string;
+    readonly warnings: readonly AdminOperationWarning[];
+    readonly operation: 'maintenance.prune-expired';
+    readonly status: 'dry-run' | 'queued' | 'completed';
+    readonly changed: boolean;
+    readonly jobId: string;
+    readonly results: readonly AdminPruneExpiredCategoryResult[];
+}
+
+export type AdminOperationResultResponse = AdminMetricsResetResultResponse | AdminPruneExpiredResultResponse;
