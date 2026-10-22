@@ -15,18 +15,9 @@ export const ADMIN_PRUNE_EXPIRED_CATEGORIES = [
     'app-data'
 ] as const;
 
-export const ADMIN_OPERATION_RESULT_STATUSES = [
-    'completed',
-    'dry-run',
-    'skipped',
-    'failed'
-] as const;
-
 export type AdminMetricsResetCategory = (typeof ADMIN_METRICS_RESET_CATEGORIES)[number];
 
 export type AdminPruneExpiredCategory = (typeof ADMIN_PRUNE_EXPIRED_CATEGORIES)[number];
-
-export type AdminOperationResultStatus = (typeof ADMIN_OPERATION_RESULT_STATUSES)[number];
 
 export type AdminOperationWarning = Readonly<{
     code: string;
@@ -264,10 +255,8 @@ export type AdminPruneExpiredCategoryResult = Readonly<{
     dryRun: boolean;
 }>;
 
-export interface AdminPruneExpiredResultResponse {
-    readonly generatedAtEpochMs: number;
+export interface AdminPruneExpiredResultResponse extends AdminOperationBaseResponse {
     readonly serverId: string;
-    readonly warnings: readonly AdminOperationWarning[];
     readonly operation: 'maintenance.prune-expired';
     readonly status: 'dry-run' | 'queued' | 'completed';
     readonly changed: boolean;

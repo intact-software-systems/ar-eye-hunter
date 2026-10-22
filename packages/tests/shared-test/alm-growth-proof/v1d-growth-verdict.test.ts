@@ -334,7 +334,7 @@ describe('V1d growth verdict', () => {
 
     it('reports an unbounded surface that never grows as unexercised: a follow-up, neither a pass nor a fail', () => {
         const unbounded: V1dGrowthClassification = { growthClass: 'unbounded', missingBound: 'rows never expire' };
-        const flat = () => toPostgresTable(0);
+        const flat = () => toPostgresTable(3);
         const verdict = computeV1dGrowthVerdict({
             surveyedSurfaceIds: [1],
             surfaces: [toSurface(unbounded)],
@@ -342,9 +342,32 @@ describe('V1d growth verdict', () => {
             samples: toSamples({ postgres: toPoints(30, flat) })
         });
 
-        expect(verdict.rows[0]).toMatchObject({ outcome: 'unbounded-unexercised', max: 0 });
+        expect(verdict.rows[0]).toMatchObject({ outcome: 'unbounded-unexercised', max: 3 });
         expect(verdict.passed).toBe(true);
-        expect(verdict.followUps).toEqual(['1 surface under test (postgres tables.surface_under_test)']);
+        expect(verdict.followUps).toEqual(['1 surface under test (postgres tables.surface_under_test) held at 3']);
+    });
+
+    it('reports an unbounded surface that starts high and falls as unexercised, never a pass', () => {
+        const unbounded: V1dGrowthClassification = { growthClass: 'unbounded', missingBound: 'rows never expire' };
+        const falling = (minute: number) => toPostgresTable(Math.max(5, 40 - Math.round(minute)));
+        const verdict = computeV1dGrowthVerdict({
+            surveyedSurfaceIds: [1],
+            surfaces: [toSurface(unbounded)],
+            run: COMPLETED_RUN,
+            samples: toSamples({ postgres: toPoints(30, falling) })
+        });
+
+        expect(verdict.rows[0]).toMatchObject({ outcome: 'unbounded-unexercised', max: 40 });
+        expect(verdict.rows[0]?.outcome).not.toBe('pass');
+        expect(verdict.followUps).toEqual(['1 surface under test (postgres tables.surface_under_test) held at 40']);
+    });
+
+    it('fails an unbounded surface that rises and then falls back', () => {
+        const unbounded: V1dGrowthClassification = { growthClass: 'unbounded', missingBound: 'rows never expire' };
+        const risesThenFalls = (minute: number) => toPostgresTable(minute < 15 ? Math.round(minute) : 1);
+        const row = computeSingleRow(toSurface(unbounded), toSamples({ postgres: toPoints(30, risesThenFalls) }));
+
+        expect(row).toMatchObject({ outcome: 'fail', max: 15 });
     });
 
     it('fails the verdict when the run recorded no workload outcome', () => {

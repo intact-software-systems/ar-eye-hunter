@@ -39,6 +39,8 @@ it('refuses to finish a reservation after database time advances past its expiry
     expect(endTsParameterIndex).toBeGreaterThanOrEqual(0);
     expect(statement.values[endTsParameterIndex]).toBe(completedAt);
     expect(statement.values.filter((value) => value === completedAt)).toHaveLength(1);
+    const expiryParameterIndex = statement.strings.findIndex((text) => /expire_ts = coalesce\(\s*$/u.test(text));
+    expect(statement.values[expiryParameterIndex]).toBeNull();
 });
 
 it('keeps a retained finish\'s row until the retention expiry it binds', async () => {
@@ -64,7 +66,7 @@ it('keeps a retained finish\'s row until the retention expiry it binds', async (
     if (statement === undefined) {
         throw new Error('Expected the retained reservation finish SQL statement');
     }
-    const expiryParameterIndex = statement.strings.findIndex((text) => /expire_ts =\s*$/u.test(text));
+    const expiryParameterIndex = statement.strings.findIndex((text) => /expire_ts = coalesce\(\s*$/u.test(text));
     expect(expiryParameterIndex).toBeGreaterThanOrEqual(0);
     expect(statement.values[expiryParameterIndex]).toBe(expiresAt);
 });

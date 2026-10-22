@@ -487,7 +487,7 @@ class AtomicDatabase {
             return [toAtomicResultRow(result)];
         }
         if (query.includes('update resource_inbox') && query.includes('ri_status = \'reserved\'')) {
-            return this.finalizeReservation(toAtomicReservationFinish(query, values));
+            return this.finalizeReservation(toAtomicReservationFinish(values));
         }
         throw new Error(`Unexpected raw transaction SQL in atomic test database: ${query}`);
     }
@@ -562,10 +562,9 @@ interface AtomicReservationFinish {
     readonly attempts: number;
 }
 
-function toAtomicReservationFinish(query: string, values: readonly PSqlParameter[]): AtomicReservationFinish {
-    const retained = query.includes('expire_ts = ?');
+function toAtomicReservationFinish(values: readonly PSqlParameter[]): AtomicReservationFinish {
     const [status, completedAt, ...rest] = values;
-    const expiresAt = retained ? rest.shift() : null;
+    const expiresAt = rest.shift();
     const [topicId, resourceId, contextId, attempts] = rest;
     if (
         (status !== EntityStatus.COMPLETED && status !== EntityStatus.FAILED && status !== EntityStatus.NON_RETRYABLE) ||

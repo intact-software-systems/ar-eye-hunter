@@ -298,7 +298,7 @@ function createTransactionSql(
             if (options.failCompletion) {
                 throw new Error('completion-failed');
             }
-            return completeTransactionInbox(state, toTransactionReservationFinish(query, values));
+            return completeTransactionInbox(state, toTransactionReservationFinish(values));
         }
 
         throw new Error(`Unhandled transaction SQL: ${query}`);
@@ -340,9 +340,9 @@ interface TransactionReservationFinish {
     readonly attempts: PSqlParameter;
 }
 
-function toTransactionReservationFinish(query: string, values: readonly PSqlParameter[]): TransactionReservationFinish {
+function toTransactionReservationFinish(values: readonly PSqlParameter[]): TransactionReservationFinish {
     const [status, completedAt, ...rest] = values;
-    const expiresAt = query.includes('expire_ts =') ? rest.shift() ?? null : null;
+    const expiresAt = rest.shift() ?? null;
     const [topicId, resourceId, contextId, attempts] = rest;
     return { status, completedAt, expiresAt, topicId, resourceId, contextId, attempts };
 }

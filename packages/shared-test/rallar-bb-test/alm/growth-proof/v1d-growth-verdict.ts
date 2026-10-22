@@ -74,7 +74,7 @@ export function computeV1dGrowthVerdict(input: V1dGrowthVerdictInput): V1dGrowth
         workloadIssues,
         followUps: rows
             .filter((row) => row.outcome === 'unbounded-unexercised')
-            .map((row) => `${row.surfaceId ?? '-'} ${row.surface} (${row.reader})`),
+            .map((row) => `${row.surfaceId ?? '-'} ${row.surface} (${row.reader}) held at ${row.max}`),
         rows
     };
 }

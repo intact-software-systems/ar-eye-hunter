@@ -77,7 +77,6 @@ export namespace AppCrdtInboxService {
 
     export interface Config {
         readonly serviceId: string;
-        /** How long a finished command's fact and result stay before the expiry sweep removes them. */
         readonly finishedRetentionMs: number;
         readonly timing: RallarTimingSink | undefined;
         readonly appInbox: AppInboxOptions;
