@@ -36,6 +36,7 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { assertGroupPresenceSummaryAppToWsLifecycle } from '../../../../packages/tests/shared-server/rallar-system/app-outbox/postgres/worker-outbox-lifecycle-assertions.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/client-state/test-disconnected-session-retention.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
@@ -246,6 +247,7 @@ Deno.test(
             const groupEvents = new PSqlGroupStateEventRepository(sql);
             const groups = new GroupStateRepository(runtime, groupEvents);
             const groupState = createGroupStateService({
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 readPlannedLayoutRow: () => Promise.resolve(null),
                 readAcceptedLayoutRow: () => Promise.resolve(null),
                 runtimeRepository: runtime,
@@ -263,6 +265,7 @@ Deno.test(
                     resultReader: groups
                 },
                 {
+                    finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                     serviceId: 'pglite-group-service',
                     timing: undefined,
                     options: {
@@ -468,6 +471,7 @@ Deno.test(
             const groupEvents = new PSqlGroupStateEventRepository(sql);
             const groups = new GroupStateRepository(runtime, groupEvents);
             const groupState = createGroupStateService({
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 readPlannedLayoutRow: () => Promise.resolve(null),
                 readAcceptedLayoutRow: () => Promise.resolve(null),
                 runtimeRepository: runtime,
@@ -485,6 +489,7 @@ Deno.test(
                     resultReader: groups
                 },
                 {
+                    finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                     serviceId: 'pglite-summary-fence',
                     timing: undefined,
                     options: {

@@ -35,6 +35,7 @@ import { computeGroupMutationWriteResult, type GroupMutationWriteInput } from '@
 import { TestGroupStateEventStore } from '@shared-test/shared-server/test-group-state-event-store.ts';
 
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { createTestAuthSession } from '../group-state-test-runtime.ts';
 
 type ExpectedTransactionWriter = {
@@ -53,6 +54,7 @@ describe('convergent group and presence state', () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         await new AuthSessionRepository(runtimeRepository).putSession(createTestAuthSession('alice'));
         const service = createGroupStateService({
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             runtimeRepository,
             groupStateEventStore: new TestGroupStateEventStore(),
             serviceId: 'session-store-service',

@@ -30,6 +30,7 @@ import {
     type AppInboxTestDatabase,
     type AppInboxTestDatabaseStage
 } from '../../app-inbox/test-support/app-inbox-test-database.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { authSession } from '../group-state-test-runtime.ts';
 
 const NOW_EPOCH_MS = Date.parse('2026-08-02T00:00:00.000Z');
@@ -157,7 +158,7 @@ function createTransactionBoundaryExecution(
     let wakeCount = 0;
     const transactionWriter = new AppInboxTransactionWriter(
         { database: storage.database, nowEpochMs: () => NOW_EPOCH_MS },
-        { serviceId: 'server-12345678' }
+        { finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS, serviceId: 'server-12345678' }
     );
     const formationMutationEvents: GroupFormationGroupMutationEvent[] = [];
     const handler = new GroupStateInboxHandler({
@@ -224,6 +225,7 @@ async function createTransactionBoundaryGroupStateService(
     const authority = createOwnerAuthority();
     await authSessions.putSession(authority);
     const groupStateService = createGroupStateService({
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         runtimeRepository: storage.runtimeRepository,
         groupStateEventStore: storage.database.groupEventStore,
         serviceId: 'server-12345678',

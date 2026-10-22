@@ -18,6 +18,7 @@ import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fak
 import { createClientStatePhaseTestDriver, failNextClientStateTestOutboxWrite } from '../client-state/client-state-test-runtime.ts';
 import { createAppInboxTestResilience, TestResourceInbox, TestResourceInboxResults } from './test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from './test-support/app-inbox-test-database.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from './test-support/test-app-inbox-finished-retention.ts';
 
 const SCOPE = { applicationId: 'app-1', workspaceId: 'workspace-1' };
 
@@ -113,6 +114,7 @@ describe('AppInbox expired row replacement', () => {
                 passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 2 })
             },
             {
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 serviceId: 'expired-auth-service'
             }
         );
@@ -228,6 +230,7 @@ describe('AppInbox expired row replacement', () => {
                 }
             });
             const groupState = createGroupStateService({
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 runtimeRepository: runtime,
                 groupStateEventStore: database.groupEventStore,
                 serviceId: 'expired-group-service',
@@ -247,6 +250,7 @@ describe('AppInbox expired row replacement', () => {
                     }
                 },
                 {
+                    finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                     serviceId: 'expired-group-service'
                 }
             );

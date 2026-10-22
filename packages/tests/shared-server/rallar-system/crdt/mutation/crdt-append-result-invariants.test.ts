@@ -27,6 +27,7 @@ import {
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_HORIZON_MS, RESOURCE_INBOX_RETRY_PROCESSING_MARGIN_MS } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
     applicationId: 'app-1',
@@ -272,7 +273,7 @@ function appCrdt(): AppCrdtInboxService {
             readCurrentSession: () => Promise.reject(new Error('not read')),
             wakeQueueEngine: () => undefined
         },
-        { serviceId: 'server-1', timing: undefined, appInbox: {} }
+        { finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS, serviceId: 'server-1', timing: undefined, appInbox: {} }
     );
 }
 

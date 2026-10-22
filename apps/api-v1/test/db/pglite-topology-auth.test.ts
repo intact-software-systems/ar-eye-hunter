@@ -46,6 +46,7 @@ import { configureRttRepository } from '@shared/repository/rtt-repository.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import {
     readPGliteDatabaseEpochMs,
@@ -115,6 +116,7 @@ Deno.test(
                 await groupRepository.putMember(member);
             }
             const groupState = createGroupStateService({
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 readPlannedLayoutRow: () => Promise.resolve(null),
                 readAcceptedLayoutRow: () => Promise.resolve(null),
                 runtimeRepository: runtime,
@@ -151,6 +153,7 @@ Deno.test(
                     mutationOwners: requireTopologyMutationOwners(topologyMutationOwners)
                 },
                 {
+                    finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                     serviceId: 'pglite-app-inbox-topology',
                     timing: undefined,
                     options: {
@@ -502,6 +505,7 @@ Deno.test(
                     }
                 },
                 {
+                    finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                     serviceId: 'pglite-app-inbox-topology',
                     options: { nowEpochMs: Date.now }
                 }

@@ -23,6 +23,7 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 
 const EVENT: RallarCrdtAuditEvent = {
     kind: 'erase',
@@ -115,6 +116,7 @@ function createInbox(input: CreateInboxInput): AppCrdtInboxService {
             auditDelivery: input.auditDelivery
         },
         {
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             serviceId: 'server-1',
             timing: undefined,
             appInbox: {}

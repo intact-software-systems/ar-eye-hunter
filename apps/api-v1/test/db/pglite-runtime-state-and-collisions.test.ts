@@ -29,6 +29,7 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
@@ -691,6 +692,7 @@ Deno.test(
                 return await readTopologyConfigMutation(command);
             };
             const groupState = createGroupStateService({
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 readPlannedLayoutRow: () => Promise.resolve(null),
                 readAcceptedLayoutRow: () => Promise.resolve(null),
                 runtimeRepository: runtime,
@@ -708,6 +710,7 @@ Deno.test(
                     mutationOwners: requireTopologyMutationOwners(topologyMutation)
                 },
                 {
+                    finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                     serviceId: 'pglite-topology-cross-target',
                     timing: undefined,
                     options: {

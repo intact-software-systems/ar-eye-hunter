@@ -43,6 +43,8 @@ export interface CreatePostgresAppInboxWorkerServicesInput {
     readonly transactionSql: PSqlSql;
     readonly serviceId: string;
     readonly atEpochMs: number;
+    /** How long a finished command's fact, result, derived outbox rows and idempotency record stay. */
+    readonly finishedRetentionMs: number;
     /** How many distinct-context heads one NEW round claims and computes together, keyed as the API server keys them. */
     readonly newLaneConcurrency: number;
     /** The rows a standing NEW-lane flight holds across passes, as the API server holds them; undefined drains each pass. */
@@ -89,6 +91,7 @@ export function createPostgresAppInboxWorkerServices(
         groupStateEventStore: groupEventStore,
         now: () => input.atEpochMs,
         serviceId: input.serviceId,
+        finishedRetentionMs: input.finishedRetentionMs,
         readPlannedLayoutRow: async () => null,
         readAcceptedLayoutRow: async () => null
     });
@@ -98,7 +101,12 @@ export function createPostgresAppInboxWorkerServices(
         resourceInboxResultsRepository: resourceInboxResults,
         database: input.transactionSql
     };
-    const handlerOptions = { serviceId: input.serviceId, timing: undefined, options: inboxOptions };
+    const handlerOptions = {
+        serviceId: input.serviceId,
+        finishedRetentionMs: input.finishedRetentionMs,
+        timing: undefined,
+        options: inboxOptions
+    };
     const client = new AppClientInboxService(
         { ...inboxDependencies, clientStateService: clientState },
         { ...handlerOptions, disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS }
@@ -171,6 +179,7 @@ function createPostgresAppInboxTopology(composition: CreatePostgresAppInboxTopol
         },
         {
             serviceId: input.serviceId,
+            finishedRetentionMs: input.finishedRetentionMs,
             options: inboxOptions
         }
     );

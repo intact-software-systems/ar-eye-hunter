@@ -13,6 +13,7 @@ import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/stat
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { FUTURE_MS, withPGliteSql } from './pglite-auth-test-harness.ts';
 import {
     applyPGliteGroupMutation,
@@ -313,6 +314,7 @@ Deno.test(
             const authSessionRepository = new AuthSessionRepository(runtime);
             await authSessionRepository.putSession(authority);
             const service = createGroupStateService({
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 readPlannedLayoutRow: () => Promise.resolve(null),
                 readAcceptedLayoutRow: () => Promise.resolve(null),
                 runtimeRepository: runtime,
@@ -411,6 +413,7 @@ Deno.test(
             const authSessionRepository = new AuthSessionRepository(runtime);
             await authSessionRepository.putSession(authority);
             const service = createGroupStateService({
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 readPlannedLayoutRow: () => Promise.resolve(null),
                 readAcceptedLayoutRow: () => Promise.resolve(null),
                 runtimeRepository: runtime,

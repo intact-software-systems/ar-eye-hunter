@@ -16,6 +16,7 @@ import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-sta
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/client-state/test-disconnected-session-retention.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { registerWsRoutes } from '../../src/routes/ws-routes.ts';
@@ -76,6 +77,7 @@ async function createTicketRejectionFixture(sql: PGliteSql): Promise<TicketRejec
             serviceId: 'ticket-binding'
         })
     }, {
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         serviceId: 'ticket-binding',
         disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,
         timing: undefined,

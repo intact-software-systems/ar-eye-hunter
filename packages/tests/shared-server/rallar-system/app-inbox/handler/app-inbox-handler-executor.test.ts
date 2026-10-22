@@ -36,6 +36,7 @@ import {
     toRegisteredHandlerIdentityResource,
     waitForRegisteredHandlerEntry
 } from '../test-support/app-inbox-transaction-test-runtime.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../test-support/test-app-inbox-finished-retention.ts';
 
 describe('AppInboxHandlerExecutor registered handler finalization', () => {
     it('hands a conditional write conflict from the mutation transaction to the lane as a retryable value, not a thrown error with a stack', async () => {
@@ -662,7 +663,7 @@ function createDirectExecutorClaim(
     const timing: RallarTimingEvent[] = [];
     const writer = new AppInboxTransactionWriter(
         { database: harness.database.sql, nowEpochMs },
-        { serviceId: 'server-1' }
+        { finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS, serviceId: 'server-1' }
     );
     const executor = new AppInboxHandlerExecutor(
         {

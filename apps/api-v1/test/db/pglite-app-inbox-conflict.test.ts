@@ -19,6 +19,7 @@ import { computeResourceInboxAttempt } from '@shared/queuebox/resource-inbox/res
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import { createAppInboxQueueMessageFixture } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/create-app-inbox-queue-message-fixture.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { createResourceEntry, withPGliteSql } from './pglite-auth-test-harness.ts';
 
 for (const owner of ['handler', 'retry-finalizer'] as const) {
@@ -60,6 +61,7 @@ for (const owner of ['handler', 'retry-finalizer'] as const) {
             const completionInput = {
                 entry,
                 completedAtEpochMs,
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 status: EntityStatus.COMPLETED,
                 durableResult: { accepted: true }
             } as const;
@@ -95,13 +97,16 @@ for (const owner of ['handler', 'retry-finalizer'] as const) {
             };
             const operation = owner === 'handler'
                 ? () =>
-                    new AppInboxTransactionWriter({ database: sql, nowEpochMs: Date.now }, { serviceId: 'conflict-test' })
+                    new AppInboxTransactionWriter({ database: sql, nowEpochMs: Date.now }, {
+                        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+                        serviceId: 'conflict-test'
+                    })
                         .writeComputedMutation(context, completion, async (transaction) => {
                             await transaction`update resource_inbox set ri_resource = 'uncommitted'
                             where ri_resource_id = ${dependent.key.resourceId}`;
                         })
                 : () =>
-                    createAppInboxRetryFinalizer({ database: sql })({
+                    createAppInboxRetryFinalizer({ finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS, database: sql })({
                         entry,
                         processingAttempts: 1,
                         reservationAttempt: 2,

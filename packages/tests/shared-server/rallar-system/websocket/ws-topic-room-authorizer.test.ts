@@ -38,6 +38,7 @@ import { findGroupStateSnapshotByRef } from '@shared/repository/group-state-snap
 import { configureTestCacheRepositories } from '../../../configure-test-cache-repositories.ts';
 import { createTestGroup } from '../../../create-test-group.ts';
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 
 describe('createGroupRoomWsAuthorizer', () => {
     afterEach(() => {
@@ -469,6 +470,7 @@ describe('createGroupRoomWsAuthorizer', () => {
         ).toMatchObject({ status: 'applied' });
 
         const durableService = createGroupStateService({
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             runtimeRepository,
             groupStateEventStore: runtimeRepository.groupStateEventStore,
             serviceId: 'ws-room-authorizer-test',

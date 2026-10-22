@@ -51,6 +51,7 @@ import { TestWebSocket } from '../../../shared/websocket/test-web-socket.ts';
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { TestResourceInbox, TestResourceInboxResults } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase, type AppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import {
     createAutoAuthorizingClientStateService,
     processAppInbox,
@@ -428,7 +429,7 @@ describe('client snapshot provenance computation', () => {
         const computed = computeClientMutationOperation({
             command,
             read: emptyRead(command),
-            completionFacts: { entry: completionEntry, completedAtEpochMs: 8_000 },
+            completionFacts: { entry: completionEntry, completedAtEpochMs: 8_000, finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS },
             lifecycle: undefined
         });
 
@@ -542,7 +543,11 @@ function createProducer(options: { readonly collideOnRequestId?: string; readonl
         resourceInboxResultsRepository: results,
         database,
         clientStateService: clientState
-    }, { serviceId: 'producer-server', disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS });
+    }, {
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+        serviceId: 'producer-server',
+        disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
+    });
     return { repository, database, service, reader, state, clientState, now: Date.now() };
 }
 

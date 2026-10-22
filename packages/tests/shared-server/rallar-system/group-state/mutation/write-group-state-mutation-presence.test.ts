@@ -11,6 +11,7 @@ import {
 import { toSessionPurgeAfterEpochMs } from '@shared-server/rallar-system/presence/session-expiry.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { createTestGroupStateRuntime, createTestGroupStateService } from '../group-state-test-runtime.ts';
 import { ApplyingGuardedBatchRepository, OrderedGroupEventStore } from './group-mutation-test-runtime.ts';
 
@@ -109,7 +110,7 @@ describe('GroupStateService guarded presence batch', () => {
                     value: JSON.stringify(admission.value),
                     expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
                 },
-                exactReceiptEffect(ref, 'presence-update-connect', connectIdempotency)
+                exactReceiptEffect(ref, 'presence-update-connect', connectIdempotency, nowEpochMs + TEST_APP_INBOX_FINISHED_RETENTION_MS)
             ]
         });
 
@@ -155,7 +156,14 @@ describe('GroupStateService guarded presence batch', () => {
                         presence.value.disconnectedAtEpochMs
                     )
                 },
-                effects: [exactReceiptEffect(ref, 'presence-update-heartbeat', heartbeatIdempotency)]
+                effects: [
+                    exactReceiptEffect(
+                        ref,
+                        'presence-update-heartbeat',
+                        heartbeatIdempotency,
+                        nowEpochMs + TEST_APP_INBOX_FINISHED_RETENTION_MS
+                    )
+                ]
             }
         ]);
         expect(runtime.transactionOrder).toEqual(['batch', 'event', 'commit']);
@@ -257,7 +265,8 @@ describe('GroupStateService guarded presence batch', () => {
 function exactReceiptEffect(
     ref: GroupRef,
     requestId: string,
-    value: GroupMutationIdempotencyRecord
+    value: GroupMutationIdempotencyRecord,
+    expireAtTimestamp: number
 ) {
     return {
         effectId: 'receipt',
@@ -265,7 +274,7 @@ function exactReceiptEffect(
         namespace: 'group-state:idempotent',
         key: groupStateIdempotencyStorageKey(ref, requestId),
         value: JSON.stringify(value),
-        expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+        expireAtTimestamp
     } as const;
 }
 

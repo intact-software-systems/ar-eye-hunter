@@ -14,6 +14,7 @@ import type { AuditStamp, GroupMember, GroupRef, GroupSnapshot } from '@shared/a
 import type { StateScope } from '@shared/api/state-types.ts';
 
 import { createTestGroup } from '../../../create-test-group.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { createRuntimeStatePostgresSql } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 import {
     deletePostgresRunRows,
@@ -95,6 +96,7 @@ function createStrictListService(
         maxEntries: 16
     });
     const durable = createGroupStateService({
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         runtimeRepository,
         groupStateEventStore,
         serviceId: 'strict-group-list-test',

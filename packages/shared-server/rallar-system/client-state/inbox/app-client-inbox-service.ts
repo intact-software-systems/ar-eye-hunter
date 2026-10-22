@@ -76,6 +76,8 @@ export namespace AppClientInboxService {
 
     export interface Config {
         readonly serviceId: string;
+        /** How long a finished command's fact and result stay before the expiry sweep removes them. */
+        readonly finishedRetentionMs: number;
         /** How long a session that ended keeps its row before the runtime-state expiry sweep removes it. */
         readonly disconnectedSessionRetentionMs: number;
         readonly timing?: RallarTimingSink;
@@ -114,6 +116,7 @@ export class AppClientInboxService {
             resultRepository: dependencies.resourceInboxResultsRepository,
             database: dependencies.database,
             serviceId: config.serviceId,
+            finishedRetentionMs: config.finishedRetentionMs,
             timing: config.timing,
             options: config.options
         });
@@ -132,7 +135,8 @@ export class AppClientInboxService {
             mutationTiming: { sink: config.timing, serviceId: config.serviceId },
             wakeQueue: config.wakeOwningQueue,
             serviceId: config.serviceId,
-            disconnectedSessionRetentionMs: config.disconnectedSessionRetentionMs
+            disconnectedSessionRetentionMs: config.disconnectedSessionRetentionMs,
+            finishedRetentionMs: config.finishedRetentionMs
         });
         this.registerClientStateMessages();
         this.handlers.assertRegistrationComplete(CLIENT_STATE_INBOX_REGISTRATION_TYPES);

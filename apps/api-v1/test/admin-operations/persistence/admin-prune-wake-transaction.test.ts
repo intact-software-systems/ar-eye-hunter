@@ -9,6 +9,7 @@ import { toError } from '@shared/resilience/to-error.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { createApiAdminInboxService } from '../../../src/admin-operations/create-api-admin-inbox-service.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestQueueResilience } from '../../api-v1-test-queue-resilience.ts';
@@ -87,6 +88,7 @@ async function createDeferredAdminCommitFixture(sql: PGliteSql): Promise<Deferre
     const state = { wakeCount: 0, processingCompleted: false, pendingCompleted: false, commitReleased: false };
     const gate: DeferredAdminCommitGate = { written: Promise.withResolvers<void>(), released: Promise.withResolvers<void>() };
     const appAdmin = createApiAdminInboxService({
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         inboxQueueReader: inbox,
         outboxQueueReader: outbox,
         wakeQueueEngine: () => {
@@ -209,6 +211,7 @@ Deno.test('dry-run initial admin work does not wake after its transaction commit
         const now = await readPGliteDatabaseEpochMs(sql);
         let wakeCount = 0;
         const appAdmin = createApiAdminInboxService({
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             inboxQueueReader: inbox,
             outboxQueueReader: new OutboxQueueReader(queue),
             wakeQueueEngine: () => {
@@ -278,6 +281,7 @@ Deno.test('rolled-back initial admin page work does not wake the queue', async (
             }
         });
         const appAdmin = createApiAdminInboxService({
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             inboxQueueReader: inbox,
             outboxQueueReader: new OutboxQueueReader(queue),
             wakeQueueEngine: () => {
@@ -349,6 +353,7 @@ Deno.test('rejected initial admin outbox write does not wake or persist page wor
             }
         });
         const appAdmin = createApiAdminInboxService({
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             inboxQueueReader: inbox,
             outboxQueueReader: new OutboxQueueReader(queue),
             wakeQueueEngine: () => {

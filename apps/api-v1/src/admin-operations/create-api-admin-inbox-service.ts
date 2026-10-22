@@ -42,6 +42,7 @@ export interface CreateApiAdminInboxServiceInput {
     serviceId: string;
     timing?: RallarTimingSink;
     options?: AppInboxOptions;
+    finishedRetentionMs: number;
     currentAuthority: ApiAdminPruneCurrentAuthority;
 }
 
@@ -97,6 +98,7 @@ export function createApiAdminInboxService(
         },
         {
             serviceId: input.serviceId,
+            finishedRetentionMs: input.finishedRetentionMs,
             pageSize,
             timing: input.timing,
             appInbox: input.options ?? {}

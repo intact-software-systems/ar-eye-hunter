@@ -9,6 +9,12 @@ export interface ResourceInboxReservationFinish {
     readonly completedAt: Date;
 }
 
+/** A finish that also bounds the finished row: it stays until `expiresAt`, then the expiry sweep removes it. */
+export interface ResourceInboxRetainedReservationFinish extends ResourceInboxReservationFinish {
+    readonly expiresAt: Date;
+}
+
+/** Finishes the reservation and keeps the row's own expiry. */
 export async function writeResourceInboxReservationFinish(
     transaction: PSqlSql,
     computed: ResourceInboxReservationFinish
@@ -16,6 +22,26 @@ export async function writeResourceInboxReservationFinish(
     const rows = await transaction<readonly { ri_row_id: bigint; }[]>`
         update resource_inbox
         set ri_status = ${computed.status}, end_ts = ${computed.completedAt}, next_ts = null
+        where ri_topic_id = ${computed.key.topicId}
+          and ri_resource_id = ${computed.key.resourceId}
+          and fk_ext_bank_id = ${computed.key.contextId}
+          and ri_status = 'RESERVED'
+          and ri_attempts = ${computed.expectedAttempts}
+          and expire_ts > (now() at time zone 'UTC')
+        returning ri_row_id
+    `;
+
+    return rows.length === 1;
+}
+
+export async function writeResourceInboxRetainedReservationFinish(
+    transaction: PSqlSql,
+    computed: ResourceInboxRetainedReservationFinish
+): Promise<boolean> {
+    const rows = await transaction<readonly { ri_row_id: bigint; }[]>`
+        update resource_inbox
+        set ri_status = ${computed.status}, end_ts = ${computed.completedAt}, next_ts = null,
+            expire_ts = ${computed.expiresAt}
         where ri_topic_id = ${computed.key.topicId}
           and ri_resource_id = ${computed.key.resourceId}
           and fk_ext_bank_id = ${computed.key.contextId}

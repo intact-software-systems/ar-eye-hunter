@@ -12,6 +12,7 @@ import type { AuditStamp, GroupMember, GroupPresenceSession, GroupSnapshot } fro
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { createTestGroup } from '../../../create-test-group.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { createAuthorityHarness, createResilience, SCOPE, type AuthorityHarness } from '../group-state/inbox/group-state-inbox-test-runtime.ts';
 
 describe('durable RTC RTT refinement work', () => {
@@ -119,7 +120,7 @@ function createRttService(harness: AuthorityHarness): RtcRttInboxService {
                 })
             }
         },
-        { serviceId: 'rtc-rtt-app-inbox-test', options: { nowEpochMs: () => harness.nowEpochMs } }
+        { finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS, serviceId: 'rtc-rtt-app-inbox-test', options: { nowEpochMs: () => harness.nowEpochMs } }
     );
 }
 

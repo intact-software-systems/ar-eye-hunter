@@ -18,6 +18,7 @@ import {
 } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import { readCompletedAppInboxResult } from '../app-inbox/test-support/read-completed-app-inbox-result.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import {
     createClientExpiryTestIssuedAuthority,
     readClientExpiryTestEntries
@@ -57,6 +58,7 @@ it(
                 clientStateService: clientStateService
             },
             {
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 serviceId: 'server-12345678',
                 disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
             }
@@ -100,6 +102,7 @@ it('durably enqueues each client expiry reconciliation tick', async () => {
             clientStateService: { ...createClientStateServiceFixture(), readExpiredSessionPage }
         },
         {
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             serviceId: 'server-12345678',
             disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
         }

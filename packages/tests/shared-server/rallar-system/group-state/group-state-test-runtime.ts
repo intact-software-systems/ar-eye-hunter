@@ -23,6 +23,7 @@ import type {
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { GroupStateTestMutationExecutor, type GroupStateTestMutationResult } from './group-state-test-mutation-executor.ts';
 
 type GroupStateTestMutationMethod = (
@@ -88,9 +89,14 @@ export interface AuthSessionInput {
 }
 
 type TestGroupStateServiceDependencies =
-    & Omit<GroupStateServiceDependencies, 'groupStateEventStore' | 'runtimeRepository' | 'readPlannedLayoutRow' | 'readAcceptedLayoutRow'>
+    & Omit<
+        GroupStateServiceDependencies,
+        'groupStateEventStore' | 'runtimeRepository' | 'readPlannedLayoutRow' | 'readAcceptedLayoutRow' | 'finishedRetentionMs'
+    >
     & Readonly<{
         runtimeRepository: RuntimeStateGuardedBatchTransactionalRepositoryLike;
+        /** Absent: the committed default window, for tests that do not exercise retention. */
+        finishedRetentionMs?: number;
         groupStateEventStoreFor?: (
             runtime: RuntimeStateOptimisticTransactionalRepositoryLike
         ) => GroupStateEventStore;
@@ -128,6 +134,7 @@ export function createTestGroupStateRuntime(
         now: dependencies.now,
         randomId: dependencies.randomId,
         serviceId: dependencies.serviceId,
+        finishedRetentionMs: dependencies.finishedRetentionMs ?? TEST_APP_INBOX_FINISHED_RETENTION_MS,
         readPlannedLayoutRow: dependencies.readPlannedLayoutRow ?? (async () => null),
         readAcceptedLayoutRow: dependencies.readAcceptedLayoutRow ?? (async () => null),
         timing: dependencies.timing

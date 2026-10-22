@@ -204,8 +204,7 @@ export class AppInboxHandlerExecutor {
 
     async rejectMalformedMessage(attempt: ResourceInboxAttempt): Promise<ResourceEntry> {
         const completionInput = {
-            entry: attempt.entry,
-            completedAtEpochMs: this.nowEpochMs(),
+            ...this.transactionWriter.readEntryCompletionFacts(attempt.entry),
             durableResult: toTerminalAppInboxFailure({
                 code: 'app-inbox-malformed-command',
                 status: 400,

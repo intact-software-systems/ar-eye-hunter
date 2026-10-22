@@ -106,8 +106,6 @@ export interface GroupMutationAuthorityProof {
 
 export type GroupMutationAuthority = IssuedAuthSession | GroupMutationAuthorityProof;
 
-export const GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS = 253_402_300_799_999;
-
 export interface GroupMutationDescriptor {
     readonly operation: GroupMutationCommand['operation'];
     readonly scope: StateScope;
@@ -240,6 +238,11 @@ export interface GroupStateServiceDependencies {
     readonly now?: () => number;
     readonly randomId?: () => string;
     readonly serviceId: string;
+    /**
+     * How long a command's idempotency record and the outbox rows derived from it stay after its ingress; the AppInbox
+     * finish gives the command's fact and result the same window.
+     */
+    readonly finishedRetentionMs: number;
     readonly timing?: RallarTimingSink;
     /**
      * Reads the stored planned-layout row — snapshot, identity, revision and

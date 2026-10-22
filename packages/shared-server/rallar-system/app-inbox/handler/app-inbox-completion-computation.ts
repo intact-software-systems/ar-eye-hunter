@@ -4,7 +4,10 @@ import {
     toResourceEntryWithUpdatedResource,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
-import type { ResourceInboxReservationFinish } from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
+import type {
+    ResourceInboxReservationFinish,
+    ResourceInboxRetainedReservationFinish
+} from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
 import {
     computeResourceInboxResultReplacement,
     type ResourceInboxResultReplacement
@@ -25,6 +28,11 @@ interface AppInboxCompletionValidationIssue {
 export interface AppInboxCompletionFacts {
     readonly entry: ResourceEntry;
     readonly completedAtEpochMs: number;
+    /**
+     * How long the finished fact and its result stay after completion. Inside the window a replay of the command's
+     * key returns the stored result; once the expiry sweep removes them, the same key executes again.
+     */
+    readonly finishedRetentionMs: number;
 }
 
 export interface AppInboxCompletionInput<Result> extends AppInboxCompletionFacts {
@@ -40,7 +48,7 @@ export interface AppInboxCompletionComputed<Result> {
     readonly durableResult: Result;
     readonly encodedResult: JsonWireValue;
     readonly resultReplacement: ResourceInboxResultReplacement;
-    readonly reservationFinish: ResourceInboxReservationFinish;
+    readonly reservationFinish: ResourceInboxRetainedReservationFinish;
     readonly finalizedEntry: ResourceEntry;
 }
 
@@ -48,20 +56,26 @@ export function computeAppInboxCompletion<Result>(
     input: AppInboxCompletionInput<Result>
 ): AppInboxCompletionComputed<Result> {
     const encodedResult = encodeAppInboxResult(input.durableResult, 'AppInbox completion result');
+    const expiresAtEpochMs = input.completedAtEpochMs + input.finishedRetentionMs;
+    const retainedEntry: ResourceEntry = {
+        ...input.entry,
+        audit: { ...input.entry.audit, expiryTs: Temporal.Instant.fromEpochMilliseconds(expiresAtEpochMs) }
+    };
     return {
         durableResult: input.durableResult,
         encodedResult,
         resultReplacement: computeResourceInboxResultReplacement(
-            toResourceEntryWithUpdatedResource(input.entry, input.status, encodedResult)
+            toResourceEntryWithUpdatedResource(retainedEntry, input.status, encodedResult)
         ),
         reservationFinish: {
             key: input.entry.key,
             expectedAttempts: input.entry.dequeueAudit.attempts,
             status: input.status,
-            completedAt: new Date(input.completedAtEpochMs)
+            completedAt: new Date(input.completedAtEpochMs),
+            expiresAt: new Date(expiresAtEpochMs)
         },
         finalizedEntry: {
-            ...input.entry,
+            ...retainedEntry,
             status: input.status,
             dequeueAudit: {
                 ...input.entry.dequeueAudit,
@@ -90,9 +104,18 @@ export function validateAppInboxCompletionFacts(
     input: AppInboxCompletionValidationFacts
 ): AppInboxCompletionValidationIssue[] {
     const issues: AppInboxCompletionValidationIssue[] = [];
-    if (!Number.isSafeInteger(input.completedAtEpochMs) || Math.abs(input.completedAtEpochMs) > 8.64e15) {
+    const completedAtIsValid = isEpochMs(input.completedAtEpochMs);
+    if (!completedAtIsValid) {
         issues.push(
             toAppInboxCompletionValidationIssue('completedAtEpochMs', 'must be a valid epoch millisecond timestamp')
+        );
+    }
+    if (
+        !Number.isSafeInteger(input.finishedRetentionMs) || input.finishedRetentionMs < 1 ||
+        (completedAtIsValid && !isEpochMs(input.completedAtEpochMs + input.finishedRetentionMs))
+    ) {
+        issues.push(
+            toAppInboxCompletionValidationIssue('finishedRetentionMs', 'must be a positive retention after completion')
         );
     }
     if (!Number.isSafeInteger(input.entry.dequeueAudit.attempts) || input.entry.dequeueAudit.attempts < 1) {
@@ -110,6 +133,10 @@ export function validateAppInboxCompletionFacts(
         issues.push(toAppInboxCompletionValidationIssue('status', 'must be COMPLETED, FAILED or NON_RETRYABLE'));
     }
     return issues;
+}
+
+function isEpochMs(value: number): boolean {
+    return Number.isSafeInteger(value) && Math.abs(value) <= 8.64e15;
 }
 
 function toAppInboxCompletionValidationIssue(

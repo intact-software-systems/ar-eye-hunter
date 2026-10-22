@@ -14,6 +14,7 @@ import { type GroupStateWritten } from '@shared-server/rallar-system/group-state
 
 import { requireApiAuthSession } from '@shared-server/http/request-auth-service.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { authSession } from '../group-state-test-runtime.ts';
 import {
     createAuthorityHarness,
@@ -204,6 +205,7 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                     }
                 },
                 {
+                    finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                     serviceId: 'server-12345678'
                 }
             );

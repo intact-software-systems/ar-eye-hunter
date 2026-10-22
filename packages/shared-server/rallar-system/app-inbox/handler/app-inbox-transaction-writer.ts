@@ -6,7 +6,7 @@ import type { ClaimableDeadlineClaim } from '@shared/resilience/run-with-claimab
 import { createPSqlCounterScope } from '../../../postgres/create-p-sql-counter-scope.ts';
 import type { PSqlSql, PSqlTransactionWrite } from '../../../postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction.ts';
-import { writeResourceInboxReservationFinish } from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
+import { writeResourceInboxRetainedReservationFinish } from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
 import { writeResourceInboxResultReplacement } from '../../../queuebox/postgres/resource-inbox-result-replacement.ts';
 import type { RallarTimingDetails, RallarTimingSink } from '../../observability/timing.ts';
 import { toAppInboxEntryCompletionAwaitability } from '../app-inbox-command-identity.ts';
@@ -49,6 +49,8 @@ export namespace AppInboxTransactionWriter {
 
     export interface Config {
         readonly serviceId: string;
+        /** How long a finished fact and its result stay before the expiry sweep removes them. */
+        readonly finishedRetentionMs: number;
         readonly timing?: RallarTimingSink;
     }
 }
@@ -82,9 +84,15 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
     }
 
     readCompletionFacts(context: AppInboxExecutionMetadata): AppInboxCompletionFacts {
+        return this.readEntryCompletionFacts(context.entry);
+    }
+
+    /** The completion facts of an entry no handler context reached, such as a malformed message. */
+    readEntryCompletionFacts(entry: ResourceEntry): AppInboxCompletionFacts {
         return {
-            entry: context.entry,
-            completedAtEpochMs: this.nowEpochMs()
+            entry,
+            completedAtEpochMs: this.nowEpochMs(),
+            finishedRetentionMs: this.config.finishedRetentionMs
         };
     }
 
@@ -221,7 +229,7 @@ async function writeAppInboxCompletion<Result>(
     transaction: PSqlSql,
     computed: AppInboxCompletionComputed<Result>
 ): Promise<void> {
-    if (!await writeResourceInboxReservationFinish(transaction, computed.reservationFinish)) {
+    if (!await writeResourceInboxRetainedReservationFinish(transaction, computed.reservationFinish)) {
         throw new AppInboxReservationConflictError(computed.reservationFinish.key);
     }
     await writeResourceInboxResultReplacement(transaction, computed.resultReplacement);

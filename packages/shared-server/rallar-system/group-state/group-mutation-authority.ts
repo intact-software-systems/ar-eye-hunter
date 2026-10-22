@@ -11,7 +11,6 @@ import { computeMutationCommandDigest, decodeJsonWireValue } from '../protocol/j
 import { toAggregateMutationCommand, toMembershipMutationCommand } from './group-mutation-command.ts';
 import { toPresenceMutationCommand } from './group-presence-mutation-command.ts';
 import {
-    GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS,
     type AuthorizedGroupMutation,
     type GroupMutationAuthority,
     type GroupMutationAuthorityProof,
@@ -31,7 +30,17 @@ export interface GroupMutationAuthorityDependencies {
     readonly now: () => number;
     readonly randomId: () => string;
     readonly serviceId: string;
+    /** How long a command's idempotency record and derived outbox rows stay after its ingress. */
+    readonly finishedRetentionMs: number;
     readonly capacity?: GroupPolicyCapacityConfig;
+}
+
+/**
+ * One event per execution: the ingress instant tells a request executed again after its retention window from the
+ * execution its idempotency record and AppInbox fact recorded; every attempt of one execution reuses the same facts.
+ */
+export function toGroupMutationEventId(commandHash: string, ingressAtEpochMs: number): string {
+    return `group-event:${computeSha256CanonicalJson({ commandHash, ingressAtEpochMs })}`;
 }
 
 const LIVE_SESSION_DENIAL = 'Authenticated session is missing, expired, revoked, or mismatched.';
@@ -97,11 +106,12 @@ async function captureAuthorizedGroupMutationIngress(
         decodeJsonWireValue(materialized.semanticCommand, 'Group semantic mutation command')
     );
     const resolvedJoinCode = resolveCommandJoinCode(command, commandHash);
+    const nowEpochMs = dependencies.now();
     const facts: GroupMutationIngressFacts = {
-        nowEpochMs: dependencies.now(),
-        expireAtEpochMs: GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS,
+        nowEpochMs,
+        expireAtEpochMs: nowEpochMs + dependencies.finishedRetentionMs,
         serviceId: dependencies.serviceId,
-        eventId: `group-event:${commandHash.slice('sha256:'.length)}`,
+        eventId: toGroupMutationEventId(commandHash, nowEpochMs),
         commandHash,
         resolvedJoinCode,
         joinCodeVerifier: await toJoinCodeVerifier(resolvedJoinCode),

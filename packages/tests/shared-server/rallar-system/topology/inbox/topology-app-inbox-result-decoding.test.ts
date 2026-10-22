@@ -7,6 +7,7 @@ import { createAuthorityHarness, waitForQueueEntry } from '../../group-state/inb
 import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 import type { TopologyAppInboxMutationOwners } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 
 describe('topology inbox result decoding', () => {
     it('returns the exact terminal left for a malformed completed topology result', async () => {
@@ -38,7 +39,7 @@ describe('topology inbox result decoding', () => {
                 groupStateService: harness.groupStateService,
                 mutationOwners: {} as TopologyAppInboxMutationOwners
             },
-            { serviceId: 'topology-result-decoding' }
+            { finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS, serviceId: 'topology-result-decoding' }
         );
         const pending = service.processAuthenticatedEntryUntilCompletion(
             {

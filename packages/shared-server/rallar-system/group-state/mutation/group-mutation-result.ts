@@ -158,7 +158,7 @@ export function computeGroupMutationWriteResult(
         layoutTombstones,
         connectTriggerLatchEffect: input.connectTriggerLatchEffect ?? null
     };
-    return { ...computed, persistence: computeGroupMutationPersistence(computed) };
+    return { ...computed, persistence: computeGroupMutationPersistence(computed, facts) };
 }
 
 function toGroupMutationIdempotency(

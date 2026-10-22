@@ -35,15 +35,17 @@ import {
 } from '../../persistence/presence/group-presence-write-descriptors.ts';
 import type {
     GroupMutationDomainWrite,
+    GroupMutationFacts,
     GroupMutationPersistence
 } from '../group-mutation-contracts.ts';
 
 export function computeGroupMutationPersistence(
-    computed: GroupMutationDomainWrite
+    computed: GroupMutationDomainWrite,
+    facts: Pick<GroupMutationFacts, 'expireAtEpochMs'>
 ): GroupMutationPersistence {
     return {
         guardedBatch: computeRuntimeStateGuardedBatchWrite(
-            computeGroupMutationGuardedBatch(computed)
+            computeGroupMutationGuardedBatch(computed, facts)
         ),
         lifecyclePolicyWrite: computed.lifecyclePolicy === null
             ? null
@@ -68,7 +70,8 @@ export function computeGroupMutationPersistence(
 }
 
 function computeGroupMutationGuardedBatch(
-    computed: GroupMutationDomainWrite
+    computed: GroupMutationDomainWrite,
+    facts: Pick<GroupMutationFacts, 'expireAtEpochMs'>
 ): RuntimeStateGuardedBatch {
     const effects: RuntimeStateGuardedBatchEffect[] = [];
     effects.push(...computePresenceAndMembershipEffects(computed));
@@ -91,7 +94,7 @@ function computeGroupMutationGuardedBatch(
                 ref: computed.idempotency.aggregateRef,
                 requestId: computed.idempotency.requestId,
                 record: computed.idempotency,
-                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                expireAtTimestamp: facts.expireAtEpochMs
             })
         });
     }

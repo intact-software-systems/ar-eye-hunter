@@ -44,6 +44,7 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { authSession } from '../../group-state/group-state-test-runtime.ts';
 import {
     createAuthorityHarness,
@@ -415,7 +416,8 @@ describe('topology AppInbox transaction and idempotency', () => {
             transactionWriter: {
                 readCompletionFacts: (context) => ({
                     entry: context.entry,
-                    completedAtEpochMs: harness.nowEpochMs
+                    completedAtEpochMs: harness.nowEpochMs,
+                    finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS
                 }),
                 writeComputedMutation: async (_context, computed, write) => {
                     await harness.database.begin(write);
@@ -478,6 +480,7 @@ function configureTopology(
                 mutationOwners: management.mutationOwners
             },
             {
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 serviceId: 'server-12345678',
                 wakeOwningQueue: wakeQueue
             }

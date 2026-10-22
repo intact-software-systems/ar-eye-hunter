@@ -30,6 +30,7 @@ import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fak
 import { TestResourceInbox, TestResourceInboxResults } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import type { AppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import {
     CLIENT_STATE_TEST_SCOPE,
     createResilience,
@@ -158,7 +159,11 @@ describe('AppClientInbox authentication', () => {
                 database,
                 clientStateService: createClientStateServiceFixture()
             },
-            { serviceId: 'server-12345678', disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS }
+            {
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+                serviceId: 'server-12345678',
+                disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
+            }
         );
         const authority = issuedSession('alice', 'alice-session');
         const pending = service.processAuthenticatedEntryUntilCompletion(
@@ -225,7 +230,11 @@ describe('AppClientInbox authentication', () => {
                 database: createAppInboxTestDatabase(queue, new TestResourceInboxResults()),
                 clientStateService: createClientStateServiceFixture()
             },
-            { serviceId: 'server-12345678', disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS }
+            {
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+                serviceId: 'server-12345678',
+                disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
+            }
         );
 
         const result = await service.processAuthenticatedEntryUntilCompletion(
@@ -291,7 +300,11 @@ describe('AppClientInbox authentication', () => {
                 database: createAppInboxTestDatabase(queue, new TestResourceInboxResults()),
                 clientStateService: createClientStateServiceFixture()
             },
-            { serviceId: 'server-12345678', disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS }
+            {
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+                serviceId: 'server-12345678',
+                disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
+            }
         );
         const enqueue = {
             type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
@@ -382,6 +395,7 @@ describe('AppClientInbox authentication', () => {
                 })
             },
             {
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 serviceId: 'server-12345678',
                 disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
             }
@@ -505,7 +519,11 @@ async function createRevokedAuthorityRetryHarness(nowEpochMs: () => number): Pro
                 serviceId: 'server-12345678'
             })
         },
-        { serviceId: 'server-12345678', disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS }
+        {
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+            serviceId: 'server-12345678',
+            disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
+        }
     );
     return {
         alice,

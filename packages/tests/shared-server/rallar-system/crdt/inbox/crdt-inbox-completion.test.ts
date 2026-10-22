@@ -9,6 +9,7 @@ import { writeCrdtOutboxProvenance } from '@shared-server/rallar-system/crdt/per
 import { writePSqlCrdtMutation } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
 import { RALLAR_CRDT_OPERATION_VERSION, RALLAR_CRDT_PROTOCOL_VERSION } from '@shared/crdt/mod.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 
 describe('CRDT inbox completion candidate', () => {
     it('computes append state, outbox and completion from explicit facts', async () => {
@@ -246,7 +247,12 @@ async function createRead() {
         storedSnapshotBytes: 0,
         featureDecision: { allowed: true, code: 'allowed', reason: 'test', rollout: 'production', retryable: false }
     };
-    return { command, read, serviceId: 'server', completionFacts: { entry: createEntry(), completedAtEpochMs: 1_010 } };
+    return {
+        command,
+        read,
+        serviceId: 'server',
+        completionFacts: { entry: createEntry(), completedAtEpochMs: 1_010, finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS }
+    };
 }
 
 function createEntry(): ResourceEntry {
