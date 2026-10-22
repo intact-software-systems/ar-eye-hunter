@@ -46,6 +46,7 @@ export const MUTATION_ROUTE_OWNER_DISPATCH_PATHS = {
     'ClientStateInboxHandler.processExpiredSessionCommands': 'handler.processExpiredSessionCommands',
     'AppCrdtInboxService.processCommand': 'processCommand',
     'GroupStateInboxHandler.processGroupStateMutation': 'groupStateInboxHandler.processGroupStateMutation',
+    'GroupStateInboxService.processQuickJoin': 'processQuickJoin',
     'RtcRttAppInboxHandler.processMutation': 'handler.processMutation',
     'TopologyAppInboxHandler.processMutation': 'handler.processMutation',
     writeGroupSessionCleanup: 'writeGroupSessionCleanup'
@@ -254,6 +255,20 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         owner: 'AuthInboxHandler.processAuthMutation',
         typeOwnerSource: 'A',
         dispatchSource: 'A'
+    },
+    {
+        transport: 'HTTP',
+        entrypoint: `POST ${GROUP_ROUTE}/quick-join${MUTATION_REQUEST_ROUTE}`,
+        type: 'GROUP_QUICK_JOIN',
+        source: 'quickJoin',
+        registrationMarker: 'registerGroupQuickJoinRoute',
+        enqueueSource: 'quickJoin',
+        enqueueMarker: 'processQuickJoin',
+        ownerSource: 'G',
+        owner: 'GroupStateInboxService.processQuickJoin',
+        familyRegistrationMarker: 'registerGroupQuickJoinRoute',
+        rootSource: 'gr',
+        constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
         transport: 'HTTP',

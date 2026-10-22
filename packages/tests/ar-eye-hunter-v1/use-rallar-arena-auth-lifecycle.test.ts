@@ -326,7 +326,7 @@ describe('useRallarArena auth lifecycle', () => {
             await Promise.resolve();
         });
         await waitForState(() => arena.current?.directorAttempt.status === 'pending');
-        const diagnosticsBeforeResolve = arena.current?.gameDiagnostics;
+        expect(arena.current?.gameDiagnostics).toBeDefined();
 
         await act(async () => {
             for (const listener of roomChangeListeners) {
@@ -355,7 +355,7 @@ describe('useRallarArena auth lifecycle', () => {
         expect(arena.current?.roomId).toBeUndefined();
         expect(arena.current?.directorStatus.isDirector).toBe(false);
         expect(arena.current?.directorAttempt.status).toBe('pending');
-        expect(arena.current?.gameDiagnostics).toBe(diagnosticsBeforeResolve);
+        expect(arena.current?.gameDiagnostics).toBeUndefined();
     });
 
     it('ignores a startup result that resolves after logout', async () => {

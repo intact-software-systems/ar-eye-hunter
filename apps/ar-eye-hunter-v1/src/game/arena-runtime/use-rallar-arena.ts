@@ -181,6 +181,7 @@ function useArenaConnectionLifecycle(
 ) {
     const { connect } = useArenaConnectionSessionLifecycle({
         nowMs: Date.now,
+        clearRoomScopedArenaState: state.clearRoomScopedArenaState,
         bumpNetworkGeneration: state.bumpNetworkGeneration,
         connectionState: state.connectionState,
         currentNetworkSignal: state.currentNetworkSignal,

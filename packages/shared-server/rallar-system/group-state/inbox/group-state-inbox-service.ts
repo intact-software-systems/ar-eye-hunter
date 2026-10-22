@@ -264,7 +264,7 @@ export class GroupStateInboxService {
                     'Quick Join ingress'
                 )
             })
-        }, decodeQuickJoinGroupResult);
+        }, (value) => decodeQuickJoinGroupResult(value, command));
     }
 
     private async processQuickJoin(
@@ -277,7 +277,10 @@ export class GroupStateInboxService {
             throw new GroupMutationAuthorizationError('Quick Join ingress and command differ');
         }
         const computed = service.compute(read);
-        service.validate(read, computed);
+        const mutationIssue = service.validate(read, computed)[0];
+        if (mutationIssue) {
+            throw mutationIssue.cause;
+        }
         const completionInput = {
             ...this.transactionWriter.readCompletionFacts(context),
             durableResult: computed.result,

@@ -27,11 +27,12 @@
   },
   {
     "paths": [
-      "tests/playwright/ar-eye-hunter/open-arena-directory.spec.ts"
+      "tests/playwright/ar-eye-hunter/open-arena-directory.spec.ts",
+      "tests/playwright/ar-eye-hunter/quick-join.spec.ts"
     ],
     "owner": "Knut-Helge Vik",
-    "command": "RALLAR_ARENA_FULL_STACK=1 npx playwright test --config apps/ar-eye-hunter-v1/playwright.config.ts open-arena-directory.spec.ts",
-    "reason": "The AR Eye browser stack remains manual because its headless rendering dependency is not stable in the Linux lane. Deterministic directory cases intercept HTTP; the conditional-read case requires an API-v1 memory fixture on port 8080 allowing http://127.0.0.1:5186."
+    "command": "RALLAR_ARENA_FULL_STACK=1 npx playwright test --config apps/ar-eye-hunter-v1/playwright.config.ts open-arena-directory.spec.ts quick-join.spec.ts",
+    "reason": "The AR Eye browser stack remains manual because its headless rendering dependency is not stable in the Linux lane. Deterministic directory cases intercept HTTP; conditional reads and two-browser Quick Join require an API-v1 memory fixture on port 8080 allowing http://127.0.0.1:5186. Quick Join passed locally with unavailable and joined outcomes."
   },
   {
     "paths": [

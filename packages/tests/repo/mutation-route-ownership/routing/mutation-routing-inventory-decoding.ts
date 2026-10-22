@@ -8,6 +8,7 @@ const PATHS = {
     ga: 'apps/api-v1/src/group-state/register-group-admission-routes.ts',
     gm: 'apps/api-v1/src/group-state/register-group-membership-routes.ts',
     gp: 'apps/api-v1/src/group-state/register-group-presence-routes.ts',
+    quickJoin: 'apps/api-v1/src/group-state/register-group-quick-join-route.ts',
     gr: 'apps/api-v1/src/group-state/register-group-state-routes.ts',
     gl: 'apps/api-v1/src/group-state/register-group-lifecycle-routes.ts',
     gs: 'apps/api-v1/src/group-state/register-group-state-mutation-routes.ts',

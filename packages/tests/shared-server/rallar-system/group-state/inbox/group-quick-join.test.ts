@@ -9,6 +9,7 @@ import { GroupQuickJoinService } from '@shared-server/rallar-system/group-state/
 import { encodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
 import type { CreateGroupRequest } from '@shared/api/state-types.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import {
@@ -356,6 +357,35 @@ describe('Quick Join through AppInbox', () => {
 
         expect((await pending).left).toMatchObject({ status: 403 });
         expect((await harness.repository.readSnapshot({ ...SCOPE, groupId: 'revoked' }))?.group.activeMemberCount).toBe(1);
+    });
+
+    it.each(['scope', 'member'] as const)('rejects a self-consistent durable result for another %s', async (substitution) => {
+        const harness = await createAuthorityHarness(['owner', 'bob']);
+        await createRoom(harness, 'result-room', 'AR Eye Hunter');
+        const before = await harness.repository.readSnapshot({ ...SCOPE, groupId: 'result-room' });
+        const input = { scope: SCOPE, request: { requestId: `substituted-${substitution}`, includeEmpty: true } };
+        const first = await quickJoin(harness, input);
+        const entry = (await harness.queueEntries()).find((candidate) => candidate.key.resourceId === input.request.requestId);
+        if (first.status !== 'joined' || !before || !entry) {
+            throw new Error('Expected a committed Quick Join and its durable command slot');
+        }
+        const wrongScope = { applicationId: 'another-app', workspaceId: 'another-workspace' };
+        const snapshot = substitution === 'member' ? before : {
+            ...first.snapshot,
+            group: { ...first.snapshot.group, ...wrongScope },
+            members: first.snapshot.members.map((member) => ({ ...member, ...wrongScope })),
+            activeSessions: first.snapshot.activeSessions.map((session) => ({ ...session, ...wrongScope }))
+        };
+        await harness.results.replace({
+            ...entry,
+            status: EntityStatus.COMPLETED,
+            resource: JSON.stringify({ status: 'joined', snapshot })
+        });
+
+        const replay = await harness.service.processQuickJoinUntilCompletion(input, harness.sessions.bob);
+
+        expect(replay.right).toBeUndefined();
+        expect(replay.left).toMatchObject({ code: 'app-inbox-result-corrupt', status: 500 });
     });
 
     it('fails closed for a corrupt admission policy instead of skipping to another room', async () => {

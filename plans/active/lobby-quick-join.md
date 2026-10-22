@@ -138,6 +138,15 @@ test; change Relic production code only if the common API requires a concrete co
 4. Run the browser/app focused suites, API snapshots and bundle boundary checks, AR Eye and Relic
    builds. Update public documentation and examples where the new surface belongs.
 
+Increment 2 evidence: the browser facade and AR Eye action are implemented. The final browser,
+AR Eye, Relic, and public-snapshot run passed 396 tests across 49 files. A real two-browser
+Playwright test passed unavailable then joined behavior. The independent review found and
+verified fixes for session replacement through cleanup, command-bound durable-result validation,
+public HTTP input compatibility, and arena state reset at the subscribed room transition.
+The reviewer has no remaining concrete findings. Fixed PostgreSQL medium scale passed all
+2,842 steps. Complete the isolated performance comparison and final publication checks before
+deleting this implementation plan at handoff.
+
 ## Review focus and completion gates
 
 | Risk                                              | Required evidence                                                               |

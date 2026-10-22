@@ -38,6 +38,7 @@ interface RootFamilyRegistration {
 
 const ROOT_FAMILY_CALLS: readonly RootFamilyRegistration[] = [
     { name: 'registerGroupStateReadRoutes', sourcePath: './register-group-state-read-routes.ts', requiresAuthorization: true },
+    { name: 'registerGroupQuickJoinRoute', sourcePath: './register-group-quick-join-route.ts', requiresAuthorization: false },
     { name: 'registerGroupStateMutationRoutes', sourcePath: './register-group-state-mutation-routes.ts', requiresAuthorization: true },
     { name: 'registerGroupLifecycleRoutes', sourcePath: './register-group-lifecycle-routes.ts', requiresAuthorization: false },
     { name: 'registerGroupAdmissionRoutes', sourcePath: './register-group-admission-routes.ts', requiresAuthorization: false },
@@ -96,6 +97,13 @@ export function findDirectGroupRouteHandler({
     const familyParameters = readParameterNames(familyOwner);
     if (familyParameters.length !== expectedFamilyParameterCount(familyOwnerName) || familyParameters.some((name) => !name)) {
         return undefined;
+    }
+    const direct = readDirectRegistration(program, familyOwner);
+    if (direct) {
+        return (expectedFamilyRouteCount === undefined || expectedFamilyRouteCount === 1) &&
+                direct.method === method && direct.routePath === routePath
+            ? direct.handler
+            : undefined;
     }
     const calledOwners = readDirectFamilyOwnerCalls(familyOwner);
     if (!calledOwners || new Set(calledOwners.map((call) => call.ownerName)).size !== calledOwners.length) {

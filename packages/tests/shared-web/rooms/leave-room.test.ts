@@ -46,14 +46,15 @@ describe('room leave operations', () => {
         ).resolves.toBe(leftRoom);
 
         expect(roomWorkflowMocks.leaveStateGroup).toHaveBeenCalledWith(
-            {
+            expect.objectContaining({
                 groupId: 'room-1',
                 principalId: 'principal-1',
                 sessionId: 'session-1',
                 generationId: 'generation-session-1',
+                authSession: roomWorkflowMocks.session,
                 scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
                 policies: { command: { signal, timeoutMs: 33 } }
-            }
+            })
         );
         expect(roomWorkflowMocks.operationLog).toEqual(['leave:room-1', 'hydrate:room-1']);
         expect(facade.rooms.current()).toBeUndefined();

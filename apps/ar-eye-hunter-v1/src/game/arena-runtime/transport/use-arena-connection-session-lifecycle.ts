@@ -11,6 +11,7 @@ import type { ArenaConnectionState } from '../arena-connection-contracts.ts';
 
 interface ArenaConnectionSessionLifecycleInput {
     readonly nowMs: () => number;
+    readonly clearRoomScopedArenaState: () => void;
     readonly bumpNetworkGeneration: () => number;
     readonly connectionState: ArenaConnectionState;
     readonly currentNetworkSignal: () => AbortSignal;
@@ -89,6 +90,10 @@ function startArenaSessionSubscriptions(input: ArenaConnectionSessionLifecycleIn
     const subscriptions = rallar.subscriptions()
         .add(
             rallar.rooms.onChange((state) => {
+                if (input.roomIdRef.current !== state.currentRoomId) {
+                    input.clearRoomScopedArenaState();
+                    input.roomIdRef.current = state.currentRoomId;
+                }
                 input.setRooms(state.rooms);
                 input.setRoomId(state.currentRoomId);
                 input.setDirectorStatus(

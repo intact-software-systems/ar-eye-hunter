@@ -4714,6 +4714,36 @@ moved or changed test.
         "requiredConstraint": "Exactly two summary computations per page, one computing the shared state and one checking it, independent of the page's row count.",
         "failureRationale": "Recomputing the shared state per expansion yields the same deltas and summary, so only the call count distinguishes the per-page computation from the per-row one."
       }
+    },
+    {
+      "id": "ar-arena-quick-join-no-create",
+      "domain": "AR Eye Hunter Quick Join",
+      "owner": "AR Eye Hunter maintainers",
+      "summary": "Quick Join admits to the selected existing arena without creating another arena.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-quick-join.test.ts#supplies the arena selector and adopts the selected room without creating one",
+      "coverageRelation": "The real arena action adopts the selected room while the owned creation port remains untouched.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Rallar rooms.createAndSwitch",
+        "observableEffect": "Quick Join admits to the selected existing arena without creating another arena.",
+        "requiredConstraint": "The create-and-switch port must remain unused by Quick Join.",
+        "failureRationale": "A successful selected-room result alone would not expose a second, unwanted room creation."
+      }
+    },
+    {
+      "id": "shared-web-quick-join-preserve-previous-membership",
+      "domain": "Shared Web Quick Join switching",
+      "owner": "Shared Web maintainers",
+      "summary": "The selected room becomes current while the caller retains membership and presence in the previous room.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/quick-join-room.test.ts#respects leaveCurrent false",
+      "coverageRelation": "The facade executes selection and presence through HTTP while the owned leave workflow remains untouched.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "LeaveStateGroup workflow boundary",
+        "observableEffect": "The selected room becomes current while the caller retains membership and presence in the previous room.",
+        "requiredConstraint": "leaveCurrent false must issue no previous-room leave mutation.",
+        "failureRationale": "A correct current-room snapshot does not prove that the old membership was retained."
+      }
     }
   ],
   "entries": [
@@ -10348,6 +10378,28 @@ moved or changed test.
       "owner": "Rallar server maintainers",
       "rationale": "The two-call count observes the summary computation while a real page of ten rows commits ten deltas; the deltas are identical when each expansion recomputes the state, which is the cost this boundary removes.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/group-state/presence/group-presence-summary-coalescing.test.ts#computes a page's summary once and checks it once, however many rows the page carries"
+    },
+    {
+      "id": "test-structure-coupling-b10a4aa91db28211",
+      "path": "packages/tests/ar-eye-hunter-v1/arena-quick-join.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-quick-join-no-create",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "A successful selected-room result alone would not expose a second, unwanted room creation.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-quick-join.test.ts#supplies the arena selector and adopts the selected room without creating one"
+    },
+    {
+      "id": "test-structure-coupling-e5462fcd747975d7",
+      "path": "packages/tests/shared-web/rooms/quick-join-room.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-quick-join-preserve-previous-membership",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "A correct current-room snapshot does not prove that the old membership was retained.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/quick-join-room.test.ts#respects leaveCurrent false"
     }
   ]
 }

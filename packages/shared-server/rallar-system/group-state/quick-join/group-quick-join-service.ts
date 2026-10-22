@@ -3,6 +3,7 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import type { AuthSessionPersistence } from '../../auth/persistence/auth-session-persistence.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
+import type { ComputedDataValidationIssue } from '../../computed-data-validation.ts';
 import {
     computeMutationCommandDigest,
     encodeJsonWireValue,
@@ -120,11 +121,8 @@ export class GroupQuickJoinService {
         return computeGroupQuickJoin(read);
     }
 
-    validate(read: GroupQuickJoinRead, computed: GroupQuickJoinComputed): void {
-        const issue = validateGroupQuickJoin(read, computed)[0];
-        if (issue) {
-            throw issue.cause;
-        }
+    validate(read: GroupQuickJoinRead, computed: GroupQuickJoinComputed): readonly ComputedDataValidationIssue[] {
+        return validateGroupQuickJoin(read, computed);
     }
 
     async write(transaction: PSqlSql, computed: GroupQuickJoinComputed): Promise<void> {

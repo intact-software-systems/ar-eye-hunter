@@ -32,6 +32,7 @@ import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupDirectoryPage, GroupDirectoryRequest } from '@shared/api/group-directory/group-directory-types.ts';
+import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
 import { Command, CommandCancelledError } from '@shared/cache/Command.ts';
 import { CommandsOrchestrator } from '@shared/cache/CommandsOrchestrator.ts';
 import {
@@ -46,7 +47,7 @@ import type { RoomFormationServiceDependencies } from './formation/command-room-
 import { createRoomFormation } from './formation/create-room-formation.ts';
 import type { RallarRoomFormation } from './formation/rallar-room-formation-contracts.ts';
 import type { RallarRoomLayoutSlotsPort } from './formation/room-layout-slots.ts';
-import { enterRoom, joinRoom } from './join-room.ts';
+import { enterRoom, joinRoom, quickJoinRoom } from './join-room.ts';
 import { leaveRoom } from './leave-room.ts';
 import type {
     RallarCreateRoomInput,
@@ -54,6 +55,7 @@ import type {
     RallarJoinRoomOptions,
     RallarLeaveRoomOptions,
     RallarListRoomEventsInput,
+    RallarQuickJoinRoomInput,
     RallarReplayRoomEventsInput,
     RallarRoomEventOptions,
     RallarRoomGovernanceOptions,
@@ -120,6 +122,7 @@ export interface BrowserRallarRooms {
     create(input: string | RallarCreateRoomInput): Promise<GroupSnapshot>;
     createAndSwitch(input: string | RallarCreateRoomInput): Promise<GroupSnapshot>;
     join(room: string | GroupRef | RallarJoinRoomInput, options?: RallarJoinRoomOptions): Promise<GroupSnapshot>;
+    quickJoin(input?: RallarQuickJoinRoomInput): Promise<QuickJoinGroupResult>;
     enter(room: string | GroupRef | RallarJoinRoomInput, options?: RallarJoinRoomOptions): Promise<RallarRoomSession>;
     session(room?: string | GroupRef): RallarRoomSession;
     formation(room?: string | GroupRef): RallarRoomFormation;
@@ -283,6 +286,7 @@ function createRoomEntryOperations(
     | 'create'
     | 'createAndSwitch'
     | 'join'
+    | 'quickJoin'
     | 'enter'
     | 'session'
     | 'formation'
@@ -299,6 +303,7 @@ function createRoomEntryOperations(
                 options,
                 createRoomSession: input.createSession
             }),
+        quickJoin: async (options = {}) => await quickJoinRoom({ ...input.rooms, options }),
         enter: async (room, options = {}) =>
             await enterRoom({
                 ...input.rooms,

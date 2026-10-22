@@ -24,6 +24,7 @@ import type {
     UpdateStateGroupBody
 } from '@shared-web/browser/rooms/room-group-state-translation.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import type { QuickJoinGroupRequest } from '@shared/api/mutation/group-quick-join.ts';
 
 import type { RallarRoomFormation } from './formation/rallar-room-formation-contracts.ts';
 
@@ -143,14 +144,25 @@ export interface RallarJoinRoomInput extends RallarJoinRoomOptions {
     readonly roomId?: string;
 }
 
-export type RallarRoomSwitchOperation = 'join' | 'create-and-switch';
+export interface RallarQuickJoinRoomInput
+    extends RallarScopedOperationOptions, Pick<QuickJoinGroupRequest, 'kind' | 'q' | 'includeEmpty'> {
+    readonly leaveCurrent?: boolean;
+}
+
+/** Admission committed, but connecting or adopting the room failed. */
+export interface RallarQuickJoinPartialFailureError extends Error {
+    readonly name: 'RallarQuickJoinPartialFailureError';
+    readonly joinedRoom: GroupSnapshot;
+}
+
+export type RallarRoomSwitchOperation = 'join' | 'quick-join' | 'create-and-switch';
 
 export interface RallarRoomSwitchPartialFailureError extends Error {
     readonly name: 'RallarRoomSwitchPartialFailureError';
     readonly operation: RallarRoomSwitchOperation;
     readonly joinedRoom: GroupSnapshot;
     readonly previousRoomRef: GroupRef;
-    readonly leaveError: unknown;
+    readonly leaveError: Error;
 }
 
 export interface RallarLeaveRoomOptions extends RallarScopedOperationOptions {

@@ -101,7 +101,7 @@ export function decodeGroupQuickJoinIngress(value: unknown): GroupQuickJoinIngre
     return { command, authorityProof, facts };
 }
 
-export function decodeQuickJoinGroupResult(value: unknown): QuickJoinGroupResult {
+export function decodeQuickJoinGroupResult(value: unknown, command: GroupQuickJoinCommand): QuickJoinGroupResult {
     const result = requireRecord(value, 'Quick Join result');
     if (result.status === 'unavailable') {
         requireExactKeys(result, ['status'], 'Unavailable Quick Join result');
@@ -112,5 +112,14 @@ export function decodeQuickJoinGroupResult(value: unknown): QuickJoinGroupResult
         throw new TypeError('Quick Join result status is invalid');
     }
     validateAuthoritativeGroupSnapshot(result.snapshot);
+    if (
+        result.snapshot.group.applicationId !== command.scope.applicationId ||
+        result.snapshot.group.workspaceId !== command.scope.workspaceId ||
+        !result.snapshot.members.some((member) =>
+            member.principalId === command.actorPrincipalId && member.status === 'active'
+        )
+    ) {
+        throw new TypeError('Quick Join result does not belong to its command');
+    }
     return { status: 'joined', snapshot: result.snapshot };
 }
