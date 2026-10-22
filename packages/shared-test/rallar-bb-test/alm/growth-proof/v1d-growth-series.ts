@@ -38,7 +38,7 @@ export function toV1dGrowthSeries(
         .map((point) => ({
             elapsedMs: point.atEpochMs - windowStartedAtEpochMs,
             agentId: point.agentId,
-            value: readV1dGrowthValue(point.value, reader)
+            value: toV1dGrowthValue(point.value, reader)
         }))
         .filter((reading): reading is { elapsedMs: number; agentId: string | null; value: number; } =>
             reading.elapsedMs >= 0 && reading.value !== undefined
@@ -47,7 +47,7 @@ export function toV1dGrowthSeries(
     return byAgent ? toAgentBucketMaxima(readings) : readings.map(({ elapsedMs, value }) => ({ elapsedMs, value }));
 }
 
-function readV1dGrowthValue(value: ApiJsonValue, reader: V1dGrowthReader): number | undefined {
+function toV1dGrowthValue(value: ApiJsonValue, reader: V1dGrowthReader): number | undefined {
     let current: ApiJsonValue = value;
     for (const step of reader.path) {
         const next = Array.isArray(current) && step === 'length'
@@ -112,4 +112,16 @@ export function computeV1dGrowthPlateau(
 
 export function computeV1dGrowthMax(series: readonly V1dGrowthSeriesPoint[]): number | null {
     return series.length === 0 ? null : Math.max(...series.map((point) => point.value));
+}
+
+export function toV1dGrowthLastElapsedMs(series: readonly V1dGrowthSeriesPoint[]): number {
+    return series.length === 0 ? 0 : series[series.length - 1]!.elapsedMs;
+}
+
+export function toV1dGrowthMinutes(milliseconds: number): number {
+    return Math.round((milliseconds / 60_000) * 10) / 10;
+}
+
+export function toV1dGrowthRounded(value: number): number {
+    return Math.round(value * 100) / 100;
 }

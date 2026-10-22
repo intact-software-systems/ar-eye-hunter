@@ -1,10 +1,7 @@
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
-import {
-    computeV1dGrowthAssessment,
-    type V1dGrowthAssessment,
-    type V1dGrowthOutcome
-} from './compute-v1d-growth-assessment.ts';
+import { computeV1dGrowthAssessment } from './compute-v1d-growth-assessment.ts';
+import type { V1dGrowthAssessment, V1dGrowthOutcome } from './v1d-growth-assessment.ts';
 import { isApiJsonObject, toV1dGrowthSeries, type V1dGrowthSamplePoint } from './v1d-growth-series.ts';
 import type {
     V1dGrowthClass,
@@ -12,12 +9,15 @@ import type {
     V1dGrowthSampleSource,
     V1dGrowthSurface
 } from './v1d-growth-surface.ts';
+import { computeV1dGrowthWorkloadIssues, type V1dGrowthWorkload } from './v1d-growth-workload.ts';
 
 export type V1dGrowthSamples = Readonly<Record<V1dGrowthSampleSource, readonly V1dGrowthSamplePoint[]>>;
 
-/** The run fact every predicate reads: where the window starts. */
+/** Where the run's window starts, and the workload outcome the script recorded when it closed. */
 export interface V1dGrowthRun {
     readonly windowStartedAtEpochMs: number;
+    /** Null when the run ended before the script recorded the workload's outcome. */
+    readonly workload: V1dGrowthWorkload | null;
 }
 
 export interface V1dGrowthVerdictInput {
@@ -36,8 +36,12 @@ export interface V1dGrowthVerdictRow extends V1dGrowthAssessment {
     readonly growthClass: V1dGrowthClass | 'unclassified';
 }
 
+/** Passed only with a complete workload and every reading passing or declared. */
 export interface V1dGrowthVerdict {
     readonly passed: boolean;
+    readonly windowStartedAtEpochMs: number;
+    readonly workload: V1dGrowthWorkload | null;
+    readonly workloadIssues: readonly string[];
     readonly rows: readonly V1dGrowthVerdictRow[];
 }
 
@@ -52,11 +56,19 @@ export function computeV1dGrowthVerdict(input: V1dGrowthVerdictInput): V1dGrowth
         ...input.surveyedSurfaceIds
             .filter((surfaceId) => !classifiedIds.has(surfaceId))
             .map((surfaceId) => toUnclassifiedRow(surfaceId, `survey surface ${surfaceId}`)),
-        ...readUnreadNamespaces(input).map((namespace) =>
+        ...toUnreadNamespaces(input).map((namespace) =>
             toUnclassifiedRow(null, `runtime_state_store namespace ${namespace}`)
         )
     ];
-    return { passed: rows.every((row) => row.outcome === 'pass'), rows };
+    const workloadIssues = computeV1dGrowthWorkloadIssues(input.run.workload);
+    return {
+        passed: workloadIssues.length === 0 &&
+            rows.every((row) => row.outcome === 'pass' || row.outcome === 'declared'),
+        windowStartedAtEpochMs: input.run.windowStartedAtEpochMs,
+        workload: input.run.workload,
+        workloadIssues,
+        rows
+    };
 }
 
 function computeV1dGrowthVerdictRow(
@@ -74,6 +86,7 @@ function computeV1dGrowthVerdictRow(
         growthClass: classification.growthClass,
         ...computeV1dGrowthAssessment(classification, {
             series: toSeries(reader),
+            entitySeries: classification.growthClass === 'durable' ? toSeries(classification.entityReader) : [],
             neverExpiringSeries: reader.neverExpiringPath === null
                 ? []
                 : toSeries({ ...reader, path: reader.neverExpiringPath, neverExpiringPath: null })
@@ -81,7 +94,7 @@ function computeV1dGrowthVerdictRow(
     };
 }
 
-function readUnreadNamespaces(input: V1dGrowthVerdictInput): readonly string[] {
+function toUnreadNamespaces(input: V1dGrowthVerdictInput): readonly string[] {
     const read = new Set(
         input.surfaces.flatMap((surface) => surface.readers)
             .filter((reader) =>
@@ -90,11 +103,11 @@ function readUnreadNamespaces(input: V1dGrowthVerdictInput): readonly string[] {
             )
             .map((reader) => reader.path[NAMESPACE_PATH.length]!)
     );
-    const observed = new Set(input.samples.postgres.flatMap((point) => readNamespaces(point.value)));
+    const observed = new Set(input.samples.postgres.flatMap((point) => toNamespaces(point.value)));
     return [...observed].filter((namespace) => !read.has(namespace)).sort();
 }
 
-function readNamespaces(value: ApiJsonValue): readonly string[] {
+function toNamespaces(value: ApiJsonValue): readonly string[] {
     const runtimeState = isApiJsonObject(value) ? value[NAMESPACE_PATH[0]] : undefined;
     const byNamespace = isApiJsonObject(runtimeState) ? runtimeState[NAMESPACE_PATH[1]] : undefined;
     return isApiJsonObject(byNamespace) ? Object.keys(byNamespace) : [];

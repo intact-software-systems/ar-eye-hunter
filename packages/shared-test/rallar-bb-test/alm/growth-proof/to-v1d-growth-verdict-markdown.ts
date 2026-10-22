@@ -1,4 +1,5 @@
-import type { V1dGrowthOutcome } from './compute-v1d-growth-assessment.ts';
+import type { V1dGrowthOutcome } from './v1d-growth-assessment.ts';
+import { toV1dGrowthMinutes } from './v1d-growth-series.ts';
 import type { V1dGrowthVerdict, V1dGrowthVerdictRow } from './v1d-growth-verdict.ts';
 
 export interface V1dGrowthVerdictDocumentInput {
@@ -6,7 +7,7 @@ export interface V1dGrowthVerdictDocumentInput {
     readonly skippedLines: number;
 }
 
-const OUTCOMES: readonly V1dGrowthOutcome[] = ['pass', 'fail', 'insufficient', 'no-data', 'unclassified'];
+const OUTCOMES: readonly V1dGrowthOutcome[] = ['pass', 'declared', 'fail', 'insufficient', 'no-data', 'unclassified'];
 const MINUTE_MS = 60_000;
 
 export function toV1dGrowthVerdictMarkdown(input: V1dGrowthVerdictDocumentInput): string {
@@ -20,7 +21,12 @@ export function toV1dGrowthVerdictMarkdown(input: V1dGrowthVerdictDocumentInput)
         `**${verdict.passed ? 'PASS' : 'FAIL'}**: ${verdict.rows.length} readings: ${counts.join(', ')}. ` +
         `Sample lines skipped: ${input.skippedLines}.`,
         '',
-        'The slope is the last 15 minutes, or everything after the 10-minute warm-up for a heap reading.',
+        toWorkloadLine(verdict),
+        ...verdict.workloadIssues.map((issue) => `- ${issue}`),
+        '',
+        'The slope is the last 15 minutes; everything after the 10-minute warm-up for a heap reading; the whole run for ' +
+        'a durable, declared or unbounded reading. A declared reading is an accepted append-only history: reported, ' +
+        'not judged. The RTC workload orders few ALM tracks, so the delivered-marker readings do not stress their caps.',
         '',
         '| # | surface | reader | class | first plateau | slope per hour | max | bound | verdict |',
         '| -: | --- | --- | --- | --- | --: | --: | --- | --- |',
@@ -33,6 +39,23 @@ export function toV1dGrowthVerdictMarkdown(input: V1dGrowthVerdictDocumentInput)
             .map((row) => `- ${row.surfaceId ?? '-'} ${toCell(row.surface)} (${row.reader}): ${row.reason}`),
         ''
     ].join('\n');
+}
+
+function toWorkloadLine(verdict: V1dGrowthVerdict): string {
+    const workload = verdict.workload;
+    if (workload === null) {
+        return 'Workload: not recorded.';
+    }
+    const toOffset = (atEpochMs: number) => toV1dGrowthMinutes(atEpochMs - verdict.windowStartedAtEpochMs);
+    const completed = workload.manifestCompletedAtEpochMs === null
+        ? 'past the window\'s end'
+        : `${toOffset(workload.manifestCompletedAtEpochMs)} min of the window`;
+    const manifest = workload.manifestStartedAtEpochMs === null
+        ? 'the manifest never started'
+        : `the manifest ran from ${toOffset(workload.manifestStartedAtEpochMs)} min to ${completed} ` +
+            '(its stream runs inside it)';
+    return `Workload: ${manifest}; runner ${workload.runner}; churn ${workload.churnPassed} passed, ` +
+        `${workload.churnFailedRunIds.length} failed.`;
 }
 
 function toTableRow(row: V1dGrowthVerdictRow): string {

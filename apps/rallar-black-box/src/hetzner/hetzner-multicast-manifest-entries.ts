@@ -68,17 +68,18 @@ export function createDiagnosticRtcMessagesPrincipal50Agent60m20hzTreeEntry(): H
  * The local growth proof's workload: one hour of principal multicast over a tree sized to the cohort, every agent
  * reading its stats, the ALM ledger among them, every 30 s while the stream runs.
  */
-export function createRtcMessagesPrincipal15Agent60m2hzTreeEntry(): HetznerDistributedManifestEntry {
+export function createRtcMessagesPrincipal15Agent78m2hzTreeEntry(): HetznerDistributedManifestEntry {
     return createManifestEntry({
         filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[22],
-        title: 'RTC messages principal 15-agent 60m 2 Hz tree',
-        description: 'One principal headless sender multicasts RTC messages at 2 Hz to 14 receivers for 60 minutes ' +
-            'through a forced tree, every agent reading its ALM ledger every 30 s. 2 Hz keeps the hour at 7,200 ' +
-            'frames, inside the 10,000-frame bound the agents enforce on one rtc.stream.',
-        distributedRunId: 'hetzner-rtc-messages-principal-15-agent-60m-2hz-tree',
+        title: 'RTC messages principal 15-agent 78m 2 Hz tree',
+        description: 'One principal headless sender multicasts RTC messages at 2 Hz to 14 receivers for 78 minutes ' +
+            'through a forced tree, every agent reading its ALM ledger every 30 s. 78 minutes outlast the growth ' +
+            'proof\'s 75-minute window; 2 Hz keeps them at 9,360 frames, inside the 10,000-frame bound the agents ' +
+            'enforce on one rtc.stream.',
+        distributedRunId: 'hetzner-rtc-messages-principal-15-agent-78m-2hz-tree',
         recipes: createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes({
             participantCount: 15,
-            durationSeconds: 3_600,
+            durationSeconds: 4_680,
             rateHz: 2,
             minReceiveRatio: 0.95,
             group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
@@ -88,7 +89,7 @@ export function createRtcMessagesPrincipal15Agent60m2hzTreeEntry(): HetznerDistr
                 progressEveryMs: 30_000,
                 sampleEvery: 100,
                 drainTimeoutMs: 30_000,
-                maxDroppedFrames: 360,
+                maxDroppedFrames: 468,
                 maxP95SendDurationMs: 2_500,
                 maxP99SendDurationMs: 4_000
             }
@@ -110,11 +111,11 @@ export function createRtcMessagesPrincipal15Agent60m2hzTreeEntry(): HetznerDistr
             treeMeshMinSize: 16,
             participantCount: 15,
             senderCount: 1,
-            durationSeconds: 3_600,
+            durationSeconds: 4_680,
             rateHz: 2,
             minReceiveRatio: 0.95,
-            receiverExpectedFrames: 7_200,
-            recommendedTerminalTimeoutSeconds: 4_500,
+            receiverExpectedFrames: 9_360,
+            recommendedTerminalTimeoutSeconds: 5_100,
             catalogProfiles: []
         })
     });

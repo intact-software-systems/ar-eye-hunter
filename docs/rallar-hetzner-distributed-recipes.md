@@ -75,20 +75,24 @@ green order:
 | `apps/rallar-black-box/manifests/hetzner/18-alm-conformance-2-agent.json`                                                                                     |        2 | ALM conformance family (two peers).                                                            |
 | `apps/rallar-black-box/manifests/hetzner/22-alm-conformance-3-agent.json`                                                                                     |        3 | ALM conformance three-peer family.                                                             |
 | `apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json` through `21-alm-conformance-50-agent-30s.json`                                 | 15/30/50 | ALM storage counters over a principal RTC multicast tree. Need rollout.                        |
-| `apps/rallar-black-box/manifests/hetzner/23-rtc-messages-principal-15-agent-60m-2hz-tree.json`                                                                |       15 | One sender, 2 Hz, 60 minutes over a tree; every agent reads its ALM ledger every 30 s.         |
+| `apps/rallar-black-box/manifests/hetzner/23-rtc-messages-principal-15-agent-78m-2hz-tree.json`                                                                |       15 | One sender, 2 Hz, 78 minutes over a tree; every agent reads its ALM ledger every 30 s.         |
 
-Manifest 23 is the workload of the local ALM growth proof. The rate is 2 Hz,
-not 5, because agents refuse an `rtc.stream` above 10,000 frames and the hour
-at 2 Hz is 7,200. The script creates and migrates a fresh `v1d_growth_*`
-database on the dev Postgres container, launches the API (timing logs and
-`--expose-gc` on, every retention at its committed default), the control
-server, the headless SPA and one worker with fixed agent credentials and the
-browser census on every 30 s, drives
-manifest 23 and loops the medium-scale churn recipes beside it, samples the
-database, the admin reads, process memory and the agents' stats every 30 s, then
-stops everything, drops the database and writes `verdict.md` from
-`write-v1d-growth-verdict.ts`. It is a manual run. `tests/manual-suites.json`
-claims only test files, so its entry lives here, in the same fields:
+Manifest 23 is the workload of the local ALM growth proof. It streams for 78
+minutes so traffic covers the proof's whole 75-minute window, at 2 Hz because
+agents refuse an `rtc.stream` above 10,000 frames (78 minutes at 2 Hz is
+9,360). The script creates and migrates a fresh `v1d_growth_*` database on the
+dev Postgres container, launches the API (timing logs and `--expose-gc` on,
+every retention at its committed default), the control server, the headless SPA
+and one worker with fixed agent credentials and the browser census on every
+30 s, drives manifest 23 and loops the medium-scale churn recipes beside it, and
+samples the database, the admin reads, process memory and the agents' stats
+every 30 s. After the window it waits for the manifest to finish, records the
+runner's outcome and the churn pass and fail counts in `run.json` (the verdict
+fails without a passed manifest and a clean churn loop), stops everything, drops
+the database and writes `verdict.md` from `write-v1d-growth-verdict.ts`. A
+75-minute run directory takes about 3 GB. It is a manual run.
+`tests/manual-suites.json` claims only test files, so its entry lives here, in
+the same fields:
 
 ```json
 {

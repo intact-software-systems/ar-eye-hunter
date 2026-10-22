@@ -11,10 +11,7 @@ import {
     groupRoomRef,
     RALLAR_BLACK_BOX_RTC_CONNECT_COMPLETION_MARGIN_MS
 } from './live-rtc-setup.ts';
-import {
-    normalizeRallarBlackBoxRtcRealtimeDurationSeconds,
-    normalizeRallarBlackBoxRtcRealtimeRateHz
-} from './rtc-realtime-recipes.ts';
+import { normalizeRallarBlackBoxRtcRealtimeRateHz } from './rtc-realtime-recipes.ts';
 
 export const RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_SENDER_RECIPE_FIXTURE_ID =
     'rtc-messages-principal-multicast-sender';
@@ -98,9 +95,8 @@ function multicastDeliveryPlan(
     );
     const rateHz = normalizeRallarBlackBoxRtcRealtimeRateHz(options.rateHz);
     const intervalMs = Math.max(1, Math.round(1_000 / rateHz));
-    const durationSeconds = normalizeRallarBlackBoxRtcRealtimeDurationSeconds(
-        options.durationSeconds
-    );
+    // Unlike a realtime stream, a multicast stream may outlast an hour; the agents bound its frames instead.
+    const durationSeconds = normalizePositiveInteger(options.durationSeconds, 30, 1);
     const frameCount = Math.max(1, Math.round(durationSeconds * rateHz));
     const receiverCount = senderCount === participantCount
         ? participantCount

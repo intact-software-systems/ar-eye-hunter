@@ -14,7 +14,7 @@ import {
     createRtcMessagesAllPeer50Agent30s5hzTreeEntry,
     createRtcMessagesMainlineAlternativeEntries,
     createRtcMessagesMediumScaleMatrixEntries,
-    createRtcMessagesPrincipal15Agent60m2hzTreeEntry,
+    createRtcMessagesPrincipal15Agent78m2hzTreeEntry,
     createRtcMessagesPrincipal50Agent30s20hzMeshEntry,
     createRtcMessagesPrincipal50Agent30s20hzTreeEntry
 } from './hetzner/hetzner-multicast-manifest-entries.ts';
@@ -59,7 +59,7 @@ export function createHetznerDistributedManifestCatalog(): readonly HetznerDistr
         createAlmConformance2AgentEntry(),
         ...createAlmScaleManifestEntries(),
         createAlmConformance3AgentEntry(),
-        createRtcMessagesPrincipal15Agent60m2hzTreeEntry(),
+        createRtcMessagesPrincipal15Agent78m2hzTreeEntry(),
         ...createAlmScaleDiagnosticEntries(),
         createDiagnosticBarrierHealth2AgentEntry(),
         createDiagnosticExpectedFailure1AgentEntry(),
