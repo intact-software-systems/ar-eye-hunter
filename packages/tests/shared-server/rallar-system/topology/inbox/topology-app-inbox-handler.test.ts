@@ -498,7 +498,8 @@ function reconfigureRead(): GroupTopologyReconfigureRead {
             nowEpochMs: NOW_EPOCH_MS
         },
         authorityGuard: groupAuthorityGuard(),
-        actorIsPlatformAdmin: false
+        actorIsPlatformAdmin: false,
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS
     };
 }
 

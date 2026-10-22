@@ -34,7 +34,6 @@ export interface GroupTopologyReconfigureMutationDependencies {
     ) => Promise<GroupTopologyPlanningAuthority>;
     readonly isPlatformAdmin: (principalId: string) => boolean;
     readonly outboxWriter: RtcTopologyOutboxWriter;
-    /** How long the commanded recompute outbox row stays after the command's capture. */
     readonly finishedRetentionMs: number;
 }
 
@@ -68,7 +67,8 @@ export class GroupTopologyReconfigureMutation {
         return {
             authority,
             authorityGuard: guarded.authorityGuard,
-            actorIsPlatformAdmin: this.dependencies.isPlatformAdmin(command.actorPrincipalId)
+            actorIsPlatformAdmin: this.dependencies.isPlatformAdmin(command.actorPrincipalId),
+            finishedRetentionMs: this.dependencies.finishedRetentionMs
         };
     }
 
@@ -89,7 +89,7 @@ export class GroupTopologyReconfigureMutation {
             // by the replanning mode that only runs commanded work.
             origin: 'commanded',
             createdAtEpochMs: command.capturedAtEpochMs,
-            expireAtEpochMs: command.capturedAtEpochMs + this.dependencies.finishedRetentionMs,
+            expireAtEpochMs: command.capturedAtEpochMs + read.finishedRetentionMs,
             senderId: command.actorPrincipalId,
             requestOptions: toCanonicalGroupTopologyConfigPatch(command.requestOptions),
             publish: command.publish

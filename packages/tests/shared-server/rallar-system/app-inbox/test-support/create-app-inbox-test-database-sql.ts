@@ -255,9 +255,8 @@ async function executeResultAndReservationSql(
     const [statusValue, completedAtValue, ...rest] = input.values;
     const status = readEntityStatus(statusValue, 'Reservation status');
     const completedAt = readDateParameter(completedAtValue, 'Reservation completion');
-    const expiresAt = input.query.includes('expire_ts = ?')
-        ? readDateParameter(rest.shift(), 'Reservation retention expiry')
-        : null;
+    const expiresAtValue = rest.shift();
+    const expiresAt = expiresAtValue === null ? null : readDateParameter(expiresAtValue, 'Reservation retention expiry');
     const topicId = readStringParameter(rest[0], 'Reservation topic ID');
     const resourceId = readStringParameter(rest[1], 'Reservation resource ID');
     const contextId = readStringParameter(rest[2], 'Reservation context ID');
@@ -310,6 +309,8 @@ function insertOutboxEntry(input: AppInboxTestSqlExecution, entry: ResourceEntry
     }
     const key = toResourceKey(entry);
     if (input.pending.outbox.has(key)) {
+        // The fake holds no expiry for pending outbox rows, so it never takes the replace-expired branch; the Postgres
+        // pins in topology-config-retention.test.ts cover writing over an expired row.
         const leavesLiveRow = input.query.includes('do nothing') ||
             input.query.includes('where resource_inbox.expire_ts <=');
         if (input.query.includes('on conflict') && leavesLiveRow) {

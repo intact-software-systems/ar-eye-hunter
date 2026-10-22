@@ -1,12 +1,30 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it } from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
-import { GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-runtime-namespaces.ts';
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
+import {
+    GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+    GROUP_TOPOLOGY_OVERRIDE_NAMESPACE
+} from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-runtime-namespaces.ts';
 import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
+import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
+import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
+import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
+import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { seedTopologyGroup, topologyGroupSnapshot } from '../../rallar-system/topology/concurrency/postgres-topology-concurrency-fixtures.ts';
 import {
@@ -29,7 +47,6 @@ import {
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 /** Short enough to wait out in a test; the configuration's floor applies to the API, not to the writer. */
 const SHORT_RETENTION_MS = 3_000;
-const NEVER_EXPIRE_YEAR = 9_999;
 
 interface TopologyRetentionHarness {
     readonly runId: string;
@@ -41,34 +58,52 @@ interface TopologyRetentionHarness {
 
 interface StoredExpiry {
     readonly expireAtEpochMs: number;
-    readonly expireYear: number;
+}
+
+interface StoredRecomputeRow extends StoredExpiry {
+    readonly msgId: string;
+    readonly status: string;
 }
 
 describe('Postgres retention of topology command rows', () => {
-    postgresIt('bounds the recompute outbox rows of a config write and a reconfigure, and the mutation record', async () => {
+    postgresIt('completes the recompute rows of a config write and a reconfigure at their own window, and bounds the record', async () => {
         await withTopologyRetentionHarness(async (harness) => {
             const runtime = harness.createRuntime();
+            const configRequestId = `put-config-${harness.runId}`;
             const configCapturedAtEpochMs = Date.now();
             await runTopologyCommand(harness, runtime, {
-                requestId: `put-config-${harness.runId}`,
+                requestId: configRequestId,
                 capturedAtEpochMs: configCapturedAtEpochMs,
                 payload: { operation: 'putConfig', config: { topologyKind: 'tree' } }
             });
+            const reconfigureRequestId = `reconfigure-${harness.runId}`;
             const reconfigureCapturedAtEpochMs = Date.now();
             await runTopologyCommand(harness, runtime, {
-                requestId: `reconfigure-${harness.runId}`,
+                requestId: reconfigureRequestId,
                 capturedAtEpochMs: reconfigureCapturedAtEpochMs,
                 payload: { operation: 'reconfigureTopology', requestOptions: {}, publish: false }
             });
+            const recomputeIds = [
+                `${configRequestId}:rtc-topology-recompute:group-revision:group=1;presence=0`,
+                `${reconfigureRequestId}:rtc-topology-recompute:explicit`
+            ];
 
-            const outbox = await readOutboxExpiries(harness.sql, harness.runId);
-            expect(outbox.length).toBeGreaterThan(0);
-            expect(outbox.every((row) => row.expireYear < NEVER_EXPIRE_YEAR)).toBe(true);
-            expect(Math.max(...outbox.map((row) => row.expireAtEpochMs))).toBe(
-                reconfigureCapturedAtEpochMs + SHORT_RETENTION_MS
-            );
+            await drainTopologyOutboxUntilCompleted(harness, recomputeIds);
+
+            expect(await readRecomputeRows(harness.sql, recomputeIds)).toEqual([
+                {
+                    msgId: recomputeIds[0],
+                    status: EntityStatus.COMPLETED,
+                    expireAtEpochMs: configCapturedAtEpochMs + SHORT_RETENTION_MS
+                },
+                {
+                    msgId: recomputeIds[1],
+                    status: EntityStatus.COMPLETED,
+                    expireAtEpochMs: reconfigureCapturedAtEpochMs + SHORT_RETENTION_MS
+                }
+            ]);
             expect(await readMutationRecordExpiries(harness.sql, harness.runId)).toEqual([
-                expect.objectContaining({ expireAtEpochMs: configCapturedAtEpochMs + SHORT_RETENTION_MS })
+                { expireAtEpochMs: configCapturedAtEpochMs + SHORT_RETENTION_MS }
             ]);
         });
     }, 60_000);
@@ -92,6 +127,23 @@ describe('Postgres retention of topology command rows', () => {
             });
             expect(executed).toMatchObject({ receipt: { outcome: 'applied', acceptedVersion: 2 } });
             expect(await readFactAttempts(harness.sql, requestId)).toEqual([1]);
+        });
+    }, 60_000);
+
+    postgresIt('writes an override over an expired override row, one revision past it', async () => {
+        await withTopologyRetentionHarness(async (harness) => {
+            const runtime = harness.createRuntime();
+            const putOverride = (requestId: string, ttlMs: number) =>
+                runTopologyCommand(harness, runtime, {
+                    requestId,
+                    capturedAtEpochMs: Date.now(),
+                    payload: { operation: 'putOverride', config: { degreeLimit: 4 }, ttlMs, expiresAtEpochMs: null }
+                });
+            await putOverride(`put-override-${harness.runId}`, 500);
+            await new Promise((resolve) => setTimeout(resolve, 750));
+
+            expect(await putOverride(`put-override-again-${harness.runId}`, 60_000)).toMatchObject({ receipt: { outcome: 'applied' } });
+            expect(await readOverrideRevisions(harness.sql, harness.runId)).toEqual([1]);
         });
     }, 60_000);
 });
@@ -150,9 +202,11 @@ async function runTopologyCommand(
     command: TopologyCommand
 ) {
     await runtime.authSessions.putSession(harness.owner);
-    const type = command.payload.operation === 'putConfig'
-        ? AppInboxType.TOPOLOGY_CONFIG_PUT
-        : AppInboxType.TOPOLOGY_RECONFIGURE;
+    const type = {
+        putConfig: AppInboxType.TOPOLOGY_CONFIG_PUT,
+        putOverride: AppInboxType.TOPOLOGY_OVERRIDE_PUT,
+        reconfigureTopology: AppInboxType.TOPOLOGY_RECONFIGURE
+    }[command.payload.operation as 'putConfig' | 'putOverride' | 'reconfigureTopology'];
     const result = await runtime.runUntilCompletion(() =>
         runtime.topology.processAuthenticatedEntryUntilCompletionResult(
             {
@@ -179,22 +233,83 @@ async function runTopologyCommand(
     return result.right;
 }
 
-async function readOutboxExpiries(sql: PSqlSql, runId: string): Promise<readonly StoredExpiry[]> {
-    return await sql<StoredExpiry[]>`
-        select round(extract(epoch from expire_ts) * 1000)::bigint::float8 as "expireAtEpochMs",
-               extract(year from expire_ts)::int as "expireYear"
+/** Runs the topology APP_OUTBOX worker until every named recompute row has completed. */
+async function drainTopologyOutboxUntilCompleted(
+    harness: TopologyRetentionHarness,
+    msgIds: readonly string[]
+): Promise<void> {
+    const outboxQueueReader = createTopologyOutboxQueueReader(harness);
+    for (let iteration = 0; iteration < 200; iteration += 1) {
+        const rows = await readRecomputeRows(harness.sql, msgIds);
+        if (rows.length === msgIds.length && rows.every((row) => row.status === EntityStatus.COMPLETED)) {
+            return;
+        }
+        await outboxQueueReader.dequeueOutbox(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, createOutboxResilience());
+        await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    throw new Error('The topology recompute rows did not complete');
+}
+
+function createTopologyOutboxQueueReader(harness: TopologyRetentionHarness): OutboxQueueReader {
+    const resources = createPSqlResourceInboxRepository(harness.sql, () => new Date());
+    const outboxQueueReader = new OutboxQueueReader(new PSqlQueueBox(resources, Temporal.Now.instant));
+    const runtimeRepository = new PSqlRuntimeStateRepository(harness.sql);
+    const groupStateRepository = createTestGroupStateRepository(
+        runtimeRepository,
+        new PSqlGroupStateEventRepository(harness.sql)
+    );
+    const topologyOwners = createGroupTopologyRuntimeOwners({
+        findGroupSnapshotByRef: () => topologyGroupSnapshot(harness.groupRef),
+        readCurrentGroupSnapshot: async (ref) => await groupStateRepository.readSnapshot(ref),
+        readRttMeasurements: () => [],
+        topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000 })
+    });
+    outboxQueueReader.onOutboxMessageDo(
+        AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
+        createRtcTopologyWorkHandler({
+            nowEpochMs: Date.now,
+            outboxQueueReader,
+            database: harness.sql,
+            topologyPlanning: topologyOwners.planning,
+            executionRepository: new RtcTopologyExecutionRepository(runtimeRepository, undefined, Date.now),
+            serviceId: 'topology-retention-outbox'
+        })
+    );
+    return outboxQueueReader;
+}
+
+function createOutboxResilience(): ResourceInboxResilience {
+    const duration = Temporal.Duration.from({ seconds: 10 });
+    return ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(100, duration, duration, duration));
+}
+
+async function readRecomputeRows(sql: PSqlSql, msgIds: readonly string[]): Promise<readonly StoredRecomputeRow[]> {
+    return await sql<StoredRecomputeRow[]>`
+        select ri_resource::jsonb #>> '{id,msgId}' as "msgId",
+               ri_status as status,
+               round(extract(epoch from expire_ts) * 1000)::bigint::float8 as "expireAtEpochMs"
         from resource_inbox
-        where ri_type_id = ${EnqueuedType.APP_OUTBOX} and ri_resource like ${`%${runId}%`}
+        where ri_type_id = ${EnqueuedType.APP_OUTBOX}
+          and ri_resource::jsonb #>> '{id,msgId}' = any(${[...msgIds]}::text[])
+        order by array_position(${[...msgIds]}::text[], ri_resource::jsonb #>> '{id,msgId}')
     `;
 }
 
 async function readMutationRecordExpiries(sql: PSqlSql, runId: string): Promise<readonly StoredExpiry[]> {
     return await sql<StoredExpiry[]>`
-        select round(extract(epoch from expire_at_ts) * 1000)::bigint::float8 as "expireAtEpochMs",
-               extract(year from expire_at_ts)::int as "expireYear"
+        select round(extract(epoch from expire_at_ts) * 1000)::bigint::float8 as "expireAtEpochMs"
         from runtime_state_store
         where store_namespace = ${GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE} and store_key like ${`%${runId}%`}
     `;
+}
+
+async function readOverrideRevisions(sql: PSqlSql, runId: string): Promise<readonly number[]> {
+    const rows = await sql<{ revision: number; }[]>`
+        select revision::int as revision from runtime_state_store
+        where store_namespace = ${GROUP_TOPOLOGY_OVERRIDE_NAMESPACE} and store_key like ${`%${runId}%`}
+          and expire_at_ts > now()
+    `;
+    return rows.map((row) => row.revision);
 }
 
 async function readFactAttempts(sql: PSqlSql, requestId: string): Promise<readonly number[]> {

@@ -229,6 +229,7 @@ function createRead(actorIsPlatformAdmin = false) {
             nowEpochMs: 1_000
         },
         authorityGuard: createTopologyTestAuthorityGuard(),
-        actorIsPlatformAdmin
+        actorIsPlatformAdmin,
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS
     };
 }
