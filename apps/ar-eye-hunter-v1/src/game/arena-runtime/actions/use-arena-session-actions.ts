@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 
 import { rallar } from '@shared-web/browser/rallar.ts';
@@ -69,17 +69,27 @@ export function useArenaSessionActions(
 function useArenaAuthentication(
     input: ArenaSessionActionsInput
 ): Pick<ArenaConnection, 'login' | 'register' | 'logout'> {
+    const pendingLogoutRef = useRef<Promise<void> | undefined>(undefined);
     const login = useCallback(
         (username: string, password: string) =>
-            authenticateArena(input, { username, password, mode: 'login', displayName: undefined }),
+            authenticateArena(
+                input,
+                { username, password, mode: 'login', displayName: undefined },
+                pendingLogoutRef.current
+            ),
         [input.connect]
     );
     const register = useCallback(
         (username: string, password: string, displayName?: string) =>
-            authenticateArena(input, { username, password, displayName, mode: 'register' }),
+            authenticateArena(input, { username, password, displayName, mode: 'register' }, pendingLogoutRef.current),
         [input.connect]
     );
-    const logout = useCallback(() => logoutArena(input), [input.resetForSignedOutAuth]);
+    const logout = useCallback(() => {
+        pendingLogoutRef.current ??= logoutArena(input).finally(() => {
+            pendingLogoutRef.current = undefined;
+        });
+        return pendingLogoutRef.current;
+    }, [input.resetForSignedOutAuth]);
     return { login, register, logout };
 }
 
@@ -96,10 +106,17 @@ async function logoutArena(input: ArenaSessionActionsInput): Promise<void> {
     }
 }
 
-async function authenticateArena(input: ArenaSessionActionsInput, authentication: ArenaAuthentication): Promise<void> {
-    input.setConnectionState('connecting');
-    input.setError(undefined);
+async function authenticateArena(
+    input: ArenaSessionActionsInput,
+    authentication: ArenaAuthentication,
+    pendingLogout: Promise<void> | undefined
+): Promise<void> {
     try {
+        if (pendingLogout) {
+            await pendingLogout;
+        }
+        input.setConnectionState('connecting');
+        input.setError(undefined);
         const session = authentication.mode === 'login'
             ? await rallar.auth.login({ username: authentication.username, password: authentication.password })
             : await rallar.auth.registerAndLogin({

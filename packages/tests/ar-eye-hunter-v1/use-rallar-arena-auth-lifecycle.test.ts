@@ -97,6 +97,58 @@ describe('useRallarArena auth lifecycle', () => {
         });
     });
 
+    it.each(
+        [
+            { mode: 'login', revoke: 'success' },
+            { mode: 'login', revoke: 'failure' },
+            { mode: 'register', revoke: 'success' },
+            { mode: 'register', revoke: 'failure' }
+        ] as const
+    )('keeps a replacement $mode session after pending logout $revoke', async ({ mode, revoke }) => {
+        await arena.render();
+        await waitForState(() => arena.current?.connectionState === 'connected');
+        const pendingRevoke = Promise.withResolvers<void>();
+        const replacement = { ...session, clientId: 'hunter-2', sessionId: 'replacement-session' };
+        mockRallar.auth.logout.mockImplementationOnce(async () => {
+            try {
+                await pendingRevoke.promise;
+            }
+            finally {
+                await emitAuthState({ authenticated: false, reason: 'logout' });
+            }
+        });
+        mockRallar.auth[mode === 'login' ? 'login' : 'registerAndLogin'].mockResolvedValueOnce(replacement);
+        mockRallar.start.mockResolvedValueOnce({ session: replacement, connected: true });
+        let logout: Promise<void> | undefined;
+        let authentication: Promise<void> | undefined;
+        await act(async () => {
+            logout = arena.current?.logout();
+        });
+        await act(async () => {
+            authentication = arena.current?.[mode]('replacement', 'password');
+        });
+        const sessionWhileLogoutPending = arena.current?.session;
+        await act(async () => {
+            if (revoke === 'success') {
+                pendingRevoke.resolve();
+            }
+            else {
+                pendingRevoke.reject(new Error('revocation unavailable'));
+            }
+            await logout;
+            await authentication;
+        });
+        expect(arena.current?.session).toEqual(replacement);
+        expect(arena.current?.connectionState).toBe('connected');
+        expect(sessionWhileLogoutPending).toBeUndefined();
+        mockRallar.rooms.directory.mockResolvedValueOnce({ entries: [directoryArena('replacement-room')], nextCursor: null });
+        await act(async () => {
+            await arena.current?.refreshRooms();
+        });
+        expect(arena.current?.openRooms.map((room) => room.groupRef.groupId)).toEqual(['replacement-room']);
+        expect(arena.current?.openRoomsStatus).toBe('ready');
+    });
+
     it('blocks stale canvas callbacks while manual logout revoke is pending', async () => {
         await arena.render();
         await waitForState(() => arena.current?.connectionState === 'connected');
@@ -578,6 +630,7 @@ describe('useRallarArena auth lifecycle', () => {
         }
         await emitAuthState({
             authenticated: true,
+            reason: 'login',
             session: transition === 'account replacement' ? { ...session, sessionId: 'replacement-session' } : session
         });
         await act(async () => {
@@ -721,6 +774,7 @@ describe('useRallarArena auth lifecycle', () => {
             displayName: expect.stringContaining('AR Eye Hunter Arena:'),
             joinMode: 'open'
         });
+        expect(mockRallar.rooms.create).not.toHaveBeenCalled();
         expect(arena.current?.roomId).toBe('arena-2');
         expect(arena.current?.remotePlayers.size).toBe(0);
         expect(arena.current?.remoteEvents).toEqual([]);
