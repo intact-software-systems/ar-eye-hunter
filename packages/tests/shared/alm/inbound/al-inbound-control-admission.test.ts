@@ -184,6 +184,10 @@ function recordALInboundCommits(
                     commit.storeKeys.push(key);
                     await tx.set(key, value, expireAtTimestamp);
                 },
+                setFence: async <V>(key: string, value: V, expireAtTimestamp?: number) => {
+                    commit.storeKeys.push(key);
+                    await tx.setFence(key, value, expireAtTimestamp);
+                },
                 remove: async (key: string) => {
                     commit.storeKeys.push(key);
                     await tx.remove(key);

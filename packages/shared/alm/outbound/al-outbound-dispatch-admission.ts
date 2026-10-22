@@ -18,7 +18,6 @@ import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
 import { toALOutboundCommitLockName, type ALBrowserLocks } from '../storage/al-browser-locks.ts';
 import { toALStorageUnavailable } from '../storage/al-storage-unavailable.ts';
-import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import type {
     ALOutboundAdmissionStore,
     ALOutboundCommitBundle,
@@ -80,9 +79,6 @@ interface ALOutboundGroupMember<TPrepared> {
     readonly phases: ALOutboundCommitPhases;
 }
 
-/** Two independent decision reads share backend batches without occupying the server's whole connection pool. */
-const AL_OUTBOUND_GROUP_READ_CONCURRENCY = 2;
-
 export namespace ALOutboundDispatchAdmission {
     export interface Result<TPrepared> {
         readonly computed: ALOutboundComputedDto<TPrepared>;
@@ -122,7 +118,6 @@ export namespace ALOutboundDispatchAdmission {
         /** The store pair this admission commits to, named on its commit-phases diagnostic. */
         readonly lane: ALStoreDurability;
         readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
-        readonly workPort: ALWorkQueuePort;
         readonly toOutboxEntry: (msg: ALMessage) => ResourceEntry;
         readonly decodePreparedMessage: ALOutboundPreparedMessageDecoder<TPrepared>;
         readonly clock: ALOutboundMessageRuntime.Clock;
@@ -317,15 +312,16 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         }
     }
 
-    /** All bounded reads settle before a group write or fresh single-member fallback may start. */
+    /**
+     * Every member reads in the same turn, so a backend that batches one turn's reads answers the whole group in one
+     * statement per store on its own connection. All reads settle before a group write or fresh single-member
+     * fallback may start.
+     */
     private async readGroupDecisions(
         members: readonly ALOutboundGroupMember<TPrepared>[]
     ): Promise<readonly ALOutboundCommitDecision<TPrepared>[] | undefined> {
-        const reading = new BoundedConcurrencyAdmission({ maxConcurrent: AL_OUTBOUND_GROUP_READ_CONCURRENCY });
         const reads = await Promise.allSettled(
-            members.map(({ dispatch, phases }) =>
-                reading.admit(() => this.readMemberDispatchDecision(dispatch, phases))
-            )
+            members.map(({ dispatch, phases }) => this.readMemberDispatchDecision(dispatch, phases))
         );
         const decisions: ALOutboundCommitDecision<TPrepared>[] = [];
         for (const read of reads) {
@@ -440,9 +436,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         input: ComputeALOutboundDispatchInput<TPrepared>
     ): Promise<ALOutboundPendingDispatchVerdict | undefined> {
         return await readALOutboundPendingDispatch({
-            namespace: this.admissionStore.namespace,
-            canonicalScope: this.admissionStore.canonicalScope,
-            workPort: this.dependencies.workPort,
+            admissionStore: this.admissionStore,
             decodePrepared: this.dependencies.decodePreparedMessage,
             nowMs: () => this.readNowMs(),
             dispatch: input

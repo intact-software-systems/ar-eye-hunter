@@ -1,4 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import type { ALOutboundCapturedPolicy } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
 import { toALOutboundCanonicalKey } from '../../alm/outbound/al-outbound-canonical-message.ts';
 import type {
     ALOutboundMessageRuntime,
@@ -21,15 +22,18 @@ import {
 import type { WsQueueBoxServerTargetResolution } from './ws-queue-box-server-target-resolution.ts';
 
 export namespace WsQueueBoxServerClusterPublication {
+    /** What a publishing row hands its publisher beside the row itself. */
+    export interface Handoff {
+        /** The captured policy the row's own commit wrote; absent, the publisher reads the stored one. */
+        readonly committedPolicy: ALOutboundCapturedPolicy | undefined;
+        readonly deferObservation: ALWorkObservationDeferral | undefined;
+    }
+
     /**
-     * Hands one durable outbox row to every other instance and delivers it to this instance's own targets. The
-     * publisher reads the row's captured policy itself, so the audience it was admitted to is read once.
+     * Hands one durable outbox row to every other instance and delivers it to this instance's own targets, under the
+     * captured policy its commit handed over or, without one, the stored policy it reads once.
      */
-    export type Publisher = (
-        message: ALMessage,
-        entry: ResourceEntry,
-        deferObservation?: ALWorkObservationDeferral
-    ) => Promise<void>;
+    export type Publisher = (message: ALMessage, entry: ResourceEntry, handoff: Handoff) => Promise<void>;
 
     export interface Dependencies {
         readonly creationNow: QueueBoxUtilities.CreationClock;
@@ -68,12 +72,16 @@ export class WsQueueBoxServerClusterPublication {
         return this.#publisher !== undefined;
     }
 
-    async writeDequeuedRow(message: ALMessage, entry: ResourceEntry): Promise<void> {
+    async writeDequeuedRow(
+        message: ALMessage,
+        entry: ResourceEntry,
+        committedPolicy: ALOutboundCapturedPolicy | undefined
+    ): Promise<void> {
         const publisher = this.#publisher;
         if (publisher === undefined || isWsQueueBoxServerReceiptRow(message)) {
             return;
         }
-        await publisher(message, entry);
+        await publisher(message, entry, { committedPolicy, deferObservation: undefined });
     }
 
     async writePreparedMessage(
@@ -108,7 +116,7 @@ export class WsQueueBoxServerClusterPublication {
                     key: toALOutboundCanonicalKey(this.#dependencies.canonicalScope, message)
                 };
                 publisherCall = 'invoked';
-                await publisher(message, entry, deferObservation);
+                await publisher(message, entry, { committedPolicy: undefined, deferObservation });
                 publisherCall = 'returned';
             }
             result = originIsHere ? { status: 'sent', submissionAttempted: true } : {

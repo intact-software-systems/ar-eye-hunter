@@ -828,7 +828,7 @@ class MaterializedTestAppInboxService extends TestAppInboxRuntime {
         );
         return {
             winner: reservation.winner,
-            result: this.clientRuntime.resultWaiter.waitForReservedResult(
+            result: this.clientRuntime.resultWaiter.waitForResult(
                 reservation,
                 (value) => value
             )

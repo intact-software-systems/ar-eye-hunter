@@ -54,11 +54,17 @@ import {
     toLivePresenceSessionsSelector,
     type GroupStateAuthorityBatchRead
 } from './read-group-state-authority.ts';
-import { readGroupStateSnapshotsForPrincipal } from './read-group-state-snapshots-for-principal.ts';
+import {
+    readGroupStateSnapshotsForPrincipal,
+    type GroupStatePrincipalSnapshotList
+} from './read-group-state-snapshots-for-principal.ts';
 
-/** A snapshot and the version of exactly the stored rows it was assembled from; null when it came from several reads. */
+/**
+ * A snapshot, or undefined for a group without a live row, and the version of exactly the stored rows the read selected;
+ * null when it came from several reads. An absent group is versioned by the rows it leaves, such as its member rows.
+ */
 export interface VersionedGroupSnapshot {
-    readonly snapshot: GroupSnapshot;
+    readonly snapshot: GroupSnapshot | undefined;
     readonly version: RuntimeStateReadBatchVersion | null;
 }
 
@@ -116,6 +122,15 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
         principalId: string,
         currentSnapshots?: Pick<GroupStateCurrentSnapshotCache, 'readSnapshots'>
     ): Promise<readonly GroupSnapshot[]> {
+        return (await this.readSnapshotListForPrincipal(scope, principalId, currentSnapshots)).snapshots;
+    }
+
+    /** The principal's groups with the statements the read issued, for a caller that records them. */
+    async readSnapshotListForPrincipal(
+        scope: GroupScope,
+        principalId: string,
+        currentSnapshots: Pick<GroupStateCurrentSnapshotCache, 'readSnapshots'> | undefined
+    ): Promise<GroupStatePrincipalSnapshotList> {
         return await readGroupStateSnapshotsForPrincipal({
             repository: this.repository,
             scope,
@@ -275,7 +290,7 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
         reader: RuntimeStateReadBatchVersionReader,
         ref: GroupRef,
         observedAtEpochMs: number
-    ): Promise<VersionedGroupSnapshot | undefined> {
+    ): Promise<VersionedGroupSnapshot> {
         const batch = await readVersionedGroupStateSnapshotBatch({
             reader,
             ref,
@@ -284,10 +299,10 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
         });
         if (batch.read.status === 'stable') {
             const stable = this.toStableAuthoritativeSnapshot(ref, batch.read, observedAtEpochMs);
-            return stable === undefined ? undefined : { snapshot: stable.snapshot, version: batch.version ?? null };
+            return { snapshot: stable?.snapshot, version: batch.version ?? null };
         }
         const fallback = await this.readStableAuthoritativeSnapshot(ref, observedAtEpochMs);
-        return fallback === undefined ? undefined : { snapshot: fallback.snapshot, version: null };
+        return { snapshot: fallback?.snapshot, version: null };
     }
 
     protected toStableAuthoritativeSnapshot(

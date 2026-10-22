@@ -58,7 +58,7 @@ describe('RTC topology plan determinism', () => {
     it('replans an unchanged member set as unchanged when seeded with the previous plan', () => {
         const members = createMemberIds(20);
         const first = planForOrder(members, []);
-        const service = new RallarRtcTopologyService({ now: () => 200 });
+        const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 200 });
         const replanned = service.planGroupTopologyAt(
             createGroupSnapshot('determinism-group', shuffled(members, 13)),
             [],
@@ -82,7 +82,7 @@ describe('RTC topology plan determinism', () => {
 });
 
 function planForOrder(members: readonly string[], rttMeasurements: readonly RttMeasurementInfo[]) {
-    const service = new RallarRtcTopologyService({ now: () => 100 });
+    const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100 });
     return service.planGroupTopologyAt(
         createGroupSnapshot('determinism-group', members),
         rttMeasurements,

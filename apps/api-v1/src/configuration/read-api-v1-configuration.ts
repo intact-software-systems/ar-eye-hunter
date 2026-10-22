@@ -39,6 +39,9 @@ export interface ApiV1ConfigurationStartupSummary {
         readonly newLaneConcurrency: ApiV1Configuration['appInbox']['newLaneConcurrency'];
         readonly newLaneHeldRows: ApiV1Configuration['appInbox']['newLaneHeldRows'];
     };
+    readonly topologyPlanning: {
+        readonly rttReplanMinimumLayoutAgeMs: ApiV1Configuration['topology']['planning']['rttReplanMinimumLayoutAgeMs'];
+    };
     readonly appliedEnvironmentOverrideNames: readonly string[];
 }
 
@@ -50,6 +53,7 @@ interface ApiV1ConfigurationStartupSummaryInput {
     readonly appInbox: Pick<ApiV1Configuration['appInbox'], 'newLaneConcurrency' | 'newLaneHeldRows'>;
     readonly topology: {
         readonly replay: ApiV1Configuration['topology']['replay'];
+        readonly planning: Pick<ApiV1Configuration['topology']['planning'], 'rttReplanMinimumLayoutAgeMs'>;
     };
     readonly ice: Pick<ApiV1Configuration['ice'], 'mode'>;
 }
@@ -103,6 +107,9 @@ export function toApiV1ConfigurationStartupSummary(
         appInbox: {
             newLaneConcurrency: configuration.appInbox.newLaneConcurrency,
             newLaneHeldRows: configuration.appInbox.newLaneHeldRows
+        },
+        topologyPlanning: {
+            rttReplanMinimumLayoutAgeMs: configuration.topology.planning.rttReplanMinimumLayoutAgeMs
         },
         appliedEnvironmentOverrideNames: [
             ...configuration.profile.appliedEnvironmentOverrideNames

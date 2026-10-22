@@ -27,5 +27,5 @@ export async function readCompletedAppInboxResult<Result>(
         { statusRepository: input.statusRepository, resultRepository: input.resultRepository },
         { serviceId: 'app-inbox-test-result-reader', options: normalizeAppInboxOptions({}) }
     );
-    return await waiter.waitForResult(identity.command, input.entry.key, input.decodeResult);
+    return await waiter.waitForResult({ enqueue: identity.command, key: input.entry.key, winner: false }, input.decodeResult);
 }

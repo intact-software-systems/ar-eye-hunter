@@ -27,7 +27,7 @@ import { startEventLoopLagTiming } from '../services/start-event-loop-lag-timing
 import {
     createApiTimingSink,
     toApiAppInboxServiceOptions,
-    toApiOutboxStageTimingSink
+    toTimingOnSink
 } from '../services/timing-service.ts';
 import { createApiV1RoomWsAuthorizer } from '../services/ws-topic-room-authorizer.ts';
 import {
@@ -111,7 +111,8 @@ function constructDefaultRallarServer(
         crdtLogRepository,
         crdtPolicies: configuration.crdt.documentTypePolicies,
         livePublication: wsOptions.livePublication,
-        timing
+        timing,
+        recomputeTiming: toTimingOnSink(configuration.observability, timing)
     });
     const routeInstallers = createDefaultApiV1RouteInstallers({
         configuration,
@@ -194,7 +195,8 @@ function createConfiguredApiV1Runtime(
         meshMinSize: planning.meshMinSize,
         meshParamK: planning.meshParamK,
         meshExitWidth: planning.meshExitWidth,
-        treeExitWidth: planning.treeExitWidth
+        treeExitWidth: planning.treeExitWidth,
+        rttReplanMinimumLayoutAgeMs: planning.rttReplanMinimumLayoutAgeMs
     };
 
     return createApiV1Runtime({
@@ -211,7 +213,8 @@ function createConfiguredApiV1Runtime(
         maxConcurrentPasswordDerivations: configuration.authentication.maxConcurrentPasswordDerivations,
         nowEpochMs,
         timing,
-        outboxStageTiming: toApiOutboxStageTimingSink(configuration.observability, timing),
+        outboxStageTiming: toTimingOnSink(configuration.observability, timing),
+        principalGroupListTiming: toTimingOnSink(configuration.observability, timing),
         wsReceiptObserver: createApiV1WsReceiptObserver({
             enabled: configuration.observability.timingLogs,
             timing,

@@ -245,7 +245,7 @@ async function createPGliteTopologyWorkSetup(sql: PGliteSql, commandId: string):
         findGroupSnapshotByRef: () => groupSnapshot,
         readCurrentGroupSnapshot: async () => groupSnapshot,
         readRttMeasurements: () => [],
-        topologyService: new RallarRtcTopologyService({ now: () => nowEpochMs }),
+        topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => nowEpochMs }),
         topologySnapshotRepository
     });
     const executionRepository = new RtcTopologyExecutionRepository(
@@ -623,7 +623,7 @@ export async function createPGliteRemovalPlanningScenario(
         readCurrentGroupSnapshot: async (ref) => await groups.readSnapshot(ref),
         readRttMeasurements: () => [],
         configRepository: new GroupTopologyConfigRepository(runtime),
-        topologyService: new RallarRtcTopologyService({ now: () => nowEpochMs }),
+        topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => nowEpochMs }),
         topologySnapshotRepository: snapshots
     });
     const authority = await service.planning.readTopologyPlanningAuthority({

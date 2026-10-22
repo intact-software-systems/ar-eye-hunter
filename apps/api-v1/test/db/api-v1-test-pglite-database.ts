@@ -27,7 +27,8 @@ export async function createApiV1TestPGliteDatabaseLifecycle(): Promise<ApiV1Tes
         pgliteEvidence: {
             mode: 'disabled',
             pollIntervalMs: 25
-        }
+        },
+        statementCensus: undefined
     });
 
     return {

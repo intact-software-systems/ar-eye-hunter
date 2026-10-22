@@ -417,15 +417,11 @@ describe('state-write diagnostic projection', () => {
                     }
                 },
                 resultWaiter: {
-                    waitForReservedResult: async () => {
-                        throw new Error('The diagnostic workload waits by its written key');
-                    },
                     waitForResult: async <Result>(
-                        _enqueue: AppInboxEnqueueInput,
-                        key: Key,
+                        written: AppInboxResultWaiter.Wait,
                         decodeResult: AppInboxResultWaiter.ResultDecoder<Result>
                     ) => {
-                        persistedKeys.push(key);
+                        persistedKeys.push(written.key);
                         return Either.ofRight(decodeResult({ status: 'stored', detail: 'PRIVATE-payload' }));
                     }
                 }

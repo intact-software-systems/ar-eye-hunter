@@ -10,8 +10,8 @@ import { createCentralRtcTopologyRttMeasurements, createRtcTopologyGroupSnapshot
 describe('RTC topology process runtime integration', () => {
     it('hydrates fresh service memory from an unchanged supplied snapshot', () => {
         const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(5));
-        const firstWorker = new RallarRtcTopologyService({ now: () => 100 });
-        const secondWorker = new RallarRtcTopologyService({ now: () => 200 });
+        const firstWorker = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100 });
+        const secondWorker = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 200 });
 
         const first = firstWorker.updateGroupTopology(group);
         const second = secondWorker.updateGroupTopology(group, [], { previous: first.snapshot });
@@ -24,6 +24,7 @@ describe('RTC topology process runtime integration', () => {
     it('retains the plan attempt when active sessions are read before scope', () => {
         let clockReads = 0;
         const service = new RallarRtcTopologyService({
+            rttReplanMinimumLayoutAgeMs: 15_000,
             now: () => {
                 clockReads += 1;
                 throw new Error('clock unavailable');
@@ -41,7 +42,7 @@ describe('RTC topology process runtime integration', () => {
 
     it('does not record a weighted graph attempt when topology selection throws first', () => {
         const group = createGroupWithThrowingActiveSessionRead(1);
-        const service = new RallarRtcTopologyService({ now: () => 100 });
+        const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100 });
 
         expect(() => service.createRoomGraph(group)).toThrow('group sessions unavailable');
         expect(service.readMetrics()).toMatchObject({
@@ -52,7 +53,7 @@ describe('RTC topology process runtime integration', () => {
 
     it('records a weighted graph attempt before its next group preparation read throws', () => {
         const group = createGroupWithThrowingActiveSessionRead(2);
-        const service = new RallarRtcTopologyService({ now: () => 100 });
+        const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100 });
 
         expect(() => service.createRoomGraph(group)).toThrow('group sessions unavailable');
         expect(service.readMetrics()).toMatchObject({
@@ -64,7 +65,7 @@ describe('RTC topology process runtime integration', () => {
     it('records a graph attempt but no duration when weighted graph preparation throws', () => {
         const memberSessionIds = createRtcTopologyMemberIds(5);
         const group = createGroupWithThrowingActiveSessionRead(3);
-        const service = new RallarRtcTopologyService({ now: () => 100 });
+        const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100 });
 
         expect(() => planWeightedTopology(service, group, memberSessionIds)).toThrow('group sessions unavailable');
         expect(service.readMetrics()).toMatchObject({
@@ -85,7 +86,7 @@ describe('RTC topology process runtime integration', () => {
                 throw new Error('group display name unavailable');
             }
         });
-        const service = new RallarRtcTopologyService({ now: () => 100 });
+        const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100 });
 
         expect(() => planWeightedTopology(service, group, memberSessionIds)).toThrow('group display name unavailable');
         expect(service.readMetrics()).toMatchObject({
@@ -169,7 +170,7 @@ describe('RTC topology process runtime integration', () => {
         let now = 1_000;
         const memberSessionIds = createRtcTopologyMemberIds(5);
         const group = createRtcTopologyGroupSnapshot('room-1', memberSessionIds);
-        const service = new RallarRtcTopologyService({ now: () => now });
+        const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => now });
 
         const first = service.updateGroupTopology(group);
         service.recordTopologyPublishResult(first.changed);
@@ -210,7 +211,7 @@ describe('RTC topology process runtime integration', () => {
 
     it('removes cached topology snapshots for inactive groups', () => {
         const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(5));
-        const service = new RallarRtcTopologyService({ now: () => 1_000 });
+        const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 1_000 });
 
         service.updateGroupTopology(group);
 

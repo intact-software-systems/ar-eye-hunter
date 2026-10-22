@@ -13,22 +13,37 @@ import {
     type ApiV1PostgresClientInput,
     type CreateApiV1DatabaseLifecycleInput
 } from '../../src/db/api-v1-database-lifecycle.ts';
+import { PostgresStatementCensus } from '../../src/db/postgres-statement-census.ts';
 
 Deno.test('PostgreSQL client adapter counts the statements of a complete current client and forwards its lifecycle', async () => {
     const events: string[] = [];
     const client = fakePostgresClient(7, events);
 
-    const adapted = toApiV1PostgresClient(client);
+    const adapted = toApiV1PostgresClient(client, undefined);
     await adapted`select 1`;
     await adapted.end();
     assert.deepEqual(adapted.getExecutorCounters?.()?.statements, 1);
     assert.deepEqual(events, ['postgres:close:7']);
     assert.throws(
         () =>
-            toApiV1PostgresClient(Object.assign(() => Promise.resolve([]), {
-                begin: () => Promise.resolve()
-            })),
+            toApiV1PostgresClient(
+                Object.assign(() => Promise.resolve([]), {
+                    begin: () => Promise.resolve()
+                }),
+                undefined
+            ),
         /required API-v1 capabilities/u
+    );
+    const withoutUnsafe = {
+        begin: () => Promise.resolve(),
+        notify: () => Promise.resolve(),
+        listen: () => Promise.resolve(),
+        end: () => Promise.resolve()
+    };
+    assert.throws(
+        () => toApiV1PostgresClient(Object.assign(() => Promise.resolve([]), withoutUnsafe), undefined),
+        /required API-v1 capabilities/u,
+        'a client that cannot send a statement unprepared cannot plan one per execution'
     );
 });
 
@@ -46,12 +61,14 @@ Deno.test('database lifecycle constructs PostgreSQL application and listener poo
         {
             connectionUrl: 'postgres://user:secret@database.test/rallar?search_path=tenant',
             max: 7,
-            idleTimeoutSeconds: 23
+            idleTimeoutSeconds: 23,
+            census: undefined
         },
         {
             connectionUrl: 'postgres://user:secret@database.test/rallar?search_path=tenant',
             max: 2,
-            idleTimeoutSeconds: 0
+            idleTimeoutSeconds: 0,
+            census: undefined
         }
     ]);
     assert.equal(lifecycle.database, clients[0]);
@@ -172,6 +189,40 @@ Deno.test('PostgreSQL URL translation moves only the Prisma schema query to sear
     );
 });
 
+Deno.test('with timing on, the application pool alone records into a statement census, whose emission stops with the lifecycle', async () => {
+    const events: string[] = [];
+    const poolInputs: ApiV1PostgresClientInput[] = [];
+    const lifecycle = await createApiV1DatabaseLifecycle(
+        {
+            ...toApiV1DatabaseLifecycleInput(postgresConfiguration(), { mode: 'disabled', pollIntervalMs: 25 }),
+            statementCensus: { timing: () => undefined, serviceId: 'server-1' }
+        },
+        fakeOperations({ events, clients: [], poolInputs })
+    );
+
+    assert.deepEqual(poolInputs.map((pool) => [pool.max, pool.census instanceof PostgresStatementCensus]), [[7, true], [2, false]]);
+    assert.deepEqual(events.filter((event) => event.startsWith('timer:')), ['timer:schedule:5000']);
+    await lifecycle.close();
+    assert.deepEqual(events.filter((event) => event.startsWith('timer:')), ['timer:schedule:5000', 'timer:cancel']);
+});
+
+Deno.test('a statement census whose pools fail to start stops its emission', async () => {
+    const events: string[] = [];
+    await assert.rejects(
+        () =>
+            createApiV1DatabaseLifecycle(
+                {
+                    ...toApiV1DatabaseLifecycleInput(postgresConfiguration(), { mode: 'disabled', pollIntervalMs: 25 }),
+                    statementCensus: { timing: () => undefined, serviceId: 'server-1' }
+                },
+                fakeOperations({ events, clients: [], fail: 'readiness' })
+            ),
+        /readiness setup failed/u
+    );
+
+    assert.deepEqual(events.filter((event) => event.startsWith('timer:')), ['timer:schedule:5000', 'timer:cancel']);
+});
+
 interface FakeOperationsInput {
     readonly events: string[];
     readonly clients?: ApiV1PostgresClient[];
@@ -229,6 +280,13 @@ function fakeOperations(input: FakeOperationsInput): ApiV1DatabaseLifecycleOpera
         createPGliteSql: () => {
             input.events.push('pglite:sql');
             return input.database ?? fakeDatabase();
+        },
+        timers: {
+            nowMs: () => 0,
+            schedule: (_run, delayMs) => {
+                input.events.push(`timer:schedule:${delayMs}`);
+                return () => input.events.push('timer:cancel');
+            }
         }
     };
 }
@@ -258,7 +316,8 @@ function fakePostgresClient(max: number, events: string[]): ApiV1PostgresClient 
         end: () => {
             events.push(`postgres:close:${max}`);
             return Promise.resolve();
-        }
+        },
+        unsafe: () => Promise.resolve([])
     });
 }
 
@@ -279,7 +338,7 @@ function toApiV1DatabaseLifecycleInput(
     database: ApiV1DatabaseConfiguration,
     pgliteEvidence: ApiV1PGliteEvidenceConfiguration
 ): CreateApiV1DatabaseLifecycleInput {
-    return { database, pgliteEvidence };
+    return { database, pgliteEvidence, statementCensus: undefined };
 }
 
 function postgresConfiguration(): ApiV1DatabaseConfiguration {

@@ -55,12 +55,9 @@ describe('runtime state expiry eviction', () => {
         await repository.deleteAllExpired(['rtc-rtt:receipts', 'test:second-protected-family']);
 
         expect(captured.queries).toHaveLength(2);
-        expect(captured.queries[0]!.text).not.toContain('store_namespace not in');
-        expect(captured.queries[1]!.text).toContain('store_namespace not in');
-        expect(captured.queries[1]!.values).toContainEqual({
-            kind: 'array',
-            values: ['rtc-rtt:receipts', 'test:second-protected-family']
-        });
+        expect(captured.queries[0]!.text).not.toContain('store_namespace <> all');
+        expect(captured.queries[1]!.text).toContain('store_namespace <> all(?::text[])');
+        expect(captured.queries[1]!.values).toEqual([['rtc-rtt:receipts', 'test:second-protected-family']]);
     });
 
     it('stays quiet when there is nothing to evict', async () => {

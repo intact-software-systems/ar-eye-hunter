@@ -13,10 +13,16 @@ export namespace ResourceInboxCompletionNotifications {
         readonly contextId: string | undefined;
     }
 
+    /**
+     * Why a wait ended: a completion of the subscribed identity since the last read began, the instance-wide safety
+     * tick, its own delay because the tick was not due within it, or the subscription's close.
+     */
+    export type WakeReason = 'completion' | 'tick' | 'delay' | 'closed';
+
     export interface Subscription {
         beginRead(): void;
         /** Ends on a wake, at the instance-wide safety tick when it is due within the delay, or after the delay. */
-        wait(delayMsecs: number): Promise<void>;
+        wait(delayMsecs: number): Promise<WakeReason>;
         close(): void;
     }
 
@@ -28,9 +34,12 @@ export namespace ResourceInboxCompletionNotifications {
 }
 
 interface ResourceInboxCompletionWait {
-    readonly resolve: () => void;
+    readonly resolve: (reason: ResourceInboxCompletionNotifications.WakeReason) => void;
     cancel: (() => void) | undefined;
 }
+
+/** How the safety tick ended a wait it scheduled. */
+type ResourceInboxSafetyTickEnd = 'tick' | 'delay';
 
 interface ResourceInboxSafetyTickRound {
     readonly dueAtMs: number;
@@ -101,7 +110,7 @@ export class ResourceInboxCompletionNotifications {
  */
 class ResourceInboxSafetyTick {
     private readonly timers: Timers;
-    private readonly parked = new Set<() => void>();
+    private readonly parked = new Set<(end: ResourceInboxSafetyTickEnd) => void>();
     private round: ResourceInboxSafetyTickRound | undefined;
 
     constructor(timers: Timers) {
@@ -109,13 +118,13 @@ class ResourceInboxSafetyTick {
     }
 
     /** Runs `settle` once, at the tick when it is due within `delayMs`, otherwise after `delayMs`; answers its cancel. */
-    schedule(settle: () => void, delayMs: number): () => void {
+    schedule(settle: (end: ResourceInboxSafetyTickEnd) => void, delayMs: number): () => void {
         const nowMs = this.timers.nowMs();
         const dueInMs = this.round === undefined
             ? RESOURCE_INBOX_COMPLETION_SAFETY_TICK_MSECS
             : this.round.dueAtMs - nowMs;
         if (delayMs < dueInMs) {
-            return this.timers.schedule(settle, delayMs);
+            return this.timers.schedule(() => settle('delay'), delayMs);
         }
         this.parked.add(settle);
         try {
@@ -149,10 +158,10 @@ class ResourceInboxSafetyTick {
         this.round = undefined;
         const settles = [...this.parked];
         this.parked.clear();
-        settles.forEach((settle) => settle());
+        settles.forEach((settle) => settle('tick'));
     }
 
-    private unpark(settle: () => void): void {
+    private unpark(settle: (end: ResourceInboxSafetyTickEnd) => void): void {
         const round = this.round;
         if (!this.parked.delete(settle) || this.parked.size > 0 || round === undefined) {
             return;
@@ -184,16 +193,16 @@ class ResourceInboxCompletionSubscription implements ResourceInboxCompletionNoti
         this.readGeneration = this.generation;
     }
 
-    wait(delayMsecs: number): Promise<void> {
+    wait(delayMsecs: number): Promise<ResourceInboxCompletionNotifications.WakeReason> {
         if (this.closed || this.generation !== this.readGeneration) {
             this.readGeneration = this.generation;
-            return Promise.resolve();
+            return Promise.resolve(this.closed ? 'closed' : 'completion');
         }
-        return new Promise<void>((resolve) => {
+        return new Promise<ResourceInboxCompletionNotifications.WakeReason>((resolve) => {
             const pending: ResourceInboxCompletionWait = { resolve, cancel: undefined };
             this.pending = pending;
             try {
-                pending.cancel = this.safetyTick.schedule(() => this.settle(pending), delayMsecs);
+                pending.cancel = this.safetyTick.schedule((end) => this.settle(end, pending), delayMsecs);
             }
             catch (error) {
                 if (this.pending === pending) {
@@ -204,8 +213,11 @@ class ResourceInboxCompletionSubscription implements ResourceInboxCompletionNoti
             if (this.pending !== pending) {
                 cancelQuietly(pending.cancel);
             }
-            else if (this.closed || this.generation !== this.readGeneration) {
-                this.settle(pending);
+            else if (this.closed) {
+                this.settle('closed', pending);
+            }
+            else if (this.generation !== this.readGeneration) {
+                this.settle('completion', pending);
             }
         });
     }
@@ -215,7 +227,7 @@ class ResourceInboxCompletionSubscription implements ResourceInboxCompletionNoti
             return;
         }
         this.generation += 1;
-        this.settle();
+        this.settle('completion');
     }
 
     close(): void {
@@ -223,11 +235,14 @@ class ResourceInboxCompletionSubscription implements ResourceInboxCompletionNoti
             return;
         }
         this.closed = true;
-        this.settle();
+        this.settle('closed');
         this.unsubscribe(this);
     }
 
-    private settle(pending: ResourceInboxCompletionWait | undefined = this.pending): void {
+    private settle(
+        reason: ResourceInboxCompletionNotifications.WakeReason,
+        pending: ResourceInboxCompletionWait | undefined = this.pending
+    ): void {
         if (pending === undefined || this.pending !== pending) {
             return;
         }
@@ -236,7 +251,7 @@ class ResourceInboxCompletionSubscription implements ResourceInboxCompletionNoti
         if (pending.cancel !== undefined) {
             cancelQuietly(pending.cancel);
         }
-        pending.resolve();
+        pending.resolve(reason);
     }
 }
 

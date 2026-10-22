@@ -681,6 +681,7 @@ function createRouteApp(options: {
                         kindHysteresisWidths: { meshExitWidth: 0, treeExitWidth: 0 },
                         rttReportingDegreeLimit: 5,
                         rttMeasurements: [],
+                        rttReplanMinimumLayoutAgeMs: 15_000,
                         replanning: 'auto',
                         nowEpochMs: 123_456
                     }))
@@ -948,6 +949,7 @@ function planningAuthorityWith(
                 kindHysteresisWidths: { meshExitWidth: 0, treeExitWidth: 0 },
                 rttReportingDegreeLimit: 5,
                 rttMeasurements,
+                rttReplanMinimumLayoutAgeMs: 15_000,
                 replanning: 'auto' as const,
                 nowEpochMs: 123_456
             })

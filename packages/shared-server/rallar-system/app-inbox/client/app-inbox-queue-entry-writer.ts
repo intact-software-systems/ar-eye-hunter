@@ -1,3 +1,4 @@
+import type { QueueBoxWrittenIfAbsent } from '@shared/queuebox/queue-box-types.ts';
 import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
@@ -22,6 +23,12 @@ export namespace AppInboxQueueEntryWriter {
         readonly defaultTopicId: string;
         readonly wakeOwningQueue?: () => void;
     }
+
+    /** The entry its key keeps, and whether this write created it. */
+    export interface Written {
+        readonly entry: ResourceEntry;
+        readonly winner: boolean;
+    }
 }
 
 export class AppInboxQueueEntryWriter {
@@ -44,17 +51,31 @@ export class AppInboxQueueEntryWriter {
         this.wakeOwningQueue = config.wakeOwningQueue;
     }
 
+    /** Writes the command's entry and wakes the owning queue, for a caller that does not wait for its completion. */
     async enqueue(enqueue: AppInboxEnqueueInput): Promise<ResourceEntry> {
+        const { entry } = await this.writeMessage(enqueue);
+        this.wakeOwningQueue?.();
+        return entry;
+    }
+
+    /**
+     * Writes the command's entry without waking the owning queue: the waiter subscribes to its completion first and
+     * wakes the queue only for an entry this write created.
+     */
+    async writeIfAbsent(enqueue: AppInboxEnqueueInput): Promise<AppInboxQueueEntryWriter.Written> {
+        const { entry, created } = await this.writeMessage(enqueue);
+        return { entry, winner: created };
+    }
+
+    private async writeMessage(enqueue: AppInboxEnqueueInput): Promise<QueueBoxWrittenIfAbsent> {
         const key = this.createKey(enqueue);
         const receivedIdentity = serializeCanonicalMutationCommand(
             toLogicalAppInboxCommand(enqueue)
         );
-        const entry = await this.inboxQueueReader.enqueueIfAbsent(
-            this.createMessage({ key, enqueue, serviceId: this.serviceId })
-        );
-        this.wakeOwningQueue?.();
-        assertMatchingAppInboxCommand(entry, enqueue, receivedIdentity);
-        return entry;
+        const message = this.createMessage({ key, enqueue, serviceId: this.serviceId });
+        const written = await this.inboxQueueReader.writeIfAbsent(message);
+        assertMatchingAppInboxCommand(written.entry, enqueue, receivedIdentity);
+        return written;
     }
 
     private createKey(enqueue: AppInboxEnqueueInput): Key {

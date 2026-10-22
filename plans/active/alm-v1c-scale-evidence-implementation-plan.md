@@ -212,32 +212,35 @@ again and a page is bounded by the AL payload. The hosted acceptance, the A-B-B-
 the CPU/GC capture and the state-write comparison on the head are recorded in proposal §1.17 and in the As applied
 entry below.
 
-1. **The outbound durable worker's flight, measured first.** A connect's own pages first settled 26.354 s p50 after
-   its commit on #690, 24.857 s of it waiting for the claim behind serial batches; #691 removed the per-row read
-   round trips and the idle-start wait but not the serial batch, and the medium-scale run drains the outbox at about
-   19 rows/s per server on main and #691 alike (D387). In this slice:
-   - measure connect commit → first page settled, the worker's phases and the topology frames' claim wait on one
-     timing-on hosted 50 (13.796 s p50 on #691, under the 20 s target; 11.751 s of it the claim wait; the group commit
-     1.315 s p50, the bundle 57 % of the worker's busy time);
-   - top up the durable worker with pipelined selections, one group commit each, with lane-owned commit and dispatch
-     tails, the per-sender version fence, receipts, delivery expiry, retry and a lease sweep that excludes held rows;
-   - measure per-context dispatch order without the per-row policy re-read (R2) beside it before taking it.
-2. **The connect path's remaining CPU.** The #691 CPU/GC capture misses its target by 0.4 points (80.4 % busy against
-   80 %); its top owners are the Postgres wire (`writeBuffer` 6.4 %, the driver about 14.5 %) and the remaining
-   group-state parsing (`toLiveGroupStateEntryValue` 3.1 %, storage-key decoding 3.5 %). Each measured on that capture
-   before it is selected:
-   - the REST list hydration that remains after the revision skip;
-   - the presence rows the REST point read, the authority guard and the stable fallback snapshot read still decode
-     unfloored, and the authority guard's JSON-safety walk over an in-memory `Group`;
-   - the presence summary page's per-row residue (each expansion still computes its own topology replan and validates
-     against the shared snapshot, about 1.2 ms per row);
-   - whether the faster server makes a three-layout join likelier at 50 (the benign peer churn of the #691 hosted 50,
-     connected → accepted 0.823 s against 0.514 s);
-   - the completion polls, a missed target: 779 `wait-poll` lines against 600 (1,416 on #690; tick re-reads 942 → 302),
-     and 64 wake polls that found their row not yet terminal (0 on #690): check the completion notice against the
-     commit's visibility and count the tick re-reads, with a statement and pool-wait counter outside transactions;
-   - the strict groups list, a missed target: 0.447 s p50 against 0.4 s (0.807 s on #690); add a timing line for the
-     principal read.
+Formation tail 6 (#692; proposal §1.18, D389–D411) took the saturated outbound stage that the #691 timing-on run
+named, the completion wake's second read and the claimed-join inversion. A 16-row outbound batch commits in 3
+statements inside its transaction, fenced on the sender version, and dispatches in 16 `pg_notify`s with the committed
+policy handed over; its decision reads go out in one round and its release in one statement. A waiting run is promoted
+only by an equal or extending successor (R2 as revised), a completion wake reads the result row, and the enqueue
+subscribes before it wakes. Fragment strings are interned, list predicates take array parameters, and the strict list
+selects by member rows with a `snapshotVersion` fence. Storage keys decode in one pass, and the connect validates each
+audience snapshot once. An RTT-only replan waits for a 15 s layout age (R1), and the hosted sign-in reads the
+session's own clients (R3). The medium-scale run exposed cached generic plans of the recordset statements, which are
+now planned per execution. The hosted verdict, measured before that fix, meets the end of formation, connect commit →
+first page (5.870 s), the strict list (0.313 s), the room view (2.53 s) and a flat heap, and misses the A-B-B-A's
+whole-formation primary (symmetric +3.112 s, its loss upstream of the room join), the polls (682), the claimed-join
+idle (0.326 s) and the busy share (83.4 %). On the fixed head `63a39f22a` (four passing legs; two attempts excluded at agent readiness with 47 of 50 agents) the A-B-B-A primary is +7.016 / −9.180 s (symmetric −1.082 s, −3.0 %; baseline drift +12.991 s between the two main legs), not met, and the end of formation −5.118 / −4.891 s (symmetric −5.005 s, −70 %), met; sign-in (+12.350 / −4.762) and SDK connect (+12.041 / −2.465) carry the primary's swing — a whole-API stall during each 50-request burst that main's slow leg shows as well (§2b of the hosted acceptance document; the sign-in investigation). On the fixed head the timing-on 50 (run 39781542777, a slow-window run: setup window 57.457 s) meets (a) connect commit → first page 5.191 s, (e) strict list 0.208 s and (f) first room view 2.66 s with no RTT-only layout, and misses (c) polls 834 (622 tick/status) and (d) claimed-join idle 0.754 s with the last join at 56.3 s: Postgres statement throughput on the shared host fell from about 1,000 per 5 s to 63–464 during the sign-in burst (a by-key inbox point read 2.5 s per execution against 0.28 s) while the API event loop stayed under 175 ms of lag; slow with timing on, so the slow/fast split follows the clock, not the code. The two slices below follow from it.
+
+1. **Where the slow 50s lose time before the room join, measured on the fixed head first.** The A-B-B-A's loss is
+   sign-in −2.086 / +6.564 s and SDK connect +0.474 / +12.665 s, with the main leg A2 the outlier and the arms on
+   different sign-in probes. In this slice:
+   - rerun the A-B-B-A and the timing-on 50 on `aeed54640`, both on the new probe;
+   - measure the login's serial step (3.760 s p50 before its session-issue waiter on the fast run) and its PBKDF2
+     derivation threads behind `RALLAR_AUTH_MAX_CONCURRENT_PASSWORD_DERIVATIONS` on a CPU/GC capture;
+   - measure the ticket wait (2.107 s) and the WS wait (3.275 s) before their handlers, and the executor wait per
+     statement shape, before selecting the PBKDF2 bound, the login step or the claims.
+2. **The API thread's busy share and the shared tick's reads.** The capture puts the thread at 83.4 % busy against
+   75 %, the Postgres wire 14.7 % of the window. Each measured before it is selected:
+   - the 436 shared-tick status reads above the 600-poll target (682 in the window);
+   - the claimed-join idle, 0.326 s against 0.3 s, its largest episode 0.273 s behind one WS connect;
+   - the medium-scale APP_OUTBOX drain, about 1.75× slower than FT5's run (executor wait per pass 2,031 against
+     602 ms), read against a main-vs-head run on the fixed head;
+   - the hot workload's 2–4 more statements per attempt, attributed per shape.
 
 After these, each measured before it is selected:
 
@@ -257,6 +260,14 @@ After these, each measured before it is selected:
 - a topic- and context-filtered work-page port for the presence summary claim's RETRY scan, the topology and rtc-rtt
   services in the shared entries-repository composition pin, and one SQL parameter type
   (`ApiV1StateWriteEvidenceSqlParameter` beside `PSqlParameter`) (D386).
+- the connect path's remaining CPU candidates from #691: the REST list hydration after the revision skip, the
+  presence rows the REST point read, the authority guard and the stable fallback snapshot read still decode
+  unfloored, the guard's JSON-safety walk over an in-memory `Group`, and the summary page's per-row residue (about
+  1.2 ms per row);
+- the tail 6 deferrals (D410): the outbound worker's pipelined-selection flight (D358) and per-context dispatch order
+  (D359), the RTT hold decided before the planner run, the guarded batch's mixed-category lock residual, `setPublisher`
+  as constructor input, the outbound readiness probe taking its caller's instant, and the 12 files `format:check` names
+  on main.
 
 The local Postgres ALM lane runs on a fresh isolated database: 15/15 on main in 35.0 min. It joins the medium-scale
 gate, the CI Postgres gates and the hosted lane as Postgres coverage. The physical commit→browser ≤ 2 s target stays
@@ -896,6 +907,52 @@ three-layout join at 50, a topic- and context-filtered work-page port for the su
 and rtc-rtt services in the composition pin, one SQL parameter type (`ApiV1StateWriteEvidenceSqlParameter` beside
 `PSqlParameter`), and the follow-ups the #690 entry lists, the physical commit→browser ≤ 2 s target and the V1c closure
 (D281).
+
+**As applied (PR #692).** Formation tail 6 landed D395–D402 under the maintainer's rulings R1–R3 (D392–D394, R2 revised
+in review) and D405–D408 from the medium-scale run's statement plans; D389–D391 record the three surveys' facts, D403
+and D404 the review rulings, D409 a harness fix, D410 the deferred items and D411 the follow-ups (proposal §3, §6). An
+admission commit names the sender version as its fence: the Postgres buffer writes the state rows as one guarded
+multi-row batch behind it, takes the holds in one ordered `for update` and inserts the queue rows in one statement, so
+a 16-row WS bundle runs 3 statements inside its transaction instead of 81. Every writer of the version row names it as
+its fence (the control admission's two writes deadlocked with a bundle, `40P01`, before review), a commit names one
+fence, and a fence that writes no row throws. The dispatch hands each row the policy its commit wrote and reads nothing
+back (48 → 16 statements, all `pg_notify`, in row order). The decision reads go out in one round per read depth and the
+release is one multi-row update (16 → 1). A waiting run is promoted only by an equal or extending successor; a
+completion wake reads the result row; the enqueue subscribes before it wakes, and the queue reports whether it created
+the row (`writeIfAbsent`). `PSqlFragment` interns its strings array per text, list predicates take one array parameter,
+and the strict list's cached path selects by member rows in 3 statements, fenced on the group row's `snapshotVersion`;
+a timing line and a per-shape statement census run with timing on. Storage keys decode in one pass with each part
+checked once; the connect validates each audience snapshot once and asserts its read twice. An RTT-only refresh within
+`topology.planning.rttReplanMinimumLayoutAgeMs` (15 000 ms, required at the service) of the stored layout commits
+`held-young-layout`. The hosted sign-in reads `GET …/workspaces/{ws}/clients`. The transaction-write checker resolves
+fragment statements (141 → 97 advisory, 0 blocking). `21f89724c` starts the dispatch pin's engine. `aeed54640` and `63a39f22a` plan
+the recordset release, hold lock and key read per execution (in a transaction, one pipelined write with the two
+`set local plan_cache_mode` settings; at the root, `unsafe(…, { prepare: false })`), because a generic
+plan cached on a small inbox (a Hash Join over a Seq Scan) was reused as it grew (a 16-row release 0.44 ms fresh,
+101–108 ms at 50 k rows), and claims a one-element type or status set through `= $n` again. Measured (proposal §1.18):
+local gates pass on `ac806422d` (`test:unit` 19,871 tests, the Deno suites 428, 7 and 150, governance 567); local 15,
+30 and 50 pass (48.4 s, 57.3 s and 1.1 min); the local Postgres ALM lane passes 15/15 (34.2 min); the medium-scale run
+passes 2,842 steps with 0 corruption errors, its APP_OUTBOX drain about 1.75× slower than FT5's run and its release at
+85 ms p50 (the trap). Hosted 15, 30 and 50 on `ac806422d` pass at 9.987, 19.528 and 31.213 s (#691 9.129, 15.032 and
+27.061 s; #690 14.397, 27.541 and 46.463 s) with 0 faults and no peer deletions. The frozen native-50 A–B–B–A (main
+`133df2c0d` against the head; legs 39744250013, 39745274359, 39746134775, 39747243936): the whole-formation primary is
+not met, B1 − A1 −2.309 s and B2 − A2 +8.533 s, symmetric +3.112 s (+10.1 %), against a −6.529 s baseline drift; the
+end of formation (the connected-barrier wait, symmetric −0.493 s), connected → accepted, room join, RTC readiness and
+last join → all ready (−3.462 s) are met; the loss is in sign-in and SDK connect, with the main leg A2 the outlier. The
+timing-on hosted 50 (run 39749063058, `21f89724c`) against run 39674474258: (a) connect commit → first page settled
+5.870 s (13.796 s), met; (b) rests on the Postgres pins; (c) 682 polls (779), not met; (d) the claimed-join idle
+0.326 s (1.579 s), not met, and the last join's end at 29.354 of 30.457 s, met; (e) the strict list 0.313 s (0.447 s),
+met; (f) the first room view 2.53 s (9.06 s) with no RTT-only layout, met. The CPU/GC capture (run 39750110469): the
+API thread 83.4 % busy against 75 %, not met, although busy time fell 5.3 s; the heap after full GC flat (FT5 rose 60.7
+→ 125.4 MB), met. The state-write comparison keeps throughput flat or higher and shows hot statements +5–6 % per
+attempt on bench 2. The medium-scale A-B-A (main `133df2c0d`, the fixed head, main again; fresh database per leg) puts the fixed head inside or better than both main legs on every metric but the longest full-pass run: release p50 8.1 ms against 20.1 / 15.2 on main (the unfixed head 85), decision / bundle / dispatch 1.5 / 3.4 / 0.8 ms per claimed row against 6.9 / 7.3 / 1.6 and 5.9 / 6.5 / 1.3, executor wait per pass 625 ms against 648 / 546, wait-polls 2,343 against 3,035 / 3,032 (`measure-medium-aba.md`). Per shape, the whole difference is the state-write bench pump's empty AppInbox claim passes (`runAppInboxPumpUntilCompletion` spins `dequeueInbox` on `setTimeout(0)` while a command is in flight): fair claim 5.47 → 6.24, ordered claim 4.88 → 5.63 and overdue-retry claim 4.88 → 5.63 per attempt, every other shape 8.22 → 8.29; per-pass SQL, in-flight time per attempt (73–78 ms) and conflicts are equal, and the candidate's claim transaction takes 2.35 ms against 2.74, so it fits 13–15 % more passes in. Production dequeue is wake-driven, so these statements do not exist there; the reason is recorded against the gate and the pump is a harness follow-up. Bench 3 on the final head passes both contrasts with the candidate faster in every workload (uncontended 258 / 250 → 281 / 281, shared 233 / 226 → 251 / 252, hot 53.5 / 53.6 → 57.0 / 58.2 mutations/s) and 3–5 % fewer hot statements. On the fixed head `63a39f22a` (four passing legs; two attempts excluded at agent readiness with 47 of 50 agents) the A-B-B-A primary is +7.016 / −9.180 s (symmetric −1.082 s, −3.0 %; baseline drift +12.991 s between the two main legs), not met, and the end of formation −5.118 / −4.891 s (symmetric −5.005 s, −70 %), met; sign-in (+12.350 / −4.762) and SDK connect (+12.041 / −2.465) carry the primary's swing — a whole-API stall during each 50-request burst that main's slow leg shows as well (§2b of the hosted acceptance document; the sign-in investigation). On the fixed head the timing-on 50 (run 39781542777, a slow-window run: setup window 57.457 s) meets (a) connect commit → first page 5.191 s, (e) strict list 0.208 s and (f) first room view 2.66 s with no RTT-only layout, and misses (c) polls 834 (622 tick/status) and (d) claimed-join idle 0.754 s with the last join at 56.3 s: Postgres statement throughput on the shared host fell from about 1,000 per 5 s to 63–464 during the sign-in burst (a by-key inbox point read 2.5 s per execution against 0.28 s) while the API event loop stayed under 175 ms of lag; slow with timing on, so the slow/fast split follows the clock, not the code.
+
+Open after this step, first the whole-formation loss upstream of the room join (the serial login and its PBKDF2
+derivation, the ticket and WS waits before their claims), read on the rerun on the fixed head; then the API thread's
+busy share through the Postgres wire, the 436 shared-tick status reads, the claimed-join idle and the medium-scale
+outbox drain; then the deferred items D410 lists (the pipelined flight, per-context dispatch order, the RTT hold before
+planning, the mixed-category lock residual, `setPublisher`, the probe's instant), the follow-ups the #691 entry lists,
+the physical commit→browser ≤ 2 s target and the V1c closure (D281).
 
 #### Performance follow-ups from the step 2h investigation
 

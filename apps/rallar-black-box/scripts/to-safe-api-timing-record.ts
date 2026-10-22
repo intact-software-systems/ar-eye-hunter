@@ -49,6 +49,25 @@ const DETAIL_NUMBERS = [
     'elapsedMsecs',
     'waitMaxElapsedMsecs'
 ];
+/** Each detail kept only as one of its closed values. */
+const DETAIL_CLOSED_STRINGS: Readonly<Record<string, readonly string[]>> = {
+    queueObservation: [
+        'missing',
+        'NEW',
+        'RESERVED',
+        'RETRY',
+        'COMPLETED',
+        'FAILED',
+        'NON_RETRYABLE',
+        'other-status',
+        'read-failure'
+    ],
+    selectedLane: API_TIMING_DEQUEUE_LANES,
+    resultStatus: ['NEW', 'RETRY', 'RESERVED', 'COMPLETED', 'FAILED', 'ABORTED', 'NON_RETRYABLE'],
+    classification: ['accepted', 'not-ready', 'retryable', 'non-retryable'],
+    trigger: ['first', 'completion', 'tick', 'delay', 'closed'],
+    readRow: ['result', 'status']
+};
 const COMPONENTS = [
     'http',
     'app-inbox',
@@ -211,39 +230,10 @@ function toSafeTimingDetails(
             safe[field] = details[field];
         }
     }
-    if (
-        isAllowedApiTimingString(details.queueObservation, [
-            'missing',
-            'NEW',
-            'RESERVED',
-            'RETRY',
-            'COMPLETED',
-            'FAILED',
-            'NON_RETRYABLE',
-            'other-status',
-            'read-failure'
-        ])
-    ) {
-        safe.queueObservation = details.queueObservation;
-    }
-    if (isAllowedApiTimingString(details.selectedLane, API_TIMING_DEQUEUE_LANES)) {
-        safe.selectedLane = details.selectedLane;
-    }
-    if (
-        isAllowedApiTimingString(details.resultStatus, [
-            'NEW',
-            'RETRY',
-            'RESERVED',
-            'COMPLETED',
-            'FAILED',
-            'ABORTED',
-            'NON_RETRYABLE'
-        ])
-    ) {
-        safe.resultStatus = details.resultStatus;
-    }
-    if (isAllowedApiTimingString(details.classification, ['accepted', 'not-ready', 'retryable', 'non-retryable'])) {
-        safe.classification = details.classification;
+    for (const [field, allowed] of Object.entries(DETAIL_CLOSED_STRINGS)) {
+        if (isAllowedApiTimingString(details[field], allowed)) {
+            safe[field] = details[field];
+        }
     }
     if (typeof details.exhaustion === 'boolean') {
         safe.exhaustion = details.exhaustion;

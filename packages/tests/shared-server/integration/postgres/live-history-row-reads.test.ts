@@ -95,10 +95,10 @@ describe('Postgres reads of live history rows', () => {
             runtime.takePresenceRows();
 
             const versioned = await groups.readVersionedSnapshot(runtime, ref, nowEpochMs);
-            expect(versioned?.snapshot.activeSessions.map(({ sessionId }) => sessionId)).toEqual(['live']);
+            expect(versioned.snapshot?.activeSessions.map(({ sessionId }) => sessionId)).toEqual(['live']);
             expect(runtime.takePresenceRows()).toBe(1);
             await expect(readGroupStateSnapshotVersions(runtime, [ref], nowEpochMs)).resolves.toEqual([
-                versioned?.version?.version
+                versioned.version?.version
             ]);
 
             expect((await groups.listSnapshots(scope)).map((snapshot) => snapshot.activeSessions.length)).toEqual([1]);
@@ -136,8 +136,8 @@ describe('Postgres reads of live history rows', () => {
             await groups.putPresenceSession({ ...live, lastHeartbeatAtEpochMs: 7 });
 
             const [probed] = await readGroupStateSnapshotVersions(runtime, [ref], nowEpochMs);
-            expect(probed).not.toBe(before?.version?.version);
-            expect((await groups.readVersionedSnapshot(runtime, ref, nowEpochMs))?.version?.version).toBe(probed);
+            expect(probed).not.toBe(before.version?.version);
+            expect((await groups.readVersionedSnapshot(runtime, ref, nowEpochMs)).version?.version).toBe(probed);
         });
     });
 });

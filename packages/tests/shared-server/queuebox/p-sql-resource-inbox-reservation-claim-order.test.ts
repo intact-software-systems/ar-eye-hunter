@@ -21,7 +21,7 @@ describe('PSqlResourceInboxReservationRepository claim order', () => {
             createClaimedRow({ rowId: 10n, resourceId: 'unscheduled-ten', selectedNextTs: null }),
             createClaimedRow({ rowId: 9n, resourceId: 'unscheduled-nine', selectedNextTs: null })
         ];
-        const repository = new PSqlResourceInboxReservationRepository(createClaimingSql(rows), () => new Date());
+        const repository = new PSqlResourceInboxReservationRepository(createClaimingSql(rows));
 
         const claimed = await repository.reserveEntriesSkipLocked({
             typeIds: new Set(['APP_INBOX']),
@@ -42,7 +42,7 @@ describe('PSqlResourceInboxReservationRepository claim order', () => {
             createClaimedRow({ rowId: 3n, resourceId: 'younger-tie-high', selectedNextTs: null, createdTs: '2026-10-13 12:00:01.000000' }),
             createClaimedRow({ rowId: 1n, resourceId: 'younger-tie-low', selectedNextTs: null, createdTs: '2026-10-13 12:00:01.000000' })
         ];
-        const repository = new PSqlResourceInboxReservationRepository(createClaimingSql(rows), () => new Date());
+        const repository = new PSqlResourceInboxReservationRepository(createClaimingSql(rows));
 
         const claimed = await repository.reserveEntriesSkipLocked({
             typeIds: new Set(['APP_INBOX']),

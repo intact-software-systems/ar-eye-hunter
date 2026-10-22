@@ -1,7 +1,4 @@
-import {
-    validateAuthoritativeClientSnapshot,
-    validateAuthoritativeGroupSnapshotList
-} from '@shared/api/authoritative-state-validation.ts';
+import { validateAuthoritativeClientSnapshot } from '@shared/api/authoritative-state-validation.ts';
 
 import type { RuntimeStateEntryValue } from '@shared-server/runtime-state/runtime-state-json-store.ts';
 import {
@@ -65,7 +62,7 @@ export function assertClientMutationRead(
     if (!Number.isSafeInteger(read.audienceObservedAtEpochMs) || read.audienceObservedAtEpochMs < 0) {
         throw new ClientMutationRejectedError('Client mutation audience observation time is invalid');
     }
-    validateAuthoritativeGroupSnapshotList(read.audienceGroupSnapshots, command.aggregateRef);
+    assertClientMutationAudienceGroupScope(command, read.audienceGroupSnapshots);
     assertClientMutationAudienceCoMemberSessions(command, read.audienceCoMemberSessions);
     assertClientMutationReadScope(command, read);
     assertClientMutationAudienceReadScope(command, read);
@@ -80,6 +77,26 @@ function assertClientMutationAudienceReadScope(
         (read.audienceGroupSnapshots.length > 0 || read.audienceCoMemberSessions.length > 0)
     ) {
         throw new ClientMutationRejectedError('Client mutation audience read is out of scope');
+    }
+}
+
+/** The group-state read validated each audience snapshot when it assembled it; the client read adds its scope. */
+function assertClientMutationAudienceGroupScope(
+    command: ClientMutationCommand,
+    snapshots: ClientMutationRead['audienceGroupSnapshots']
+): void {
+    if (!Array.isArray(snapshots)) {
+        throw new ClientMutationRejectedError('Client mutation audience group snapshots must be a list');
+    }
+    for (const snapshot of snapshots) {
+        if (
+            snapshot.group.applicationId !== command.aggregateRef.applicationId ||
+            snapshot.group.workspaceId !== command.aggregateRef.workspaceId
+        ) {
+            throw new ClientMutationRejectedError(
+                'Client mutation audience group snapshot is outside the requested scope'
+            );
+        }
     }
 }
 

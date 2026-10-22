@@ -10,7 +10,6 @@ import {
 
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
@@ -43,11 +42,6 @@ describe('outbound admission observation order', () => {
             new ALOutboundDispatchAdmission<OutboundTestPayload>({
                 lane: 'durable',
                 admissionStore: store,
-                workPort: createTestALOutboundWorkPort({
-                    admissionStore: store,
-                    workQueue: backend.workQueue,
-                    nowMs: Date.now
-                }),
                 toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
                 decodePreparedMessage: decodeOutboundTestPayload,
                 clock: { nowMs: Date.now },
@@ -131,11 +125,6 @@ describe('outbound admission observation order', () => {
         const admission = new ALOutboundDispatchAdmission<OutboundTestPayload>({
             lane: 'durable',
             admissionStore: store,
-            workPort: createTestALOutboundWorkPort({
-                admissionStore: store,
-                workQueue: backend.workQueue,
-                nowMs: Date.now
-            }),
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             decodePreparedMessage: decodeOutboundTestPayload,
             clock: { nowMs: Date.now },
@@ -205,11 +194,6 @@ describe('outbound admission observation order', () => {
         const admission = new ALOutboundDispatchAdmission<OutboundTestPayload>({
             lane: 'durable',
             admissionStore: store,
-            workPort: createTestALOutboundWorkPort({
-                admissionStore: store,
-                workQueue: backend.workQueue,
-                nowMs: Date.now
-            }),
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             decodePreparedMessage: decodeOutboundTestPayload,
             clock: { nowMs: Date.now },

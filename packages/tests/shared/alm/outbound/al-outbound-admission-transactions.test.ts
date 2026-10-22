@@ -7,10 +7,7 @@ import {
     vi
 } from 'vitest';
 
-import {
-    createTestALOutboundControlAdmission,
-    createTestALOutboundWorkPort
-} from '@shared-test/shared/create-test-al-outbound-work-port.ts';
+import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
@@ -118,7 +115,6 @@ function createTransactionDispatchAdmission(
     return new ALOutboundDispatchAdmission<OutboundTestPayload>({
         lane: 'durable',
         admissionStore: store,
-        workPort: createTestALOutboundWorkPort({ admissionStore: store, workQueue: backend.workQueue, nowMs: Date.now }),
         toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
         decodePreparedMessage: decodeOutboundTestPayload,
         clock: { nowMs: Date.now },

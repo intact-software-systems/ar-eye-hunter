@@ -8,7 +8,10 @@ import {
     type ResourceInboxReservationOptions,
     type ResourceInboxWorkPage
 } from '@shared/queuebox/queue-box-types.ts';
-import { resolveResourceInboxWorkPageRequest } from '@shared/queuebox/resource-entry-observations.ts';
+import {
+    hasSameResourceEntryValue,
+    resolveResourceInboxWorkPageRequest
+} from '@shared/queuebox/resource-entry-observations.ts';
 import {
     resolveResourceInboxClaimOrder,
     type ResourceInboxClaimOrder
@@ -23,13 +26,16 @@ import { Either } from '@shared/resilience/Either.ts';
 
 import { PSqlFragment } from '../../postgres/p-sql-fragment.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
-import { PSqlResourceInboxEntryRepository } from './p-sql-resource-inbox-entry-repository.ts';
+import { ResourceInboxInvariantCorruptionError } from './p-sql-resource-inbox-entry-repository.ts';
 import {
     readResourceInboxWorkPresences,
     type ResourceInboxWorkPresence,
     type ResourceInboxWorkPresenceRead
 } from './read-resource-inbox-work-presences.ts';
-import type { ResourceInboxObservedReplacement } from './replace-observed-resource-inbox-entry.ts';
+import {
+    replaceObservedResourceInboxEntries,
+    type ResourceInboxObservedReplacement
+} from './replace-observed-resource-inbox-entry.ts';
 import { requeueObservedResourceInboxDeliveryFailure } from './requeue-observed-resource-inbox-delivery-failure.ts';
 import {
     parseTemporalPlainDateTime,
@@ -47,8 +53,8 @@ export interface StartProcessingEntitySkipped {
 
 /** The row after the claim plus the lifecycle it was selected with, which must have been valid to claim. */
 interface ClaimedResourceInboxRow extends ResourceInboxRow {
-    readonly previous_persisted_retry_delay_us?: unknown;
-    readonly due_to_reservation_observation_us?: unknown;
+    readonly previous_persisted_retry_delay_us: unknown;
+    readonly due_to_reservation_observation_us: unknown;
     readonly selected_status: string;
     readonly selected_attempts: bigint | null;
     readonly selected_start_ts: string | null;
@@ -97,11 +103,9 @@ export namespace PSqlResourceInboxReservationRepository {
 
 export class PSqlResourceInboxReservationRepository {
     private readonly sql: PSqlSql;
-    private readonly now: () => Date;
 
-    constructor(sql: PSqlSql, now: () => Date) {
+    constructor(sql: PSqlSql) {
         this.sql = sql;
-        this.now = now;
     }
 
     async readWorkPage(input: ResourceInboxWorkPage.Request): Promise<ResourceInboxWorkPage> {
@@ -173,7 +177,7 @@ export class PSqlResourceInboxReservationRepository {
         if (typeIds.size === 0 || statusIds.size === 0 || maxToReserve === 0) {
             return capture ? { entries: new Map(), observations: [] } : new Map();
         }
-        const eligibility = { typeIds: this.sql([...typeIds]), statusIds: this.sql([...statusIds]), maxAttempts };
+        const eligibility = { typeIds: [...typeIds], statusIds: [...statusIds], maxAttempts };
         const order = resolveResourceInboxClaimOrder(statusIds);
         const statement = toReservationStatement({ eligibility, order, contextClaim, maxToReserve, capture });
         const rows = await this.sql<ClaimedResourceInboxRow[]>(...statement.toStatement());
@@ -209,7 +213,7 @@ export class PSqlResourceInboxReservationRepository {
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
-        const eligibility = { typeIds: this.sql([...typeIds]), statusIds: this.sql([...statusIds]), maxAttempts };
+        const eligibility = { typeIds: [...typeIds], statusIds: [...statusIds], maxAttempts };
         const statement = PSqlFragment.of`
             select candidate.*
             from resource_inbox candidate
@@ -235,10 +239,10 @@ export class PSqlResourceInboxReservationRepository {
         }
 
         const overdueBefore = new Date(overdueBeforeEpochMs);
-        const rows = await this.sql<ResourceInboxRow[]>`
+        const statement = PSqlFragment.of`
             select *
             from resource_inbox
-            where ri_type_id in ${this.sql([...typeIds])}
+            where ${PSqlFragment.toTextListPredicate(PSqlFragment.identifier('ri_type_id'), [...typeIds])}
               and ri_status = ${EntityStatus.RETRY}
               and expire_ts > (now() at time zone 'UTC')
               and next_ts <= ${overdueBefore}
@@ -248,6 +252,7 @@ export class PSqlResourceInboxReservationRepository {
                 for update skip locked
             limit ${maxToReserve}
         `;
+        const rows = await this.sql<ResourceInboxRow[]>(...statement.toStatement());
 
         return rowsToMap(rows);
     }
@@ -274,7 +279,7 @@ export class PSqlResourceInboxReservationRepository {
             ? await this.sql<ResourceInboxRow[]>`
             select *
             from resource_inbox
-            where ri_type_id in ${this.sql([...typeIds])}
+            where ri_type_id = any(${[...typeIds]}::text[])
               and ri_status = ${EntityStatus.RESERVED}
               and expire_ts > (now() at time zone 'UTC')
               and ri_attempts < ${maxAttempts}
@@ -288,7 +293,7 @@ export class PSqlResourceInboxReservationRepository {
             : await this.sql<ResourceInboxRow[]>`
             select *
             from resource_inbox
-            where ri_type_id in ${this.sql([...typeIds])}
+            where ri_type_id = any(${[...typeIds]}::text[])
               and ri_status = ${EntityStatus.RESERVED}
               and ri_row_id = any(${observedRowIds}::bigint[])
               and expire_ts > (now() at time zone 'UTC')
@@ -340,13 +345,29 @@ export class PSqlResourceInboxReservationRepository {
             : Either.ofRight<StartProcessingEntitySkipped, ResourceEntry>(toDomain(rows[0]));
     }
 
+    /**
+     * Every reservation of a batch released in one statement, answered in the order given: the released row, or null
+     * where the observation was no reservation or its row no longer holds it. A row observed twice is released by its
+     * first replacement only; the later one finds the row moved, as a second statement would have.
+     */
     async releaseReserved(
-        computed: ResourceInboxObservedReplacement
-    ): Promise<ResourceEntry | null> {
-        if (computed.expected.entry.status !== EntityStatus.RESERVED) {
-            return null;
+        computed: readonly ResourceInboxObservedReplacement[]
+    ): Promise<readonly (ResourceEntry | null)[]> {
+        const releasable = new Map<bigint, ResourceInboxObservedReplacement>();
+        for (const replacement of computed) {
+            if (
+                replacement.expected.entry.status === EntityStatus.RESERVED &&
+                !releasable.has(replacement.expectedRowId)
+            ) {
+                releasable.set(replacement.expectedRowId, replacement);
+            }
         }
-        return await new PSqlResourceInboxEntryRepository(this.sql, this.now).writeObservedReplacement(computed);
+        const released = await replaceObservedRowsById(this.sql, releasable);
+        return computed.map((replacement) =>
+            releasable.get(replacement.expectedRowId) === replacement
+                ? released.get(replacement.expectedRowId) ?? null
+                : null
+        );
     }
 
     async requeueObservedDeliveryFailure(
@@ -430,8 +451,8 @@ function resolveResourceInboxWorkPosition(
 }
 
 interface ResourceInboxEligibility {
-    readonly typeIds: object;
-    readonly statusIds: object;
+    readonly typeIds: readonly string[];
+    readonly statusIds: readonly EntityStatus[];
     readonly maxAttempts: number;
 }
 
@@ -501,8 +522,8 @@ function toReservationStatement(
 function toEligibleRowPredicate(alias: 'candidate' | 'head', eligibility: ResourceInboxEligibility): PSqlFragment {
     const row = PSqlFragment.identifier(alias);
     return PSqlFragment.of`(
-        ${row}.ri_type_id in ${eligibility.typeIds}
-        and ${row}.ri_status in ${eligibility.statusIds}
+        ${PSqlFragment.toTextListPredicate(PSqlFragment.of`${row}.ri_type_id`, eligibility.typeIds)}
+        and ${PSqlFragment.toTextListPredicate(PSqlFragment.of`${row}.ri_status`, eligibility.statusIds)}
         and ${row}.ri_status <> ${EntityStatus.FAILED}
         and ${row}.expire_ts > (now() at time zone 'UTC')
         and ${row}.ri_attempts < ${eligibility.maxAttempts}
@@ -535,4 +556,35 @@ function toClaimOrderBy(alias: 'candidate' | 'head', order: ResourceInboxClaimOr
     return order === 'creation'
         ? PSqlFragment.of`${row}.created_ts asc, ${row}.ri_row_id asc`
         : PSqlFragment.of`${row}.next_ts asc nulls first, ${row}.ri_row_id asc`;
+}
+
+/**
+ * Every replacement of a distinct row in one statement: the replaced rows by row identity, none for a row that
+ * moved.
+ */
+async function replaceObservedRowsById(
+    sql: PSqlSql,
+    replacementsByRowId: ReadonlyMap<bigint, ResourceInboxObservedReplacement>
+): Promise<ReadonlyMap<bigint, ResourceEntry>> {
+    if (replacementsByRowId.size === 0) {
+        return new Map();
+    }
+    const rows = await replaceObservedResourceInboxEntries(sql, [...replacementsByRowId.values()]);
+    return new Map(rows.map((row) => {
+        const rowId = BigInt(row.ri_row_id);
+        return [rowId, toReplacedEntry(row, replacementsByRowId.get(rowId))];
+    }));
+}
+
+function toReplacedEntry(row: ResourceInboxRow, computed: ResourceInboxObservedReplacement | undefined): ResourceEntry {
+    const updated = toDomain(row);
+    if (
+        computed === undefined || !hasSameResourceEntryValue(updated, { ...computed.replacement.entry, db: updated.db })
+    ) {
+        throw new ResourceInboxInvariantCorruptionError(
+            updated.key,
+            'Resource inbox compare-and-replace returned a row other than its replacement'
+        );
+    }
+    return updated;
 }

@@ -199,7 +199,7 @@ export class AppAdminInboxService {
         const command = decodeAdminPruneCommand(reservation.enqueue.data);
         assertAdminPruneStoredIdentity(key, reservation.enqueue, command);
         assertMatchingAdminPruneIdentity(identity, command);
-        const enqueued = await this.resultWaiter.waitForReservedResult<AdminPruneEnqueueResult>(
+        const enqueued = await this.resultWaiter.waitForResult<AdminPruneEnqueueResult>(
             reservation,
             (value) => decodeAdminPruneEnqueueResultForCommand(value, command)
         );

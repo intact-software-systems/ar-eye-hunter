@@ -327,3 +327,43 @@ describe('ResourceInbox completion safety tick', () => {
         expect(vi.getTimerCount()).toBe(0);
     });
 });
+
+describe('ResourceInbox completion wake reasons', () => {
+    it('answers a completion of its own key, also one that arrived before the wait began', async () => {
+        vi.useFakeTimers({ now: 0 });
+        const notifications = ResourceInboxCompletionNotifications.createDefault();
+        const subscription = notifications.subscribe(identity);
+        const woken = subscription.wait(RESOURCE_INBOX_COMPLETION_SAFETY_TICK_MSECS);
+        notifications.publish(identity, 'awaitable');
+        expect(await woken).toBe('completion');
+        subscription.beginRead();
+        notifications.acceptRelayed(identity);
+        expect(await subscription.wait(RESOURCE_INBOX_COMPLETION_SAFETY_TICK_MSECS)).toBe('completion');
+        subscription.close();
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('answers the shared tick for a parked wait and the delay for a wait that ends before the tick', async () => {
+        vi.useFakeTimers({ now: 0 });
+        const notifications = ResourceInboxCompletionNotifications.createDefault();
+        const [ticking, budgeted] = ['ticking', 'budgeted'].map((resourceId) => notifications.subscribe({ ...identity, resourceId }));
+        const reasons = new Map<string, ResourceInboxCompletionNotifications.WakeReason>();
+        void ticking.wait(RESOURCE_INBOX_COMPLETION_SAFETY_TICK_MSECS).then((reason) => reasons.set('ticking', reason));
+        void budgeted.wait(300).then((reason) => reasons.set('budgeted', reason));
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(Object.fromEntries(reasons)).toEqual({ ticking: 'tick', budgeted: 'delay' });
+        [ticking, budgeted].forEach((subscription) => subscription.close());
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('answers closed for a wait its subscription closed and for any wait after that', async () => {
+        vi.useFakeTimers({ now: 0 });
+        const notifications = ResourceInboxCompletionNotifications.createDefault();
+        const subscription = notifications.subscribe(identity);
+        const pending = subscription.wait(RESOURCE_INBOX_COMPLETION_SAFETY_TICK_MSECS);
+        subscription.close();
+        expect(await pending).toBe('closed');
+        expect(await subscription.wait(RESOURCE_INBOX_COMPLETION_SAFETY_TICK_MSECS)).toBe('closed');
+        expect(vi.getTimerCount()).toBe(0);
+    });
+});

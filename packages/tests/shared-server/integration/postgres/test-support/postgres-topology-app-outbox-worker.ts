@@ -144,7 +144,7 @@ function registerTopologyAppOutboxHandler(
         findGroupSnapshotByRef: () => input.groupSnapshot,
         readCurrentGroupSnapshot: async (ref) => await groupStateRepository.readSnapshot(ref),
         readRttMeasurements: () => [],
-        topologyService: new RallarRtcTopologyService({ now: () => input.atEpochMs })
+        topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => input.atEpochMs })
     });
     registration.outboxQueueReader.onOutboxMessageDo(
         AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,

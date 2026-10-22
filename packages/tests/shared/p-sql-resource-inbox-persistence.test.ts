@@ -663,11 +663,11 @@ describe('PostgreSQL resource inbox persistence', () => {
             status: EntityStatus.RETRY,
             dequeueAudit: { ...observed.dequeueAudit, endTs: releasedAt, nextTs: releasedAt.add({ milliseconds: 37 }) }
         };
-        await expect(repo.reservations.releaseReserved(computeResourceInboxObservedReplacement({
+        await expect(repo.reservations.releaseReserved([computeResourceInboxObservedReplacement({
             ...observed,
             dequeueAudit: { ...observed.dequeueAudit, attempts: 1 }
-        }, candidate))).resolves.toBeNull();
-        const released = await repo.reservations.releaseReserved(computeResourceInboxObservedReplacement(observed, candidate));
+        }, candidate)])).resolves.toEqual([null]);
+        const [released] = await repo.reservations.releaseReserved([computeResourceInboxObservedReplacement(observed, candidate)]);
 
         expect(released?.dequeueAudit.endTs?.toString()).toBe(releasedAt.toString());
         expect(released?.dequeueAudit.nextTs?.toString())
@@ -676,6 +676,49 @@ describe('PostgreSQL resource inbox persistence', () => {
             status: EntityStatus.RETRY,
             dequeueAudit: { attempts: 2 }
         });
+    });
+
+    it('releases a sixteen-claim batch of mixed outcomes in one update statement', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+        const harness = createResourceInboxSqlHarness();
+        const repo = createPSqlResourceInboxRepository(harness.sql, () => new Date());
+        const releasedAt = Temporal.Instant.from('2026-01-01T00:01:00.123Z');
+        const reserved: ResourceEntry[] = [];
+        for (let index = 0; index < 16; index += 1) {
+            const entry = createEntry(createKey(`batch-release-${index}`), {
+                text: 'reserved',
+                expiryTs: Temporal.Instant.from('2026-01-01T00:05:00Z')
+            });
+            await repo.entries.write(entry);
+            const stored = findStoredResourceInboxRow(harness.rows, entry.key)!;
+            stored.ri_status = EntityStatus.RESERVED;
+            stored.ri_attempts = 1n;
+            stored.start_ts = '2026-01-01 00:00:00.000000';
+            reserved.push((await repo.entries.findByKey(entry.key))!);
+        }
+        const dispositions = [
+            { status: EntityStatus.COMPLETED, delayMs: null },
+            { status: EntityStatus.RETRY, delayMs: 1_000 },
+            { status: EntityStatus.RETRY, delayMs: 250, reason: 'not-ready' }
+        ] as const;
+        harness.sqlCalls.length = 0;
+
+        await new PSqlQueueBox(repo, () => releasedAt).releaseEntries(
+            reserved.map((entry, index) => ({ entry, disposition: dispositions[index % 3]! }))
+        );
+
+        expect(harness.sqlCalls.filter((query) => query.startsWith('update resource_inbox'))).toHaveLength(1);
+        expect(reserved.map((entry) => {
+            const row = findStoredResourceInboxRow(harness.rows, entry.key)!;
+            return [row.ri_status, row.ri_attempts, row.next_ts];
+        })).toEqual(reserved.map((_, index) =>
+            [
+                [EntityStatus.COMPLETED, 1n, null],
+                [EntityStatus.RETRY, 1n, '2026-01-01 00:01:01.123000'],
+                [EntityStatus.RETRY, 0n, '2026-01-01 00:01:00.373000']
+            ][index % 3]
+        ));
     });
 
     it.each(

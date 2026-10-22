@@ -119,7 +119,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             findGroupSnapshotByRef: readGroup,
             readCurrentGroupSnapshot: readGroup,
             readRttMeasurements: () => [],
-            topologyService: new RallarRtcTopologyService({ now: () => nowEpochMs }),
+            topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => nowEpochMs }),
             topologySnapshotRepository: snapshots
         }).planning;
         const handler = createRtcTopologyWorkHandler({
@@ -297,7 +297,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             findGroupSnapshotByRef: () => corruptFinderGroup,
             readCurrentGroupSnapshot: async () => corruptFinderGroup,
             readRttMeasurements: () => [],
-            topologyService: new RallarRtcTopologyService({ now: () => 10 }),
+            topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 10 }),
             topologySnapshotRepository: new RtcTopologySnapshotRepository(runtimeRepository)
         });
         const handler = createRtcTopologyWorkHandler({
@@ -340,7 +340,7 @@ describe('RTC topology APP_OUTBOX work', () => {
                     minCausalRevision: knownGroup?.causalRevision
                 }) ?? await findGroupSnapshotByRef(ref),
             readRttMeasurements: () => [],
-            topologyService: new RallarRtcTopologyService({ now: () => 10 }),
+            topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 10 }),
             topologySnapshotRepository: new RtcTopologySnapshotRepository(runtimeRepository)
         });
         const handler = createRtcTopologyWorkHandler({
@@ -391,7 +391,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             },
             readCurrentGroupSnapshot: async (ref) => await groupStateRepository.readSnapshot(ref),
             readRttMeasurements: () => [],
-            topologyService: new RallarRtcTopologyService({ now: () => 10 }),
+            topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 10 }),
             topologySnapshotRepository: new RtcTopologySnapshotRepository(runtimeRepository)
         });
         const handler = createRtcTopologyWorkHandler({
@@ -518,7 +518,7 @@ describe('RTC topology APP_OUTBOX work', () => {
                 throw new Error('Malformed topology work must not read mutable authority');
             },
             readRttMeasurements: () => [],
-            topologyService: new RallarRtcTopologyService({ now: () => 10 }),
+            topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 10 }),
             topologySnapshotRepository: new RtcTopologySnapshotRepository(runtimeRepository)
         });
         const handler = createRtcTopologyWorkHandler({
@@ -567,7 +567,7 @@ describe('RTC topology APP_OUTBOX work', () => {
                 throw new Error('Malformed topology work must not read mutable authority');
             },
             readRttMeasurements: () => [],
-            topologyService: new RallarRtcTopologyService({ now: () => 10 }),
+            topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 10 }),
             topologySnapshotRepository: new RtcTopologySnapshotRepository(runtimeRepository)
         });
         const handler = createRtcTopologyWorkHandler({
@@ -600,7 +600,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             findGroupSnapshotByRef: () => undefined,
             readCurrentGroupSnapshot: async () => undefined,
             readRttMeasurements: () => [],
-            topologyService: new RallarRtcTopologyService({ now: () => 10 }),
+            topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 10 }),
             topologySnapshotRepository: snapshots
         }).planning;
         const handler = createRtcTopologyWorkHandler({
@@ -748,7 +748,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             findGroupSnapshotByRef: async () => group,
             readCurrentGroupSnapshot: async () => group,
             readRttMeasurements: () => [rtt('session-a', 'session-b', 1)],
-            topologyService: new RallarRtcTopologyService({ now: () => 1_000 }),
+            topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 1_000 }),
             topologySnapshotRepository: snapshots
         }).planning;
         const authority = await planning.readTopologyPlanningAuthority({

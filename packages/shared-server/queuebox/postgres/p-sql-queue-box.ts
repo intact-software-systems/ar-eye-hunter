@@ -14,6 +14,7 @@ import {
     toResourceInboxReservationOptions,
     toResourceInboxWorkAdvertisementOptions,
     type QueueBoxResourceEntryRepository,
+    type QueueBoxWrittenIfAbsent,
     type ResourceInboxFairnessReservationInput,
     type ResourceInboxFairnessSelection,
     type ResourceInboxFinalizationReservationOptions,
@@ -410,55 +411,44 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
         }
     }
 
+    /**
+     * One statement releases every reservation; only a row it did not update is read again, to tell
+     * finalized from lost.
+     */
     private async releaseCandidates(
         transaction: PSqlResourceInboxRepository,
         computed: PSqlQueueReleaseComputed
     ): Promise<Map<Key, ResourceEntry> | PSqlQueueReleased> {
         const timing = this.releaseTiming;
         const startedAtMs = timing?.readMonotonicMs();
-        const members: PSqlQueueReleaseTiming.MemberSpan[] | undefined = timing === undefined ? undefined : [];
+        const released = await transaction.reservations.releaseReserved(
+            computed.candidates.map((candidate) => candidate.replacement)
+        );
+        const statementEndedAtMs = timing?.readMonotonicMs();
         const entries = new Map<Key, ResourceEntry>();
         let fallbackCount = 0;
-        for (const { disposition, replacement } of computed.candidates) {
-            const ordinal = members?.length ?? 16;
+        for (const [index, { disposition, replacement }] of computed.candidates.entries()) {
             const entry = replacement.expected.entry;
-            const memberStartedAtMs = ordinal < 16 ? timing?.readMonotonicMs() : undefined;
-            const updated = await transaction.reservations.releaseReserved(replacement);
-            const memberEndedAtMs = ordinal < 16 ? timing?.readMonotonicMs() : undefined;
-            if (ordinal < 16) {
-                members?.push({
-                    entry,
-                    ordinal,
-                    startedAtMs: memberStartedAtMs,
-                    endedAtMs: memberEndedAtMs,
-                    updated: updated !== null
-                });
+            const updated = released[index] ?? null;
+            if (updated === null) {
+                fallbackCount += 1;
             }
-            if (!updated) {
-                if (timing !== undefined) {
-                    fallbackCount += 1;
-                }
-                const current = await transaction.entries.findAnyByKey(entry.key);
-                if (
-                    !current ||
-                    !isIdempotentHandlerFinalizedRelease({
-                            current,
-                            reserved: entry,
-                            disposition,
-                            observedAt: computed.releasedAt
-                        }) &&
-                        !isAdminPruneHandlerFinalizedRelease(current, entry, disposition)
-                ) {
-                    throw new ResourceInboxLostReservationError(entry.key, entry.dequeueAudit.attempts);
-                }
-                entries.set(entry.key, current);
-                continue;
-            }
-            entries.set(entry.key, updated);
+            entries.set(
+                entry.key,
+                updated ?? await readFinalizedRelease(transaction, { entry, disposition }, computed.releasedAt)
+            );
         }
-        return members === undefined ? entries : {
+        if (timing === undefined) {
+            return entries;
+        }
+        const members = computed.candidates.slice(0, 16).map(({ replacement }, ordinal) => ({
+            entry: replacement.expected.entry,
+            ordinal,
+            updated: released[ordinal] !== null
+        }));
+        return {
             entries,
-            timing: { startedAtMs, endedAtMs: timing?.readMonotonicMs(), fallbackCount, members }
+            timing: { startedAtMs, statementEndedAtMs, endedAtMs: timing.readMonotonicMs(), fallbackCount, members }
         };
     }
 
@@ -482,6 +472,10 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async enqueueIfAbsent(resourceEntry: ResourceEntry): Promise<ResourceEntry> {
+        return (await this.writeIfAbsent(resourceEntry)).entry;
+    }
+
+    async writeIfAbsent(resourceEntry: ResourceEntry): Promise<QueueBoxWrittenIfAbsent> {
         const values = computeResourceInboxEntryInsertValues(resourceEntry);
         return await this.resourceInbox.transaction(
             async (txRepo: PSqlResourceInboxRepository) => {
@@ -516,6 +510,24 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     async deleteExpired(): Promise<number> {
         return await this.resourceInbox.maintenance.deleteExpired();
     }
+}
+
+/** The row a release did not update: accepted only when its handler already finalized it, otherwise lost. */
+async function readFinalizedRelease(
+    transaction: PSqlResourceInboxRepository,
+    release: ResourceInboxRelease,
+    releasedAt: Temporal.Instant
+): Promise<ResourceEntry> {
+    const { entry, disposition } = release;
+    const current = await transaction.entries.findAnyByKey(entry.key);
+    if (
+        !current ||
+        !isIdempotentHandlerFinalizedRelease({ current, reserved: entry, disposition, observedAt: releasedAt }) &&
+            !isAdminPruneHandlerFinalizedRelease(current, entry, disposition)
+    ) {
+        throw new ResourceInboxLostReservationError(entry.key, entry.dequeueAudit.attempts);
+    }
+    return current;
 }
 
 /** Every release of a batch decided before its one transaction opens: validated, then computed. */

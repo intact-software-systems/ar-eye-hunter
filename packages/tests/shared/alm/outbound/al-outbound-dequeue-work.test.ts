@@ -14,6 +14,7 @@ import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persis
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { toALOutboundSentMessageKey } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import type { ALOutboundCapturedPolicy } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import { ALOutboundMessageRuntime, type ALOutboundDropReasonCode } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     AL_OUTBOUND_WORK_PAGE_SIZE,
@@ -618,6 +619,87 @@ describe('AL outbound dequeue work', () => {
         }
     });
 
+    it('hands each committed row of a group the policy its commit wrote, in row order', async () => {
+        const outbox = createOutboxQueue();
+        const stores = createDefaultOutboundTestStores(outbox);
+        const handed: HandedDequeuePolicy[] = [];
+        const runtime = createDefaultOutboundTestRuntime({
+            outbox,
+            stores,
+            dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'durable',
+                preparedMessages: [],
+                admittedAudience: ['peer-1'],
+                recipientScope: { applicationId: 'app', workspaceId: 'workspace' }
+            }),
+            afterDequeueAdmission: async (msg, entry, committedPolicy) => {
+                handed.push({ msgId: msg.id.msgId, entry, committedPolicy });
+            },
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+        });
+        const messages = ['ordered-1', 'ordered-2', 'ordered-3'].map(createDequeuedMessage);
+
+        try {
+            await runtime.ready();
+            for (const message of messages) {
+                await outbox.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(message, DEQUEUE_TYPE, Temporal.Now.instant()));
+            }
+            await runOutboundWorkTask(runtime);
+
+            expect(handed.map(({ msgId }) => msgId)).toEqual(messages.map((message) => message.id.msgId));
+            for (const [index, { entry, committedPolicy }] of handed.entries()) {
+                expect(committedPolicy).toMatchObject({ admittedAudience: ['peer-1'] });
+                expect(committedPolicy).toEqual(await stores.admissionStore.readCapturedPolicy(messages[index]!, entry));
+            }
+        }
+        finally {
+            await runtime.dispose();
+        }
+    });
+
+    it('hands nothing to the publication of a row whose commit conflicted', async () => {
+        const outbox = createOutboxQueue();
+        const stores = createDefaultOutboundTestStores(outbox);
+        vi.spyOn(stores.admissionStore, 'commitBundles').mockResolvedValue('conflict');
+        vi.spyOn(stores.admissionStore, 'commitBundle').mockResolvedValue('conflict');
+        const handed: HandedDequeuePolicy[] = [];
+        const runtime = createDefaultOutboundTestRuntime({
+            outbox,
+            stores,
+            dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
+            afterDequeueAdmission: async (msg, entry, committedPolicy) => {
+                handed.push({ msgId: msg.id.msgId, entry, committedPolicy });
+            },
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+        });
+        const entries = ['conflicted-1', 'conflicted-2'].map((resourceId) =>
+            QueueBoxUtilities.toResourceEntryFromMsg(createDequeuedMessage(resourceId), DEQUEUE_TYPE, Temporal.Now.instant())
+        );
+        onTestFinished(() => {
+            vi.restoreAllMocks();
+        });
+
+        try {
+            await runtime.ready();
+            for (const entry of entries) {
+                await outbox.enqueueIfAbsent(entry);
+            }
+            await runOutboundWorkTask(runtime);
+
+            expect(handed).toEqual([]);
+            for (const entry of entries) {
+                expect((await outbox.getItem(entry.key))?.status).not.toBe(EntityStatus.COMPLETED);
+            }
+        }
+        finally {
+            await runtime.dispose();
+        }
+    });
+
     it.each(
         [
             { authority: 'readable', label: 'a readable authority' },
@@ -1017,6 +1099,13 @@ it('keeps simultaneous owner reservations separate and reports an empty claim wi
     await runOutboundWorkTask(owner.runtime);
     expect(events.filter((event) => event.operation === 'work-batch')).toHaveLength(1);
 });
+
+/** What one dequeued row handed its publication: the canonical row and the policy its commit wrote. */
+interface HandedDequeuePolicy {
+    readonly msgId: string;
+    readonly entry: ResourceEntry;
+    readonly committedPolicy: ALOutboundCapturedPolicy | undefined;
+}
 
 interface TurnRecorder {
     record(): void;

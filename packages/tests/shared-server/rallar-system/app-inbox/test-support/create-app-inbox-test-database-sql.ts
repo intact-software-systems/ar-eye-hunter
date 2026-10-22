@@ -2,7 +2,7 @@ import { Temporal } from '@js-temporal/polyfill';
 
 import type { PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
-import type { AppOutboxInsertRow } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
+import type { ResourceInboxEntryInsertRow } from '@shared-server/queuebox/postgres/resource-inbox-entry-insert-values.ts';
 import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { validateAuthoritativeClientEvent, validateAuthoritativeGroupEvent } from '@shared/api/authoritative-state-validation.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
@@ -308,7 +308,7 @@ export function toAppOutboxInsertParameterRows(
     if (!query.includes('jsonb_to_recordset')) {
         return [values];
     }
-    return (values[0] as readonly AppOutboxInsertRow[]).map((row) => [
+    return (values[0] as readonly ResourceInboxEntryInsertRow[]).map((row) => [
         row.resourceId,
         row.topicId,
         row.resource,

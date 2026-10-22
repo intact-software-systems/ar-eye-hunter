@@ -170,7 +170,7 @@ describe('RTC topology weighted room graph planning', () => {
 
     it('uses fallback graph weights until RTT measurements are available', () => {
         const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(3));
-        const service = new RallarRtcTopologyService({ now: () => 100 });
+        const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100 });
 
         const fallbackGraph = service.createRoomGraph(group);
         const fallbackEdge = fallbackGraph.edge('peer-1', 'peer-3');
@@ -194,7 +194,7 @@ describe('RTC topology weighted room graph planning', () => {
 
     it('uses the latest RTT measurement for duplicate reverse pairs', () => {
         const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(3));
-        const service = new RallarRtcTopologyService({ now: () => 100 });
+        const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100 });
 
         const graph = service.createRoomGraph(group, [
             createRtcTopologyRttMeasurement({
@@ -315,7 +315,7 @@ describe('RTC topology weighted room graph planning', () => {
     it('documents complete weighted room graph materialization with partial RTT input', () => {
         const memberSessionIds = createRtcTopologyMemberIds(8);
         const group = createRtcTopologyGroupSnapshot('room-1', memberSessionIds);
-        const service = new RallarRtcTopologyService({ now: () => 100, rttReportingDegreeLimit: 8 });
+        const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100, rttReportingDegreeLimit: 8 });
 
         const graph = service.createRoomGraph(group, [
             createRtcTopologyRttMeasurement({
@@ -335,6 +335,7 @@ describe('RTC topology weighted room graph planning', () => {
         const memberSessionIds = createRtcTopologyMemberIds(32);
         const group = createRtcTopologyGroupSnapshot('room-1', memberSessionIds);
         const service = new RallarRtcTopologyService({
+            rttReplanMinimumLayoutAgeMs: 15_000,
             now: () => 100,
             degreeLimit: 5,
             rttReportingDegreeLimit: 5
@@ -353,6 +354,7 @@ describe('RTC topology weighted room graph planning', () => {
         const memberSessionIds = createRtcTopologyMemberIds(200);
         const group = createRtcTopologyGroupSnapshot('room-1', memberSessionIds);
         const service = new RallarRtcTopologyService({
+            rttReplanMinimumLayoutAgeMs: 15_000,
             now: () => 100,
             degreeLimit: 5,
             rttReportingDegreeLimit: 5
@@ -371,6 +373,7 @@ describe('RTC topology weighted room graph planning', () => {
         const memberSessionIds = createRtcTopologyMemberIds(32);
         const group = createRtcTopologyGroupSnapshot('room-1', memberSessionIds);
         const service = new RallarRtcTopologyService({
+            rttReplanMinimumLayoutAgeMs: 15_000,
             now: () => 100,
             degreeLimit: 5,
             rttReportingDegreeLimit: 5
@@ -390,7 +393,7 @@ describe('RTC topology weighted room graph planning', () => {
         const memberSessionIds = createRtcTopologyMemberIds(16);
         const group = createRtcTopologyGroupSnapshot('room-1', memberSessionIds);
         const rttMeasurements = createCentralRtcTopologyRttMeasurements(memberSessionIds, 'peer-1');
-        const service = new RallarRtcTopologyService({ now: () => 100 });
+        const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100 });
 
         const result = service.updateGroupTopology(group, rttMeasurements);
 

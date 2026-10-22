@@ -242,6 +242,79 @@ describe('transaction write purity', () => {
         }));
     });
 
+    it('resolves a spread fragment statement as a direct transaction operation', () => {
+        const findings = analyzeFixture(`
+            class PSqlFragment {
+                static of(strings: TemplateStringsArray, ...parts: readonly unknown[]): PSqlFragment {
+                    return new PSqlFragment();
+                }
+                toStatement(): [TemplateStringsArray, ...unknown[]] {
+                    return [[] as unknown as TemplateStringsArray];
+                }
+            }
+            interface PSqlSql {
+                <Result>(strings: TemplateStringsArray, ...values: readonly unknown[]): Promise<Result>;
+            }
+            export async function writeMutation(
+                transaction: PSqlSql,
+                computed: { readonly row: string }
+            ): Promise<void> {
+                const statement = PSqlFragment.of\`insert into item(value) values (\${computed.row})\`;
+                await transaction<void>(...statement.toStatement());
+            }
+        `);
+
+        expect(findings).toEqual([]);
+    });
+
+    it('checks the interpolations of a fragment built in a write', () => {
+        const findings = analyzeFixture(`
+            class PSqlFragment {
+                static of(strings: TemplateStringsArray, ...parts: readonly unknown[]): PSqlFragment {
+                    return new PSqlFragment();
+                }
+                toStatement(): [TemplateStringsArray, ...unknown[]] {
+                    return [[] as unknown as TemplateStringsArray];
+                }
+            }
+            interface PSqlSql {
+                <Result>(strings: TemplateStringsArray, ...values: readonly unknown[]): Promise<Result>;
+            }
+            export async function writeMutation(
+                transaction: PSqlSql,
+                computed: { readonly revision: number }
+            ): Promise<void> {
+                const statement = PSqlFragment.of\`insert into item(revision) values (\${computed.revision + 1})\`;
+                await transaction<void>(...statement.toStatement());
+            }
+        `);
+
+        expect(findings).toContainEqual(expect.objectContaining({
+            rule: 'transaction.precomputable-work',
+            operation: 'PSqlFragment.of interpolation'
+        }));
+    });
+
+    it('treats PSqlQueueBox.writeIfAbsent as the reviewed one-row transaction owner', () => {
+        const findings = analyzeFixture(
+            `
+            interface ResourceInbox {
+                transaction<T>(write: (repository: object) => Promise<T>): Promise<T>;
+            }
+            declare const rowCodec: { decode(row: object): string };
+            export class PSqlQueueBox {
+                constructor(private readonly resourceInbox: ResourceInbox) {}
+                async writeIfAbsent(row: object): Promise<string> {
+                    return await this.resourceInbox.transaction(async () => rowCodec.decode(row));
+                }
+            }
+        `,
+            '/packages/shared-server/queuebox/postgres/p-sql-queue-box.ts'
+        );
+
+        expect(findings).toEqual([]);
+    });
+
     it('allows direct prepared values and database-result refinements as write arguments', () => {
         const findings = analyzeFixture(`
             interface PSqlSql {

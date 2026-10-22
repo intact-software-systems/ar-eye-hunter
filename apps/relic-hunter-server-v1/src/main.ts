@@ -47,7 +47,8 @@ const configuration = await readRelicHunterServerConfiguration({
 });
 const databaseLifecycle = await createDefaultApiV1DatabaseLifecycle({
     database: configuration.apiV1.database,
-    pgliteEvidence: configuration.apiV1.blackBox.pgliteEvidence
+    pgliteEvidence: configuration.apiV1.blackBox.pgliteEvidence,
+    statementCensus: undefined
 });
 const rallar = await createDefaultRallarServer({
     configuration: configuration.apiV1,

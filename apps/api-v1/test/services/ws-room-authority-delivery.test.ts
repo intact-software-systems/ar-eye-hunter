@@ -1053,7 +1053,7 @@ async function readCapturedOutboxPolicy(harness: RoomDeliveryHarness, message: A
         const entry = await harness.outbox.getItem(key);
         const relayed = entry === undefined ? undefined : decodePersistedALMessage(entry.resource);
         if (entry !== undefined && relayed?.id.msgId === message.id.msgId) {
-            return await harness.service.readCapturedPolicy(relayed, entry);
+            return await harness.service.readCapturedPolicy(relayed, entry, undefined);
         }
     }
     return undefined;

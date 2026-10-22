@@ -1,9 +1,15 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it } from 'vitest';
 
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { PSqlResourceInboxEntryRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import { ResourceInboxRowCorruptionError } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { AppInboxQueueEntryWriter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-queue-entry-writer.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import {
     createResourceInboxTestStorage,
@@ -11,6 +17,7 @@ import {
     seedResourceInboxRow,
     type ResourceInboxTestStorage
 } from '../../queuebox/resource-inbox-test-storage.ts';
+import { createAppInboxQueueMessageFixture } from '../../rallar-system/app-inbox/test-support/create-app-inbox-queue-message-fixture.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 
@@ -102,6 +109,35 @@ describe('Postgres resource inbox status batch read', () => {
             expect(explained).toHaveLength(1);
             expect(explained[0]).toContain('resource_inbox_unique_k');
             expect(explained[0]).not.toContain('Seq Scan on resource_inbox');
+        });
+    });
+});
+
+describe('Postgres AppInbox written entry', () => {
+    postgresIt('tells the write that created an entry from a replay of its key', async () => {
+        await withStorage(async (storage) => {
+            const repository = createPSqlResourceInboxRepository(storage.sql, () => new Date());
+            const writer = new AppInboxQueueEntryWriter({
+                newResourceId: crypto.randomUUID.bind(crypto),
+                createMessage: createAppInboxQueueMessageFixture,
+                inboxQueueReader: new InboxQueueReader(new PSqlQueueBox(repository, Temporal.Now.instant), {
+                    laneBudgetPolicy: 'fixed-retry-two',
+                    newLaneConcurrency: 1
+                })
+            }, { serviceId: 'server-1', defaultTopicId: 'app-inbox.client-state' });
+            const command = {
+                type: AppInboxType.CLIENT_AUTHORISED_WS_CONNECT,
+                resourceId: 'written-command-0001',
+                contextId: 'written-client',
+                data: { requestId: 'written-command-0001' }
+            };
+
+            const created = await writer.writeIfAbsent(command);
+            const replayed = await writer.writeIfAbsent(command);
+
+            expect(created.winner).toBe(true);
+            expect(replayed.winner).toBe(false);
+            expect(replayed.entry.resource).toBe(created.entry.resource);
         });
     });
 });

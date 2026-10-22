@@ -1,0 +1,137 @@
+import type { PSqlParameter } from '@shared-server/postgres/p-sql-sql.ts';
+import { recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
+import { startRepeating } from '@shared/resilience/start-repeating.ts';
+import type { Timers } from '@shared/resilience/timers.ts';
+
+/** The statements of one shape since the previous take. */
+export interface PostgresStatementShape {
+    readonly shape: string;
+    readonly count: number;
+    readonly executorWaitMs: number;
+    readonly parameterChars: number;
+}
+
+export interface PostgresCensusStatement {
+    readonly strings: TemplateStringsArray;
+    readonly values: readonly PSqlParameter[];
+    readonly executorWaitMs: number;
+}
+
+interface PostgresStatementShapeTotals {
+    count: number;
+    executorWaitMs: number;
+    parameterChars: number;
+}
+
+const SHAPE_LENGTH = 60;
+const ISO_INSTANT_LENGTH = 24;
+
+/**
+ * Statements by shape: the whole statement text, parameters as `?`, whitespace collapsed. Every SQL shape belongs to
+ * one function, so a shape names its caller, and the totals give statements, executor wait and parameter text per
+ * caller. A census line names each shape by its first 60 characters only, so two shapes may share a name there.
+ */
+export class PostgresStatementCensus {
+    private readonly shapeByStrings = new WeakMap<TemplateStringsArray, string>();
+    private readonly totalsByShape = new Map<string, PostgresStatementShapeTotals>();
+
+    public record(statement: PostgresCensusStatement): void {
+        const shape = this.toShape(statement.strings);
+        const totals = this.totalsByShape.get(shape) ?? { count: 0, executorWaitMs: 0, parameterChars: 0 };
+        totals.count += 1;
+        totals.executorWaitMs += statement.executorWaitMs;
+        totals.parameterChars += statement.values.reduce<number>((sum, value) => sum + computeParameterChars(value), 0);
+        this.totalsByShape.set(shape, totals);
+    }
+
+    /**
+     * Every shape recorded since the previous take, the longest total executor wait first; the census starts empty
+     * again.
+     */
+    public takeShapes(): readonly PostgresStatementShape[] {
+        const shapes = [...this.totalsByShape].map(([shape, totals]) => ({ shape, ...totals }));
+        this.totalsByShape.clear();
+        return shapes.sort((left, right) => right.executorWaitMs - left.executorWaitMs);
+    }
+
+    private toShape(strings: TemplateStringsArray): string {
+        const kept = this.shapeByStrings.get(strings);
+        if (kept !== undefined) {
+            return kept;
+        }
+        const shape = strings.join('?').replace(/\s+/gu, ' ').trim();
+        this.shapeByStrings.set(strings, shape);
+        return shape;
+    }
+}
+
+export interface StartPostgresStatementCensusTimingInput {
+    readonly census: PostgresStatementCensus;
+    readonly timers: Timers;
+    readonly timing: RallarTimingSink;
+    readonly serviceId: string;
+    readonly intervalMs: number;
+}
+
+/** One `postgres statement-census` line per interval that saw a statement; answers the stop. */
+export function startPostgresStatementCensusTiming(input: StartPostgresStatementCensusTimingInput): () => void {
+    return startRepeating({
+        timers: input.timers,
+        intervalMs: input.intervalMs,
+        firstRun: 'after-interval',
+        run: () => {
+            const shapes = input.census.takeShapes();
+            if (shapes.length === 0) {
+                return;
+            }
+            recordRallarTiming({
+                sink: input.timing,
+                event: {
+                    component: 'postgres',
+                    operation: 'statement-census',
+                    serviceId: input.serviceId,
+                    details: {
+                        statements: shapes.reduce((sum, shape) => sum + shape.count, 0),
+                        executorWaitMs: Math.round(shapes.reduce((sum, shape) => sum + shape.executorWaitMs, 0)),
+                        parameterChars: shapes.reduce((sum, shape) => sum + shape.parameterChars, 0),
+                        shapes: JSON.stringify(shapes.map(toEmittedShape))
+                    }
+                },
+                status: 'ok',
+                durationMs: input.intervalMs
+            });
+        }
+    });
+}
+
+function toEmittedShape(shape: PostgresStatementShape): PostgresStatementShape {
+    return {
+        ...shape,
+        shape: shape.shape.slice(0, SHAPE_LENGTH),
+        executorWaitMs: Math.round(shape.executorWaitMs * 100) / 100
+    };
+}
+
+/**
+ * The characters of a parameter's scalar text: a string's length, a number's digits, an ISO instant. An array counts
+ * its scalar elements and a structured element counts nothing, so the census never serializes what it measures.
+ */
+function computeParameterChars(value: PSqlParameter): number {
+    if (Array.isArray(value)) {
+        return value.reduce<number>((sum, element: PSqlParameter) => sum + computeScalarChars(element), 0);
+    }
+    return computeScalarChars(value);
+}
+
+function computeScalarChars(value: PSqlParameter): number {
+    if (value === null || value === undefined) {
+        return 0;
+    }
+    if (typeof value === 'string') {
+        return value.length;
+    }
+    if (value instanceof Date) {
+        return ISO_INSTANT_LENGTH;
+    }
+    return typeof value === 'object' ? 0 : String(value).length;
+}

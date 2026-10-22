@@ -657,7 +657,7 @@ Deno.test(
                 readCurrentGroupSnapshot: async (ref) => await groupStateRepository.readSnapshot(ref),
                 readRttMeasurements: () => [],
                 configRepository,
-                topologyService: new RallarRtcTopologyService()
+                topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000 })
             });
             const outboxWriter = new RtcTopologyOutboxWriter({ recordWrite: () => undefined });
             const baselineMutation = createGroupTopologyMutationOwners({

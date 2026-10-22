@@ -17,6 +17,7 @@ describe('RTC topology planning without RTT measurements', () => {
     it('does not build a weighted room graph for star topology', () => {
         const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(8));
         const service = new RallarRtcTopologyService({
+            rttReplanMinimumLayoutAgeMs: 15_000,
             now: () => 100,
             treeMinSize: 9,
             meshMinSize: 10
@@ -32,8 +33,8 @@ describe('RTC topology planning without RTT measurements', () => {
 
     it('does not build a weighted room graph for no-RTT mesh topology', () => {
         const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(16));
-        const service = new RallarRtcTopologyService({ now: () => 100 });
-        const graphPathService = new RallarRtcTopologyService({ now: () => 100 });
+        const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100 });
+        const graphPathService = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100 });
         const createRoomGraph = vi.spyOn(service, 'createRoomGraph');
 
         const result = service.updateGroupTopology(group);
@@ -68,11 +69,13 @@ describe('RTC topology planning without RTT measurements', () => {
     )('does not build a weighted room graph for no-RTT %s-member tree topology with degree %s', (memberCount, degreeLimit) => {
         const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(memberCount));
         const service = new RallarRtcTopologyService({
+            rttReplanMinimumLayoutAgeMs: 15_000,
             now: () => 100,
             degreeLimit,
             meshMinSize: 999
         });
         const graphPathService = new RallarRtcTopologyService({
+            rttReplanMinimumLayoutAgeMs: 15_000,
             now: () => 100,
             degreeLimit,
             meshMinSize: 999
@@ -98,7 +101,7 @@ describe('RTC topology planning without RTT measurements', () => {
     it('roots a no-RTT tree at the appointed director', () => {
         const memberSessionIds = createRtcTopologyMemberIds(30);
         const group = createRtcTopologyGroupSnapshot('room-1', memberSessionIds);
-        const service = new RallarRtcTopologyService({ now: () => 100, meshMinSize: 999 });
+        const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100, meshMinSize: 999 });
 
         const leaderless = service.updateGroupTopology(group);
         const appointed = service.updateGroupTopology(toRtcTopologyGroupWithDirector(group, 'peer-12'));
@@ -117,7 +120,7 @@ describe('RTC topology planning without RTT measurements', () => {
         ] as const
     )('creates degree-limited %s-member %s topology', (memberCount, topology) => {
         const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(memberCount));
-        const service = new RallarRtcTopologyService({ now: () => 100 });
+        const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100 });
 
         const result = service.updateGroupTopology(group);
 

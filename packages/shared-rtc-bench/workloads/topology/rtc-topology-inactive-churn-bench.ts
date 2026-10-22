@@ -62,7 +62,7 @@ export function runRtcTopologyInactiveChurn(
     sessionsPerGroup: number,
     mode: RtcTopologyInactiveChurnMode
 ): RtcTopologyInactiveChurnResult {
-    const service = new RallarRtcTopologyService({ now: () => 1_000 });
+    const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 1_000 });
     const sessionIdsPerGroup = Array.from(
         { length: sessionsPerGroup },
         (_session, sessionIndex) => `session-${String(sessionIndex).padStart(3, '0')}`

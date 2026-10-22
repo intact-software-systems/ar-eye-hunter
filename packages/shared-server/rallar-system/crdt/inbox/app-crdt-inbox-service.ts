@@ -237,7 +237,7 @@ export class AppCrdtInboxService {
                 reservation.semanticHash
             );
         }
-        return await this.resultWaiter.waitForReservedResult(
+        return await this.resultWaiter.waitForResult(
             reserved,
             decodeCrdtMutationResult
         );

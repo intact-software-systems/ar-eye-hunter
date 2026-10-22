@@ -235,7 +235,7 @@ function createCriterionFingerprintFixture(
         effects: [] as string[],
         submitted: [] as CriterionSubmission[]
     };
-    const topologyService = new RallarRtcTopologyService({ now: () => NOW, durationNowMs });
+    const topologyService = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => NOW, durationNowMs });
     const planning = createGroupTopologyRuntimeOwners({
         findGroupSnapshotByRef: () => state.current,
         readCurrentGroupSnapshot: async () => state.current,

@@ -503,7 +503,7 @@ function topologyManagement(
         readCurrentGroupSnapshot: async (ref) => await harness.repository.readSnapshot(ref),
         readRttMeasurements: () => [],
         configRepository: repository,
-        topologyService: new RallarRtcTopologyService()
+        topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000 })
     });
     const mutationOwners = createGroupTopologyMutationOwners({
         groupStateRepository: harness.repository,

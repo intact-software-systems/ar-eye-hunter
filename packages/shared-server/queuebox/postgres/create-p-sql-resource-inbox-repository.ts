@@ -20,7 +20,7 @@ export function createPSqlResourceInboxRepository(
 ): PSqlResourceInboxRepository {
     return {
         entries: new PSqlResourceInboxEntryRepository(sql, now),
-        reservations: new PSqlResourceInboxReservationRepository(sql, now),
+        reservations: new PSqlResourceInboxReservationRepository(sql),
         finalization: new PSqlResourceInboxFinalizationRepository(sql),
         maintenance: new PSqlResourceInboxMaintenance(sql),
         transaction: async <T>(

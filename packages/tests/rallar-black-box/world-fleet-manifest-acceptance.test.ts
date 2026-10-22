@@ -177,7 +177,7 @@ describe('world-fleet native manifest acceptance', () => {
         expect(() => expectWorldFleetGroupAssertions(nativeManifest, incomplete)).toThrow();
         expect(() => expectWorldFleetGroupAssertions(nativeManifest, dishonest)).toThrow();
     });
-    it('keeps the authored workload identity, now creating the group under the default replanning with the cohort as its capacity, joining players only through their connect with 650 ms per participant for the hosted join lane, waiting for the cohort audience in the state-synced room snapshot of each page instead of polling the group, reading the ready status under the group-request allowance from the state-synced room store, appointing the director before the players connect, holding setup-complete for an accepted layout stable at its exact revision for a quiet window counted from when the page held it, allowing group joins per member and signing both roles in under the setup allowance, with the ALM diagnostic stream off', () => {
+    it('keeps the authored workload identity, now creating the group under the default replanning with the cohort as its capacity, joining players only through their connect with 650 ms per participant for the hosted join lane, waiting for the cohort audience in the state-synced room snapshot of each page instead of polling the group, reading the ready status under the group-request allowance from the state-synced room store, appointing the director before the players connect, holding setup-complete for an accepted layout stable at its exact revision for a quiet window counted from when the page held it, allowing group joins per member and signing both roles in under the setup allowance with a read of their own client snapshot under strict state reads instead of the workspace statistics scan, with the ALM diagnostic stream off', () => {
         const connectCommands = authored.recipes.flatMap((selection) => selection.recipe?.commands.filter((command) => command.kind === 'rtc.connect') ?? []);
         expect(connectCommands.map((command) => command.rallar?.almDiagnostics)).toEqual([false, false]);
         const workload = {
@@ -194,7 +194,7 @@ describe('world-fleet native manifest acceptance', () => {
                 }
             }))
         };
-        expect(createHash('sha256').update(JSON.stringify(workload)).digest('hex')).toBe('7fdc94f89b8fb4d379747e1f37758b230c6fc710bf13b660794c47b7673c8420');
+        expect(createHash('sha256').update(JSON.stringify(workload)).digest('hex')).toBe('ef1c42de9772b5dcb0db66b78faa94512d4718133dd3f30cda70da318fb17a3a');
         expect(authored.rtcCaptureMode).toBeUndefined();
         expect(authored.targetPolicy.expectedParticipantCount).toBe(15);
         expect(authored.groupAssertions).toHaveLength(231);

@@ -165,7 +165,7 @@ describe('RTC topology websocket publication', () => {
             name: 'server-1'
         });
         onTestFinished(() => service.dispose());
-        const topologyService = new RallarRtcTopologyService();
+        const topologyService = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000 });
         const appOutbox = new InMemoryQueueBox(new Map());
         const outboxQueueReader = new OutboxQueueReader(appOutbox);
         installTestTopologyOutbox(service, {
@@ -462,7 +462,7 @@ function createTopologyExecutionDependencies(
 }
 
 function createTopologyOwners(
-    topologyService = new RallarRtcTopologyService(),
+    topologyService = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000 }),
     findGroupSnapshotByRef: GroupTopologyGroupSnapshotReader = () => undefined
 ): GroupTopologyRuntimeOwners {
     return createGroupTopologyRuntimeOwners({

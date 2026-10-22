@@ -26,7 +26,7 @@ import {
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 
 describe('Postgres release elapsed phase evidence', () => {
-    postgresIt('attributes one held UPDATE in a real sixteen-member release only after root return', async () => {
+    postgresIt('attributes the one held UPDATE of a real sixteen-member release only after root return', async () => {
         const storage = await createReleaseStorage();
         const observed: PSqlQueueReleaseTiming.Observation[] = [];
         const gates = createReleaseGates(storage.sql);
@@ -68,6 +68,7 @@ describe('Postgres release elapsed phase evidence', () => {
                 candidateElapsedMs: 5,
                 transactionAdmissionElapsedMs: 7,
                 callbackElapsedMs: 100,
+                releaseReservedElapsedMs: 100,
                 transactionReturnElapsedMs: 13,
                 releaseOwnerElapsedMs: 125,
                 callbackRemainderElapsedMs: 0,
@@ -79,7 +80,7 @@ describe('Postgres release elapsed phase evidence', () => {
             throw new Error('Expected available release boundaries');
         }
         expect(observation.members).toHaveLength(16);
-        expect(observation.members.map((member) => member.releaseReservedElapsedMs)).toEqual([0, 0, 0, 0, 0, 0, 0, 100, 0, 0, 0, 0, 0, 0, 0, 0]);
+        expect(observation.members.map((member) => member.updated)).toEqual(storage.reserved.map(() => true));
         expect(observation.members[7]).toMatchObject({
             ordinal: 7,
             key: storage.reserved[7]!.key,
@@ -150,8 +151,8 @@ describe('Postgres release elapsed phase evidence', () => {
             begin: async <T>(write: PSqlTransactionWrite<T>): Promise<T> =>
                 await source.begin(async (transaction) =>
                     await write(createCompletionSql(transaction, async (rows) => {
-                        if (!Array.isArray(rows) || rows.length !== 1 || typeof rows[0] !== 'object' || rows[0] === null) {
-                            throw new Error('Expected one real UPDATE row');
+                        if (!Array.isArray(rows) || rows.length !== 16 || typeof rows[0] !== 'object' || rows[0] === null) {
+                            throw new Error('Expected the sixteen rows of the one real UPDATE');
                         }
                         Object.defineProperty(rows[0], 'ri_resource', {
                             get: () => {
@@ -408,7 +409,7 @@ function createReleaseGates(source: PSqlSql): ReleaseGates {
                 clock.atMs = 12;
                 const gated = createCompletionSql(transaction, async () => {
                     updates += 1;
-                    if (updates === 8) {
+                    if (updates === 1) {
                         statementReached.resolve();
                         await statementCompleted.promise;
                     }

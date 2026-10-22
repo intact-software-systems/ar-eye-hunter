@@ -22,7 +22,7 @@ import type { ApiV1TopologyServices } from '../../src/composition/create-api-v1-
 import { decodeApiV1Configuration } from '../../src/configuration/decode-api-v1-configuration.ts';
 import { createLocalQueuePubSubBus } from '../../src/db/local-queue-pubsub-bridge.ts';
 import type { ApiRtcTopologyRuntime } from '../../src/runtime/rtc-topology/create-api-rtc-topology-runtime.ts';
-import { createApiTimingSink, toApiOutboxStageTimingSink } from '../../src/services/timing-service.ts';
+import { createApiTimingSink, toTimingOnSink } from '../../src/services/timing-service.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { validDecodeApiV1ConfigurationInput } from '../configuration/api-v1-configuration-test-fixture.ts';
 
@@ -35,7 +35,7 @@ Deno.test('production timing-off configuration omits outbox stage sinks before o
     let middlewareStageTiming: CreateApiV1RuntimeInput['outboxStageTiming'];
     const releasePorts: Array<PSqlQueueReleaseTiming.Port | undefined> = [];
     const capturedPolicyPorts: Array<ALOutboundCapturedPolicyTiming.Capability | undefined> = [];
-    constructApiV1Runtime({ ...createInput([]), timing, outboxStageTiming: toApiOutboxStageTimingSink(observability, timing) }, {
+    constructApiV1Runtime({ ...createInput([]), timing, outboxStageTiming: toTimingOnSink(observability, timing) }, {
         ...operations,
         configureWsRuntimeStores: (input) => {
             releasePorts.push(input.outboundReleaseTiming);
@@ -54,6 +54,28 @@ Deno.test('production timing-off configuration omits outbox stage sinks before o
     assert.equal(middlewareStageTiming, undefined);
     assert.deepEqual(releasePorts, [undefined]);
     assert.deepEqual(capturedPolicyPorts, [undefined]);
+});
+
+Deno.test('timing off hands the mutation runtime no principal group list sink, so a failing sink is never reached', () => {
+    const configuration = decodeApiV1Configuration(validDecodeApiV1ConfigurationInput());
+    const failing = (): void => {
+        throw new Error('a timing-off list must not reach a sink');
+    };
+    const sinks: CreateApiV1RuntimeInput['principalGroupListTiming'][] = [];
+    for (const timingLogs of [false, true]) {
+        constructApiV1Runtime({
+            ...createInput([]),
+            principalGroupListTiming: toTimingOnSink({ ...configuration.observability, timingLogs }, failing)
+        }, {
+            ...createOperations([]),
+            createMutationRuntime: (input) => {
+                sinks.push(input.principalGroupListTiming);
+                return MUTATION_RUNTIME;
+            }
+        });
+    }
+
+    assert.deepEqual(sinks, [undefined, failing]);
 });
 
 Deno.test('enabled outbound release timing captures process identity only at the root store composition', () => {
@@ -245,7 +267,7 @@ function createInput(events: string[]): CreateApiV1RuntimeInput {
         },
         topologyDelivery: TEST_TOPOLOGY_DELIVERY,
         adminClientIds: ['admin'],
-        rtcTopologyOptions: {},
+        rtcTopologyOptions: { rttReplanMinimumLayoutAgeMs: 15_000 },
         rttRefinementGateConfig: {
             minIntervalMs: 0,
             vivaldiDeltaThresholdMs: 0

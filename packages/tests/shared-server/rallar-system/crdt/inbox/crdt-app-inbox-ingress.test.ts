@@ -19,7 +19,7 @@ import {
 } from '@shared/crdt/mod.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { QueueBoxWrittenIfAbsent } from '@shared/queuebox/queue-box-types.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
@@ -116,12 +116,12 @@ class CapturingInboxReader extends InboxQueueReader {
         this.fail = fail;
     }
 
-    override async enqueueIfAbsent(message: ALMessage): Promise<ResourceEntry> {
+    override async writeIfAbsent(message: ALMessage): Promise<QueueBoxWrittenIfAbsent> {
         this.messages.push(structuredClone(message));
         if (this.fail) {
             throw new Error('injected durable enqueue failure');
         }
-        return await super.enqueueIfAbsent(message);
+        return await super.writeIfAbsent(message);
     }
 }
 

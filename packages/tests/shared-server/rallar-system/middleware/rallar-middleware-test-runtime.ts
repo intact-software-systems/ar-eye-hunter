@@ -78,7 +78,7 @@ export function createRallarMiddlewareTestRuntime(
         readCurrentGroupSnapshot: async (ref) => await groupsRepository.readSnapshot(ref),
         readRttMeasurements: () => [],
         configRepository: topologyConfigRepository,
-        topologyService: new RallarRtcTopologyService()
+        topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000 })
     });
     const topologyMutationOwners = createGroupTopologyMutationOwners({
         groupStateRepository: groupsRepository,

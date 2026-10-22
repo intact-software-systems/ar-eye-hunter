@@ -305,7 +305,7 @@ it('bounds SQL rows visited across a large unrelated gap on both the first and s
             return await Reflect.apply(target, receiver, arguments_);
         }
     });
-    const repository = new PSqlResourceInboxReservationRepository(explainedSql, () => new Date());
+    const repository = new PSqlResourceInboxReservationRepository(explainedSql);
     const request = { typeId: 'page-work', status: EntityStatus.NEW, maxToRead: 16, cursor: null } as const;
 
     const first = await repository.readWorkPage(request);

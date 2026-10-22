@@ -110,6 +110,8 @@ export interface CreateApiV1RuntimeInput {
     readonly nowEpochMs: () => number;
     readonly timing: RallarTimingSink;
     readonly outboxStageTiming?: RallarTimingSink;
+    /** Present only while timing is on: one line per strict principal group list. */
+    readonly principalGroupListTiming?: RallarTimingSink;
     readonly wsReceiptObserver?: WsQueueBoxServerReceiptObserver;
     readonly appInboxOptions: AppInboxOptions;
     readonly appInboxLaneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
@@ -344,6 +346,7 @@ function toMutationRuntimeInput(
         nowEpochMs: input.nowEpochMs,
         timing: input.timing,
         outboxStageTiming: input.outboxStageTiming,
+        principalGroupListTiming: input.principalGroupListTiming,
         appInboxOptions: input.appInboxOptions,
         appInboxLaneBudgetPolicy: input.appInboxLaneBudgetPolicy,
         appInboxNewLaneConcurrency: input.appInboxNewLaneConcurrency,

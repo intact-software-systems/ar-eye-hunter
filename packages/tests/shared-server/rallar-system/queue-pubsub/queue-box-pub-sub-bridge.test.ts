@@ -21,6 +21,7 @@ import {
 } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
+import type { ALOutboundCapturedPolicy } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import {
     captureALOutboundCreationExpiry,
     toALOutboundCanonicalKey,
@@ -40,6 +41,9 @@ import { ExpectedConnectionHolds } from '@shared/websocket/expected-connection-h
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 type ClusterPublisher = Parameters<QueueBoxPubSubWsService['onOutboxClusterPublishDo']>[0];
+
+/** A publication whose commit handed no policy, so the publisher reads the stored one. */
+const STORED_POLICY_HANDOFF: Parameters<ClusterPublisher>[2] = { committedPolicy: undefined, deferObservation: undefined };
 
 interface TestQueueBoxPubSubBridge extends QueueBoxPubSubBridge {
     readonly published: PublishedQueueMessage[];
@@ -156,7 +160,7 @@ describe('QueueBoxPubSubBridge', () => {
         const entry = createWsOutboxEntry();
 
         const message = decodePersistedALMessage(entry.resource);
-        await outboxPublishers[0](message, entry);
+        await outboxPublishers[0](message, entry, STORED_POLICY_HANDOFF);
 
         expect(bridge.published).toEqual([
             {
@@ -194,7 +198,7 @@ describe('QueueBoxPubSubBridge', () => {
             timing: (event) => timingEvents.push(event)
         });
         const entry = createWsOutboxEntry();
-        const publishing = outboxPublishers[0](decodePersistedALMessage(entry.resource), entry);
+        const publishing = outboxPublishers[0](decodePersistedALMessage(entry.resource), entry, STORED_POLICY_HANDOFF);
 
         expect(timingEvents.filter((event) => event.operation === 'outbox-cluster-publish-start'))
             .toEqual([expect.objectContaining({
@@ -244,7 +248,7 @@ describe('QueueBoxPubSubBridge', () => {
             }
         });
         const entry = createWsOutboxEntry();
-        const publication = publishers[0]!(decodePersistedALMessage(entry.resource), entry);
+        const publication = publishers[0]!(decodePersistedALMessage(entry.resource), entry, STORED_POLICY_HANDOFF);
         await entered.promise;
         expect(events.some((event) => event.operation === 'outbox-cluster-publish')).toBe(true);
         expect(events.some((event) => event.operation === 'outbox-captured-policy-read')).toBe(false);
@@ -285,7 +289,7 @@ describe('QueueBoxPubSubBridge', () => {
         });
         const entry = createWsOutboxEntry();
 
-        await expect(outboxPublishers[0](decodePersistedALMessage(entry.resource), entry)).rejects.toBe(failure);
+        await expect(outboxPublishers[0](decodePersistedALMessage(entry.resource), entry, STORED_POLICY_HANDOFF)).rejects.toBe(failure);
         expect(
             timingEvents.filter((event) => event.operation.startsWith('outbox-cluster-publish'))
                 .map((event) => event.operation)
@@ -326,7 +330,7 @@ describe('QueueBoxPubSubBridge', () => {
         for (let index = 0; index < rowCount; index += 1) {
             const entry = createWsOutboxEntry();
             messages.push(decodePersistedALMessage(entry.resource));
-            await outboxPublishers[0](messages.at(-1)!, entry);
+            await outboxPublishers[0](messages.at(-1)!, entry, STORED_POLICY_HANDOFF);
         }
         // Rows addressed to the session while its connect waits; the connect's own rows arrive last.
         socketOpened = true;
@@ -364,7 +368,7 @@ describe('QueueBoxPubSubBridge', () => {
             filterEligibleCapturedSessionIds: (input) => input.candidateSessionIds
         });
 
-        await outboxPublishers[0](decodePersistedALMessage(entry.resource), entry);
+        await outboxPublishers[0](decodePersistedALMessage(entry.resource), entry, STORED_POLICY_HANDOFF);
         await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry }));
 
         expect(addressed).toEqual([['admitted-session'], ['admitted-session']]);
@@ -390,7 +394,7 @@ describe('QueueBoxPubSubBridge', () => {
             filterEligibleCapturedSessionIds: (input) => input.candidateSessionIds
         });
 
-        await expect(outboxPublishers[0](decodePersistedALMessage(entry.resource), entry)).resolves.toBeUndefined();
+        await expect(outboxPublishers[0](decodePersistedALMessage(entry.resource), entry, STORED_POLICY_HANDOFF)).resolves.toBeUndefined();
         expect(addressed).toEqual([[]]);
     });
 
@@ -587,7 +591,7 @@ describe('QueueBoxPubSubBridge', () => {
             publisherId: 'publisher-1'
         });
 
-        await outboxPublishers[0](decodePersistedALMessage(entry.resource), entry);
+        await outboxPublishers[0](decodePersistedALMessage(entry.resource), entry, STORED_POLICY_HANDOFF);
         await bridge.subscriber?.(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'publisher-2', entry }));
 
         expect(handedAudiences).toEqual([undefined, undefined]);
@@ -971,7 +975,7 @@ describe('the captured audience of a cluster publication', () => {
                 clock: { nowMs: () => nowMs }
             });
 
-            await outboxPublishers[0](message, entry);
+            await outboxPublishers[0](message, entry, STORED_POLICY_HANDOFF);
             if (input.expired) {
                 nowMs = message.constraints!.expiresAtMs! + 1;
             }
@@ -1004,10 +1008,98 @@ describe('the captured audience of a cluster publication', () => {
             publisherId: 'local'
         });
 
-        await outboxPublishers[0](decodePersistedALMessage(entry.resource), entry);
+        await outboxPublishers[0](decodePersistedALMessage(entry.resource), entry, STORED_POLICY_HANDOFF);
         await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry }));
 
         expect(sends.map((send) => send.recipientScope)).toEqual([recipientScope, recipientScope]);
+    });
+
+    it('sends a row under the policy its commit handed over, after the cluster publish, and reads only the remote copy', async () => {
+        const outboxPublishers: ClusterPublisher[] = [];
+        const bridge = createBridge();
+        const entry = createCanonicalRoomOutboxEntry(Date.now());
+        const outbox = new InMemoryQueueBox();
+        await persistCanonicalEntry(outbox, entry);
+        const effects: string[] = [];
+        const policyReads: (ALOutboundCapturedPolicy | undefined)[] = [];
+        const committedPolicy: ALOutboundCapturedPolicy = {
+            persist: true,
+            ackTracking: null,
+            retryTracking: null,
+            repairTracking: null,
+            supersedenceTracking: null,
+            admittedAudience: ['committed-session']
+        };
+        await installQueueBoxPubSubBridge({
+            wsQBoxServerService: createTestQueueBoxPubSubWsService({
+                outbox,
+                registerOutboxPublisher: (publisher) => outboxPublishers.push(publisher),
+                policyReads,
+                readAudience: async () => {
+                    effects.push('stored-read');
+                    return ['stored-session'];
+                },
+                sendToTargetsWithResult: (message, _recipientSessionIds, admittedPeerIds) => {
+                    effects.push(`send:${admittedPeerIds?.join()}`);
+                    return sentLiveResult(message);
+                }
+            }),
+            bridge: {
+                ...bridge,
+                publish: async (channel, message) => {
+                    effects.push('publish');
+                    await bridge.publish(channel, message);
+                }
+            },
+            channel: 'queuebox-events',
+            publisherId: 'local'
+        });
+
+        await outboxPublishers[0]!(decodePersistedALMessage(entry.resource), entry, {
+            committedPolicy,
+            deferObservation: undefined
+        });
+        await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry }));
+
+        expect(effects).toEqual(['publish', 'send:committed-session', 'stored-read', 'send:stored-session']);
+        expect(policyReads).toEqual([committedPolicy, undefined]);
+    });
+
+    it('names on the captured-policy read whether the commit handed the policy over or the store answered it', async () => {
+        const outboxPublishers: ClusterPublisher[] = [];
+        const events: RallarTimingEvent[] = [];
+        const entry = createCanonicalRoomOutboxEntry(Date.now());
+        const outbox = new InMemoryQueueBox();
+        await persistCanonicalEntry(outbox, entry);
+        const committedPolicy: ALOutboundCapturedPolicy = {
+            persist: true,
+            ackTracking: null,
+            retryTracking: null,
+            repairTracking: null,
+            supersedenceTracking: null,
+            admittedAudience: ['committed-session']
+        };
+        await installQueueBoxPubSubBridge({
+            wsQBoxServerService: createTestQueueBoxPubSubWsService({
+                outbox,
+                registerOutboxPublisher: (publisher) => outboxPublishers.push(publisher),
+                readAudience: async () => ['stored-session'],
+                sendToTargetsWithResult: (message) => sentLiveResult(message)
+            }),
+            bridge: createBridge(),
+            channel: 'queuebox-events',
+            publisherId: 'local',
+            timing: (event) => events.push(event)
+        });
+        const message = decodePersistedALMessage(entry.resource);
+
+        await outboxPublishers[0]!(message, entry, { committedPolicy, deferObservation: undefined });
+        await outboxPublishers[0]!(message, entry, STORED_POLICY_HANDOFF);
+
+        expect(events.filter((event) => event.operation === 'outbox-captured-policy-read')).toEqual([
+            expect.objectContaining({ details: expect.objectContaining({ capturedPolicy: 'committed' }) }),
+            expect.objectContaining({ details: expect.objectContaining({ capturedPolicy: 'stored' }) })
+        ]);
     });
 
     it('fails the local publish closed when the captured policy is missing, as the remote receive does', async () => {
@@ -1034,7 +1126,7 @@ describe('the captured audience of a cluster publication', () => {
             publisherId: 'local'
         });
 
-        await expect(outboxPublishers[0](decodePersistedALMessage(entry.resource), entry))
+        await expect(outboxPublishers[0](decodePersistedALMessage(entry.resource), entry, STORED_POLICY_HANDOFF))
             .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         expect(sent).toEqual([]);
     });
@@ -1067,6 +1159,8 @@ interface CreateTestQueueBoxPubSubWsServiceInput {
     readonly readAudience?: (message: ALMessage, entry: ResourceEntry) => Promise<readonly string[] | undefined>;
     readonly recipientScope?: StateScope;
     readonly sends?: WsServerLiveSendInputDto[];
+    /** The committed policy each captured-policy read was handed, or `undefined` for a stored read. */
+    readonly policyReads?: (ALOutboundCapturedPolicy | undefined)[];
     readonly sendToTargetsWithResult?: (
         message: ALMessage,
         recipientSessionIds?: readonly string[],
@@ -1090,7 +1184,11 @@ function createTestQueueBoxPubSubWsService(
             return input.sendToTargetsWithResult?.(message, recipientSessionIds, admittedPeerIds) ??
                 noRecipientLiveSendResult(message);
         },
-        async readCapturedPolicy(message, entry) {
+        async readCapturedPolicy(message, entry, committedPolicy) {
+            input.policyReads?.push(committedPolicy);
+            if (committedPolicy !== undefined) {
+                return committedPolicy;
+            }
             return {
                 persist: true,
                 ackTracking: null,

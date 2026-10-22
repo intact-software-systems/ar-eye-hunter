@@ -12,10 +12,5 @@ export function groupStateIdempotencyStorageKey(ref: GroupRef, requestId: string
 export function decodeGroupStateIdempotencyStorageKey(
     storageKey: string
 ): GroupRef & Readonly<{ requestId: string; }> {
-    return decodeGroupStateChildStorageKey(
-        storageKey,
-        'request',
-        'requestId',
-        (ref) => groupStateIdempotencyStorageKey(ref, ref.requestId)
-    );
+    return decodeGroupStateChildStorageKey(storageKey, 'request', 'requestId');
 }

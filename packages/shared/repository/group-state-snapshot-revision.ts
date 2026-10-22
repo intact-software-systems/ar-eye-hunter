@@ -43,7 +43,8 @@ export function decideGroupSnapshotCausalRevision(
 
 /** Two snapshots at one causal tuple carry the same content apart from the liveness plane. */
 function isGroupSnapshotEqualRevisionDuplicate(current: GroupSnapshot, incoming: GroupSnapshot): boolean {
-    return jsonEquals(toLeaseInsensitiveSnapshot(current), toLeaseInsensitiveSnapshot(incoming)) ||
+    return current === incoming ||
+        jsonEquals(toLeaseInsensitiveSnapshot(current), toLeaseInsensitiveSnapshot(incoming)) ||
         isTuplePreservingGroupLivenessReduction(incoming, current) ||
         isTuplePreservingGroupLivenessReduction(current, incoming);
 }

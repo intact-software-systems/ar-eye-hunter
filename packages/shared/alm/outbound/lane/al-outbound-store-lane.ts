@@ -713,7 +713,6 @@ function createALOutboundLaneAdmissions<TPrepared>(
     const dispatchAdmission = new ALOutboundDispatchAdmission({
         lane: input.lane,
         admissionStore: stores.admissionStore,
-        workPort,
         toOutboxEntry: runtime.toOutboxEntry,
         decodePreparedMessage: runtime.decodePreparedMessage,
         clock: runtime.clock,

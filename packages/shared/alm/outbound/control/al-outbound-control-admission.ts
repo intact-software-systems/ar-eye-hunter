@@ -254,7 +254,7 @@ export class ALOutboundControlAdmission<TPrepared> {
                     { msgId: schedule.msgId, attempts, pendingEffectId: effect.effectId },
                     expireAt
                 );
-                await tx.set(
+                await tx.setFence(
                     versionKey,
                     { senderId: schedule.senderId, version: (schedule.expectedVersion ?? 0) + 1 },
                     nowMs + this.retention.versionTtlMs
@@ -395,7 +395,7 @@ export class ALOutboundControlAdmission<TPrepared> {
         if (candidate.endedAckTimeoutEffectId !== undefined) {
             await writeALOutboundAckTimeoutCompletion(tx, this.namespace, candidate.endedAckTimeoutEffectId);
         }
-        await tx.set(
+        await tx.setFence(
             toALOutboundVersionKey(this.namespace, read.owner!),
             candidate.nextVersion!,
             candidate.versionExpireAtTimestamp

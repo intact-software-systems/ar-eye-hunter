@@ -102,12 +102,13 @@ function createSignInCommand(input: AlmScaleRecipeInput, prefix: string): Rallar
         commandId: `${prefix}-sign-in`,
         metadata: {
             purpose: 'Sign in under the setup allowance: a cohort registers serially on the API, ' +
-                'so the lazy sign-in must not spend the group requests\' allowance.'
+                'so the lazy sign-in must not spend the group requests\' allowance. ' +
+                'Under strict state reads the read is the session\'s own client snapshot, one point read.'
         },
         request: {
             method: 'GET',
             path: `/api/state/apps/${encodeURIComponent(input.group.applicationId)}` +
-                `/workspaces/${encodeURIComponent(input.group.workspaceId)}/stats/me/realtime`
+                `/workspaces/${encodeURIComponent(input.group.workspaceId)}/clients`
         },
         response: { body: 'json', acceptedStatusCodes: [200] },
         timeoutMs: input.readyTimeoutMs

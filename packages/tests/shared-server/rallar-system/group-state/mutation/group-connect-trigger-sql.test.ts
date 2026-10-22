@@ -372,7 +372,7 @@ function createPublicationHandlerHarness(sql: PSqlSql, applicationId: string): P
         findGroupSnapshotByRef: async () => group,
         readCurrentGroupSnapshot: async () => group,
         readRttMeasurements: () => [],
-        topologyService: new RallarRtcTopologyService(),
+        topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000 }),
         topologySnapshotRepository: snapshots
     });
     const handler = createRtcTopologyWorkHandler({

@@ -9,6 +9,8 @@ import {
     isCallbackReference,
     isDirectDatabaseResultCall,
     isDirectTransactionOperation,
+    isFragmentStatementCall,
+    isFragmentTemplateTag,
     isPersistedWriteOperation,
     isReviewedCallableParameterInvocation,
     isReviewedTransactionForwardingReference,
@@ -332,7 +334,7 @@ function reportProhibitedCall(input) {
 
 function reportSqlInterpolationMaterialization(input) {
     const { node, root, findings, boundary, project } = input;
-    if (!isKnownTransactionType(node.getTag())) {
+    if (!isKnownTransactionType(node.getTag()) && !isFragmentTemplateTag(node.getTag())) {
         return;
     }
     const template = node.getTemplate();
@@ -384,7 +386,7 @@ function followCallTarget(input) {
     for (const invocation of targets.invocations) {
         callables.push(analysisRoot(invocation));
     }
-    if (targets.unresolved && !isDirectTransactionOperation(call)) {
+    if (targets.unresolved && !isDirectTransactionOperation(call) && !isFragmentStatementCall(call)) {
         addFinding({
             findings,
             node: call,

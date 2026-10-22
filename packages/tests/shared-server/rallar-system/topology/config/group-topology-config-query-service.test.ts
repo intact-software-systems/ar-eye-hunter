@@ -92,7 +92,7 @@ describe('GroupTopologyConfigQueryService', () => {
             findGroupSnapshotByRef: async () => undefined,
             readCurrentGroupSnapshot: async () => undefined,
             readRttMeasurements: () => [],
-            topologyService: new RallarRtcTopologyService({ now: () => 20_000 })
+            topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 20_000 })
         });
 
         expect('putConfig' in service).toBe(false);

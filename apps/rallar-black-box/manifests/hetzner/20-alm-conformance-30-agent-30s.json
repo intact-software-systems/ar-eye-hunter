@@ -1504,11 +1504,11 @@
             "kind": "http.request",
             "commandId": "alm-scale-director-sign-in",
             "metadata": {
-              "purpose": "Sign in under the setup allowance: a cohort registers serially on the API, so the lazy sign-in must not spend the group requests' allowance."
+              "purpose": "Sign in under the setup allowance: a cohort registers serially on the API, so the lazy sign-in must not spend the group requests' allowance. Under strict state reads the read is the session's own client snapshot, one point read."
             },
             "request": {
               "method": "GET",
-              "path": "/api/state/apps/rallar-server/workspaces/default/stats/me/realtime"
+              "path": "/api/state/apps/rallar-server/workspaces/default/clients"
             },
             "response": {
               "body": "json",
@@ -5796,11 +5796,11 @@
             "kind": "http.request",
             "commandId": "alm-scale-player-sign-in",
             "metadata": {
-              "purpose": "Sign in under the setup allowance: a cohort registers serially on the API, so the lazy sign-in must not spend the group requests' allowance."
+              "purpose": "Sign in under the setup allowance: a cohort registers serially on the API, so the lazy sign-in must not spend the group requests' allowance. Under strict state reads the read is the session's own client snapshot, one point read."
             },
             "request": {
               "method": "GET",
-              "path": "/api/state/apps/rallar-server/workspaces/default/stats/me/realtime"
+              "path": "/api/state/apps/rallar-server/workspaces/default/clients"
             },
             "response": {
               "body": "json",

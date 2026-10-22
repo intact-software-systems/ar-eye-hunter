@@ -38,11 +38,11 @@ import {
 } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import {
     createCachedGroupStateService,
-    type CachedGroupStateService,
-    type CachedGroupStateServicePrincipalGroups
+    type CachedGroupStateService
 } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
 import { GroupStateCurrentSnapshotCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-current-snapshot-cache.ts';
 import { GroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-snapshot-read-through-cache.ts';
+import { createPrincipalGroupList } from '@shared-server/rallar-system/group-state/snapshot/principal-group-list.ts';
 import type {
     CreateRallarMiddlewareOptions,
     RallarMiddlewareResilience
@@ -101,6 +101,8 @@ export interface CreateApiV1MutationRuntimeInput {
     readonly nowEpochMs: () => number;
     readonly timing: RallarTimingSink;
     readonly outboxStageTiming?: RallarTimingSink;
+    /** Present only while timing is on: one line per strict principal group list. */
+    readonly principalGroupListTiming?: RallarTimingSink;
     readonly appInboxOptions: AppInboxOptions;
     readonly appInboxLaneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
     readonly appInboxNewLaneConcurrency: number;
@@ -283,20 +285,13 @@ function createMutationGroupStateService(
         }),
         cache: resources.groupSnapshotCache,
         current: resources.groupCurrentSnapshotCache,
-        principalGroups: toPrincipalGroups(resources)
+        principalGroups: createPrincipalGroupList({
+            repository: resources.groupsRepository,
+            currentSnapshots: resources.groupCurrentSnapshotCache,
+            timing: input.principalGroupListTiming,
+            serviceId: input.serviceId
+        })
     });
-}
-
-/** A principal's groups through the member index, assembled through the current-snapshot cache. */
-function toPrincipalGroups(resources: ApiV1MutationResources): CachedGroupStateServicePrincipalGroups {
-    return {
-        listSnapshotsForPrincipal: async (scope, principalId) =>
-            await resources.groupsRepository.listSnapshotsForPrincipal(
-                scope,
-                principalId,
-                resources.groupCurrentSnapshotCache
-            )
-    };
 }
 
 function createApiV1MutationResources(

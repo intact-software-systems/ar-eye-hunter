@@ -340,17 +340,17 @@ Deno.test(
             );
             assert.ok(reserved.right);
             const staleReservation = { ...reserved.right, dequeueAudit: { ...reserved.right.dequeueAudit, attempts: 2 } };
-            assert.equal(
-                await inbox.reservations.releaseReserved(computeResourceInboxObservedReplacement(
+            assert.deepEqual(
+                await inbox.reservations.releaseReserved([computeResourceInboxObservedReplacement(
                     staleReservation,
                     computeResourceInboxRelease(staleReservation, { status: EntityStatus.COMPLETED, delayMs: null }, releasedAt)
-                )),
-                null
+                )]),
+                [null]
             );
-            const released = await inbox.reservations.releaseReserved(computeResourceInboxObservedReplacement(
+            const [released] = await inbox.reservations.releaseReserved([computeResourceInboxObservedReplacement(
                 reserved.right,
                 computeResourceInboxRelease(reserved.right, { status: EntityStatus.COMPLETED, delayMs: null }, releasedAt)
-            ));
+            )]);
             const releaseRows = await sql<EndTimestampRow[]>`
       select end_ts::text as end_ts
       from resource_inbox
@@ -580,7 +580,7 @@ Deno.test(
                 nowEpochMs
             );
             const runtimeRepository = new PSqlRuntimeStateRepository(sql);
-            const topologyService = new RallarRtcTopologyService({ now: () => nowEpochMs });
+            const topologyService = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => nowEpochMs });
             const topologyManagement = createGroupTopologyRuntimeOwners({
                 findGroupSnapshotByRef: () => currentSnapshot,
                 readCurrentGroupSnapshot: async () => currentSnapshot,

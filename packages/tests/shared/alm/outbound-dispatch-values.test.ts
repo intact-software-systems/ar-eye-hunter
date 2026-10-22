@@ -7,7 +7,6 @@ import {
     vi
 } from 'vitest';
 
-import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import type { ALOutboundMessageReadDto } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
@@ -91,7 +90,6 @@ describe('outbound dispatch value ownership', () => {
         const admission = new ALOutboundDispatchAdmission<OutboundTestPayload>({
             lane: 'durable',
             admissionStore: store,
-            workPort: createTestALOutboundWorkPort({ ...stores, nowMs: Date.now }),
             toOutboxEntry: () => wrongEntry,
             decodePreparedMessage: decodeOutboundTestPayload,
             clock: { nowMs: Date.now },
@@ -181,7 +179,6 @@ describe('outbound dispatch value ownership', () => {
         const admission = new ALOutboundDispatchAdmission<OutboundTestPayload>({
             lane: 'durable',
             admissionStore: store,
-            workPort: createTestALOutboundWorkPort({ ...stores, nowMs: Date.now }),
             toOutboxEntry: () => {
                 throw new Error('Captured entries must not be rebuilt');
             },

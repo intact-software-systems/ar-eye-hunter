@@ -39,6 +39,8 @@ export interface CreateApiV1SystemInstallersInput {
     readonly crdtPolicies: readonly RallarCrdtDocumentTypePolicy[];
     readonly livePublication: RallarServerWsRouterOptions['livePublication'];
     readonly timing: RallarTimingSink;
+    /** The topology recompute decision line's sink, present only while timing is on. */
+    readonly recomputeTiming: RallarTimingSink | undefined;
 }
 
 /** A clock outlives its due instant long enough to survive a slow queue, and no longer. */
@@ -104,6 +106,7 @@ function createTopologyAppOutboxOptions(
         rttRefinementService: topology.rttRefinementService,
         topologyDelivery: runtime.rtcTopologyDelivery,
         nowEpochMs: topology.rtcTopologyOptions.now ?? Date.now,
+        timing: input.recomputeTiming,
         formationAutomation: {
             latches: new GroupConnectTriggerLatchRepository(new PSqlRuntimeStateRepository(input.database)),
             readGroup: async (ref) => await topology.groupStateRepository.findGroup(ref) ?? null,

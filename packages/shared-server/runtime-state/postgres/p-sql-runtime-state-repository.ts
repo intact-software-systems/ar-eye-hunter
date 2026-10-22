@@ -190,7 +190,7 @@ export class PSqlRuntimeStateRepository
             select store_key, store_value, updated_ts, expire_at_ts, store_namespace, revision
             from runtime_state_store
             where store_namespace = ${namespace}
-              and store_key in ${this.sql([...new Set(keys)])}
+              and store_key = any(${[...new Set(keys)]}::text[])
             order by store_key collate "C"
         `;
 
@@ -390,7 +390,7 @@ export class PSqlRuntimeStateRepository
                 delete
                 from runtime_state_store
                 where expire_at_ts <= now()
-                  and store_namespace not in ${this.sql(excludedNamespaces)}
+                  and store_namespace <> all(${excludedNamespaces}::text[])
                 returning store_namespace, store_key
             `;
 

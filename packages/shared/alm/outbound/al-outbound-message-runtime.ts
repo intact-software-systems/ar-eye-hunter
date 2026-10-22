@@ -40,6 +40,7 @@ import type {
     ALOutboundPlanner,
     ALOutboundPreparedMessageDecoder
 } from './admission/al-outbound-admission-store.ts';
+import type { ALOutboundCapturedPolicy } from './admission/al-outbound-admission-validation.ts';
 import type { ALSessionInvalidationAuthority } from './admission/al-session-invalidation-authority.ts';
 import type { ALOutboundDispatchAdmission } from './al-outbound-dispatch-admission.ts';
 import { controlTargetMsgId, type ALOutboundControlSource } from './compute-al-outbound-control-admission.ts';
@@ -78,7 +79,7 @@ export type ALOutboundDequeueAuthorityReader = (
     entry: ResourceEntry
 ) => Promise<ALOutboundDequeueAuthority | undefined>;
 
-/** The delay a carrier names on a `not-ready` submission, on both carriers: a full channel or socket may drain within it (D185). */
+/** The delay a carrier names on a `not-ready` submission, on both carriers: a full channel or socket may drain within it. */
 export const AL_SUBMISSION_NOT_READY_RETRY_MS = 50;
 
 export interface ALOutboundSettledSendResult {
@@ -170,9 +171,9 @@ export interface ALOutboundDispatchPlan<TPrepared> {
     readonly dropReason?: string;
     /** Required so every planner states its drop code; `undefined` means the plan is not dropping the message. */
     readonly dropReasonCode: ALOutboundDropReasonCode | undefined;
-    /** The session volatile bound a `capacity` drop passed (D179); absent on a congestion drop the planner made. */
+    /** The session volatile bound a `capacity` drop passed; absent on a congestion drop the planner made. */
     readonly capacityLimit?: ALVolatileSessionLimit;
-    /** The congestion decision behind a `capacity` or `congested` drop the planner made (D186); absent on every other plan. */
+    /** The congestion decision behind a `capacity` or `congested` drop the planner made; absent on every other plan. */
     readonly congestionDrop?: ALOutboundCongestionDrop;
     /** The store lane the admission runs in: the message's durability, or `volatile` for a dropping plan. */
     readonly lane: ALStoreDurability;
@@ -229,14 +230,14 @@ export interface ALCheckpointOutboundRuntimeStores<TPrepared> extends ALOutbound
     readonly checkpoint: ALCheckpointPort;
 }
 
-/** The congestion decision behind a drop: its cause and the message's priority (D186). */
+/** The congestion decision behind a drop: its cause and the message's priority. */
 export interface ALOutboundCongestionDrop {
     readonly cause: ALCongestionCause;
     readonly priority: number;
 }
 
 /**
- * One congestion decision (D186): `drop` at the admission of this session's own send, `defer` at a submission its
+ * One congestion decision: `drop` at the admission of this session's own send, `defer` at a submission its
  * channel or socket could not take, of any message the page holds there, relay forwards and controls included, and
  * `hand-over` by a fallback strategy that moved a congested leg of its own send to the other carrier.
  */
@@ -250,7 +251,7 @@ export interface ALOutboundCongestionDiagnostic {
 }
 
 /**
- * The congestion decisions of one session, counted from its `congestion` diagnostics by action (D186), beside the
+ * The congestion decisions of one session, counted from its `congestion` diagnostics by action, beside the
  * messages its RTC hand-off protections refused and the most bytes an RTC channel of it held queued at a submission.
  */
 export interface ALCongestionCounters {
@@ -496,8 +497,13 @@ export namespace ALOutboundMessageRuntime {
         readonly planOutgoingMessage: ALOutboundPlanner<TPrepared>;
         readonly planDequeuedMessage: ALOutboundPlanner<TPrepared>;
         readonly readDequeueAuthority?: ALOutboundDequeueAuthorityReader;
+        /** Runs in global row order once the row committed, with the captured policy that commit wrote. */
         readonly afterDequeueAdmission:
-            | ((msg: ALMessage, entry: ResourceEntry) => void | Promise<void>)
+            | ((
+                msg: ALMessage,
+                entry: ResourceEntry,
+                committedPolicy: ALOutboundCapturedPolicy | undefined
+            ) => void | Promise<void>)
             | undefined;
         readonly decodePreparedMessage: ALOutboundPreparedMessageDecoder<TPrepared>;
         readonly sendPreparedMessage: (
@@ -649,7 +655,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
     }
 
     /**
-     * Hands one message to another carrier's owner (D56): aborts its live attempt, completes every later
+     * Hands one message to another carrier's owner: aborts its live attempt, completes every later
      * effect of it silently and ends its receipt row, and states no settlement -- the message is not
      * cancelled. Idempotent; a message already cancelled or handed over is left as it is.
      */
@@ -933,7 +939,7 @@ export function toALOutboundCongestionDrop(
 }
 
 /**
- * A message its carrier holds back at submission because its channel or socket cannot take it now (D186): every held
+ * A message its carrier holds back at submission because its channel or socket cannot take it now: every held
  * message of the page, relay forwards and controls included, not only this session's own sends.
  */
 export function writeALOutboundCongestionDeferral(input: WriteALOutboundCongestionDeferralInput): void {

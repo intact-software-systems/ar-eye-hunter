@@ -1,4 +1,3 @@
-import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 import type { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import { validateAppInboxCommandIdentity } from '../app-inbox-command-identity.ts';
@@ -9,14 +8,9 @@ import {
     type AppInboxQueueEntryCreationDependencies,
     type AppInboxQueueMessageFactory
 } from '../app-inbox-queue-entry.ts';
+import type { AppInboxResultWaiter } from './app-inbox-result-waiter.ts';
 
 export namespace AppInboxReservationClient {
-    export interface MaterializedReservation {
-        readonly enqueue: AppInboxEnqueueInput;
-        readonly key: Key;
-        readonly winner: boolean;
-    }
-
     export interface Repository extends Pick<AppInboxEntryRepository, 'writeMaterializedIfAbsentOrReplaceExpired'> {}
 
     export interface Dependencies {
@@ -47,7 +41,7 @@ export class AppInboxReservationClient {
     async reserveMaterializedEntry(
         placeholder: AppInboxEnqueueInput,
         materialize: () => Promise<AppInboxEnqueueInput>
-    ): Promise<AppInboxReservationClient.MaterializedReservation> {
+    ): Promise<AppInboxResultWaiter.Wait> {
         let winner = false;
         const entry = await this.repository.writeMaterializedIfAbsentOrReplaceExpired(
             createAppInboxResourceEntry(placeholder, `${this.serviceId}:fact-reservation`, this.entryCreation),

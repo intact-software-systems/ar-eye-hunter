@@ -10,14 +10,18 @@ import {
     AppInboxType,
     type AppInboxEnqueueInput
 } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { normalizeAppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import { createAppInboxResourceEntry } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
 import { AppInboxCommandClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-command-client.ts';
+import { AppInboxQueueEntryWriter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-queue-entry-writer.ts';
 import { AppInboxReservationClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-reservation-client.ts';
-import type { AppInboxResultWaiter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-result-waiter.ts';
+import { AppInboxResultWaiter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-result-waiter.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
-import type { Key } from '@shared/queuebox/ResourceEntry.ts';
+import { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
+import { EntityStatus, toResourceEntryWithKey } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { TestResourceInbox } from '../test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxQueueMessageFixture } from '../test-support/create-app-inbox-queue-message-fixture.ts';
@@ -36,12 +40,14 @@ describe('AppInboxCommandClient', () => {
         const client = new AppInboxCommandClient(
             {
                 queueEntryWriter: {
-                    enqueue: async (enqueue) =>
-                        createAppInboxResourceEntry(
+                    writeIfAbsent: async (enqueue) => ({
+                        entry: createAppInboxResourceEntry(
                             enqueue,
                             'server-12345678',
                             { creationNow: Temporal.Now.instant, createMessage: createAppInboxQueueMessageFixture }
-                        )
+                        ),
+                        winner: true
+                    })
                 },
                 reservationClient: {
                     reserveMaterializedEntry: async () => {
@@ -49,16 +55,13 @@ describe('AppInboxCommandClient', () => {
                     }
                 },
                 resultWaiter: {
-                    waitForReservedResult: async () => {
-                        throw new Error('An enqueued command waits by its written key');
-                    },
                     waitForResult: async <Result>(
-                        enqueue: AppInboxEnqueueInput,
-                        key: Key,
+                        written: AppInboxResultWaiter.Wait,
                         decodeResult: AppInboxResultWaiter.ResultDecoder<Result>
                     ) => {
-                        expect(enqueue).toEqual(COMMAND);
-                        expect(key).toEqual({ topicId: '', resourceId: 'command-1', contextId: 'app:workspace:principal' });
+                        expect(written.enqueue).toEqual(COMMAND);
+                        expect(written.key).toEqual({ topicId: '', resourceId: 'command-1', contextId: 'app:workspace:principal' });
+                        expect(written.winner).toBe(true);
                         const value = { status: 'stored' } as const;
                         decodedValues.push(value);
                         return Either.ofRight(decodeResult(value));
@@ -91,6 +94,54 @@ describe('AppInboxCommandClient', () => {
         expect(decodedValues).toEqual([{ status: 'stored' }]);
     });
 
+    it('lets a command it wrote take the wake of a handler that completes within the enqueue, while a replay reads first', async () => {
+        const notifications = ResourceInboxCompletionNotifications.createDefault();
+        const writtenKey = { topicId: 'app-inbox.client-state', resourceId: 'command-1', contextId: 'app:workspace:principal' };
+        const reads: string[] = [];
+        let wakes = 0;
+        const wakeOwningQueue = () => {
+            wakes += 1;
+            notifications.publish(writtenKey, 'awaitable');
+        };
+        const options = normalizeAppInboxOptions({ phaseTiming: false, waitMaxElapsedMsecs: 1_000 });
+        const client = new AppInboxCommandClient({
+            queueEntryWriter: new AppInboxQueueEntryWriter({
+                newResourceId: crypto.randomUUID.bind(crypto),
+                createMessage: createAppInboxQueueMessageFixture,
+                inboxQueueReader: new InboxQueueReader(new TestResourceInbox(new Map()), {
+                    laneBudgetPolicy: 'fixed-retry-two',
+                    newLaneConcurrency: 1
+                })
+            }, { serviceId: 'server-12345678', defaultTopicId: writtenKey.topicId, wakeOwningQueue }),
+            reservationClient: {
+                reserveMaterializedEntry: async () => {
+                    throw new Error('An enqueued command reserves nothing');
+                }
+            },
+            resultWaiter: new AppInboxResultWaiter({
+                completionNotifications: notifications,
+                statusRepository: {
+                    readStatusAndAttempts: async () => {
+                        reads.push('status');
+                        return { status: EntityStatus.COMPLETED, attempts: 1 };
+                    }
+                },
+                resultRepository: {
+                    findByKey: async (key) => {
+                        reads.push('result');
+                        return { ...toResourceEntryWithKey(key, 'APP_INBOX', { status: 'stored' }), status: EntityStatus.COMPLETED };
+                    }
+                }
+            }, { serviceId: 'server-12345678', options, wakeOwningQueue })
+        }, { serviceId: 'server-12345678', options });
+
+        await expect(client.enqueueAndWait(COMMAND)).resolves.toEqual(Either.ofRight({ status: 'stored' }));
+        expect(reads).toEqual(['result']);
+        await expect(client.enqueueAndWait(COMMAND)).resolves.toEqual(Either.ofRight({ status: 'stored' }));
+        expect(reads).toEqual(['result', 'status', 'result']);
+        expect(wakes).toBe(1);
+    });
+
     it('reserves a materialized command once and rejects a different command under its key', async () => {
         const timing: RallarTimingEvent[] = [];
         const queue = new TestResourceInbox(new Map());
@@ -99,21 +150,18 @@ describe('AppInboxCommandClient', () => {
             creationNow: Temporal.Now.instant,
             createMessage: createAppInboxQueueMessageFixture
         }, { serviceId: 'server-12345678' });
-        const reserved: AppInboxReservationClient.MaterializedReservation[] = [];
+        const reserved: AppInboxResultWaiter.Wait[] = [];
         const client = new AppInboxCommandClient(
             {
                 queueEntryWriter: {
-                    enqueue: async () => {
+                    writeIfAbsent: async () => {
                         throw new Error('A reserved command is not written by the queue writer');
                     }
                 },
                 reservationClient,
                 resultWaiter: {
-                    waitForResult: async () => {
-                        throw new Error('A reserved command waits for its reservation');
-                    },
-                    waitForReservedResult: async <Result>(
-                        reservation: AppInboxReservationClient.MaterializedReservation,
+                    waitForResult: async <Result>(
+                        reservation: AppInboxResultWaiter.Wait,
                         decodeResult: AppInboxResultWaiter.ResultDecoder<Result>
                     ) => {
                         reserved.push(reservation);

@@ -141,7 +141,10 @@ export type ALOutboundOutgoingDecision<TPrepared> =
     | Readonly<{ kind: 'settled'; }>
     | Readonly<{ kind: 'commit'; bundle: ALOutboundCommitBundle<TPrepared>; }>;
 
-/** What a dequeued row's authority reads first: whether its admission is retained, and whether its canonical identity exists. */
+/**
+ * What a dequeued row's authority reads first: whether its admission is retained, and whether its
+ * canonical identity exists.
+ */
 export interface ALOutboundDequeueAdmissionFacts {
     readonly sentAdmission: boolean;
     readonly canonicalIdentity: boolean;
@@ -327,12 +330,15 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
      * One session for a single send: the decision surface, the decision `decide` takes on it, and the
      * observation the commit of that decision fences. A group decides member by member and reads
      * its observation in `commitBundles`. `decide` runs while the session is open: it may read
-     * through the work port (the pending-admission probe) and must not write.
+     * work rows through `readWork` (the pending-admission probe) and must not write.
      */
     readonly readOutgoingDecision: <TDecision extends ALOutboundOutgoingDecision<TPrepared>>(
         input: ALOutboundOutgoingReadInput<TPrepared>,
         decide: (read: ALOutboundMessageReadDto<TPrepared>) => Promise<TDecision>
     ) => Promise<ALOutboundObservedDecision<TPrepared, TDecision>>;
+
+    /** One work row, in its own session: a backend that batches one turn's work reads answers a group in one round. */
+    readonly readWork: (key: Key) => Promise<ResourceEntry | undefined>;
 
     /** Admission-store read round trips issued so far, so a commit can report its own read cost. */
     readonly getReadOperationCount: () => number;
@@ -508,13 +514,17 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         return this.reads.getReadOperationCount();
     }
 
+    async readWork(key: Key): Promise<ResourceEntry | undefined> {
+        return await this.backend.readWithin((session) => session.readWork(key));
+    }
+
     async readOutgoingMessage(
         input: ALOutboundOutgoingReadInput<TPrepared>
     ): Promise<ALOutboundMessageReadDto<TPrepared>> {
         return await this.backend.readWithin((session) => this.reads.readOutgoingMessage(session, input));
     }
 
-    /** `decide` runs inside the open session: it may read through the work port and must not write. */
+    /** `decide` runs inside the open session: it may read work rows through `readWork` and must not write. */
     async readOutgoingDecision<TDecision extends ALOutboundOutgoingDecision<TPrepared>>(
         input: ALOutboundOutgoingReadInput<TPrepared>,
         decide: (read: ALOutboundMessageReadDto<TPrepared>) => Promise<TDecision>
@@ -752,7 +762,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
                 }
                 this.effectStore.writeEffects(tx, effects);
                 await this.mutations.writeStateWrites(tx, mutations);
-                await tx.set(versionKey, version, versionExpireAt);
+                await tx.setFence(versionKey, version, versionExpireAt);
                 return 'committed';
             }, computeALOutboundGroupExecutionExpiry(candidates));
         }

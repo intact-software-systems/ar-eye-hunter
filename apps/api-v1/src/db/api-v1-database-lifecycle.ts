@@ -3,6 +3,8 @@ import postgres from 'postgres';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { createPostgresTimestampWithoutTimeZoneTextType } from '@shared-server/postgres/postgres-timestamp-without-time-zone.ts';
+import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
+import { createDefaultBackgroundTimers, type Timers } from '@shared/resilience/timers.ts';
 import { tryWith } from '@shared/resilience/try-with-policy.ts';
 
 import type {
@@ -16,6 +18,7 @@ import {
 } from './pglite-black-box-evidence-snapshot.ts';
 import { createPGliteSqlClient } from './pglite-sql-adapter.ts';
 import { createPostgresSqlClient, type PostgresSqlClientSource } from './postgres-sql-adapter.ts';
+import { PostgresStatementCensus, startPostgresStatementCensusTiming } from './postgres-statement-census.ts';
 
 export interface ApiV1DatabaseLifecycle {
     readonly database: PSqlSql;
@@ -50,6 +53,13 @@ export interface ApiV1PostgresClientInput {
     readonly connectionUrl: string;
     readonly max: number;
     readonly idleTimeoutSeconds: number;
+    readonly census: PostgresStatementCensus | undefined;
+}
+
+/** Where the statement census of the application pool goes while timing is on. */
+export interface ApiV1StatementCensusTiming {
+    readonly timing: RallarTimingSink;
+    readonly serviceId: string;
 }
 
 export interface ApiV1DatabaseLifecycleOperations {
@@ -65,12 +75,18 @@ export interface ApiV1DatabaseLifecycleOperations {
         configuration: ApiV1PGliteEvidenceConfiguration
     ): Promise<Pick<PGliteBlackBoxSnapshotPublisher, 'stop'> | undefined>;
     createPGliteSql(resource: ApiV1PGliteResource): PSqlSql;
+    /** The clock of the statement census's emission. */
+    readonly timers: Timers;
 }
 
 export interface CreateApiV1DatabaseLifecycleInput {
     readonly database: ApiV1DatabaseConfiguration;
     readonly pgliteEvidence: ApiV1PGliteEvidenceConfiguration;
+    /** Undefined with timing off: no statement is recorded. A PGlite database keeps no census. */
+    readonly statementCensus: ApiV1StatementCensusTiming | undefined;
 }
+
+const STATEMENT_CENSUS_INTERVAL_MS = 5_000;
 
 export async function createDefaultApiV1DatabaseLifecycle(
     input: CreateApiV1DatabaseLifecycleInput
@@ -83,7 +99,7 @@ export async function createApiV1DatabaseLifecycle(
     operations: ApiV1DatabaseLifecycleOperations
 ): Promise<ApiV1DatabaseLifecycle> {
     return input.database.mode === 'postgres'
-        ? await createPostgresLifecycle(input.database, operations)
+        ? await createPostgresLifecycle(input.database, input.statementCensus, operations)
         : await createPGliteLifecycle(input, operations);
 }
 
@@ -100,22 +116,83 @@ export function toPostgresJsConnectionUrl(databaseUrl: string): string {
     return url.toString();
 }
 
+interface ApiV1StatementCensusRun {
+    readonly census: PostgresStatementCensus | undefined;
+    readonly stop: () => void;
+}
+
+interface ApiV1PostgresPools {
+    readonly application: ApiV1PostgresClient;
+    readonly listener: ApiV1PostgresClient;
+}
+
 async function createPostgresLifecycle(
     configuration: Extract<ApiV1DatabaseConfiguration, { mode: 'postgres'; }>,
+    statementCensus: ApiV1StatementCensusTiming | undefined,
     operations: ApiV1DatabaseLifecycleOperations
 ): Promise<ApiV1DatabaseLifecycle> {
+    const census = startApiV1StatementCensus(statementCensus, operations.timers);
+    let pools: ApiV1PostgresPools;
+    try {
+        pools = await createReadyPostgresPools(configuration, census.census, operations);
+    }
+    catch (error) {
+        census.stop();
+        throw error;
+    }
+    const { application, listener } = pools;
+    let closing: Promise<void> | undefined;
+    return {
+        database: application,
+        notification: createPostgresNotificationPort(application, listener),
+        readiness: Promise.resolve(),
+        close: () => {
+            census.stop();
+            closing ??= closePostgresClients(listener, application);
+            return closing;
+        }
+    };
+}
+
+/** The census of the application pool and its emission, while timing is on. */
+function startApiV1StatementCensus(
+    statementCensus: ApiV1StatementCensusTiming | undefined,
+    timers: Timers
+): ApiV1StatementCensusRun {
+    if (statementCensus === undefined) {
+        return { census: undefined, stop: () => undefined };
+    }
+    const census = new PostgresStatementCensus();
+    return {
+        census,
+        stop: startPostgresStatementCensusTiming({
+            census,
+            timers,
+            ...statementCensus,
+            intervalMs: STATEMENT_CENSUS_INTERVAL_MS
+        })
+    };
+}
+
+async function createReadyPostgresPools(
+    configuration: Extract<ApiV1DatabaseConfiguration, { mode: 'postgres'; }>,
+    census: PostgresStatementCensus | undefined,
+    operations: ApiV1DatabaseLifecycleOperations
+): Promise<ApiV1PostgresPools> {
     const connectionUrl = toPostgresJsConnectionUrl(configuration.url);
     const application = operations.createPostgresClient({
         connectionUrl,
         max: configuration.applicationPool.maxConnections,
-        idleTimeoutSeconds: configuration.applicationPool.idleTimeoutSeconds
+        idleTimeoutSeconds: configuration.applicationPool.idleTimeoutSeconds,
+        census
     });
     let listener: ApiV1PostgresClient;
     try {
         listener = operations.createPostgresClient({
             connectionUrl,
             max: configuration.listenerPool.maxConnections,
-            idleTimeoutSeconds: configuration.listenerPool.idleTimeoutSeconds
+            idleTimeoutSeconds: configuration.listenerPool.idleTimeoutSeconds,
+            census: undefined
         });
     }
     catch (error) {
@@ -130,16 +207,7 @@ async function createPostgresLifecycle(
         await closePostgresClients(listener, application);
         throw error;
     }
-    let closing: Promise<void> | undefined;
-    return {
-        database: application,
-        notification: createPostgresNotificationPort(application, listener),
-        readiness: Promise.resolve(),
-        close: () => {
-            closing ??= closePostgresClients(listener, application);
-            return closing;
-        }
-    };
+    return { application, listener };
 }
 
 async function createPGliteLifecycle(
@@ -252,13 +320,16 @@ async function closePGliteResources(
 
 const PRODUCTION_OPERATIONS: ApiV1DatabaseLifecycleOperations = {
     createPostgresClient: (input) =>
-        toApiV1PostgresClient(postgres(input.connectionUrl, {
-            max: input.max,
-            idle_timeout: input.idleTimeoutSeconds,
-            types: {
-                timestampWithoutTimeZone: createPostgresTimestampWithoutTimeZoneTextType()
-            }
-        })),
+        toApiV1PostgresClient(
+            postgres(input.connectionUrl, {
+                max: input.max,
+                idle_timeout: input.idleTimeoutSeconds,
+                types: {
+                    timestampWithoutTimeZone: createPostgresTimestampWithoutTimeZoneTextType()
+                }
+            }),
+            input.census
+        ),
     readyPostgres: async (client) => {
         await client`select 1`;
     },
@@ -284,21 +355,29 @@ const PRODUCTION_OPERATIONS: ApiV1DatabaseLifecycleOperations = {
     createPGliteSql: (resource) =>
         createPGliteSqlClient(resource as PGlite, {
             ready: Promise.resolve()
-        })
+        }),
+    timers: createDefaultBackgroundTimers()
 };
 
-/** The counting adapter over a complete postgres.js client; every statement the application issues passes through it. */
-export function toApiV1PostgresClient(client: object): ApiV1PostgresClient {
+/**
+ * The counting adapter over a complete postgres.js client; every statement the application issues passes through it,
+ * and into the census when one is given.
+ */
+export function toApiV1PostgresClient(
+    client: object,
+    census: PostgresStatementCensus | undefined
+): ApiV1PostgresClient {
     if (
         typeof client !== 'function' ||
         !hasCallableProperty(client, 'begin') ||
         !hasCallableProperty(client, 'notify') ||
         !hasCallableProperty(client, 'listen') ||
-        !hasCallableProperty(client, 'end')
+        !hasCallableProperty(client, 'end') ||
+        !hasCallableProperty(client, 'unsafe')
     ) {
         throw new TypeError('Postgres client does not expose the required API-v1 capabilities.');
     }
-    return createPostgresSqlClient(client as PostgresSqlClientSource);
+    return createPostgresSqlClient(client as PostgresSqlClientSource, census);
 }
 
 function hasCallableProperty(value: object, property: string): boolean {

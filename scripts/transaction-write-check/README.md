@@ -29,6 +29,9 @@ function-valued declarations, transaction-bound callback arguments, and
 immediately executing collection callbacks to a fixed point while preserving
 the originating transaction boundary. Merely constructing a callback does not
 make its body transaction work.
+A `PSqlSql` call whose only argument is a spread of a `PSqlFragment`'s `toStatement()` is a direct
+transaction operation, and the interpolations of `PSqlFragment.of` templates get the same check as
+tagged `sql` templates.
 `typescript-provenance.mjs` owns source, symbol, callable, and resolved-type
 navigation so the rule analyzer can stay focused on transaction semantics.
 `transaction-boundaries.mjs` owns transaction API recognition, reviewed

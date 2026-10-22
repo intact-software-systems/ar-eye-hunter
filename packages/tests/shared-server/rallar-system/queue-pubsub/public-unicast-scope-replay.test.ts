@@ -34,7 +34,7 @@ describe('persisted public unicast scope replay', () => {
         if (!admitted.entry) {
             throw new Error('Expected a durable public unicast row');
         }
-        expect(await fixture.service.readCapturedPolicy(admitted.message, admitted.entry))
+        expect(await fixture.service.readCapturedPolicy(admitted.message, admitted.entry, undefined))
             .toMatchObject({ recipientScope: SCOPE, admittedAudience: ['peer'] });
         fixture.proof.scope = { ...SCOPE, workspaceId: 'another-workspace' };
         const replacement = new TestWebSocket('ws://replacement');

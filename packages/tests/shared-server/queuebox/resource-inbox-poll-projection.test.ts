@@ -124,10 +124,16 @@ describe('resource inbox poll projection', () => {
             timing: (event) => events.push(event),
             options: normalizeAppInboxOptions({ phaseTiming: true, waitMaxElapsedMsecs: 0 })
         });
-        const result = await waiter.waitForResult({ type: AppInboxType.GROUP_CREATE, ...key, data: null }, key, (value) => value);
+        const result = await waiter.waitForResult(
+            { enqueue: { type: AppInboxType.GROUP_CREATE, ...key, data: null }, key: key, winner: false },
+            (value) => value
+        );
         expect(result.left).toMatchObject({ code: 'app-inbox-unavailable', status: 503 });
         expect(events.filter((event) => event.operation === 'wait-poll')).toEqual([
-            expect.objectContaining({ status: 'error', details: { type: 'GROUP_CREATE', ...key, queueObservation: 'read-failure' } })
+            expect.objectContaining({
+                status: 'error',
+                details: { type: 'GROUP_CREATE', ...key, queueObservation: 'read-failure', trigger: 'first', readRow: 'status' }
+            })
         ]);
     });
 });

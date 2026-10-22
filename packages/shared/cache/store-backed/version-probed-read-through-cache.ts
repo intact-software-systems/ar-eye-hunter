@@ -18,6 +18,13 @@ export interface VersionProbedReadThroughCacheDependencies<K, V> {
     readonly maxEntries: number;
 }
 
+/** The values in key order, with the store reads the call issued: the one probe, if any, and each full read. */
+export interface VersionProbedReads<V> {
+    readonly values: readonly (V | undefined)[];
+    readonly probes: number;
+    readonly reads: number;
+}
+
 interface VersionedEntry<V> {
     readonly version: string;
     readonly value: V;
@@ -39,26 +46,28 @@ export class VersionProbedReadThroughCache<K, V> {
     }
 
     public async read(key: K): Promise<V | undefined> {
-        const [value] = await this.readMany([key]);
+        const [value] = (await this.readMany([key])).values;
         return value;
     }
 
     /** The values in key order; every kept key is probed by one store read, and changed or unkept keys are read in order. */
-    public async readMany(keys: readonly K[]): Promise<readonly (V | undefined)[]> {
+    public async readMany(keys: readonly K[]): Promise<VersionProbedReads<V>> {
         const nowEpochMs = this.dependencies.nowEpochMs();
         const cacheKeys = keys.map((key) => this.dependencies.toCacheKey(key));
         const kept = cacheKeys.map((cacheKey) => this.entries.readAt(cacheKey, nowEpochMs));
         const currentVersions = await this.readKeptVersions(keys, kept);
         const values: (V | undefined)[] = [];
+        let reads = 0;
         for (const [index, key] of keys.entries()) {
             const entry = kept[index];
-            values.push(
-                entry !== undefined && currentVersions[index] === entry.version
-                    ? entry.value
-                    : await this.readThrough(key, cacheKeys[index]!, nowEpochMs)
-            );
+            if (entry !== undefined && currentVersions[index] === entry.version) {
+                values.push(entry.value);
+                continue;
+            }
+            reads += 1;
+            values.push(await this.readThrough(key, cacheKeys[index]!, nowEpochMs));
         }
-        return values;
+        return { values, probes: kept.some((entry) => entry !== undefined) ? 1 : 0, reads };
     }
 
     private async readKeptVersions(

@@ -99,7 +99,7 @@ class StateWriteDurableEvidenceReader {
 
     constructor(input: QueryStateWriteDurableEvidenceInput) {
         this.input = input;
-        const database = toApiV1PostgresClient(input.sql);
+        const database = toApiV1PostgresClient(input.sql, undefined);
         const runtime = new PSqlRuntimeStateRepository(database);
         this.clients = new ClientStateRepository(runtime, new PSqlClientStateEventRepository(database));
         this.groups = new GroupStateRepository(runtime, new PSqlGroupStateEventRepository(database));

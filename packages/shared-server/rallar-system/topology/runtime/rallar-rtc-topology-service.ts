@@ -26,6 +26,12 @@ export interface RallarRtcTopologyServiceOptions {
     readonly durationNowMs?: () => number;
 }
 
+/** The planning options every group plans with, and the service's own settings beside them. */
+export interface RallarRtcTopologyServiceConfig extends RallarRtcTopologyServiceOptions {
+    /** How long a stored layout stands before a replan an RTT measurement alone caused may replace it. */
+    readonly rttReplanMinimumLayoutAgeMs: number;
+}
+
 export interface RallarRtcTopologyUpdateResult {
     readonly snapshot: RallarOverlayTopologySnapshot;
     readonly changed: boolean;
@@ -49,11 +55,11 @@ export class RallarRtcTopologyService {
     private readonly metrics = new RtcTopologyMetrics();
     private readonly snapshots = new RtcTopologySnapshotRegistry();
     private readonly planner: RtcTopologyPlanner;
-    private readonly options: RallarRtcTopologyServiceOptions;
+    private readonly options: RallarRtcTopologyServiceConfig;
 
-    constructor(options: RallarRtcTopologyServiceOptions = {}) {
-        this.options = options;
-        this.planner = new RtcTopologyPlanner(options, {
+    constructor(config: RallarRtcTopologyServiceConfig) {
+        this.options = config;
+        this.planner = new RtcTopologyPlanner(config, {
             metrics: this.metrics,
             durationNowMs: () => this.durationNowMs()
         });
@@ -174,6 +180,10 @@ export class RallarRtcTopologyService {
 
     readKindHysteresisWidths(): RtcTopologyKindHysteresisWidths {
         return this.planner.readKindHysteresisWidths();
+    }
+
+    readRttReplanMinimumLayoutAgeMs(): number {
+        return this.options.rttReplanMinimumLayoutAgeMs;
     }
 
     private now(): number {

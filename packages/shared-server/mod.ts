@@ -198,6 +198,7 @@ export type {
 } from './rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 export { RallarRtcTopologyService } from './rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 export type {
+    RallarRtcTopologyServiceConfig,
     RallarRtcTopologyServiceOptions,
     RallarRtcTopologyUpdateOptions,
     RallarRtcTopologyUpdateResult,

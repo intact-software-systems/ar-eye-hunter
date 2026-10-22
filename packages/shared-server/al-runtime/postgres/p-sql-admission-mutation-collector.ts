@@ -1,7 +1,17 @@
-import { requireConditionalWrite } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { computeRuntimeStateGuardedBatchWrite } from '@shared-server/runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';
+import type {
+    RuntimeStateGuardedBatchGuard,
+    RuntimeStateGuardedBatchWrite
+} from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import { validateRuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
+import {
+    requireConditionalWrite,
+    RuntimeStateWriteConflictError
+} from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type {
     RuntimeStateEntry,
-    RuntimeStateOptimisticTransactionalRepositoryLike
+    RuntimeStateOptimisticTransactionalRepositoryLike,
+    RuntimeStateOptimisticTransactionRepositoryLike
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { ALAdmissionBackendEntry, ALAdmissionWriteContext } from '@shared/alm/al-admission-backend.ts';
 import {
@@ -15,26 +25,10 @@ import { toError } from '@shared/resilience/to-error.ts';
 import { decodeJsonWireValue, type JsonWireValue } from '../../rallar-system/protocol/json-wire-identity.ts';
 import { readRuntimeStateEntriesByPrefix } from './read-runtime-state-entries-by-prefix.ts';
 
-export type ALAdmissionMutation =
-    | Readonly<{
-        kind: 'insert';
-        key: string;
-        expected: 'absent';
-        value: string;
-        expireAtEpochMs: number;
-    }>
-    | Readonly<{
-        kind: 'replace';
-        key: string;
-        expectedRevision: number;
-        value: string;
-        expireAtEpochMs: number;
-    }>
-    | Readonly<{
-        kind: 'delete';
-        key: string;
-        expectedRevision: number;
-    }>;
+/** A commit's state rows: one conditional row alone, or a guarded batch of the fence and every other row on it. */
+export type PSqlAdmissionStateWrite =
+    | Readonly<{ kind: 'row'; row: RuntimeStateGuardedBatchGuard; }>
+    | Readonly<{ kind: 'batch'; batch: RuntimeStateGuardedBatchWrite; }>;
 
 export namespace PSqlAdmissionMutationCollector {
     export interface Dependencies {
@@ -130,45 +124,40 @@ export class PSqlAdmissionMutationCollector implements ALAdmissionWriteContext {
         observation.touched = true;
     }
 
-    mutations(): readonly ALAdmissionMutation[] {
-        const mutations: ALAdmissionMutation[] = [];
-        for (
-            const [key, observation] of [...this.observations.entries()]
-                .sort(([left], [right]) => left.localeCompare(right))
-        ) {
-            if (!observation.touched) {
-                continue;
-            }
-            if (observation.value === undefined || observation.expireAtEpochMs <= this.nowEpochMs()) {
-                if (observation.entry) {
-                    mutations.push({
-                        kind: 'delete',
-                        key,
-                        expectedRevision: observation.entry.revision
-                    });
-                }
-                continue;
-            }
-            const value = JSON.stringify(observation.value);
-            if (!observation.entry) {
-                mutations.push({
-                    kind: 'insert',
-                    key,
-                    expected: 'absent',
-                    value,
-                    expireAtEpochMs: observation.expireAtEpochMs
-                });
-                continue;
-            }
-            mutations.push({
-                kind: 'replace',
-                key,
-                expectedRevision: observation.entry.revision,
-                value,
-                expireAtEpochMs: observation.expireAtEpochMs
-            });
+    /**
+     * Every touched row as one write: the fence decides first and every other row is written only on it. A commit
+     * that names no fence is fenced on its first row in key order, the row a write one row at a time wrote first.
+     */
+    computeStateWrite(fenceKey: string | undefined): PSqlAdmissionStateWrite | undefined {
+        const rows = this.mutations();
+        const fence = fenceKey === undefined ? rows[0] : rows.find((row) => row.key === fenceKey);
+        if (fenceKey !== undefined && fence === undefined) {
+            throw new TypeError('The fence of an admission commit writes no row');
         }
-        return mutations;
+        if (fence === undefined) {
+            return undefined;
+        }
+        if (rows.length === 1) {
+            return { kind: 'row', row: fence };
+        }
+        const batch = validateRuntimeStateGuardedBatch({
+            guard: fence,
+            effects: rows.filter((row) => row !== fence).map((row) => ({ ...row, effectId: row.key }))
+        });
+        return { kind: 'batch', batch: computeRuntimeStateGuardedBatchWrite(batch) };
+    }
+
+    /** Every touched row in key order, as the conditional write its observation calls for. */
+    private mutations(): readonly RuntimeStateGuardedBatchGuard[] {
+        const nowEpochMs = this.nowEpochMs();
+        return [...this.observations.entries()]
+            .sort(([left], [right]) => left.localeCompare(right))
+            .flatMap(([key, observation]) => {
+                const row = observation.touched
+                    ? toPSqlAdmissionStateRow({ namespace: this.namespace, key, observation, nowEpochMs })
+                    : undefined;
+                return row === undefined ? [] : [row];
+            });
     }
 
     private async readObservation(key: string): Promise<PSqlAdmissionMutationCollector.Observation> {
@@ -188,46 +177,68 @@ export class PSqlAdmissionMutationCollector implements ALAdmissionWriteContext {
         this.observations.set(key, observation);
         return observation;
     }
+}
 
-    async writeMutations(
-        transaction: RuntimeStateOptimisticTransactionalRepositoryLike,
-        mutations: readonly ALAdmissionMutation[]
-    ): Promise<void> {
-        for (const mutation of mutations) {
-            switch (mutation.kind) {
-                case 'insert':
-                    requireConditionalWrite(
-                        await transaction.insertIfAbsent(
-                            this.namespace,
-                            mutation.key,
-                            mutation.value,
-                            mutation.expireAtEpochMs
-                        )
-                    );
-                    break;
-                case 'replace':
-                    requireConditionalWrite(
-                        await transaction.upsertIfRevision(
-                            this.namespace,
-                            mutation.key,
-                            mutation.value,
-                            mutation.expireAtEpochMs,
-                            mutation.expectedRevision
-                        )
-                    );
-                    break;
-                case 'delete':
-                    requireConditionalWrite(
-                        await transaction.deleteIfRevision(
-                            this.namespace,
-                            mutation.key,
-                            mutation.expectedRevision
-                        )
-                    );
-                    break;
-            }
+/** A stale fence or row rolls the transaction back as a conflict. */
+export async function writePSqlAdmissionState(
+    transaction: RuntimeStateOptimisticTransactionRepositoryLike,
+    computed: PSqlAdmissionStateWrite
+): Promise<void> {
+    if (computed.kind === 'batch') {
+        const result = await transaction.writeGuardedBatch(computed.batch);
+        if (result.guard.status !== 'applied' || result.effects.some((effect) => effect.status !== 'applied')) {
+            throw new RuntimeStateWriteConflictError();
         }
+        return;
     }
+    const { row } = computed;
+    switch (row.operation) {
+        case 'insert':
+            requireConditionalWrite(
+                await transaction.insertIfAbsent(row.namespace, row.key, row.value, row.expireAtTimestamp)
+            );
+            return;
+        case 'update':
+            requireConditionalWrite(
+                await transaction.upsertIfRevision(
+                    row.namespace,
+                    row.key,
+                    row.value,
+                    row.expireAtTimestamp,
+                    row.expectedRevision
+                )
+            );
+            return;
+        case 'delete':
+            requireConditionalWrite(await transaction.deleteIfRevision(row.namespace, row.key, row.expectedRevision));
+            return;
+    }
+}
+
+interface ToPSqlAdmissionStateRowInput {
+    readonly namespace: string;
+    readonly key: string;
+    readonly observation: PSqlAdmissionMutationCollector.Observation;
+    readonly nowEpochMs: number;
+}
+
+/** The conditional write of one touched row; a removed or expired row that was never stored needs none. */
+function toPSqlAdmissionStateRow(input: ToPSqlAdmissionStateRowInput): RuntimeStateGuardedBatchGuard | undefined {
+    const { namespace, key, observation } = input;
+    if (observation.value === undefined || observation.expireAtEpochMs <= input.nowEpochMs) {
+        return observation.entry
+            ? { operation: 'delete', namespace, key, expectedRevision: observation.entry.revision }
+            : undefined;
+    }
+    const stored = {
+        namespace,
+        key,
+        value: JSON.stringify(observation.value),
+        expireAtTimestamp: observation.expireAtEpochMs
+    };
+    return observation.entry
+        ? { ...stored, operation: 'update', expectedRevision: observation.entry.revision }
+        : { ...stored, operation: 'insert' };
 }
 
 function toPSqlAdmissionObservation(

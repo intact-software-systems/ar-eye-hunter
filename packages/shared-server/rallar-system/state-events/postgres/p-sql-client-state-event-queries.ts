@@ -150,7 +150,7 @@ async function readRecentClientRowsForTypes(
             where application_id = ${input.ref.applicationId}
               and workspace_key = ${clientStateWorkspaceStorageKey(input.ref.workspaceId)}
               and principal_id = ${input.ref.principalId}
-              and event_type in ${input.sql(eventTypes)}
+              and event_type = any(${eventTypes}::text[])
             order by snapshot_version desc, occurred_at_epoch_ms desc, event_id desc
             limit ${input.limit}
         ) recent_events
@@ -205,7 +205,7 @@ async function readClientPageRowsForTypes(
         where application_id = ${input.ref.applicationId}
           and workspace_key = ${clientStateWorkspaceStorageKey(input.ref.workspaceId)}
           and principal_id = ${input.ref.principalId}
-          and event_type in ${input.sql(eventTypes)}
+          and event_type = any(${eventTypes}::text[])
         order by snapshot_version, occurred_at_epoch_ms, event_id
         limit ${input.limit}
     `;
@@ -226,7 +226,7 @@ async function readClientPageRowsForTypesAfter(
         where application_id = ${input.ref.applicationId}
           and workspace_key = ${clientStateWorkspaceStorageKey(input.ref.workspaceId)}
           and principal_id = ${input.ref.principalId}
-          and event_type in ${input.sql(eventTypes)}
+          and event_type = any(${eventTypes}::text[])
           and (snapshot_version, occurred_at_epoch_ms, event_id) >
               (${after.snapshotVersion}, ${after.occurredAtEpochMs}, ${after.eventId})
         order by snapshot_version, occurred_at_epoch_ms, event_id

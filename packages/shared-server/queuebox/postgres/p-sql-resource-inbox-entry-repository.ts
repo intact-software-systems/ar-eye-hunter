@@ -1,3 +1,4 @@
+import type { QueueBoxWrittenIfAbsent } from '@shared/queuebox/queue-box-types.ts';
 import { hasSameResourceEntryValue } from '@shared/queuebox/resource-entry-observations.ts';
 import { toResourceInboxCompletionKey } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
 import {
@@ -10,7 +11,7 @@ import { TurnBatchedReads } from '@shared/resilience/turn-batched-reads.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import { PSqlResourceInboxEntryReader, type ResourceInboxStatusRead } from './p-sql-resource-inbox-entry-reader.ts';
 import {
-    lockObservedResourceInboxEntry,
+    lockObservedResourceInboxEntries,
     replaceObservedResourceInboxEntry,
     type ResourceInboxObservation,
     type ResourceInboxObservedReplacement
@@ -24,7 +25,10 @@ import {
     type ResourceInboxRow,
     type ResourceInboxStatusAndAttempts
 } from './resource-inbox-row-codec.ts';
-import { writeResourceInboxEntryIfAbsentOrExpired } from './write-resource-inbox-entry-if-absent-or-expired.ts';
+import {
+    writeResourceInboxEntriesIfAbsentOrExpired,
+    writeResourceInboxEntryIfAbsentOrExpired
+} from './write-resource-inbox-entry-if-absent-or-expired.ts';
 import { writeResourceInboxEntryIfAbsentOrMatch } from './write-resource-inbox-entry-if-absent-or-match.ts';
 
 export class ResourceInboxInvariantCorruptionError extends Error {
@@ -121,9 +125,10 @@ export class PSqlResourceInboxEntryRepository {
         return await this.writeObservedReplacement(computeResourceInboxObservedReplacement(expected, replacement));
     }
 
-    /** Whether the row still holds the observation; a held row stays locked until the transaction ends. */
-    async lockObserved(observation: ResourceInboxObservation): Promise<boolean> {
-        return (await lockObservedResourceInboxEntry(this.sql, observation)).length === 1;
+    /** Whether every row still holds its observation; the held rows stay locked until the transaction ends. */
+    async lockAllObserved(observations: readonly ResourceInboxObservation[]): Promise<boolean> {
+        return observations.length === 0 ||
+            (await lockObservedResourceInboxEntries(this.sql, observations)).length === observations.length;
     }
 
     async writeObservedReplacement(computed: ResourceInboxObservedReplacement): Promise<ResourceEntry | null> {
@@ -207,18 +212,20 @@ export class PSqlResourceInboxEntryRepository {
     }
 
     async writeIfAbsentOrReplaceExpired(entry: ResourceEntry): Promise<ResourceEntry> {
-        return await this.writeComputedIfAbsentOrReplaceExpired(computeResourceInboxEntryInsertValues(entry));
+        return (await this.writeComputedIfAbsentOrReplaceExpired(computeResourceInboxEntryInsertValues(entry))).entry;
     }
 
-    async writeComputedIfAbsentOrReplaceExpired(values: ResourceInboxEntryInsertValues): Promise<ResourceEntry> {
+    async writeComputedIfAbsentOrReplaceExpired(
+        values: ResourceInboxEntryInsertValues
+    ): Promise<QueueBoxWrittenIfAbsent> {
         const written = await this.tryWriteComputedIfAbsentOrReplaceExpired(values);
         if (written) {
-            return written;
+            return { entry: written, created: true };
         }
 
         const existing = await this.findAnyByKey(values.entry.key);
         if (existing) {
-            return existing;
+            return { entry: existing, created: false };
         }
 
         throw new Error(
@@ -255,6 +262,14 @@ export class PSqlResourceInboxEntryRepository {
                 entry: { ...reserved, resource: materialized.resource }
             });
         });
+    }
+
+    /** Whether every row was written; a key whose live row was kept leaves the batch unwritten. */
+    async tryWriteAllComputedIfAbsentOrReplaceExpired(
+        values: readonly ResourceInboxEntryInsertValues[]
+    ): Promise<boolean> {
+        return values.length === 0 ||
+            (await writeResourceInboxEntriesIfAbsentOrExpired(this.sql, values)).length === values.length;
     }
 
     async tryWriteComputedIfAbsentOrReplaceExpired(

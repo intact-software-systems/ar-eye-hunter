@@ -8,10 +8,7 @@ import {
 } from 'vitest';
 
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
-import {
-    createTestALOutboundControlAdmission,
-    createTestALOutboundWorkPort
-} from '@shared-test/shared/create-test-al-outbound-work-port.ts';
+import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     newALAckControlMessage,
@@ -30,7 +27,10 @@ import {
     AL_ADMISSION_SCHEMA_ID,
     openIndexedDbAdmissionDatabase
 } from '@shared/alm/open-indexed-db-admission-database.ts';
-import { toALOutboundMessageOwnerKey } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
+import {
+    toALOutboundMessageOwnerKey,
+    toALOutboundVersionKey
+} from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import {
     createALOutboundAdmissionStore,
     type ALOutboundAdmissionStore,
@@ -97,6 +97,45 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
         expect(await fixture.store.commitBundle(winner)).toBe('committed');
         const before = await fixture.readAdmissionState();
         expect(await fixture.store.commitBundle(stale)).toBe('conflict');
+
+        expect(await fixture.readAdmissionState()).toBe(before);
+    });
+
+    it('names the sender version as the fence of each commit', async () => {
+        const fixture = await createFenceFixture(storage);
+        const bundle = await readOutboundTestAdmission({
+            store: fixture.store,
+            message: createOutboundMessage('fenced'),
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() }
+        });
+        const fences: string[] = [];
+        const write = fixture.backend.write.bind(fixture.backend);
+        vi.spyOn(fixture.backend, 'write').mockImplementation(async (operation, executionExpiresAtMs) =>
+            await write(async (transaction) => {
+                const setFence = transaction.setFence.bind(transaction);
+                vi.spyOn(transaction, 'setFence').mockImplementation(async (key, value, expireAtTimestamp) => {
+                    fences.push(key);
+                    await setFence(key, value, expireAtTimestamp);
+                });
+                return await operation(transaction);
+            }, executionExpiresAtMs)
+        );
+
+        expect(await fixture.store.commitBundle(bundle)).toBe('committed');
+
+        expect(fences).toEqual([toALOutboundVersionKey(FENCE_NAMESPACE, bundle.senderId)]);
+    });
+
+    it('rejects a second fence in one commit and writes nothing', async () => {
+        const fixture = await createFenceFixture(storage);
+        const before = await fixture.readAdmissionState();
+
+        await expect(fixture.backend.write(async (transaction) => {
+            await transaction.setFence(`${FENCE_NAMESPACE}:version:first`, 1);
+            await transaction.setFence(`${FENCE_NAMESPACE}:version:first`, 2);
+            await transaction.setFence(`${FENCE_NAMESPACE}:version:second`, 1);
+        })).rejects.toThrow('An admission commit is fenced on one row');
 
         expect(await fixture.readAdmissionState()).toBe(before);
     });
@@ -380,11 +419,6 @@ function createFenceDispatchAdmission(fixture: FenceFixture): ALOutboundDispatch
     const admission = new ALOutboundDispatchAdmission<OutboundTestPayload>({
         lane: 'durable',
         admissionStore: fixture.store,
-        workPort: createTestALOutboundWorkPort({
-            admissionStore: fixture.store,
-            workQueue: fixture.backend.workQueue,
-            nowMs: Date.now
-        }),
         toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
         decodePreparedMessage: decodeOutboundTestPayload,
         clock: { nowMs: Date.now },

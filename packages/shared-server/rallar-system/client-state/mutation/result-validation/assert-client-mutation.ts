@@ -9,7 +9,6 @@ import {
     assertClientMutationFacts
 } from '../command-validation/assert-client-mutation-command.ts';
 import { resolveClientMutationAudienceReadScope } from '../resolve-client-mutation-audience-read-scope.ts';
-import { assertClientMutationRead } from './assert-client-mutation-read.ts';
 import { assertClientMutationResult } from './assert-client-mutation-result.ts';
 import { assertClientPersistenceRecords } from './assert-client-persistence.ts';
 
@@ -40,7 +39,10 @@ export interface ClientMutationAssertionInput {
     readonly computed: ClientMutationComputed;
 }
 
-/** The caller has proved computed equal to a complete recompute; these are the identity and guard invariants. */
+/**
+ * The caller has proved computed equal to a complete recompute, which asserted the read; these are the identity and
+ * guard invariants.
+ */
 export function assertClientMutationInvariants(
     input: ClientMutationAssertionInput
 ): void {
@@ -49,7 +51,6 @@ export function assertClientMutationInvariants(
     assertClientMutationFacts(command.facts);
     assertClientMutationResult(computed);
     assertClientMutationIdentity(command);
-    assertClientMutationRead(command, read);
     assertClientSessionIdentity(command);
     if (computed.outcome !== 'idempotency-conflict') {
         assertClientMutationReceiptIdentity(command, computed);

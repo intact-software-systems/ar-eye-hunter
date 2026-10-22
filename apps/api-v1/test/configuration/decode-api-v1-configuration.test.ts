@@ -273,6 +273,7 @@ Deno.test('configuration decoder validates every numeric policy boundary without
         ['topology.planning.meshParamK', 1],
         ['topology.planning.meshExitWidth', 0],
         ['topology.planning.treeExitWidth', 0],
+        ['topology.planning.rttReplanMinimumLayoutAgeMs', 0],
         ['topology.recompute.formationDebounceMs', 0],
         ['topology.recompute.formationMaxWaitMs', 0],
         ['topology.rttRefinement.minIntervalMs', 0],
@@ -773,6 +774,36 @@ Deno.test('configuration decoder requires the AppInbox flight hold and bounds it
         error.issues.map(({ path, environmentName, code }) => ({ path, environmentName, code })),
         [{ path: 'appInbox.newLaneHeldRows', environmentName: 'RALLAR_APP_INBOX_NEW_LANE_HELD_ROWS', code: 'held-rows-below-concurrency' }]
     );
+});
+
+Deno.test('configuration decoder requires the RTT replan minimum layout age and bounds it by the largest age', () => {
+    assert.equal(
+        decodeApiV1Configuration(validDecodeApiV1ConfigurationInput()).topology.planning.rttReplanMinimumLayoutAgeMs,
+        15_000
+    );
+    const unnamed = validDecodeApiV1ConfigurationInput();
+    const unnamedPlanning = ((unnamed.defaultsSource as MutableApiV1ConfigurationSourceObject).topology as MutableApiV1ConfigurationSourceObject)
+        .planning;
+    delete (unnamedPlanning as MutableApiV1ConfigurationSourceObject).rttReplanMinimumLayoutAgeMs;
+    assert.deepEqual(
+        captureConfigurationError(() => decodeApiV1Configuration(unnamed)).issues.map(({ path, code }) => ({ path, code })),
+        [{ path: 'topology.planning.rttReplanMinimumLayoutAgeMs', code: 'missing-property' }]
+    );
+
+    for (const [minimumLayoutAgeMs, valid] of [[-1, false], [0, true], [120_000, true], [120_001, false], [1.5, false]] as const) {
+        const input = validDecodeApiV1ConfigurationInput();
+        setPath(input.defaultsSource, 'topology.planning.rttReplanMinimumLayoutAgeMs', minimumLayoutAgeMs);
+        if (valid) {
+            assert.equal(decodeApiV1Configuration(input).topology.planning.rttReplanMinimumLayoutAgeMs, minimumLayoutAgeMs);
+            continue;
+        }
+        const error = captureConfigurationError(() => decodeApiV1Configuration(input));
+        assert.deepEqual(
+            error.issues.map(({ path }) => path),
+            ['topology.planning.rttReplanMinimumLayoutAgeMs'],
+            `${minimumLayoutAgeMs}`
+        );
+    }
 });
 
 Deno.test('configuration decoder requires the disconnected client session retention and bounds it by the auth session TTL', () => {

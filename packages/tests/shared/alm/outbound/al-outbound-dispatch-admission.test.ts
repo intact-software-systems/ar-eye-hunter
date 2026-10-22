@@ -6,7 +6,6 @@ import {
     vi
 } from 'vitest';
 
-import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
@@ -21,7 +20,8 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import {
     createDefaultOutboundTestStores,
     createOutboundMessage,
-    OUTBOUND_TEST_SEND_PLANNER
+    OUTBOUND_TEST_SEND_PLANNER,
+    readOutboundTestAdmission
 } from '../outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from '../outbound-test-payload.ts';
 
@@ -46,7 +46,6 @@ function createDispatchFixture(): DispatchFixture {
     const admission = new ALOutboundDispatchAdmission({
         lane: 'durable',
         admissionStore: stores.admissionStore,
-        workPort: createTestALOutboundWorkPort({ ...stores, nowMs: Date.now }),
         toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
         decodePreparedMessage: decodeOutboundTestPayload,
         clock: { nowMs: Date.now },
@@ -92,11 +91,56 @@ function toRecordingReadSession(session: ALAdmissionReadSession, recorded: Recor
     };
 }
 
+/** The decision reads of each store, by turn-batched round, and the most rounds in flight at once. */
+interface DecisionStoreRounds {
+    readonly state: string[][];
+    readonly queue: string[][];
+    peakInFlight: number;
+}
+
+/**
+ * Before the group commit opens, every state read and every queue read answers in its store's turn-batched round, as
+ * the server's backend and queue each answer one turn's reads in one statement on one pooled connection.
+ */
+function recordDecisionStoreRounds(backend: InMemoryAdmissionBackend, isCommitting: () => boolean): DecisionStoreRounds {
+    const recorded: DecisionStoreRounds = { state: [], queue: [], peakInFlight: 0 };
+    let inFlight = 0;
+    const toRounds = (rounds: string[][]) =>
+        new TurnBatchedReads<string, string>({
+            toKeyId: (key) => key,
+            readBatch: async (keys) => {
+                rounds.push([...keys]);
+                inFlight += 1;
+                recorded.peakInFlight = Math.max(recorded.peakInFlight, inFlight);
+                await Promise.resolve();
+                inFlight -= 1;
+                return keys;
+            }
+        });
+    const stateRounds = toRounds(recorded.state);
+    const queueRounds = toRounds(recorded.queue);
+    const inRound = async <V>(rounds: TurnBatchedReads<string, string>, key: string, read: () => Promise<V>): Promise<V> => {
+        if (!isCommitting()) {
+            await rounds.read(key);
+        }
+        return await read();
+    };
+    const read = backend.read.bind(backend);
+    const list = backend.list.bind(backend);
+    const getItem = backend.workQueue.getItem.bind(backend.workQueue);
+    vi.spyOn(backend, 'read').mockImplementation((key, decode) => inRound(stateRounds, key, () => read(key, decode)));
+    vi.spyOn(backend, 'list').mockImplementation((prefix, decode) => inRound(stateRounds, prefix, () => list(prefix, decode)));
+    vi.spyOn(backend.workQueue, 'getItem').mockImplementation((key) =>
+        inRound(queueRounds, `${key.topicId}/${key.contextId}/${key.resourceId}`, () => getItem(key))
+    );
+    return recorded;
+}
+
 function toDispatch(msg: ALMessage): ALOutboundDispatchAdmission.Input<OutboundTestPayload> {
     return { msg, planner: OUTBOUND_TEST_SEND_PLANNER, intent: 'enqueue', phase: 'immediate', origin: 'send', options: {} };
 }
 
-it('makes bounded independent read progress through a burst before committing in input order and admitting a late send', async () => {
+it('reads every member of a burst at once before committing in input order and admitting a late send', async () => {
     const { admission, store } = createDispatchFixture();
     const messages = Array.from({ length: 5 }, (_, index) => ({
         ...createOutboundMessage(`burst-${index}`),
@@ -131,21 +175,18 @@ it('makes bounded independent read progress through a burst before committing in
     const lateRead = vi.spyOn(store, 'readOutgoingDecision');
 
     try {
-        await expect.poll(() => started).toEqual([0, 1]);
+        await expect.poll(() => started).toEqual([0, 1, 2, 3, 4]);
         expect(writes).toEqual([]);
         expect(lateRead).not.toHaveBeenCalled();
         for (let index = 1; index < messages.length; index += 1) {
             gates[index]!.resolve();
-            if (index + 1 < messages.length) {
-                await expect.poll(() => started.length).toBe(index + 2);
-            }
         }
         await expect.poll(() => active).toBe(1);
         expect(writes).toEqual([]);
         expect(lateRead).not.toHaveBeenCalled();
         gates[0]!.resolve();
         const results = await group;
-        expect(peak).toBe(2);
+        expect(peak).toBe(messages.length);
         expect(writes).toEqual([0]);
         expect(results.map((result) => result.status === 'fulfilled' && result.value.committed)).toEqual([true, true, true, true, true]);
         expect(results.map((result) => result.status === 'fulfilled' && result.value.computed.msg)).toEqual(messages);
@@ -324,6 +365,62 @@ it('reads the commit observations of a sixteen-member group in at most two store
     }
 });
 
+it('reads the decisions of a sixteen-member group in one round per read depth, two connections at most', async () => {
+    const { admission, store, backend } = createDispatchFixture();
+    let committing = false;
+    const commitBundles = store.commitBundles.bind(store);
+    vi.spyOn(store, 'commitBundles').mockImplementation(async (bundles) => {
+        committing = true;
+        try {
+            return await commitBundles(bundles);
+        }
+        finally {
+            committing = false;
+        }
+    });
+    const rounds = recordDecisionStoreRounds(backend, () => committing);
+    const messages = Array.from({ length: 16 }, (_, index) => ({
+        ...createOutboundMessage(`member-${index}`),
+        targets: { mode: 'unicast' as const, toPeerId: `peer-${index}` }
+    }));
+
+    try {
+        const results = await admission.commitAllSettled(messages.map(toDispatch));
+
+        expect(results.map((result) => result.status === 'fulfilled' && result.value.committed)).toEqual(messages.map(() => true));
+        expect(rounds.state).toHaveLength(1);
+        // The canonical row, then the identity row it names: each round reads that row for every member at once.
+        expect(rounds.queue.map((round) => round.length)).toEqual([16, 16]);
+        expect(rounds.peakInFlight).toBeLessThanOrEqual(2);
+    }
+    finally {
+        admission.dispose();
+    }
+});
+
+it('probes the pending admission each enqueue member retained through the backend\'s turn-batched work read', async () => {
+    const { admission, store, backend } = createDispatchFixture();
+    const messages = Array.from({ length: 4 }, (_, index) => ({
+        ...createOutboundMessage(`retained-${index}`),
+        targets: { mode: 'unicast' as const, toPeerId: `peer-${index}` }
+    }));
+
+    try {
+        for (const message of messages) {
+            await retainPendingAdmission(admission, store, message);
+        }
+        const unbatched = recordUnbatchedWorkQueueReads(backend);
+        const results = await admission.commitAllSettled(messages.map(toDispatch));
+
+        expect(results.map((result) => result.status === 'fulfilled' && result.value.computed.verdict))
+            .toEqual(messages.map(() => ({ kind: 'pending' })));
+        expect(unbatched).toEqual([]);
+    }
+    finally {
+        admission.dispose();
+    }
+});
+
 it('rejects a group commit with two corrupt member observations as corruption, not as an aggregate', async () => {
     const failure = await readGroupObservationFailure({
         'member-1': { delayMs: 5, error: () => new ALAdmissionCorruptionError('member-1', new Error('bad row')) },
@@ -419,4 +516,52 @@ function toFailingReadSession(
         read: (key, decode) => session.read(key, decode),
         list: (prefix, decode) => session.list(prefix, decode)
     };
+}
+
+/** A competing send of the same sender wins the version fence inside the message's first commit, so it retains. */
+async function retainPendingAdmission(
+    admission: ALOutboundDispatchAdmission<OutboundTestPayload>,
+    store: ALOutboundAdmissionStore<OutboundTestPayload>,
+    message: ALMessage
+): Promise<void> {
+    const competitor = await readOutboundTestAdmission({
+        store,
+        message: createOutboundMessage(`${message.id.msgId}-competitor`),
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: Date.now }
+    });
+    const commitBundle = store.commitBundle.bind(store);
+    const spy = vi.spyOn(store, 'commitBundle').mockImplementationOnce(async (bundle, observation) => {
+        expect(await commitBundle(competitor)).toBe('committed');
+        return await commitBundle(bundle, observation);
+    });
+    expect((await admission.commit(toDispatch(message))).computed.verdict).toEqual({ kind: 'pending' });
+    spy.mockRestore();
+}
+
+/**
+ * The work-queue reads that bypass the backend's work read, which the server backend answers turn-batched in one
+ * statement; the in-memory backend's work read reaches the queue synchronously, inside the call.
+ */
+function recordUnbatchedWorkQueueReads(backend: InMemoryAdmissionBackend): string[] {
+    const unbatched: string[] = [];
+    let insideWorkRead = false;
+    const readWork = backend.readWork.bind(backend);
+    const getItem = backend.workQueue.getItem.bind(backend.workQueue);
+    vi.spyOn(backend, 'readWork').mockImplementation((key) => {
+        insideWorkRead = true;
+        try {
+            return readWork(key);
+        }
+        finally {
+            insideWorkRead = false;
+        }
+    });
+    vi.spyOn(backend.workQueue, 'getItem').mockImplementation((key) => {
+        if (!insideWorkRead) {
+            unbatched.push(`${key.topicId}/${key.contextId}`);
+        }
+        return getItem(key);
+    });
+    return unbatched;
 }

@@ -334,7 +334,7 @@ describe('RTC topology planning options and revisions', () => {
 
     it('honors request topology kind override for star topology', () => {
         const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(8));
-        const service = new RallarRtcTopologyService({ now: () => 100 });
+        const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100 });
 
         const result = service.updateGroupTopology(group, [], {
             topologyOptions: { topologyKind: 'star' }
@@ -346,7 +346,7 @@ describe('RTC topology planning options and revisions', () => {
 
     it('honors request topology kind override for tree topology', () => {
         const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(4));
-        const service = new RallarRtcTopologyService({ now: () => 100 });
+        const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100 });
 
         const result = service.updateGroupTopology(group, [], {
             topologyOptions: { topologyKind: 'tree' }
@@ -360,7 +360,7 @@ describe('RTC topology planning options and revisions', () => {
 
     it('honors mesh override when the group supports mesh', () => {
         const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(16));
-        const service = new RallarRtcTopologyService({ now: () => 100, meshMinSize: 999 });
+        const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100, meshMinSize: 999 });
 
         const result = service.updateGroupTopology(group, [], {
             topologyOptions: { topologyKind: 'mesh' }
@@ -378,6 +378,7 @@ describe('RTC topology planning options and revisions', () => {
     it('uses per-update degree limit without replacing service-wide defaults', () => {
         const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(8));
         const service = new RallarRtcTopologyService({
+            rttReplanMinimumLayoutAgeMs: 15_000,
             now: () => 100,
             degreeLimit: 5,
             meshMinSize: 999
@@ -396,7 +397,7 @@ describe('RTC topology planning options and revisions', () => {
     });
 
     it('keeps default threshold behavior when no per-update topology options are passed', () => {
-        const service = new RallarRtcTopologyService({ now: () => 100 });
+        const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100 });
 
         expect(service.updateGroupTopology(createRtcTopologyGroupSnapshot('small-room', createRtcTopologyMemberIds(4))).snapshot.topology).toBe(
             'star'
@@ -411,7 +412,7 @@ describe('RTC topology planning options and revisions', () => {
 
     it('retains the graph version while advancing an unchanged group revision', () => {
         const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(5));
-        const service = new RallarRtcTopologyService({ now: () => 100 });
+        const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100 });
 
         const first = service.updateGroupTopology(group);
         const second = service.updateGroupTopology({
@@ -433,7 +434,7 @@ describe('RTC topology planning options and revisions', () => {
     it('republishes tree topology when RTT measurements change next hops', () => {
         const memberSessionIds = createRtcTopologyMemberIds(5);
         const group = createRtcTopologyGroupSnapshot('room-1', memberSessionIds);
-        const service = new RallarRtcTopologyService({ now: () => 100 });
+        const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100 });
 
         const first = service.updateGroupTopology(group);
         const second = service.updateGroupTopology(group, createCentralRtcTopologyRttMeasurements(memberSessionIds, 'peer-1'));
@@ -448,8 +449,8 @@ describe('RTC topology planning options and revisions', () => {
     it('continues versioning from a supplied previous snapshot', () => {
         const memberSessionIds = createRtcTopologyMemberIds(5);
         const group = createRtcTopologyGroupSnapshot('room-1', memberSessionIds);
-        const firstWorker = new RallarRtcTopologyService({ now: () => 100 });
-        const secondWorker = new RallarRtcTopologyService({ now: () => 200 });
+        const firstWorker = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100 });
+        const secondWorker = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 200 });
 
         const first = firstWorker.updateGroupTopology(group);
         const second = secondWorker.updateGroupTopology(group, createCentralRtcTopologyRttMeasurements(memberSessionIds, 'peer-1'), {

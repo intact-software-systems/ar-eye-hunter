@@ -25,6 +25,7 @@ import {
     isWsQueueBoxServerCapturedSessionRow,
     toWsQueueBoxServerCapturedSendInput
 } from '@shared/services/ws-queue-box-server/scope/to-ws-queue-box-server-captured-send-input.ts';
+import type { WsQueueBoxServerClusterPublication } from '@shared/services/ws-queue-box-server/ws-queue-box-server-cluster-publication.ts';
 import type {
     WsServerLiveSendInputDto,
     WsServerLiveSendResult
@@ -54,14 +55,13 @@ import { requeueRemoteWsOutboxDeliveryFailure } from './requeue-remote-ws-outbox
 export interface QueueBoxPubSubWsService {
     readonly outbox: QueueBoxResourceEntryRepository;
     readonly socket: Pick<JsonWebSocketServer, 'expectedConnections'>;
-    onOutboxClusterPublishDo(
-        publisher: (
-            message: ALMessage,
-            entry: ResourceEntry,
-            deferObservation?: ALWorkObservationDeferral
-        ) => Promise<void>
-    ): QueueBoxPubSubWsService;
-    readCapturedPolicy(message: ALMessage, entry: ResourceEntry): Promise<ALOutboundCapturedPolicy>;
+    onOutboxClusterPublishDo(publisher: WsQueueBoxServerClusterPublication.Publisher): QueueBoxPubSubWsService;
+    /** The policy the row's own commit handed over is checked instead of read back. */
+    readCapturedPolicy(
+        message: ALMessage,
+        entry: ResourceEntry,
+        committedPolicy: ALOutboundCapturedPolicy | undefined
+    ): Promise<ALOutboundCapturedPolicy>;
     sendToTargetsWithResult(input: WsServerLiveSendInputDto): WsServerLiveSendResult;
 }
 
@@ -141,6 +141,7 @@ interface SendToCapturedLocalTargetsInput {
 interface QueueBoxOutboxPublication {
     readonly message: ALMessage;
     readonly entry: ResourceEntry;
+    readonly committedPolicy: ALOutboundCapturedPolicy | undefined;
     readonly deferObservation: ALWorkObservationDeferral | undefined;
 }
 
@@ -214,8 +215,13 @@ export function installQueueBoxPubSubBridge(
 function registerQueueBoxOutboxPublisher(
     options: RegisterQueueBoxOutboxPublisherInput
 ): void {
-    options.wsQBoxServerService.onOutboxClusterPublishDo((message, entry, deferObservation) =>
-        writeQueueBoxOutboxPublication({ message, entry, deferObservation }, options)
+    options.wsQBoxServerService.onOutboxClusterPublishDo((message, entry, handoff) =>
+        writeQueueBoxOutboxPublication({
+            message,
+            entry,
+            committedPolicy: handoff.committedPolicy,
+            deferObservation: handoff.deferObservation
+        }, options)
     );
 }
 
@@ -236,7 +242,7 @@ async function writeQueueBoxOutboxPublication(
         await publishOutboxClusterNotice(envelope, options);
         publishCall = 'returned';
         const policy = options.timing === undefined
-            ? await readCapturedPublicationPolicy(options.wsQBoxServerService, message, entry)
+            ? await readCapturedPublicationPolicy(options.wsQBoxServerService, publication)
             : await readLocalPublicationPolicy(publication, envelope, options);
         directCall = 'invoked';
         result = sendToCapturedLocalTargets({ message, entry, policy }, options);
@@ -274,11 +280,7 @@ async function readLocalPublicationPolicy(
 ): Promise<ALOutboundCapturedPolicy | undefined> {
     let status: 'ok' | 'error' = 'error';
     try {
-        const policy = await readCapturedPublicationPolicy(
-            options.wsQBoxServerService,
-            publication.message,
-            publication.entry
-        );
+        const policy = await readCapturedPublicationPolicy(options.wsQBoxServerService, publication);
         status = 'ok';
         return policy;
     }
@@ -288,6 +290,7 @@ async function readLocalPublicationPolicy(
                 timing: options.timing,
                 operation: 'outbox-captured-policy-read',
                 message: envelope,
+                details: { capturedPolicy: publication.committedPolicy === undefined ? 'stored' : 'committed' },
                 status
             });
         }
@@ -413,7 +416,10 @@ async function sendRemoteQueueBoxOutboxEntry(
     let result: WsServerLiveSendResult;
     let awaited: ExpectedConnectionHolds.AudienceHold;
     try {
-        const policy = await readCapturedPublicationPolicy(options.wsQBoxServerService, remoteMessage, entry);
+        const policy = await readCapturedPublicationPolicy(
+            options.wsQBoxServerService,
+            { message: remoteMessage, entry, committedPolicy: undefined }
+        );
         result = sendToCapturedLocalTargets({ message: remoteMessage, entry, policy }, options);
         awaited = deferAwaitedCapturedRecipients({ message: remoteMessage, entry, policy }, result, options);
     }
@@ -482,12 +488,11 @@ async function requeueFailedRemoteOutboxEntry(
 /** A receipt row answers its origin and carries no captured policy of its own. */
 async function readCapturedPublicationPolicy(
     service: QueueBoxPubSubWsService,
-    message: ALMessage,
-    entry: ResourceEntry
+    row: Pick<QueueBoxOutboxPublication, 'message' | 'entry' | 'committedPolicy'>
 ): Promise<ALOutboundCapturedPolicy | undefined> {
-    return isWsQueueBoxServerReceiptRow(message)
+    return isWsQueueBoxServerReceiptRow(row.message)
         ? undefined
-        : await service.readCapturedPolicy(message, entry);
+        : await service.readCapturedPolicy(row.message, row.entry, row.committedPolicy);
 }
 
 /** A row with failed sends is retried, and its redelivery reaches the awaited session; only a settled row is held. */

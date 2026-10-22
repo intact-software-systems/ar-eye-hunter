@@ -3,6 +3,7 @@ import { Node, SyntaxKind } from 'ts-morph';
 const TRANSACTION_TYPE_NAMES = ['PSqlSql', 'IDBTransaction'];
 const CANONICAL_TYPE_SOURCES = new Map([
     ['PSqlSql', 'packages/shared-server/postgres/p-sql-sql.ts'],
+    ['PSqlFragment', 'packages/shared-server/postgres/p-sql-fragment.ts'],
     ['IDBDatabase', '/typescript/lib/lib.dom.d.ts'],
     ['IDBObjectStore', '/typescript/lib/lib.dom.d.ts'],
     ['IDBOpenDBRequest', '/typescript/lib/lib.dom.d.ts'],

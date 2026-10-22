@@ -35,7 +35,7 @@ describe('evolve planned topology through the kernel', () => {
         'bounds single join/leave churn by O(degree) at N=$memberCount ($kind)',
         ({ memberCount, kind, evolvesEveryChange }) => {
             const members = createMemberIds(memberCount);
-            const service = new RallarRtcTopologyService({ now: () => 100 });
+            const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100 });
             const formed = service.planGroupTopologyAt(
                 createGroupSnapshot('evolve-group', members, 1),
                 [],
@@ -78,7 +78,7 @@ describe('evolve planned topology through the kernel', () => {
 
     it('evolves deterministically for shuffled input orders given an equal previous', () => {
         const members = createMemberIds(20);
-        const service = new RallarRtcTopologyService({ now: () => 100 });
+        const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100 });
         const formed = service.planGroupTopologyAt(
             createGroupSnapshot('evolve-group', members, 1),
             [],
@@ -88,7 +88,7 @@ describe('evolve planned topology through the kernel', () => {
 
         const nextMembers = [...members, 'session-joiner-901'];
         const planned = [nextMembers, [...nextMembers].reverse()].map((order) =>
-            new RallarRtcTopologyService({ now: () => 200 }).planGroupTopologyAt(
+            new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 200 }).planGroupTopologyAt(
                 createGroupSnapshot('evolve-group', order, 2),
                 [],
                 { previous: formed.snapshot, planningIntent: 'membership-delta' },
@@ -103,7 +103,7 @@ describe('evolve planned topology through the kernel', () => {
 
     it('falls back to a full rebuild when the membership delta is too large', () => {
         const members = createMemberIds(20);
-        const service = new RallarRtcTopologyService({ now: () => 100 });
+        const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100 });
         const formed = service.planGroupTopologyAt(
             createGroupSnapshot('evolve-group', members, 1),
             [],
@@ -129,7 +129,7 @@ describe('evolve planned topology through the kernel', () => {
 
     it('plans full rebuilds for non-membership-delta intents', () => {
         const members = createMemberIds(20);
-        const service = new RallarRtcTopologyService({ now: () => 100 });
+        const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100 });
         const formed = service.planGroupTopologyAt(
             createGroupSnapshot('evolve-group', members, 1),
             [],
@@ -150,7 +150,7 @@ describe('evolve planned topology through the kernel', () => {
 
     it('holds the kind across the hysteresis band and counts the hold', () => {
         const members = createMemberIds(16);
-        const service = new RallarRtcTopologyService({ now: () => 100 });
+        const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100 });
         const formed = service.planGroupTopologyAt(
             createGroupSnapshot('evolve-group', members, 1),
             [],

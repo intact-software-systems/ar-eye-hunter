@@ -323,6 +323,11 @@ const ENVIRONMENT_SETTINGS: readonly EnvironmentSetting[] = [
         apply: (source, value) => source.topology.planning.treeExitWidth = value
     },
     {
+        name: 'RALLAR_RTC_TOPOLOGY_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS',
+        decode: decodeNumber,
+        apply: (source, value) => source.topology.planning.rttReplanMinimumLayoutAgeMs = value
+    },
+    {
         name: 'RALLAR_RTC_TOPOLOGY_RECOMPUTE_DEBOUNCE_MS',
         decode: decodeNumber,
         apply: (source, value) => source.topology.recompute.formationDebounceMs = value

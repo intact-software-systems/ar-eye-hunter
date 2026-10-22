@@ -11,6 +11,7 @@ import { startApiProcess } from './runtime/api-process-startup.ts';
 import {
     stopApiOnRtcTopologyDeliveryHealthFailure
 } from './runtime/rtc-topology/rtc-topology-delivery-health-shutdown.ts';
+import { myServerId } from './runtime/runtime-identity.ts';
 import { installApiHttpMiddleware } from './services/install-api-http-middleware.ts';
 import { createApiTimingSink } from './services/timing-service.ts';
 
@@ -31,9 +32,11 @@ console.log(JSON.stringify({
     event: 'api-v1.configuration',
     ...toApiV1ConfigurationStartupSummary(configuration)
 }));
+const timing = createApiTimingSink(configuration.observability);
 const databaseLifecycle = await createDefaultApiV1DatabaseLifecycle({
     database: configuration.database,
-    pgliteEvidence: configuration.blackBox.pgliteEvidence
+    pgliteEvidence: configuration.blackBox.pgliteEvidence,
+    statementCensus: configuration.observability.timingLogs ? { timing, serviceId: myServerId } : undefined
 });
 const rallar = await createDefaultRallarServer({
     configuration,
@@ -49,7 +52,7 @@ const app: Hono = new Hono();
 installApiHttpMiddleware(app, {
     http: configuration.http,
     stateApi: configuration.stateApi,
-    timing: createApiTimingSink(configuration.observability)
+    timing
 });
 
 rallar.installSystemTopics();

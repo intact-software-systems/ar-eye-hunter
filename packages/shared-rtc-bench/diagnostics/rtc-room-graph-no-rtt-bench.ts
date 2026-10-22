@@ -20,7 +20,7 @@ const group = createGroupSnapshot('room-1', createMemberIds(SESSIONS));
 const results: BenchResult[] = [];
 
 for (let run = 1; run <= RUNS; run++) {
-    const service = new RallarRtcTopologyService();
+    const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000 });
     const start = performance.now();
     const graph = service.createRoomGraph(group);
     const durationMs = performance.now() - start;

@@ -17,12 +17,9 @@ import type {
 } from '@shared-server/postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '@shared-server/postgres/run-in-p-sql-transaction.ts';
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import type { ResourceInboxEntryInsertRow } from '@shared-server/queuebox/postgres/resource-inbox-entry-insert-values.ts';
 import type { ResourceInboxRow } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
-import {
-    computeAppOutboxInsert,
-    writeAppOutboxInsert,
-    type AppOutboxInsertRow
-} from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
+import { computeAppOutboxInsert, writeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import {
     writeCoalescedAppOutboxWork,
     type ComputedCoalescedAppOutboxWork
@@ -985,7 +982,7 @@ function executeResourceInboxQuery(
 
 function insertResourceInboxTestRows(
     rows: Map<string, ResourceInboxRow>,
-    inserts: readonly AppOutboxInsertRow[]
+    inserts: readonly ResourceInboxEntryInsertRow[]
 ): PSqlRows {
     const inserted: ResourceInboxRow[] = [];
     for (const insert of inserts) {
@@ -1043,15 +1040,15 @@ function updateResourceInboxTestRow(
 }
 
 /** The outbox insert passes its rows as one recordset parameter. */
-function readInsertRowsParameter(value: PSqlParameter): readonly AppOutboxInsertRow[] {
+function readInsertRowsParameter(value: PSqlParameter): readonly ResourceInboxEntryInsertRow[] {
     if (!Array.isArray(value)) {
         throw new TypeError('Expected the outbox insert rows SQL parameter to be an array');
     }
-    return value as readonly AppOutboxInsertRow[];
+    return value as readonly ResourceInboxEntryInsertRow[];
 }
 
 /** The repository's single-row insert passes its columns as positional parameters. */
-function toPositionalInsertRow(values: readonly PSqlParameter[]): AppOutboxInsertRow {
+function toPositionalInsertRow(values: readonly PSqlParameter[]): ResourceInboxEntryInsertRow {
     const toTimestamp = (value: PSqlParameter) => (value === null ? null : String(value));
     return {
         resourceId: readStringParameter(values[0], 'resource id'),
@@ -1071,7 +1068,7 @@ function toPositionalInsertRow(values: readonly PSqlParameter[]): AppOutboxInser
     };
 }
 
-function toTestRow(insert: AppOutboxInsertRow, rowId: bigint): ResourceInboxRow {
+function toTestRow(insert: ResourceInboxEntryInsertRow, rowId: bigint): ResourceInboxRow {
     return {
         ri_row_id: rowId,
         ri_resource_id: insert.resourceId,

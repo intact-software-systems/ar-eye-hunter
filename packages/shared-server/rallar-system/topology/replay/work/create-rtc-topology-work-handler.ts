@@ -9,6 +9,7 @@ import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
 import type { ResourceInboxReservationFinish } from '../../../../queuebox/postgres/resource-inbox-reservation-write.ts';
 import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
 import { AppOutboxType } from '../../../app-outbox/app-outbox-type.ts';
+import type { RallarTimingSink } from '../../../observability/timing.ts';
 import type { RtcRttRefinementService } from '../../../rtc-rtt/topic/rtc-rtt-refinement-service.ts';
 import type { RtcTopologyMutationRead } from '../../mutation/rtc-topology-mutations.ts';
 import type { RtcTopologyExecutionRepository } from '../../persistence/rtc-topology-execution-repository.ts';
@@ -43,6 +44,7 @@ import {
     computeRtcTopologyReservationFinish,
     writeRtcTopologyWorkCompletion
 } from './rtc-topology-work-completion.ts';
+import { recordRtcTopologyWorkTiming } from './rtc-topology-work-timing.ts';
 import {
     readTopologyPromotion,
     type TopologyPromotionPublicationPort
@@ -94,6 +96,8 @@ interface RtcTopologyWorkHandlerOptions {
     readonly wakeQueue?: () => void;
     readonly wakeReplay?: () => void;
     readonly serviceId?: string;
+    /** Present only while timing is on; absent, no recompute decision line is built or recorded. */
+    readonly timing?: RallarTimingSink;
 }
 
 interface RtcTopologyWorkAttemptInput {
@@ -345,6 +349,18 @@ interface WriteAcceptedRtcTopologyWorkInput {
 async function writeAcceptedRtcTopologyWork(
     input: WriteAcceptedRtcTopologyWorkInput
 ): Promise<void> {
+    await writeRtcTopologyWorkDecision(input);
+    recordRtcTopologyWorkTiming({
+        timing: input.options.timing,
+        serviceId: input.options.serviceId,
+        accepted: input.accepted,
+        computeDurationMs: input.computeDurationMs
+    });
+}
+
+async function writeRtcTopologyWorkDecision(
+    input: WriteAcceptedRtcTopologyWorkInput
+): Promise<void> {
     const { options, accepted, computedWrite, computeDurationMs } = input;
     if (accepted.decision === 'skipped-rtt-refinement') {
         await writeCompletionOnly(options.database, computedWrite);
@@ -358,7 +374,10 @@ async function writeAcceptedRtcTopologyWork(
         await petitionCommittedCriterion(options, accepted.criterionPetition);
         return;
     }
-    if (accepted.decision === 'skipped-unchanged' || accepted.decision === 'skipped-frozen') {
+    if (
+        accepted.decision === 'skipped-unchanged' || accepted.decision === 'skipped-frozen' ||
+        accepted.decision === 'held-young-layout'
+    ) {
         await writeSkippedTopologyWork({ options, accepted, computedWrite, computeDurationMs });
         return;
     }
@@ -405,14 +424,19 @@ function requireTopologyTransactionWrite(
 }
 
 /**
- * Both skip decisions commit one already validated transaction write. Only
- * the unchanged decision refreshes the input fingerprint: the frozen path
- * must NOT write it, because the stale fingerprint is decision 11's latched
- * signal that the stored layout trails the authority.
+ * Every decision that keeps the stored layout commits one already validated
+ * transaction write. Only the unchanged decision refreshes the input
+ * fingerprint. The frozen path must NOT write it: the stale fingerprint is
+ * the latched signal that the stored layout trails the authority. The held
+ * path writes none because nothing changed: a hold requires the stored
+ * fingerprint to equal the authority's already.
  */
 interface WriteSkippedTopologyWorkInput {
     readonly options: RtcTopologyWorkHandlerOptions;
-    readonly accepted: Extract<AcceptedRtcTopologyWork, { decision: 'skipped-unchanged' | 'skipped-frozen'; }>;
+    readonly accepted: Extract<
+        AcceptedRtcTopologyWork,
+        { decision: 'skipped-unchanged' | 'skipped-frozen' | 'held-young-layout'; }
+    >;
     readonly computedWrite: AcceptedRtcTopologyWorkWrite;
     readonly computeDurationMs: number;
 }
@@ -430,7 +454,7 @@ async function writeSkippedTopologyWork(
     if (accepted.decision === 'skipped-frozen') {
         options.topologyPlanning.recordTopologyPlanFrozen();
     }
-    else {
+    else if (accepted.decision === 'skipped-unchanged') {
         recordCommittedPlanningObservation(options, accepted, computeDurationMs);
         options.topologyPlanning.recordTopologyPublication(false);
     }

@@ -75,7 +75,7 @@ const ADAPTERS: readonly ReleaseAdapter[] = [
             const storedCurrent = { ...current, db: { id: '1' } };
             const capture = createResourceInboxQueryCapture();
             const repository = createPSqlResourceInboxRepository(capture.sql, () => new Date());
-            repository.reservations.releaseReserved = vi.fn(async () => null);
+            repository.reservations.releaseReserved = vi.fn(async () => [null]);
             repository.entries.findAnyByKey = vi.fn(async () => storedCurrent);
             repository.transaction = async (work) => await work(repository);
             const queue = new PSqlQueueBox(repository, Temporal.Now.instant);

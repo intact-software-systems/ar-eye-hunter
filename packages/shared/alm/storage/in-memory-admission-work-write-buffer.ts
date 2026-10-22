@@ -17,7 +17,7 @@ import type {
 } from '../al-admission-backend.ts';
 import { decodeALAdmissionValue, type ALAdmissionDecoder } from '../al-admission-decoder.ts';
 import { decodeALAdmissionNumber } from '../al-admission-value-validation.ts';
-import type { ALAdmissionWorkWriteContext } from '../al-admission-work-backend.ts';
+import { assertALAdmissionFence, type ALAdmissionWorkWriteContext } from '../al-admission-work-backend.ts';
 
 export class InMemoryAdmissionWorkWriteBuffer implements ALAdmissionWorkWriteContext {
     private readonly pending = new KeyedWriteSet<string, ALAdmissionStoredValue>();
@@ -27,6 +27,7 @@ export class InMemoryAdmissionWorkWriteBuffer implements ALAdmissionWorkWriteCon
     private readonly workQueue: InMemoryQueueBox;
     private readonly observations = new Map<string, ResourceEntry | undefined>();
     private readonly pendingWork = new Map<string, ResourceEntry>();
+    private fenceKey: string | undefined;
 
     constructor(storage: ALAdmissionBackend, nowMs: () => number, workQueue: InMemoryQueueBox) {
         this.storage = storage;
@@ -74,6 +75,13 @@ export class InMemoryAdmissionWorkWriteBuffer implements ALAdmissionWorkWriteCon
 
     async set<V>(key: string, value: V, expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP): Promise<void> {
         this.pending.set(key, { key, value, expireAtTimestamp: decodeALAdmissionNumber(expireAtTimestamp) });
+    }
+
+    /** The map applies a commit at once, so its fence is a row like any other. */
+    async setFence<V>(key: string, value: V, expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP): Promise<void> {
+        assertALAdmissionFence(this.fenceKey, key);
+        this.fenceKey = key;
+        await this.set(key, value, expireAtTimestamp);
     }
 
     async remove(key: string): Promise<void> {
