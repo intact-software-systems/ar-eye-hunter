@@ -1,13 +1,10 @@
-import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
-import { etag } from 'jsr:@hono/hono@4.11.9/etag';
+import { Hono, type Context, type Next } from 'jsr:@hono/hono@4.11.9';
+import { etag, RETAINED_304_HEADERS } from 'jsr:@hono/hono@4.11.9/etag';
 
 import { computeGroupDirectoryPage } from '@shared-server/rallar-system/group-state/directory/compute-group-directory-page.ts';
 import { decodeGroupDirectoryQuery } from '@shared-server/rallar-system/group-state/directory/decode-group-directory-query.ts';
-import {
-    readStateEventListQuery,
-    type StateEventListQuery
-} from '@shared-server/rallar-system/state-events/state-event-listing.ts';
-import type { GroupEvent, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { readStateEventListQuery } from '@shared-server/rallar-system/state-events/state-event-listing.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { isGroupSnapshotCausalRevisionCovered } from '@shared/repository/group-state-snapshot-revision.ts';
 
 import { readGroupSnapshotPointQuery } from '../routes/state-snapshot-read/state-snapshot-read-query.ts';
@@ -19,14 +16,21 @@ import {
 } from './group-state-route-authorization.ts';
 import {
     toGroupStateRouteScope,
-    type GroupStateRouteDependencies,
-    type GroupStateRouteService
+    type GroupStateRouteDependencies
 } from './group-state-route-contracts.ts';
 import { toGroupStateErrorResponse } from './group-state-route-errors.ts';
 
 const GROUPS_PATH = '/api/state/apps/:applicationId/workspaces/:workspaceId/groups';
 const GROUP_DIRECTORY_PATH = '/api/state/apps/:applicationId/workspaces/:workspaceId/group-directory';
 const GROUP_PATH = `${GROUPS_PATH}/:groupId`;
+const directoryEtag = etag({
+    retainedHeaders: [
+        ...RETAINED_304_HEADERS,
+        'access-control-allow-origin',
+        'access-control-allow-credentials',
+        'access-control-expose-headers'
+    ]
+});
 
 export function registerGroupStateReadRoutes(
     app: Hono,
@@ -34,7 +38,7 @@ export function registerGroupStateReadRoutes(
     authorization: GroupStateRouteAuthorization
 ): void {
     app.get(GROUPS_PATH, (context) => readGroupSnapshotList(context, dependencies, authorization));
-    app.use(GROUP_DIRECTORY_PATH, etag());
+    app.use(GROUP_DIRECTORY_PATH, revalidateGroupDirectory);
     app.get(GROUP_DIRECTORY_PATH, (context) => readGroupDirectory(context, dependencies, authorization));
     app.get(GROUP_PATH, (context) => readGroupSnapshot(context, dependencies, authorization));
     app.get(
@@ -45,6 +49,18 @@ export function registerGroupStateReadRoutes(
         `${GROUP_PATH}/events/page`,
         (context) => readGroupEventPage(context, dependencies, authorization)
     );
+}
+
+async function revalidateGroupDirectory(context: Context, next: Next): Promise<void> {
+    await next();
+    context.header('Vary', 'Authorization, x-client-id', { append: true });
+    if (context.res.status !== 200) {
+        context.header('Cache-Control', 'no-store');
+        return;
+    }
+
+    context.header('Cache-Control', 'private, no-cache');
+    await directoryEtag(context, async () => {});
 }
 
 async function readGroupSnapshotList(
@@ -94,8 +110,7 @@ async function readGroupDirectory(
                         query,
                         defaultMaxMembers: dependencies.groupDefaultMaxMembers
                     }),
-                    200,
-                    { 'Cache-Control': 'no-cache' }
+                    200
                 );
             }
         );
@@ -158,11 +173,7 @@ async function readGroupEventArray(
         const query = readStateEventListQuery(new URL(context.req.raw.url).searchParams);
 
         return context.json(
-            await listRecentGroupEventsForArrayRoute(
-                dependencies.groupStateService,
-                ref,
-                query
-            )
+            await dependencies.groupStateService.listRecentEvents(ref, query)
         );
     }
     catch (error) {
@@ -210,12 +221,4 @@ function hydrateGroupSnapshots(
 
     void dependencies.hydrateStateSyncSnapshotCaches({ groups })
         .catch((error) => console.warn('Failed to hydrate group state sync snapshot caches', error));
-}
-
-async function listRecentGroupEventsForArrayRoute(
-    service: GroupStateRouteService,
-    ref: GroupRef,
-    query: StateEventListQuery
-): Promise<readonly GroupEvent[]> {
-    return await service.listRecentEvents(ref, query);
 }

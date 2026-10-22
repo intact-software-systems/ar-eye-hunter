@@ -18,6 +18,9 @@ in the AR Eye runtime. Discovery remains separate from authoritative membership 
 
 ## Global constraints
 
+- User direction for this implementation and continuation: no legacy paths, no duplication, no
+  migration code. Reuse existing patterns, keep the repository consistent, and keep the implementation
+  PR and plans current. After slice 0 is ready, wait for the maintainer to merge before continuing.
 - Preserve `GET /api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory` and
   `rallar.rooms.directory(request?, options?): Promise<GroupDirectoryPage>`.
 - Preserve `GroupDirectoryEntry`, `GroupDirectoryPage`, and sparse `GroupDirectoryRequest` in
