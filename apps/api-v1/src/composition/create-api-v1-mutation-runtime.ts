@@ -104,7 +104,6 @@ export interface CreateApiV1MutationRuntimeInput {
     /** Present only while timing is on: one line per strict principal group list. */
     readonly principalGroupListTiming?: RallarTimingSink;
     readonly appInboxOptions: AppInboxOptions;
-    readonly appInboxLaneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
     readonly appInboxNewLaneConcurrency: number;
     readonly appInboxNewLaneHeldRows: number;
     readonly disconnectedSessionRetentionMs: number;
@@ -499,7 +498,6 @@ function createAppInboxDequeueOptions(
         timing: input.timing
     });
     return {
-        laneBudgetPolicy: input.appInboxLaneBudgetPolicy,
         newLaneConcurrency: input.appInboxNewLaneConcurrency,
         newLaneHeldRows: input.appInboxNewLaneHeldRows,
         toComputeExclusionKey: (_key, attempt) => toGroupCommandExclusionKey(attempt.entry),

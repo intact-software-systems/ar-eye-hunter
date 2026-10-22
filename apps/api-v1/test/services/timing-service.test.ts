@@ -5,7 +5,6 @@ Deno.test('API app inbox options preserve every resolved wait policy field', () 
     assert.deepEqual(
         toApiAppInboxServiceOptions({
             phaseTiming: true,
-            laneBudgetPolicy: 'fixed-retry-two',
             newLaneConcurrency: 4,
             newLaneHeldRows: 16,
             completionWait: {

@@ -38,7 +38,7 @@ Deno.test('PGlite AppInbox reclaims a reservation abandoned past its lease and r
     await withPGliteSql(async (sql) => {
         const inbox = createPSqlResourceInboxRepository(sql, () => new Date());
         const queueBox = new PSqlQueueBox(inbox, Temporal.Now.instant);
-        const inboxQueueReader = new InboxQueueReader(queueBox, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+        const inboxQueueReader = new InboxQueueReader(queueBox, { newLaneConcurrency: 1 });
         const results = new ResourceInboxResultsRepository(sql);
         const commandClient = createAppInboxClientRuntime({
             inboxQueueReader,
@@ -114,7 +114,7 @@ Deno.test('PGlite composed queue leases keep an AppInbox claim for 60 s and an o
     await withPGliteSql(async (sql) => {
         const inbox = createPSqlResourceInboxRepository(sql, () => new Date());
         const queueBox = new PSqlQueueBox(inbox, Temporal.Now.instant);
-        const appInboxEntry = await new InboxQueueReader(queueBox, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 }).enqueueIfAbsent(
+        const appInboxEntry = await new InboxQueueReader(queueBox, { newLaneConcurrency: 1 }).enqueueIfAbsent(
             toLeaseMessage(AppInboxType.CLIENT_PRINCIPAL_UPSERT, 'lease-app-inbox-request')
         );
         const outboxEntry = await new OutboxQueueReader(queueBox).enqueueIfAbsent(

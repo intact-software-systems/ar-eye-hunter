@@ -230,7 +230,6 @@ function createJoinReadHarness(sql: PSqlSql, groupRef: GroupRef): PostgresGroupJ
     const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date());
     const queueEntries = new ReservationRecordingEntryRepository(sql, () => new Date());
     const inbox = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
-        laneBudgetPolicy: 'adaptive-retry',
         newLaneConcurrency: 1
     });
     const groupEventStore = new PSqlGroupStateEventRepository(sql);

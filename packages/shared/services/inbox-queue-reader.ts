@@ -4,23 +4,13 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { DequeueController } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import { DequeueLaneFlight } from '@shared/queuebox/dequeue/dequeue-lane-flight.ts';
-import type {
-    QueueBoxResourceEntryRepository,
-    QueueBoxWrittenIfAbsent,
-    ResourceInboxWorkPage
-} from '@shared/queuebox/queue-box-types.ts';
+import type { QueueBoxResourceEntryRepository, QueueBoxWrittenIfAbsent } from '@shared/queuebox/queue-box-types.ts';
 import type { DequeueResourceEntryOptions } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import type { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
 import type { ResourceInboxHandlerOutcome } from '@shared/queuebox/resource-inbox/resource-inbox-handler-outcome.ts';
 import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
-import {
-    EntityStatus,
-    isExpiredResourceEntry,
-    type Key,
-    type ResourceEntry
-} from '@shared/queuebox/ResourceEntry.ts';
-import { RateLimiter } from '@shared/resilience/Resilience.ts';
+import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type {
     OnQueuedMessageCallback,
     OnRejectedQueuedMessageCallback
@@ -31,14 +21,7 @@ import type { QueueBoxUtilities } from './queue-box-utilities.ts';
 import { QueueMessageReader } from './queue-message-reader.ts';
 
 export namespace InboxQueueReader {
-    /**
-     * How many due retries one AppInbox pass serves: up to the drain limit, one, one or two by the observed retry
-     * pressure, or two. Every other lane's budget is the same under each policy.
-     */
-    export type LaneBudgetPolicy = 'drain' | 'fixed-one' | 'adaptive-retry' | 'fixed-retry-two';
-
     export interface Options extends DequeueResourceEntryOptions {
-        readonly laneBudgetPolicy: LaneBudgetPolicy;
         /**
          * How many distinct-context heads one NEW round reserves in one claim and runs together, from one to the
          * contexts a pass serves. Rows of one context never run together: a context with a row in flight, or one a
@@ -63,17 +46,6 @@ export namespace InboxQueueReader {
      * error is rethrown by the next pass instead, or taken by an owner that runs no further pass, so it is reported once.
      */
     export type FlightEntryListener = (settlement: Promise<void>) => void;
-
-    export interface PressureSample {
-        readonly observedAt: number;
-        readonly retryQuota: number;
-    }
-
-    export interface PressureObservation {
-        readonly generation: number;
-        readonly maxAttempts: number;
-        readonly observedAt: number;
-    }
 }
 
 export class InboxQueueReader {
@@ -87,15 +59,10 @@ export class InboxQueueReader {
      */
     public static readonly NEW_CONTEXTS_PER_PASS = 8;
     public static readonly MAX_NEW_LANE_HELD_ROWS = 64;
-    public static readonly LANE_BUDGET_POLICIES: readonly InboxQueueReader.LaneBudgetPolicy[] = [
-        'drain',
-        'fixed-one',
-        'adaptive-retry',
-        'fixed-retry-two'
-    ];
+    /** The due retries one AppInbox pass claims, in one reservation beside the NEW lane's share. */
+    private static readonly RETRY_ROWS_PER_PASS = 2;
 
     private readonly reader: QueueMessageReader;
-    private readonly laneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
     private readonly newLaneConcurrency: number;
     private readonly newLaneHeldRows: number | undefined;
     private readonly flight:
@@ -112,14 +79,6 @@ export class InboxQueueReader {
     private externalWriteCount = 0;
     /** The dequeue clock that stamps each claim's selection. */
     public readonly nowEpochMs: () => number;
-    private readonly pressureRefreshLimiter: RateLimiter;
-    private pressureScope: string | undefined;
-    private pressureGeneration = 0;
-    private pressureCursor: ResourceInboxWorkPage.Cursor | null = null;
-    private pressureSample: InboxQueueReader.PressureSample | undefined;
-    private pressureRefresh: Promise<void> | undefined;
-
-    private static readonly PRESSURE_WINDOW_MS = 1_000;
 
     public readonly completionNotifications: ResourceInboxCompletionNotifications | undefined;
     public readonly inbox: QueueBoxResourceEntryRepository;
@@ -131,7 +90,6 @@ export class InboxQueueReader {
     ) {
         this.completionNotifications = dequeueOptions.completionNotifications;
         this.inbox = inbox;
-        this.laneBudgetPolicy = dequeueOptions.laneBudgetPolicy;
         this.newLaneConcurrency = requireNewLaneConcurrency(dequeueOptions.newLaneConcurrency);
         this.newLaneHeldRows = dequeueOptions.newLaneHeldRows === undefined
             ? undefined
@@ -151,11 +109,6 @@ export class InboxQueueReader {
                 releaseFailureClock: this.nowEpochMs,
                 retainSettlement: (settlement) => this.retainFlightSettlement(settlement)
             });
-        this.pressureRefreshLimiter = RateLimiter.initWithTs(
-            InboxQueueReader.PRESSURE_WINDOW_MS,
-            1,
-            this.nowEpochMs()
-        );
         this.reader = new QueueMessageReader(inbox, {
             enqueueType: InboxQueueReader.INBOX_ENQUEUE_TYPE,
             creationNow,
@@ -237,13 +190,6 @@ export class InboxQueueReader {
         workAdvertisement?: DequeueController.WorkAdvertisement
     ): Promise<number> {
         const isAppInbox = typesToDequeue.size === 1 && typesToDequeue.has(EnqueuedType.APP_INBOX);
-        const scope = isAppInbox ? `${EnqueuedType.APP_INBOX}:${resilience.retryPolicy.maxAttempts}` : undefined;
-        if (this.pressureScope !== scope) {
-            this.pressureScope = scope;
-            this.pressureGeneration += 1;
-            this.pressureSample = undefined;
-            this.pressureCursor = null;
-        }
         const standingFlight = isAppInbox ? this.flight : undefined;
         const settlementCountAtStart = this.flightSettlementCount;
         const externalWriteCountAtStart = this.externalWriteCount;
@@ -252,9 +198,7 @@ export class InboxQueueReader {
             resilience,
             // A budgeted AppInbox pass claims context heads; any other type set keeps draining in queue order.
             newLaneClaimOrder: isAppInbox ? 'oldest-per-context' : 'queue',
-            readLaneBudgets: isAppInbox
-                ? () => this.readLaneBudgets(resilience.retryPolicy.maxAttempts, workAdvertisement)
-                : undefined,
+            readLaneBudgets: isAppInbox ? () => this.readLaneBudgets() : undefined,
             workAdvertisement,
             standingFlight
         });
@@ -276,11 +220,8 @@ export class InboxQueueReader {
         }));
     }
 
-    private readLaneBudgets(
-        maxAttempts: number,
-        workAdvertisement: DequeueController.WorkAdvertisement | undefined
-    ): DequeueController.LaneBudgets {
-        const retryQuota = this.readRetryQuota(maxAttempts, workAdvertisement);
+    private readLaneBudgets(): DequeueController.LaneBudgets {
+        const retryRows = InboxQueueReader.RETRY_ROWS_PER_PASS;
         // Only NEW heads are of distinct contexts; every other lane may hold two rows of one context, so they run in turn.
         // A standing flight computes every lane's rows under its own bounds, and a top-up may fill all of its places.
         return {
@@ -291,80 +232,10 @@ export class InboxQueueReader {
                 maxConcurrentComputes: this.newLaneConcurrency
             },
             FAIRNESS: { maxToReserve: 1, maxNumToDequeue: 1, maxConcurrentComputes: 1 },
-            // One claim for the whole quota: a short claim ends the lane without a second, empty reservation.
-            RETRY: { maxToReserve: retryQuota, maxNumToDequeue: retryQuota, maxConcurrentComputes: 1 },
+            // One claim for every retry row: a short claim ends the lane without a second, empty reservation.
+            RETRY: { maxToReserve: retryRows, maxNumToDequeue: retryRows, maxConcurrentComputes: 1 },
             TIMEOUT: { maxToReserve: 1, maxNumToDequeue: 1, maxConcurrentComputes: 1 }
         };
-    }
-
-    private readRetryQuota(
-        maxAttempts: number,
-        workAdvertisement: DequeueController.WorkAdvertisement | undefined
-    ): number {
-        switch (this.laneBudgetPolicy) {
-            case 'drain':
-                return DequeueController.DEFAULT_MAX_NUM_TO_DEQUEUE;
-            case 'fixed-one':
-                return 1;
-            case 'fixed-retry-two':
-                return 2;
-            case 'adaptive-retry':
-                return this.readAdaptiveRetryQuota(maxAttempts, workAdvertisement);
-        }
-    }
-
-    /** A probe that advertised no due retry makes a pressure page read pointless: it would observe none. */
-    private readAdaptiveRetryQuota(
-        maxAttempts: number,
-        workAdvertisement: DequeueController.WorkAdvertisement | undefined
-    ): number {
-        const now = this.nowEpochMs();
-        const sample = this.pressureSample;
-        const retryQuota = sample && now >= sample.observedAt &&
-                now - sample.observedAt < InboxQueueReader.PRESSURE_WINDOW_MS
-            ? sample.retryQuota
-            : 1;
-        const retryAdvertised = workAdvertisement === undefined || workAdvertisement.RETRY;
-        if (retryAdvertised && !this.pressureRefresh && this.pressureRefreshLimiter.allowAt(now)) {
-            this.pressureRefresh = this.refreshRetryPressure({
-                generation: this.pressureGeneration,
-                maxAttempts,
-                observedAt: now
-            })
-                .finally(() => {
-                    this.pressureRefresh = undefined;
-                });
-        }
-        return retryQuota;
-    }
-
-    private async refreshRetryPressure(observation: InboxQueueReader.PressureObservation): Promise<void> {
-        const { generation, maxAttempts, observedAt } = observation;
-        try {
-            const page = await this.inbox.readWorkPage({
-                typeId: EnqueuedType.APP_INBOX,
-                status: EntityStatus.RETRY,
-                maxToRead: 2,
-                cursor: this.pressureCursor
-            });
-            const now = Temporal.Instant.fromEpochMilliseconds(observedAt);
-            const eligible = page.entries.filter((entry) =>
-                entry.typeId === EnqueuedType.APP_INBOX && entry.status === EntityStatus.RETRY &&
-                !isExpiredResourceEntry(entry, now) && entry.dequeueAudit.attempts < maxAttempts &&
-                entry.dequeueAudit.nextTs !== undefined && Temporal.Instant.compare(entry.dequeueAudit.nextTs, now) <= 0
-            );
-            if (generation === this.pressureGeneration) {
-                this.pressureCursor = page.nextCursor;
-                // A page is a lower bound, never proof that the lane is empty.
-                this.pressureSample = { observedAt, retryQuota: eligible.length >= 2 ? 2 : 1 };
-            }
-        }
-        catch (error) {
-            if (generation === this.pressureGeneration) {
-                this.pressureSample = undefined;
-            }
-            console.warn('AppInbox retry pressure observation failed', error);
-        }
     }
 }
 

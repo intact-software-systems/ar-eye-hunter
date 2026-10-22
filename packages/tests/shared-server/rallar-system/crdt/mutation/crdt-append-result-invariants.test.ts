@@ -261,7 +261,7 @@ function appCrdt(): AppCrdtInboxService {
     };
     return new AppCrdtInboxService(
         {
-            inboxQueueReader: new InboxQueueReader(new InMemoryQueueBox(), { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 }),
+            inboxQueueReader: new InboxQueueReader(new InMemoryQueueBox(), { newLaneConcurrency: 1 }),
             resourceInboxRepository: createPSqlResourceInboxRepository(database, () => new Date()).entries,
             resourceInboxResultsRepository: new ResourceInboxResultsRepository(database),
             database,

@@ -744,6 +744,21 @@ Deno.test('configuration decoder rejects a queue resilience source naming the re
     );
 });
 
+Deno.test('configuration decoder rejects an AppInbox source naming a lane budget policy: the RETRY quota is not configurable', async () => {
+    const input = validDecodeApiV1ConfigurationInput();
+    input.defaultsSource = await readJsonResource('defaults-config.json');
+    assert.equal(Object.hasOwn(decodeApiV1Configuration(input).appInbox, 'laneBudgetPolicy'), false);
+    input.profileSource = { ...validConfigurationProfileSource(), appInbox: { laneBudgetPolicy: 'fixed-retry-two' } };
+
+    const error = captureConfigurationError(() => decodeApiV1Configuration(input));
+
+    assert.equal(
+        error.issues.some((issue) => issue.source === 'profile' && issue.code === 'unknown-property' && issue.path === 'appInbox.laneBudgetPolicy'),
+        true,
+        JSON.stringify(error.issues)
+    );
+});
+
 Deno.test('configuration decoder requires the AppInbox flight hold and bounds it by the lane concurrency and the largest flight', () => {
     assert.equal(decodeApiV1Configuration(validDecodeApiV1ConfigurationInput()).appInbox.newLaneHeldRows, 16);
     const unnamed = validDecodeApiV1ConfigurationInput();

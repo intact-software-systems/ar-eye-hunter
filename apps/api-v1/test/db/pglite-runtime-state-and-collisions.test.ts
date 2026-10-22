@@ -627,7 +627,6 @@ Deno.test(
                 }
             }
             const inboxReader = new InboxQueueReader(new RetryObservedQueueBox(resourceInbox, Temporal.Now.instant), {
-                laneBudgetPolicy: 'fixed-retry-two',
                 newLaneConcurrency: 1
             });
             const authority: IssuedAuthSession = {

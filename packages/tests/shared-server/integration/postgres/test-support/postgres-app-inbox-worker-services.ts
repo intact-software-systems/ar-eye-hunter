@@ -195,7 +195,6 @@ function createPostgresAppInboxWorkerInbox(
     input: Pick<CreatePostgresAppInboxWorkerServicesInput, 'newLaneConcurrency' | 'newLaneHeldRows' | 'flightEntryListener' | 'trace'>
 ): InboxQueueReader {
     return new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
-        laneBudgetPolicy: 'adaptive-retry',
         newLaneConcurrency: input.newLaneConcurrency,
         newLaneHeldRows: input.newLaneHeldRows,
         flightEntryListener: input.flightEntryListener,

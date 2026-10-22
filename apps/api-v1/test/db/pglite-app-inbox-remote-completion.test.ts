@@ -36,6 +36,13 @@ const REQUEST_ID = 'remote-completion-request-0001';
 /** Well below the waiter's one-second safety tick: only a relayed wake returns this early. */
 const REMOTE_WAKE_ALLOWANCE_MS = 300;
 
+interface CreateServerRuntimeInput {
+    readonly sql: PGliteSql;
+    readonly serviceId: string;
+    readonly completionNotifications: ResourceInboxCompletionNotifications;
+    readonly type: AppInboxType;
+}
+
 interface ServerRuntime {
     readonly client: ReturnType<typeof createAppInboxClientRuntime>;
     readonly engine: InboxOutboxEngine;
@@ -53,7 +60,7 @@ Deno.test('PGlite AppInbox reservation winner on one server returns promptly whe
     await verifyRemoteCompletion(AppInboxType.CLIENT_AUTHORISED_WS_CONNECT, (client, received) => {
         const command = { ...received, topicId: CLIENT_STATE_APP_INBOX_TOPIC };
         return client.commandClient.reserveMaterializedAndWaitForResult(
-            { received: command, placeholder: command, materialize: async () => command },
+            { received: command, placeholder: command, materialize: () => Promise.resolve(command) },
             (value) => value
         );
     });
@@ -69,8 +76,8 @@ async function verifyRemoteCompletion(
         const handlerNotices = createCompletionNotices(notification, 'server-b');
         const waiterNotifications = createRelayedNotifications(waiterNotices);
         const handlerNotifications = createRelayedNotifications(handlerNotices);
-        const waiterServer = createServerRuntime(sql, 'server-a', waiterNotifications, type);
-        const handlerServer = createServerRuntime(sql, 'server-b', handlerNotifications, type);
+        const waiterServer = createServerRuntime({ sql, serviceId: 'server-a', completionNotifications: waiterNotifications, type });
+        const handlerServer = createServerRuntime({ sql, serviceId: 'server-b', completionNotifications: handlerNotifications, type });
         await installAppInboxCompletionNoticeSubscriber({ ...waiterNotices, notifications: waiterNotifications });
         await installAppInboxCompletionNoticeSubscriber({ ...handlerNotices, notifications: handlerNotifications });
 
@@ -128,15 +135,9 @@ function createMemoryNotificationPort(): ApiV1DatabaseNotificationPort {
     };
 }
 
-function createServerRuntime(
-    sql: PGliteSql,
-    serviceId: string,
-    completionNotifications: ResourceInboxCompletionNotifications,
-    type: AppInboxType
-): ServerRuntime {
+function createServerRuntime({ sql, serviceId, completionNotifications, type }: CreateServerRuntimeInput): ServerRuntime {
     const queueInbox = createPSqlResourceInboxRepository(sql, () => new Date());
     const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(queueInbox, Temporal.Now.instant), {
-        laneBudgetPolicy: 'fixed-retry-two',
         newLaneConcurrency: 1,
         completionNotifications
     });

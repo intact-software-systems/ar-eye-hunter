@@ -67,7 +67,6 @@ async function createConnectWriteFixture(sql: PGliteSql): Promise<ConnectWriteFi
     const runtime = new PSqlRuntimeStateRepository(sql);
     const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date());
     const reader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
-        laneBudgetPolicy: 'fixed-retry-two',
         newLaneConcurrency: 1
     });
     const sessions = new AuthSessionRepository(runtime);

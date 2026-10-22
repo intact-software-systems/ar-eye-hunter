@@ -177,7 +177,7 @@ const CONFIGURATION_KEYS_BY_PATH: Readonly<Record<string, ReadonlySet<string>>> 
         'reconnectBatchWindowMs',
         'consumerRetentionMs'
     ]),
-    appInbox: new Set(['phaseTiming', 'laneBudgetPolicy', 'newLaneConcurrency', 'newLaneHeldRows', 'completionWait']),
+    appInbox: new Set(['phaseTiming', 'newLaneConcurrency', 'newLaneHeldRows', 'completionWait']),
     'appInbox.completionWait': new Set([
         'maxElapsedMs',
         'retryIntervalMs',
@@ -231,7 +231,6 @@ const ENVIRONMENT_NAME_BY_PATH: Readonly<Record<string, string>> = {
     'topology.replay.mode': 'RALLAR_RTC_TOPOLOGY_REPLAY',
     'topology.replay.queueWorkers': 'RALLAR_API_QUEUE_WORKERS',
     'appInbox.phaseTiming': 'RALLAR_APP_INBOX_PHASE_TIMING',
-    'appInbox.laneBudgetPolicy': 'RALLAR_APP_INBOX_LANE_BUDGET_POLICY',
     'appInbox.newLaneConcurrency': 'RALLAR_APP_INBOX_NEW_LANE_CONCURRENCY',
     'appInbox.newLaneHeldRows': 'RALLAR_APP_INBOX_NEW_LANE_HELD_ROWS',
     'appInbox.completionWait.maxElapsedMs': 'RALLAR_APP_INBOX_WAIT_MAX_ELAPSED_MS',

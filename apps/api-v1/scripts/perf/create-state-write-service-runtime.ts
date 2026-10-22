@@ -162,7 +162,6 @@ function createStateWriteInboxRuntime(
     const resourceInbox = createPSqlResourceInboxRepository(database, () => new Date(nowEpochMs()));
     const queue = new PSqlQueueBox(resourceInbox, Temporal.Now.instant);
     const ordinaryOptions: InboxQueueReader.Options = {
-        laneBudgetPolicy: 'fixed-retry-two',
         newLaneConcurrency: 1,
         onAttemptReleaseTelemetry: (event) => context.attemptReleases.push(event)
     };

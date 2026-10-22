@@ -146,7 +146,6 @@ async function createRecoveryLane(schemaPrefix: string): Promise<RecoveryLane> {
     const gates = new Map<string, () => void>();
     const settlements: Promise<void>[] = [];
     const reader = new InboxQueueReader(queue, {
-        laneBudgetPolicy: 'fixed-retry-two',
         newLaneConcurrency: K,
         newLaneHeldRows: H,
         flightEntryListener: (settlement) => settlements.push(settlement)
@@ -239,7 +238,6 @@ function createLaneReader(
         settled.resolve();
     };
     const reader = new InboxQueueReader(input.queue, {
-        laneBudgetPolicy: 'fixed-retry-two',
         newLaneConcurrency: K,
         newLaneHeldRows: input.newLaneHeldRows,
         flightEntryListener: (settlement) => {

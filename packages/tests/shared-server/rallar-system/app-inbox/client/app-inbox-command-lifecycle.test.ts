@@ -61,7 +61,7 @@ describe('AppInbox command lifecycle', () => {
         const results = new TestResourceInboxResults();
         const service = new TestAppInboxRuntime(
             {
-                inboxQueueReader: new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 }),
+                inboxQueueReader: new InboxQueueReader(queue, { newLaneConcurrency: 1 }),
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: results,
                 database: createAppInboxTestDatabase(queue, results)
@@ -84,7 +84,7 @@ describe('AppInbox command lifecycle', () => {
 
     it('wakes only the strict reservation winner and never creates a second queue identity', async () => {
         const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+        const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
         const results = new TestResourceInboxResults();
         let wakeRequests = 0;
         const wakeOwningQueue = () => {
@@ -158,7 +158,7 @@ describe('AppInbox command lifecycle', () => {
 
     it('decodes a completed persisted result exactly once at the AppInbox boundary', async () => {
         const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+        const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
         const results = new TestResourceInboxResults();
         const service = new TestAppInboxRuntime(
             {
@@ -213,7 +213,7 @@ describe('AppInbox command lifecycle', () => {
 
     it('preserves supplied attempt ages without sampling another clock', async () => {
         const queue = new TestResourceInbox();
-        const reader = new CapturingInboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+        const reader = new CapturingInboxQueueReader(queue, { newLaneConcurrency: 1 });
         const results = new TestResourceInboxResults();
         const businessNowEpochMs = () => 9_000;
         const timing: RallarTimingEvent[] = [];
@@ -288,7 +288,7 @@ describe('AppInbox command lifecycle', () => {
 
     it('uses exact stored JSON wire identity and rejects unsafe accessors', async () => {
         const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+        const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
         const results = new TestResourceInboxResults();
         const handledPayloads: JsonWireValue[] = [];
         const service = new TestAppInboxRuntime(
@@ -410,7 +410,7 @@ describe('AppInbox command lifecycle', () => {
 
     it('preserves an own __proto__ key through write, replay, and conflict', async () => {
         const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+        const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
         const results = new TestResourceInboxResults();
         const handledPayloads: ProtoPayload[] = [];
         const service = new TestAppInboxRuntime(
@@ -495,7 +495,7 @@ describe('AppInbox command lifecycle', () => {
 
     it('rejects unsafe first-request JSON wire values before leaving any queue row', async () => {
         const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+        const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
         const results = new TestResourceInboxResults();
         let handled = false;
         const service = new TestAppInboxRuntime(
@@ -542,7 +542,7 @@ describe('AppInbox command lifecycle', () => {
 
     it('rejects changed semantics while replaying reordered equal content', async () => {
         const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+        const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
         const results = new TestResourceInboxResults();
         const handledPayloads: JsonWireObject[] = [];
         const service = new TestAppInboxRuntime(
@@ -621,7 +621,7 @@ describe('AppInbox command lifecycle', () => {
 
     it('stores client idempotency conflict as terminal without queue retry', async () => {
         const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+        const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
         const results = new TestResourceInboxResults();
         const service = new TestAppInboxRuntime(
             {
@@ -691,7 +691,7 @@ describe('AppInbox command lifecycle', () => {
         ]
     ])('stores %s collision as terminal without queue retry', async (_label, error, code) => {
         const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+        const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
         const results = new TestResourceInboxResults();
         const service = new TestAppInboxRuntime(
             {

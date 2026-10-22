@@ -1,6 +1,5 @@
 import type { LoginClientData } from '@shared-server/rallar-system/auth/login/authenticate-auth-user.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
-import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 export interface ApiV1ConfigurationProfile {
     readonly name: 'dev' | 'prod' | 'prod-hardened' | 'prod-in-memory';
@@ -189,7 +188,6 @@ export interface ApiV1AppInboxCompletionWaitConfiguration {
 
 export interface ApiV1AppInboxConfiguration {
     readonly phaseTiming: boolean;
-    readonly laneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
     /** Distinct-context heads one NEW round claims and runs together (1 to `InboxQueueReader.NEW_CONTEXTS_PER_PASS`). */
     readonly newLaneConcurrency: number;
     /**

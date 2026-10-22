@@ -22,7 +22,7 @@ describe('InboxQueueReader', () => {
     it('captures the enqueue time to the millisecond separately from admission time and retains it on replay', async () => {
         const queue = new InMemoryQueueBox();
         let createdAt = Temporal.Instant.from('2026-10-14T01:59:59.123456789+02:00');
-        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'adaptive-retry', newLaneConcurrency: 1, nowEpochMs: () => 123 }, () => createdAt);
+        const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1, nowEpochMs: () => 123 }, () => createdAt);
         const message = createAppInboxMessage('group-state.create.v1');
         const first = await reader.enqueueIfAbsent(message);
 
@@ -40,7 +40,7 @@ describe('InboxQueueReader', () => {
 
     it('dispatches app inbox messages to the registered payload type callback', async () => {
         const queue = new InMemoryQueueBox();
-        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+        const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
         const dispatched: ALMessage[] = [];
         const onMessage: OnMessageCallback['onMessage'] = async (dispatchedMessage) => {
             dispatched.push(dispatchedMessage);
@@ -57,7 +57,7 @@ describe('InboxQueueReader', () => {
 
     it.each(['invalid-version', 'invalid-json'])('fails a persisted %s message without retrying or delivering it', async (corruption) => {
         const queue = new InMemoryQueueBox();
-        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+        const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
         const delivered: ALMessage[] = [];
         reader.onInboxMessageDo('group-state.create.v1', {
             onMessage: async (message) => {
@@ -89,7 +89,7 @@ describe('InboxQueueReader', () => {
 
     it('keeps the queue entry retryable when no payload type callback is registered', async () => {
         const queue = new InMemoryQueueBox();
-        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+        const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
         const enqueued = await reader.enqueueIfAbsent(createAppInboxMessage('group-state.create.v1'));

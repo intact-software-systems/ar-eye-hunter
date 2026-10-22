@@ -122,7 +122,6 @@
   },
   "appInbox": {
     "phaseTiming": false,
-    "laneBudgetPolicy": "fixed-retry-two",
     "newLaneConcurrency": 4,
     "newLaneHeldRows": 16,
     "completionWait": {

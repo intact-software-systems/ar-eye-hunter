@@ -63,7 +63,6 @@ function createRetryMutationScenario(sql: PGliteSql, now: number): RetryMutation
     });
     const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(now));
     const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
-        laneBudgetPolicy: 'fixed-retry-two',
         newLaneConcurrency: 1
     });
     return {

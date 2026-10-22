@@ -237,16 +237,15 @@ describe('the AppInbox NEW lane with a standing flight', () => {
     it('requires a flight entry listener for a standing flight, so no settlement goes unjoined', () => {
         const queue = new InMemoryQueueBox();
 
-        expect(() => new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 4, newLaneHeldRows: 4 }))
+        expect(() => new InboxQueueReader(queue, { newLaneConcurrency: 4, newLaneHeldRows: 4 }))
             .toThrow(TypeError);
-        expect(() => new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 4 })).not.toThrow();
+        expect(() => new InboxQueueReader(queue, { newLaneConcurrency: 4 })).not.toThrow();
     });
 
     it('rejects a held-row bound below the lane\'s concurrency or above the largest flight', () => {
         const queue = new InMemoryQueueBox();
         const create = (newLaneHeldRows: number) =>
             new InboxQueueReader(queue, {
-                laneBudgetPolicy: 'fixed-retry-two',
                 newLaneConcurrency: 4,
                 newLaneHeldRows,
                 flightEntryListener: () => undefined
@@ -268,7 +267,6 @@ function createStandingFlightReader(
         : new ClaimRecordingQueueBox();
     const settlements: Promise<void>[] = [];
     const reader = new InboxQueueReader(queue, {
-        laneBudgetPolicy: 'fixed-retry-two',
         newLaneConcurrency: input.newLaneConcurrency,
         newLaneHeldRows: input.newLaneHeldRows,
         flightEntryListener: (settlement) => settlements.push(settlement),

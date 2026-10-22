@@ -488,7 +488,6 @@ function decodeAppInbox(
     );
     return {
         phaseTiming: decoder.boolean('appInbox.phaseTiming'),
-        laneBudgetPolicy: decoder.enumeration('appInbox.laneBudgetPolicy', InboxQueueReader.LANE_BUDGET_POLICIES),
         newLaneConcurrency,
         newLaneHeldRows: decodeAppInboxNewLaneHeldRows(decoder, newLaneConcurrency),
         completionWait: {

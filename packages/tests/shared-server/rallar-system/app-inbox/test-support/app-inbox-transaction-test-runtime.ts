@@ -278,7 +278,6 @@ export function createRegisteredHandlerHarness(
     const queue = new RegisteredHandlerInbox(new Map(), now);
     const results = new RegisteredHandlerResults(options.failResultWriteAfter);
     const reader = new InboxQueueReader(queue, {
-        laneBudgetPolicy: 'adaptive-retry',
         newLaneConcurrency: 1,
         nowEpochMs: () => Number(now().epochMilliseconds)
     });
@@ -587,7 +586,7 @@ export function createAtomicHarness(
     });
 
     const queue = new RegisteredHandlerInbox();
-    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+    const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
     const results = new RegisteredHandlerResults();
     const service = new AtomicAppInboxService(
         {

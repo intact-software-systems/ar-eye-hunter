@@ -127,7 +127,6 @@ describe('the AppInbox NEW lane with concurrent context heads', () => {
         const queue = new InMemoryQueueBox();
         const keyByRow = new Map([['row-0', 'scope-a:group-1'], ['row-1', 'scope-a'], ['row-2', 'scope-a:group-2'], ['row-3', 'scope-b']]);
         const reader = new InboxQueueReader(queue, {
-            laneBudgetPolicy: 'fixed-retry-two',
             newLaneConcurrency: K,
             toComputeExclusionKey: (key) => keyByRow.get(key.resourceId)
         });
@@ -269,7 +268,6 @@ describe('the AppInbox NEW lane with concurrent context heads', () => {
         const queue = new InMemoryQueueBox();
         const sharedGroupRows = new Set(Array.from({ length: 8 }, (_value, index) => `row-${2 * index}`));
         const reader = new InboxQueueReader(queue, {
-            laneBudgetPolicy: 'fixed-retry-two',
             newLaneConcurrency: K,
             toComputeExclusionKey: (key) => sharedGroupRows.has(key.resourceId) ? 'group-shared' : `group-${key.resourceId}`
         });
@@ -309,7 +307,7 @@ describe('the AppInbox NEW lane with concurrent context heads', () => {
 });
 
 function createReader(queue: QueueBoxResourceEntryRepository): InboxQueueReader {
-    return new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: K });
+    return new InboxQueueReader(queue, { newLaneConcurrency: K });
 }
 
 function contexts(count: number): string[] {
