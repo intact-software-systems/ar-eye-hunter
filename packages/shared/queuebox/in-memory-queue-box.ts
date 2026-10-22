@@ -27,6 +27,7 @@ import {
     toResourceInboxFinalizationReservationOptions,
     toResourceInboxReservationOptions,
     toResourceInboxWorkAdvertisementOptions,
+    type QueueBoxWrittenIfAbsent,
     type ResourceInboxReservationObservationRequest,
     type ResourceInboxReservationObservationResult,
     type ResourceInboxReservationRequest,
@@ -209,10 +210,14 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async enqueueIfAbsent(resourceEntry: ResourceEntry): Promise<ResourceEntry> {
+        return (await this.writeIfAbsent(resourceEntry)).entry;
+    }
+
+    async writeIfAbsent(resourceEntry: ResourceEntry): Promise<QueueBoxWrittenIfAbsent> {
         if (this.writeIfAllObserved([{ expected: undefined, entry: resourceEntry }])) {
-            return toResourceEntrySnapshot(resourceEntry);
+            return { entry: toResourceEntrySnapshot(resourceEntry), created: true };
         }
-        return toResourceEntrySnapshot(this.data.get(toKeyAsString(resourceEntry.key))!);
+        return { entry: toResourceEntrySnapshot(this.data.get(toKeyAsString(resourceEntry.key))!), created: false };
     }
 
     /** Standalone guarded writes publish synchronously after the complete queue/index batch. */

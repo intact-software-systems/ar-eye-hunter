@@ -4,7 +4,11 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { DequeueController } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import { DequeueLaneFlight } from '@shared/queuebox/dequeue/dequeue-lane-flight.ts';
-import type { QueueBoxResourceEntryRepository, ResourceInboxWorkPage } from '@shared/queuebox/queue-box-types.ts';
+import type {
+    QueueBoxResourceEntryRepository,
+    QueueBoxWrittenIfAbsent,
+    ResourceInboxWorkPage
+} from '@shared/queuebox/queue-box-types.ts';
 import type { DequeueResourceEntryOptions } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import type { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
@@ -219,7 +223,11 @@ export class InboxQueueReader {
     }
 
     async enqueueIfAbsent(message: ALMessage): Promise<ResourceEntry> {
-        return await this.reader.enqueueIfAbsent(message);
+        return (await this.writeIfAbsent(message)).entry;
+    }
+
+    async writeIfAbsent(message: ALMessage): Promise<QueueBoxWrittenIfAbsent> {
+        return await this.reader.writeIfAbsent(message);
     }
 
     /** Resolves with the number of entries this invocation claimed; a preceding probe limits the lanes it offers. */

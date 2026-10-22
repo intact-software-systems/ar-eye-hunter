@@ -426,10 +426,10 @@ function requireTopologyTransactionWrite(
 /**
  * Every decision that keeps the stored layout commits one already validated
  * transaction write. Only the unchanged decision refreshes the input
- * fingerprint. The frozen path must NOT write it, because the stale
- * fingerprint is decision 11's latched signal that the stored layout trails
- * the authority. The held path writes none because a hold requires the
- * stored fingerprint to equal the authority's already.
+ * fingerprint. The frozen path must NOT write it: the stale fingerprint is
+ * the latched signal that the stored layout trails the authority. The held
+ * path writes none because nothing changed: a hold requires the stored
+ * fingerprint to equal the authority's already.
  */
 interface WriteSkippedTopologyWorkInput {
     readonly options: RtcTopologyWorkHandlerOptions;

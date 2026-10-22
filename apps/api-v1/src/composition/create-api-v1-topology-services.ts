@@ -34,7 +34,7 @@ import {
 } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import {
     RallarRtcTopologyService,
-    type RallarRtcTopologyServiceOptions
+    type RallarRtcTopologyServiceConfig
 } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import type { RuntimeStateRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
@@ -60,14 +60,14 @@ export interface CreateApiV1TopologyServicesInput {
     readonly topologyOutboxWritten: () => void;
     readonly topologyReplayMetrics: ApiV1TopologyReplayMetrics;
     readonly adminClientIds: readonly string[];
-    readonly rtcTopologyOptions: RallarRtcTopologyServiceOptions;
+    readonly rtcTopologyOptions: RallarRtcTopologyServiceConfig;
     readonly rttRefinementGateConfig: RtcRttRefinementGateConfig;
     readonly nowEpochMs: () => number;
 }
 
 export interface ApiV1TopologyServices {
     readonly rtcTopologyService: RallarRtcTopologyService;
-    readonly rtcTopologyOptions: RallarRtcTopologyServiceOptions;
+    readonly rtcTopologyOptions: RallarRtcTopologyServiceConfig;
     readonly topologyQuery: GroupTopologyConfigQueryService;
     readonly topologyPlanning: GroupTopologyPlanningService;
     readonly readPlannedLayoutFingerprint: (ref: GroupRef) => Promise<string | null>;

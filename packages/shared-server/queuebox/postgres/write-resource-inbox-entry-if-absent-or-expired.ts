@@ -1,24 +1,11 @@
+import { PSqlFragment } from '../../postgres/p-sql-fragment.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
-import type { ResourceInboxEntryInsertValues } from './resource-inbox-entry-insert-values.ts';
+import {
+    toResourceInboxEntryInsert,
+    toResourceInboxEntryInsertRow,
+    type ResourceInboxEntryInsertValues
+} from './resource-inbox-entry-insert-values.ts';
 import type { ResourceInboxRow } from './resource-inbox-row-codec.ts';
-
-/** One row of the multi-row insert, named as the statement's recordset columns. */
-interface ResourceInboxEntryInsertRow {
-    readonly resourceId: string;
-    readonly topicId: string;
-    readonly resource: string;
-    readonly typeId: string;
-    readonly status: string;
-    readonly contextId: string;
-    readonly systemDate: string;
-    readonly createdBy: string;
-    readonly createdAt: string;
-    readonly expiresAt: string;
-    readonly startedAt: string | null;
-    readonly finishedAt: string | null;
-    readonly nextAt: string | null;
-    readonly attempts: number;
-}
 
 export async function writeResourceInboxEntryIfAbsentOrExpired(
     sql: PSqlSql,
@@ -35,21 +22,7 @@ export async function writeResourceInboxEntriesIfAbsentOrExpired(
     sql: PSqlSql,
     values: readonly ResourceInboxEntryInsertValues[]
 ): Promise<ResourceInboxRow[]> {
-    return await sql<ResourceInboxRow[]>`
-        insert into resource_inbox (
-            ri_resource_id, ri_topic_id, ri_resource, ri_type_id, ri_status,
-            fk_ext_bank_id, system_date, created_by, created_ts, expire_ts,
-            start_ts, end_ts, next_ts, ri_attempts
-        )
-        select inserted."resourceId", inserted."topicId", inserted.resource, inserted."typeId", inserted.status,
-               inserted."contextId", inserted."systemDate"::date, inserted."createdBy",
-               inserted."createdAt"::timestamp(6), inserted."expiresAt"::timestamp(6),
-               inserted."startedAt"::timestamp(6), inserted."finishedAt"::timestamp(6),
-               inserted."nextAt"::timestamp(6), inserted.attempts
-        from jsonb_to_recordset(${values.map(toInsertRow)}::jsonb)
-            as inserted("resourceId" text, "topicId" text, resource text, "typeId" text, status text,
-                        "contextId" text, "systemDate" text, "createdBy" text, "createdAt" text, "expiresAt" text,
-                        "startedAt" text, "finishedAt" text, "nextAt" text, attempts bigint)
+    const statement = PSqlFragment.of`${toResourceInboxEntryInsert(values.map(toResourceInboxEntryInsertRow))}
         on conflict (fk_ext_bank_id, ri_resource_id, ri_topic_id)
             do update set ri_resource = excluded.ri_resource,
                           ri_type_id = excluded.ri_type_id,
@@ -65,24 +38,5 @@ export async function writeResourceInboxEntriesIfAbsentOrExpired(
         where resource_inbox.expire_ts <= (now() at time zone 'UTC')
         returning *
     `;
-}
-
-function toInsertRow(values: ResourceInboxEntryInsertValues): ResourceInboxEntryInsertRow {
-    const { entry } = values;
-    return {
-        resourceId: entry.key.resourceId,
-        topicId: entry.key.topicId,
-        resource: entry.resource,
-        typeId: entry.typeId,
-        status: entry.status,
-        contextId: entry.key.contextId,
-        systemDate: values.systemDate,
-        createdBy: entry.audit.createdBy,
-        createdAt: values.createdTimestamp,
-        expiresAt: values.expiryTimestamp,
-        startedAt: values.startTimestamp,
-        finishedAt: values.endTimestamp,
-        nextAt: values.nextTimestamp,
-        attempts: values.attempts
-    };
+    return await sql<ResourceInboxRow[]>(...statement.toStatement());
 }

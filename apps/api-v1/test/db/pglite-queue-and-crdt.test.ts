@@ -580,7 +580,7 @@ Deno.test(
                 nowEpochMs
             );
             const runtimeRepository = new PSqlRuntimeStateRepository(sql);
-            const topologyService = new RallarRtcTopologyService({ now: () => nowEpochMs });
+            const topologyService = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => nowEpochMs });
             const topologyManagement = createGroupTopologyRuntimeOwners({
                 findGroupSnapshotByRef: () => currentSnapshot,
                 readCurrentGroupSnapshot: async () => currentSnapshot,

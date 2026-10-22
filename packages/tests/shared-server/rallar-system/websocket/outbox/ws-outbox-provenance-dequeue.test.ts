@@ -85,7 +85,7 @@ describe('producer provenance through WS dequeue', () => {
             await fixture.engine.executeOnce();
             await expect.poll(async () => (await fixture.stores.workQueue.getItem(entry.key))?.status)
                 .not.toBe(EntityStatus.RESERVED);
-            await expect.poll(async () => fixture.service.readCapturedPolicy(message, entry)).toMatchObject({
+            await expect.poll(async () => fixture.service.readCapturedPolicy(message, entry, undefined)).toMatchObject({
                 admittedAudience: ['peer'],
                 recipientScope: SCOPE,
                 principalTargetId: 'principal'
@@ -140,7 +140,7 @@ describe('producer provenance through WS dequeue', () => {
             await fixture.engine.executeOnce();
             await expect.poll(async () => (await fixture.stores.workQueue.getItem(entry.key))?.status)
                 .not.toBe(EntityStatus.RESERVED);
-            await expect.poll(async () => fixture.service.readCapturedPolicy(message, entry)).toMatchObject({
+            await expect.poll(async () => fixture.service.readCapturedPolicy(message, entry, undefined)).toMatchObject({
                 recipientScope: SCOPE
             });
             expect(fixture.native.sent).toHaveLength(recipient === 'same-scope' ? 1 : 0);
@@ -203,7 +203,7 @@ describe('producer provenance through WS dequeue', () => {
             expect(fixture.native.sent).toHaveLength(recipient === 'same-scope' ? 1 : 0);
             expect(replacement.sent).toEqual([]);
             expect(await fixture.repository.findEntry(WS_OUTBOX_PROVENANCE_NAMESPACE, fixture.key)).toBeUndefined();
-            expect(await fixture.service.readCapturedPolicy(fixture.message, fixture.entry)).toMatchObject({
+            expect(await fixture.service.readCapturedPolicy(fixture.message, fixture.entry, undefined)).toMatchObject({
                 admittedAudience: ['peer'],
                 recipientScope: SCOPE
             });
@@ -216,7 +216,7 @@ describe('producer provenance through WS dequeue', () => {
             fixture.engine.wakeAfterExternalWrite(new Set([EnqueuedType.WS_OUTBOX]));
             await fixture.engine.executeOnce();
             await expect.poll(async () => (await fixture.stores.workQueue.getItem(fixture.entry.key))?.status).toBe(EntityStatus.COMPLETED);
-            expect(await fixture.service.readCapturedPolicy(fixture.message, fixture.entry)).toMatchObject({
+            expect(await fixture.service.readCapturedPolicy(fixture.message, fixture.entry, undefined)).toMatchObject({
                 admittedAudience: ['peer'],
                 recipientScope: SCOPE
             });

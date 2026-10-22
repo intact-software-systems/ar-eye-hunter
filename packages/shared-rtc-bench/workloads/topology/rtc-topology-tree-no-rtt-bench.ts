@@ -54,6 +54,7 @@ export function runRtcTopologyTree(sessions: number, degreeLimit: number): RtcTo
     const sessionIds = createSessionIds(sessions);
     const group = createDeterministicRtcTopologyGroupSnapshot('room-1', sessionIds);
     const service = new RallarRtcTopologyService({
+        rttReplanMinimumLayoutAgeMs: 15_000,
         degreeLimit,
         meshMinSize: sessions + 1,
         now: () => 100

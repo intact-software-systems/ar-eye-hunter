@@ -34,6 +34,20 @@ describe('safe AppInbox poll timing projection', () => {
         expect(toSafeApiTimingRecord(JSON.stringify({ ...poll, details: { ...poll.details, queueObservation } }))).toEqual(poll);
     });
 
+    it.each(['first', 'completion', 'tick', 'delay', 'closed'])('retains the closed %s trigger and the row each poll read', (trigger) => {
+        for (const readRow of ['result', 'status']) {
+            const details = { ...poll.details, queueObservation: 'RESERVED', trigger, readRow };
+            expect(toSafeApiTimingRecord(JSON.stringify({ ...poll, details }))).toEqual({ ...poll, details });
+        }
+    });
+
+    it.each([['trigger', 'arbitrary-secret'], ['readRow', 'ri_resource'], ['trigger', 1], ['readRow', null]])(
+        'drops a non-allowlisted %s of %j',
+        (field, value) => {
+            expect(toSafeApiTimingRecord(JSON.stringify({ ...poll, details: { ...poll.details, [field]: value } }))).toEqual(poll);
+        }
+    );
+
     it('excludes payloads, credentials, errors and additional timestamps from sampled observations', () => {
         expect(toSafeApiTimingRecord(JSON.stringify({
             ...poll,

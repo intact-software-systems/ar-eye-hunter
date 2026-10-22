@@ -239,7 +239,7 @@ class PresenceConvergenceFixture {
         readLifecyclePolicy: async (ref) => await this.repository.readLifecyclePolicy(ref),
         configRepository: this.configs,
         topologySnapshotRepository: this.snapshots,
-        topologyService: new RallarRtcTopologyService({ now: () => this.now })
+        topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => this.now })
     }).planning;
     readonly handler = createRtcTopologyWorkHandler({
         nowEpochMs: () => this.now,

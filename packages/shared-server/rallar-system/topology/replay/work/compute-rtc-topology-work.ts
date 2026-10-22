@@ -28,8 +28,7 @@ import {
 import {
     resolveRttReplanPromotion,
     type HeldRttReplan,
-    type PromotedRttReplan,
-    type RttReplanPromotion
+    type PromotedRttReplan
 } from '../../planning/resolve-rtt-replan-promotion.ts';
 import {
     computeRtcTopologyWorkWrite,
@@ -213,9 +212,9 @@ function computeAcceptedRtcTopologyWork(
     if (unchanged !== null) {
         return Either.ofRight(unchanged);
     }
-    const rttReplanPromotion = computeRttReplanPromotion(input, inputFingerprint);
-    if (rttReplanPromotion?.decision === 'hold') {
-        return Either.ofRight(toHeldTopologyWork(input, rttReplanPromotion));
+    const rttReplan = computeRttReplan(input, inputFingerprint);
+    if (rttReplan?.decision === 'held-young-layout') {
+        return Either.ofRight(rttReplan);
     }
     return computeAcceptedTopologyMutation({
         facts: input.facts,
@@ -225,7 +224,7 @@ function computeAcceptedRtcTopologyWork(
         inputFingerprint,
         promotionRead: input.read.promotion,
         publicationExpireAtTimestamp: input.publicationExpireAtTimestamp,
-        rttReplanPromotion
+        rttReplanPromotion: rttReplan
     });
 }
 
@@ -278,40 +277,46 @@ function computeUnchangedTopologyWork(
     };
 }
 
-/** Only an RTT refresh is judged by the layout's age; membership work always replans at once. */
-function computeRttReplanPromotion(
+/**
+ * Only an RTT refresh against an active stored layout is judged by that layout's age: a held one keeps it. Membership
+ * work always replans at once.
+ */
+function computeRttReplan(
     input: ComputeRtcTopologyWorkInput,
     inputFingerprint: string
-): RttReplanPromotion | null {
+): PromotedRttReplan | HeldRtcTopologyWork | null {
     const { authority, mutation, storedInputFingerprint } = input.read;
     if (input.facts.workEnvelope.data.kind !== 'rtt-refresh') {
         return null;
     }
-    return resolveRttReplanPromotion({
-        stored: mutation.snapshot?.value ?? null,
+    const stored = mutation.snapshot?.value;
+    if (stored?.state !== 'active') {
+        return { decision: 'promote', reason: 'no-active-layout' };
+    }
+    const promotion = resolveRttReplanPromotion({
+        stored,
         storedInputFingerprint,
         inputFingerprint,
         presenceRevision: authority.group.causalRevision.presenceRevision,
-        minimumLayoutAgeMs: authority.rttReplanMinimumLayoutAgeMs,
+        rttReplanMinimumLayoutAgeMs: authority.rttReplanMinimumLayoutAgeMs,
         nowEpochMs: authority.nowEpochMs
     });
+    return promotion.decision === 'hold' ? toHeldTopologyWork(input, promotion, stored) : promotion;
 }
 
 /** A hold is resolved only against an active stored layout, which stays and is what the criterion sees. */
 function toHeldTopologyWork(
     input: ComputeRtcTopologyWorkInput,
-    rttReplanPromotion: HeldRttReplan
+    rttReplanPromotion: HeldRttReplan,
+    stored: RallarOverlayTopologySnapshot
 ): HeldRtcTopologyWork {
-    const { authority, mutation, promotion: promotionRead } = input.read;
-    if (mutation.snapshot === null) {
-        throw new TypeError('A held RTT replan requires the stored layout it keeps');
-    }
+    const { authority, promotion: promotionRead } = input.read;
     return {
         decision: 'held-young-layout',
         work: input.facts.workEnvelope.data,
         group: authority.group,
         promotionRead,
-        criterionPetition: { authority, planned: mutation.snapshot.value },
+        criterionPetition: { authority, planned: stored },
         rttReplanPromotion
     };
 }

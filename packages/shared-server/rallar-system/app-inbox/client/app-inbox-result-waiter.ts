@@ -31,7 +31,6 @@ import {
 } from '../app-inbox-failure.ts';
 import type { NormalizedAppInboxOptions } from '../app-inbox-options.ts';
 import { toAppInboxTimingDetails } from '../handler/app-inbox-attempt-timing.ts';
-import type { AppInboxReservationClient } from './app-inbox-reservation-client.ts';
 
 type AppInboxQueueObservation =
     | 'missing'
@@ -106,6 +105,13 @@ interface AppInboxWaitPhase<Result> {
 export namespace AppInboxResultWaiter {
     export type ResultDecoder<Result> = (value: JsonWireValue) => Result;
 
+    /** The entry a wait reads, and whether its caller's reservation or write created it. */
+    export interface Wait {
+        readonly enqueue: AppInboxEnqueueInput;
+        readonly key: Key;
+        readonly winner: boolean;
+    }
+
     export interface StatusRepository {
         readStatusAndAttempts(key: Key): Promise<ResourceInboxStatusAndAttempts | undefined>;
     }
@@ -151,11 +157,11 @@ export class AppInboxResultWaiter {
     }
 
     /** Waits for the entry its key holds; a winner's reservation or write created that entry. */
-    async waitForReservedResult<Result>(
-        reservation: AppInboxReservationClient.MaterializedReservation,
+    async waitForResult<Result>(
+        wait: AppInboxResultWaiter.Wait,
         decodeResult: AppInboxResultWaiter.ResultDecoder<Result>
     ): Promise<Either<AppInboxFailure, Result>> {
-        const { enqueue, key, winner } = reservation;
+        const { enqueue, key, winner } = wait;
         return await this.waitSubscribed({ enqueue, key, decodeResult, winner });
     }
 

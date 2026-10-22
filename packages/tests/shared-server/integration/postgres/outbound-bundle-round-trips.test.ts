@@ -297,7 +297,7 @@ async function readStateRows(sql: PSqlSql, lane: WsDequeueLane): Promise<readonl
     });
 }
 
-/** The parent wrote an owner and a sent row per message and the sender version, each one insert at revision 0. */
+/** The bundle writes an owner and a sent row per message and the sender version, each one insert at revision 0. */
 function toExpectedStateRows(lane: WsDequeueLane, messages: readonly ALMessage[]): readonly StateRowSummary[] {
     return [
         ...messages.map((message) => ({
@@ -320,7 +320,7 @@ async function readSentRows(sql: PSqlSql, lane: WsDequeueLane): Promise<readonly
     return rows.map((row) => JSON.parse(row.store_value) as object);
 }
 
-/** What the parent stored for a sent message: its WS row as the reference, and the policy it was admitted under. */
+/** The stored sent row of a message: its WS row as the reference, and the policy it was admitted under. */
 function toExpectedSentRow(lane: WsDequeueLane, proved: readonly ProvedWsRow[], sent: object): object {
     const row = proved.find(({ message }) => JSON.stringify(sent).includes(message.id.msgId))!;
     return {
@@ -355,7 +355,7 @@ async function readQueueExpiries(sql: PSqlSql, proved: readonly ProvedWsRow[]): 
     return proved.map(({ message }) => rows.filter((row) => row.ri_resource.includes(message.id.msgId)).map((row) => Date.parse(row.expire_ts)));
 }
 
-/** The parent wrote each message's identity and own-work rows to expire with the WS row they admit. */
+/** A message's identity and own-work rows expire with the WS row they admit, so all three expire together. */
 function toQueueExpiries({ entry }: ProvedWsRow): number[] {
     return Array.from({ length: 3 }, () => entry.audit.expiryTs.epochMilliseconds);
 }
@@ -367,7 +367,7 @@ async function readQueueRows(sql: PSqlSql): Promise<readonly string[]> {
 }
 
 /**
- * Where the parent's lane settles: per message a completed identity row and a completed own-work row, both
+ * Where the lane settles: per message a completed identity row and a completed own-work row, both
  * written by the bundle, and the claimed row itself completed by its release.
  */
 function toExpectedQueueRows(): readonly string[] {

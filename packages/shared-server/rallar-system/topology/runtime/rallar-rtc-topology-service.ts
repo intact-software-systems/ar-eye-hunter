@@ -5,7 +5,6 @@ import type { GroupTopologyKindSetting } from '@shared/api/graph-topology-manage
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot, RallarRtcTopologyKind } from '@shared/api/overlay-topology.ts';
 
-import { DEFAULT_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS } from '../planning/resolve-rtt-replan-promotion.ts';
 import { RtcTopologyPlanner } from '../planning/rtc-topology-planner.ts';
 import {
     RtcTopologyMetrics,
@@ -23,10 +22,14 @@ export interface RallarRtcTopologyServiceOptions {
     readonly meshParamK?: number;
     readonly meshExitWidth?: number;
     readonly treeExitWidth?: number;
-    /** api-v1 always passes its required key; like its neighbours, the fallback serves test and bench services. */
-    readonly rttReplanMinimumLayoutAgeMs?: number;
     readonly now?: () => number;
     readonly durationNowMs?: () => number;
+}
+
+/** The planning options every group plans with, and the service's own settings beside them. */
+export interface RallarRtcTopologyServiceConfig extends RallarRtcTopologyServiceOptions {
+    /** How long a stored layout stands before a replan an RTT measurement alone caused may replace it. */
+    readonly rttReplanMinimumLayoutAgeMs: number;
 }
 
 export interface RallarRtcTopologyUpdateResult {
@@ -52,11 +55,11 @@ export class RallarRtcTopologyService {
     private readonly metrics = new RtcTopologyMetrics();
     private readonly snapshots = new RtcTopologySnapshotRegistry();
     private readonly planner: RtcTopologyPlanner;
-    private readonly options: RallarRtcTopologyServiceOptions;
+    private readonly options: RallarRtcTopologyServiceConfig;
 
-    constructor(options: RallarRtcTopologyServiceOptions = {}) {
-        this.options = options;
-        this.planner = new RtcTopologyPlanner(options, {
+    constructor(config: RallarRtcTopologyServiceConfig) {
+        this.options = config;
+        this.planner = new RtcTopologyPlanner(config, {
             metrics: this.metrics,
             durationNowMs: () => this.durationNowMs()
         });
@@ -180,7 +183,7 @@ export class RallarRtcTopologyService {
     }
 
     readRttReplanMinimumLayoutAgeMs(): number {
-        return this.options.rttReplanMinimumLayoutAgeMs ?? DEFAULT_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS;
+        return this.options.rttReplanMinimumLayoutAgeMs;
     }
 
     private now(): number {

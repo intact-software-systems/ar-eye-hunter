@@ -147,7 +147,7 @@ function createPostgresAppInboxTopology(composition: CreatePostgresAppInboxTopol
         readCurrentGroupSnapshot: async (ref) => await topologyGroupStateRepository.readSnapshot(ref),
         readRttMeasurements: () => [],
         configRepository: topologyConfigRepository,
-        topologyService: new RallarRtcTopologyService()
+        topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000 })
     });
     const topologyMutationOwners = createGroupTopologyMutationOwners({
         groupStateRepository: topologyGroupStateRepository,

@@ -106,7 +106,7 @@ function createFrozenWorkHarness(sql: PSqlSql, now: () => number): FrozenWorkHar
         runtimeRepository,
         new PSqlGroupStateEventRepository(sql)
     );
-    const topologyService = new RallarRtcTopologyService({ now });
+    const topologyService = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now });
     const topologyManagement = createGroupTopologyRuntimeOwners({
         findGroupSnapshotByRef: async (ref) => await groupStateRepository.readSnapshot(ref),
         readCurrentGroupSnapshot: async (ref) => await groupStateRepository.readSnapshot(ref),

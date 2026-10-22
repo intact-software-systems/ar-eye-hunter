@@ -32,17 +32,7 @@ import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { TestWebSocket } from '../../../shared/websocket/test-web-socket.ts';
-import {
-    createRuntimeStatePostgresSql,
-    requirePostgresClient,
-    requirePostgresDatabaseUrl,
-    withPostgresClients
-} from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
-import {
-    deletePostgresRunRows,
-    NO_POSTGRES_RUN_ROWS,
-    readPostgresRunRowCounts
-} from './test-support/delete-postgres-run-rows.ts';
+import { createResourceInboxTestStorage } from '../../queuebox/resource-inbox-test-storage.ts';
 import {
     recordPostgresStatements,
     type PostgresStatementLog,
@@ -51,25 +41,18 @@ import {
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 
+// A WS lane claims every WS_OUTBOX row of its database, so the test runs on the API schema of its own.
 describe('Postgres WS outbound dispatch statements', () => {
     // Re-reading each row's captured policy (its stored row, then its identity row) after the NOTIFY cost 48 sequential
     // statements per full page of one sender; the policy its commit wrote is in hand, so only the NOTIFYs remain.
-    postgresIt('publishes a dequeued page with one NOTIFY per row and no read back, each publish before its send', async () => {
-        await withPostgresClients({
-            namespace: null,
-            clientCount: 1,
-            createClient: async () => await createRuntimeStatePostgresSql(requirePostgresDatabaseUrl(), 4)
-        }, async (clients) => {
-            const sql = requirePostgresClient(clients, 0);
-            const runId = crypto.randomUUID();
-            try {
-                await measurePageDispatch(sql, runId);
-            }
-            finally {
-                await deletePostgresRunRows(sql, runId);
-            }
-            expect(await readPostgresRunRowCounts(sql, runId)).toEqual(NO_POSTGRES_RUN_ROWS);
-        });
+    postgresIt('publishes a dequeued page with one autocommit NOTIFY per row and no read back, each before its send', async () => {
+        const storage = await createResourceInboxTestStorage('ws_dispatch', 4);
+        try {
+            await measurePageDispatch(storage.sql, crypto.randomUUID());
+        }
+        finally {
+            await storage.close();
+        }
     }, 60_000);
 });
 
@@ -92,6 +75,7 @@ async function measurePageDispatch(sql: PSqlSql, runId: string): Promise<void> {
         const dispatched = lane.dispatch.statements(log.statements);
         expect(dispatched.map(({ text }) => text), dispatched.map(({ text }) => text.slice(0, 80)).join('\n'))
             .toEqual(rows.map(() => 'select pg_notify(?, ?)'));
+        expect(dispatched.filter(({ transaction }) => transaction === null)).toHaveLength(rows.length);
         expect(lane.effects).toEqual(rows.flatMap((row) => [`notify:${row.key.resourceId}`, `send:${row.key.resourceId}`]));
         expect(lane.native.sent).toHaveLength(rows.length);
         for (const { message, entry, committedPolicy } of lane.policies) {

@@ -30,6 +30,7 @@ import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persis
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import type {
+    QueueBoxWrittenIfAbsent,
     ResourceInboxReservationObservationRequest,
     ResourceInboxReservationObservationResult,
     ResourceInboxReservationRequest
@@ -228,9 +229,9 @@ class RegisteredHandlerInbox extends TestResourceInbox {
         return await super.enqueue(entry);
     }
 
-    override async enqueueIfAbsent(entry: ResourceEntry): Promise<ResourceEntry> {
+    override async writeIfAbsent(entry: ResourceEntry): Promise<QueueBoxWrittenIfAbsent> {
         this.latestKey = entry.key;
-        return await super.enqueueIfAbsent(entry);
+        return await super.writeIfAbsent(entry);
     }
 
     async readLatest(): Promise<ResourceEntry | undefined> {

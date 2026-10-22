@@ -124,7 +124,7 @@ describe('resource inbox poll projection', () => {
             timing: (event) => events.push(event),
             options: normalizeAppInboxOptions({ phaseTiming: true, waitMaxElapsedMsecs: 0 })
         });
-        const result = await waiter.waitForReservedResult(
+        const result = await waiter.waitForResult(
             { enqueue: { type: AppInboxType.GROUP_CREATE, ...key, data: null }, key: key, winner: false },
             (value) => value
         );

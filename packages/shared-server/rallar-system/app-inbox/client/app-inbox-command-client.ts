@@ -15,8 +15,8 @@ export namespace AppInboxCommandClient {
     export type QueueEntryWriter = Pick<AppInboxQueueEntryWriter, 'writeIfAbsent'>;
 
     export interface ResultWaiter {
-        waitForReservedResult<Result>(
-            reservation: AppInboxReservationClient.MaterializedReservation,
+        waitForResult<Result>(
+            wait: AppInboxResultWaiter.Wait,
             decodeResult: AppInboxResultWaiter.ResultDecoder<Result>
         ): Promise<Either<AppInboxFailure, Result>>;
     }
@@ -79,7 +79,7 @@ export class AppInboxCommandClient {
                 enqueue,
                 async () => await this.queueEntryWriter.writeIfAbsent(enqueue)
             );
-            return await this.resultWaiter.waitForReservedResult({ enqueue, key: entry.key, winner }, decodeResult);
+            return await this.resultWaiter.waitForResult({ enqueue, key: entry.key, winner }, decodeResult);
         });
     }
 
@@ -92,13 +92,13 @@ export class AppInboxCommandClient {
                 command.received,
                 async () => await this.reserveMatchingEntry(command)
             );
-            return await this.resultWaiter.waitForReservedResult(reservation, decodeResult);
+            return await this.resultWaiter.waitForResult(reservation, decodeResult);
         });
     }
 
     private async reserveMatchingEntry(
         command: AppInboxCommandClient.MaterializedCommand
-    ): Promise<AppInboxReservationClient.MaterializedReservation> {
+    ): Promise<AppInboxResultWaiter.Wait> {
         const receivedCommandIdentity = serializeCanonicalMutationCommand(toLogicalAppInboxCommand(command.received));
         const reservation = await this.reservationClient.reserveMaterializedEntry(
             command.placeholder,

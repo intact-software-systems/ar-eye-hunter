@@ -398,8 +398,17 @@ export interface ResourceInboxTimeoutReservationRequest {
     readonly excludedContextIds?: ReadonlySet<string>;
 }
 
+/** The entry its key keeps, and whether this write created it. */
+export interface QueueBoxWrittenIfAbsent {
+    readonly entry: ResourceEntry;
+    readonly created: boolean;
+}
+
 export interface EnqueueResourceEntryController {
     enqueueIfAbsent(resourceEntry: ResourceEntry): Promise<ResourceEntry>;
+
+    /** A live entry already stored under the key is kept and answered as not created. */
+    writeIfAbsent(resourceEntry: ResourceEntry): Promise<QueueBoxWrittenIfAbsent>;
 
     replaceIfObserved(
         expected: ResourceEntry,

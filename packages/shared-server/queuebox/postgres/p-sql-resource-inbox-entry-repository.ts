@@ -1,3 +1,4 @@
+import type { QueueBoxWrittenIfAbsent } from '@shared/queuebox/queue-box-types.ts';
 import { hasSameResourceEntryValue } from '@shared/queuebox/resource-entry-observations.ts';
 import { toResourceInboxCompletionKey } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
 import {
@@ -211,18 +212,20 @@ export class PSqlResourceInboxEntryRepository {
     }
 
     async writeIfAbsentOrReplaceExpired(entry: ResourceEntry): Promise<ResourceEntry> {
-        return await this.writeComputedIfAbsentOrReplaceExpired(computeResourceInboxEntryInsertValues(entry));
+        return (await this.writeComputedIfAbsentOrReplaceExpired(computeResourceInboxEntryInsertValues(entry))).entry;
     }
 
-    async writeComputedIfAbsentOrReplaceExpired(values: ResourceInboxEntryInsertValues): Promise<ResourceEntry> {
+    async writeComputedIfAbsentOrReplaceExpired(
+        values: ResourceInboxEntryInsertValues
+    ): Promise<QueueBoxWrittenIfAbsent> {
         const written = await this.tryWriteComputedIfAbsentOrReplaceExpired(values);
         if (written) {
-            return written;
+            return { entry: written, created: true };
         }
 
         const existing = await this.findAnyByKey(values.entry.key);
         if (existing) {
-            return existing;
+            return { entry: existing, created: false };
         }
 
         throw new Error(

@@ -32,7 +32,6 @@ import {
     createDefaultOutboundTestRuntime,
     createDefaultOutboundTestStores,
     createOutboundMessage,
-    createOutboundWorkPort,
     enqueueOutboundOrThrow,
     runOutboundWorkTask,
     waitForOutboundWorkDrained,
@@ -119,7 +118,6 @@ function createRepairRetransmission(
         dispatchAdmission: new ALOutboundDispatchAdmission({
             lane: 'durable',
             admissionStore: stores.admissionStore,
-            workPort: createOutboundWorkPort(stores.workQueue, stores.admissionStore.namespace),
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             decodePreparedMessage: decodeOutboundTestPayload,
             clock: { nowMs: Date.now },

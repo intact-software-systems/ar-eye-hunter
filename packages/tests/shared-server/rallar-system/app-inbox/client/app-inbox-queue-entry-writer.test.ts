@@ -8,7 +8,7 @@ import {
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { AppInboxQueueEntryWriter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-queue-entry-writer.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { QueueBoxWrittenIfAbsent } from '@shared/queuebox/queue-box-types.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { TestResourceInbox } from '../test-support/app-inbox-resource-fixtures.ts';
@@ -105,6 +105,29 @@ describe('AppInbox durable enqueue', () => {
         expect(created.entry).toEqual(await queue.getItem(created.entry.key));
         expect(wakeSignals).toBe(0);
     });
+
+    it('takes whether its write created the entry from the queue, not from the message it serialized', async () => {
+        const queue = new TestResourceInbox(new Map());
+        const message = createAppInboxQueueMessageFixture({
+            key: { topicId: 'app-inbox.client-state', resourceId: COMMAND.resourceId, contextId: COMMAND.contextId },
+            enqueue: COMMAND,
+            serviceId: 'server-12345678'
+        });
+        const service = new AppInboxQueueEntryWriter(
+            {
+                createMessage: () => message,
+                newResourceId: crypto.randomUUID.bind(crypto),
+                inboxQueueReader: new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 })
+            },
+            { serviceId: 'server-12345678', defaultTopicId: 'app-inbox.client-state' }
+        );
+
+        const created = await service.writeIfAbsent(COMMAND);
+        const replayed = await service.writeIfAbsent(COMMAND);
+
+        expect(created.winner).toBe(true);
+        expect(replayed).toEqual({ entry: created.entry, winner: false });
+    });
 });
 
 function createService(
@@ -133,7 +156,7 @@ class FailingQueueBox extends TestResourceInbox {
         this.failure = failure;
     }
 
-    override enqueueIfAbsent(): Promise<ResourceEntry> {
+    override writeIfAbsent(): Promise<QueueBoxWrittenIfAbsent> {
         return Promise.reject(this.failure);
     }
 }

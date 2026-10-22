@@ -20,7 +20,6 @@ export namespace PSqlQueueReleaseTiming {
         readonly anchorAfterMs: number | undefined;
     }
 
-    /** One released row; the batch's one release statement answered whether it updated the row. */
     export interface MemberRelease {
         readonly entry: ResourceEntry;
         readonly ordinal: number;
@@ -29,7 +28,6 @@ export namespace PSqlQueueReleaseTiming {
 
     export interface Callback {
         readonly startedAtMs: number | undefined;
-        /** When the one statement releasing every member returned. */
         readonly statementEndedAtMs: number | undefined;
         readonly endedAtMs: number | undefined;
         readonly fallbackCount: number;
@@ -71,7 +69,6 @@ export namespace PSqlQueueReleaseTiming {
         readonly candidateElapsedMs: number;
         readonly transactionAdmissionElapsedMs: number;
         readonly callbackElapsedMs: number;
-        /** The one release statement of every member. */
         readonly releaseReservedElapsedMs: number;
         readonly callbackRemainderElapsedMs: number;
         readonly transactionReturnElapsedMs: number;

@@ -60,7 +60,7 @@ export interface QueueBoxPubSubWsService {
     readCapturedPolicy(
         message: ALMessage,
         entry: ResourceEntry,
-        committedPolicy?: ALOutboundCapturedPolicy
+        committedPolicy: ALOutboundCapturedPolicy | undefined
     ): Promise<ALOutboundCapturedPolicy>;
     sendToTargetsWithResult(input: WsServerLiveSendInputDto): WsServerLiveSendResult;
 }
@@ -219,8 +219,8 @@ function registerQueueBoxOutboxPublisher(
         writeQueueBoxOutboxPublication({
             message,
             entry,
-            committedPolicy: handoff?.committedPolicy,
-            deferObservation: handoff?.deferObservation
+            committedPolicy: handoff.committedPolicy,
+            deferObservation: handoff.deferObservation
         }, options)
     );
 }

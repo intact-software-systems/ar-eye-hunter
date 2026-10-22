@@ -27,8 +27,9 @@ const SHAPE_LENGTH = 60;
 const ISO_INSTANT_LENGTH = 24;
 
 /**
- * Statements by shape: the first 60 characters of the statement text, parameters as `?`, whitespace collapsed. Every SQL shape belongs to
- * one function, so a shape names its caller, and the totals give statements, executor wait and parameter text per caller.
+ * Statements by shape: the whole statement text, parameters as `?`, whitespace collapsed. Every SQL shape belongs to
+ * one function, so a shape names its caller, and the totals give statements, executor wait and parameter text per
+ * caller. A census line names each shape by its first 60 characters only, so two shapes may share a name there.
  */
 export class PostgresStatementCensus {
     private readonly shapeByStrings = new WeakMap<TemplateStringsArray, string>();
@@ -43,7 +44,10 @@ export class PostgresStatementCensus {
         this.totalsByShape.set(shape, totals);
     }
 
-    /** Every shape recorded since the previous take, the longest total executor wait first; the census starts empty again. */
+    /**
+     * Every shape recorded since the previous take, the longest total executor wait first; the census starts empty
+     * again.
+     */
     public takeShapes(): readonly PostgresStatementShape[] {
         const shapes = [...this.totalsByShape].map(([shape, totals]) => ({ shape, ...totals }));
         this.totalsByShape.clear();
@@ -55,7 +59,7 @@ export class PostgresStatementCensus {
         if (kept !== undefined) {
             return kept;
         }
-        const shape = toStatementText(strings).replace(/\s+/gu, ' ').trim().slice(0, SHAPE_LENGTH);
+        const shape = strings.join('?').replace(/\s+/gu, ' ').trim();
         this.shapeByStrings.set(strings, shape);
         return shape;
     }
@@ -90,7 +94,7 @@ export function startPostgresStatementCensusTiming(input: StartPostgresStatement
                         statements: shapes.reduce((sum, shape) => sum + shape.count, 0),
                         executorWaitMs: Math.round(shapes.reduce((sum, shape) => sum + shape.executorWaitMs, 0)),
                         parameterChars: shapes.reduce((sum, shape) => sum + shape.parameterChars, 0),
-                        shapes: JSON.stringify(shapes.map(toRoundedShape))
+                        shapes: JSON.stringify(shapes.map(toEmittedShape))
                     }
                 },
                 status: 'ok',
@@ -100,17 +104,12 @@ export function startPostgresStatementCensusTiming(input: StartPostgresStatement
     });
 }
 
-/** Enough of the text, parameters as `?`, to hold a shape after whitespace collapses. */
-function toStatementText(strings: TemplateStringsArray): string {
-    let text = strings[0]!;
-    for (let index = 1; index < strings.length && text.length < SHAPE_LENGTH * 4; index += 1) {
-        text += `?${strings[index]}`;
-    }
-    return text.slice(0, SHAPE_LENGTH * 4);
-}
-
-function toRoundedShape(shape: PostgresStatementShape): PostgresStatementShape {
-    return { ...shape, executorWaitMs: Math.round(shape.executorWaitMs * 100) / 100 };
+function toEmittedShape(shape: PostgresStatementShape): PostgresStatementShape {
+    return {
+        ...shape,
+        shape: shape.shape.slice(0, SHAPE_LENGTH),
+        executorWaitMs: Math.round(shape.executorWaitMs * 100) / 100
+    };
 }
 
 /**

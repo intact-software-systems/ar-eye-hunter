@@ -3,7 +3,11 @@ import { decodePersistedALMessage } from '../al-contracts/al-message-persistence
 import { EnqueuedType } from '../api/api-config.ts';
 import type { DequeueController } from '../queuebox/dequeue/dequeue-controller.ts';
 import type { DequeueLaneFlight } from '../queuebox/dequeue/dequeue-lane-flight.ts';
-import type { QueueBoxResourceEntryRepository, ResourceInboxClaimOrder } from '../queuebox/queue-box-types.ts';
+import type {
+    QueueBoxResourceEntryRepository,
+    QueueBoxWrittenIfAbsent,
+    ResourceInboxClaimOrder
+} from '../queuebox/queue-box-types.ts';
 import {
     NonRetryableException,
     ResourceInboxHandlerEntryError,
@@ -91,7 +95,11 @@ export class QueueMessageReader {
     }
 
     async enqueueIfAbsent(message: ALMessage): Promise<ResourceEntry> {
-        return await this.repository.enqueueIfAbsent(
+        return (await this.writeIfAbsent(message)).entry;
+    }
+
+    async writeIfAbsent(message: ALMessage): Promise<QueueBoxWrittenIfAbsent> {
+        return await this.repository.writeIfAbsent(
             QueueBoxUtilities.toResourceEntryFromMsg(message, this.config.enqueueType, this.config.creationNow())
         );
     }

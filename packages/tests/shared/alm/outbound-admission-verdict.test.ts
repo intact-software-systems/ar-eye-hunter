@@ -5,7 +5,6 @@ import {
     it
 } from 'vitest';
 
-import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     createInitialALDeliveryLifecycle,
@@ -466,7 +465,6 @@ function createTestOutboundDispatchAdmission(
     return new ALOutboundDispatchAdmission<OutboundTestPayload>({
         lane: 'durable',
         admissionStore: stores.admissionStore,
-        workPort: createTestALOutboundWorkPort({ ...stores, nowMs: Date.now }),
         toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
         decodePreparedMessage: decodeOutboundTestPayload,
         clock: { nowMs: Date.now },

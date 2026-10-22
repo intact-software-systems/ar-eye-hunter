@@ -55,8 +55,8 @@ describe('AppInboxCommandClient', () => {
                     }
                 },
                 resultWaiter: {
-                    waitForReservedResult: async <Result>(
-                        written: AppInboxReservationClient.MaterializedReservation,
+                    waitForResult: async <Result>(
+                        written: AppInboxResultWaiter.Wait,
                         decodeResult: AppInboxResultWaiter.ResultDecoder<Result>
                     ) => {
                         expect(written.enqueue).toEqual(COMMAND);
@@ -150,7 +150,7 @@ describe('AppInboxCommandClient', () => {
             creationNow: Temporal.Now.instant,
             createMessage: createAppInboxQueueMessageFixture
         }, { serviceId: 'server-12345678' });
-        const reserved: AppInboxReservationClient.MaterializedReservation[] = [];
+        const reserved: AppInboxResultWaiter.Wait[] = [];
         const client = new AppInboxCommandClient(
             {
                 queueEntryWriter: {
@@ -160,8 +160,8 @@ describe('AppInboxCommandClient', () => {
                 },
                 reservationClient,
                 resultWaiter: {
-                    waitForReservedResult: async <Result>(
-                        reservation: AppInboxReservationClient.MaterializedReservation,
+                    waitForResult: async <Result>(
+                        reservation: AppInboxResultWaiter.Wait,
                         decodeResult: AppInboxResultWaiter.ResultDecoder<Result>
                     ) => {
                         reserved.push(reservation);

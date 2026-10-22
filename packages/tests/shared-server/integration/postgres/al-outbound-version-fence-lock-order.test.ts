@@ -20,11 +20,14 @@ import { createResourceInboxTestStorage } from '../../queuebox/resource-inbox-te
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 
 const NAMESPACE = 'fence-lock-order';
-const GATE_LOCK_ID = 4242;
 const WAIT_POLL = { timeout: 20_000, interval: 25 };
 
 interface WaitingCount {
     readonly waiting: number;
+}
+
+interface GateHolder {
+    readonly pid: number;
 }
 
 describe('Postgres outbound sender version fence lock order', () => {
@@ -48,9 +51,9 @@ describe('Postgres outbound sender version fence lock order', () => {
             const gate = holdRowGate(storage.sql);
             await gate.held;
             const committing = settle(store.commitBundle(bundle));
-            await expect.poll(() => readWaitingCount(storage.sql), WAIT_POLL).toBe(1);
+            await expect.poll(() => readWaitingBehindGate(storage.sql, gate), WAIT_POLL).toBe(1);
             const acknowledging = settle(control.admit(toDeliveredAck(message, 'peer-1'), 'peer'));
-            await expect.poll(() => readWaitingCount(storage.sql), WAIT_POLL).toBe(2);
+            await expect.poll(() => readWaitingBehindGate(storage.sql, gate), WAIT_POLL).toBe(2);
             gate.release();
             await gate.closed;
 
@@ -83,14 +86,15 @@ function createStore(sql: PSqlSql): FenceLockOrderStore {
 
 /**
  * Every update of a sender version or pending-ack row waits, with the row already locked, until the gate opens:
- * whichever commit reaches its first such row holds it there.
+ * whichever commit reaches its first such row holds it there. The gate is keyed on the test's own schema, so no
+ * other test on the database shares it.
  */
 async function installRowGate(sql: PSqlSql): Promise<void> {
     await sql`
         create function gate_admission_row() returns trigger language plpgsql as $gate$
         begin
             if new.store_key like '%:version:%' or new.store_key like '%:pending-ack:%' then
-                perform pg_advisory_xact_lock_shared(4242);
+                perform pg_advisory_xact_lock_shared(hashtext(tg_table_schema));
             end if;
             return new;
         end
@@ -103,26 +107,36 @@ async function installRowGate(sql: PSqlSql): Promise<void> {
 }
 
 interface RowGate {
-    readonly held: Promise<void>;
+    readonly held: Promise<number>;
     readonly closed: Promise<void>;
     release(): void;
 }
 
+/** Held by its own backend, whose process id `held` answers. */
 function holdRowGate(sql: PSqlSql): RowGate {
-    const { promise: held, resolve: markHeld } = Promise.withResolvers<void>();
+    const { promise: held, resolve: markHeld } = Promise.withResolvers<number>();
     const { promise: released, resolve: release } = Promise.withResolvers<void>();
     const closed = sql.begin(async (transaction) => {
-        await transaction`select pg_advisory_xact_lock(${GATE_LOCK_ID})`;
-        markHeld();
+        await transaction`select pg_advisory_xact_lock(hashtext(current_schema()))`;
+        const [gate] = await transaction<GateHolder[]>`select pg_backend_pid() as pid`;
+        markHeld(gate!.pid);
         await released;
     });
     return { held, closed, release: () => release() };
 }
 
-async function readWaitingCount(sql: PSqlSql): Promise<number> {
+/** The backends waiting on the gate, directly or behind a backend that waits on it; other tests' waits are not. */
+async function readWaitingBehindGate(sql: PSqlSql, gate: RowGate): Promise<number> {
+    const gatePid = await gate.held;
     const [row] = await sql<WaitingCount[]>`
-        select count(*)::int as waiting from pg_stat_activity
-        where datname = current_database() and wait_event_type = 'Lock' and pid <> pg_backend_pid()
+        with recursive waiting(pid) as (
+            select pid from pg_stat_activity where ${gatePid}::int = any(pg_blocking_pids(pid))
+            union
+            select activity.pid
+            from pg_stat_activity activity
+            join waiting on waiting.pid = any(pg_blocking_pids(activity.pid))
+        )
+        select count(*)::int as waiting from waiting
     `;
     return row?.waiting ?? 0;
 }

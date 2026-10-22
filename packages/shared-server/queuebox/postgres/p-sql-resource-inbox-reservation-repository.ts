@@ -32,9 +32,11 @@ import {
     type ResourceInboxWorkPresence,
     type ResourceInboxWorkPresenceRead
 } from './read-resource-inbox-work-presences.ts';
-import type { ResourceInboxObservedReplacement } from './replace-observed-resource-inbox-entry.ts';
+import {
+    replaceObservedResourceInboxEntries,
+    type ResourceInboxObservedReplacement
+} from './replace-observed-resource-inbox-entry.ts';
 import { requeueObservedResourceInboxDeliveryFailure } from './requeue-observed-resource-inbox-delivery-failure.ts';
-import type { ResourceInboxEntryInsertValues } from './resource-inbox-entry-insert-values.ts';
 import {
     parseTemporalPlainDateTime,
     rowsToMap,
@@ -359,7 +361,7 @@ export class PSqlResourceInboxReservationRepository {
                 releasable.set(replacement.expectedRowId, replacement);
             }
         }
-        const released = await replaceObservedResourceInboxEntries(this.sql, releasable);
+        const released = await replaceObservedRowsById(this.sql, releasable);
         return computed.map((replacement) =>
             releasable.get(replacement.expectedRowId) === replacement
                 ? released.get(replacement.expectedRowId) ?? null
@@ -555,49 +557,18 @@ function toClaimOrderBy(alias: 'candidate' | 'head', order: ResourceInboxClaimOr
         : PSqlFragment.of`${row}.next_ts asc nulls first, ${row}.ri_row_id asc`;
 }
 
-/** The observed columns of one replacement that its row must still hold. */
-interface ResourceInboxObservedColumns {
-    readonly expectedTypeId: string;
-    readonly expectedResource: string;
-    readonly expectedStatus: string;
-    readonly expectedSystemDate: string;
-    readonly expectedCreatedBy: string;
-    readonly expectedCreatedAt: string;
-    readonly expectedExpiresAt: string;
-    readonly expectedStartedAt: string | null;
-    readonly expectedFinishedAt: string | null;
-    readonly expectedNextAt: string | null;
-    readonly expectedAttempts: number;
-}
-
-/** One replacement of the multi-row compare-and-replace, named as the statement's recordset columns. */
-interface ResourceInboxObservedReplacementRow extends ResourceInboxObservedColumns {
-    readonly expectedRowId: string;
-    readonly topicId: string;
-    readonly resourceId: string;
-    readonly contextId: string;
-    readonly resource: string;
-    readonly typeId: string;
-    readonly status: string;
-    readonly systemDate: string;
-    readonly createdBy: string;
-    readonly createdAt: string;
-    readonly expiresAt: string;
-    readonly startedAt: string | null;
-    readonly finishedAt: string | null;
-    readonly nextAt: string | null;
-    readonly attempts: number;
-}
-
-/** Every replacement of a distinct row in one statement: the replaced rows by row identity, none for a row that moved. */
-async function replaceObservedResourceInboxEntries(
+/**
+ * Every replacement of a distinct row in one statement: the replaced rows by row identity, none for a row that
+ * moved.
+ */
+async function replaceObservedRowsById(
     sql: PSqlSql,
     replacementsByRowId: ReadonlyMap<bigint, ResourceInboxObservedReplacement>
 ): Promise<ReadonlyMap<bigint, ResourceEntry>> {
     if (replacementsByRowId.size === 0) {
         return new Map();
     }
-    const rows = await writeObservedReplacementRows(sql, [...replacementsByRowId.values()]);
+    const rows = await replaceObservedResourceInboxEntries(sql, [...replacementsByRowId.values()]);
     return new Map(rows.map((row) => {
         const rowId = BigInt(row.ri_row_id);
         return [rowId, toReplacedEntry(row, replacementsByRowId.get(rowId))];
@@ -615,87 +586,4 @@ function toReplacedEntry(row: ResourceInboxRow, computed: ResourceInboxObservedR
         );
     }
     return updated;
-}
-
-async function writeObservedReplacementRows(
-    sql: PSqlSql,
-    computed: readonly ResourceInboxObservedReplacement[]
-): Promise<readonly ResourceInboxRow[]> {
-    return await sql<ResourceInboxRow[]>`
-        update resource_inbox
-        set ri_resource = observed.resource,
-            ri_type_id = observed."typeId",
-            ri_status = observed.status,
-            system_date = observed."systemDate"::date,
-            created_by = observed."createdBy",
-            created_ts = observed."createdAt"::timestamp(6),
-            expire_ts = observed."expiresAt"::timestamp(6),
-            start_ts = observed."startedAt"::timestamp(6),
-            end_ts = observed."finishedAt"::timestamp(6),
-            next_ts = observed."nextAt"::timestamp(6),
-            ri_attempts = observed.attempts
-        from jsonb_to_recordset(${computed.map(toObservedReplacementRow)}::jsonb)
-            as observed("expectedRowId" bigint, "topicId" text, "resourceId" text, "contextId" text,
-                        "expectedTypeId" text, "expectedResource" text, "expectedStatus" text,
-                        "expectedSystemDate" text, "expectedCreatedBy" text, "expectedCreatedAt" text,
-                        "expectedExpiresAt" text, "expectedStartedAt" text, "expectedFinishedAt" text,
-                        "expectedNextAt" text, "expectedAttempts" bigint, resource text, "typeId" text, status text,
-                        "systemDate" text, "createdBy" text, "createdAt" text, "expiresAt" text, "startedAt" text,
-                        "finishedAt" text, "nextAt" text, attempts bigint)
-        where resource_inbox.ri_row_id = observed."expectedRowId"
-          and resource_inbox.ri_topic_id = observed."topicId"
-          and resource_inbox.ri_resource_id = observed."resourceId"
-          and resource_inbox.fk_ext_bank_id = observed."contextId"
-          and resource_inbox.ri_type_id = observed."expectedTypeId"
-          and resource_inbox.ri_resource = observed."expectedResource"
-          and resource_inbox.ri_status = observed."expectedStatus"
-          and resource_inbox.system_date = observed."expectedSystemDate"::date
-          and resource_inbox.created_by = observed."expectedCreatedBy"
-          and resource_inbox.created_ts = observed."expectedCreatedAt"::timestamp(6)
-          and resource_inbox.expire_ts = observed."expectedExpiresAt"::timestamp(6)
-          and resource_inbox.start_ts is not distinct from observed."expectedStartedAt"::timestamp(6)
-          and resource_inbox.end_ts is not distinct from observed."expectedFinishedAt"::timestamp(6)
-          and resource_inbox.next_ts is not distinct from observed."expectedNextAt"::timestamp(6)
-          and resource_inbox.ri_attempts = observed."expectedAttempts"
-          and resource_inbox.expire_ts > (now() at time zone 'UTC')
-        returning resource_inbox.*
-    `;
-}
-
-function toObservedReplacementRow(computed: ResourceInboxObservedReplacement): ResourceInboxObservedReplacementRow {
-    const { expected, replacement } = computed;
-    return {
-        expectedRowId: computed.expectedRowId.toString(),
-        topicId: expected.entry.key.topicId,
-        resourceId: expected.entry.key.resourceId,
-        contextId: expected.entry.key.contextId,
-        ...toExpectedColumns(expected),
-        resource: replacement.entry.resource,
-        typeId: replacement.entry.typeId,
-        status: replacement.entry.status,
-        systemDate: replacement.systemDate,
-        createdBy: replacement.entry.audit.createdBy,
-        createdAt: replacement.createdTimestamp,
-        expiresAt: replacement.expiryTimestamp,
-        startedAt: replacement.startTimestamp,
-        finishedAt: replacement.endTimestamp,
-        nextAt: replacement.nextTimestamp,
-        attempts: replacement.attempts
-    };
-}
-
-function toExpectedColumns(expected: ResourceInboxEntryInsertValues): ResourceInboxObservedColumns {
-    return {
-        expectedTypeId: expected.entry.typeId,
-        expectedResource: expected.entry.resource,
-        expectedStatus: expected.entry.status,
-        expectedSystemDate: expected.systemDate,
-        expectedCreatedBy: expected.entry.audit.createdBy,
-        expectedCreatedAt: expected.createdTimestamp,
-        expectedExpiresAt: expected.expiryTimestamp,
-        expectedStartedAt: expected.startTimestamp,
-        expectedFinishedAt: expected.endTimestamp,
-        expectedNextAt: expected.nextTimestamp,
-        expectedAttempts: expected.attempts
-    };
 }

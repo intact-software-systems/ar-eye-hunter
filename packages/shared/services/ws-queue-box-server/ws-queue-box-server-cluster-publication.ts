@@ -33,7 +33,7 @@ export namespace WsQueueBoxServerClusterPublication {
      * Hands one durable outbox row to every other instance and delivers it to this instance's own targets, under the
      * captured policy its commit handed over or, without one, the stored policy it reads once.
      */
-    export type Publisher = (message: ALMessage, entry: ResourceEntry, handoff?: Handoff) => Promise<void>;
+    export type Publisher = (message: ALMessage, entry: ResourceEntry, handoff: Handoff) => Promise<void>;
 
     export interface Dependencies {
         readonly creationNow: QueueBoxUtilities.CreationClock;

@@ -7,9 +7,6 @@ import type {
     ApiV1AppInboxConfiguration,
     ApiV1ObservabilityConfiguration
 } from '../configuration/api-v1-configuration.ts';
-export {
-    createApiStateSnapshotReadSelectors
-} from './create-api-state-snapshot-read-selectors.ts';
 
 export function createApiTimingSink(
     configuration: ApiV1ObservabilityConfiguration
@@ -19,8 +16,8 @@ export function createApiTimingSink(
     });
 }
 
-/** New per-output stage records are constructed only while timing is enabled. */
-export function toApiOutboxStageTimingSink(
+/** The sink only while timing logs are on, so a consumer builds its timing records only while they are written. */
+export function toTimingOnSink(
     configuration: ApiV1ObservabilityConfiguration,
     timing: RallarTimingSink
 ): RallarTimingSink | undefined {

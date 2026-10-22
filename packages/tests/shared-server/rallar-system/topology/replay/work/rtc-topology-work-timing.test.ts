@@ -83,7 +83,7 @@ async function runFirstRttRefresh(input: RunFirstRttRefreshInput): Promise<First
         findGroupSnapshotByRef: () => undefined,
         readCurrentGroupSnapshot: async () => undefined,
         readRttMeasurements: () => [],
-        topologyService: new RallarRtcTopologyService({ now: () => NOW_EPOCH_MS }),
+        topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => NOW_EPOCH_MS }),
         topologySnapshotRepository: new RtcTopologySnapshotRepository(runtimeRepository)
     }).planning;
     const handler = createRtcTopologyWorkHandler({

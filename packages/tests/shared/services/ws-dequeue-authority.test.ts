@@ -146,7 +146,7 @@ describe('WS first dequeue authority', () => {
         await fixture.stores.workQueue.enqueue(entry);
         await fixture.engine.executeOnce();
         await expect.poll(() => fixture.native.sent.length).toBe(1);
-        expect(await fixture.service.readCapturedPolicy(message, entry)).toMatchObject({ admittedAudience: ['peer'], recipientScope: SCOPE });
+        expect(await fixture.service.readCapturedPolicy(message, entry, undefined)).toMatchObject({ admittedAudience: ['peer'], recipientScope: SCOPE });
     });
 
     it('publishes each row of a dequeued group under the policy its commit wrote, in row order, reading none back', async () => {
@@ -169,7 +169,7 @@ describe('WS first dequeue authority', () => {
         expect(storedReads).toEqual([]);
         expect(published.map(({ message }) => message.id.msgId)).toEqual(messages.map((message) => message.id.msgId));
         for (const { message, entry, committedPolicy } of published) {
-            expect(committedPolicy).toEqual(await fixture.service.readCapturedPolicy(message, entry));
+            expect(committedPolicy).toEqual(await fixture.service.readCapturedPolicy(message, entry, undefined));
         }
     });
 
@@ -234,7 +234,7 @@ describe('WS first dequeue authority', () => {
         await fixture.stores.workQueue.enqueue(entry);
         await fixture.engine.executeOnce();
         await expect.poll(async () => fixture.stores.admissionStore.hasSentMessageAdmission(message.id.msgId)).toBe(true);
-        expect(await fixture.service.readCapturedPolicy(message, entry)).toMatchObject({ admittedAudience: [], recipientScope: SCOPE });
+        expect(await fixture.service.readCapturedPolicy(message, entry, undefined)).toMatchObject({ admittedAudience: [], recipientScope: SCOPE });
         expect(fixture.native.sent).toEqual([]);
     });
 
@@ -249,7 +249,7 @@ describe('WS first dequeue authority', () => {
         await stores.workQueue.enqueue(entry);
         await fixture.engine.executeOnce();
         await expect.poll(async () => (await stores.workQueue.getItem(entry.key))?.status).toBe(EntityStatus.COMPLETED);
-        expect(await fixture.service.readCapturedPolicy(message, entry)).toMatchObject({ admittedAudience: [], recipientScope: SCOPE });
+        expect(await fixture.service.readCapturedPolicy(message, entry, undefined)).toMatchObject({ admittedAudience: [], recipientScope: SCOPE });
         expect(fixture.native.sent).toEqual([]);
     });
 });

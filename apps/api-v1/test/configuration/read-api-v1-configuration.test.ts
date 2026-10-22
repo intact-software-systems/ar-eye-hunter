@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict';
 
-import { DEFAULT_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS } from '@shared-server/rallar-system/topology/planning/resolve-rtt-replan-promotion.ts';
-
 import { ApiV1ConfigurationError } from '../../src/configuration/api-v1-configuration-error.ts';
 import type { ApiV1ConfigurationSourceValue } from '../../src/configuration/decode-api-v1-configuration-source.ts';
 import {
@@ -446,11 +444,7 @@ Deno.test('every committed profile holds sixteen AppInbox flight rows unless the
     }
 });
 
-Deno.test('every committed profile holds RTT-only replans for the overlay transition grace unless the environment selects another age', async () => {
-    for (const profile of ['dev', 'prod', 'prod-hardened', 'prod-in-memory'] as const) {
-        const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));
-        assert.equal(configuration.topology.planning.rttReplanMinimumLayoutAgeMs, DEFAULT_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS, profile);
-    }
+Deno.test('the environment selects the RTT replan minimum layout age within its range', async () => {
     const selected = await readApiV1Configuration(readerInput({
         ...validConfigurationEnvironment('prod-in-memory'),
         RALLAR_RTC_TOPOLOGY_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS: '0'

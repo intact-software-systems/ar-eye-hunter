@@ -126,10 +126,10 @@ describe('RTC topology producer provenance', () => {
                 await expect.poll(async () => (await stores.workQueue.getItem(entry.key))?.status).toBe(EntityStatus.NON_RETRYABLE);
             }
             else {
-                await expect.poll(async () => service.readCapturedPolicy(message, entry)).toMatchObject({
+                await expect.poll(async () => service.readCapturedPolicy(message, entry, undefined)).toMatchObject({
                     admittedAudience: ['session-a', 'session-b']
                 });
-                expect(await service.readCapturedPolicy(message, entry)).not.toHaveProperty('recipientScope');
+                expect(await service.readCapturedPolicy(message, entry, undefined)).not.toHaveProperty('recipientScope');
             }
             expect(native.sent).toHaveLength(recipient === 'captured' ? 1 : 0);
         }

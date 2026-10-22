@@ -8,6 +8,7 @@ import { readClientMutation } from '@shared-server/rallar-system/client-state/mu
 import { assertClientMutationRead } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation-read.ts';
 import { assertClientMutationInvariants } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
 import { clientStatePrincipalStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-principal-storage-key.ts';
+import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
 import { groupStateScopeStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
 import {
@@ -516,9 +517,10 @@ describe('client mutation principal audience read', () => {
         }
         const forged = { ...snapshot, group: { ...snapshot.group, workspaceId: 'workspace-2' } };
 
-        expect(() => assertClientMutationRead(command, { ...read, audienceGroupSnapshots: [forged] })).toThrow(
-            'outside the requested scope'
-        );
+        const assertForged = () => assertClientMutationRead(command, { ...read, audienceGroupSnapshots: [forged] });
+
+        expect(assertForged).toThrow(ClientMutationRejectedError);
+        expect(assertForged).toThrow('outside the requested scope');
     });
 
     it('rejects a heartbeat write computed outside the principal audience read scope', async () => {

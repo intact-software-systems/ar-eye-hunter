@@ -52,6 +52,7 @@ import {
     toResourceInboxFinalizationReservationOptions,
     toResourceInboxReservationOptions,
     toResourceInboxWorkAdvertisementOptions,
+    type QueueBoxWrittenIfAbsent,
     type ResourceInboxReservationObservationRequest,
     type ResourceInboxReservationObservationResult,
     type ResourceInboxReservationRequest,
@@ -265,6 +266,10 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async enqueueIfAbsent(resourceEntry: ResourceEntry): Promise<ResourceEntry> {
+        return (await this.writeIfAbsent(resourceEntry)).entry;
+    }
+
+    async writeIfAbsent(resourceEntry: ResourceEntry): Promise<QueueBoxWrittenIfAbsent> {
         const operation = this.#connection.beginOperation();
         try {
             const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-write' });
@@ -278,29 +283,9 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 toKeyAsString(resourceEntry.key)
             );
             if (stored && !isStoredQueueEntryExpired(stored, this.#now())) {
-                return decodeStoredResourceEntry(stored);
+                return { entry: decodeStoredResourceEntry(stored), created: false };
             }
-            const computed = {
-                mutations: [computeIndexedDbQueuePut(stored, resourceEntry)],
-                result: resourceEntry
-            };
-            try {
-                return await this.#write(db, computed);
-            }
-            catch (error) {
-                if (!(error instanceof IndexedDbQueueWriteConflictError)) {
-                    throw error;
-                }
-                const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-read' });
-                if (decision instanceof Promise) {
-                    await decision;
-                }
-                const winner = await this.#readItem(db, resourceEntry.key);
-                if (winner) {
-                    return winner;
-                }
-                throw error;
-            }
+            return await this.#writeAbsent(db, stored, resourceEntry);
         }
         finally {
             operation.release();
@@ -717,6 +702,32 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             owner: 'al-work',
             kind: mutations.length === 0 ? 'work-probe' : 'work-reserve'
         });
+    }
+
+    /** A conflicting writer that landed first keeps its entry. */
+    async #writeAbsent(
+        db: IDBDatabase,
+        stored: StoredResourceEntry | undefined,
+        resourceEntry: ResourceEntry
+    ): Promise<QueueBoxWrittenIfAbsent> {
+        const computed = { mutations: [computeIndexedDbQueuePut(stored, resourceEntry)], result: resourceEntry };
+        try {
+            return { entry: await this.#write(db, computed), created: true };
+        }
+        catch (error) {
+            if (!(error instanceof IndexedDbQueueWriteConflictError)) {
+                throw error;
+            }
+            const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-read' });
+            if (decision instanceof Promise) {
+                await decision;
+            }
+            const winner = await this.#readItem(db, resourceEntry.key);
+            if (winner) {
+                return { entry: winner, created: false };
+            }
+            throw error;
+        }
     }
 
     async #write<Result>(

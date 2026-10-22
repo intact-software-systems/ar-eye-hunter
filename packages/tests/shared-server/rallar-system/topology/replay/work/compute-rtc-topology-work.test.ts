@@ -196,6 +196,25 @@ describe('RTC topology RTT-refresh work', () => {
         });
     });
 
+    it('promotes an RTT-only replan at once, without an age, when no layout is stored', () => {
+        const workInput = toRttRefreshWorkInput({
+            accepted: acceptPathLayout(createRtcTopologyMemberIds(6)),
+            current: toLaterGroupRevision(createRtcTopologyGroupSnapshot('group-1', createRtcTopologyMemberIds(6))),
+            nowEpochMs: ACCEPTED_AT_EPOCH_MS + 500
+        });
+        const computed = computeRtcTopologyWork({
+            ...workInput,
+            read: { ...workInput.read, mutation: { ...workInput.read.mutation, snapshot: null }, storedInputFingerprint: null }
+        });
+
+        const promoted = computed.right?.accepted;
+        expect(promoted?.decision).toBe('accepted');
+        expect(promoted?.decision === 'accepted' ? promoted.rttReplanPromotion : null).toEqual({
+            decision: 'promote',
+            reason: 'no-active-layout'
+        });
+    });
+
     it('writes a held replan as the frozen path writes: the stored layout targeted, no layout, fingerprint or delivery', () => {
         const workInput = toRttRefreshWorkInput({
             accepted: acceptPathLayout(createRtcTopologyMemberIds(6)),

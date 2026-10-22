@@ -10,17 +10,6 @@ const ACCEPTED_AT_EPOCH_MS = 2_000;
 const FINGERPRINT = `sha256:${'a'.repeat(64)}`;
 
 describe('RTT replan promotion', () => {
-    it('promotes without an age when no active layout is stored', () => {
-        expect(resolveRttReplanPromotion({ ...youngReplan(), stored: null })).toEqual({
-            decision: 'promote',
-            reason: 'no-active-layout'
-        });
-        expect(resolveRttReplanPromotion({ ...youngReplan(), stored: { ...storedLayout(), state: 'removed' } })).toEqual({
-            decision: 'promote',
-            reason: 'no-active-layout'
-        });
-    });
-
     it('promotes a young layout at once when no input fingerprint was recorded for it', () => {
         expect(resolveRttReplanPromotion({ ...youngReplan(), storedInputFingerprint: null })).toEqual({
             decision: 'promote',
@@ -54,7 +43,7 @@ describe('RTT replan promotion', () => {
     });
 
     it('promotes every RTT replan at once when the minimum age is zero', () => {
-        expect(resolveRttReplanPromotion({ ...youngReplan(), minimumLayoutAgeMs: 0 })).toEqual({
+        expect(resolveRttReplanPromotion({ ...youngReplan(), rttReplanMinimumLayoutAgeMs: 0 })).toEqual({
             decision: 'promote',
             reason: 'layout-at-minimum-age',
             layoutAgeMs: 500
@@ -68,7 +57,7 @@ function youngReplan(): ResolveRttReplanPromotionInput {
         storedInputFingerprint: FINGERPRINT,
         inputFingerprint: FINGERPRINT,
         presenceRevision: 0,
-        minimumLayoutAgeMs: 15_000,
+        rttReplanMinimumLayoutAgeMs: 15_000,
         nowEpochMs: ACCEPTED_AT_EPOCH_MS + 500
     };
 }

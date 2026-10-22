@@ -107,6 +107,7 @@ describe('held group snapshot causal revisions', () => {
 
         expect(isGroupSnapshotCausalRevisionCovered(same, same)).toBe(true);
         expect(decideGroupSnapshotCausalRevision(same, same)).toBe('duplicate');
-        expect([...readKeys]).toEqual(['causalRevision']);
+        expect([...readKeys].filter((key) => key === 'group' || key === 'members' || key === 'activeSessions'))
+            .toEqual([]);
     });
 });

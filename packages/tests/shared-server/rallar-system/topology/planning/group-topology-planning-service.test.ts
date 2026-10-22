@@ -177,14 +177,14 @@ describe('GroupTopologyPlanningService', () => {
     it('computes deterministic planning observation without mutating metrics or hidden snapshot state', () => {
         const group = groupWithSessionsIn('active');
         const authority = planningAuthority(group);
-        const cleanTopology = new RallarRtcTopologyService({ now: () => 2_000 });
+        const cleanTopology = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 2_000 });
         const cleanPlanning = createPlanningService({ group, topologyService: cleanTopology });
         const expected = computeGroupTopologyFromAuthority(
             authority,
             undefined,
             { intent: 'full-rebuild', origin: 'automatic' }
         );
-        const statefulTopology = new RallarRtcTopologyService({ now: () => 2_000 });
+        const statefulTopology = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 2_000 });
         statefulTopology.observeCommittedTopologySnapshot(requirePlannedTopology(expected).snapshot);
         expect(computeGroupTopologyFromAuthority(
             authority,
@@ -225,6 +225,7 @@ describe('GroupTopologyPlanningService', () => {
         const group = groupWithSessionsIn('active');
         const times = [10, 17];
         const topologyService = new RallarRtcTopologyService({
+            rttReplanMinimumLayoutAgeMs: 15_000,
             now: () => 2_000,
             durationNowMs: () => times.shift() ?? 17
         });
@@ -424,7 +425,7 @@ describe('GroupTopologyPlanningService', () => {
 
     it('freezes the local reconfigure path for a dialing stage', async () => {
         const group = groupWithSessionsIn('connecting');
-        const topologyService = new RallarRtcTopologyService({ now: () => 2_000 });
+        const topologyService = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 2_000 });
         const service = createPlanningService({ group, topologyService });
         const stored = requirePlannedTopology(computeGroupTopologyFromAuthority(
             planningAuthority(group),
@@ -508,7 +509,7 @@ function createPlanningService(input: {
     config?: ReturnType<typeof resolveGroupTopologyConfig>;
     topologyService?: RallarRtcTopologyService;
 }): GroupTopologyPlanningService {
-    const topologyService = input.topologyService ?? new RallarRtcTopologyService({ now: () => 2_000 });
+    const topologyService = input.topologyService ?? new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 2_000 });
     return new GroupTopologyPlanningService({
         findGroupSnapshotByRef: async () => input.group,
         readCurrentGroupSnapshot: async () => input.group,

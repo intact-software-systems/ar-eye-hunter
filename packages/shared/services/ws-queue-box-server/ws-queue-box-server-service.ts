@@ -730,7 +730,7 @@ export class WsQueueBoxServerService {
     async readCapturedPolicy(
         message: ALMessage,
         entry: ResourceEntry,
-        committedPolicy?: ALOutboundCapturedPolicy
+        committedPolicy: ALOutboundCapturedPolicy | undefined
     ): Promise<ALOutboundCapturedPolicy> {
         return await this.dequeueAuthority.readCapturedPolicy(message, entry, committedPolicy);
     }

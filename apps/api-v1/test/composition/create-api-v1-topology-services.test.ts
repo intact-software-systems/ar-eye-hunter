@@ -108,7 +108,7 @@ function createServicesInput(
             resetMetrics: () => {}
         },
         adminClientIds: ['admin'],
-        rtcTopologyOptions: { rttReportingDegreeLimit: 7 },
+        rtcTopologyOptions: { rttReportingDegreeLimit: 7, rttReplanMinimumLayoutAgeMs: 15_000 },
         rttRefinementGateConfig: {
             minIntervalMs: 30_000,
             vivaldiDeltaThresholdMs: 5

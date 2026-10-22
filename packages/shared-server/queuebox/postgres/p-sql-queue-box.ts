@@ -14,6 +14,7 @@ import {
     toResourceInboxReservationOptions,
     toResourceInboxWorkAdvertisementOptions,
     type QueueBoxResourceEntryRepository,
+    type QueueBoxWrittenIfAbsent,
     type ResourceInboxFairnessReservationInput,
     type ResourceInboxFairnessSelection,
     type ResourceInboxFinalizationReservationOptions,
@@ -468,6 +469,10 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async enqueueIfAbsent(resourceEntry: ResourceEntry): Promise<ResourceEntry> {
+        return (await this.writeIfAbsent(resourceEntry)).entry;
+    }
+
+    async writeIfAbsent(resourceEntry: ResourceEntry): Promise<QueueBoxWrittenIfAbsent> {
         const values = computeResourceInboxEntryInsertValues(resourceEntry);
         return await this.resourceInbox.transaction(
             async (txRepo: PSqlResourceInboxRepository) => {

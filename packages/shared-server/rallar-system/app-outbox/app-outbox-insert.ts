@@ -1,30 +1,17 @@
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
+import { PSqlFragment } from '../../postgres/p-sql-fragment.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import { ResourceInboxInvariantCorruptionError } from '../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import {
+    toResourceInboxEntryInsert,
+    type ResourceInboxEntryInsertRow
+} from '../../queuebox/postgres/resource-inbox-entry-insert-values.ts';
 import { toPgTimestamp, toSystemDate } from '../../queuebox/postgres/resource-inbox-row-codec.ts';
 
 export interface AppOutboxInsert {
     readonly entry: Readonly<ResourceEntry>;
     readonly systemDate: string;
-    readonly createdAt: string;
-    readonly expiresAt: string;
-    readonly startedAt: string | null;
-    readonly finishedAt: string | null;
-    readonly nextAt: string | null;
-    readonly attempts: number;
-}
-
-/** One row of the multi-row outbox insert, named as the statement's recordset columns. */
-export interface AppOutboxInsertRow {
-    readonly resourceId: string;
-    readonly topicId: string;
-    readonly resource: string;
-    readonly typeId: string;
-    readonly status: string;
-    readonly contextId: string;
-    readonly systemDate: string;
-    readonly createdBy: string;
     readonly createdAt: string;
     readonly expiresAt: string;
     readonly startedAt: string | null;
@@ -119,31 +106,22 @@ async function insertAbsentAppOutboxRows(
     transaction: PSqlSql,
     computed: readonly AppOutboxInsert[]
 ): Promise<readonly AppOutboxInsertedRow[]> {
-    return await transaction<readonly AppOutboxInsertedRow[]>`
-        insert into resource_inbox (ri_resource_id, ri_topic_id, ri_resource, ri_type_id, ri_status, fk_ext_bank_id,
-                                    system_date, created_by, created_ts, expire_ts, start_ts, end_ts, next_ts,
-                                    ri_attempts)
-        select row."resourceId", row."topicId", row.resource, row."typeId", row.status, row."contextId",
-               row."systemDate"::date, row."createdBy", row."createdAt"::timestamp(6), row."expiresAt"::timestamp(6),
-               row."startedAt"::timestamp(6), row."finishedAt"::timestamp(6), row."nextAt"::timestamp(6), row.attempts
-        from jsonb_to_recordset(${computed.map(toAppOutboxInsertRow)}::jsonb)
-            as row("resourceId" text, "topicId" text, resource text, "typeId" text, status text, "contextId" text,
-                   "systemDate" text, "createdBy" text, "createdAt" text, "expiresAt" text, "startedAt" text,
-                   "finishedAt" text, "nextAt" text, attempts bigint)
+    const statement = PSqlFragment.of`${toResourceInboxEntryInsert(computed.map(toAppOutboxInsertRow))}
         on conflict (fk_ext_bank_id, ri_resource_id, ri_topic_id) do nothing
         returning ri_row_id, ri_resource_id, ri_topic_id, fk_ext_bank_id
     `;
+    return await transaction<readonly AppOutboxInsertedRow[]>(...statement.toStatement());
 }
 
-function toAppOutboxInsertRow(computed: AppOutboxInsert): AppOutboxInsertRow {
+function toAppOutboxInsertRow(computed: AppOutboxInsert): ResourceInboxEntryInsertRow {
     const { entry } = computed;
     return {
         resourceId: entry.key.resourceId,
         topicId: entry.key.topicId,
+        contextId: entry.key.contextId,
         resource: entry.resource,
         typeId: entry.typeId,
         status: entry.status,
-        contextId: entry.key.contextId,
         systemDate: computed.systemDate,
         createdBy: entry.audit.createdBy,
         createdAt: computed.createdAt,

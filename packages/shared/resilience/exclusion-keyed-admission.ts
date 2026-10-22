@@ -82,9 +82,7 @@ export class ExclusionKeyedAdmission {
 
     /** Takes an overlapping successor; only one with the run's key or an extension of it makes the run a chain head. */
     private attachChainSuccessor(earlier: KeyedRun, successor: KeyedRun): void {
-        const extendsEarlierKey = successor.exclusionKey === earlier.exclusionKey ||
-            successor.exclusionKey.startsWith(`${earlier.exclusionKey}:`);
-        if (!this.keyedChainsFirst || !extendsEarlierKey) {
+        if (!this.keyedChainsFirst || !isExtendingExclusionKey(earlier.exclusionKey, successor.exclusionKey)) {
             return;
         }
         earlier.isChainHead = true;
@@ -109,5 +107,10 @@ export class ExclusionKeyedAdmission {
 }
 
 function isOverlappingExclusionKey(left: string, right: string): boolean {
-    return left === right || left.startsWith(`${right}:`) || right.startsWith(`${left}:`);
+    return isExtendingExclusionKey(left, right) || isExtendingExclusionKey(right, left);
+}
+
+/** The later key equals the earlier one or extends its path. */
+function isExtendingExclusionKey(earlier: string, later: string): boolean {
+    return later === earlier || later.startsWith(`${earlier}:`);
 }

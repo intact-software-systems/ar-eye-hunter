@@ -83,7 +83,7 @@ export class WsQueueBoxServerDequeueAuthority {
         }
         const facts = await admissionStore.readDequeueAdmissionFacts(message, entry);
         if (facts.sentAdmission) {
-            const policy = await this.readCapturedPolicy(message, entry);
+            const policy = await this.readCapturedPolicy(message, entry, undefined);
             return {
                 admittedAudience: policy.admittedAudience,
                 recipientScope: policy.recipientScope,
@@ -111,7 +111,7 @@ export class WsQueueBoxServerDequeueAuthority {
     async readCapturedPolicy(
         message: ALMessage,
         entry: ResourceEntry,
-        committedPolicy?: ALOutboundCapturedPolicy
+        committedPolicy: ALOutboundCapturedPolicy | undefined
     ): Promise<ALOutboundCapturedPolicy> {
         const policy = committedPolicy ?? await this.dependencies.admissionStore.readCapturedPolicy(message, entry);
         if (validateWsQueueBoxServerRecipientAuthority(message, policy, entry.key).length > 0) {

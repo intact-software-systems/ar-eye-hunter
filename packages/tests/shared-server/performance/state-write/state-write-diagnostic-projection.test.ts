@@ -10,7 +10,6 @@ import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-s
 import { toPhysicalAppInboxQueueKey } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
 import { AppInboxCommandClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-command-client.ts';
 import { AppInboxQueueEntryWriter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-queue-entry-writer.ts';
-import type { AppInboxReservationClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-reservation-client.ts';
 import type { AppInboxResultWaiter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-result-waiter.ts';
 import { toAuthenticatedGroupMutationQueueKey } from '@shared-server/rallar-system/group-state/inbox/to-authenticated-group-mutation-queue-key.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
@@ -418,8 +417,8 @@ describe('state-write diagnostic projection', () => {
                     }
                 },
                 resultWaiter: {
-                    waitForReservedResult: async <Result>(
-                        written: AppInboxReservationClient.MaterializedReservation,
+                    waitForResult: async <Result>(
+                        written: AppInboxResultWaiter.Wait,
                         decodeResult: AppInboxResultWaiter.ResultDecoder<Result>
                     ) => {
                         persistedKeys.push(written.key);

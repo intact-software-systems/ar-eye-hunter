@@ -60,7 +60,7 @@ export function runRtcRoomGraphRtt(
     const sessionIds = createSessionIds(sessions);
     const group = createDeterministicRtcTopologyGroupSnapshot('room-1', sessionIds);
     const measurements = createRttMeasurements(sessionIds, mode, sparseDegree);
-    const service = new RallarRtcTopologyService();
+    const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000 });
     const startedAt = performance.now();
     const graph = service.createRoomGraph(group, measurements);
     const durationMs = performance.now() - startedAt;

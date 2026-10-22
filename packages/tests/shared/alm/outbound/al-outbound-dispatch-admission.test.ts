@@ -6,7 +6,6 @@ import {
     vi
 } from 'vitest';
 
-import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
@@ -21,7 +20,8 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import {
     createDefaultOutboundTestStores,
     createOutboundMessage,
-    OUTBOUND_TEST_SEND_PLANNER
+    OUTBOUND_TEST_SEND_PLANNER,
+    readOutboundTestAdmission
 } from '../outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from '../outbound-test-payload.ts';
 
@@ -46,7 +46,6 @@ function createDispatchFixture(): DispatchFixture {
     const admission = new ALOutboundDispatchAdmission({
         lane: 'durable',
         admissionStore: stores.admissionStore,
-        workPort: createTestALOutboundWorkPort({ ...stores, nowMs: Date.now }),
         toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
         decodePreparedMessage: decodeOutboundTestPayload,
         clock: { nowMs: Date.now },
@@ -399,6 +398,29 @@ it('reads the decisions of a sixteen-member group in one round per read depth, t
     }
 });
 
+it('probes the pending admission each enqueue member retained through the backend\'s turn-batched work read', async () => {
+    const { admission, store, backend } = createDispatchFixture();
+    const messages = Array.from({ length: 4 }, (_, index) => ({
+        ...createOutboundMessage(`retained-${index}`),
+        targets: { mode: 'unicast' as const, toPeerId: `peer-${index}` }
+    }));
+
+    try {
+        for (const message of messages) {
+            await retainPendingAdmission(admission, store, message);
+        }
+        const unbatched = recordUnbatchedWorkQueueReads(backend);
+        const results = await admission.commitAllSettled(messages.map(toDispatch));
+
+        expect(results.map((result) => result.status === 'fulfilled' && result.value.computed.verdict))
+            .toEqual(messages.map(() => ({ kind: 'pending' })));
+        expect(unbatched).toEqual([]);
+    }
+    finally {
+        admission.dispose();
+    }
+});
+
 it('rejects a group commit with two corrupt member observations as corruption, not as an aggregate', async () => {
     const failure = await readGroupObservationFailure({
         'member-1': { delayMs: 5, error: () => new ALAdmissionCorruptionError('member-1', new Error('bad row')) },
@@ -494,4 +516,52 @@ function toFailingReadSession(
         read: (key, decode) => session.read(key, decode),
         list: (prefix, decode) => session.list(prefix, decode)
     };
+}
+
+/** A competing send of the same sender wins the version fence inside the message's first commit, so it retains. */
+async function retainPendingAdmission(
+    admission: ALOutboundDispatchAdmission<OutboundTestPayload>,
+    store: ALOutboundAdmissionStore<OutboundTestPayload>,
+    message: ALMessage
+): Promise<void> {
+    const competitor = await readOutboundTestAdmission({
+        store,
+        message: createOutboundMessage(`${message.id.msgId}-competitor`),
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: Date.now }
+    });
+    const commitBundle = store.commitBundle.bind(store);
+    const spy = vi.spyOn(store, 'commitBundle').mockImplementationOnce(async (bundle, observation) => {
+        expect(await commitBundle(competitor)).toBe('committed');
+        return await commitBundle(bundle, observation);
+    });
+    expect((await admission.commit(toDispatch(message))).computed.verdict).toEqual({ kind: 'pending' });
+    spy.mockRestore();
+}
+
+/**
+ * The work-queue reads that bypass the backend's work read, which the server backend answers turn-batched in one
+ * statement; the in-memory backend's work read reaches the queue synchronously, inside the call.
+ */
+function recordUnbatchedWorkQueueReads(backend: InMemoryAdmissionBackend): string[] {
+    const unbatched: string[] = [];
+    let insideWorkRead = false;
+    const readWork = backend.readWork.bind(backend);
+    const getItem = backend.workQueue.getItem.bind(backend.workQueue);
+    vi.spyOn(backend, 'readWork').mockImplementation((key) => {
+        insideWorkRead = true;
+        try {
+            return readWork(key);
+        }
+        finally {
+            insideWorkRead = false;
+        }
+    });
+    vi.spyOn(backend.workQueue, 'getItem').mockImplementation((key) => {
+        if (!insideWorkRead) {
+            unbatched.push(`${key.topicId}/${key.contextId}`);
+        }
+        return getItem(key);
+    });
+    return unbatched;
 }

@@ -35,6 +35,22 @@ const SERVICE_ID = 'server-12345678';
 const AUDIENCE_SCOPE = { applicationId: 'ar-eye-hunter', workspaceId: 'default' } as const;
 
 const groupSnapshotValidationCounts = vi.hoisted(() => new Map<string, number>());
+const clientMutationReadAssertions = vi.hoisted(() => ({ count: 0 }));
+
+vi.mock(
+    '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation-read.ts',
+    async (importOriginal) => {
+        const original: typeof import('@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation-read.ts') =
+            await importOriginal();
+        return {
+            ...original,
+            assertClientMutationRead: (...input: Parameters<typeof original.assertClientMutationRead>) => {
+                clientMutationReadAssertions.count += 1;
+                original.assertClientMutationRead(...input);
+            }
+        };
+    }
+);
 
 vi.mock('@shared/api/authoritative-state-validation.ts', async (importOriginal) => {
     const original: typeof import('@shared/api/authoritative-state-validation.ts') = await importOriginal();
@@ -128,6 +144,29 @@ it('validates each audience group snapshot once, where the connect read assemble
 
     expect(requireRightSnapshot(connected).activeSessions).toHaveLength(1);
     expect(Object.fromEntries(groupSnapshotValidationCounts)).toEqual({ 'room-one': 1, 'room-two': 1 });
+});
+
+it('asserts the connect read in its computation and in the recompute that validates it, and nowhere else', async () => {
+    const queue = new TestResourceInbox();
+    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+    const results = new TestResourceInboxResults();
+    const authSession = issuedSession('alice', 'alice-ws-session');
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    const authSessions = new AuthSessionRepository(runtimeRepository);
+    await authSessions.putSession(authSession);
+    const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
+    const service = createAuthorisedWsService({ database, queue, reader, results, runtimeRepository });
+    clientMutationReadAssertions.count = 0;
+
+    const connected = await connectAuthorisedWs({ queue, reader, service }, {
+        authSession,
+        generationId: 'generation-read-assertions',
+        ticketDigest: await putAuthorisedWsTestTicket(authSessions, authSession),
+        input: AUDIENCE_SCOPE
+    });
+
+    expect(requireRightSnapshot(connected).activeSessions).toHaveLength(1);
+    expect(clientMutationReadAssertions.count).toBe(2);
 });
 
 it('rejects authorised websocket disconnect after durable auth revocation', async () => {

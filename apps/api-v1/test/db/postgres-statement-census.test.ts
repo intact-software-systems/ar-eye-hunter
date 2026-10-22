@@ -50,7 +50,7 @@ Deno.test('the census emits one statement-census line per interval that saw stat
     assert.equal(events.length, 1);
 });
 
-Deno.test('a shape is the first sixty characters of the statement text, parameters as marks, with whitespace collapsed', () => {
+Deno.test('a shape is the whole statement text, parameters as marks, with whitespace collapsed', () => {
     const census = new PostgresStatementCensus();
     const text = `select ${'column_name, '.repeat(20)}`;
 
@@ -59,8 +59,24 @@ Deno.test('a shape is the first sixty characters of the statement text, paramete
 
     assert.deepEqual(census.takeShapes().map((shape) => shape.shape).sort(), [
         'select ?::int as ordinal, exists(?)',
-        text.slice(0, 60)
+        text.trim()
     ]);
+});
+
+Deno.test('statements whose texts share their first sixty characters stay two shapes, each truncated only on its line', () => {
+    const census = new PostgresStatementCensus();
+    const events: RallarTimingEvent[] = [];
+    const timers = createManualTimers();
+    const prefix = 'select * from resource_inbox where ri_type_id = any(';
+    startPostgresStatementCensusTiming({ census, timers, timing: (event) => events.push(event), serviceId: 'server-1', intervalMs: 5_000 });
+
+    census.record({ strings: toStrings([prefix, '::text[]) and ri_status = \'RETRY\' limit 1']), values: [[]], executorWaitMs: 4 });
+    census.record({ strings: toStrings([prefix, '::text[]) and ri_status = \'RESERVED\' limit 1']), values: [[]], executorWaitMs: 1 });
+    timers.runDue();
+
+    const shapes = JSON.parse(String(events[0]?.details?.shapes)) as { shape: string; count: number; executorWaitMs: number; }[];
+    assert.deepEqual(shapes.map(({ count, executorWaitMs }) => [count, executorWaitMs]), [[1, 4], [1, 1]]);
+    assert.deepEqual(shapes.map(({ shape }) => shape.length), [60, 60]);
 });
 
 Deno.test('a parameter counts its scalar text: an array its scalar elements, a structured value nothing', () => {

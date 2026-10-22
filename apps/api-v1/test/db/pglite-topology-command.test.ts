@@ -219,6 +219,7 @@ Deno.test(
             // planned degree: a four-session ring keeps every selection
             // exactly the planned hops and leaves the a-c chord outside.
             const topologyService = new RallarRtcTopologyService({
+                rttReplanMinimumLayoutAgeMs: 15_000,
                 now: () => nowEpochMs,
                 topologyKind: 'tree',
                 degreeLimit: 2,
@@ -341,7 +342,7 @@ Deno.test(
                 readCurrentGroupSnapshot: async (ref) => await groups.readSnapshot(ref),
                 readRttMeasurements: () => [],
                 configRepository: new GroupTopologyConfigRepository(runtimeRepository),
-                topologyService: new RallarRtcTopologyService({ now: () => nowEpochMs }),
+                topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => nowEpochMs }),
                 topologySnapshotRepository: snapshots
             });
             const readTopologyPlanningAuthority = topologyManagement.planning

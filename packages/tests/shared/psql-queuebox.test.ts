@@ -91,13 +91,14 @@ describe('PSqlQueueBox', () => {
             resource: JSON.stringify({ resourceId: 'entry-1', version: 1 })
         };
         const repo = createQueueBoxRepositoryFixture({
-            writeComputedIfAbsentOrReplaceExpired: vi.fn(async () => existing)
+            writeComputedIfAbsentOrReplaceExpired: vi.fn(async () => ({ entry: existing, created: false }))
         });
 
         const queue = new PSqlQueueBox(repo, Temporal.Now.instant);
         const returned = await queue.enqueueIfAbsent(entry);
 
         expect(returned).toBe(existing);
+        expect(await queue.writeIfAbsent(entry)).toEqual({ entry: existing, created: false });
         expect(repo.entries.writeComputedIfAbsentOrReplaceExpired).toHaveBeenCalledWith(expect.objectContaining({
             entry,
             createdTimestamp: '2024-01-01T00:00:00Z',
@@ -517,7 +518,7 @@ function createQueueBoxRepositoryFixture(overrides: PSqlQueueBoxTestRepositoryOv
             replaceComputed: overrides.replaceComputed ?? vi.fn(async (values: ResourceInboxEntryInsertValues) => values.entry),
             replaceIfObserved: overrides.replaceIfObserved ?? vi.fn(async () => null),
             writeComputedIfAbsentOrReplaceExpired: overrides.writeComputedIfAbsentOrReplaceExpired ??
-                vi.fn(async (values: ResourceInboxEntryInsertValues) => values.entry)
+                vi.fn(async (values: ResourceInboxEntryInsertValues) => ({ entry: values.entry, created: true }))
         } satisfies Partial<PSqlResourceInboxEntryRepository>
     );
     Object.assign(

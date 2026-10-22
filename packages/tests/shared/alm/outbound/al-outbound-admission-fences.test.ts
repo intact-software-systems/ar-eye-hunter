@@ -8,10 +8,7 @@ import {
 } from 'vitest';
 
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
-import {
-    createTestALOutboundControlAdmission,
-    createTestALOutboundWorkPort
-} from '@shared-test/shared/create-test-al-outbound-work-port.ts';
+import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     newALAckControlMessage,
@@ -422,11 +419,6 @@ function createFenceDispatchAdmission(fixture: FenceFixture): ALOutboundDispatch
     const admission = new ALOutboundDispatchAdmission<OutboundTestPayload>({
         lane: 'durable',
         admissionStore: fixture.store,
-        workPort: createTestALOutboundWorkPort({
-            admissionStore: fixture.store,
-            workQueue: fixture.backend.workQueue,
-            nowMs: Date.now
-        }),
         toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
         decodePreparedMessage: decodeOutboundTestPayload,
         clock: { nowMs: Date.now },

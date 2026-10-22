@@ -18,7 +18,6 @@ import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
 import { toALOutboundCommitLockName, type ALBrowserLocks } from '../storage/al-browser-locks.ts';
 import { toALStorageUnavailable } from '../storage/al-storage-unavailable.ts';
-import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import type {
     ALOutboundAdmissionStore,
     ALOutboundCommitBundle,
@@ -119,7 +118,6 @@ export namespace ALOutboundDispatchAdmission {
         /** The store pair this admission commits to, named on its commit-phases diagnostic. */
         readonly lane: ALStoreDurability;
         readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
-        readonly workPort: ALWorkQueuePort;
         readonly toOutboxEntry: (msg: ALMessage) => ResourceEntry;
         readonly decodePreparedMessage: ALOutboundPreparedMessageDecoder<TPrepared>;
         readonly clock: ALOutboundMessageRuntime.Clock;
@@ -438,9 +436,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         input: ComputeALOutboundDispatchInput<TPrepared>
     ): Promise<ALOutboundPendingDispatchVerdict | undefined> {
         return await readALOutboundPendingDispatch({
-            namespace: this.admissionStore.namespace,
-            canonicalScope: this.admissionStore.canonicalScope,
-            workPort: this.dependencies.workPort,
+            admissionStore: this.admissionStore,
             decodePrepared: this.dependencies.decodePreparedMessage,
             nowMs: () => this.readNowMs(),
             dispatch: input

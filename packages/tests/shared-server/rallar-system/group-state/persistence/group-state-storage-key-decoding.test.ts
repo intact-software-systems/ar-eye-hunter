@@ -73,6 +73,9 @@ const storageKeyFamilies: readonly StorageKeyFamily[] = [
     }
 ];
 
+/** Each printable ASCII character on its own, so whether each one is kept or escaped is pinned. */
+const PRINTABLE_ASCII_CHARACTERS = Array.from({ length: 95 }, (_, index) => String.fromCharCode(0x20 + index));
+
 const acceptedValues = [
     'a',
     'AZaz09',
@@ -87,8 +90,10 @@ const acceptedValues = [
     'a=b',
     'a+b',
     'æøå',
-    '\u{1F600}'
-] as const;
+    '\u{1F600}',
+    PRINTABLE_ASCII_CHARACTERS.join(''),
+    ...PRINTABLE_ASCII_CHARACTERS
+];
 
 const missingNameParts = (name: string): readonly string[] => [
     '',
@@ -123,6 +128,8 @@ const noncanonicalParts = (name: string): readonly string[] => [
     `${name}=%5F`,
     `${name}=%7E`,
     `${name}=%21`,
+    `${name}=%27`,
+    `${name}=%2A`,
     `${name}=æ`,
     `${name}=%c3%a6`
 ];

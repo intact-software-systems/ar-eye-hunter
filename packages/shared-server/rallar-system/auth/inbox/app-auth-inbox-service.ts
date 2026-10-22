@@ -34,7 +34,6 @@ import { toUnexpectedAppInboxFailure, type AppInboxFailure } from '../../app-inb
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
 import { encodeAppInboxCommand, encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
-import type { AppInboxReservationClient } from '../../app-inbox/client/app-inbox-reservation-client.ts';
 import type { AppInboxResultWaiter } from '../../app-inbox/client/app-inbox-result-waiter.ts';
 import { createAppInboxClientRuntime } from '../../app-inbox/client/create-app-inbox-client-runtime.ts';
 import { AppInboxHandlerRegistry } from '../../app-inbox/handler/app-inbox-handler-registry.ts';
@@ -524,7 +523,7 @@ export class AppAuthInboxService {
     ): Promise<Either<AppInboxFailure, AuthMutationPublicResult>> {
         let persisted: Either<AppInboxFailure, AuthMutationResult>;
         try {
-            persisted = await this.resultWaiter.waitForReservedResult<AuthMutationResult>(
+            persisted = await this.resultWaiter.waitForResult<AuthMutationResult>(
                 reserved.reservation,
                 decodeAuthMutationResult
             );
@@ -629,7 +628,7 @@ interface AuthIntentReservation {
 
 interface ReservedAuthIntent<I extends AuthMutationIntent> {
     readonly intent: I;
-    readonly reservation: AppInboxReservationClient.MaterializedReservation;
+    readonly reservation: AppInboxResultWaiter.Wait;
 }
 
 /** A replay that finds its intent still NEW wakes the queue as its reserver did, in case that waiter is gone. */

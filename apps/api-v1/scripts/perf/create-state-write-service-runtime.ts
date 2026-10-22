@@ -217,7 +217,7 @@ function createStateWriteTopologyService({
         readCurrentGroupSnapshot: async (ref) => await groupStateRepository.readSnapshot(ref),
         readRttMeasurements: () => [],
         configRepository: topologyConfigRepository,
-        topologyService: new RallarRtcTopologyService()
+        topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000 })
     });
     const topologyMutationOwners = createGroupTopologyMutationOwners({
         groupStateRepository,

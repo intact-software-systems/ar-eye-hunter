@@ -8,8 +8,10 @@ import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALAdmissionWorkBackend } from '../al-admission-work-backend.ts';
 import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
 import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
-import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
-import type { ALOutboundPreparedMessageDecoder } from './admission/al-outbound-admission-store.ts';
+import type {
+    ALOutboundAdmissionStore,
+    ALOutboundPreparedMessageDecoder
+} from './admission/al-outbound-admission-store.ts';
 import {
     captureALOutboundPolicy,
     type ALOutboundCapturedPolicy
@@ -52,9 +54,7 @@ export function toALOutboundPendingControlId(msg: ALMessage): string {
 }
 
 export interface ReadALOutboundPendingDispatchInput<TPrepared> {
-    readonly namespace: string;
-    readonly canonicalScope: string;
-    readonly workPort: ALWorkQueuePort;
+    readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
     readonly decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>;
     readonly nowMs: () => number;
     readonly dispatch: ComputeALOutboundDispatchInput<TPrepared>;
@@ -87,14 +87,15 @@ export async function readALOutboundPendingDispatch<TPrepared>(
     if (input.dispatch.intent !== 'enqueue' || options.pendingAdmission || !retained || read.sentSnapshot) {
         return undefined;
     }
-    const reference = toALOutboundMessageReference(input.canonicalScope, outboxEntry, read.msg);
-    const entry = await input.workPort.readEntry(
-        toALOutboundWorkKey(input.namespace, toALOutboundPendingAdmissionId(reference))
+    const { admissionStore } = input;
+    const reference = toALOutboundMessageReference(admissionStore.canonicalScope, outboxEntry, read.msg);
+    const entry = await admissionStore.readWork(
+        toALOutboundWorkKey(admissionStore.namespace, toALOutboundPendingAdmissionId(reference))
     );
     if (!entry || reference.expiresAtMs <= input.nowMs()) {
         return undefined;
     }
-    const pending = decodeALOutboundWorkEntry(entry, input.namespace, {
+    const pending = decodeALOutboundWorkEntry(entry, admissionStore.namespace, {
         decodePrepared: input.decodePrepared,
         message: read.msg
     }).payload;

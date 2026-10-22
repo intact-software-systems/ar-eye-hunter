@@ -222,7 +222,7 @@ export class TopologyInboxService {
                 reservation.semanticHash
             );
         }
-        return await this.resultWaiter.waitForReservedResult(
+        return await this.resultWaiter.waitForResult(
             reserved,
             decodeTopologyAppInboxResult
         );

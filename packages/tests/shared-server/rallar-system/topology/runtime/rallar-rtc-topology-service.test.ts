@@ -17,7 +17,7 @@ import { createRtcTopologyGroupSnapshot, createRtcTopologyMemberIds, createRtcTo
 describe('RallarRtcTopologyService public facade', () => {
     it('creates scoped star topology for groups below tree size', () => {
         const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(4));
-        const service = new RallarRtcTopologyService({ now: () => 100 });
+        const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100 });
 
         const result = service.updateGroupTopology(group);
 
@@ -29,7 +29,7 @@ describe('RallarRtcTopologyService public facade', () => {
 
     it('plans a topology without observing it in the process cache', () => {
         const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(4));
-        const service = new RallarRtcTopologyService({ now: () => 100 });
+        const service = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100 });
 
         const result = service.planGroupTopology(group);
 
@@ -103,7 +103,7 @@ class RecordingRtcTopologyService extends RallarRtcTopologyService {
     private readonly recordingOptions: RecordingRtcTopologyServiceOptions;
 
     constructor(recordingOptions: RecordingRtcTopologyServiceOptions = {}) {
-        super({ now: () => 100 });
+        super({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100 });
         this.recordingOptions = recordingOptions;
     }
 
@@ -164,5 +164,5 @@ function createGroup(): GroupSnapshot {
 }
 
 function createSnapshot(group: GroupSnapshot): RallarOverlayTopologySnapshot {
-    return new RallarRtcTopologyService({ now: () => 100 }).planGroupTopology(group).snapshot;
+    return new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 100 }).planGroupTopology(group).snapshot;
 }

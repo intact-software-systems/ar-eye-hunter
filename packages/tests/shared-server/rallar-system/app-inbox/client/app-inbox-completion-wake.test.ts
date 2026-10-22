@@ -12,7 +12,6 @@ import { PSqlResourceInboxEntryRepository } from '@shared-server/queuebox/postgr
 import type { ResourceInboxStatusAndAttempts } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { normalizeAppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
-import type { AppInboxReservationClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-reservation-client.ts';
 import { AppInboxResultWaiter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-result-waiter.ts';
 import type { RallarTimingDetails, RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
@@ -62,7 +61,7 @@ describe('AppInbox local completion wait', () => {
             }
         });
         let returned = false;
-        const pending = waiter.waitForReservedResult({ enqueue, key, winner: false }, (value) => value).then((result) => {
+        const pending = waiter.waitForResult({ enqueue, key, winner: false }, (value) => value).then((result) => {
             returned = true;
             return result;
         });
@@ -98,7 +97,7 @@ describe('AppInbox local completion wait', () => {
             }
         });
         let returned = false;
-        const pending = waiter.waitForReservedResult({ enqueue, key, winner: false }, (value) => value).then((result) => {
+        const pending = waiter.waitForResult({ enqueue, key, winner: false }, (value) => value).then((result) => {
             returned = true;
             return result;
         });
@@ -136,7 +135,7 @@ describe('AppInbox local completion wait', () => {
                 return completed;
             }
         });
-        const pending = waiter.waitForReservedResult({ enqueue, key, winner: false }, (value) => value);
+        const pending = waiter.waitForResult({ enqueue, key, winner: false }, (value) => value);
         await firstReadStarted.promise;
         for (let duplicate = 0; duplicate < 100; duplicate += 1) {
             notifications.publish(key, 'awaitable');
@@ -167,7 +166,7 @@ describe('AppInbox local completion wait', () => {
                 return completed;
             }
         });
-        const pending = waiter.waitForReservedResult({ enqueue, key, winner: false }, (value) => value);
+        const pending = waiter.waitForResult({ enqueue, key, winner: false }, (value) => value);
         await vi.advanceTimersByTimeAsync(0);
         expect((await pending).right).toEqual({ accepted: true });
         expect(reads).toEqual(['status', 'result']);
@@ -185,7 +184,7 @@ describe('AppInbox local completion wait', () => {
                 return { status, attempts: 1 };
             }
         });
-        const pending = waiter.waitForReservedResult({ enqueue, key, winner: false }, (value) => value);
+        const pending = waiter.waitForResult({ enqueue, key, winner: false }, (value) => value);
         await vi.advanceTimersByTimeAsync(0);
         status = EntityStatus.COMPLETED;
         await vi.advanceTimersByTimeAsync(999);
@@ -212,7 +211,7 @@ describe('AppInbox local completion wait', () => {
                 return { status, attempts: 1 };
             }
         });
-        const pending = waiter.waitForReservedResult({ enqueue, key, winner: false }, (value) => value);
+        const pending = waiter.waitForResult({ enqueue, key, winner: false }, (value) => value);
         await vi.advanceTimersByTimeAsync(700);
         expect(reads).toBe(1);
         status = EntityStatus.COMPLETED;
@@ -243,7 +242,7 @@ describe('AppInbox local completion wait', () => {
                 waitMaxElapsedMsecs: 10_000,
                 readStatus: async () => ({ status, attempts: 1 })
             });
-            const pending = waiter.waitForReservedResult({ enqueue, key, winner: false }, (value) => value);
+            const pending = waiter.waitForResult({ enqueue, key, winner: false }, (value) => value);
             await vi.advanceTimersByTimeAsync(400);
 
             status = EntityStatus.COMPLETED;
@@ -279,7 +278,7 @@ describe('AppInbox local completion wait', () => {
                 return { status, attempts: 1 };
             }
         });
-        const pending = waiter.waitForReservedResult({ enqueue, key, winner: false }, (value) => value);
+        const pending = waiter.waitForResult({ enqueue, key, winner: false }, (value) => value);
         await vi.advanceTimersByTimeAsync(500);
         status = EntityStatus.COMPLETED;
         await vi.advanceTimersByTimeAsync(499);
@@ -308,7 +307,7 @@ describe('AppInbox local completion wait', () => {
                 return { status: 'RESERVED', attempts: 1 };
             }
         });
-        const pending = waiter.waitForReservedResult({ enqueue, key, winner: false }, (value) => value);
+        const pending = waiter.waitForResult({ enqueue, key, winner: false }, (value) => value);
         await vi.advanceTimersByTimeAsync(699);
         expect(reads).toBe(1);
         await vi.advanceTimersByTimeAsync(1);
@@ -323,7 +322,7 @@ describe('AppInbox local completion wait', () => {
         const notifications = new ObservedCompletionNotifications();
         notifications.publish(key, 'awaitable');
         const waiter = createWaiter({ notifications, readStatus: async () => ({ status: 'COMPLETED', attempts: 1 }) });
-        expect((await waiter.waitForReservedResult({ enqueue, key, winner: false }, (value) => value)).right).toEqual({ accepted: true });
+        expect((await waiter.waitForResult({ enqueue, key, winner: false }, (value) => value)).right).toEqual({ accepted: true });
         expect(notifications.activeSubscriptions).toBe(0);
     });
 
@@ -343,8 +342,8 @@ describe('AppInbox local completion wait', () => {
             }
         });
         const pending = [
-            waiter.waitForReservedResult({ enqueue, key, winner: false }, (value) => value),
-            waiter.waitForReservedResult({ enqueue, key, winner: false }, (value) => value)
+            waiter.waitForResult({ enqueue, key, winner: false }, (value) => value),
+            waiter.waitForResult({ enqueue, key, winner: false }, (value) => value)
         ];
         await vi.advanceTimersByTimeAsync(0);
         expect(notifications.activeSubscriptions).toBe(2);
@@ -379,7 +378,7 @@ describe('AppInbox local completion wait', () => {
                 return completed;
             }
         });
-        const pending = waiter.waitForReservedResult({ enqueue, key, winner: false }, (value) => value);
+        const pending = waiter.waitForResult({ enqueue, key, winner: false }, (value) => value);
         await vi.advanceTimersByTimeAsync(0);
         expect(reads).toEqual(['status', 'result']);
         expect(vi.getTimerCount()).toBe(1);
@@ -400,7 +399,7 @@ describe('AppInbox local completion wait', () => {
             readStatus: async () => ({ status: terminal ? status : 'RESERVED', attempts: 1 }),
             readResult: async () => status === 'COMPLETED' ? completed : { ...failure, status }
         });
-        const pending = waiter.waitForReservedResult({ enqueue, key, winner: false }, (value) => value);
+        const pending = waiter.waitForResult({ enqueue, key, winner: false }, (value) => value);
         await vi.advanceTimersByTimeAsync(0);
         terminal = true;
         notifications.publish(key, 'awaitable');
@@ -417,7 +416,7 @@ describe('AppInbox local completion wait', () => {
     }])('preserves $code and cleanup after terminal poll', async ({ result, code }) => {
         const notifications = new ObservedCompletionNotifications();
         const waiter = createWaiter({ notifications, readStatus: async () => ({ status: 'COMPLETED', attempts: 1 }), readResult: async () => result });
-        expect((await waiter.waitForReservedResult({ enqueue, key, winner: false }, (value) => value)).left?.code).toBe(code);
+        expect((await waiter.waitForResult({ enqueue, key, winner: false }, (value) => value)).left?.code).toBe(code);
         expect(notifications.activeSubscriptions).toBe(0);
     });
 
@@ -431,7 +430,7 @@ describe('AppInbox local completion wait', () => {
                 throw error;
             }
         });
-        await expect(waiter.waitForReservedResult({ enqueue, key, winner: false }, (value) => value)).rejects.toBe(error);
+        await expect(waiter.waitForResult({ enqueue, key, winner: false }, (value) => value)).rejects.toBe(error);
         expect(notifications.activeSubscriptions).toBe(0);
     });
 
@@ -449,7 +448,7 @@ describe('AppInbox local completion wait', () => {
             };
         });
         const waiter = createWaiter({ notifications, readStatus: async () => ({ status: 'RESERVED', attempts: 1 }) });
-        await expect(waiter.waitForReservedResult({ enqueue, key, winner: false }, (value) => value)).rejects.toBe(error);
+        await expect(waiter.waitForResult({ enqueue, key, winner: false }, (value) => value)).rejects.toBe(error);
         expect(notifications.activeSubscriptions).toBe(0);
     });
 
@@ -462,7 +461,7 @@ describe('AppInbox local completion wait', () => {
                 throw new Error('read failed');
             }
         });
-        const pending = waiter.waitForReservedResult({ enqueue, key, winner: false }, (value) => value);
+        const pending = waiter.waitForResult({ enqueue, key, winner: false }, (value) => value);
         await vi.runAllTimersAsync();
         expect((await pending).left?.code).toBe('app-inbox-unavailable');
         expect(notifications.activeSubscriptions).toBe(0);
@@ -483,7 +482,7 @@ describe('AppInbox coalesced completion polls', () => {
         for (const [index, resourceId] of resourceIds.entries()) {
             table.rows.set(resourceId, { status: 'RESERVED', attempts: 1 });
             const waiter = index === 1 ? clientWaiter : groupWaiter;
-            pending.push(waiter.waitForReservedResult({ enqueue: { ...enqueue, resourceId }, key: { ...key, resourceId }, winner: false }, (value) => value));
+            pending.push(waiter.waitForResult({ enqueue: { ...enqueue, resourceId }, key: { ...key, resourceId }, winner: false }, (value) => value));
             await vi.advanceTimersByTimeAsync(250);
         }
         expect(table.statements).toEqual([1, 1, 1]);
@@ -502,7 +501,7 @@ describe('AppInbox coalesced completion polls', () => {
         resourceIds.forEach((resourceId) => table.rows.set(resourceId, { status: 'NEW', attempts: 0 }));
         const waiter = createWaiter({ notifications, readStatus: table.readStatus, waitMaxElapsedMsecs: 10_000 });
         const pending = resourceIds.map((resourceId) =>
-            waiter.waitForReservedResult({ enqueue: { ...enqueue, resourceId }, key: { ...key, resourceId }, winner: false }, (value) => value)
+            waiter.waitForResult({ enqueue: { ...enqueue, resourceId }, key: { ...key, resourceId }, winner: false }, (value) => value)
         );
         await vi.advanceTimersByTimeAsync(0);
         expect(table.statements).toEqual([3]);
@@ -529,7 +528,7 @@ describe('AppInbox coalesced completion polls', () => {
         ['request-a', 'request-b'].forEach((resourceId) => table.rows.set(resourceId, { status: 'RESERVED', attempts: 1 }));
         const waiter = createWaiter({ notifications, events, phaseTiming: true, waitMaxElapsedMsecs: 1_500, readStatus: table.readStatus });
         const pending = ['request-a', 'request-b'].map((resourceId) =>
-            waiter.waitForReservedResult({ enqueue: { ...enqueue, resourceId }, key: { ...key, resourceId }, winner: false }, (value) => value)
+            waiter.waitForResult({ enqueue: { ...enqueue, resourceId }, key: { ...key, resourceId }, winner: false }, (value) => value)
         );
         await vi.advanceTimersByTimeAsync(0);
         table.failing = true;
@@ -558,12 +557,12 @@ describe('AppInbox coalesced completion polls', () => {
         table.rows.set('request-healthy', { status: 'RESERVED', attempts: 1 });
         table.rows.set('request-corrupt', { status: 'RESERVED', attempts: 1 });
         const waiter = createWaiter({ notifications, events, phaseTiming: true, waitMaxElapsedMsecs: 1_500, readStatus: table.readStatus });
-        const healthy = waiter.waitForReservedResult({
+        const healthy = waiter.waitForResult({
             enqueue: { ...enqueue, resourceId: 'request-healthy' },
             key: { ...key, resourceId: 'request-healthy' },
             winner: false
         }, (value) => value);
-        const corrupt = waiter.waitForReservedResult({
+        const corrupt = waiter.waitForResult({
             enqueue: { ...enqueue, resourceId: 'request-corrupt' },
             key: { ...key, resourceId: 'request-corrupt' },
             winner: false
@@ -588,13 +587,13 @@ describe('AppInbox coalesced completion polls', () => {
         const waiter = createWaiter({ notifications, events, phaseTiming: true, waitMaxElapsedMsecs: 1_300, readStatus: table.readStatus });
         table.rows.set('request-a', { status: 'RESERVED', attempts: 1 });
         table.rows.set('request-b', { status: 'RESERVED', attempts: 1 });
-        const early = waiter.waitForReservedResult({
+        const early = waiter.waitForResult({
             enqueue: { ...enqueue, resourceId: 'request-a' },
             key: { ...key, resourceId: 'request-a' },
             winner: false
         }, (value) => value);
         await vi.advanceTimersByTimeAsync(500);
-        const late = waiter.waitForReservedResult(
+        const late = waiter.waitForResult(
             { enqueue: { ...enqueue, resourceId: 'request-b' }, key: { ...key, resourceId: 'request-b' }, winner: false },
             (value) => value
         );
@@ -636,9 +635,9 @@ describe('AppInbox coalesced completion polls', () => {
                 return await table.readStatus(read);
             }
         });
-        const winner = waiter.waitForReservedResult(createReservation('request-winner', true), (value) => value);
-        const ticked = waiter.waitForReservedResult(createReservation('request-ticked', true), (value) => value);
-        const replay = waiter.waitForReservedResult(createReservation('request-replay', false), (value) => value);
+        const winner = waiter.waitForResult(createReservation('request-winner', true), (value) => value);
+        const ticked = waiter.waitForResult(createReservation('request-ticked', true), (value) => value);
+        const replay = waiter.waitForResult(createReservation('request-replay', false), (value) => value);
         await vi.advanceTimersByTimeAsync(0);
         expect(wakes).toBe(2);
         expect(reads).toEqual(['request-replay']);
@@ -675,7 +674,7 @@ describe('AppInbox coalesced completion polls', () => {
             },
             readStatus: table.readStatus
         });
-        const winner = waiter.waitForReservedResult(createReservation('request-winner', true), (value) => value);
+        const winner = waiter.waitForResult(createReservation('request-winner', true), (value) => value);
         await vi.advanceTimersByTimeAsync(0);
         expect(table.statements).toEqual([]);
         expect((await winner).right).toEqual({ accepted: true });
@@ -703,7 +702,7 @@ describe('AppInbox wake reads', () => {
                 return completed;
             }
         });
-        const pending = waiter.waitForReservedResult({ enqueue, key, winner: false }, (value) => value);
+        const pending = waiter.waitForResult({ enqueue, key, winner: false }, (value) => value);
         await vi.advanceTimersByTimeAsync(400);
         if (origin === 'local') {
             notifications.publish(key, 'awaitable');
@@ -727,7 +726,7 @@ describe('AppInbox wake reads', () => {
             readStatus: async () => ({ status: 'RESERVED', attempts: 1 }),
             readResult: async () => ({ ...failure, status })
         });
-        const pending = waiter.waitForReservedResult({ enqueue, key, winner: false }, (value) => value);
+        const pending = waiter.waitForResult({ enqueue, key, winner: false }, (value) => value);
         await vi.advanceTimersByTimeAsync(0);
         notifications.publish(key, 'awaitable');
         await vi.advanceTimersByTimeAsync(0);
@@ -748,7 +747,7 @@ describe('AppInbox wake reads', () => {
             readStatus: async () => ({ status: results.length > 1 ? 'RESERVED' : 'COMPLETED', attempts: 1 }),
             readResult: async () => results.length > 1 ? results.shift() : results[0]
         });
-        const pending = waiter.waitForReservedResult({ enqueue, key, winner: false }, (value) => value);
+        const pending = waiter.waitForResult({ enqueue, key, winner: false }, (value) => value);
         await vi.advanceTimersByTimeAsync(0);
         notifications.publish(key, 'awaitable');
         await vi.advanceTimersByTimeAsync(0);
@@ -777,7 +776,7 @@ describe('AppInbox wake reads', () => {
             readStatus: async () => ({ status, attempts: 1 }),
             readResult: async () => results.length > 1 ? results.shift() : results[0]
         });
-        const pending = waiter.waitForReservedResult({ enqueue, key, winner: false }, (value) => value);
+        const pending = waiter.waitForResult({ enqueue, key, winner: false }, (value) => value);
         await vi.advanceTimersByTimeAsync(0);
         status = EntityStatus.COMPLETED;
         notifications.publish(key, 'awaitable');
@@ -802,7 +801,7 @@ describe('AppInbox wake reads', () => {
             waitMaxElapsedMsecs: 1_500,
             readStatus: async () => ({ status: 'RESERVED', attempts: 1 })
         });
-        const pending = waiter.waitForReservedResult({ enqueue, key, winner: false }, (value) => value);
+        const pending = waiter.waitForResult({ enqueue, key, winner: false }, (value) => value);
         await vi.advanceTimersByTimeAsync(1_500);
         expect((await pending).left?.code).toBe('app-inbox-unavailable');
         expect(toPollLines(events)).toEqual([
@@ -817,7 +816,7 @@ describe('AppInbox wake reads', () => {
         const notifications = new ObservedCompletionNotifications();
         const events: RallarTimingEvent[] = [];
         const waiter = createWaiter({ notifications, events, readStatus: async () => ({ status: 'RESERVED', attempts: 1 }) });
-        const pending = waiter.waitForReservedResult({ enqueue, key, winner: false }, (value) => value);
+        const pending = waiter.waitForResult({ enqueue, key, winner: false }, (value) => value);
         await vi.advanceTimersByTimeAsync(0);
         notifications.publish(key, 'awaitable');
         await vi.advanceTimersByTimeAsync(0);
@@ -874,7 +873,7 @@ function createWaiter(fixture: WaiterFixture): AppInboxResultWaiter {
 function createReservation(
     resourceId: string,
     winner: boolean
-): AppInboxReservationClient.MaterializedReservation {
+): AppInboxResultWaiter.Wait {
     const reservedKey = { ...key, resourceId };
     return { enqueue: { ...enqueue, resourceId }, key: reservedKey, winner };
 }

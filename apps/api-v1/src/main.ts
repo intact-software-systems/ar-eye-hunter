@@ -32,12 +32,11 @@ console.log(JSON.stringify({
     event: 'api-v1.configuration',
     ...toApiV1ConfigurationStartupSummary(configuration)
 }));
+const timing = createApiTimingSink(configuration.observability);
 const databaseLifecycle = await createDefaultApiV1DatabaseLifecycle({
     database: configuration.database,
     pgliteEvidence: configuration.blackBox.pgliteEvidence,
-    statementCensus: configuration.observability.timingLogs
-        ? { timing: createApiTimingSink(configuration.observability), serviceId: myServerId }
-        : undefined
+    statementCensus: configuration.observability.timingLogs ? { timing, serviceId: myServerId } : undefined
 });
 const rallar = await createDefaultRallarServer({
     configuration,
@@ -53,7 +52,7 @@ const app: Hono = new Hono();
 installApiHttpMiddleware(app, {
     http: configuration.http,
     stateApi: configuration.stateApi,
-    timing: createApiTimingSink(configuration.observability)
+    timing
 });
 
 rallar.installSystemTopics();

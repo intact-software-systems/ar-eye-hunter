@@ -85,7 +85,7 @@ describe('activation status series settlement', () => {
             findGroupSnapshotByRef: () => current,
             readCurrentGroupSnapshot: async () => current,
             readRttMeasurements: () => [],
-            topologyService: new RallarRtcTopologyService({ now: () => 2_000 }),
+            topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 2_000 }),
             topologySnapshotRepository: snapshots
         }).planning;
         const authority = await planning.readTopologyPlanningAuthority({ groupRef: toCanonicalGroupRef(current.group) });
