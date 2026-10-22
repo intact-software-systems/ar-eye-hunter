@@ -1,137 +1,223 @@
-# Lobby and matchmaking follow-ups
+# Lobby and matchmaking product plan
 
-Follow-up to the open-arenas lobby (`GET …/group-directory`, `rallar.rooms.directory()`, the AR Eye
-Hunter "Open arenas" section). That change lets a non-member discover and join an open arena. This
-plan covers what the same primitives can serve next. Each slice is independently shippable and ships
-as its own pull request.
+Rallar should make it easy to enter a shared browser experience and keep the same people together:
+share a room, enter it, participate, reconnect, and return. This plan develops that promise from the
+existing open-room directory. Rallar owns discovery, admission, membership, and recovery; applications
+own activity eligibility, readiness, match rules, and what participants or spectators may see.
 
-## Starting point
+The chosen direction is invitation first, followed by drop-in discovery and automatic room selection.
+An invitation can serve two people who already know each other. Public matching additionally depends
+on enough compatible people being available at the same time. This is a product direction to validate
+with adoption and participation evidence, not a claim that current usage has proved it.
 
-- `joinMode` is `invite-only | code | open`; only `open` groups are directory-visible
-  (`readGroupVisibility` → `directory`). The directory returns safe summaries and never enters the
-  browser's authoritative group cache.
-- Member roles and the `pending` member status already exist (admission approval), as do
-  `expiresAtEpochMs` / `purgeAfterEpochMs`, join codes (`rotateJoinCode`), `rallar.people`, and the
-  Vivaldi RTT / topology helpers in `packages/shared-graph`.
-- The directory is pull-based. It loads on login and on Refresh, and has no push updates.
+Current product and architecture authority remains in [product](../../docs/product.md) and
+[architecture](../../docs/architecture.md). Slice numbers below preserve existing references; their
+numeric order is not the delivery order. Each implementation PR delivers an independently testable
+outcome. Only the next two implementation increments are made concrete in the
+[slice 0 implementation plan](./lobby-directory-hardening-implementation.md); later work stays
+outcome-shaped until its prerequisites and product evidence are available.
 
-## Slice 0: directory hardening (prerequisite)
+## Current foundation
 
-Owned by the directory pull requests, listed here because later slices assume them.
+- `GET …/group-directory` and `rallar.rooms.directory()` discover safe summaries of open rooms the
+  caller cannot already read in full. They do not hydrate authoritative browser group caches.
+- The original directory hardening is already present in the tree, introduced by PR #685: `kind`
+  and `q` filters, limits, keyset pagination, `GroupDirectoryEntry`, effective member capacity,
+  lifecycle state, ETag revalidation, AR Eye directory-error state, and shared Relic HTTP middleware.
+  Slice 0 below finishes the contract and user-facing reliability around that foundation.
+- `joinMode` supplies the admission credential: `open`, `code`, or `invite-only`. Lifecycle admission
+  policy can still close entry or require approval. Business status, formation state, connectivity,
+  room membership, and participation in an application activity are separate facts.
+- Relic explicitly separates online room members from expedition hunters. Use it alongside AR Eye
+  while designing directory and admission behavior, rather than validating generality at the end.
+- Codes, rotation, pending admission, roles, expiry fields, people presence, and topology RTT helpers
+  already exist. Their existence does not establish complete invitation, friendship, retention,
+  spectating, or matchmaking products.
 
-- Server-side `kind` and `q` filters, a stable sort (online count, then id) with a keyset cursor, and
-  a `limit`. Rooms with no online member are hidden unless `includeEmpty=true`.
-- A dedicated directory entry type with `maxMembers`, `lifecycleState` and a derived full flag,
-  replacing the reused `SpaStatisticsSafeGroupSummary`.
-- `ETag` plus `Cache-Control: no-cache` so repeated polls revalidate cheaply.
-- The app reports a directory failure instead of showing an empty lobby.
-- The Relic server installs the shared `installApiHttpMiddleware` instead of a hand-copied CORS
-  config.
-- Not in scope here: purging stale empty groups. `purgeAfterEpochMs` is an absolute client-supplied
-  time and no policy sets it. That needs its own decision (slice 6).
+## Product choices
 
-## Slice 1: quick match
+### Entry and participation
 
-`POST …/groups/quick-join` picks the best open room and joins it in one server step, removing the
-client-side race where two players take the last slot.
+Quick Join promises immediate admission to a suitable existing room or an explicit unavailable
+result. It does not silently submit an approval request, promise a seat in a running activity, or
+create a matchmaking ticket. Applications decide whether room admission is enough to participate.
 
-- Selection is pure `computeXxx` over the directory read: open, active, not full, most online
-  members first, ties by lowest estimated RTT once slice 2 exists.
-- It is a group mutation, so it follows the AppInbox doctrine in `convergent-service-writing.md`:
-  read the decision surface outside the transaction, compute and validate purely, then
-  `write(transaction, computed)` with the conditional guard first. A full or vanished room is a
-  typed conflict that restarts the attempt with a fresh read, never an exception.
-- Add the command across the group-mutation registries (see the group mutation command registry
-  census), one registrar and one translator with literal paths, the OpenAPI entry, and black-box
-  recipes. Two clients racing for one slot must both resolve, with exactly one admitted to the full
-  room and the other placed in another room or told none is available.
-- Browser: `rallar.rooms.quickJoin()`; app: a "Quick match" button beside "New Arena".
-- Validation: unit tests for the pure selector, AppInbox convergence tests, the Postgres
-  `test:api-v1:black-box:postgres:medium-scale` gate because this is a mutation path.
+Selection first respects scope, credentials, admission windows, effective capacity, and application
+eligibility. It must not treat `lifecycleState: active` as a universal eligibility filter: the match
+preset admits while forming and closes afterward. Rank eligible rooms by useful participation, with
+online-member count as an initial proxy where appropriate; spectators and multiple sessions must not
+be described as additional players.
 
-## Slice 2: latency-ranked lobby
+When no room is suitable, the initial app experience offers starting a room and sharing it. Automatic
+creation is an explicit app choice. Waiting for a newly formed match is a later capability with its
+own cancellation, timeout, reservation, and group-formation semantics. Pending admission is consent
+awaiting approval, not a matchmaking queue.
 
-Rank directory entries by estimated RTT from the caller to the room's members.
+### Visibility and access
 
-- Reuse the Vivaldi coordinates already maintained for topology. Do not add a second RTT source.
-- The server returns an optional `estimatedRttMs` per entry only when both sides have coordinates;
-  absence means unknown, not zero. Ranking by RTT is a sort option, not the default.
-- Open question: whether the caller's coordinate is known before the first RTC contact. If not, the
-  ranking is only available after the first connect, which limits its use in a cold lobby.
+Discovery and permission to enter are independent. Use these initial product choices:
 
-## Slice 3: spectate
+| Choice         | Directory | Admission credential                               |
+| -------------- | --------- | -------------------------------------------------- |
+| Public         | Listed    | Open, subject to admission policy                  |
+| Unlisted       | Hidden    | Room reference, subject to admission policy        |
+| Code protected | Hidden    | Valid code, subject to admission policy            |
+| Invite only    | Hidden    | Authorized invitation, subject to admission policy |
 
-Open rooms offer a "watch" join with a read-only role.
+Unlisted means absent from discovery, not access restricted. Settle this behavior before implementing
+shareable private and unlisted flows. Preserve existing public-room visibility during any migration;
+adding a stored listing field requires an explicit migration, not a tolerant reader.
 
-- Use the existing member roles; add or reuse a role that can read state and presence but cannot
-  send gameplay messages. Enforcement belongs in the room send authorization, not the UI.
-- The directory entry advertises whether spectating is allowed. Spectators do not count against
-  `maxMembers`, or count separately; decide before implementation.
-- Recipe: a spectator joins, receives presence and state, and is denied a gameplay send.
+Invitation destinations survive authentication. Links identify the intended application/workspace
+and room, or use a deliberately scoped code resolver; a code alone must not be assumed globally
+unique or already resolvable. Never put an auth session or ticket in a link. Code expiry and rotation
+prevent future entry with that code; they do not remove existing members. Revocation of membership is
+a separate owner action. Provide an enter-code path for people receiving a code without a link.
 
-## Slice 4: private games with shareable codes
+### Return, lifetime, and keeping people together
 
-Keep invite-only rooms and make the existing `code` join mode usable.
+Reconnect to the current activity and return to a recent room are different experiences. A fresh
+invitation takes precedence over restoring an old room. Recovery rechecks current authorization and
+activity state; it must not resurrect an expired, deleted, or no-longer-authorized session.
 
-- App: create a private arena, show a share code and a link of the form `#/join/<code>`; opening the
-  link joins directly without the lobby.
-- Codes expire and rotate through the existing rotate-join-code command. The link carries the code
-  only, never a session or ticket.
-- `code` rooms stay out of the directory. Whether a "enter a code" row belongs in the lobby is a
-  product choice and is deliberately not decided here.
+Temporary activities and persistent social or collaborative rooms need different retention policies.
+Define reconnect grace, hiding from discovery, archival, and permanent deletion separately. Do not
+purge every empty room under one platform-wide rule. Existing absolute expiry/purge fields do not
+supply an idle-retention policy.
 
-## Slice 5: unlisted but joinable
+Explore “play again with these people” before a general party system. Reusing a room for another
+activity may be sufficient. Moving a party together between rooms requires explicit reservation and
+all-or-none admission decisions before it becomes a platform promise.
 
-Split "open to join" from "listed in the directory".
+## Delivery priorities
 
-- Add a required `listed` flag on the group, defaulting to `true` for `open` rooms, so a room can be
-  joinable by link and hidden from the lobby.
-- This changes the stored group shape, so it needs a data migration. The strict reader rejects rows
-  missing a key (the stale-row 400 seen on the Relic deploy), and the repo forbids tolerant readers.
-  Write a Prisma data migration and cover it with a migration test.
-- `readDirectoryVisibility` and the directory filter both honour the flag.
+| Priority    | Outcomes                                                                                                |
+| ----------- | ------------------------------------------------------------------------------------------------------- |
+| First       | Slice 0 reliability; share links/codes (4); visibility choices (5); reconnect/recent-room behavior (6). |
+| Next        | Quick Join (1), designed and validated against both AR Eye and Relic (9).                               |
+| Then        | Automatic directory freshness (7), introducing push when the experience needs it.                       |
+| Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them.             |
+| Later       | Latency ranking (2), scheduled rooms (8), and a separate tournament capability.                         |
 
-## Slice 6: resume, rejoin and cleanup
+Relic validation is a constraint throughout, not a dependency postponed to slice 9. Operator
+reliability work may ship independently where a concrete operational need warrants it.
 
-- "My recent arenas": the caller's own groups, ordered by last activity, with auto-rejoin after a
-  reload. No new permissions are needed.
-- Decide a stale-room policy: a server-side rule that sets `purgeAfterEpochMs` once a room has been
-  empty for a configured time, so abandoned arenas leave storage and not just the lobby.
-- Isolate one corrupt row from list reads instead of failing the whole request (a partial result
-  with a reported row id). This must be reconciled with the no-tolerant-readers rule, so it needs an
-  explicit decision before work starts.
+## Slice 0: finish directory hardening
 
-## Slice 7: live lobby
+Preserve the shipped directory behavior and finish these acceptance outcomes:
 
-Replace Refresh with a pushed directory.
+- Preserve server-side `kind`, trimmed case-insensitive `q`, default limit 50, maximum 200,
+  `includeEmpty=false`, and online-count-descending/group-id-ascending keyset ordering. Pagination is
+  a best-effort view of changing presence, not a frozen snapshot; consumers deduplicate results.
+- Keep the dedicated safe entry contract and effective capacity. `isFull` describes the membership
+  cap, not whether admission or gameplay is available. Forming rooms remain discoverable when their
+  visibility allows it. Document this distinction instead of describing every entry as joinable.
+- Keep ETag revalidation and make the documented conditional request usable across allowed browser
+  origins. Revalidate authorization before a conditional result; preserve typed query/auth failures.
+  A 304 saves response-body transfer, not necessarily snapshot reads or server computation.
+- Distinguish initial loading, a successfully empty directory, and a failed refresh. A failure must
+  not also show empty-lobby guidance. Retained entries after failure are visibly stale; Refresh
+  recovers them. Older requests and signed-out or replaced sessions cannot publish directory state.
+- Preserve separation from authoritative membership caches and retain the shared HTTP middleware
+  already installed in Relic. Verify the same directory contract with AR Eye and Relic-shaped names.
 
-- A workspace-level directory topic over the existing state-sync WebSocket carries create, join,
-  leave and close deltas as safe entries only, never full group snapshots.
-- Friends' presence comes from `rallar.people`, shown beside entries.
-- Delivery must stay best-effort and recoverable: a client that misses a delta recovers from the
-  ETag-validated pull.
+No Quick Join command, listing migration, spectator role, retention job, push directory, metadata
+query language, or corruption-tolerant reader belongs to this slice. Implementation owners, the two
+remaining increments, and validation are in the linked implementation plan.
 
-## Slice 8: scheduled and tournament rooms
+## Slice 1: Quick Join
 
-Groups with a start time, expiry and approval-based admission.
+Automatically admit a caller to a suitable existing room in one authoritative operation. The browser
+surface is `rallar.rooms.quickJoin()`; apps use “Quick Join” where that accurately describes the result.
+Selection and final admission share current policy, and conflict retries restart from fresh state.
+Two callers racing for the last place cannot both receive it; the other caller finds another room or
+receives an unavailable result. Do not promise global snapshot isolation across all candidate rooms.
 
-- A start time on the group, `pending` admission for sign-up, and the existing admission approval
-  commands for the organizer.
-- Fits the lifecycle policy work; confirm the lifecycle owner before adding any new group field.
+The default never creates a room or places someone in an approval queue. The app supplies its
+participation requirements and handles the empty result through the start-and-share experience above.
+AppInbox owns mutations and retry; define the operation contract and concurrency evidence when this
+slice enters the implementation horizon.
 
-## Slice 9: other apps and operators
+## Slice 2: latency-ranked discovery
 
-- Relic Hunters: list co-op expeditions through the same endpoint with `kind` and metadata filters.
-  This is the check that the filter design is general; if Relic needs a filter the AR app does not,
-  revisit slice 0.
-- Ops view: an admin-authorized directory of every group, including unlisted and invite-only, with a
-  per-row validity status so a corrupt row is visible instead of poisoning the list.
+First establish whether peer, director, or authoritative-server latency predicts the application's
+experience. Reuse existing RTT evidence only when it measures that path. Cold-start and missing
+coordinates remain usable unknowns, never zero latency or automatic exclusion. Ranking is opt-in and
+must show participation benefit before it displaces simpler eligibility and occupancy decisions.
 
-## Cross-cutting rules
+## Slice 3: spectating
 
-- REST changes add or adjust black-box recipes in the same change.
-- shared-web public surface changes include the public API snapshots and bundle-boundary checks; the
-  `browser/rallar.ts` Brotli budget is adjustable and is raised and reported when crossed.
-- Any group mutation or stored-shape change goes through the convergent-writing and migration rules
-  above, with the Postgres medium-scale gate for mutation paths.
-- Related, tracked separately: advertised WebSocket host validation (GitHub issue 683).
+Offer watching when it helps learning or social participation. Applications define a spectator-safe
+view; read-only message permissions alone do not authorize exposing hidden gameplay state. Enforce
+permissions at authoritative boundaries, use separate bounded spectator capacity, and decide chat,
+moderation, and transition-to-player behavior before shipping. Advertise watching only when the
+application actually supports it.
+
+## Slice 4: shareable private rooms
+
+Make code-protected and invitation-based entry usable from a fresh browser, including authentication,
+expired/rotated-code feedback, and an enter-code action. Carry the intended destination through the
+whole flow. Keep these rooms hidden from discovery and make access and rotation semantics match the
+product choices above. Validate invitation-to-participation and reload recovery together.
+
+## Slice 5: unlisted rooms
+
+Allow reference-based entry without directory listing. Separate listing from credentials while
+preserving established room visibility through an explicit stored-data migration. Directory reads
+and eventual pushed updates must remove rooms that become hidden; hiding is not membership revocation.
+Do not implement the migration in slice 0.
+
+## Slice 6: recovery and room lifetime
+
+Deliver recovery and recent-room navigation first, then separately define temporary versus persistent
+room retention. Include interrupted authentication, reload, expired rooms, removed membership, and a
+new invitation overriding an old destination. Reconnect grace and deletion must not race each other.
+Decide “play again” behavior with each application's activity lifecycle.
+
+Corrupt-row isolation belongs to operator reliability in slice 9, not this recovery feature.
+
+## Slice 7: fresh discovery and social context
+
+Start with deliberate automatic refresh and measured freshness needs. If push is justified, send safe
+workspace-scoped directory updates over existing state sync, including removals when visibility
+changes, and recover missed updates with conditional pull. Do not hydrate full group snapshots.
+
+`rallar.people` provides known people and presence. Define friendship, consent, and room-location
+visibility before showing “friends here”; presence alone does not establish a friend relationship.
+
+## Slice 8: scheduled rooms
+
+Support scheduled sessions for organized games, workshops, or classrooms when demand warrants it.
+Define organizer ownership, sign-up, cancellation, no-shows, and admission around the start window.
+Confirm the lifecycle owner before introducing stored fields. A tournament is a separate product
+requiring rounds, results, and advancement; a scheduled room does not imply that support.
+
+## Slice 9: consumer validation and operator reliability
+
+Use AR Eye and Relic from slice 0 onward to verify the same safe discovery contract while keeping
+activity rules in the apps. Add metadata filters only for a concrete consumer requirement with safe,
+bounded semantics; do not generalize `kind` into a game-specific query language.
+
+An administrator directory can show all rooms and per-row validity under operator authorization.
+Decide strict-row rejection versus explicitly reported partial collection results before isolating
+corruption. Invalid rows must never become accepted authoritative values, and ordinary callers must
+not receive hidden room identifiers through diagnostics.
+
+## Success evidence and delivery rules
+
+Measure invitation/discovery-to-participation time, join failures by reason, empty-directory
+outcomes, reconnect success, repeat participation with the same people, and the application glue
+required to implement those flows. Baseline these before choosing numeric targets. HTTP admission
+success alone does not prove successful participation.
+
+- REST behavior changes update OpenAPI and black-box recipes in the same change.
+- Shared browser public-surface changes include API snapshots and bundle-boundary checks. Report any
+  bundle-budget change rather than silently exceeding it.
+- Authoritative mutations use AppInbox and the current convergent-service standard; stored-shape
+  changes require migration evidence. Select the current testing skill's gates for the actual scope.
+- Review every changed human-authored file in full; remediation support files enter the same closure,
+  while independent untouched code stays outside it. Remove affected legacy without verified consumers;
+  retaining a real compatibility boundary requires the repository's explicit approval and registry.
+- GitHub PRs own delivery state. Do not mirror it in a plan catalog or completion ledger. Delete an
+  implementation plan in the PR that completes its outcomes, not in this planning PR.
+- Advertised WebSocket host validation remains separately tracked in issue #683.
