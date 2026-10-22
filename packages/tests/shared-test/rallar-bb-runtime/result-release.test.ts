@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { computeResultCaptureReceipt } from '@shared-test/rallar-bb-test/result-release/result-release-protocol.ts';
+import { RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES } from '@shared-test/rallar-bb-test/control-protocol.ts';
+import {
+    canonicalControlRetentionJson,
+    CONTROL_RETENTION_PLAN_LIMITS,
+    ControlRetentionPlanLimitError
+} from '@shared-test/rallar-bb-test/control-retention-canonical.ts';
+import {
+    computeResultCaptureReceipt,
+    RESULT_CAPTURE_LIMITS,
+    toCanonicalResultCaptureJson
+} from '@shared-test/rallar-bb-test/result-release/result-release-protocol.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 
 const identity = { runId: 'release-run', agentId: 'release-agent' };
@@ -154,7 +164,9 @@ it('defers active work and owned recipe leases, rejects reset receipts, and fail
 });
 
 it('rejects digest budget failures explicitly and retains original payloads', async () => {
-    const runtime = createDefaultRallarBlackBoxTestRuntime({ commandExecutor: () => ({ status: 'ok', value: 'x'.repeat(1_048_577) }) });
+    const runtime = createDefaultRallarBlackBoxTestRuntime({
+        commandExecutor: () => ({ status: 'ok', value: 'x'.repeat(RESULT_CAPTURE_LIMITS.stringCharacters + 1) })
+    });
     const result = await runtime.execute({ kind: 'health', commandId: 'large' }, identity);
     const release = await runtime.releaseResults({
         ...identity,
@@ -162,7 +174,29 @@ it('rejects digest budget failures explicitly and retains original payloads', as
         receipts: [{ ...identity, commandId: result.commandId, capture: result.capture!, digest: 'unverifiable' }]
     });
     expect(release.status).toBe('rejected');
+    expect(release.reason).toBe('The exact full result cannot be certified within the capture digest bounds.');
     expect(runtime.state().resultCache.large).toBe(result);
+});
+
+it('bounds result capture by the admitted control frame, not by the retention plan', async () => {
+    expect(RESULT_CAPTURE_LIMITS).toEqual({
+        canonicalDepth: 64,
+        canonicalNodes: RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES / 2,
+        stringCharacters: RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES,
+        canonicalUtf8Bytes: RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES
+    });
+    const aboveRetention = { samples: new Array(CONTROL_RETENTION_PLAN_LIMITS.canonicalNodes).fill(0) };
+    expect(() => canonicalControlRetentionJson(aboveRetention)).toThrow(ControlRetentionPlanLimitError);
+    expect(toCanonicalResultCaptureJson(aboveRetention)).toBe(JSON.stringify(aboveRetention));
+
+    const aboveCapture = new Array(RESULT_CAPTURE_LIMITS.canonicalNodes).fill(0);
+    expect(() => toCanonicalResultCaptureJson(aboveCapture)).toThrow(
+        expect.objectContaining({
+            name: 'ResultCaptureLimitError',
+            limit: 'canonicalNodes',
+            maximum: RESULT_CAPTURE_LIMITS.canonicalNodes
+        })
+    );
 });
 
 it('history aliases cannot fabricate assertions after releasing the latest result', async () => {

@@ -1,6 +1,13 @@
 import { assertEquals } from '@std/assert';
 
+import {
+    canonicalControlRetentionJson,
+    ControlRetentionPlanLimitError
+} from '@shared-test/rallar-bb-test/control-retention-canonical.ts';
+import type { RallarBlackBoxTestResult } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { RESULT_CAPTURE_LIMITS } from '@shared-test/rallar-bb-test/result-release/result-release-protocol.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import { createManualTimers } from '../../../packages/tests/shared/resilience/manual-timers.ts';
 import { ControlArtifactRecorder, DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG } from '../src/control-artifact-recorder.ts';
@@ -124,10 +131,42 @@ Deno.test('receipt selection keeps reused root IDs scoped to the latest reset ge
     }
 });
 
-Deno.test('canonical receipt budget never prevents full admitted result artifact persistence', async () => {
+Deno.test('a 50-agent result above the retention node budget is certified and released end to end', async () => {
+    const storageDir = await Deno.makeTempDir();
+    const identity = { runId: 'fifty-agent', agentId: 'director' };
+    const runtime = createDefaultRallarBlackBoxTestRuntime({ commandExecutor: () => ({ status: 'ok', value: createFiftyAgentDirectorValue() }) });
+    const recorder = new ControlArtifactRecorder({
+        timers: createDefaultTimers(),
+        config: DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG,
+        storageDir,
+        commandSnapshots: { snapshotCommand: () => undefined }
+    });
+    try {
+        const result = await runtime.execute({ kind: 'health', commandId: 'director' }, identity);
+        // The fixture must exceed the retention canonicalizer's node budget, or the test proves nothing.
+        assertEquals(toRetentionLimitBreach(result), 'canonicalNodes');
+        const recorded = await recorder.record({ kind: 'result', protocolVersion: 1, ...identity, commandId: result.commandId, ok: result.ok, result });
+        assertEquals(recorded.left, undefined);
+        const receipts = await recorder.readResultReceipts(identity, ['director']);
+        assertEquals(receipts.left, undefined);
+        assertEquals(receipts.right?.length, 1);
+        const release = await runtime.releaseResults({ ...identity, requestId: 'fifty-agent-release', receipts: receipts.right! });
+        assertEquals(release.status, 'released');
+        assertEquals(release.releasedResults, 1);
+        const stored = JSON.parse(await Deno.readTextFile(`${storageDir}/runs/fifty-agent/results.jsonl`));
+        assertEquals(stored.fullResult, JSON.parse(JSON.stringify(result)));
+    }
+    finally {
+        await Deno.remove(storageDir, { recursive: true });
+    }
+});
+
+Deno.test('a result beyond its capture budget is persisted in full but never certified', async () => {
     const storageDir = await Deno.makeTempDir();
     const identity = { runId: 'large', agentId: 'agent' };
-    const runtime = createDefaultRallarBlackBoxTestRuntime({ commandExecutor: () => ({ status: 'ok', value: 'x'.repeat(1_048_577) }) });
+    const runtime = createDefaultRallarBlackBoxTestRuntime({
+        commandExecutor: () => ({ status: 'ok', value: 'x'.repeat(RESULT_CAPTURE_LIMITS.stringCharacters + 1) })
+    });
     const recorder = new ControlArtifactRecorder({
         timers: createDefaultTimers(),
         config: DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG,
@@ -236,3 +275,23 @@ Deno.test('overflow during receipt persistence prevents a successful capture ack
         await Deno.remove(storageDir, { recursive: true });
     }
 });
+
+function createFiftyAgentDirectorValue(): ApiJsonObject {
+    return {
+        agents: Array.from({ length: 50 }, (_, agent) => ({
+            agentId: `agent-${agent}`,
+            ok: true,
+            samples: Array.from({ length: 2_500 }, (_, sample) => sample % 1_000)
+        }))
+    };
+}
+
+function toRetentionLimitBreach(result: RallarBlackBoxTestResult): string | undefined {
+    try {
+        canonicalControlRetentionJson(result);
+        return undefined;
+    }
+    catch (error) {
+        return error instanceof ControlRetentionPlanLimitError ? error.limit : undefined;
+    }
+}
