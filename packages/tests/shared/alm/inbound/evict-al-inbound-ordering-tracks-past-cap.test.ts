@@ -259,9 +259,7 @@ async function createOrderingCapFixture(
         storage,
         observer: createPassThroughIndexedDbOperationObserver(),
         maxOrderingTracks: cap === 'capped' ? AL_INBOUND_MAX_ORDERING_TRACKS : undefined,
-        reportOrderingTracks,
-        // Room for a marker on every track a test opens, so only the ordering pass removes anything.
-        maxDeliveredMarkers: CHURNED_TRACKS
+        reportOrderingTracks
     });
     const inbound = createInboundTestRuntime({ carrier: 'ws', stores, effectWorkerId: 'al-inbound:ordering-cap' });
     await inbound.runtime.ready();

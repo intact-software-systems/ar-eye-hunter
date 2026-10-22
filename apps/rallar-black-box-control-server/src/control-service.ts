@@ -12,7 +12,7 @@ import {
 } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import {
     planControlRunRetention,
-    resolveRetainedControlRunIds,
+    resolveRemovedControlRunIds,
     type ControlRetentionPlan
 } from '@shared-test/rallar-bb-test/control-retention.ts';
 import type {
@@ -572,12 +572,11 @@ export class RallarBlackBoxControlService {
     }
 
     applyRunRetention(maxRuns: number | undefined): readonly string[] {
-        const runs = Array.from(this.runs.values());
-        const retainedIds = resolveRetainedControlRunIds(runs, maxRuns);
-        if (retainedIds === undefined) {
-            return [];
-        }
-        return this.deleteControlRunRecords(runs.filter((run) => !retainedIds.has(run.runId)).map((run) => run.runId));
+        return this.deleteControlRunRecords(resolveRemovedControlRunIds(this.runs.values(), maxRuns, 'any'));
+    }
+
+    applyCompletedRunRetention(maxRuns: number | undefined): readonly string[] {
+        return this.deleteControlRunRecords(resolveRemovedControlRunIds(this.runs.values(), maxRuns, 'completed'));
     }
 
     createRetentionPlan(maxRuns: number | undefined): ControlRetentionPlan {

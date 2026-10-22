@@ -5,99 +5,73 @@ export interface ALInboundIndexedMarker {
 }
 
 /**
- * The delivered markers one inbound store holds, kept per sender in the order their expiry last moved forward, so the
- * marker that expires first is the head of its sender's map: found, moved and forgotten in O(1).
+ * The delivered markers one capped inbound store holds, in the order their expiry last moved forward, so the least
+ * recently admitted track's marker is the head: found, moved and forgotten in O(1).
  *
- * The index learns a marker from the store's own commits, which name the sender. Rows the store held before the index
- * existed carry no readable sender (a track key joins an ordering key and a sender id that may both hold colons), so
- * `load` keeps them apart, earliest expiry first; they count toward the total and leave by expiry, or move under their
- * sender when a commit writes them again.
+ * The order is not strictly the expiry order: a marker's expiry also covers its buffered releases, which may outlive
+ * the track TTL. An expired marker behind a live head therefore stays counted until it reaches the head, so `count` is
+ * an upper bound, and a pass that meets such a marker counts its removal against the excess it inflated.
+ *
+ * The index learns a marker from the store's own commits. `load` adds the rows the store held before the index
+ * existed, earliest expiry first, ahead of every marker a commit already named.
  */
 export class ALInboundDeliveredMarkerIndex {
     #loaded = false;
-    readonly #bySender = new Map<string, Map<string, number>>();
-    readonly #senderByTrack = new Map<string, string>();
-    readonly #unattributed = new Map<string, number>();
+    #markers = new Map<string, number>();
 
     get loaded(): boolean {
         return this.#loaded;
     }
 
-    /** Adds the rows the store held that no commit has named yet; called once, before the first eviction. */
+    /** Called once, before the first eviction. */
     load(held: readonly ALInboundIndexedMarker[]): void {
-        const unnamed = held.filter((marker) => !this.#senderByTrack.has(marker.trackKey));
-        for (const marker of [...unnamed].sort((left, right) => left.expireAtTimestamp - right.expireAtTimestamp)) {
-            this.#unattributed.set(marker.trackKey, marker.expireAtTimestamp);
-        }
+        const unnamed = held
+            .filter((marker) => !this.#markers.has(marker.trackKey))
+            .sort((left, right) => left.expireAtTimestamp - right.expireAtTimestamp);
+        this.#markers = new Map([
+            ...unnamed.map((marker): [string, number] => [marker.trackKey, marker.expireAtTimestamp]),
+            ...this.#markers
+        ]);
         this.#loaded = true;
     }
 
-    /** A committed marker write; a later expiry moves the marker behind every other marker of its sender. */
-    record(senderId: string, marker: ALInboundIndexedMarker): void {
-        this.#unattributed.delete(marker.trackKey);
-        const markers = this.#bySender.get(senderId) ?? new Map<string, number>();
-        const known = markers.get(marker.trackKey);
+    /** A committed marker write; a later expiry moves the marker behind every other marker. */
+    record(marker: ALInboundIndexedMarker): void {
+        const known = this.#markers.get(marker.trackKey);
         if (known !== undefined && known >= marker.expireAtTimestamp) {
             return;
         }
-        markers.delete(marker.trackKey);
-        markers.set(marker.trackKey, marker.expireAtTimestamp);
-        this.#bySender.set(senderId, markers);
-        this.#senderByTrack.set(marker.trackKey, senderId);
+        this.#markers.delete(marker.trackKey);
+        this.#markers.set(marker.trackKey, marker.expireAtTimestamp);
     }
 
-    forget(senderId: string, trackKey: string): void {
-        const markers = this.#bySender.get(senderId);
-        markers?.delete(trackKey);
-        if (markers?.size === 0) {
-            this.#bySender.delete(senderId);
-        }
-        this.#senderByTrack.delete(trackKey);
+    forget(trackKey: string): void {
+        this.#markers.delete(trackKey);
     }
 
     /**
-     * The sender's markers from the first to expire, read lazily from the live map: a marker the caller forgets is not
-     * read again, and one it records again is read once more after the others.
+     * The markers from the least recently admitted, read lazily from the live map after the expired heads are dropped:
+     * a marker the caller forgets is not read again, and one it records again is read once more after the others.
      */
-    *readOldest(senderId: string, nowMs: number): Generator<ALInboundIndexedMarker> {
-        this.#dropExpiredHeads(senderId, nowMs);
-        for (const [trackKey, expireAtTimestamp] of this.#bySender.get(senderId) ?? []) {
+    *getOldest(nowMs: number): Generator<ALInboundIndexedMarker> {
+        this.#dropExpiredHeads(nowMs);
+        for (const [trackKey, expireAtTimestamp] of this.#markers) {
             yield { trackKey, expireAtTimestamp };
         }
     }
 
-    countSender(senderId: string, nowMs: number): number {
-        this.#dropExpiredHeads(senderId, nowMs);
-        return this.#bySender.get(senderId)?.size ?? 0;
-    }
-
-    /** Every marker the index holds; an expired one past its sender's head counts until its sender's next pass. */
+    /** The markers the index holds once the expired heads are dropped, so a departed sender's markers leave it. */
     count(nowMs: number): number {
-        dropExpiredHeads(this.#unattributed, nowMs);
-        let total = this.#unattributed.size;
-        for (const markers of this.#bySender.values()) {
-            total += markers.size;
-        }
-        return total;
+        this.#dropExpiredHeads(nowMs);
+        return this.#markers.size;
     }
 
-    #dropExpiredHeads(senderId: string, nowMs: number): void {
-        const markers = this.#bySender.get(senderId);
-        for (const trackKey of markers === undefined ? [] : dropExpiredHeads(markers, nowMs)) {
-            this.#senderByTrack.delete(trackKey);
+    #dropExpiredHeads(nowMs: number): void {
+        for (const [trackKey, expireAtTimestamp] of this.#markers) {
+            if (expireAtTimestamp > nowMs) {
+                return;
+            }
+            this.#markers.delete(trackKey);
         }
     }
-}
-
-/** Drops the head entries whose expiry has passed and answers their keys. */
-function dropExpiredHeads(markers: Map<string, number>, nowMs: number): readonly string[] {
-    const dropped: string[] = [];
-    for (const [trackKey, expireAtTimestamp] of markers) {
-        if (expireAtTimestamp > nowMs) {
-            break;
-        }
-        markers.delete(trackKey);
-        dropped.push(trackKey);
-    }
-    return dropped;
 }

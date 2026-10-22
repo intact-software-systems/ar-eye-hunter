@@ -24,6 +24,8 @@ const DELIVERED_PREFIX = `${NAMESPACE}:delivered:`;
 const ORDERING_PREFIX = `${NAMESPACE}:ordering:`;
 const CHURNED_TRACKS = 300;
 const OTHER_SENDER = 'other-sender';
+/** The fixture store's ordering-track TTL, which every admission moves a marker's expiry past. */
+const MARKER_TRACK_TTL_MS = 60_000;
 /** Three hundred IndexedDB admissions, each opening a track, take about five seconds under a loaded machine. */
 const CHURN_TIMEOUT_MS = 30_000;
 /** The rounds that deliver the cap's first sequences run 16 a round. */
@@ -64,39 +66,38 @@ describe('the inbound store\'s delivered markers', () => {
         expect(marked).toContain(toTrackKey(AL_INBOUND_MAX_DELIVERED_MARKERS));
     });
 
-    it('keeps every marker when 257 tracks are spread over two senders, since the cap is per sender', async () => {
+    it('counts every sender\'s markers against the store\'s one cap, evicting another sender\'s older marker', async () => {
         const stated: number[] = [];
         const fixture = await createMarkerCapFixture({
             storage: 'memory',
             reportDeliveredMarkers: (markers) => stated.push(markers)
         });
         await admitAtNextMs(fixture, createTrackMessage(0, 1, OTHER_SENDER));
-
-        await admitFirstSequences(fixture, AL_INBOUND_MAX_DELIVERED_MARKERS);
-
-        const marked = await readMarkedTracks(fixture.backend);
-        expect(marked).toHaveLength(AL_INBOUND_MAX_DELIVERED_MARKERS + 1);
-        expect(marked).toContain(toTrackKey(0, OTHER_SENDER));
-        expect(stated.at(-1)).toBe(AL_INBOUND_MAX_DELIVERED_MARKERS + 1);
-    });
-
-    it('evicts the oldest marker of the sender past its cap, not an older marker of another sender', async () => {
-        const stated: number[] = [];
-        const fixture = await createMarkerCapFixture({
-            storage: 'memory',
-            reportDeliveredMarkers: (markers) => stated.push(markers)
-        });
-        await admitAtNextMs(fixture, createTrackMessage(0, 1, OTHER_SENDER));
-        await admitFirstSequences(fixture, AL_INBOUND_MAX_DELIVERED_MARKERS);
+        await admitFirstSequences(fixture, AL_INBOUND_MAX_DELIVERED_MARKERS - 1);
 
         await admitAtNextMs(fixture, createTrackMessage(AL_INBOUND_MAX_DELIVERED_MARKERS, 1));
 
         const marked = await readMarkedTracks(fixture.backend);
-        expect(marked).toHaveLength(AL_INBOUND_MAX_DELIVERED_MARKERS + 1);
-        expect(marked).toContain(toTrackKey(0, OTHER_SENDER));
-        expect(marked).not.toContain(toTrackKey(0));
-        expect(marked).toContain(toTrackKey(AL_INBOUND_MAX_DELIVERED_MARKERS));
-        expect(stated.at(-1)).toBe(AL_INBOUND_MAX_DELIVERED_MARKERS + 1);
+        expect(marked).toHaveLength(AL_INBOUND_MAX_DELIVERED_MARKERS);
+        expect(marked).not.toContain(toTrackKey(0, OTHER_SENDER));
+        expect(marked).toContain(toTrackKey(0));
+        expect(stated.at(-1)).toBe(AL_INBOUND_MAX_DELIVERED_MARKERS);
+    });
+
+    it('stops counting a sender that opens no more tracks once its markers expire', async () => {
+        const stated: number[] = [];
+        const fixture = await createMarkerCapFixture({
+            storage: 'memory',
+            reportDeliveredMarkers: (markers) => stated.push(markers)
+        });
+        for (let track = 0; track < 3; track += 1) {
+            await admitAtNextMs(fixture, createTrackMessage(track, 1, OTHER_SENDER));
+        }
+        vi.setSystemTime(Date.now() + MARKER_TRACK_TTL_MS);
+
+        await admitAtNextMs(fixture, createTrackMessage(0, 1));
+
+        expect(stated).toEqual([1, 2, 3, 1]);
     });
 
     it('still answers every retained marker\'s delivered sequence as completed, and the evicted one as unknown', async () => {

@@ -2,28 +2,38 @@ import { expect, it } from 'vitest';
 
 import { ALInboundDeliveredMarkerIndex } from '@shared/alm/inbound/admission/al-inbound-delivered-marker-index.ts';
 
-function readOldestTracks(index: ALInboundDeliveredMarkerIndex, senderId: string, nowMs: number): readonly string[] {
-    return [...index.readOldest(senderId, nowMs)].map((marker) => marker.trackKey);
+function getOldestTracks(index: ALInboundDeliveredMarkerIndex, nowMs: number): readonly string[] {
+    return [...index.getOldest(nowMs)].map((marker) => marker.trackKey);
 }
 
-it('reads a sender\'s markers from the first to expire, a later expiry moving a marker behind the others', () => {
+it('reads the markers from the least recently admitted, a later expiry moving a marker behind the others', () => {
     const index = new ALInboundDeliveredMarkerIndex();
-    index.record('a', { trackKey: 't1', expireAtTimestamp: 100 });
-    index.record('a', { trackKey: 't2', expireAtTimestamp: 101 });
-    index.record('b', { trackKey: 't3', expireAtTimestamp: 50 });
+    index.record({ trackKey: 't1', expireAtTimestamp: 100 });
+    index.record({ trackKey: 't2', expireAtTimestamp: 101 });
+    index.record({ trackKey: 't3', expireAtTimestamp: 102 });
 
-    index.record('a', { trackKey: 't1', expireAtTimestamp: 102 });
-    index.record('a', { trackKey: 't2', expireAtTimestamp: 101 });
+    index.record({ trackKey: 't1', expireAtTimestamp: 103 });
+    index.record({ trackKey: 't2', expireAtTimestamp: 101 });
 
-    expect(readOldestTracks(index, 'a', 0)).toEqual(['t2', 't1']);
-    expect(index.countSender('a', 0)).toBe(2);
-    expect(index.countSender('b', 0)).toBe(1);
+    expect(getOldestTracks(index, 0)).toEqual(['t2', 't3', 't1']);
     expect(index.count(0)).toBe(3);
 });
 
-it('drops expired heads and counts the rows loaded before any commit named their sender', () => {
+it('leaves no entry for a sender that opens no more tracks once its markers expire, and the count falls', () => {
     const index = new ALInboundDeliveredMarkerIndex();
-    index.record('a', { trackKey: 't1', expireAtTimestamp: 100 });
+    index.record({ trackKey: 'chat:departed:0', expireAtTimestamp: 100 });
+    index.record({ trackKey: 'chat:departed:1', expireAtTimestamp: 101 });
+    index.record({ trackKey: 'chat:staying:0', expireAtTimestamp: 200 });
+
+    expect(index.count(50)).toBe(3);
+    expect(index.count(150)).toBe(1);
+    expect(getOldestTracks(index, 150)).toEqual(['chat:staying:0']);
+});
+
+it('puts the rows the store held before any commit named them ahead of the recorded markers, earliest expiry first', () => {
+    const index = new ALInboundDeliveredMarkerIndex();
+    index.record({ trackKey: 't1', expireAtTimestamp: 100 });
+
     index.load([
         { trackKey: 't1', expireAtTimestamp: 100 },
         { trackKey: 'old-2', expireAtTimestamp: 90 },
@@ -31,12 +41,8 @@ it('drops expired heads and counts the rows loaded before any commit named their
     ]);
 
     expect(index.loaded).toBe(true);
-    expect(index.count(0)).toBe(3);
+    expect(getOldestTracks(index, 0)).toEqual(['old-1', 'old-2', 't1']);
     expect(index.count(85)).toBe(2);
-
-    index.record('a', { trackKey: 'old-2', expireAtTimestamp: 120 });
-    index.forget('a', 't1');
-
+    index.forget('t1');
     expect(index.count(85)).toBe(1);
-    expect(index.countSender('a', 130)).toBe(0);
 });

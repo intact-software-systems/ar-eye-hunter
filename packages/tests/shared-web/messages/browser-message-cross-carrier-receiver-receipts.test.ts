@@ -29,7 +29,6 @@ import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@share
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundMessageRuntime, type ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
@@ -589,7 +588,7 @@ function createReceiptLoopInboundStores(peerId: string): ALInboundRuntimeStores 
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention(),
             maxOrderingTracks: undefined,
-            maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
+            maxDeliveredMarkers: undefined
         }),
         workQueue: backend.workQueue
     };

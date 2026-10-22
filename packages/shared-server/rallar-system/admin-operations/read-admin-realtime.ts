@@ -19,8 +19,8 @@ export namespace ReadAdminRealtime {
         readonly readGroupFormationMetrics: () => RallarGroupFormationMetrics;
         readonly readAlmReceipts: () => AdminOperationsAlmReceiptDiagnostics;
         readonly readCacheSizes: () => AdminOperationsCacheSizes;
-        /** The delivered markers this process's inbound stores last stated they hold, summed. */
-        readonly readAlmDeliveredMarkers: () => number;
+        /** The unexpired delivered markers the WS server's shared inbound store holds, read from the store. */
+        readonly readAlmDeliveredMarkers: () => Promise<number>;
     }
 }
 
@@ -31,9 +31,9 @@ export class ReadAdminRealtime {
         this.options = options;
     }
 
+    /** Reads the process-local metrics at once, so a failing one throws before the store's marker count is read. */
     execute(input: AdminOperationReadRequest): Promise<AdminOperationsRealtimeResponse> {
-        const status = this.options.readWebSocketStatus();
-        return Promise.resolve({
+        const processLocal = {
             ...createAdminOperationBaseResponse({
                 nowEpochMs: this.options.nowEpochMs,
                 serverId: this.options.serverId,
@@ -46,12 +46,7 @@ export class ReadAdminRealtime {
                     }
                 ]
             }),
-            websocket: {
-                connectionCount: status.connectionCount,
-                openConnectionCount: status.openConnectionCount,
-                connectionIds: status.connectionIds.slice(0, 50),
-                openConnectionIds: status.openConnectionIds.slice(0, 50)
-            },
+            websocket: toAdminWebSocketReading(this.options.readWebSocketStatus()),
             rtcTopology: {
                 metrics: decodeJsonWireValue(
                     this.options.readRtcTopologyMetrics(),
@@ -70,11 +65,20 @@ export class ReadAdminRealtime {
             caches: {
                 ...this.options.readCacheSizes(),
                 processLocal: true
-            },
-            alm: {
-                deliveredMarkers: this.options.readAlmDeliveredMarkers(),
-                processLocal: true
             }
-        });
+        };
+        return this.options.readAlmDeliveredMarkers().then((deliveredMarkers) => ({
+            ...processLocal,
+            alm: { deliveredMarkers, processLocal: false }
+        }));
     }
+}
+
+function toAdminWebSocketReading(status: RallarServerWsStatus): AdminOperationsRealtimeResponse['websocket'] {
+    return {
+        connectionCount: status.connectionCount,
+        openConnectionCount: status.openConnectionCount,
+        connectionIds: status.connectionIds.slice(0, 50),
+        openConnectionIds: status.openConnectionIds.slice(0, 50)
+    };
 }

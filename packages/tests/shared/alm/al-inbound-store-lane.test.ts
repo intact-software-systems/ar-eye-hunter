@@ -8,7 +8,6 @@ import {
     AL_VOLATILE_STORE_EVICTION_INTERVAL_MS,
     normalizeALRuntimeStoreRetention
 } from '@shared/alm/ALStoreRetention.ts';
-import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import {
     createVolatileALInboundAdmissionStore,
     type ALInboundAdmissionStore
@@ -236,7 +235,7 @@ function createObservedInboundPairs(): ObservedInboundPairs {
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention(),
             maxOrderingTracks: undefined,
-            maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
+            maxDeliveredMarkers: undefined
         }),
         workQueue: backend.workQueue,
         evictExpired,

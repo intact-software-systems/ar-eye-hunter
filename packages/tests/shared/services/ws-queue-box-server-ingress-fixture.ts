@@ -8,7 +8,6 @@ import {
     type ALAdmissionMemoryState
 } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import { createALInboundAdmissionStore, type ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/mod.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
@@ -53,7 +52,7 @@ export async function createServerIngressFixture(
         supersedenceTrackTtlMs: 300000,
         retention: normalizeALRuntimeStoreRetention(),
         maxOrderingTracks: undefined,
-        maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
+        maxDeliveredMarkers: undefined
     });
     const input: WsQueueBoxServerService.Input = {
         outbox: new InMemoryQueueBox(new Map()),

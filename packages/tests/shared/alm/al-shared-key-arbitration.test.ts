@@ -22,7 +22,6 @@ import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@share
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { computeALInboundAdmission } from '@shared/alm/inbound/admission/compute-al-inbound-admission.ts';
-import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import {
     createALInboundAdmissionStore,
     type ALInboundAdmissionStore,
@@ -384,7 +383,7 @@ function createInboundStore(fixture: ArbitrationFixture): ALInboundAdmissionStor
         supersedenceTrackTtlMs: 60_000,
         retention: normalizeALRuntimeStoreRetention(),
         maxOrderingTracks: undefined,
-        maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
+        maxDeliveredMarkers: undefined
     });
 }
 

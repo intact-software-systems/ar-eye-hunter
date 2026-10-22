@@ -233,7 +233,6 @@ function createConfiguredApiV1Runtime(
         appInboxNewLaneHeldRows: configuration.appInbox.newLaneHeldRows,
         appInboxFinishedRetentionMs: configuration.appInbox.finishedRetentionMs,
         disconnectedSessionRetentionMs: configuration.clientSessions.disconnectedRetentionMs,
-        almDeliveredMarkerCap: configuration.alm.deliveredMarkerCap,
         groupCapacity: {
             defaultMaxMembers: configuration.group.defaultMaxMembers
         },
@@ -297,7 +296,7 @@ function createDefaultApiV1AdminServices(
         resetGroupFormationMetrics: runtime.groupFormationMetrics.resetMetrics,
         readAlmReceipts: runtime.almReceiptDiagnostics.readDiagnostics,
         readCacheSizes: () => ({ groupAudienceSnapshots: runtime.groupCurrentSnapshotCache.size() }),
-        readAlmDeliveredMarkers: () => runtime.almInboundStoreCounts.getDeliveredMarkers(),
+        readAlmDeliveredMarkers: runtime.readAlmDeliveredMarkers,
         crdtAdminRepository: crdtLogRepository,
         topologyQuery: topology.topologyQuery,
         clientStateService: runtime.clientStateService,

@@ -13,7 +13,6 @@ import {
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import type { PSqlQueueReleaseTiming } from '@shared-server/queuebox/postgres/p-sql-queue-release-timing.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { ResourceInboxRelease } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus, NEVER_EXPIRE_TS, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -304,10 +303,7 @@ describe('Postgres release elapsed phase evidence', () => {
                 record: (value: PSqlQueueReleaseTiming.Observation) => observed.push(value)
             }
         };
-        const inbound = createDefaultPSqlALInboundRuntimeStores({
-            ...options,
-            maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
-        });
+        const inbound = createDefaultPSqlALInboundRuntimeStores(options);
         const disabled = createDefaultPSqlALOutboundRuntimeStores({
             repository: options.repository,
             namespace: storage.namespace,

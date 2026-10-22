@@ -68,7 +68,6 @@ const DEFAULT_TOP_LEVEL_KEYS = new Set([
     'database',
     'authentication',
     'clientSessions',
-    'alm',
     'stateApi',
     'group',
     'topology',
@@ -117,7 +116,6 @@ const CONFIGURATION_KEYS_BY_PATH: Readonly<Record<string, ReadonlySet<string>>> 
         'webSocketTicket'
     ]),
     clientSessions: new Set(['disconnectedRetentionMs']),
-    alm: new Set(['deliveredMarkerCap']),
     stateApi: new Set(['strictReadAuthorization', 'rateLimits', 'circuitBreaker']),
     'stateApi.rateLimits': new Set(['windowMs', 'request', 'eventList']),
     'stateApi.circuitBreaker': new Set([
@@ -214,7 +212,6 @@ const ENVIRONMENT_NAME_BY_PATH: Readonly<Record<string, string>> = {
     'authentication.rateLimits.registrationIp': 'RALLAR_REGISTRATION_IP_RATE_LIMIT',
     'authentication.rateLimits.registrationUsername': 'RALLAR_REGISTRATION_USER_RATE_LIMIT',
     'clientSessions.disconnectedRetentionMs': 'RALLAR_CLIENT_SESSION_DISCONNECTED_RETENTION_MS',
-    'alm.deliveredMarkerCap': 'RALLAR_ALM_DELIVERED_MARKER_CAP',
     'stateApi.strictReadAuthorization': 'RALLAR_STATE_STRICT_READ_AUTH',
     'group.defaultMaxMembers': 'RALLAR_GROUP_DEFAULT_MAX_MEMBERS',
     'group.admission.joinPrincipal': 'RALLAR_GROUP_JOIN_ADMISSION_PRINCIPAL_RATE_LIMIT',

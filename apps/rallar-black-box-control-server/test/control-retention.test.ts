@@ -99,6 +99,25 @@ Deno.test('immediate prune remains available beyond bounded preview candidate li
     assert(service.snapshotRun('immediate-run-1001'));
 });
 
+Deno.test('the automatic sweep removes only completed runs past the cap and never a live one', () => {
+    const service = createRallarBlackBoxControlService(toControlServiceInput());
+    service.restoreSnapshot({
+        runs: [
+            controlRun('live-oldest', 1_000, false),
+            completedRun(controlRun('completed-old', 2_000, false)),
+            controlRun('live-old', 3_000, true),
+            completedRun(controlRun('completed-new', 4_000, false))
+        ],
+        distributedRuns: [],
+        fleetReports: []
+    });
+
+    assertJsonEquals(service.applyCompletedRunRetention(1), ['completed-old']);
+    assertJsonEquals(service.snapshot().runs.map((run) => run.runId), ['live-oldest', 'live-old', 'completed-new']);
+    assertJsonEquals(service.applyCompletedRunRetention(0), []);
+    assertJsonEquals(service.applyCompletedRunRetention(undefined), []);
+});
+
 const EMPTY_ROLLUP_SUMMARY: ControlDistributedRunSnapshot['rollup']['summary'] = {
     participants: 0,
     readyParticipants: 0,
@@ -153,6 +172,18 @@ function controlRun(
         stats: [],
         reports: [],
         heartbeats: []
+    };
+}
+
+function completedRun(run: ControlRunSnapshot): ControlRunSnapshot {
+    return {
+        ...run,
+        completion: {
+            completedAtEpochMs: run.updatedAtEpochMs,
+            retentionRevision: 1,
+            counts: { commands: 0, results: 0, events: 0, stats: 0, reports: 0, heartbeats: 0 },
+            file: { path: `runs/${run.runId}/control-run.json`, bytes: 2, writtenAtEpochMs: run.updatedAtEpochMs, state: 'present' }
+        }
     };
 }
 

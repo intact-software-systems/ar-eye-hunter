@@ -2,9 +2,8 @@ import assert from 'node:assert/strict';
 
 import type { PSqlQueueReleaseTiming } from '@shared-server/queuebox/postgres/p-sql-queue-release-timing.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
-import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
+import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALOutboundCapturedPolicyTiming } from '@shared/alm/outbound/admission/al-outbound-captured-policy-timing.ts';
-import type { ALInboundStoreCounts } from '@shared/alm/storage/al-inbound-store-counts.ts';
 
 import type { ClientRestSnapshotReadSelector } from '@shared-server/rallar-system/client-state/snapshot/client-rest-snapshot-read-selector.ts';
 import type { GroupRestSnapshotReadSelector } from '@shared-server/rallar-system/group-state/snapshot/group-rest-snapshot-read-selector.ts';
@@ -204,29 +203,34 @@ Deno.test('runtime construction hands one receipt recorder to the middleware and
     assert.equal(handedRecorders[0], handedRecorders[1]);
 });
 
-Deno.test('runtime construction caps the WS stores\' delivered markers as configured and reads their count in one place', () => {
-    const caps: number[] = [];
-    const handed: ALInboundStoreCounts[] = [];
-    constructApiV1Runtime({ ...createInput([]), almDeliveredMarkerCap: 300 }, {
+Deno.test('runtime construction hands the middleware the WS inbound stores and the admin runtime their marker count', async () => {
+    const handed: ALInboundRuntimeStores[] = [];
+    const counted: number[] = [];
+    const inboundStores: ALInboundRuntimeStores = {
+        admissionStore: {
+            readDeliveredMarkerCount: (nowMs: number) => {
+                counted.push(nowMs);
+                return Promise.resolve(7);
+            }
+        }
+    } as never;
+    let readAlmDeliveredMarkers: (() => Promise<number>) | undefined;
+    constructApiV1Runtime(createInput([]), {
         ...createOperations([]),
-        configureWsRuntimeStores: (input) => {
-            caps.push(input.maxDeliveredMarkers);
-            input.reportDeliveredMarkers(5);
-        },
+        resolveWsInboundStores: () => inboundStores,
         createMiddleware: (input) => {
-            handed.push(input.almInboundStoreCounts);
+            handed.push(input.inboundStores);
             return SHARED_RUNTIME;
         },
         requireRuntime: (input) => {
-            handed.push(input.almInboundStoreCounts);
+            readAlmDeliveredMarkers = input.readAlmDeliveredMarkers;
             return COMPLETE_RUNTIME;
         }
     });
 
-    assert.deepEqual(caps, [300]);
-    assert.equal(handed.length, 2);
-    assert.equal(handed[0], handed[1]);
-    assert.equal(handed[0]?.getDeliveredMarkers(), 5);
+    assert.deepEqual(handed, [inboundStores]);
+    assert.equal(await readAlmDeliveredMarkers?.(), 7);
+    assert.deepEqual(counted, [1_000]);
 });
 
 Deno.test('runtime construction hands the mutation runtime\'s group audience cache to the admin runtime', () => {
@@ -303,7 +307,6 @@ function createInput(events: string[]): CreateApiV1RuntimeInput {
         appInboxNewLaneHeldRows: 4,
         appInboxFinishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,
-        almDeliveredMarkerCap: AL_INBOUND_MAX_DELIVERED_MARKERS,
         groupCapacity: { defaultMaxMembers: 10 },
         groupFormationRecomputeDebounceMs: 250,
         groupFormationRecomputeMaxWaitMs: 1_000,
@@ -370,6 +373,7 @@ function createOperations(
             return TOPOLOGY_SERVICES;
         },
         configureWsRuntimeStores: () => record('configure-ws'),
+        resolveWsInboundStores: () => ({}) as never,
         startResourceInboxExpiry: () => record('resource-expiry'),
         startRuntimeStateExpiry: () => record('runtime-state-expiry'),
         createMiddleware: () => {

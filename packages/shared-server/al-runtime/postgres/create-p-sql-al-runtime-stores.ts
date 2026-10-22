@@ -11,7 +11,6 @@ import {
     normalizeALRuntimeStoreRetention,
     type ALRuntimeStoreRetentionConfig
 } from '@shared/alm/ALStoreRetention.ts';
-import type { ALInboundDeliveredMarkersReport } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import {
@@ -36,13 +35,6 @@ export interface CreatePSqlALRuntimeStoresInput {
     readonly retention: ALRuntimeStoreRetentionConfig | undefined;
 }
 
-export interface CreatePSqlALInboundRuntimeStoresInput extends CreatePSqlALRuntimeStoresInput {
-    /** The most delivered markers the shared inbound store keeps per sender, from the server's configuration. */
-    readonly maxDeliveredMarkers: number;
-    /** Where the inbound store states its delivered markers; absent where nothing reads the count. */
-    readonly reportDeliveredMarkers?: ALInboundDeliveredMarkersReport;
-}
-
 export interface CreatePSqlALOutboundRuntimeStoresInput<TPrepared> extends CreatePSqlALRuntimeStoresInput {
     readonly outboundReleaseTiming?: PSqlQueueReleaseTiming.Port;
     readonly capturedPolicyTiming?: ALOutboundCapturedPolicyTiming.Capability;
@@ -59,21 +51,10 @@ export interface CreateDefaultPSqlALRuntimeStoresInput {
     readonly retention?: ALRuntimeStoreRetentionConfig;
 }
 
-export interface CreateDefaultPSqlALInboundRuntimeStoresInput extends CreateDefaultPSqlALRuntimeStoresInput {
-    readonly maxDeliveredMarkers: number;
-    readonly reportDeliveredMarkers?: ALInboundDeliveredMarkersReport;
-}
-
 export interface CreateDefaultPSqlALOutboundRuntimeStoresInput<TPrepared>
     extends CreateDefaultPSqlALRuntimeStoresInput {
     readonly decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>;
 }
-
-/** A WS runtime's store pair, both built from one set of options. */
-interface ServerWsQBoxALRuntimeStoresInput
-    extends
-        CreateDefaultPSqlALInboundRuntimeStoresInput,
-        CreateDefaultPSqlALOutboundRuntimeStoresInput<WsQueueBoxServerPreparedMessage> {}
 
 const DEFAULT_NAMESPACE = 'al-runtime';
 
@@ -85,7 +66,7 @@ export function toServerWsQBoxALRuntimeStoreId(
 
 function createPSqlRuntimeStoreFactories(
     runtimeStoreId: ALRuntimeStoreId<WsQueueBoxServerPreparedMessage>,
-    options: ServerWsQBoxALRuntimeStoresInput
+    options: CreateDefaultPSqlALOutboundRuntimeStoresInput<WsQueueBoxServerPreparedMessage>
 ): ALRuntimeStoreFactories<WsQueueBoxServerPreparedMessage> {
     const scopedOptions = {
         ...options,
@@ -99,7 +80,7 @@ function createPSqlRuntimeStoreFactories(
 }
 
 export function createPSqlALInboundRuntimeStores(
-    input: CreatePSqlALInboundRuntimeStoresInput
+    input: CreatePSqlALRuntimeStoresInput
 ): ALInboundRuntimeStores {
     const namespace = `${input.namespace}:inbound:admission`;
     const backend = new PSqlAdmissionWorkBackend({ sql: input.repository.sql, namespace, nowMs: input.nowMs });
@@ -111,10 +92,10 @@ export function createPSqlALInboundRuntimeStores(
             orderingTrackTtlMs: input.orderingTrackTtlMs,
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
             retention: normalizeALRuntimeStoreRetention(input.retention),
-            // Every WS client's tracks share the one store, so a cap there would evict live tracks (D191).
+            // Every WS client's tracks share the one store, so a cap there would evict live tracks (D191); the
+            // delivered markers stay bounded by their expiry alone, for the same reason.
             maxOrderingTracks: undefined,
-            maxDeliveredMarkers: input.maxDeliveredMarkers,
-            reportDeliveredMarkers: input.reportDeliveredMarkers
+            maxDeliveredMarkers: undefined
         }),
         workQueue: backend.workQueue
     };
@@ -146,13 +127,9 @@ export function createPSqlALOutboundRuntimeStores<TPrepared>(
 }
 
 export function createDefaultPSqlALInboundRuntimeStores(
-    options: CreateDefaultPSqlALInboundRuntimeStoresInput
+    options: CreateDefaultPSqlALRuntimeStoresInput
 ): ALInboundRuntimeStores {
-    return createPSqlALInboundRuntimeStores({
-        ...toDefaultPSqlALRuntimeStoresInput(options, Date.now),
-        maxDeliveredMarkers: options.maxDeliveredMarkers,
-        reportDeliveredMarkers: options.reportDeliveredMarkers
-    });
+    return createPSqlALInboundRuntimeStores(toDefaultPSqlALRuntimeStoresInput(options, Date.now));
 }
 
 export function createDefaultPSqlALOutboundRuntimeStores<TPrepared>(
@@ -168,7 +145,7 @@ export function createDefaultPSqlALOutboundRuntimeStores<TPrepared>(
 
 export function configureServerWsQBoxALRuntimeStores(
     name: string,
-    options: CreateDefaultPSqlALInboundRuntimeStoresInput
+    options: CreateDefaultPSqlALRuntimeStoresInput
 ): void {
     const runtimeStoreId = toServerWsQBoxALRuntimeStoreId(name);
     configureALRuntimeStoreScopes([

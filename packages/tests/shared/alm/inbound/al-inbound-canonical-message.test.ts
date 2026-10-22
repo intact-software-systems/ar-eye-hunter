@@ -21,7 +21,6 @@ import {
 } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention, type NormalizedALRuntimeStoreRetentionConfig } from '@shared/alm/ALStoreRetention.ts';
 import { computeALInboundAdmission } from '@shared/alm/inbound/admission/compute-al-inbound-admission.ts';
-import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import {
     createALInboundAdmissionStore,
     type ALInboundAdmissionMutation,
@@ -115,7 +114,7 @@ describe('inbound canonical message ownership', () => {
             retention,
             nowMs: () => clock.nowMs,
             maxOrderingTracks: undefined,
-            maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
+            maxDeliveredMarkers: undefined
         });
         const gapped = newInboundMessage('gapped', { orderingKey: 'stream', seq: 2 }, 'buffered');
         const trackKey = toALOrderingTrackKey(gapped)!;
@@ -250,7 +249,7 @@ function createRetentionFixture(
             retention,
             nowMs: () => nowMs,
             maxOrderingTracks: undefined,
-            maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
+            maxDeliveredMarkers: undefined
         })
     };
 }
@@ -287,7 +286,7 @@ function createCanonicalRuntime(): CanonicalRuntimeFixture {
         supersedenceTrackTtlMs: 5 * 60_000,
         retention: normalizeALRuntimeStoreRetention(),
         maxOrderingTracks: undefined,
-        maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
+        maxDeliveredMarkers: undefined
     });
     const resources = createDefaultALInboundRuntimeResources({
         selfPeerId: 'receiver',

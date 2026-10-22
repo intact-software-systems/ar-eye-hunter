@@ -29,7 +29,7 @@ describe('ReadAdminRealtime', () => {
             readGroupFormationMetrics: () => formationMetrics,
             readAlmReceipts: () => ({ capacity: 256, messages: [] }),
             readCacheSizes: () => ({ groupAudienceSnapshots: 7 }),
-            readAlmDeliveredMarkers: () => 259
+            readAlmDeliveredMarkers: () => Promise.resolve(259)
         });
 
         const realtime = await readRealtime.execute({ adminSession: createAdminSession() });
@@ -53,7 +53,7 @@ describe('ReadAdminRealtime', () => {
                 processLocal: true
             },
             almReceipts: { diagnostics: { capacity: 256, messages: [] }, processLocal: true },
-            alm: { deliveredMarkers: 259, processLocal: true }
+            alm: { deliveredMarkers: 259, processLocal: false }
         });
     });
 });

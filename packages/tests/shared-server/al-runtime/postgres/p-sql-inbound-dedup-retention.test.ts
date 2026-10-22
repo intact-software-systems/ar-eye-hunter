@@ -9,7 +9,6 @@ import {
 import { createPSqlALInboundRuntimeStores } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
-import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 
 import {
     createInboundTestMessage,
@@ -46,8 +45,7 @@ it('acknowledges a replay after the dedup window inside its deadline again witho
             namespace: 'psql-dedup-retention',
             orderingTrackTtlMs: 60_000,
             supersedenceTrackTtlMs: 60_000,
-            retention: undefined,
-            maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
+            retention: undefined
         }),
         carrier: 'ws',
         effectWorkerId: 'al-inbound:psql-dedup-retention'
