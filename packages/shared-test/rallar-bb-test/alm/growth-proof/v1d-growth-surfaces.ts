@@ -605,13 +605,11 @@ export const V1D_GROWTH_SURFACES: readonly V1dGrowthSurface[] = [
     },
     {
         id: 78,
-        name: 'runtime_state_store group-topology:config-mutation (not in the survey)',
+        name:
+            'runtime_state_store group-topology:config-mutation, the topology idempotency records (not in the survey)',
         owner:
-            'packages/shared-server/rallar-system/topology/config/persistence/group-topology-config-runtime-namespaces.ts',
-        classification: {
-            growthClass: 'unbounded',
-            missingBound: 'one row per configuration mutation, never expiring'
-        },
+            'packages/shared-server/rallar-system/topology/config/mutation/compute-topology-config-runtime-writes.ts',
+        classification: FINISHED_APP_INBOX_RETENTION,
         readers: [toNamespaceCount('group-topology:config-mutation')]
     },
     {

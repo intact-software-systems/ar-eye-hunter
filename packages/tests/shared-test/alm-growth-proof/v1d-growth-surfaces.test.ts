@@ -47,4 +47,15 @@ describe('V1d growth surface classification', () => {
 
         expect(markers?.classification).toEqual({ growthClass: 'count-capped', cap: 512 });
     });
+
+    it('bounds the topology idempotency records by the 24-hour finished retention, guarded against rows without expiry', () => {
+        const configMutations = V1D_GROWTH_SURFACES.find((surface) => surface.readers.some((reader) => reader.path.includes('group-topology:config-mutation')));
+
+        expect(configMutations?.classification).toEqual({ growthClass: 'ttl-beyond-run', ttlMs: 86_400_000 });
+        expect(configMutations?.readers[0]?.neverExpiringPath).toEqual([
+            'runtimeState',
+            'neverExpireByNamespace',
+            'group-topology:config-mutation'
+        ]);
+    });
 });
