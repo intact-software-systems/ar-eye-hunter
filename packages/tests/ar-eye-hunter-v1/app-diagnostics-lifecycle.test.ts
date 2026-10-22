@@ -85,6 +85,57 @@ describe('AR Eye Hunter diagnostics lifecycle', () => {
         expect(mockArena.refreshDiagnostics).toHaveBeenCalledTimes(2);
     });
 
+    it.each(['idle', 'loading', 'ready', 'error'] as const)('shows empty-lobby guidance only after a ready directory, currently %s', async (status) => {
+        mockArena.current = createArenaConnection({
+            rooms: [],
+            openRoomsStatus: status,
+            openRoomsError: status === 'error' ? 'unavailable' : undefined
+        });
+        root = createRoot(container);
+        await act(async () => root?.render(createElement(App)));
+        await act(async () => findButton('Ops').click());
+        const operations = container.querySelector('[aria-label="Arena operations"]');
+        expect(operations?.textContent?.includes('Create an arena or join from another browser session.')).toBe(status === 'ready');
+        expect(operations?.textContent?.includes('Loading open arenas…')).toBe(status === 'loading');
+        expect(operations?.textContent?.includes('Could not load open arenas')).toBe(status === 'error');
+    });
+
+    it.each(['error', 'loading'] as const)('labels retained directory rows during %s and treats capacity as a request-time admission check', async (status) => {
+        const openRoom = {
+            groupRef: { applicationId: 'ar-eye-hunter', workspaceId: 'default', groupId: 'open' },
+            displayName: 'AR Eye Hunter Arena: Available',
+            kind: 'room' as const,
+            joinMode: 'open' as const,
+            memberCount: 1,
+            onlineMemberCount: 1,
+            maxMembers: 2,
+            isFull: false,
+            lifecycleState: 'forming' as const
+        };
+        mockArena.current = createArenaConnection({
+            rooms: [],
+            openRoomsStatus: status,
+            openRoomsError: status === 'error' ? 'unavailable' : undefined,
+            openRooms: [openRoom, {
+                ...openRoom,
+                groupRef: { ...openRoom.groupRef, groupId: 'full' },
+                displayName: 'AR Eye Hunter Arena: Full',
+                memberCount: 2,
+                isFull: true
+            }]
+        });
+        root = createRoot(container);
+        await act(async () => root?.render(createElement(App)));
+        await act(async () => findButton('Ops').click());
+        const operations = container.querySelector('[aria-label="Arena operations"]');
+        expect(operations?.textContent).toContain('Last loaded arenas — refresh to check availability.');
+        const rows = [...(operations?.querySelectorAll<HTMLButtonElement>('.room-row') ?? [])];
+        expect(rows[0].textContent).toContain('Request to join');
+        expect(rows[0].disabled).toBe(false);
+        expect(rows[1].textContent).toContain('Full');
+        expect(rows[1].disabled).toBe(true);
+    });
+
     it.each(
         [
             { state: 'pending', evidence: 'queued', reason: undefined, label: 'pending (queued)' },
@@ -223,6 +274,7 @@ function createArenaRoomSnapshot(): GroupSnapshot {
 
 const arenaConnectionDefaults: Omit<ArenaConnection, 'session' | 'rooms' | 'connectionState' | 'error' | 'roomId'> = {
     openRooms: [],
+    openRoomsStatus: 'idle',
     openRoomsError: undefined,
     directorStatus: {
         role: 'none',

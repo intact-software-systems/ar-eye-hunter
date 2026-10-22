@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 
 import { rallar } from '@shared-web/browser/rallar.ts';
@@ -31,11 +31,13 @@ interface ArenaSessionActionsInput {
     readonly roomIdRef: RefObject<string | undefined>;
     readonly rooms: readonly RallarRoomSummary[];
     readonly sessionRef: RefObject<AuthSession | undefined>;
+    readonly directoryGenerationRef: RefObject<number>;
     readonly setConnectionState: Dispatch<SetStateAction<ArenaConnectionState>>;
     readonly setError: Dispatch<SetStateAction<string | undefined>>;
     readonly setRoomId: Dispatch<SetStateAction<string | undefined>>;
     readonly setOpenRooms: Dispatch<SetStateAction<readonly GroupDirectoryEntry[]>>;
     readonly setOpenRoomsError: Dispatch<SetStateAction<string | undefined>>;
+    readonly setOpenRoomsStatus: Dispatch<SetStateAction<ArenaConnection['openRoomsStatus']>>;
     readonly setRooms: Dispatch<SetStateAction<readonly RallarRoomSummary[]>>;
     readonly setSession: Dispatch<SetStateAction<AuthSession | undefined>>;
 }
@@ -67,35 +69,54 @@ export function useArenaSessionActions(
 function useArenaAuthentication(
     input: ArenaSessionActionsInput
 ): Pick<ArenaConnection, 'login' | 'register' | 'logout'> {
+    const pendingLogoutRef = useRef<Promise<void> | undefined>(undefined);
     const login = useCallback(
         (username: string, password: string) =>
-            authenticateArena(input, { username, password, mode: 'login', displayName: undefined }),
+            authenticateArena(
+                input,
+                { username, password, mode: 'login', displayName: undefined },
+                pendingLogoutRef.current
+            ),
         [input.connect]
     );
     const register = useCallback(
         (username: string, password: string, displayName?: string) =>
-            authenticateArena(input, { username, password, displayName, mode: 'register' }),
+            authenticateArena(input, { username, password, displayName, mode: 'register' }, pendingLogoutRef.current),
         [input.connect]
     );
-    const logout = useCallback(async () => {
-        input.resetForSignedOutAuth();
-        try {
-            await rallar.auth.logout();
-        }
-        catch {
-            // The facade already performed local cleanup; revocation is best effort.
-        }
-        finally {
-            input.resetForSignedOutAuth();
-        }
+    const logout = useCallback(() => {
+        pendingLogoutRef.current ??= logoutArena(input).finally(() => {
+            pendingLogoutRef.current = undefined;
+        });
+        return pendingLogoutRef.current;
     }, [input.resetForSignedOutAuth]);
     return { login, register, logout };
 }
 
-async function authenticateArena(input: ArenaSessionActionsInput, authentication: ArenaAuthentication): Promise<void> {
-    input.setConnectionState('connecting');
-    input.setError(undefined);
+async function logoutArena(input: ArenaSessionActionsInput): Promise<void> {
+    input.resetForSignedOutAuth();
     try {
+        await rallar.auth.logout();
+    }
+    catch {
+        // The facade already performed local cleanup; revocation is best effort.
+    }
+    finally {
+        input.resetForSignedOutAuth();
+    }
+}
+
+async function authenticateArena(
+    input: ArenaSessionActionsInput,
+    authentication: ArenaAuthentication,
+    pendingLogout: Promise<void> | undefined
+): Promise<void> {
+    try {
+        if (pendingLogout) {
+            await pendingLogout;
+        }
+        input.setConnectionState('connecting');
+        input.setError(undefined);
         const session = authentication.mode === 'login'
             ? await rallar.auth.login({ username: authentication.username, password: authentication.password })
             : await rallar.auth.registerAndLogin({
@@ -112,7 +133,7 @@ async function authenticateArena(input: ArenaSessionActionsInput, authentication
     }
 }
 
-async function readOpenArenaDirectory(): Promise<readonly GroupDirectoryEntry[]> {
+async function readOpenArenaDirectory(isCurrent: () => boolean): Promise<readonly GroupDirectoryEntry[] | undefined> {
     const entries = new Map<string, GroupDirectoryEntry>();
     let cursor: string | null = null;
     do {
@@ -122,6 +143,9 @@ async function readOpenArenaDirectory(): Promise<readonly GroupDirectoryEntry[]>
             limit: OPEN_ARENA_DIRECTORY_PAGE_SIZE,
             ...(cursor === null ? {} : { cursor })
         });
+        if (!isCurrent()) {
+            return undefined;
+        }
         page.entries.forEach((entry) => entries.set(entry.groupRef.groupId, entry));
         cursor = page.nextCursor;
     }
@@ -129,72 +153,119 @@ async function readOpenArenaDirectory(): Promise<readonly GroupDirectoryEntry[]>
     return [...entries.values()];
 }
 
-function useArenaRoomActions(
-    input: ArenaSessionActionsInput
-): Pick<ArenaConnection, 'refreshRooms' | 'createArenaRoom' | 'joinRoom'> {
-    const { sessionRef, setRooms, setOpenRooms, setOpenRoomsError, setRoomId, clearRoomScopedArenaState, rooms } =
-        input;
-    const refreshRooms = useCallback(async () => {
-        if (!sessionRef.current) {
-            return;
-        }
+async function refreshArenaRooms(input: ArenaSessionActionsInput): Promise<void> {
+    const {
+        sessionRef,
+        directoryGenerationRef,
+        setRooms,
+        setRoomId,
+        setOpenRooms,
+        setOpenRoomsError,
+        setOpenRoomsStatus
+    } = input;
+    const session = sessionRef.current;
+    if (!session) {
+        return;
+    }
+    const generation = ++directoryGenerationRef.current;
+    const isCurrent = () =>
+        directoryGenerationRef.current === generation &&
+        sessionRef.current?.sessionId === session.sessionId && sessionRef.current?.clientId === session.clientId;
+    setOpenRoomsStatus('loading');
+    setOpenRoomsError(undefined);
+    try {
         const state = await rallar.rooms.refresh();
-        if (!sessionRef.current) {
+        if (!isCurrent()) {
             return;
         }
         setRooms(state.rooms);
         setRoomId(state.currentRoomId);
-        try {
-            const openRooms = await readOpenArenaDirectory();
-            if (!sessionRef.current) {
-                return;
-            }
-            setOpenRooms(openRooms);
-            setOpenRoomsError(undefined);
+        const openRooms = await readOpenArenaDirectory(isCurrent);
+        if (!isCurrent() || !openRooms) {
+            return;
         }
-        catch (error) {
-            if (sessionRef.current) {
-                setOpenRoomsError(error instanceof Error ? error.message : String(error));
-            }
+        setOpenRooms(openRooms);
+        setOpenRoomsStatus('ready');
+    }
+    catch (error) {
+        if (!isCurrent()) {
+            return;
         }
-    }, []);
+        setOpenRoomsError(error instanceof Error ? error.message : String(error));
+        setOpenRoomsStatus('error');
+    }
+}
 
-    const createArenaRoom = useCallback(async () => {
-        if (!sessionRef.current) {
-            return;
-        }
-        const displayName = createRallarAiFunnyRoomName({
-            baseName: GAME_ROOM_NAME,
-            theme: 'ar-eye-hunter',
-            seed: createRallarAiRoomNameSeed('ar-eye-hunter'),
-            existingNames: rooms.map((room) => room.name)
-        });
-        const snapshot = await rallar.rooms.createAndSwitch({
-            displayName,
-            joinMode: 'open'
-        });
-        if (!sessionRef.current) {
-            return;
-        }
-        clearRoomScopedArenaState();
-        setRoomId(snapshot.group.groupId);
-        await refreshRooms();
-    }, [clearRoomScopedArenaState, refreshRooms, rooms]);
-
-    const joinRoom = useCallback(async (nextRoomId: string) => {
-        if (!sessionRef.current) {
-            return;
-        }
-        const room = await rallar.rooms.enter(nextRoomId);
-        if (!sessionRef.current) {
-            return;
-        }
-        clearRoomScopedArenaState();
-        setRoomId(room.roomId);
-        await refreshRooms();
-    }, [clearRoomScopedArenaState, refreshRooms]);
-
+function useArenaRoomActions(
+    input: ArenaSessionActionsInput
+): Pick<ArenaConnection, 'refreshRooms' | 'createArenaRoom' | 'joinRoom'> {
+    const refreshRooms = useCallback(() => refreshArenaRooms(input), [
+        input.sessionRef,
+        input.directoryGenerationRef,
+        input.setRooms,
+        input.setRoomId,
+        input.setOpenRooms,
+        input.setOpenRoomsError,
+        input.setOpenRoomsStatus
+    ]);
+    const createArenaRoom = useCallback(() => createAndSelectArenaRoom(input, refreshRooms), [
+        input.sessionRef,
+        input.setRoomId,
+        input.clearRoomScopedArenaState,
+        input.rooms,
+        refreshRooms
+    ]);
+    const joinRoom = useCallback((roomId: string) => enterArenaRoom(input, refreshRooms, roomId), [
+        input.sessionRef,
+        input.setRoomId,
+        input.clearRoomScopedArenaState,
+        refreshRooms
+    ]);
     return { refreshRooms, createArenaRoom, joinRoom };
+}
+
+async function createAndSelectArenaRoom(
+    input: ArenaSessionActionsInput,
+    refreshRooms: ArenaConnection['refreshRooms']
+): Promise<void> {
+    const { sessionRef, setRoomId, clearRoomScopedArenaState, rooms } = input;
+    if (!sessionRef.current) {
+        return;
+    }
+    const displayName = createRallarAiFunnyRoomName({
+        baseName: GAME_ROOM_NAME,
+        theme: 'ar-eye-hunter',
+        seed: createRallarAiRoomNameSeed('ar-eye-hunter'),
+        existingNames: rooms.map((room) => room.name)
+    });
+    const snapshot = await rallar.rooms.createAndSwitch({
+        displayName,
+        joinMode: 'open'
+    });
+    if (!sessionRef.current) {
+        return;
+    }
+    clearRoomScopedArenaState();
+    setRoomId(snapshot.group.groupId);
+    await refreshRooms();
+}
+
+async function enterArenaRoom(
+    input: ArenaSessionActionsInput,
+    refreshRooms: ArenaConnection['refreshRooms'],
+    nextRoomId: string
+): Promise<void> {
+    const { sessionRef, setRoomId, clearRoomScopedArenaState } = input;
+    if (!sessionRef.current) {
+        return;
+    }
+    const room = await rallar.rooms.enter(nextRoomId);
+    if (!sessionRef.current) {
+        return;
+    }
+    clearRoomScopedArenaState();
+    setRoomId(room.roomId);
+    await refreshRooms();
 }
 
 function useArenaAutomaticAppointment(input: ArenaSessionActionsInput): void {

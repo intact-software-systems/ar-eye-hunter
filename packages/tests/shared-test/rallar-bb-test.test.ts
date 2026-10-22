@@ -206,12 +206,22 @@ describe('black-box HTTP response evidence', () => {
             'Cache-Control': 'no-store',
             'Rallar-State-Source': 'durable',
             'Rallar-State-Revision': '8',
+            'Access-Control-Allow-Origin': 'https://arena.test',
+            'Access-Control-Allow-Credentials': 'true',
+            'Access-Control-Allow-Headers': 'Authorization,If-None-Match',
+            'Access-Control-Expose-Headers': 'ETag',
+            Vary: 'Origin, Authorization, x-client-id',
             Authorization: 'Bearer secret',
             'Set-Cookie': 'session=secret'
         });
 
         expect(normalizeBlackBoxResponseHeaders(headers)).toEqual({
             'cache-control': 'no-store',
+            'access-control-allow-origin': 'https://arena.test',
+            'access-control-allow-credentials': 'true',
+            'access-control-allow-headers': 'Authorization,If-None-Match',
+            'access-control-expose-headers': 'ETag',
+            vary: 'Origin, Authorization, x-client-id',
             'rallar-state-revision': '8',
             'rallar-state-source': 'durable'
         });

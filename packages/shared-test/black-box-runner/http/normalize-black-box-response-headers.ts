@@ -1,11 +1,16 @@
 const RESPONSE_HEADER_ALLOW_LIST = [
+    'access-control-allow-credentials',
+    'access-control-allow-headers',
+    'access-control-allow-origin',
+    'access-control-expose-headers',
     'cache-control',
     'etag',
     'rallar-group-revision',
     'rallar-presence-revision',
     'rallar-state-revision',
     'rallar-state-source',
-    'retry-after'
+    'retry-after',
+    'vary'
 ] as const;
 
 export function normalizeBlackBoxResponseHeaders(

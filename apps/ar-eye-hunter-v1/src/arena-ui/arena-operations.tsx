@@ -196,8 +196,15 @@ function ArenaRoomList({ arena }: Pick<ArenaOperationsProps, 'arena'>) {
     );
     return (
         <div className="room-list">
-            {rooms.length === 0 && arena.openRooms.length === 0 && (
+            {arena.openRoomsStatus === 'loading' && <p className="muted">Loading open arenas…</p>}
+            {arena.openRoomsStatus === 'ready' && rooms.length === 0 && arena.openRooms.length === 0 && (
                 <p className="muted">Create an arena or join from another browser session.</p>
+            )}
+            {arena.openRoomsStatus === 'error' && (
+                <p className="muted">Could not load open arenas: {arena.openRoomsError}</p>
+            )}
+            {arena.openRoomsStatus !== 'ready' && arena.openRooms.length > 0 && (
+                <p className="muted">Last loaded arenas — refresh to check availability.</p>
             )}
             {rooms.map((room) => (
                 <button
@@ -220,10 +227,9 @@ function ArenaRoomList({ arena }: Pick<ArenaOperationsProps, 'arena'>) {
                     onClick={() => arena.joinRoom(room.groupRef.groupId)}
                 >
                     <span>{room.displayName}</span>
-                    <small>{room.isFull ? 'Full' : `${room.onlineMemberCount} online · Join`}</small>
+                    <small>{room.isFull ? 'Full' : `${room.onlineMemberCount} online · Request to join`}</small>
                 </button>
             ))}
-            {arena.openRoomsError && <p className="muted">Could not load open arenas: {arena.openRoomsError}</p>}
         </div>
     );
 }

@@ -1,6 +1,7 @@
-import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
 import { cors } from 'jsr:@hono/hono@4.11.9/cors';
+
+import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 
 import type {
     ApiV1HttpConfiguration,
@@ -23,12 +24,13 @@ export function installApiHttpMiddleware(app: Hono, input: InstallApiHttpMiddlew
     const apiCors = cors({
         origin: (origin) => resolveCorsOrigin(origin, input.http.corsOrigins),
         allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-        allowHeaders: ['Content-Type', 'Authorization', 'x-client-id'],
+        allowHeaders: ['Content-Type', 'Authorization', 'x-client-id', 'If-None-Match'],
         exposeHeaders: [
             'Content-Length',
             'Server-Timing',
             'x-request-id',
             'Retry-After',
+            'ETag',
             ...STATE_SNAPSHOT_READ_EXPOSED_HEADERS
         ],
         maxAge: input.http.preflightMaxAgeSeconds,
@@ -36,13 +38,13 @@ export function installApiHttpMiddleware(app: Hono, input: InstallApiHttpMiddlew
     });
 
     app.use('/api/*', createHttpTimingMiddleware({ timing: input.timing }));
-    app.use('/api/*', async (c, next) => {
-        if (isWebSocketUpgradeRequest(c.req.path, c.req.header('upgrade'))) {
+    app.use('/api/*', async (context, next) => {
+        if (isWebSocketUpgradeRequest(context.req.path, context.req.header('upgrade'))) {
             await next();
             return;
         }
 
-        return await apiCors(c, next);
+        return await apiCors(context, next);
     });
     app.use('/api/state/*', createStateApiResilienceMiddleware({ configuration: input.stateApi }));
 }
