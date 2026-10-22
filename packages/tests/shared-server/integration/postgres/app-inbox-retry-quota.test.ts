@@ -124,8 +124,13 @@ async function seedRows(reader: InboxQueueReader, sql: PSqlSql): Promise<void> {
     }
 }
 
-async function readStatus(sql: PSqlSql, resourceId: string): Promise<{ ri_status: string; ri_attempts: number; }> {
-    const [row] = await sql<{ ri_status: string; ri_attempts: number; }[]>`
+interface StatusRow {
+    ri_status: string;
+    ri_attempts: number;
+}
+
+async function readStatus(sql: PSqlSql, resourceId: string): Promise<StatusRow> {
+    const [row] = await sql<StatusRow[]>`
         select ri_status, ri_attempts::int as ri_attempts from resource_inbox where ri_resource_id = ${resourceId}`;
     return row;
 }

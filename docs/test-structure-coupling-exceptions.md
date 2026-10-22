@@ -8289,7 +8289,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar shared maintainers",
-      "rationale": "Exactly one failure feedback signal must represent the actual failure in this mixed batch; NotReady must not create an extra signal that changes breaker or rate-adapter state.",
+      "rationale": "Exactly one failure feedback signal must represent the actual failure in this mixed batch; NotReady must not create an extra signal that changes breaker state.",
       "semanticCoverage": "packages/tests/shared/queuebox-utilities.test.ts#retains actual failure accounting alongside neutral readiness and successful work"
     },
     {

@@ -59,7 +59,7 @@ export class InboxQueueReader {
      */
     public static readonly NEW_CONTEXTS_PER_PASS = 8;
     public static readonly MAX_NEW_LANE_HELD_ROWS = 64;
-    /** The due retries one AppInbox pass claims, in one reservation beside the NEW lane's share. */
+    /** The most due retries one AppInbox pass claims, in one reservation beside the NEW lane's share. */
     private static readonly RETRY_ROWS_PER_PASS = 2;
 
     private readonly reader: QueueMessageReader;
@@ -221,7 +221,6 @@ export class InboxQueueReader {
     }
 
     private readLaneBudgets(): DequeueController.LaneBudgets {
-        const retryRows = InboxQueueReader.RETRY_ROWS_PER_PASS;
         // Only NEW heads are of distinct contexts; every other lane may hold two rows of one context, so they run in turn.
         // A standing flight computes every lane's rows under its own bounds, and a top-up may fill all of its places.
         return {
@@ -232,8 +231,12 @@ export class InboxQueueReader {
                 maxConcurrentComputes: this.newLaneConcurrency
             },
             FAIRNESS: { maxToReserve: 1, maxNumToDequeue: 1, maxConcurrentComputes: 1 },
-            // One claim for every retry row: a short claim ends the lane without a second, empty reservation.
-            RETRY: { maxToReserve: retryRows, maxNumToDequeue: retryRows, maxConcurrentComputes: 1 },
+            // One claim for the whole RETRY budget: a short claim ends the lane without a second, empty reservation.
+            RETRY: {
+                maxToReserve: InboxQueueReader.RETRY_ROWS_PER_PASS,
+                maxNumToDequeue: InboxQueueReader.RETRY_ROWS_PER_PASS,
+                maxConcurrentComputes: 1
+            },
             TIMEOUT: { maxToReserve: 1, maxNumToDequeue: 1, maxConcurrentComputes: 1 }
         };
     }

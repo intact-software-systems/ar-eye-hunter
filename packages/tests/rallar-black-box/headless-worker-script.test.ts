@@ -20,8 +20,11 @@ function startHeadlessWorker(env: NodeJS.ProcessEnv) {
         { cwd: repoRoot, env }
     );
     let output = '';
-    worker.stdout.on('data', (chunk) => output += String(chunk));
-    worker.stderr.on('data', (chunk) => output += String(chunk));
+    const appendOutput = (chunk: Buffer) => {
+        output += String(chunk);
+    };
+    worker.stdout.on('data', appendOutput);
+    worker.stderr.on('data', appendOutput);
     const result = new Promise<
         Readonly<{
             exitCode: number | null;
@@ -32,18 +35,20 @@ function startHeadlessWorker(env: NodeJS.ProcessEnv) {
         worker.once('close', (exitCode) => resolve({ exitCode, output }));
     });
 
-    return { worker, result };
+    return { worker, result, getOutput: () => output };
 }
 
+/** Matches the output accumulated since spawn, so text written before the wait or split across chunks is found. */
 function waitForOutput(runningWorker: ReturnType<typeof startHeadlessWorker>, text: string): Promise<void> {
     return new Promise<void>((resolve) => {
-        const onData = (chunk: Buffer) => {
-            if (chunk.toString().includes(text)) {
+        const onData = () => {
+            if (runningWorker.getOutput().includes(text)) {
                 runningWorker.worker.stdout.removeListener('data', onData);
                 resolve();
             }
         };
         runningWorker.worker.stdout.on('data', onData);
+        onData();
     });
 }
 

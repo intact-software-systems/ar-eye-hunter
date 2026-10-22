@@ -400,16 +400,17 @@ async function closeAgents(agents: readonly RunningAgent[]): Promise<void> {
 
 async function disconnectAgentPage(runningAgent: RunningAgent): Promise<void> {
     const { agent, page, pageDisconnectTimeoutMs } = runningAgent;
-    const exceeded =
-        `Agent ${agent.agentId} page disconnect exceeded ${pageDisconnectTimeoutMs}ms; closing its context`;
     const boundController = new AbortController();
     const disconnected = page.evaluate(closeAgentPageRuntime).then(
         () => `Agent ${agent.agentId} page disconnected`,
         (error) => `Agent ${agent.agentId} page disconnect failed: ${toError(error).message}`
     );
-    const bound = delay(pageDisconnectTimeoutMs, boundController.signal).then(() => exceeded, () => exceeded);
+    // The bound is aborted only after the race settles, so its abort rejection never becomes the logged outcome.
+    const exceeded = delay(pageDisconnectTimeoutMs, boundController.signal).then(
+        () => `Agent ${agent.agentId} page disconnect exceeded ${pageDisconnectTimeoutMs}ms; closing its context`
+    );
     log(`Disconnecting agent ${agent.agentId} page`);
-    log(await Promise.race([disconnected, bound]));
+    log(await Promise.race([disconnected, exceeded]));
     boundController.abort();
 }
 
