@@ -53,8 +53,8 @@ export interface StartProcessingEntitySkipped {
 
 /** The row after the claim plus the lifecycle it was selected with, which must have been valid to claim. */
 interface ClaimedResourceInboxRow extends ResourceInboxRow {
-    readonly previous_persisted_retry_delay_us?: unknown;
-    readonly due_to_reservation_observation_us?: unknown;
+    readonly previous_persisted_retry_delay_us: unknown;
+    readonly due_to_reservation_observation_us: unknown;
     readonly selected_status: string;
     readonly selected_attempts: bigint | null;
     readonly selected_start_ts: string | null;

@@ -2,9 +2,9 @@ import { Project } from 'ts-morph';
 
 import { analyzeTransactionWrites } from '../../../scripts/transaction-write-check/analyze-transaction-writes.mjs';
 
-export function analyzeFixture(source: string) {
+export function analyzeFixture(source: string, path = '/packages/domain/mutation.ts') {
     const project = new Project({ useInMemoryFileSystem: true });
-    const sourceFile = project.createSourceFile('/packages/domain/mutation.ts', source);
+    const sourceFile = project.createSourceFile(path, source);
     return analyzeTransactionWrites(project, [sourceFile]);
 }
 

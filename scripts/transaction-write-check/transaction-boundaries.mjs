@@ -60,7 +60,7 @@ const SPECIALIZED_TRANSACTION_OWNERS = new Map([
             'reserveRetryExhaustionFinalizations',
             'releaseEntries',
             'enqueue',
-            'enqueueIfAbsent'
+            'writeIfAbsent'
         ])
     ],
     [
@@ -384,6 +384,25 @@ export function isDirectTransactionOperation(call) {
     return Node.isIdentifier(receiver) && resolvedDeclarations(receiver).some(
         (declaration) => Node.isParameterDeclaration(declaration) && isTransactionParameter(declaration)
     );
+}
+
+export function isFragmentStatementCall(call) {
+    const [argument, ...rest] = call.getArguments();
+    if (!Node.isSpreadElement(argument) || rest.length > 0) {
+        return false;
+    }
+    const statement = unwrapExpression(argument.getExpression());
+    const method = Node.isCallExpression(statement) ? statement.getExpression() : undefined;
+    return Node.isPropertyAccessExpression(method) &&
+        method.getName() === 'toStatement' &&
+        isExactType(method.getExpression(), 'PSqlFragment') &&
+        isTransactionArgument(call.getExpression());
+}
+
+export function isFragmentTemplateTag(tag) {
+    return Node.isPropertyAccessExpression(tag) &&
+        tag.getName() === 'of' &&
+        isExactType(tag.getExpression(), 'PSqlFragment');
 }
 
 export function isDirectDatabaseResultCall(call) {

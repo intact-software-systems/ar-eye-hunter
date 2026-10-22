@@ -411,7 +411,10 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
         }
     }
 
-    /** One statement releases every reservation; only a row it did not update is read again, to tell finalized from lost. */
+    /**
+     * One statement releases every reservation; only a row it did not update is read again, to tell
+     * finalized from lost.
+     */
     private async releaseCandidates(
         transaction: PSqlResourceInboxRepository,
         computed: PSqlQueueReleaseComputed

@@ -100,6 +100,25 @@ describe('IndexedDbQueueBox', () => {
         expect(firstValue(reserved).resource).toBe(original.resource);
     });
 
+    it('reports from writeIfAbsent whether the row was created, with the earlier entry when it was not', async () => {
+        const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
+        const original = createEntry('presence.state.v1', 'resource-1', {
+            resource: JSON.stringify({ version: 1 })
+        });
+        const replacement = createEntry('presence.state.v1', 'resource-1', {
+            resource: JSON.stringify({ version: 2 })
+        });
+
+        const first = await queue.writeIfAbsent(original);
+        const second = await queue.writeIfAbsent(replacement);
+
+        expect(first.created).toBe(true);
+        expect(first.entry.resource).toBe(original.resource);
+        expect(second.created).toBe(false);
+        expect(second.entry.resource).toBe(original.resource);
+    });
+
     it('hands each caller of getAllKeys a key of its own', async () => {
         const typeId = 'presence.state.v1';
         const queue = new IndexedDbQueueBox({

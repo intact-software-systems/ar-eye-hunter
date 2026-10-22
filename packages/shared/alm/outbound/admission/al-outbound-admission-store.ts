@@ -141,7 +141,10 @@ export type ALOutboundOutgoingDecision<TPrepared> =
     | Readonly<{ kind: 'settled'; }>
     | Readonly<{ kind: 'commit'; bundle: ALOutboundCommitBundle<TPrepared>; }>;
 
-/** What a dequeued row's authority reads first: whether its admission is retained, and whether its canonical identity exists. */
+/**
+ * What a dequeued row's authority reads first: whether its admission is retained, and whether its
+ * canonical identity exists.
+ */
 export interface ALOutboundDequeueAdmissionFacts {
     readonly sentAdmission: boolean;
     readonly canonicalIdentity: boolean;
