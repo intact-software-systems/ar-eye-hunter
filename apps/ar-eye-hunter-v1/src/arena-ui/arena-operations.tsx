@@ -203,7 +203,7 @@ function ArenaRoomList({ arena }: Pick<ArenaOperationsProps, 'arena'>) {
             {arena.openRoomsStatus === 'error' && (
                 <p className="muted">Could not load open arenas: {arena.openRoomsError}</p>
             )}
-            {arena.openRoomsStatus === 'error' && arena.openRooms.length > 0 && (
+            {arena.openRoomsStatus !== 'ready' && arena.openRooms.length > 0 && (
                 <p className="muted">Last loaded arenas — refresh to check availability.</p>
             )}
             {rooms.map((room) => (

@@ -615,21 +615,6 @@ moved or changed test.
       "coverageRelation": "The assertion operates the real arena hook or App and observes the named external port alongside resulting visible or public state."
     },
     {
-      "id": "ar-arena-create-and-switch-boundary",
-      "domain": "AR Eye Hunter arena room switching",
-      "owner": "AR Eye Hunter maintainers",
-      "summary": "Creating an arena uses atomic create-and-switch rather than create-only. Executable assertion: “creates a new arena by switching rooms and clearing stale remote players”.",
-      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#creates a new arena by switching rooms and clearing stale remote players",
-      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
-      "interactionRequirement": {
-        "interactionKind": "absence",
-        "ownedPort": "Rallar room create-only port",
-        "observableEffect": "The room switches and stale remote state clears without create-only.",
-        "requiredConstraint": "The create-only port remains unused for create-and-switch.",
-        "failureRationale": "Create-only would leave switching and old-room cleanup outside the owning workflow."
-      }
-    },
-    {
       "id": "ar-arena-diagnostics-network-polling",
       "domain": "AR Eye Hunter browser lifecycle",
       "owner": "AR Eye Hunter maintainers",
@@ -5376,17 +5361,6 @@ moved or changed test.
       "owner": "AR Eye Hunter maintainers",
       "rationale": "The raw realtime JSON-send absence assertion directly proves that all game and raw realtime egress remains unused after logout.",
       "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#blocks stale canvas combat callbacks after logout"
-    },
-    {
-      "id": "test-structure-coupling-69f6c6dd1aaada67",
-      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "ar-arena-create-and-switch-boundary",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "AR Eye Hunter maintainers",
-      "rationale": "The create-only port absence assertion directly proves that create-only remains unused during create-and-switch.",
-      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#creates a new arena by switching rooms and clearing stale remote players"
     },
     {
       "id": "test-structure-coupling-826d23c83753ba6a",

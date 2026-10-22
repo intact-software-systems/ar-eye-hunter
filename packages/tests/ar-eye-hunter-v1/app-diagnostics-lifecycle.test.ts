@@ -100,7 +100,7 @@ describe('AR Eye Hunter diagnostics lifecycle', () => {
         expect(operations?.textContent?.includes('Could not load open arenas')).toBe(status === 'error');
     });
 
-    it('labels retained directory rows and treats capacity as a request-time admission check', async () => {
+    it.each(['error', 'loading'] as const)('labels retained directory rows during %s and treats capacity as a request-time admission check', async (status) => {
         const openRoom = {
             groupRef: { applicationId: 'ar-eye-hunter', workspaceId: 'default', groupId: 'open' },
             displayName: 'AR Eye Hunter Arena: Available',
@@ -114,8 +114,8 @@ describe('AR Eye Hunter diagnostics lifecycle', () => {
         };
         mockArena.current = createArenaConnection({
             rooms: [],
-            openRoomsStatus: 'error',
-            openRoomsError: 'unavailable',
+            openRoomsStatus: status,
+            openRoomsError: status === 'error' ? 'unavailable' : undefined,
             openRooms: [openRoom, {
                 ...openRoom,
                 groupRef: { ...openRoom.groupRef, groupId: 'full' },
