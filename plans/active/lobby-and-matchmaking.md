@@ -13,9 +13,13 @@ with adoption and participation evidence, not a claim that current usage has pro
 Current product and architecture authority remains in [product](../../docs/product.md) and
 [architecture](../../docs/architecture.md). Slice numbers below preserve existing references; their
 numeric order is not the delivery order. Each implementation PR delivers an independently testable
-outcome. Only the next two implementation increments are made concrete in the
-[slice 0 implementation plan](./lobby-directory-hardening-implementation.md); later work stays
-outcome-shaped until its prerequisites and product evidence are available.
+outcome. Only the next two useful implementation increments are made concrete when a slice begins; later
+work stays outcome-shaped until its prerequisites and product evidence are available.
+
+Across these slices, add no legacy path, duplicated implementation, or migration code. Prefer
+existing repository patterns and keep code, tests, documentation, and plans consistent. Each slice
+uses test-driven development and one current PR; wait for the maintainer to merge it before starting
+the next slice.
 
 ## Current foundation
 
@@ -24,7 +28,8 @@ outcome-shaped until its prerequisites and product evidence are available.
 - The original directory hardening is already present in the tree, introduced by PR #685: `kind`
   and `q` filters, limits, keyset pagination, `GroupDirectoryEntry`, effective member capacity,
   lifecycle state, ETag revalidation, AR Eye directory-error state, and shared Relic HTTP middleware.
-  Slice 0 below finishes the contract and user-facing reliability around that foundation.
+  The completed slice 0 contract adds caller-specific private revalidation, cross-origin validators,
+  and request/session ownership for explicit directory loading, error, recovery, and empty states.
 - `joinMode` supplies the admission credential: `open`, `code`, or `invite-only`. Lifecycle admission
   policy can still close entry or require approval. Business status, formation state, connectivity,
   room membership, and participation in an application activity are separate facts.
@@ -65,8 +70,9 @@ Discovery and permission to enter are independent. Use these initial product cho
 | Invite only    | Hidden    | Authorized invitation, subject to admission policy |
 
 Unlisted means absent from discovery, not access restricted. Settle this behavior before implementing
-shareable private and unlisted flows. Preserve existing public-room visibility during any migration;
-adding a stored listing field requires an explicit migration, not a tolerant reader.
+shareable private and unlisted flows. Select a listing design that preserves existing public-room
+visibility without migration code. Resolve the design before implementation if the existing canonical
+state cannot represent that outcome.
 
 Invitation destinations survive authentication. Links identify the intended application/workspace
 and room, or use a deliberately scoped code resolver; a code alone must not be assumed globally
@@ -104,7 +110,8 @@ reliability work may ship independently where a concrete operational need warran
 
 ## Slice 0: finish directory hardening
 
-Preserve the shipped directory behavior and finish these acceptance outcomes:
+The directory baseline, completed in [PR #696](https://github.com/intact-software-systems/ar-eye-hunter/pull/696),
+has these continuing acceptance requirements:
 
 - Preserve server-side `kind`, trimmed case-insensitive `q`, default limit 50, maximum 200,
   `includeEmpty=false`, and online-count-descending/group-id-ascending keyset ordering. Pagination is
@@ -122,8 +129,8 @@ Preserve the shipped directory behavior and finish these acceptance outcomes:
   already installed in Relic. Verify the same directory contract with AR Eye and Relic-shaped names.
 
 No Quick Join command, listing migration, spectator role, retention job, push directory, metadata
-query language, or corruption-tolerant reader belongs to this slice. Implementation owners, the two
-remaining increments, and validation are in the linked implementation plan.
+query language, or corruption-tolerant reader belongs to this slice. The completed implementation
+plan is removed with its delivery; the PR owns validation and review evidence.
 
 ## Slice 1: Quick Join
 
@@ -163,9 +170,9 @@ product choices above. Validate invitation-to-participation and reload recovery 
 ## Slice 5: unlisted rooms
 
 Allow reference-based entry without directory listing. Separate listing from credentials while
-preserving established room visibility through an explicit stored-data migration. Directory reads
-and eventual pushed updates must remove rooms that become hidden; hiding is not membership revocation.
-Do not implement the migration in slice 0.
+preserving established room visibility without migration code. Directory reads and eventual pushed
+updates must remove rooms that become hidden; hiding is not membership revocation. Resolve any
+representation gap in the existing canonical state before implementing this slice.
 
 ## Slice 6: recovery and room lifetime
 
@@ -214,7 +221,8 @@ success alone does not prove successful participation.
 - Shared browser public-surface changes include API snapshots and bundle-boundary checks. Report any
   bundle-budget change rather than silently exceeding it.
 - Authoritative mutations use AppInbox and the current convergent-service standard; stored-shape
-  changes require migration evidence. Select the current testing skill's gates for the actual scope.
+  changes require an explicit design decision consistent with the no-migration constraint. Select the
+  current testing skill's gates for the actual scope.
 - Review every changed human-authored file in full; remediation support files enter the same closure,
   while independent untouched code stays outside it. Remove affected legacy without verified consumers;
   retaining a real compatibility boundary requires the repository's explicit approval and registry.

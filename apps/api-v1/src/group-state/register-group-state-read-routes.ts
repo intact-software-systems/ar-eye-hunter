@@ -2,9 +2,14 @@ import { Hono, type Context, type Next } from 'jsr:@hono/hono@4.11.9';
 import { etag, RETAINED_304_HEADERS } from 'jsr:@hono/hono@4.11.9/etag';
 
 import { computeGroupDirectoryPage } from '@shared-server/rallar-system/group-state/directory/compute-group-directory-page.ts';
-import { decodeGroupDirectoryQuery } from '@shared-server/rallar-system/group-state/directory/decode-group-directory-query.ts';
+import {
+    decodeGroupDirectoryQuery,
+    type GroupDirectoryQuery
+} from '@shared-server/rallar-system/group-state/directory/decode-group-directory-query.ts';
 import { readStateEventListQuery } from '@shared-server/rallar-system/state-events/state-event-listing.ts';
+import type { GroupDirectoryPage } from '@shared/api/group-directory/group-directory-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 import { isGroupSnapshotCausalRevisionCovered } from '@shared/repository/group-state-snapshot-revision.ts';
 
 import { readGroupSnapshotPointQuery } from '../routes/state-snapshot-read/state-snapshot-read-query.ts';
@@ -19,6 +24,12 @@ import {
     type GroupStateRouteDependencies
 } from './group-state-route-contracts.ts';
 import { toGroupStateErrorResponse } from './group-state-route-errors.ts';
+
+interface ReadGroupDirectoryPageInput {
+    readonly scope: StateScope;
+    readonly principalId: string | undefined;
+    readonly query: GroupDirectoryQuery;
+}
 
 const GROUPS_PATH = '/api/state/apps/:applicationId/workspaces/:workspaceId/groups';
 const GROUP_DIRECTORY_PATH = '/api/state/apps/:applicationId/workspaces/:workspaceId/group-directory';
@@ -96,28 +107,34 @@ async function readGroupDirectory(
                 Promise.resolve(
                     context.json({ error: issues.join('; '), code: 'invalid-group-directory-query' }, 400)
                 ),
-            async (query) => {
-                const snapshots = await dependencies.groupStateService.listSnapshots(
-                    toGroupStateRouteScope(context)
-                );
-                const nowEpochMs = dependencies.nowEpochMs();
-                const listed = snapshots.filter((snapshot) =>
-                    isGroupStateRouteSnapshotDirectoryListed(snapshot, authSession?.clientId, nowEpochMs)
-                );
-
-                return context.json(
-                    computeGroupDirectoryPage(listed, {
-                        query,
-                        defaultMaxMembers: dependencies.groupDefaultMaxMembers
-                    }),
-                    200
-                );
-            }
+            async (query) =>
+                context.json(
+                    await readGroupDirectoryPage(dependencies, {
+                        scope: toGroupStateRouteScope(context),
+                        principalId: authSession?.clientId,
+                        query
+                    })
+                )
         );
     }
     catch (error) {
         return toGroupStateErrorResponse(context, error);
     }
+}
+
+async function readGroupDirectoryPage(
+    dependencies: GroupStateRouteDependencies,
+    request: ReadGroupDirectoryPageInput
+): Promise<GroupDirectoryPage> {
+    const snapshots = await dependencies.groupStateService.listSnapshots(request.scope);
+    const nowEpochMs = dependencies.nowEpochMs();
+    const listed = snapshots.filter((snapshot) =>
+        isGroupStateRouteSnapshotDirectoryListed(snapshot, request.principalId, nowEpochMs)
+    );
+    return computeGroupDirectoryPage(listed, {
+        query: request.query,
+        defaultMaxMembers: dependencies.groupDefaultMaxMembers
+    });
 }
 
 async function readGroupSnapshot(

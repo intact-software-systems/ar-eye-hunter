@@ -1,5 +1,3 @@
-import { useMemo } from 'react';
-
 import { readAuthSessionStorageKind } from '@shared/api/auth.ts';
 
 import { useArenaDiagnosticActions } from './actions/use-arena-diagnostic-actions.ts';
@@ -50,7 +48,7 @@ export function useRallarArena(): ArenaConnection {
         roomId: state.roomId,
         session: state.session
     });
-    const transport = useArenaSnapshotTransport(state);
+    const transport = useArenaTransport(state);
     const { matchDelivery, publishMatchLifecycleOutput } = useArenaMatchDelivery({
         currentNetworkSignal: state.currentNetworkSignal,
         isCurrentNetworkGeneration: state.isCurrentNetworkGeneration,
@@ -85,7 +83,7 @@ export function useRallarArena(): ArenaConnection {
     );
     const gameActions = useArenaGameActions(state, transport, publishMatchLifecycleOutput);
 
-    return useArenaConnectionView({ state, matchDelivery, presence, connectionActions, gameActions });
+    return readArenaConnectionView({ state, matchDelivery, presence, connectionActions, gameActions });
 }
 
 function useArenaPresence(state: ReturnType<typeof useArenaRuntimeState>) {
@@ -107,8 +105,8 @@ function useArenaPresence(state: ReturnType<typeof useArenaRuntimeState>) {
     });
 }
 
-function useArenaSnapshotTransport(state: ReturnType<typeof useArenaRuntimeState>) {
-    return useArenaNetworkTransportSupport({
+function useArenaTransport(state: ReturnType<typeof useArenaRuntimeState>) {
+    const transport = useArenaNetworkTransportSupport({
         nowMs: Date.now,
         arenaMatchRef: state.arenaMatchRef,
         clearPendingReliableArenaSnapshot: state.clearPendingReliableArenaSnapshot,
@@ -122,6 +120,20 @@ function useArenaSnapshotTransport(state: ReturnType<typeof useArenaRuntimeState
         roomIdRef: state.roomIdRef,
         setTransportDiagnostics: state.setTransportDiagnostics
     });
+    useArenaRtcLifecycle({
+        arenaMatchRef: state.arenaMatchRef,
+        connectionState: state.connectionState,
+        isCurrentNetworkGeneration: state.isCurrentNetworkGeneration,
+        isNetworkEnabled: state.isNetworkEnabled,
+        networkGenerationRef: state.networkGenerationRef,
+        roomId: state.roomId,
+        rtcLanes: state.rtcLanes,
+        runBestEffortNetworkTask: transport.runBestEffortNetworkTask,
+        setGameDiagnostics: state.setGameDiagnostics,
+        setRtcLanes: state.setRtcLanes,
+        snapshotLaneReadySyncKeyRef: state.snapshotLaneReadySyncKeyRef
+    });
+    return transport;
 }
 
 function useArenaMessageHandlers(
@@ -188,21 +200,8 @@ function useArenaConnectionLifecycle(
 function useArenaMatchLifecycles(
     state: ReturnType<typeof useArenaRuntimeState>,
     messages: ReturnType<typeof useArenaMessageHandlers>,
-    transport: ReturnType<typeof useArenaSnapshotTransport>
+    transport: ReturnType<typeof useArenaTransport>
 ) {
-    useArenaRtcLifecycle({
-        arenaMatchRef: state.arenaMatchRef,
-        connectionState: state.connectionState,
-        isCurrentNetworkGeneration: state.isCurrentNetworkGeneration,
-        isNetworkEnabled: state.isNetworkEnabled,
-        networkGenerationRef: state.networkGenerationRef,
-        roomId: state.roomId,
-        rtcLanes: state.rtcLanes,
-        runBestEffortNetworkTask: transport.runBestEffortNetworkTask,
-        setGameDiagnostics: state.setGameDiagnostics,
-        setRtcLanes: state.setRtcLanes,
-        snapshotLaneReadySyncKeyRef: state.snapshotLaneReadySyncKeyRef
-    });
     const { attemptDirectorAppointment } = useArenaDirectorAppointment({
         nowMs: Date.now,
         currentNetworkSignal: state.currentNetworkSignal,
@@ -267,6 +266,8 @@ function useArenaConnectionActions(
         setError: state.setError,
         setOpenRooms: state.setOpenRooms,
         setOpenRoomsError: state.setOpenRoomsError,
+        setOpenRoomsStatus: state.setOpenRoomsStatus,
+        directoryGenerationRef: state.directoryGenerationRef,
         setRoomId: state.setRoomId,
         setRooms: state.setRooms,
         setSession: state.setSession
@@ -292,7 +293,7 @@ function useArenaConnectionActions(
 
 function useArenaGameActions(
     state: ReturnType<typeof useArenaRuntimeState>,
-    transport: ReturnType<typeof useArenaSnapshotTransport>,
+    transport: ReturnType<typeof useArenaTransport>,
     publishMatchLifecycleOutput: ArenaMatchDelivery['publishMatchLifecycleOutput']
 ) {
     const presenceActions = useArenaPresenceActions({
@@ -334,51 +335,6 @@ function useArenaGameActions(
     return { presenceActions, combatActions, worldActions };
 }
 
-function useArenaConnectionView(input: ArenaConnectionViewInput): ArenaConnection {
-    const { state, matchDelivery, presence, connectionActions, gameActions } = input;
-    return useMemo(
-        () => readArenaConnectionView(input),
-        [
-            matchDelivery,
-            state.activeEvent,
-            state.aiError,
-            state.aiStatus,
-            state.arenaMatchRef,
-            state.arenaSnapshot,
-            state.connectionState,
-            state.directorAttempt,
-            state.directorStatus,
-            state.error,
-            state.gameDiagnostics,
-            state.httpDiagnostics,
-            state.isNetworkEnabled,
-            state.networkGenerationRef,
-            state.openRooms,
-            state.openRoomsError,
-            state.pickupAcceptances,
-            state.presenceNotices,
-            state.remoteEvents,
-            state.remotePlayerHits,
-            state.remotePlayers,
-            state.remoteShots,
-            state.roomId,
-            state.roomIdRef,
-            state.rooms,
-            state.rtcLanes,
-            state.session,
-            state.sessionRef,
-            state.transportDiagnostics,
-            presence.dismissPresenceNotice,
-            presence.linkState,
-            connectionActions.diagnosticActions,
-            connectionActions.sessionActions,
-            gameActions.combatActions,
-            gameActions.presenceActions,
-            gameActions.worldActions
-        ]
-    );
-}
-
 function readArenaConnectionView(input: ArenaConnectionViewInput): ArenaConnection {
     const { state, matchDelivery, presence, connectionActions, gameActions } = input;
     return {
@@ -389,6 +345,7 @@ function readArenaConnectionView(input: ArenaConnectionViewInput): ArenaConnecti
         rooms: state.rooms,
         openRooms: state.openRooms,
         openRoomsError: state.openRoomsError,
+        openRoomsStatus: state.openRoomsStatus,
         directorStatus: state.directorStatus,
         rtcLanes: state.rtcLanes,
         directorAttempt: state.directorAttempt,

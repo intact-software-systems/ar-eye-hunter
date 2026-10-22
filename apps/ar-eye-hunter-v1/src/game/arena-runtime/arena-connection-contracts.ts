@@ -133,6 +133,7 @@ export interface ArenaConnection {
     readonly roomId?: string;
     readonly rooms: readonly RallarRoomSummary[];
     readonly openRooms: readonly GroupDirectoryEntry[];
+    readonly openRoomsStatus: 'idle' | 'loading' | 'ready' | 'error';
     readonly openRoomsError: string | undefined;
     readonly directorStatus: RallarDirectorStatus;
     readonly rtcLanes: readonly RtcLaneStatus[];
