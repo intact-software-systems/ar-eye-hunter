@@ -18,13 +18,12 @@ const STATEMENT_STRINGS_BY_TEXT = new Map<string, TemplateStringsArray>();
 export class PSqlFragment<Value extends PSqlParameter = PSqlParameter> {
     readonly strings: readonly string[];
     readonly values: readonly Value[];
-    /** The text's identity, each part prefixed by its length so that no two splits of one text share it. */
-    private readonly textKey: string;
+    /** Set by the first `toStatement`, so a fragment spliced into another never computes it. */
+    private statementStrings: TemplateStringsArray | undefined;
 
     private constructor(strings: readonly string[], values: readonly Value[]) {
         this.strings = strings;
         this.values = values;
-        this.textKey = strings.map((text) => `${text.length}:${text}`).join('');
     }
 
     /** A tagged template whose interpolations are parameters, or fragments spliced in place. */
@@ -60,11 +59,13 @@ export class PSqlFragment<Value extends PSqlParameter = PSqlParameter> {
 
     /** The template call arguments: `sql(...fragment.toStatement())`; equal text yields the identical strings array. */
     toStatement(): [TemplateStringsArray, ...Value[]] {
-        return [readStatementStrings(this.textKey, this.strings), ...this.values];
+        this.statementStrings ??= toInternedStatementStrings(this.strings);
+        return [this.statementStrings, ...this.values];
     }
 }
 
-function readStatementStrings(textKey: string, texts: readonly string[]): TemplateStringsArray {
+function toInternedStatementStrings(texts: readonly string[]): TemplateStringsArray {
+    const textKey = toTextKey(texts);
     const kept = STATEMENT_STRINGS_BY_TEXT.get(textKey);
     if (kept !== undefined) {
         return kept;
@@ -74,4 +75,9 @@ function readStatementStrings(textKey: string, texts: readonly string[]): Templa
     );
     STATEMENT_STRINGS_BY_TEXT.set(textKey, strings);
     return strings;
+}
+
+/** The text's identity: each part prefixed by its length, so no two splits of one text share it. */
+function toTextKey(texts: readonly string[]): string {
+    return texts.map((text) => `${text.length}:${text}`).join('');
 }

@@ -11,6 +11,7 @@ import {
 import { GroupStateCurrentSnapshotCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-current-snapshot-cache.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import type { RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { AuditStamp, GroupMember, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 
@@ -30,13 +31,58 @@ const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.ski
 
 interface StrictListRuntime {
     readonly repository: GroupStateRepository;
+    /** Writes on its own connection handle, outside the recorded statements. */
+    readonly writer: GroupStateRepository;
+    readonly runtime: RoundHoldingRuntimeStateRepository;
     readonly groups: CachedGroupStateService;
     readonly log: PostgresStatementLog;
 }
 
+/** Runtime-state reads that can hold a list's second member selection until its snapshot read has answered. */
+class RoundHoldingRuntimeStateRepository extends PSqlRuntimeStateRepository {
+    private memberSelections = 0;
+    private beforeSecondMemberSelection: (() => Promise<void>) | undefined;
+    private settleSnapshotRead: (() => void) | undefined;
+
+    holdSecondMemberSelection(write: () => Promise<void>): void {
+        const snapshotRead = new Promise<void>((resolve) => {
+            this.settleSnapshotRead = resolve;
+        });
+        this.memberSelections = 0;
+        this.beforeSecondMemberSelection = async () => {
+            await snapshotRead;
+            await write();
+        };
+    }
+
+    override async readRuntimeStateBatch(selectors: readonly RuntimeStateReadBatchSelector[]) {
+        if (selectors[0]?.kind === 'prefix-suffix') {
+            this.memberSelections += 1;
+            const beforeSecondMemberSelection = this.beforeSecondMemberSelection;
+            if (this.memberSelections === 2 && beforeSecondMemberSelection !== undefined) {
+                this.beforeSecondMemberSelection = undefined;
+                await beforeSecondMemberSelection();
+            }
+        }
+        return await super.readRuntimeStateBatch(selectors);
+    }
+
+    override async readRuntimeStateBatchVersions(selectorGroups: readonly (readonly RuntimeStateReadBatchSelector[])[]) {
+        const versions = await super.readRuntimeStateBatchVersions(selectorGroups);
+        this.settleSnapshotRead?.();
+        return versions;
+    }
+
+    override async readRuntimeStateBatchWithVersion(selectors: readonly RuntimeStateReadBatchSelector[]) {
+        const batch = await super.readRuntimeStateBatchWithVersion(selectors);
+        this.settleSnapshotRead?.();
+        return batch;
+    }
+}
+
 describe('Postgres strict group list statements', () => {
     postgresIt(
-        'lists a principal\'s kept groups in three statements and a changed, joined or removed group in four, as the scan and filter list them',
+        'lists kept and purged groups in three statements, a changed, joined or removed one in four, and re-reads a group written between the rounds',
         async () => {
             const sql = await createRuntimeStatePostgresSql(requirePostgresDatabaseUrl(), 2);
             const applicationId = `strict-group-list-statements-${crypto.randomUUID()}`;
@@ -64,10 +110,17 @@ describe('Postgres strict group list statements', () => {
 
                     await runtime.repository.removeGroup(ref('room-c'));
                     expect(await listCounted(runtime, scope)).toEqual({ statements: 4, groupIds: ['room-a', 'room-b', 'room-bob'] });
+                    expect(await listCounted(runtime, scope)).toEqual({ statements: 3, groupIds: ['room-a', 'room-b', 'room-bob'] });
+
+                    const changed = await runtime.repository.findGroup(ref('room-a'));
+                    runtime.runtime.holdSecondMemberSelection(async () => {
+                        await runtime.writer.putGroup({ ...changed!, displayName: 'changed', snapshotVersion: changed!.snapshotVersion + 1 });
+                    });
+                    expect(await listCounted(runtime, scope)).toEqual({ statements: 4, groupIds: ['room-a', 'room-b', 'room-bob'] });
 
                     const listed = readable(await runtime.groups.listSnapshotsForPrincipal(scope, 'alice'));
                     expect(listed).toEqual(readable(await runtime.groups.listSnapshots(scope)));
-                    expect(listed.find((snapshot) => snapshot.group.groupId === 'room-b')?.group.displayName).toBe('renamed');
+                    expect(listed.map((snapshot) => snapshot.group.displayName)).toEqual(['changed', 'renamed', 'room-bob']);
                 }
                 finally {
                     await deletePostgresRunRows(sql, applicationId);
@@ -94,9 +147,10 @@ async function listCounted(
 /** The production strict-list stack, its every statement recorded; the current-snapshot cache keeps what it reads. */
 function createStrictListRuntime(sql: PSqlSql): StrictListRuntime {
     const log: PostgresStatementLog = { statements: [], transactions: 0 };
-    const runtimeRepository = new PSqlRuntimeStateRepository(recordPostgresStatements(sql, log, null));
+    const runtimeRepository = new RoundHoldingRuntimeStateRepository(recordPostgresStatements(sql, log, null));
     const groupStateEventStore = new PSqlGroupStateEventRepository(sql);
     const repository = new GroupStateRepository(runtimeRepository, groupStateEventStore);
+    const writer = new GroupStateRepository(new PSqlRuntimeStateRepository(sql), groupStateEventStore);
     const current = new GroupStateCurrentSnapshotCache({
         repository,
         versionReader: runtimeRepository,
@@ -118,7 +172,7 @@ function createStrictListRuntime(sql: PSqlSql): StrictListRuntime {
             listSnapshotsForPrincipal: async (groupScope, principalId) => await repository.listSnapshotsForPrincipal(groupScope, principalId, current)
         }
     });
-    return { repository, groups, log };
+    return { repository, writer, runtime: runtimeRepository, groups, log };
 }
 
 /** The first principal owns the group; every principal is an active member. */

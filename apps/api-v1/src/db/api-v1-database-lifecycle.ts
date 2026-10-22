@@ -4,7 +4,7 @@ import postgres from 'postgres';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { createPostgresTimestampWithoutTimeZoneTextType } from '@shared-server/postgres/postgres-timestamp-without-time-zone.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
-import { createDefaultBackgroundTimers } from '@shared/resilience/timers.ts';
+import { createDefaultBackgroundTimers, type Timers } from '@shared/resilience/timers.ts';
 import { tryWith } from '@shared/resilience/try-with-policy.ts';
 
 import type {
@@ -75,6 +75,8 @@ export interface ApiV1DatabaseLifecycleOperations {
         configuration: ApiV1PGliteEvidenceConfiguration
     ): Promise<Pick<PGliteBlackBoxSnapshotPublisher, 'stop'> | undefined>;
     createPGliteSql(resource: ApiV1PGliteResource): PSqlSql;
+    /** The clock of the statement census's emission. */
+    readonly timers: Timers;
 }
 
 export interface CreateApiV1DatabaseLifecycleInput {
@@ -114,13 +116,70 @@ export function toPostgresJsConnectionUrl(databaseUrl: string): string {
     return url.toString();
 }
 
+interface ApiV1StatementCensusRun {
+    readonly census: PostgresStatementCensus | undefined;
+    readonly stop: () => void;
+}
+
+interface ApiV1PostgresPools {
+    readonly application: ApiV1PostgresClient;
+    readonly listener: ApiV1PostgresClient;
+}
+
 async function createPostgresLifecycle(
     configuration: Extract<ApiV1DatabaseConfiguration, { mode: 'postgres'; }>,
     statementCensus: ApiV1StatementCensusTiming | undefined,
     operations: ApiV1DatabaseLifecycleOperations
 ): Promise<ApiV1DatabaseLifecycle> {
+    const census = startApiV1StatementCensus(statementCensus, operations.timers);
+    let pools: ApiV1PostgresPools;
+    try {
+        pools = await createReadyPostgresPools(configuration, census.census, operations);
+    }
+    catch (error) {
+        census.stop();
+        throw error;
+    }
+    const { application, listener } = pools;
+    let closing: Promise<void> | undefined;
+    return {
+        database: application,
+        notification: createPostgresNotificationPort(application, listener),
+        readiness: Promise.resolve(),
+        close: () => {
+            census.stop();
+            closing ??= closePostgresClients(listener, application);
+            return closing;
+        }
+    };
+}
+
+/** The census of the application pool and its emission, while timing is on. */
+function startApiV1StatementCensus(
+    statementCensus: ApiV1StatementCensusTiming | undefined,
+    timers: Timers
+): ApiV1StatementCensusRun {
+    if (statementCensus === undefined) {
+        return { census: undefined, stop: () => undefined };
+    }
+    const census = new PostgresStatementCensus();
+    return {
+        census,
+        stop: startPostgresStatementCensusTiming({
+            census,
+            timers,
+            ...statementCensus,
+            intervalMs: STATEMENT_CENSUS_INTERVAL_MS
+        })
+    };
+}
+
+async function createReadyPostgresPools(
+    configuration: Extract<ApiV1DatabaseConfiguration, { mode: 'postgres'; }>,
+    census: PostgresStatementCensus | undefined,
+    operations: ApiV1DatabaseLifecycleOperations
+): Promise<ApiV1PostgresPools> {
     const connectionUrl = toPostgresJsConnectionUrl(configuration.url);
-    const census = statementCensus === undefined ? undefined : new PostgresStatementCensus();
     const application = operations.createPostgresClient({
         connectionUrl,
         max: configuration.applicationPool.maxConnections,
@@ -148,25 +207,7 @@ async function createPostgresLifecycle(
         await closePostgresClients(listener, application);
         throw error;
     }
-    const stopCensus = census === undefined || statementCensus === undefined
-        ? () => undefined
-        : startPostgresStatementCensusTiming({
-            census,
-            timers: createDefaultBackgroundTimers(),
-            ...statementCensus,
-            intervalMs: STATEMENT_CENSUS_INTERVAL_MS
-        });
-    let closing: Promise<void> | undefined;
-    return {
-        database: application,
-        notification: createPostgresNotificationPort(application, listener),
-        readiness: Promise.resolve(),
-        close: () => {
-            stopCensus();
-            closing ??= closePostgresClients(listener, application);
-            return closing;
-        }
-    };
+    return { application, listener };
 }
 
 async function createPGliteLifecycle(
@@ -314,7 +355,8 @@ const PRODUCTION_OPERATIONS: ApiV1DatabaseLifecycleOperations = {
     createPGliteSql: (resource) =>
         createPGliteSqlClient(resource as PGlite, {
             ready: Promise.resolve()
-        })
+        }),
+    timers: createDefaultBackgroundTimers()
 };
 
 /**

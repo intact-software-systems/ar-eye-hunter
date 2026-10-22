@@ -106,7 +106,7 @@ Deno.test('with a census, every statement of the root, transaction and savepoint
     const shapes = census.takeShapes();
     assert.deepEqual(
         shapes.map(({ shape, count, parameterChars }) => [shape, count, parameterChars]).sort(),
-        [['select ? as one', 2, 5], ['update rows set value = ?', 2, 6]]
+        [['select ? as one', 2, 5], ['update rows set value = ?', 2, 3]]
     );
     assert.ok(shapes.every((shape) => shape.executorWaitMs >= 0));
     assert.deepEqual(census.takeShapes(), [], 'a take empties the census');

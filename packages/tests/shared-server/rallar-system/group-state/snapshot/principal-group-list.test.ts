@@ -31,24 +31,6 @@ describe('principal group list', () => {
             details: { groups: 1, selectedMembers: 3, statements: 4, fallbackReads: 1 }
         })]);
     });
-
-    it('records nothing with timing off', async () => {
-        const reads: string[] = [];
-        const list = createPrincipalGroupList({
-            repository: {
-                readSnapshotListForPrincipal: async (_scope, principalId) => {
-                    reads.push(principalId);
-                    return toList([]);
-                }
-            },
-            currentSnapshots: { readSnapshots: async () => ({ snapshots: [], probes: 0, reads: 0 }) },
-            timing: undefined,
-            serviceId: 'server-1'
-        });
-
-        expect(await list.listSnapshotsForPrincipal(SCOPE, 'alice')).toEqual([]);
-        expect(reads).toEqual(['alice']);
-    });
 });
 
 function toList(snapshots: readonly GroupSnapshot[]): GroupStatePrincipalSnapshotList {

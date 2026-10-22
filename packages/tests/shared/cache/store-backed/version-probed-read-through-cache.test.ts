@@ -161,10 +161,11 @@ describe('VersionProbedReadThroughCache', () => {
             await cache.readMany(KEYS);
             store.counts.fullReads = 0;
 
-            const values = await cache.readMany(KEYS);
+            const read = await cache.readMany(KEYS);
 
-            expect(values).toEqual(KEYS.map((key) => `${key} first`));
+            expect(read.values).toEqual(KEYS.map((key) => `${key} first`));
             expect(store.counts).toEqual({ probes: 1, probedKeys: 21, fullReads: 0 });
+            expect([read.probes, read.reads]).toEqual([1, 0]);
         });
 
         it('reads only a changed key again, after the one batched probe', async () => {
@@ -175,13 +176,15 @@ describe('VersionProbedReadThroughCache', () => {
             store.counts.fullReads = 0;
             store.counts.probes = 0;
 
-            const values = await cache.readMany(KEYS);
+            const read = await cache.readMany(KEYS);
+            const values = read.values;
 
             expect(values[7]).toBe('group-7 second');
             expect(values.filter((value, index) => index !== 7)).toEqual(
                 KEYS.filter((_, index) => index !== 7).map((key) => `${key} first`)
             );
             expect(store.counts).toMatchObject({ probes: 1, fullReads: 1 });
+            expect([read.probes, read.reads]).toEqual([1, 1]);
         });
 
         it('probes only the keys it keeps a live value for and never probes when it keeps none', async () => {
@@ -194,11 +197,19 @@ describe('VersionProbedReadThroughCache', () => {
             );
             const cache = createCache(store, () => nowEpochMs, 32);
 
-            expect(await cache.readMany(['kept', 'expiring', 'absent'])).toEqual(['kept', 'expiring', undefined]);
+            expect(await cache.readMany(['kept', 'expiring', 'absent'])).toEqual({
+                values: ['kept', 'expiring', undefined],
+                probes: 0,
+                reads: 3
+            });
             expect(store.counts).toEqual({ probes: 0, probedKeys: 0, fullReads: 3 });
 
             nowEpochMs = 1_500;
-            expect(await cache.readMany(['kept', 'expiring', 'absent'])).toEqual(['kept', 'expiring', undefined]);
+            expect(await cache.readMany(['kept', 'expiring', 'absent'])).toEqual({
+                values: ['kept', 'expiring', undefined],
+                probes: 1,
+                reads: 2
+            });
             expect(store.probedBatches).toEqual([['kept']]);
             expect(store.counts.fullReads).toBe(5);
         });
@@ -227,7 +238,7 @@ describe('VersionProbedReadThroughCache', () => {
             failing = false;
             store.write('group-0', { version: 'group-0@2', body: 'group-0 second', validUntilEpochMs: null });
 
-            expect((await cache.readMany(KEYS))[0]).toBe('group-0 second');
+            expect((await cache.readMany(KEYS)).values[0]).toBe('group-0 second');
         });
 
         it('keeps a value under the version its own read reported when a write lands after the batched probe', async () => {
@@ -251,9 +262,9 @@ describe('VersionProbedReadThroughCache', () => {
             store.write('group-3', { version: 'group-3@2', body: 'group-3 second', validUntilEpochMs: null });
             racing = true;
 
-            expect((await cache.readMany(KEYS))[3]).toBe('group-3 third');
+            expect((await cache.readMany(KEYS)).values[3]).toBe('group-3 third');
             store.counts.fullReads = 0;
-            expect((await cache.readMany(KEYS))[3]).toBe('group-3 third');
+            expect((await cache.readMany(KEYS)).values[3]).toBe('group-3 third');
             expect(store.counts.fullReads).toBe(0);
         });
     });

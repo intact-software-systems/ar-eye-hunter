@@ -63,6 +63,18 @@ Deno.test('a shape is the first sixty characters of the statement text, paramete
     ]);
 });
 
+Deno.test('a parameter counts its scalar text: an array its scalar elements, a structured value nothing', () => {
+    const census = new PostgresStatementCensus();
+
+    census.record({
+        strings: toStrings(['select ', ', ', ', ', '']),
+        values: [['ab', { kind: 'key' }, 3], { selector: 'never serialized' }, new Date(0)],
+        executorWaitMs: 0
+    });
+
+    assert.deepEqual(census.takeShapes().map((shape) => shape.parameterChars), [27]);
+});
+
 function toStrings(texts: readonly string[]): TemplateStringsArray {
     return Object.assign([...texts], { raw: [...texts] });
 }

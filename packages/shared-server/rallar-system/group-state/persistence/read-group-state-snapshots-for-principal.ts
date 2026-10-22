@@ -104,10 +104,17 @@ interface PrincipalGroupReads {
     readonly selectedMembers: number;
 }
 
+/** The principal's active member rows and the live group rows of the groups asked, from one read. */
+interface PrincipalMembersAndGroups {
+    readonly members: readonly RuntimeStateEntryValue<GroupMember>[];
+    readonly groupsByKey: ReadonlyMap<string, Group>;
+}
+
 /**
- * Selects by member rows only: a current snapshot is one consistent read of the group row with its children, so a
- * group row read beside the member index would only repeat it. The second selection runs alongside the snapshot read;
- * anything committed before the request is in the first, and a member row that moved between them is read again.
+ * The first selection reads member rows only: a current snapshot is one consistent read of the group row with its
+ * children. The second selection runs alongside the snapshot read and reads the member rows again with the group row of
+ * each group the first selected; a group whose member row moved, or whose group row was written past the snapshot, is
+ * read again from current authority, and one whose group row is gone is not listed.
  */
 async function readCurrentPrincipalSnapshots(
     input: ReadGroupStateSnapshotsForPrincipalInput,
@@ -115,18 +122,27 @@ async function readCurrentPrincipalSnapshots(
     tally: PrincipalListTally
 ): Promise<PrincipalGroupReads> {
     const membersBefore = await readActivePrincipalMembers(input, tally);
-    const [current, membersAfter] = await Promise.all([
-        currentSnapshots.readSnapshots(membersBefore.map((member) => toGroupRef(member.value))),
-        readActivePrincipalMembers(input, tally)
+    const refs = membersBefore.map((member) => toGroupRef(member.value));
+    const [current, after] = await Promise.all([
+        currentSnapshots.readSnapshots(refs),
+        readPrincipalMembersAndGroups(input, refs, tally)
     ]);
     tally.statements += current.probes + current.reads;
     const readByGroupKey = new Map(membersBefore.map((member, index) => [
         groupStateGroupStorageKey(member.value),
         { member, snapshot: current.snapshots[index] }
     ]));
-    const snapshots = await Promise.all(membersAfter.map(async (member) => {
-        const read = readByGroupKey.get(groupStateGroupStorageKey(member.value));
-        return read !== undefined && read.member.entry.revision === member.entry.revision
+    const snapshots = await Promise.all(after.members.map(async (member) => {
+        const groupKey = groupStateGroupStorageKey(member.value);
+        const read = readByGroupKey.get(groupKey);
+        if (read === undefined || read.member.entry.revision !== member.entry.revision) {
+            return await readFallbackSnapshot(input, toGroupRef(member.value), tally);
+        }
+        const group = after.groupsByKey.get(groupKey);
+        if (group === undefined) {
+            return undefined;
+        }
+        return read.snapshot?.group.snapshotVersion === group.snapshotVersion
             ? read.snapshot
             : await readFallbackSnapshot(input, toGroupRef(member.value), tally);
     }));
@@ -168,16 +184,56 @@ async function readActivePrincipalMembers(
     input: ReadGroupStateSnapshotsForPrincipalInput,
     tally: PrincipalListTally
 ): Promise<readonly RuntimeStateEntryValue<GroupMember>[]> {
-    const [storedMembers] = await readLiveSelections(input.repository, [{
+    const [storedMembers] = await readLiveSelections(input.repository, [toPrincipalMembersSelector(input)], tally);
+    return toActivePrincipalMembers(storedMembers!, input);
+}
+
+function toPrincipalMembersSelector(input: ReadGroupStateSnapshotsForPrincipalInput): RuntimeStateReadBatchSelector {
+    return {
         selectorId: 'principal-members',
         kind: 'prefix-suffix',
         namespace: MEMBERS_NAMESPACE,
         keyPrefix: `${groupStateScopeStorageKey(input.scope)}:`,
         keySuffix: groupStateMemberStorageKeySuffix(input.principalId)
-    }], tally);
+    };
+}
+
+function toActivePrincipalMembers(
+    storedMembers: readonly RuntimeStateEntryValue<JsonWireValue>[],
+    input: ReadGroupStateSnapshotsForPrincipalInput
+): readonly RuntimeStateEntryValue<GroupMember>[] {
     return storedMembers
         .map((stored) => toPrincipalMember(stored, input))
         .filter((member) => member.value.status === 'active');
+}
+
+async function readPrincipalMembersAndGroups(
+    input: ReadGroupStateSnapshotsForPrincipalInput,
+    refs: readonly GroupRef[],
+    tally: PrincipalListTally
+): Promise<PrincipalMembersAndGroups> {
+    const [storedMembers, ...storedGroups] = await readLiveSelections(
+        input.repository,
+        [
+            toPrincipalMembersSelector(input),
+            ...refs.map((ref, index): RuntimeStateReadBatchSelector => ({
+                selectorId: `group:${index}`,
+                kind: 'key',
+                namespace: GROUPS_NAMESPACE,
+                key: groupStateGroupStorageKey(ref)
+            }))
+        ],
+        tally
+    );
+    return {
+        members: toActivePrincipalMembers(storedMembers!, input),
+        groupsByKey: new Map(refs.flatMap((ref, index) => {
+            const [storedGroup] = storedGroups[index]!;
+            return storedGroup === undefined
+                ? []
+                : [[groupStateGroupStorageKey(ref), canonicalStoredGroup(storedGroup, ref).value]];
+        }))
+    };
 }
 
 async function readPrincipalGroupSelections(

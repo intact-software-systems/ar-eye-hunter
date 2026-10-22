@@ -101,6 +101,8 @@ export interface CreateApiV1MutationRuntimeInput {
     readonly nowEpochMs: () => number;
     readonly timing: RallarTimingSink;
     readonly outboxStageTiming?: RallarTimingSink;
+    /** Present only while timing is on: one line per strict principal group list. */
+    readonly principalGroupListTiming?: RallarTimingSink;
     readonly appInboxOptions: AppInboxOptions;
     readonly appInboxLaneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
     readonly appInboxNewLaneConcurrency: number;
@@ -286,7 +288,7 @@ function createMutationGroupStateService(
         principalGroups: createPrincipalGroupList({
             repository: resources.groupsRepository,
             currentSnapshots: resources.groupCurrentSnapshotCache,
-            timing: input.outboxStageTiming,
+            timing: input.principalGroupListTiming,
             serviceId: input.serviceId
         })
     });

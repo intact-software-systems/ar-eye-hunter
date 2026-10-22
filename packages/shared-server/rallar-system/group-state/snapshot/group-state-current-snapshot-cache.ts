@@ -21,17 +21,6 @@ export interface GroupStateCurrentSnapshotReads {
     readonly reads: number;
 }
 
-interface GroupStateCurrentSnapshotTally {
-    probes: number;
-    reads: number;
-}
-
-/** One call's read of a group: every key of a call shares the call's tally. */
-interface GroupStateCurrentSnapshotKey {
-    readonly ref: GroupRef;
-    readonly tally: GroupStateCurrentSnapshotTally;
-}
-
 /**
  * The current group snapshot, as durable as a full read. Groups with a kept snapshot cost one revision probe together
  * while unchanged; any other read is one statement per group that returns the rows with their version. A kept snapshot
@@ -39,32 +28,29 @@ interface GroupStateCurrentSnapshotKey {
  * it shows expires.
  */
 export class GroupStateCurrentSnapshotCache {
-    private readonly cache: VersionProbedReadThroughCache<GroupStateCurrentSnapshotKey, GroupSnapshot>;
+    /** Null keeps a group without a live row, under the version of the rows it leaves, until a write moves them. */
+    private readonly cache: VersionProbedReadThroughCache<GroupRef, GroupSnapshot | null>;
 
     public constructor(dependencies: GroupStateCurrentSnapshotCacheDependencies) {
         const { repository, versionReader, nowEpochMs } = dependencies;
         this.cache = new VersionProbedReadThroughCache({
-            readVersions: async (keys) => {
-                keys[0]!.tally.probes += 1;
-                return await readGroupStateSnapshotVersions(versionReader, keys.map(({ ref }) => ref), nowEpochMs());
-            },
-            readValue: async ({ ref, tally }) => {
-                tally.reads += 1;
+            readVersions: async (refs) => await readGroupStateSnapshotVersions(versionReader, refs, nowEpochMs()),
+            readValue: async (ref) => {
                 const observedAtEpochMs = nowEpochMs();
                 const read = await repository.readVersionedSnapshot(versionReader, ref, observedAtEpochMs);
-                return read === undefined ? undefined : {
-                    value: read.snapshot,
+                return {
+                    value: read.snapshot ?? null,
                     version: read.version?.version ?? null,
                     validUntilEpochMs: toEarliestAfter(
                         [
                             ...(read.version?.expireAtEpochMs ?? []),
-                            ...toSnapshotExpiries(read.snapshot)
+                            ...(read.snapshot === undefined ? [] : toSnapshotExpiries(read.snapshot))
                         ],
                         observedAtEpochMs
                     )
                 };
             },
-            toCacheKey: ({ ref }) => groupStateGroupStorageKey(ref),
+            toCacheKey: groupStateGroupStorageKey,
             nowEpochMs,
             maxEntries: dependencies.maxEntries
         });
@@ -77,9 +63,12 @@ export class GroupStateCurrentSnapshotCache {
 
     /** The snapshots in ref order, every kept group probed by one statement. */
     public async readSnapshots(refs: readonly GroupRef[]): Promise<GroupStateCurrentSnapshotReads> {
-        const tally: GroupStateCurrentSnapshotTally = { probes: 0, reads: 0 };
-        const snapshots = await this.cache.readMany(refs.map((ref) => ({ ref, tally })));
-        return { snapshots, probes: tally.probes, reads: tally.reads };
+        const read = await this.cache.readMany(refs);
+        return {
+            snapshots: read.values.map((snapshot) => snapshot ?? undefined),
+            probes: read.probes,
+            reads: read.reads
+        };
     }
 }
 

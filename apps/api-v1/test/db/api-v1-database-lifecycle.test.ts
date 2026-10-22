@@ -178,7 +178,7 @@ Deno.test('PostgreSQL URL translation moves only the Prisma schema query to sear
     );
 });
 
-Deno.test('with timing on, the application pool alone records into a statement census, which stops with the lifecycle', async () => {
+Deno.test('with timing on, the application pool alone records into a statement census, whose emission stops with the lifecycle', async () => {
     const events: string[] = [];
     const poolInputs: ApiV1PostgresClientInput[] = [];
     const lifecycle = await createApiV1DatabaseLifecycle(
@@ -190,7 +190,26 @@ Deno.test('with timing on, the application pool alone records into a statement c
     );
 
     assert.deepEqual(poolInputs.map((pool) => [pool.max, pool.census instanceof PostgresStatementCensus]), [[7, true], [2, false]]);
+    assert.deepEqual(events.filter((event) => event.startsWith('timer:')), ['timer:schedule:5000']);
     await lifecycle.close();
+    assert.deepEqual(events.filter((event) => event.startsWith('timer:')), ['timer:schedule:5000', 'timer:cancel']);
+});
+
+Deno.test('a statement census whose pools fail to start stops its emission', async () => {
+    const events: string[] = [];
+    await assert.rejects(
+        () =>
+            createApiV1DatabaseLifecycle(
+                {
+                    ...toApiV1DatabaseLifecycleInput(postgresConfiguration(), { mode: 'disabled', pollIntervalMs: 25 }),
+                    statementCensus: { timing: () => undefined, serviceId: 'server-1' }
+                },
+                fakeOperations({ events, clients: [], fail: 'readiness' })
+            ),
+        /readiness setup failed/u
+    );
+
+    assert.deepEqual(events.filter((event) => event.startsWith('timer:')), ['timer:schedule:5000', 'timer:cancel']);
 });
 
 interface FakeOperationsInput {
@@ -250,6 +269,13 @@ function fakeOperations(input: FakeOperationsInput): ApiV1DatabaseLifecycleOpera
         createPGliteSql: () => {
             input.events.push('pglite:sql');
             return input.database ?? fakeDatabase();
+        },
+        timers: {
+            nowMs: () => 0,
+            schedule: (_run, delayMs) => {
+                input.events.push(`timer:schedule:${delayMs}`);
+                return () => input.events.push('timer:cancel');
+            }
         }
     };
 }

@@ -34,13 +34,42 @@ class AudienceReadRuntime extends PSqlRuntimeStateRepository {
     versionedValueReads = 0;
     /** Runs once, after the next principal member selection has read its rows. */
     afterMemberSelection: (() => Promise<void>) | undefined;
+    private memberSelections = 0;
+    private beforeSecondMemberSelection: (() => Promise<void>) | undefined;
+    private settleSnapshotRead: (() => void) | undefined;
+
+    /** Holds the next list's second member selection until its snapshot read has answered, then commits `write`. */
+    holdSecondMemberSelection(write: () => Promise<void>): void {
+        const snapshotRead = new Promise<void>((resolve) => {
+            this.settleSnapshotRead = resolve;
+        });
+        this.memberSelections = 0;
+        this.beforeSecondMemberSelection = async () => {
+            await snapshotRead;
+            await write();
+        };
+    }
 
     override async readRuntimeStateBatchVersion(selectors: readonly RuntimeStateReadBatchSelector[]) {
         this.versionReads += 1;
         return await super.readRuntimeStateBatchVersion(selectors);
     }
 
+    override async readRuntimeStateBatchVersions(selectorGroups: readonly (readonly RuntimeStateReadBatchSelector[])[]) {
+        const versions = await super.readRuntimeStateBatchVersions(selectorGroups);
+        this.settleSnapshotRead?.();
+        return versions;
+    }
+
     override async readRuntimeStateBatch(selectors: readonly RuntimeStateReadBatchSelector[]) {
+        if (selectors[0]?.kind === 'prefix-suffix') {
+            this.memberSelections += 1;
+            const beforeSecondMemberSelection = this.beforeSecondMemberSelection;
+            if (this.memberSelections === 2 && beforeSecondMemberSelection !== undefined) {
+                this.beforeSecondMemberSelection = undefined;
+                await beforeSecondMemberSelection();
+            }
+        }
         const selections = await super.readRuntimeStateBatch(selectors);
         this.valueRows += selections.reduce((count, selection) => count + selection.entries.length, 0);
         const afterMemberSelection = this.afterMemberSelection;
@@ -55,6 +84,7 @@ class AudienceReadRuntime extends PSqlRuntimeStateRepository {
         this.versionedValueReads += 1;
         const batch = await super.readRuntimeStateBatchWithVersion(selectors);
         this.valueRows += batch.selections.reduce((count, selection) => count + selection.entries.length, 0);
+        this.settleSnapshotRead?.();
         return batch;
     }
 }
@@ -108,21 +138,19 @@ Deno.test('a principal audience observes revoked membership and expired presence
     }
 });
 
-Deno.test('a group changed after its snapshot was read is listed as read while the principal member row stands', async () => {
+Deno.test('a group written between the snapshot read and the second selection is read again from current authority', async () => {
     const seeded = await seedCache();
     try {
-        const snapshots = await seeded.repository.listSnapshotsForPrincipal(REF, 'alice', {
-            readSnapshots: async (refs) => {
-                const before = await seeded.cache.readSnapshots(refs);
-                const group = before.snapshots[0]?.group;
-                assert.ok(group);
-                await seeded.repository.putMember(createMember('bob', 'member'));
-                await seeded.repository.putGroup({ ...group, activeMemberCount: 2 });
-                return before;
-            }
+        const group = await seeded.repository.findGroup(REF);
+        assert.ok(group);
+        seeded.runtime.holdSecondMemberSelection(async () => {
+            await seeded.repository.putMember(createMember('bob', 'member'));
+            await seeded.repository.putGroup({ ...group, activeMemberCount: 2, snapshotVersion: group.snapshotVersion + 1 });
         });
 
-        assert.deepEqual(snapshots[0].members.map((member) => member.principalId), ['alice']);
+        const snapshots = await seeded.repository.listSnapshotsForPrincipal(REF, 'alice', seeded.cache);
+
+        assert.deepEqual(snapshots[0].members.map((member) => member.principalId), ['alice', 'bob']);
     }
     finally {
         await seeded.close();

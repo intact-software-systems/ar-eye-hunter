@@ -56,6 +56,28 @@ Deno.test('production timing-off configuration omits outbox stage sinks before o
     assert.deepEqual(capturedPolicyPorts, [undefined]);
 });
 
+Deno.test('timing off hands the mutation runtime no principal group list sink, so a failing sink is never reached', () => {
+    const configuration = decodeApiV1Configuration(validDecodeApiV1ConfigurationInput());
+    const failing = (): void => {
+        throw new Error('a timing-off list must not reach a sink');
+    };
+    const sinks: CreateApiV1RuntimeInput['principalGroupListTiming'][] = [];
+    for (const timingLogs of [false, true]) {
+        constructApiV1Runtime({
+            ...createInput([]),
+            principalGroupListTiming: toApiOutboxStageTimingSink({ ...configuration.observability, timingLogs }, failing)
+        }, {
+            ...createOperations([]),
+            createMutationRuntime: (input) => {
+                sinks.push(input.principalGroupListTiming);
+                return MUTATION_RUNTIME;
+            }
+        });
+    }
+
+    assert.deepEqual(sinks, [undefined, failing]);
+});
+
 Deno.test('enabled outbound release timing captures process identity only at the root store composition', () => {
     const events: RallarTimingEvent[] = [];
     const ports: Array<PSqlQueueReleaseTiming.Port | undefined> = [];

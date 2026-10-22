@@ -24,17 +24,18 @@ interface PostgresStatementShapeTotals {
 }
 
 const SHAPE_LENGTH = 60;
+const ISO_INSTANT_LENGTH = 24;
 
 /**
  * Statements by shape: the first 60 characters of the statement text, parameters as `?`, whitespace collapsed. Every SQL shape belongs to
- * one function, so a shape names its caller, and the totals give statements, executor wait and bytes per caller.
+ * one function, so a shape names its caller, and the totals give statements, executor wait and parameter text per caller.
  */
 export class PostgresStatementCensus {
     private readonly shapeByStrings = new WeakMap<TemplateStringsArray, string>();
     private readonly totalsByShape = new Map<string, PostgresStatementShapeTotals>();
 
     public record(statement: PostgresCensusStatement): void {
-        const shape = this.readShape(statement.strings);
+        const shape = this.toShape(statement.strings);
         const totals = this.totalsByShape.get(shape) ?? { count: 0, executorWaitMs: 0, parameterChars: 0 };
         totals.count += 1;
         totals.executorWaitMs += statement.executorWaitMs;
@@ -49,7 +50,7 @@ export class PostgresStatementCensus {
         return shapes.sort((left, right) => right.executorWaitMs - left.executorWaitMs);
     }
 
-    private readShape(strings: TemplateStringsArray): string {
+    private toShape(strings: TemplateStringsArray): string {
         const kept = this.shapeByStrings.get(strings);
         if (kept !== undefined) {
             return kept;
@@ -112,8 +113,18 @@ function toRoundedShape(shape: PostgresStatementShape): PostgresStatementShape {
     return { ...shape, executorWaitMs: Math.round(shape.executorWaitMs * 100) / 100 };
 }
 
-/** The characters a parameter puts on the wire as text; a structured value counts as its JSON. */
+/**
+ * The characters of a parameter's scalar text: a string's length, a number's digits, an ISO instant. An array counts
+ * its scalar elements and a structured element counts nothing, so the census never serializes what it measures.
+ */
 function computeParameterChars(value: PSqlParameter): number {
+    if (Array.isArray(value)) {
+        return value.reduce<number>((sum, element: PSqlParameter) => sum + computeScalarChars(element), 0);
+    }
+    return computeScalarChars(value);
+}
+
+function computeScalarChars(value: PSqlParameter): number {
     if (value === null || value === undefined) {
         return 0;
     }
@@ -121,11 +132,7 @@ function computeParameterChars(value: PSqlParameter): number {
         return value.length;
     }
     if (value instanceof Date) {
-        return value.toJSON()?.length ?? 0;
+        return ISO_INSTANT_LENGTH;
     }
-    if (typeof value === 'object') {
-        return JSON.stringify(value, (_key, nested) => typeof nested === 'bigint' ? nested.toString() : nested)
-            ?.length ?? 0;
-    }
-    return String(value).length;
+    return typeof value === 'object' ? 0 : String(value).length;
 }
