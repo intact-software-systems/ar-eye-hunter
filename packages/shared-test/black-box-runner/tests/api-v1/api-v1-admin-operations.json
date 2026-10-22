@@ -190,6 +190,10 @@
             "processLocal": true,
             "groupAudienceSnapshots": "integer",
             "versionProbedReads": "integer"
+          },
+          "alm": {
+            "processLocal": true,
+            "deliveredMarkers": "integer"
           }
         }
       }

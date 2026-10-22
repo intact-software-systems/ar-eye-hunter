@@ -12,11 +12,13 @@ import type {
 import type { RallarBlackBoxEventHistory } from './event-history.ts';
 
 /**
- * The page's session ledger report (D180) beside `orderingTracks`, the ordering snapshots its inbound stores state
- * they hold, each store's latest statement since the page's last `close`, summed (D191).
+ * The page's session ledger report (D180) beside `orderingTracks` and `deliveredMarkers`, the ordering snapshots
+ * and the delivered markers its inbound stores state they hold, each store's latest statement since the page's last
+ * `close`, summed.
  */
 export interface RallarBlackBoxTestAlmUsage extends ALVolatileSessionReport {
     readonly orderingTracks: number;
+    readonly deliveredMarkers: number;
 }
 
 export interface RallarBlackBoxIndexedDbStoreCensus {

@@ -86,6 +86,14 @@ export interface ApiV1ClientSessionsConfiguration {
     readonly disconnectedRetentionMs: number;
 }
 
+export interface ApiV1AlmConfiguration {
+    /**
+     * The most delivered markers each of the WS server's inbound stores keeps per sender; the sender's next new marker
+     * past it evicts that sender's first to expire, except a marker whose track still buffers a release. 256 to 65 536.
+     */
+    readonly deliveredMarkerCap: number;
+}
+
 export interface ApiV1StateApiRateLimits {
     readonly windowMs: number;
     readonly request: number;
@@ -270,6 +278,7 @@ export interface ApiV1Configuration {
     readonly database: ApiV1DatabaseConfiguration;
     readonly authentication: ApiV1AuthenticationConfiguration;
     readonly clientSessions: ApiV1ClientSessionsConfiguration;
+    readonly alm: ApiV1AlmConfiguration;
     readonly stateApi: ApiV1StateApiConfiguration;
     readonly group: ApiV1GroupConfiguration;
     readonly topology: ApiV1TopologyConfiguration;
