@@ -30,7 +30,6 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
         const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
         const resourceResults = new ResourceInboxResultsRepository(sql);
         const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
-            laneBudgetPolicy: 'fixed-retry-two',
             newLaneConcurrency: 1
         });
         const secret = 'pglite-auth-secret-0123456789abcdef-extra';
@@ -165,7 +164,6 @@ Deno.test('PGlite AppAuth rereads registered-user policy after enqueue', async (
         const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
         const resourceResults = new ResourceInboxResultsRepository(sql);
         const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
-            laneBudgetPolicy: 'fixed-retry-two',
             newLaneConcurrency: 1
         });
 
@@ -259,7 +257,6 @@ Deno.test(
             const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(databaseNowEpochMs));
             const resourceResults = new ResourceInboxResultsRepository(sql);
             const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
-                laneBudgetPolicy: 'fixed-retry-two',
                 newLaneConcurrency: 1
             });
 

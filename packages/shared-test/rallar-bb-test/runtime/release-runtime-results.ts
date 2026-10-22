@@ -1,5 +1,4 @@
 import type { ControlClientIdentity } from '../control-protocol.ts';
-import { canonicalControlRetentionJson } from '../control-retention-canonical.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestEvent,
@@ -8,6 +7,7 @@ import type {
 } from '../rallar-black-box-test-contracts.ts';
 import {
     computeResultCaptureReceipt,
+    toCanonicalResultCaptureJson,
     type ResultCaptureReceipt,
     type ResultReleaseOutcome,
     type ResultReleaseRequest
@@ -64,8 +64,8 @@ export async function readVerifiedRuntimeRelease(
     const receipts = new Map(request.receipts.map((receipt) => [receipt.capture.ordinal, receipt]));
     if (
         request.receipts.some((receipt) =>
-            canonicalControlRetentionJson(receipts.get(receipt.capture.ordinal)) !==
-                canonicalControlRetentionJson(receipt)
+            toCanonicalResultCaptureJson(receipts.get(receipt.capture.ordinal)) !==
+                toCanonicalResultCaptureJson(receipt)
         )
     ) {
         return undefined;
@@ -79,7 +79,7 @@ export async function readVerifiedRuntimeRelease(
     for (const result of selected) {
         const verified = await computeResultCaptureReceipt(result, request);
         const receipt = receipts.get(result.capture!.ordinal)!;
-        if (!verified || canonicalControlRetentionJson(verified) !== canonicalControlRetentionJson(receipt)) {
+        if (!verified || toCanonicalResultCaptureJson(verified) !== toCanonicalResultCaptureJson(receipt)) {
             return undefined;
         }
     }
@@ -95,8 +95,8 @@ export function computeReleasedRuntimeResults(
     const selected = state.commandHistory.filter((result) => result.capture && receipts.has(result.capture.ordinal));
     const selectedOrdinals = new Set(selected.map((result) => result.capture!.ordinal));
     const selectedResults = new Map(selected.map((result) => [
-        canonicalControlRetentionJson(result.capture),
-        canonicalControlRetentionJson(result)
+        toCanonicalResultCaptureJson(result.capture),
+        toCanonicalResultCaptureJson(result)
     ]));
     const commandHistory = state.commandHistory.filter((result) =>
         !selectedOrdinals.has(result.capture?.ordinal ?? -1)
@@ -150,8 +150,8 @@ function isSelectedResult(value: Record<string, unknown>, selectedResults: Reado
     if (!isJsonRecordValue(value.capture)) {
         return false;
     }
-    const captured = selectedResults.get(canonicalControlRetentionJson(value.capture));
-    return captured !== undefined && captured === canonicalControlRetentionJson(value);
+    const captured = selectedResults.get(toCanonicalResultCaptureJson(value.capture));
+    return captured !== undefined && captured === toCanonicalResultCaptureJson(value);
 }
 
 function toReleasedResultMarkers(value: unknown, selectedResults: ReadonlyMap<string, string>): unknown {

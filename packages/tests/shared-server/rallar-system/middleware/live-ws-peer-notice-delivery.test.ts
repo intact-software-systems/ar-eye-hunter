@@ -41,13 +41,7 @@ describe('middleware remote live WS notices', () => {
         native.open();
         socket.addConnection(new ConnectionContext({ id: 'remote-session', socket: native }));
         const duration = Temporal.Duration.from({ seconds: 10 });
-        const resilience = ResourceInboxResilience.createDefault({
-            circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-            initialRate: 1,
-            maxRate: 10,
-            concurrencyIncreaseStep: 1,
-            concurrencyReduceStep: 1
-        });
+        const resilience = ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(10, duration, duration, duration));
         const fixture = createRallarMiddlewareTestRuntime({ resilience: { inbox: resilience, outbox: resilience, appOutbox: resilience } });
         const engine = new InboxOutboxEngine();
         const runtime = createRallarMiddlewareInfrastructure({
@@ -136,13 +130,7 @@ describe('middleware remote live WS notices', () => {
         native.open();
         socket.addConnection(new ConnectionContext({ id: 'remote-session', socket: native }));
         const duration = Temporal.Duration.from({ seconds: 10 });
-        const resilience = ResourceInboxResilience.createDefault({
-            circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-            initialRate: 1,
-            maxRate: 10,
-            concurrencyIncreaseStep: 1,
-            concurrencyReduceStep: 1
-        });
+        const resilience = ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(10, duration, duration, duration));
         const fixture = createRallarMiddlewareTestRuntime({ resilience: { inbox: resilience, outbox: resilience, appOutbox: resilience } });
         const engine = new InboxOutboxEngine();
         const expiresAtMs = nowMs + 100;

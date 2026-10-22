@@ -1,5 +1,6 @@
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
-import { RateLimiter, RateLimiterPolicy, SlidingWindowCounter } from '@shared/resilience/Resilience.ts';
+import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/rate-limiter.ts';
+import { SlidingWindowCounter } from '@shared/resilience/sliding-window-counter.ts';
 
 const RATE_LIMITER_CACHE_TTL_MS = 10 * 60_000;
 const RATE_LIMITER_CACHE_DELETE_EXPIRED_INTERVAL_MS = 60_000;

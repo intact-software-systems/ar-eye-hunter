@@ -192,13 +192,7 @@ async function runTopologyAppOutboxUntilCompletion(
 
 function createResilience(): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResourceInboxResilience.createDefault({
-        circuitBreakerPolicy: new CircuitBreakerPolicy(100, duration, duration, duration),
-        initialRate: 1,
-        maxRate: 1,
-        concurrencyIncreaseStep: 1,
-        concurrencyReduceStep: 1
-    });
+    return ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(100, duration, duration, duration));
 }
 
 function decodeTopologyAppOutboxWorkerInput(raw: string): TopologyAppOutboxWorkerInput {

@@ -957,7 +957,7 @@ class AdminInboxHarness {
     readonly events: string[] = [];
     readonly timingEvents: RallarTimingEvent[] = [];
     readonly queue = new TestResourceInbox();
-    readonly reader = new InboxQueueReader(this.queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+    readonly reader = new InboxQueueReader(this.queue, { newLaneConcurrency: 1 });
     readonly results = new TestResourceInboxResults();
     readonly database: AppInboxTestDatabase;
     readonly service: AppAdminInboxService;

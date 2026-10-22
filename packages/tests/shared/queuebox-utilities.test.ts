@@ -21,7 +21,7 @@ import {
 } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
-import { SlidingWindowCounter } from '@shared/resilience/Resilience.ts';
+import { SlidingWindowCounter } from '@shared/resilience/sliding-window-counter.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 afterEach(() => {
@@ -36,13 +36,7 @@ describe('QueueBoxUtilities', () => {
             errors.push(String(message));
         });
         const duration = Temporal.Duration.from({ seconds: 10 });
-        const resilience = ResourceInboxResilience.createDefault({
-            circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-            initialRate: 2,
-            maxRate: 10,
-            concurrencyIncreaseStep: 1,
-            concurrencyReduceStep: 1
-        });
+        const resilience = ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(10, duration, duration, duration));
         const queue = new InMemoryQueueBox();
         const entry = toResourceEntry('waiting', { ok: true });
         await queue.enqueue(entry);
@@ -58,7 +52,6 @@ describe('QueueBoxUtilities', () => {
             options: { onAttemptReleaseTelemetry: (event) => events.push(event) }
         });
         expect((await queue.getItem(entry.key))?.dequeueAudit.attempts).toBe(0);
-        expect(SlidingWindowCounter.sumInWindowWithNow(resilience.rateAdjuster.slidingWindow, Date.now())).toBe(0);
         expect(SlidingWindowCounter.sumInWindowWithNow(resilience.circuitBreaker.slidingWindow, Date.now())).toBe(0);
         expect(events).toEqual([expect.objectContaining({ attempt: 0, classification: 'not-ready', retryDelayMs: 1_000, failure: { kind: 'none' } })]);
         expect(errors).toEqual([]);
@@ -66,13 +59,7 @@ describe('QueueBoxUtilities', () => {
     it('retains actual failure accounting alongside neutral readiness and successful work', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         const duration = Temporal.Duration.from({ seconds: 10 });
-        const resilience = ResourceInboxResilience.createDefault({
-            circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-            initialRate: 2,
-            maxRate: 10,
-            concurrencyIncreaseStep: 1,
-            concurrencyReduceStep: 1
-        });
+        const resilience = ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(10, duration, duration, duration));
         const failure = vi.spyOn(resilience, 'failure');
         const success = vi.spyOn(resilience, 'success');
         const queue = new InMemoryQueueBox();
@@ -106,13 +93,7 @@ describe('QueueBoxUtilities', () => {
 
     it.each([0, -1, NaN, Infinity, 1.5])('rejects malformed readiness delay %s as nonretryable', async (delayMs) => {
         const duration = Temporal.Duration.from({ seconds: 10 });
-        const resilience = ResourceInboxResilience.createDefault({
-            circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-            initialRate: 2,
-            maxRate: 10,
-            concurrencyIncreaseStep: 1,
-            concurrencyReduceStep: 1
-        });
+        const resilience = ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(10, duration, duration, duration));
         const queue = new InMemoryQueueBox();
         const entry = toResourceEntry('waiting', {});
         await queue.enqueue(entry);
@@ -133,13 +114,10 @@ describe('QueueBoxUtilities', () => {
     it('exhausts the unchanged processing budget only after failures following repeated readiness', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         const duration = Temporal.Duration.from({ seconds: 10 });
-        const resilience = ResourceInboxResilience.createDefault({
+        const resilience = ResourceInboxResilience.create({
             circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-            initialRate: 2,
-            maxRate: 10,
-            concurrencyIncreaseStep: 1,
-            concurrencyReduceStep: 1,
-            retryPolicy: { ...DEFAULT_RESOURCE_INBOX_RETRY_POLICY, maxAttempts: 2 }
+            retryPolicy: { ...DEFAULT_RESOURCE_INBOX_RETRY_POLICY, maxAttempts: 2 },
+            reservationLeaseMs: ResourceInboxResilience.DEFAULT_RESERVATION_LEASE_MS
         });
         const queue = new InMemoryQueueBox();
         const entry = toResourceEntry('waiting', {});
@@ -175,15 +153,10 @@ describe('QueueBoxUtilities', () => {
         expect(attempts).toEqual([0, 0, 0, 1, 2]);
     });
 
-    it('does not manufacture adaptive successes when the queue has no work', async () => {
+    it('does not manufacture breaker outcomes when the queue has no work', async () => {
         const duration = Temporal.Duration.from({ seconds: 10 });
-        const resilience = ResourceInboxResilience.createDefault({
-            circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-            initialRate: 2,
-            maxRate: 10,
-            concurrencyIncreaseStep: 1,
-            concurrencyReduceStep: 1
-        });
+        const resilience = ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(10, duration, duration, duration));
+        resilience.failure();
         await QueueBoxUtilities.defaultDequeue({
             qbox: new InMemoryQueueBox(),
             typesToDequeue: new Set(['waiting']),
@@ -194,8 +167,7 @@ describe('QueueBoxUtilities', () => {
             },
             options: {}
         });
-        expect(SlidingWindowCounter.sumInWindowWithNow(resilience.rateAdjuster.slidingWindow, Date.now())).toBe(0);
-        expect(resilience.rateAdjuster.status.get().rate).toBe(2);
+        expect(SlidingWindowCounter.sumInWindowWithNow(resilience.circuitBreaker.slidingWindow, Date.now())).toBe(1);
     });
     it('stores the explicit UTC creation instant to the millisecond independently of message time', () => {
         const createdAt = Temporal.Instant.from('2026-10-14T01:59:59.123456789+02:00');
@@ -331,13 +303,7 @@ describe('QueueBoxUtilities', () => {
 
             await queue.enqueue(entry);
             const duration = Temporal.Duration.from({ seconds: 10 });
-            const resilience = ResourceInboxResilience.createDefault({
-                circuitBreakerPolicy: new CircuitBreakerPolicy(1, duration, duration, duration),
-                initialRate: 1,
-                maxRate: 1,
-                concurrencyIncreaseStep: 1,
-                concurrencyReduceStep: 1
-            });
+            const resilience = ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(1, duration, duration, duration));
             resilience.circuitBreaker.failureCount(2);
 
             await QueueBoxUtilities.defaultDequeue(
@@ -372,11 +338,5 @@ function toDueRetryEntry(resourceId: string): ResourceEntry {
 
 function toDrainingResilience(): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResourceInboxResilience.createDefault({
-        circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-        initialRate: 1,
-        maxRate: 10,
-        concurrencyIncreaseStep: 1,
-        concurrencyReduceStep: 1
-    });
+    return ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(10, duration, duration, duration));
 }

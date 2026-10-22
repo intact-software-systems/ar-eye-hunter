@@ -76,6 +76,7 @@ export interface HeadlessWorkerConfig {
     readonly headless: boolean;
     readonly launchTimeoutMs: number;
     readonly readyTimeoutMs: number;
+    readonly pageDisconnectTimeoutMs: number;
     readonly exitMode: HeadlessWorkerExitMode;
     readonly targetDistributedRunId?: string;
     readonly controlHttpUrl?: string;
@@ -105,6 +106,7 @@ export type HeadlessWorkerAgentUrlInput =
         | 'controlHttpUrl'
         | 'idleExitMs'
         | 'distributedPollIntervalMs'
+        | 'pageDisconnectTimeoutMs'
     >
     & Omit<HeadlessWorkerAgentConfig, 'url'>
     & Readonly<{
@@ -130,6 +132,7 @@ const DEFAULT_EXIT_MODE: HeadlessWorkerExitMode = 'signal';
 const DEFAULT_DISTRIBUTED_POLL_INTERVAL_MS = 5_000;
 const DEFAULT_LAUNCH_TIMEOUT_MS = 30_000;
 const DEFAULT_READY_TIMEOUT_MS = 45_000;
+const DEFAULT_PAGE_DISCONNECT_TIMEOUT_MS = 10_000;
 
 const REQUIRED_ENV = [
     'RALLAR_BLACK_BOX_SPA_URL',
@@ -428,6 +431,7 @@ function readHeadlessWorkerBrowserLifecycleEnvironment(
     | 'headless'
     | 'launchTimeoutMs'
     | 'readyTimeoutMs'
+    | 'pageDisconnectTimeoutMs'
 > {
     return {
         register: booleanEnv(env, 'RALLAR_BLACK_BOX_REGISTER', false),
@@ -453,6 +457,11 @@ function readHeadlessWorkerBrowserLifecycleEnvironment(
             env,
             'RALLAR_BLACK_BOX_READY_TIMEOUT_MS',
             DEFAULT_READY_TIMEOUT_MS
+        ),
+        pageDisconnectTimeoutMs: positiveIntegerEnv(
+            env,
+            'RALLAR_BLACK_BOX_PAGE_DISCONNECT_TIMEOUT_MS',
+            DEFAULT_PAGE_DISCONNECT_TIMEOUT_MS
         )
     };
 }

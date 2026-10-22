@@ -1,8 +1,8 @@
 # Slice 1: Quick Join implementation plan
 
 **Goal:** Admit an authenticated caller to a suitable existing room, or return an explicit unavailable
-result, through `rallar.rooms.quickJoin()`. Deliver this slice in one PR stacked on
-[PR #696](https://github.com/intact-software-systems/ar-eye-hunter/pull/696), which includes the planning
+result, through `rallar.rooms.quickJoin()`. Deliver this slice in PR #697, originally stacked on
+[PR #696](https://github.com/intact-software-systems/ar-eye-hunter/pull/696), now merged. It includes the planning
 foundation from [PR #695](https://github.com/intact-software-systems/ar-eye-hunter/pull/695).
 
 **Architecture:** A scope-owned Quick Join command runs through the existing AppInbox client, handler,
@@ -19,7 +19,8 @@ Current repo skills and standards govern implementation, not historical plan con
 
 ## Constraints and delivery
 
-- The user explicitly selected slice 1 next and authorized this stack while #695/#696 remain open.
+- The user explicitly selected slice 1 next and authorized the original stack. PR #696 has merged;
+  #697 now targets main. Resolve the real parent-merge conflict before final validation.
   Finish this PR and wait for the maintainer to merge before continuing to another slice. Do not merge
   or enable auto-merge on the user's behalf.
 - Use TDD: observe a meaningful failure at the owned behavior boundary before each implementation,
@@ -149,7 +150,9 @@ test; change Relic production code only if the common API requires a concrete co
 
 - Focused baseline before edits: 20 tests in the four membership/admission/retry/browser workflow
   files passed at parent `97cdef5e855973ab368dfdedd6a4056629a3f8d2`.
-- Retain fresh parent/candidate state-write measurements under ignored `tmp/perf/`, with separate
+- The parent merge brought #694 queue-budget and benchmark changes. The earlier #696-branch
+  baseline is historical; use merged main `5662b410621b464f5b3a60999dafdbfc1c107fd3` for a new
+  comparable baseline with the current harness. Retain fresh parent/candidate state-write measurements under ignored `tmp/perf/`, with separate
   freshly migrated databases: `npm run perf:api-v1:state-write -- --backend=postgres --warmup=1
   --runs=3 --concurrency=10 --out=...`. Run the unchanged comparator; use the prescribed balanced
   protocol if noise prevents a defensible verdict. Native-check affected harness consumers.

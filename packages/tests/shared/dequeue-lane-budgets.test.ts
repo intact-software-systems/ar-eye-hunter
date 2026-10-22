@@ -150,7 +150,7 @@ describe('DequeueController lane budgets', () => {
     it('keeps numeric limits per lane when no budget callback is configured', async () => {
         let now = Temporal.Now.instant();
         const queue = new InMemoryQueueBox(new Map(), () => now);
-        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+        const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
         await seedRetry(queue, 'retry-a');
         await seedRetry(queue, 'retry-b');
         await reader.enqueueIfAbsent(createQueueMessage('new-a'));
@@ -175,7 +175,7 @@ describe('DequeueController lane budgets', () => {
 
     it('bounds separate finalization recovery and reports its key alongside ordinary computed values', async () => {
         const queue = new InMemoryQueueBox();
-        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+        const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
         for (const id of ['exhausted-a', 'exhausted-b']) {
             const entry = await seedRetry(queue, id);
             await queue.enqueue({
@@ -222,7 +222,7 @@ describe('DequeueController lane budgets', () => {
 
     it('clamps claims to a lane quota and snapshots budgets before any handler can change them', async () => {
         const queue = new InMemoryQueueBox();
-        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+        const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
         const entries = await Promise.all(['a', 'b', 'c', 'd'].map((id) => reader.enqueueIfAbsent(createQueueMessage(id))));
         const budgets = laneBudgets(2);
         let observations = 0;
@@ -254,7 +254,7 @@ describe('DequeueController lane budgets', () => {
 
     it('keeps a getter-backed service quota bounded at the first observed value', async () => {
         const queue = new InMemoryQueueBox();
-        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+        const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
         const entries = await Promise.all(['a', 'b', 'c'].map((id) => reader.enqueueIfAbsent(createQueueMessage(id))));
         let firstRead = true;
         const budgets: DequeueController.LaneBudgets = {
@@ -300,7 +300,7 @@ describe('DequeueController lane budgets', () => {
         async (failurePhase) => {
             try {
                 const queue = new InMemoryQueueBox();
-                const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+                const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
                 const first = await reader.enqueueIfAbsent(createQueueMessage('first'));
                 const trailing = await reader.enqueueIfAbsent(createQueueMessage('trailing'));
                 const failure = new Error(`${failurePhase} unavailable`);
@@ -353,7 +353,7 @@ describe('DequeueController lane budgets', () => {
 
     it.each(['callback', 'numeric'] as const)('charges a filtered claimed batch against the %s lane budget', async (budgetSource) => {
         const queue = new InMemoryQueueBox();
-        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+        const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
         const entries = await Promise.all(['a', 'b', 'c'].map((id) => reader.enqueueIfAbsent(createQueueMessage(id))));
         const computed: string[] = [];
         await createDefaultResourceInboxDequeuer<string>({
@@ -381,7 +381,7 @@ describe('DequeueController lane budgets', () => {
             'rejects invalid $field=$invalid before claiming any work',
             async ({ invalid, field }) => {
                 const queue = new InMemoryQueueBox();
-                const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+                const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
                 const entry = await reader.enqueueIfAbsent(createQueueMessage('untouched'));
                 const dequeuer = createDefaultResourceInboxDequeuer<string>({
                     repository: queue,

@@ -59,6 +59,22 @@ describe('InboxQueueReader work advertisement', () => {
             .toEqual([['overdue', Reservator.FAIRNESS], ['due', Reservator.RETRY]]);
     });
 
+    it('serves two of three due retries after the NEW lane in one pass', async () => {
+        const observed = createObservedReader();
+        for (const resourceId of ['due-a', 'due-b', 'due-c']) {
+            await seedRetry(observed.queue, resourceId);
+        }
+        observed.advanceNow(2);
+        await observed.reader.enqueueIfAbsent(createQueueMessage('fresh'));
+        const resilience = createQueueResilience();
+
+        const advertisedLanes = await observed.reader.readWorkAdvertisement(InboxQueueReader.INBOX_DEQUEUE_TYPES, resilience);
+        expect(await observed.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, resilience, advertisedLanes)).toBe(3);
+
+        expect(observed.claimed.map((attempt) => [attempt.entry.key.resourceId, attempt.telemetry.selectedLane]))
+            .toEqual([['fresh', Reservator.NEW], ['due-a', Reservator.RETRY], ['due-b', Reservator.RETRY]]);
+    });
+
     it('claims an overdue retry on the FAIRNESS lane on every pass, probed or not, with no selection limiter in play', async () => {
         const observed = createObservedReader();
         const resilience = createQueueResilience();
@@ -158,7 +174,6 @@ function createObservedReader(dequeueOptions: DequeueResourceEntryOptions = {}):
     const queue = new InMemoryQueueBox(new Map(), () => now);
     const reader = new InboxQueueReader(queue, {
         ...dequeueOptions,
-        laneBudgetPolicy: 'adaptive-retry',
         newLaneConcurrency: 1,
         nowEpochMs: () => Number(now.epochMilliseconds)
     });

@@ -22,7 +22,7 @@ describe('AppInbox completion clock ownership', () => {
         Date.now = () => 1_784_721_600_123;
         try {
             const runtime = createAppInboxHandlerRuntime({
-                inboxQueueReader: new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 }),
+                inboxQueueReader: new InboxQueueReader(queue, { newLaneConcurrency: 1 }),
                 resultRepository: results,
                 database: harness.database.sql,
                 serviceId: 'server-1'
@@ -57,7 +57,7 @@ describe('AppInbox completion clock ownership', () => {
         const queueNow = () => Temporal.Instant.from('2026-07-22T12:00:00Z');
         const queue = new TestResourceInbox(new Map(), queueNow);
         const results = new TestResourceInboxResults(queueNow);
-        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'adaptive-retry', newLaneConcurrency: 1, nowEpochMs: () => 1_784_721_600_000 });
+        const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1, nowEpochMs: () => 1_784_721_600_000 });
         let completionClock = () => 1_784_721_600_456;
         createAppInboxHandlerRuntime({
             inboxQueueReader: reader,

@@ -48,18 +48,14 @@ describe('outbound planner validation boundary', () => {
         const stores = createDefaultOutboundTestStores(outbox);
         const dequeue = {
             types: new Set(['outbox']),
-            resilience: ResourceInboxResilience.createDefault({
-                circuitBreakerPolicy: new CircuitBreakerPolicy(
+            resilience: ResourceInboxResilience.createDefault(
+                new CircuitBreakerPolicy(
                     10,
                     Temporal.Duration.from('PT1S'),
                     Temporal.Duration.from('PT1S'),
                     Temporal.Duration.from('PT1S')
-                ),
-                initialRate: 1,
-                maxRate: 10,
-                concurrencyIncreaseStep: 1,
-                concurrencyReduceStep: 1
-            })
+                )
+            )
         };
         const runtime = createDefaultOutboundTestRuntime({
             outbox,

@@ -89,7 +89,7 @@ it('awaits only the authorised websocket connect, which its upgrade route waits 
 
 it('consumes the upgrade ticket in the connect transaction so a replayed ticket is rejected and writes nothing', async () => {
     const queue = new TestResourceInbox();
-    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+    const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
     const results = new TestResourceInboxResults();
     const authSession = issuedSession('alice', 'alice-ws-session');
     const runtimeRepository = new FakeRuntimeStateRepository();
@@ -122,7 +122,7 @@ it('consumes the upgrade ticket in the connect transaction so a replayed ticket 
 
 it('validates each audience group snapshot once, where the connect read assembles it', async () => {
     const queue = new TestResourceInbox();
-    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+    const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
     const results = new TestResourceInboxResults();
     const authSession = issuedSession('alice', 'alice-ws-session');
     const runtimeRepository = new FakeRuntimeStateRepository();
@@ -148,7 +148,7 @@ it('validates each audience group snapshot once, where the connect read assemble
 
 it('asserts the connect read in its computation and in the recompute that validates it, and nowhere else', async () => {
     const queue = new TestResourceInbox();
-    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+    const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
     const results = new TestResourceInboxResults();
     const authSession = issuedSession('alice', 'alice-ws-session');
     const runtimeRepository = new FakeRuntimeStateRepository();
@@ -171,7 +171,7 @@ it('asserts the connect read in its computation and in the recompute that valida
 
 it('rejects authorised websocket disconnect after durable auth revocation', async () => {
     const queue = new TestResourceInbox();
-    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+    const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
     const results = new TestResourceInboxResults();
     const authSession = issuedSession('alice', 'alice-ws-session');
     const runtimeRepository = new FakeRuntimeStateRepository();
@@ -221,7 +221,7 @@ it('rejects authorised websocket disconnect after durable auth revocation', asyn
 
 it('serves an authorised websocket disconnect after its own connect behind a backlog of the principal', async () => {
     const queue = new TestResourceInbox();
-    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+    const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
     const results = new TestResourceInboxResults();
     const runtimeRepository = new FakeRuntimeStateRepository();
     const authSessions = new AuthSessionRepository(runtimeRepository);
@@ -279,7 +279,7 @@ it('serves an authorised websocket disconnect after its own connect behind a bac
 
 it('processes authorised websocket connects in the requested state scope', async () => {
     const queue = new TestResourceInbox();
-    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+    const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
     const results = new TestResourceInboxResults();
     const authSession = issuedSession('admin', 'admin-ws-session');
     const runtimeRepository = new FakeRuntimeStateRepository();
@@ -329,7 +329,7 @@ it('processes authorised websocket connects in the requested state scope', async
 
 it('processes authorised websocket connects independently per state scope', async () => {
     const queue = new TestResourceInbox();
-    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+    const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
     const results = new TestResourceInboxResults();
     const authSession = issuedSession('admin', 'admin-ws-session');
     const runtimeRepository = new FakeRuntimeStateRepository();
@@ -380,7 +380,7 @@ it(
     ].join(' '),
     async () => {
         const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+        const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
         const results = new TestResourceInboxResults();
         const authSession = issuedSession('admin', 'admin-ws-session');
         const runtimeRepository = new FakeRuntimeStateRepository();

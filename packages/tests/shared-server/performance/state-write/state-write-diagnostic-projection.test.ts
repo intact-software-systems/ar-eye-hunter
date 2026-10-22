@@ -405,7 +405,6 @@ describe('state-write diagnostic projection', () => {
             {
                 queueEntryWriter: new AppInboxQueueEntryWriter({
                     inboxQueueReader: new InboxQueueReader(new TestResourceInbox(new Map()), {
-                        laneBudgetPolicy: 'fixed-retry-two',
                         newLaneConcurrency: 1
                     }, Temporal.Now.instant),
                     newResourceId: () => 'PRIVATE-generated',

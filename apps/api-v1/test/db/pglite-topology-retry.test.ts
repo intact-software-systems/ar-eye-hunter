@@ -56,7 +56,6 @@ Deno.test(
             const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
             const resourceResults = new ResourceInboxResultsRepository(sql);
             const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
-                laneBudgetPolicy: 'fixed-retry-two',
                 newLaneConcurrency: 1
             });
             const authSessions = new AuthSessionRepository(runtime);
@@ -379,7 +378,6 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
             }
         }
         const inboxReader = new InboxQueueReader(new RetryObservedQueueBox(resourceInbox, Temporal.Now.instant), {
-            laneBudgetPolicy: 'fixed-retry-two',
             newLaneConcurrency: 1
         });
         const appGroup = new TopologyInboxService(

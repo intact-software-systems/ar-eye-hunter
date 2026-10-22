@@ -43,10 +43,9 @@ const EXPECTED_PASS_STATEMENTS_OUTSIDE_HANDLER = 3;
 const EXPECTED_HANDLER_STATEMENTS = 3;
 /**
  * An overdue row is also a due row, so the probe advertises RETRY beside FAIRNESS: the probe, the FAIRNESS
- * lane's select and start, the RETRY lane's one-statement claim that then finds nothing, and the retry
- * pressure page read the advertised RETRY lane asks for once per second.
+ * lane's select and start, and the RETRY lane's one-statement claim that then finds nothing.
  */
-const EXPECTED_OVERDUE_PASS_STATEMENTS_OUTSIDE_HANDLER = 5;
+const EXPECTED_OVERDUE_PASS_STATEMENTS_OUTSIDE_HANDLER = 4;
 
 interface DequeuePassRuntime {
     readonly timing: RallarTimingEvent[];
@@ -145,7 +144,6 @@ function createDequeuePassRuntime(sql: PGliteSql): DequeuePassRuntime {
     const queueBox = new PSqlQueueBox(queueInbox, Temporal.Now.instant);
     const finalizeAppInboxRetry = createAppInboxRetryFinalizer({ database: sql });
     const inboxQueueReader = new InboxQueueReader(queueBox, {
-        laneBudgetPolicy: 'adaptive-retry',
         newLaneConcurrency: 1,
         completionNotifications,
         onRetryExhausted: finalizeAppInboxRetry,

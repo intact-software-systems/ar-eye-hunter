@@ -292,7 +292,6 @@ function createQueueFlightHarness(
         }
     });
     const reader = new InboxQueueReader(queue, {
-        laneBudgetPolicy: 'fixed-retry-two',
         newLaneConcurrency: input.newLaneConcurrency,
         newLaneHeldRows: input.newLaneHeldRows,
         flightEntryListener: (settlement) => engine.retainSettlingWork(InboxQueueReader.INBOX_ENQUEUE_TYPE, settlement),

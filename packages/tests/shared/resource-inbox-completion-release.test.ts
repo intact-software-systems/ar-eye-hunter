@@ -30,13 +30,7 @@ describe('ResourceInbox post-release completion hints', () => {
             woke = true;
         });
         const duration = Temporal.Duration.from({ seconds: 10 });
-        const resilience = ResourceInboxResilience.createDefault({
-            circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-            initialRate: 2,
-            maxRate: 10,
-            concurrencyIncreaseStep: 1,
-            concurrencyReduceStep: 1
-        });
+        const resilience = ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(10, duration, duration, duration));
         const controller = createDefaultResourceInboxDequeuer({
             repository: {
                 isAnyEntryToLock: async () => true,
@@ -79,13 +73,7 @@ describe('ResourceInbox post-release completion hints', () => {
                 woke = true;
             });
             const duration = Temporal.Duration.from({ seconds: 10 });
-            const resilience = ResourceInboxResilience.createDefault({
-                circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-                initialRate: 2,
-                maxRate: 10,
-                concurrencyIncreaseStep: 1,
-                concurrencyReduceStep: 1
-            });
+            const resilience = ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(10, duration, duration, duration));
             const options = {
                 completionNotifications,
                 onAttemptReleaseTelemetry: () => {
@@ -152,13 +140,7 @@ describe('ResourceInbox post-release completion hints', () => {
             newLaneClaimOrder: 'queue',
             maxToReserve: () => 1,
             maxNumToDequeue: 1,
-            resilience: ResourceInboxResilience.createDefault({
-                circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-                initialRate: 2,
-                maxRate: 10,
-                concurrencyIncreaseStep: 1,
-                concurrencyReduceStep: 1
-            }),
+            resilience: ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(10, duration, duration, duration)),
             options: {
                 completionNotifications: ResourceInboxCompletionNotifications.createDefault((key) => relayed.push(key)),
                 toCompletionAwaitability: awaitability === undefined ? undefined : () => awaitability

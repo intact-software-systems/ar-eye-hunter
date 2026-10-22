@@ -142,19 +142,6 @@ function validateTopologyDeliveryInvariants(
     collector: ApiV1ConfigurationInvariantCollector,
     topology: ApiV1TopologyConfiguration
 ): void {
-    const queueResilience = topology.queueResilience;
-    if (
-        collector.isValid(
-            'topology.queueResilience.initialRate',
-            'topology.queueResilience.maxRate'
-        ) && queueResilience.initialRate > queueResilience.maxRate
-    ) {
-        collector.invariant(
-            'topology.queueResilience.initialRate',
-            'initial-rate-exceeds-maximum',
-            'Initial queue rate must not exceed the maximum queue rate.'
-        );
-    }
     const delivery = topology.delivery;
     if (
         collector.isValid(

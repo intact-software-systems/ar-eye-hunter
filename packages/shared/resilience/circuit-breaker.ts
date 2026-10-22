@@ -1,7 +1,9 @@
 import { Temporal } from '@js-temporal/polyfill';
 
+import { AtomicLong } from './atomic-long.ts';
+import { AtomicReference } from './atomic-reference.ts';
 import { Either } from './Either.ts';
-import { AtomicLong, AtomicReference, SlidingWindowCounter } from './Resilience.ts';
+import { SlidingWindowCounter } from './sliding-window-counter.ts';
 
 function nowMs(): number {
     return Date.now();

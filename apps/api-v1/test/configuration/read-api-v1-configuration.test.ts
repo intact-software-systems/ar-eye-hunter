@@ -386,18 +386,6 @@ Deno.test('all committed profiles preserve the default finite ICE admission poli
     }
 });
 
-Deno.test('every committed profile serves due retries at the fixed two per pass unless the environment selects another arm', async () => {
-    for (const profile of ['dev', 'prod', 'prod-hardened', 'prod-in-memory'] as const) {
-        const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));
-        assert.equal(configuration.appInbox.laneBudgetPolicy, 'fixed-retry-two', profile);
-    }
-    const selected = await readApiV1Configuration(readerInput({
-        ...validConfigurationEnvironment('prod-in-memory'),
-        RALLAR_APP_INBOX_LANE_BUDGET_POLICY: 'adaptive-retry'
-    }));
-    assert.equal(selected.appInbox.laneBudgetPolicy, 'adaptive-retry');
-});
-
 Deno.test('every committed profile gives the application pool five connections and the listener one', async () => {
     for (const profile of ['dev', 'prod', 'prod-hardened', 'prod-in-memory'] as const) {
         const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));

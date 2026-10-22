@@ -125,7 +125,6 @@ function createGroupSetupMutation(sql: PGliteSql): ApiV1MutationRuntime {
             waitJitterRatio: completion.jitterRatio,
             nowEpochMs: Date.now
         },
-        appInboxLaneBudgetPolicy: 'fixed-retry-two',
         appInboxNewLaneConcurrency: 1,
         appInboxNewLaneHeldRows: 4,
         disconnectedSessionRetentionMs: defaults.clientSessions.disconnectedRetentionMs,

@@ -97,6 +97,37 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'cache',
         maximumMagnitude: 27
     }),
+    // One resilience primitive per file (atomic-long, atomic-reference, sliding-window-counter, rate-limiter,
+    // circuit-breaker and the admission, timer and settle owners), each named for its export; the cache folder
+    // precedent above holds 27.
+    Object.freeze({
+        path: 'packages/shared/resilience',
+        rule: 'layout.directory-density',
+        symbol: 'resilience',
+        maximumMagnitude: 22
+    }),
+    // Caught-value boundaries: thrown values reach these callbacks, retry predicates and the abort helpers;
+    // normalising with toError changes what callers receive, so that change is a backlog item, not a silent rewrite.
+    Object.freeze({
+        path: 'packages/shared/cache/Command.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 9
+    }),
+    Object.freeze({
+        path: 'packages/shared/cache/PullPushCommand.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 5
+    }),
+    // The ICE route's error mapper receives the caught value and narrows it with instanceof Error before use; its
+    // structural response writer accepts any JSON body. Normalising with toError is the same backlog item.
+    Object.freeze({
+        path: 'apps/api-v1/src/routes/ice-route.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toIceRouteErrorResponse',
+        maximumMagnitude: 2
+    }),
     // Independent whole-owner integration review keeps inert-data admission and
     // exact projection comparison together with their shared atomic rules.
     // This module-only cap records that cohesive algorithm, not future growth.

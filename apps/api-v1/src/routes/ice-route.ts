@@ -2,7 +2,7 @@ import { readRateLimiter } from '@shared-server/http/rate-limit-service.ts';
 import { IceConfig } from '@shared/api/api-config.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { LoanedValue } from '@shared/cache/LoanedValue.ts';
-import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/Resilience.ts';
+import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/rate-limiter.ts';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import type { ApiV1IceConfiguration, ApiV1MeteredIceConfiguration } from '../configuration/api-v1-configuration.ts';
 import { getMeteredIceCandidates } from '../services/get-metered-ice-candidates.ts';

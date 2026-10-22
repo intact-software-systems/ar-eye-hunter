@@ -9,7 +9,7 @@ import type {
     WebSocketTicketResponse
 } from '@shared/api/api-config.ts';
 import type { ApiMutationFailureJsonObject } from '@shared/api/mutation/api-mutation-failure.ts';
-import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/Resilience.ts';
+import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/rate-limiter.ts';
 
 import { readApiAuthCredentialProof, RequestAuthFailure } from '../../services/request-auth-service.ts';
 import { toApiMutationFailureResponse, toApiMutationRateLimitResponse } from '../api-mutation-route-failure.ts';

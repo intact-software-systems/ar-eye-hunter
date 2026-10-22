@@ -197,7 +197,6 @@ function createPostgresAppInboxWorkerInbox(
 ): InboxQueueReader {
     const finalizeRetry = createAppInboxRetryFinalizer({ database: input.sql });
     return new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
-        laneBudgetPolicy: 'adaptive-retry',
         newLaneConcurrency: input.newLaneConcurrency,
         newLaneHeldRows: input.newLaneHeldRows,
         flightEntryListener: input.flightEntryListener,

@@ -498,6 +498,20 @@ describe('rallar-black-box headless worker config', () => {
         ).toThrow('RALLAR_BLACK_BOX_IDLE_EXIT_MS must be a positive integer');
     });
 
+    it('bounds the shutdown page disconnect by default and accepts an explicit bound', () => {
+        expect(readHeadlessWorkerConfig({ env: recordingWorkerEnvironment }).pageDisconnectTimeoutMs).toBe(10_000);
+        expect(
+            readHeadlessWorkerConfig({
+                env: { ...recordingWorkerEnvironment, RALLAR_BLACK_BOX_PAGE_DISCONNECT_TIMEOUT_MS: '2500' }
+            }).pageDisconnectTimeoutMs
+        ).toBe(2_500);
+        expect(() =>
+            readHeadlessWorkerConfig({
+                env: { ...recordingWorkerEnvironment, RALLAR_BLACK_BOX_PAGE_DISCONNECT_TIMEOUT_MS: '0' }
+            })
+        ).toThrow('RALLAR_BLACK_BOX_PAGE_DISCONNECT_TIMEOUT_MS must be a positive integer');
+    });
+
     it('defaults the Playwright browser engine to chromium', () => {
         const config = readHeadlessWorkerConfig({
             env: {

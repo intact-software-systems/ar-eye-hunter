@@ -15,7 +15,6 @@ import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box
 import { ResourceInboxHandlerRetryableConflict } from '@shared/queuebox/resource-inbox/resource-inbox-handler-outcome.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
@@ -127,7 +126,6 @@ describe('the AppInbox NEW lane with concurrent context heads', () => {
         const queue = new InMemoryQueueBox();
         const keyByRow = new Map([['row-0', 'scope-a:group-1'], ['row-1', 'scope-a'], ['row-2', 'scope-a:group-2'], ['row-3', 'scope-b']]);
         const reader = new InboxQueueReader(queue, {
-            laneBudgetPolicy: 'fixed-retry-two',
             newLaneConcurrency: K,
             toComputeExclusionKey: (key) => keyByRow.get(key.resourceId)
         });
@@ -269,7 +267,6 @@ describe('the AppInbox NEW lane with concurrent context heads', () => {
         const queue = new InMemoryQueueBox();
         const sharedGroupRows = new Set(Array.from({ length: 8 }, (_value, index) => `row-${2 * index}`));
         const reader = new InboxQueueReader(queue, {
-            laneBudgetPolicy: 'fixed-retry-two',
             newLaneConcurrency: K,
             toComputeExclusionKey: (key) => sharedGroupRows.has(key.resourceId) ? 'group-shared' : `group-${key.resourceId}`
         });
@@ -309,7 +306,7 @@ describe('the AppInbox NEW lane with concurrent context heads', () => {
 });
 
 function createReader(queue: QueueBoxResourceEntryRepository): InboxQueueReader {
-    return new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: K });
+    return new InboxQueueReader(queue, { newLaneConcurrency: K });
 }
 
 function contexts(count: number): string[] {
@@ -342,12 +339,5 @@ function isReservation(statement: string): boolean {
 
 function createResilience(failureThreshold = 10): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResourceInboxResilience.createDefault({
-        circuitBreakerPolicy: new CircuitBreakerPolicy(failureThreshold, duration, duration, duration),
-        initialRate: 1,
-        maxRate: 10,
-        concurrencyIncreaseStep: 1,
-        concurrencyReduceStep: 1,
-        retryPolicy: DEFAULT_RESOURCE_INBOX_RETRY_POLICY
-    });
+    return ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(failureThreshold, duration, duration, duration));
 }

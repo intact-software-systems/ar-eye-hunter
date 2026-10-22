@@ -332,13 +332,7 @@ function createRetryDequeuer(queue: PSqlQueueBox, releases: ResourceInboxAttempt
         maxToReserve: () => 1,
         maxNumToDequeue: 1,
         workAdvertisement: { NEW: false, RETRY: true, FAIRNESS: false, TIMEOUT: false, FINALIZATION: false },
-        resilience: ResourceInboxResilience.createDefault({
-            circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-            initialRate: 1,
-            maxRate: 10,
-            concurrencyIncreaseStep: 1,
-            concurrencyReduceStep: 1
-        }),
+        resilience: ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(10, duration, duration, duration)),
         options: {
             reservationObservation: 'postgres-ordinary-retry-v1',
             onAttemptReleaseTelemetry: (release) => releases.push(release)

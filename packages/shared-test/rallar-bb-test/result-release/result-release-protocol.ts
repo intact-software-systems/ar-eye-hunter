@@ -2,11 +2,54 @@ import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
 import { decodeRallarBlackBoxTestResult } from '../composite-results.ts';
-import type { ControlClientIdentity } from '../control-protocol.ts';
-import { canonicalControlRetentionJson } from '../control-retention-canonical.ts';
+import { RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES, type ControlClientIdentity } from '../control-protocol.ts';
+import {
+    CANONICAL_JSON_MAX_DEPTH,
+    toCanonicalJson,
+    type CanonicalJsonBudget,
+    type CanonicalJsonLimit,
+    type CanonicalJsonLimits
+} from '../control-retention-canonical.ts';
 import { computeCanonicalDigest } from '../distributed-artifact-evidence/compute-canonical-digest.ts';
 import type { RallarBlackBoxTestResult } from '../rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
+
+/**
+ * A result parsed from one standard control frame is bounded by that frame's UTF-8 bytes: no string is longer than
+ * the frame and every node spends at least two bytes with its separator. Values the frame does not bound
+ * (undefined-valued keys counted in the browser, frames a larger RALLAR_BLACK_BOX_MAX_REQUEST_BYTES admits, number
+ * spellings such as 1e20 that re-encode longer) can exceed these limits and then fail closed: persisted, never
+ * certified.
+ */
+export const RESULT_CAPTURE_LIMITS: CanonicalJsonLimits = Object.freeze({
+    canonicalDepth: CANONICAL_JSON_MAX_DEPTH,
+    canonicalNodes: RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES / 2,
+    stringCharacters: RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES,
+    canonicalUtf8Bytes: RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES
+});
+
+export class ResultCaptureLimitError extends Error {
+    override readonly name = 'ResultCaptureLimitError';
+
+    readonly limit: CanonicalJsonLimit;
+    readonly maximum: number;
+
+    constructor(limit: CanonicalJsonLimit) {
+        super(`Result capture exceeded the ${limit} bound of ${RESULT_CAPTURE_LIMITS[limit]}.`);
+        this.limit = limit;
+        this.maximum = RESULT_CAPTURE_LIMITS[limit];
+    }
+}
+
+const RESULT_CAPTURE_BUDGET: CanonicalJsonBudget = Object.freeze({
+    limits: RESULT_CAPTURE_LIMITS,
+    toLimitError: (limit: CanonicalJsonLimit) => new ResultCaptureLimitError(limit)
+});
+
+/** The canonical text a capture receipt digests and the runtime compares before it releases a result. */
+export function toCanonicalResultCaptureJson<Value>(value: Value): string {
+    return toCanonicalJson(value, RESULT_CAPTURE_BUDGET);
+}
 
 export interface ResultCaptureIdentity {
     readonly runtimeId: string;
@@ -52,7 +95,7 @@ export async function computeResultCaptureReceipt(
         agentId: identity.agentId,
         capture: result.capture,
         commandId: result.commandId,
-        digest: await computeCanonicalDigest(canonicalControlRetentionJson(fullResult))
+        digest: await computeCanonicalDigest(toCanonicalResultCaptureJson(fullResult))
     };
 }
 

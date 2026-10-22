@@ -112,7 +112,7 @@ class CapturingInboxReader extends InboxQueueReader {
     private readonly fail: boolean;
 
     constructor(fail: boolean) {
-        super(new InMemoryQueueBox(), { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+        super(new InMemoryQueueBox(), { newLaneConcurrency: 1 });
         this.fail = fail;
     }
 

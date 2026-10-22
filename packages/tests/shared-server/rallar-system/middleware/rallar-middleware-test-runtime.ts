@@ -95,7 +95,7 @@ export function createRallarMiddlewareTestRuntime(
         readAuthenticatedConnectionScope: () => undefined,
         inbox,
         outbox,
-        appInboxDequeueOptions: { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 },
+        appInboxDequeueOptions: { newLaneConcurrency: 1 },
         inboundVolatileStores: undefined,
         wsRuntimeName: input.wsRuntimeName,
         resilience: input.resilience,

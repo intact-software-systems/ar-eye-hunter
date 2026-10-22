@@ -20,7 +20,7 @@ Across these slices, add no legacy path, duplicated implementation, or migration
 existing repository patterns and keep code, tests, documentation, and plans consistent. Each slice
 uses test-driven development and one current PR; wait for the maintainer to merge it before starting
 the next slice unless the maintainer explicitly requests a stack. The maintainer selected Quick Join
-(slice 1) next, stacked on the slice 0 foundation in PR #696. Finish that slice and wait for its merge
+(slice 1) next. PR #696 merged the slice 0 foundation; PR #697 now targets main. Finish that slice and wait for its merge
 before continuing.
 
 ## Current foundation
@@ -99,13 +99,13 @@ all-or-none admission decisions before it becomes a platform promise.
 
 ## Delivery priorities
 
-| Priority    | Outcomes                                                                                                |
-| ----------- | ------------------------------------------------------------------------------------------------------- |
-| Current     | Slice 1 Quick Join on slice 0 reliability, designed and validated against both AR Eye and Relic (9).    |
-| Next        | Share links/codes (4); visibility choices (5); reconnect/recent-room behavior (6).                       |
-| Then        | Automatic directory freshness (7), introducing push when the experience needs it.                       |
-| Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them.             |
-| Later       | Latency ranking (2), scheduled rooms (8), and a separate tournament capability.                         |
+| Priority    | Outcomes                                                                                             |
+| ----------- | ---------------------------------------------------------------------------------------------------- |
+| Current     | Slice 1 Quick Join on slice 0 reliability, designed and validated against both AR Eye and Relic (9). |
+| Next        | Share links/codes (4); visibility choices (5); reconnect/recent-room behavior (6).                   |
+| Then        | Automatic directory freshness (7), introducing push when the experience needs it.                    |
+| Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them.          |
+| Later       | Latency ranking (2), scheduled rooms (8), and a separate tournament capability.                      |
 
 Relic validation is a constraint throughout, not a dependency postponed to slice 9. Operator
 reliability work may ship independently where a concrete operational need warrants it.

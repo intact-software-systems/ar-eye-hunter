@@ -1,5 +1,6 @@
 import { chromium, firefox, webkit, type Browser, type BrowserContext, type BrowserType, type Page } from 'playwright';
 
+import type { BlackBoxRallarRuntimeInstallationTarget } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import {
@@ -25,6 +26,7 @@ interface RunningAgent {
     readonly agent: HeadlessWorkerAgentConfig;
     readonly context: BrowserContext;
     readonly page: Page;
+    readonly pageDisconnectTimeoutMs: number;
 }
 
 interface ShutdownSignal {
@@ -36,7 +38,6 @@ interface ShutdownSignal {
 interface WaitForShutdownOrAbortInput {
     readonly shutdown: Promise<void>;
     readonly signal: AbortSignal;
-    readonly dispose: () => void;
 }
 
 interface OpenAgentInput {
@@ -79,9 +80,12 @@ try {
             `engine=${config.browserEngine} ` +
             `spa=${config.spaUrl} control=${config.controlUrl}`
     );
+    // The worker owns SIGINT and SIGTERM: Playwright's own handlers would close the browser under the pages' disconnect.
     const launchedBrowser = await browserTypes[config.browserEngine].launch({
         headless: config.headless,
-        timeout: config.launchTimeoutMs
+        timeout: config.launchTimeoutMs,
+        handleSIGINT: false,
+        handleSIGTERM: false
     });
     browser = launchedBrowser;
 
@@ -104,9 +108,9 @@ catch (error) {
     }
 }
 finally {
-    shutdown?.dispose();
     await closeAgents(runningAgents);
     await browser?.close().catch(() => undefined);
+    shutdown?.dispose();
     log('Rallar black-box headless worker stopped.');
 }
 
@@ -140,7 +144,8 @@ async function openAgent(input: OpenAgentInput): Promise<RunningAgent> {
     return {
         agent,
         context,
-        page
+        page,
+        pageDisconnectTimeoutMs: config.pageDisconnectTimeoutMs
     };
 }
 
@@ -385,11 +390,34 @@ function delay(ms: number, signal?: AbortSignal): Promise<void> {
 
 async function closeAgents(agents: readonly RunningAgent[]): Promise<void> {
     await Promise.all(
-        agents.map(async ({ agent, context }) => {
-            log(`Closing agent ${agent.agentId}`);
-            await context.close().catch(() => undefined);
+        agents.map(async (runningAgent) => {
+            await disconnectAgentPage(runningAgent);
+            log(`Closing agent ${runningAgent.agent.agentId}`);
+            await runningAgent.context.close().catch(() => undefined);
         })
     );
+}
+
+async function disconnectAgentPage(runningAgent: RunningAgent): Promise<void> {
+    const { agent, page, pageDisconnectTimeoutMs } = runningAgent;
+    const boundController = new AbortController();
+    const disconnected = page.evaluate(closeAgentPageRuntime).then(
+        () => `Agent ${agent.agentId} page disconnected`,
+        (error) => `Agent ${agent.agentId} page disconnect failed: ${toError(error).message}`
+    );
+    // The bound is aborted only after the race settles, so its abort rejection never becomes the logged outcome.
+    const exceeded = delay(pageDisconnectTimeoutMs, boundController.signal).then(
+        () => `Agent ${agent.agentId} page disconnect exceeded ${pageDisconnectTimeoutMs}ms; closing its context`
+    );
+    log(`Disconnecting agent ${agent.agentId} page`);
+    log(await Promise.race([disconnected, exceeded]));
+    boundController.abort();
+}
+
+/** Runs in the agent page; the page runtime's close leaves, logs out and disconnects as its launch configured. */
+async function closeAgentPageRuntime(): Promise<void> {
+    const target: BlackBoxRallarRuntimeInstallationTarget = window;
+    await target.__blackBoxRallar?.close();
 }
 
 function createShutdownSignal(): ShutdownSignal {
@@ -415,18 +443,18 @@ function createShutdownSignal(): ShutdownSignal {
         if (settledController.signal.aborted) {
             return;
         }
-        removeListeners();
         log(`Received ${signal}; shutting down`);
         shutdownController.abort(new HeadlessWorkerSignalShutdownError(`Received ${signal}; shutting down`));
         settledController.abort();
     };
 
-    process.once('SIGINT', onSigint);
-    process.once('SIGTERM', onSigterm);
+    // The listeners stay until dispose: the tsx launcher exits the process on a signal no listener remains for.
+    process.on('SIGINT', onSigint);
+    process.on('SIGTERM', onSigterm);
     return {
         signal: shutdownController.signal,
         wait: (signal) =>
-            signal === undefined ? waitPromise : waitForShutdownOrAbort({ shutdown: waitPromise, signal, dispose }),
+            signal === undefined ? waitPromise : waitForShutdownOrAbort({ shutdown: waitPromise, signal }),
         dispose
     };
 }
@@ -437,7 +465,6 @@ function waitForShutdownOrAbort(input: WaitForShutdownOrAbortInput): Promise<voi
         const cleanup = () => signal.removeEventListener('abort', onAbort);
         const onAbort = () => {
             cleanup();
-            input.dispose();
             reject(signal.reason ?? new Error('Operation aborted'));
         };
 

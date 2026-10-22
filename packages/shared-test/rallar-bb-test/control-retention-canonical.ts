@@ -1,7 +1,26 @@
+/** The bounds of one canonical JSON encoding; each owner names its own set. */
+export interface CanonicalJsonLimits {
+    readonly canonicalDepth: number;
+    readonly canonicalNodes: number;
+    readonly stringCharacters: number;
+    readonly canonicalUtf8Bytes: number;
+}
+
+export type CanonicalJsonLimit = keyof CanonicalJsonLimits;
+
+/** One owner's canonical bounds and the error it throws when the encoding breaches one of them. */
+export interface CanonicalJsonBudget {
+    readonly limits: CanonicalJsonLimits;
+    readonly toLimitError: (limit: CanonicalJsonLimit) => Error;
+}
+
+/** The encoder's recursion bound; no admission bound limits JSON depth, so every owner keeps this one. */
+export const CANONICAL_JSON_MAX_DEPTH = 64;
+
 export const CONTROL_RETENTION_PLAN_LIMITS = Object.freeze({
     candidates: 1_000,
     collectionItems: 100_000,
-    canonicalDepth: 64,
+    canonicalDepth: CANONICAL_JSON_MAX_DEPTH,
     canonicalNodes: 100_000,
     stringCharacters: 1024 * 1024,
     canonicalUtf8Bytes: 8 * 1024 * 1024
@@ -34,6 +53,11 @@ export function controlRetentionLimitError(
     );
 }
 
+const CONTROL_RETENTION_CANONICAL_BUDGET: CanonicalJsonBudget = Object.freeze({
+    limits: CONTROL_RETENTION_PLAN_LIMITS,
+    toLimitError: controlRetentionLimitError
+});
+
 export function boundedControlRetentionArray<T>(
     value: readonly T[],
     label: string
@@ -54,11 +78,17 @@ export function assertControlRetentionString(
     if (typeof value !== 'string' || value.length === 0) {
         throw new TypeError(`${label} must be a non-empty string.`);
     }
-    assertStringBound(value);
+    assertWithinBudget(value.length, 'stringCharacters', CONTROL_RETENTION_CANONICAL_BUDGET);
 }
 
-export function canonicalControlRetentionJson(value: unknown): string {
+export function canonicalControlRetentionJson<Value>(value: Value): string {
+    return toCanonicalJson(value, CONTROL_RETENTION_CANONICAL_BUDGET);
+}
+
+/** Sorted-key JSON without whitespace; the first breached bound throws its owner's error before more is read. */
+export function toCanonicalJson<Value>(value: Value, budget: CanonicalJsonBudget): string {
     const state: CanonicalState = {
+        budget,
         nodes: 0,
         seen: new Set<object>(),
         utf8Bytes: 0,
@@ -69,51 +99,48 @@ export function canonicalControlRetentionJson(value: unknown): string {
     return state.chunks.join('');
 }
 
-type CanonicalState = {
+interface CanonicalState {
+    readonly budget: CanonicalJsonBudget;
     nodes: number;
     seen: Set<object>;
     utf8Bytes: number;
     chunks: string[];
     encoder: TextEncoder;
-};
+}
 
-function writeCanonicalJson(
-    value: unknown,
+function writeCanonicalJson<Value>(
+    value: Value,
     depth: number,
     state: CanonicalState
 ): void {
-    if (depth > CONTROL_RETENTION_PLAN_LIMITS.canonicalDepth) {
-        throw controlRetentionLimitError('canonicalDepth');
-    }
+    assertWithinBudget(depth, 'canonicalDepth', state.budget);
     state.nodes += 1;
-    if (state.nodes > CONTROL_RETENTION_PLAN_LIMITS.canonicalNodes) {
-        throw controlRetentionLimitError('canonicalNodes');
-    }
+    assertWithinBudget(state.nodes, 'canonicalNodes', state.budget);
     if (value === null || typeof value === 'boolean') {
         appendCanonical(JSON.stringify(value), state);
         return;
     }
     if (typeof value === 'string') {
-        assertStringBound(value);
+        assertWithinBudget(value.length, 'stringCharacters', state.budget);
         appendCanonical(JSON.stringify(value), state);
         return;
     }
     if (typeof value === 'number') {
         if (!Number.isFinite(value)) {
-            throw new TypeError('Canonical retention numbers must be finite.');
+            throw new TypeError('Canonical JSON numbers must be finite.');
         }
         appendCanonical(JSON.stringify(value), state);
         return;
     }
     if (!value || typeof value !== 'object') {
-        throw new TypeError('Canonical retention state must be JSON-compatible.');
+        throw new TypeError('Canonical JSON values must be JSON-compatible.');
     }
     if (state.seen.has(value)) {
-        throw new TypeError('Canonical retention state must not be cyclic.');
+        throw new TypeError('Canonical JSON values must not be cyclic.');
     }
     const prototype = Object.getPrototypeOf(value);
     if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) {
-        throw new TypeError('Canonical retention objects must be plain records.');
+        throw new TypeError('Canonical JSON objects must be plain records.');
     }
     state.seen.add(value);
     if (Array.isArray(value)) {
@@ -124,7 +151,7 @@ function writeCanonicalJson(
             }
             const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
             if (!descriptor || !('value' in descriptor)) {
-                throw new TypeError('Canonical retention arrays must be dense data arrays.');
+                throw new TypeError('Canonical JSON arrays must be dense data arrays.');
             }
             writeCanonicalJson(descriptor.value, depth + 1, state);
         }
@@ -132,24 +159,22 @@ function writeCanonicalJson(
     }
     else {
         if (Object.getOwnPropertySymbols(value).length > 0) {
-            throw new TypeError('Canonical retention records must not use symbol keys.');
+            throw new TypeError('Canonical JSON records must not use symbol keys.');
         }
         appendCanonical('{', state);
         let written = 0;
         const keys = Object.keys(value);
         state.nodes += keys.length;
-        if (state.nodes > CONTROL_RETENTION_PLAN_LIMITS.canonicalNodes) {
-            throw controlRetentionLimitError('canonicalNodes');
-        }
+        assertWithinBudget(state.nodes, 'canonicalNodes', state.budget);
         for (const key of keys.sort(compareText)) {
             const descriptor = Object.getOwnPropertyDescriptor(value, key);
             if (!descriptor || !('value' in descriptor)) {
-                throw new TypeError('Canonical retention records must use data properties.');
+                throw new TypeError('Canonical JSON records must use data properties.');
             }
             if (descriptor.value === undefined) {
                 continue;
             }
-            assertStringBound(key);
+            assertWithinBudget(key.length, 'stringCharacters', state.budget);
             if (written > 0) {
                 appendCanonical(',', state);
             }
@@ -164,15 +189,13 @@ function writeCanonicalJson(
 
 function appendCanonical(value: string, state: CanonicalState): void {
     state.utf8Bytes += state.encoder.encode(value).byteLength;
-    if (state.utf8Bytes > CONTROL_RETENTION_PLAN_LIMITS.canonicalUtf8Bytes) {
-        throw controlRetentionLimitError('canonicalUtf8Bytes');
-    }
+    assertWithinBudget(state.utf8Bytes, 'canonicalUtf8Bytes', state.budget);
     state.chunks.push(value);
 }
 
-function assertStringBound(value: string): void {
-    if (value.length > CONTROL_RETENTION_PLAN_LIMITS.stringCharacters) {
-        throw controlRetentionLimitError('stringCharacters');
+function assertWithinBudget(amount: number, limit: CanonicalJsonLimit, budget: CanonicalJsonBudget): void {
+    if (amount > budget.limits[limit]) {
+        throw budget.toLimitError(limit);
     }
 }
 

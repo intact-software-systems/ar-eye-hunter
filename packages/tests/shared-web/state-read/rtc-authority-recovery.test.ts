@@ -62,7 +62,7 @@ import {
 } from '@shared/repository/group-state-snapshots-repository.ts';
 import { configureOverlayRepositories, toOverlayLayoutIdentity } from '@shared/repository/overlays-repository.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
-import { toRateLimiter } from '@shared/resilience/Resilience.ts';
+import { toRateLimiter } from '@shared/resilience/rate-limiter.ts';
 import { createDefaultWebRtcRxStreamerService, WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import {
     createPassThroughTransportFaultPort,

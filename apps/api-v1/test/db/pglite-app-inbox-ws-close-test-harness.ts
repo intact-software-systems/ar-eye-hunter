@@ -72,11 +72,9 @@ export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql): Promis
     const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date());
     const resourceResults = new ResourceInboxResultsRepository(sql);
     const reader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
-        laneBudgetPolicy: 'fixed-retry-two',
         newLaneConcurrency: 1
     });
     const secondReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
-        laneBudgetPolicy: 'fixed-retry-two',
         newLaneConcurrency: 1
     });
     const authSessions = new AuthSessionRepository(runtime);

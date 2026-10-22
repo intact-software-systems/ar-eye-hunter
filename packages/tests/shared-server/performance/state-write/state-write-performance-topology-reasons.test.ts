@@ -94,6 +94,17 @@ describe('API-v1 state-write topology regression reasons', { timeout: 30_000 }, 
         expect(memberPolicyReasons).toHaveLength(12);
         expect(memberPolicyReasons.every((entry) => entry.reason.includes('memberPolicy'))).toBe(true);
 
+        const closureOptions = parseBenchmarkOptions([
+            '--regression-reason-profile=v1c-closure-rows-read'
+        ]);
+        expect(closureOptions).toMatchObject({ regressionReasonProfile: 'v1c-closure-rows-read' });
+        const closureReasons = selectStateWriteRegressionReasons(closureOptions.regressionReasonProfile, []);
+        expect(closureReasons.map(({ workload, metric }) => `${workload}:${metric}`)).toEqual([
+            'shared:sql.rowsRead',
+            'hot:sql.rowsRead'
+        ]);
+        expect(closureReasons.every((entry) => entry.reason.includes('#691'))).toBe(true);
+
         const groupTopologyOptions = parseBenchmarkOptions([
             '--regression-reasons-file=tmp/perf/topology-reasons.json'
         ]);

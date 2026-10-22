@@ -222,7 +222,6 @@ function createConfiguredApiV1Runtime(
             publisherId: myPublisherId
         }),
         appInboxOptions: toApiAppInboxServiceOptions(configuration.appInbox),
-        appInboxLaneBudgetPolicy: configuration.appInbox.laneBudgetPolicy,
         appInboxNewLaneConcurrency: configuration.appInbox.newLaneConcurrency,
         appInboxNewLaneHeldRows: configuration.appInbox.newLaneHeldRows,
         disconnectedSessionRetentionMs: configuration.clientSessions.disconnectedRetentionMs,

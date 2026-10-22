@@ -303,7 +303,7 @@ async function expectNoPlaintextCredentials(
 it('rechecks the parent session before issuing agent credentials', async () => {
     const queue = new TestResourceInbox();
     const results = new TestResourceInboxResults();
-    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+    const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
     const runtime = new FakeRuntimeStateRepository();
     const credentialIssuer = createHmacAuthCredentialIssuer(
         'agent-authority-secret-0123456789abcdef'

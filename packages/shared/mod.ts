@@ -45,11 +45,14 @@ export * from './queuebox/ResourceEntry.ts';
 export * from './persistence/indexed-db-string-persistence-provider.ts';
 export * from './persistence/PersistenceProvider.ts';
 
+export * from './resilience/atomic-long.ts';
+export * from './resilience/atomic-reference.ts';
 export * from './resilience/circuit-breaker.ts';
 export * from './resilience/ComputeAsyncTask.ts';
 export * from './resilience/Either.ts';
 export * from './resilience/PartitionRange.ts';
-export * from './resilience/Resilience.ts';
+export * from './resilience/rate-limiter.ts';
+export * from './resilience/sliding-window-counter.ts';
 export * from './resilience/try-with-policy.ts';
 
 export * from './websocket/json-web-socket-client.ts';

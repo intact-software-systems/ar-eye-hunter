@@ -230,7 +230,6 @@ function createJoinReadHarness(sql: PSqlSql, groupRef: GroupRef): PostgresGroupJ
     const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date());
     const queueEntries = new ReservationRecordingEntryRepository(sql, () => new Date());
     const inbox = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
-        laneBudgetPolicy: 'adaptive-retry',
         newLaneConcurrency: 1
     });
     const groupEventStore = new PSqlGroupStateEventRepository(sql);
@@ -375,13 +374,7 @@ function readStatementCount(sql: PSqlSql): number {
 
 function createWorkerResilience(): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResourceInboxResilience.createDefault({
-        circuitBreakerPolicy: new CircuitBreakerPolicy(100, duration, duration, duration),
-        initialRate: 1,
-        maxRate: 1,
-        concurrencyIncreaseStep: 1,
-        concurrencyReduceStep: 1
-    });
+    return ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(100, duration, duration, duration));
 }
 
 function requireDatabaseUrl(): string {
