@@ -136,6 +136,7 @@ Deno.test(
                 topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => nowEpochMs })
             });
             const topologyMutationOwners = createGroupTopologyMutationOwners({
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 groupStateRepository: groupRepository,
                 configRepository: topologyConfigRepository,
                 planning: topologyRuntimeOwners.planning,

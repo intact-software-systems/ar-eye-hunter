@@ -310,7 +310,9 @@ function insertOutboxEntry(input: AppInboxTestSqlExecution, entry: ResourceEntry
     }
     const key = toResourceKey(entry);
     if (input.pending.outbox.has(key)) {
-        if (input.query.includes('on conflict') && input.query.includes('do nothing')) {
+        const leavesLiveRow = input.query.includes('do nothing') ||
+            input.query.includes('where resource_inbox.expire_ts <=');
+        if (input.query.includes('on conflict') && leavesLiveRow) {
             return [];
         }
         throw new ResourceInboxInvariantCorruptionError(

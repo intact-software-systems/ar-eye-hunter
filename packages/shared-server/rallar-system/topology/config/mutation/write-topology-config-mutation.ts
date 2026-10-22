@@ -34,7 +34,9 @@ async function executeTopologyConfigRuntimeWrite(
 ): Promise<void> {
     switch (write.operation) {
         case 'insert':
-            requireExpectedRevision(write, await insertRuntimeState(transaction, write));
+            if (await insertRuntimeState(transaction, write) === null) {
+                throw new RuntimeStateWriteConflictError();
+            }
             return;
         case 'update':
             requireExpectedRevision(write, await updateRuntimeState(transaction, write));
@@ -63,7 +65,12 @@ async function insertRuntimeState(
                 ${write.expireAtIsoTimestamp},
                 now(),
                 0)
-        on conflict (store_namespace, store_key) do nothing
+        on conflict (store_namespace, store_key) do update
+            set store_value = excluded.store_value,
+                expire_at_ts = excluded.expire_at_ts,
+                updated_ts = now(),
+                revision = runtime_state_store.revision + 1
+            where runtime_state_store.expire_at_ts <= now()
         returning revision
     `;
     return rows[0] ? decodeRuntimeStateRevision(rows[0].revision) : null;
@@ -102,7 +109,7 @@ async function deleteRuntimeState(
 }
 
 function requireExpectedRevision(
-    write: Extract<TopologyConfigRuntimeWrite, { operation: 'insert' | 'update'; }>,
+    write: Extract<TopologyConfigRuntimeWrite, { operation: 'update'; }>,
     revision: number | null
 ): void {
     if (revision !== write.expectedResultRevision) {

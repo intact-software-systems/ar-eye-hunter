@@ -509,6 +509,7 @@ function topologyManagement(
         topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000 })
     });
     const mutationOwners = createGroupTopologyMutationOwners({
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         groupStateRepository: harness.repository,
         configRepository: repository,
         planning: runtimeOwners.planning,

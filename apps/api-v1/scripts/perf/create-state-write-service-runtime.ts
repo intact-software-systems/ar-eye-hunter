@@ -226,7 +226,8 @@ function createStateWriteTopologyService({
         planning: topologyRuntimeOwners.planning,
         nowEpochMs,
         isPlatformAdmin: () => false,
-        outboxWriter: new RtcTopologyOutboxWriter({ recordWrite: () => undefined })
+        outboxWriter: new RtcTopologyOutboxWriter({ recordWrite: () => undefined }),
+        finishedRetentionMs: defaults.appInbox.finishedRetentionMs
     });
     return new TopologyInboxService(
         {

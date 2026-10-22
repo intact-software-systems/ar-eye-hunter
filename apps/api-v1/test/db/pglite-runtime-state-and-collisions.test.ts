@@ -661,6 +661,7 @@ Deno.test(
             });
             const outboxWriter = new RtcTopologyOutboxWriter({ recordWrite: () => undefined });
             const baselineMutation = createGroupTopologyMutationOwners({
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 groupStateRepository,
                 configRepository,
                 planning: topologyRuntime.planning,
@@ -674,6 +675,7 @@ Deno.test(
             let staleReadCount = 0;
             let delegatedReadCount = 0;
             const topologyMutation = createGroupTopologyMutationOwners({
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 groupStateRepository,
                 configRepository,
                 planning: topologyRuntime.planning,

@@ -8,6 +8,7 @@ import {
     type ResourceInboxEntryInsertRow
 } from '../../queuebox/postgres/resource-inbox-entry-insert-values.ts';
 import { toPgTimestamp, toSystemDate } from '../../queuebox/postgres/resource-inbox-row-codec.ts';
+import { REPLACE_EXPIRED_RESOURCE_INBOX_ROW } from '../../queuebox/postgres/write-resource-inbox-entry-if-absent-or-expired.ts';
 
 export interface AppOutboxInsert {
     readonly entry: Readonly<ResourceEntry>;
@@ -72,8 +73,8 @@ export async function writeAppOutboxInsert(transaction: PSqlSql, computed: AppOu
 }
 
 /**
- * Every row in one statement and in the given order; each must return its row id, since a row whose key already
- * exists is the corruption the insert reports.
+ * Every row in one statement and in the given order; each must return its row id, since a live row already under
+ * its key is the corruption the insert reports. An expired row is taken for absent and written over.
  */
 export async function writeAppOutboxInserts(
     transaction: PSqlSql,
@@ -82,7 +83,7 @@ export async function writeAppOutboxInserts(
     if (computed.length === 0) {
         return;
     }
-    const inserted = await insertAbsentAppOutboxRows(transaction, computed);
+    const inserted = await insertAppOutboxRows(transaction, computed, REPLACE_EXPIRED_RESOURCE_INBOX_ROW);
     if (inserted.length !== computed.length) {
         const missing = computed.find(({ entry: { key } }) =>
             !inserted.some((row) =>
@@ -97,17 +98,21 @@ export async function writeAppOutboxInserts(
     }
 }
 
-/** Whether the row was created; a row already stored under its key is left as it is. */
+/** Whether the row was created; a row already stored under its key, expired or not, is left as it is. */
 export async function writeAppOutboxInsertIfAbsent(transaction: PSqlSql, computed: AppOutboxInsert): Promise<boolean> {
-    return (await insertAbsentAppOutboxRows(transaction, [computed])).length === 1;
+    return (await insertAppOutboxRows(transaction, [computed], KEEP_STORED_RESOURCE_INBOX_ROW)).length === 1;
 }
 
-async function insertAbsentAppOutboxRows(
+const KEEP_STORED_RESOURCE_INBOX_ROW = PSqlFragment
+    .of`on conflict (fk_ext_bank_id, ri_resource_id, ri_topic_id) do nothing`;
+
+async function insertAppOutboxRows(
     transaction: PSqlSql,
-    computed: readonly AppOutboxInsert[]
+    computed: readonly AppOutboxInsert[],
+    onConflict: PSqlFragment<never>
 ): Promise<readonly AppOutboxInsertedRow[]> {
     const statement = PSqlFragment.of`${toResourceInboxEntryInsert(computed.map(toAppOutboxInsertRow))}
-        on conflict (fk_ext_bank_id, ri_resource_id, ri_topic_id) do nothing
+        ${onConflict}
         returning ri_row_id, ri_resource_id, ri_topic_id, fk_ext_bank_id
     `;
     return await transaction<readonly AppOutboxInsertedRow[]>(...statement.toStatement());
