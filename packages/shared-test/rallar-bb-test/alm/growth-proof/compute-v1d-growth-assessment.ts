@@ -1,34 +1,23 @@
 import {
+    computeDeclaredAppendOnlyAssessment,
+    computeDurableAssessment,
+    computeUnboundedAssessment
+} from './compute-v1d-unexpiring-assessment.ts';
+import { toV1dGrowthNoData, type V1dGrowthAssessment, type V1dGrowthSeriesInput } from './v1d-growth-assessment.ts';
+import {
     computeV1dGrowthMax,
     computeV1dGrowthPlateau,
     computeV1dGrowthSlopePerHour,
-    type V1dGrowthPlateau,
+    toV1dGrowthLastElapsedMs,
+    toV1dGrowthMinutes,
+    toV1dGrowthRounded,
     type V1dGrowthSeriesPoint
 } from './v1d-growth-series.ts';
 import type { V1dGrowthClassification } from './v1d-growth-surface.ts';
 
-export type V1dGrowthOutcome = 'pass' | 'fail' | 'insufficient' | 'no-data' | 'unclassified';
-
-/** What one reading of one surface showed against its class's predicate. */
-export interface V1dGrowthAssessment {
-    readonly bound: string;
-    readonly firstPlateau: V1dGrowthPlateau | null;
-    /** The slope the predicate read: the last 15 minutes, or everything after the warm-up for the heap. */
-    readonly slopePerHour: number | null;
-    readonly max: number | null;
-    readonly outcome: V1dGrowthOutcome;
-    readonly reason: string;
-}
-
-export interface V1dGrowthSeriesInput {
-    readonly series: readonly V1dGrowthSeriesPoint[];
-    /** The reading's rows stamped never to expire; empty where the store stamps none. */
-    readonly neverExpiringSeries: readonly V1dGrowthSeriesPoint[];
-}
-
 const MINUTE_MS = 60_000;
 const HOUR_MS = 3_600_000;
-const MIB = 1_048_576;
+const MB = 1_000_000;
 const LAST_WINDOW_MS = 15 * MINUTE_MS;
 const MIN_SLOPE_WINDOW_MS = 10 * MINUTE_MS;
 const PLATEAU_RELATIVE_TOLERANCE = 0.05;
@@ -36,7 +25,7 @@ const PLATEAU_ABSOLUTE_TOLERANCE = 1;
 const LINEAR_ACCELERATION_TOLERANCE = 0.5;
 const LINEAR_ABSOLUTE_TOLERANCE_PER_HOUR = 4;
 const HEAP_WARM_UP_MS = 10 * MINUTE_MS;
-const HEAP_SLOPE_LIMIT_BYTES_PER_HOUR = 10 * MIB;
+const HEAP_SLOPE_LIMIT_BYTES_PER_HOUR = 10 * MB;
 const HEAP_MAX_PLATEAU_FACTOR = 2;
 
 export function computeV1dGrowthAssessment(
@@ -47,12 +36,12 @@ export function computeV1dGrowthAssessment(
         case 'count-capped':
             return computeCountCappedAssessment(classification.cap, input.series);
         case 'ttl-within-run':
-            return withExpiryHeld(
+            return toExpiryHeldAssessment(
                 computeTtlWithinRunAssessment(classification.ttlMs, classification.sweepMs, input.series),
                 input.neverExpiringSeries
             );
         case 'ttl-beyond-run':
-            return withExpiryHeld(
+            return toExpiryHeldAssessment(
                 computeLinearAssessment(
                     input.series,
                     (ratePerHour) =>
@@ -62,10 +51,9 @@ export function computeV1dGrowthAssessment(
                 input.neverExpiringSeries
             );
         case 'durable':
-            return computeLinearAssessment(
-                input.series,
-                (ratePerHour) => `${classification.entity}; +${Math.round(ratePerHour)}/h`
-            );
+            return computeDurableAssessment(classification, input);
+        case 'declared-append-only':
+            return computeDeclaredAppendOnlyAssessment(classification.history, input.series);
         case 'heap':
             return computeHeapAssessment(input.series);
         case 'unbounded':
@@ -74,7 +62,7 @@ export function computeV1dGrowthAssessment(
 }
 
 /** A time-to-live bounds only rows that carry one: rows stamped never to expire that rise during the run fail it. */
-function withExpiryHeld(
+function toExpiryHeldAssessment(
     assessment: V1dGrowthAssessment,
     neverExpiringSeries: readonly V1dGrowthSeriesPoint[]
 ): V1dGrowthAssessment {
@@ -93,35 +81,15 @@ function computeCountCappedAssessment(cap: number, series: readonly V1dGrowthSer
     const bound = `≤ ${cap}`;
     const max = computeV1dGrowthMax(series);
     if (max === null) {
-        return toNoData(bound);
+        return toV1dGrowthNoData(bound);
     }
     return {
         bound,
         firstPlateau: computeV1dGrowthPlateau(series, 0),
-        slopePerHour: computeV1dGrowthSlopePerHour(series, toLastElapsedMs(series) - LAST_WINDOW_MS),
+        slopePerHour: computeV1dGrowthSlopePerHour(series, toV1dGrowthLastElapsedMs(series) - LAST_WINDOW_MS),
         max,
         outcome: max <= cap ? 'pass' : 'fail',
         reason: max <= cap ? `every reading ≤ ${cap}` : `a reading of ${max} exceeds the cap ${cap}`
-    };
-}
-
-function computeUnboundedAssessment(
-    missingBound: string,
-    series: readonly V1dGrowthSeriesPoint[]
-): V1dGrowthAssessment {
-    const bound = `none: ${missingBound}`;
-    const max = computeV1dGrowthMax(series);
-    if (max === null) {
-        return toNoData(bound);
-    }
-    const slopePerHour = computeV1dGrowthSlopePerHour(series, 0);
-    return {
-        bound,
-        firstPlateau: computeV1dGrowthPlateau(series, 0),
-        slopePerHour,
-        max,
-        outcome: 'fail',
-        reason: `no bound (${missingBound}); grew ${toRounded(slopePerHour ?? 0)}/h over the run`
     };
 }
 
@@ -133,10 +101,10 @@ function computeTtlWithinRunAssessment(
     const bound = `ttl ${Math.round(ttlMs / 1_000)} s + sweep ${Math.round(sweepMs / 1_000)} s`;
     const max = computeV1dGrowthMax(series);
     if (max === null) {
-        return toNoData(bound);
+        return toV1dGrowthNoData(bound);
     }
     const warmUpMs = ttlMs + sweepMs;
-    const lastElapsedMs = toLastElapsedMs(series);
+    const lastElapsedMs = toV1dGrowthLastElapsedMs(series);
     const windowStartMs = Math.max(lastElapsedMs - LAST_WINDOW_MS, warmUpMs);
     const firstPlateau = computeV1dGrowthPlateau(series, warmUpMs);
     const slopePerHour = computeV1dGrowthSlopePerHour(series, windowStartMs);
@@ -147,8 +115,8 @@ function computeTtlWithinRunAssessment(
             slopePerHour,
             max,
             outcome: 'insufficient',
-            reason: `the run ends ${toMinutes(lastElapsedMs)} min in; the plateau needs ` +
-                `${toMinutes(warmUpMs + MIN_SLOPE_WINDOW_MS)} min`
+            reason: `the run ends ${toV1dGrowthMinutes(lastElapsedMs)} min in; the plateau needs ` +
+                `${toV1dGrowthMinutes(warmUpMs + MIN_SLOPE_WINDOW_MS)} min`
         };
     }
     const lastWindowGrowth = slopePerHour * (LAST_WINDOW_MS / HOUR_MS);
@@ -161,9 +129,11 @@ function computeTtlWithinRunAssessment(
         max,
         outcome: plateaued ? 'pass' : 'fail',
         reason: plateaued
-            ? `grew ${toRounded(lastWindowGrowth)} in the last 15 min (tolerance ${toRounded(tolerance)})`
-            : `still rising after ttl + sweep: ${toRounded(lastWindowGrowth)} in the last 15 min ` +
-                `exceeds ${toRounded(tolerance)}`
+            ? `grew ${toV1dGrowthRounded(lastWindowGrowth)} in the last 15 min (tolerance ${
+                toV1dGrowthRounded(tolerance)
+            })`
+            : `still rising after ttl + sweep: ${toV1dGrowthRounded(lastWindowGrowth)} in the last 15 min ` +
+                `exceeds ${toV1dGrowthRounded(tolerance)}`
     };
 }
 
@@ -174,10 +144,10 @@ function computeLinearAssessment(
     const max = computeV1dGrowthMax(series);
     const runRatePerHour = computeV1dGrowthSlopePerHour(series, 0);
     if (max === null || runRatePerHour === null) {
-        return toNoData(toBound(0));
+        return toV1dGrowthNoData(toBound(0));
     }
     const bound = toBound(Math.max(runRatePerHour, 0));
-    const lastElapsedMs = toLastElapsedMs(series);
+    const lastElapsedMs = toV1dGrowthLastElapsedMs(series);
     const slopePerHour = computeV1dGrowthSlopePerHour(series, lastElapsedMs - LAST_WINDOW_MS);
     const firstPlateau = computeV1dGrowthPlateau(series, 0);
     if (lastElapsedMs < LAST_WINDOW_MS + MIN_SLOPE_WINDOW_MS || slopePerHour === null) {
@@ -187,8 +157,8 @@ function computeLinearAssessment(
             slopePerHour,
             max,
             outcome: 'insufficient',
-            reason: `the run ends ${toMinutes(lastElapsedMs)} min in; a linear check needs ` +
-                `${toMinutes(LAST_WINDOW_MS + MIN_SLOPE_WINDOW_MS)} min`
+            reason: `the run ends ${toV1dGrowthMinutes(lastElapsedMs)} min in; a linear check needs ` +
+                `${toV1dGrowthMinutes(LAST_WINDOW_MS + MIN_SLOPE_WINDOW_MS)} min`
         };
     }
     const limit = (1 + LINEAR_ACCELERATION_TOLERANCE) * Math.max(runRatePerHour, 0) +
@@ -201,24 +171,26 @@ function computeLinearAssessment(
         max,
         outcome: linear ? 'pass' : 'fail',
         reason: linear
-            ? `grows at most linearly: last 15 min ${toRounded(slopePerHour)}/h, run ${toRounded(runRatePerHour)}/h`
-            : `accelerating: last 15 min ${toRounded(slopePerHour)}/h exceeds ${toRounded(limit)}/h`
+            ? `grows at most linearly: last 15 min ${toV1dGrowthRounded(slopePerHour)}/h, run ${
+                toV1dGrowthRounded(runRatePerHour)
+            }/h`
+            : `accelerating: last 15 min ${toV1dGrowthRounded(slopePerHour)}/h exceeds ${toV1dGrowthRounded(limit)}/h`
     };
 }
 
 function computeHeapAssessment(series: readonly V1dGrowthSeriesPoint[]): V1dGrowthAssessment {
-    const bound = `slope within ±${HEAP_SLOPE_LIMIT_BYTES_PER_HOUR / MIB} MiB/h after ` +
-        `${toMinutes(HEAP_WARM_UP_MS)} min; max < ${HEAP_MAX_PLATEAU_FACTOR} × first plateau`;
+    const bound = `slope within ±${HEAP_SLOPE_LIMIT_BYTES_PER_HOUR / MB} MB/h after ` +
+        `${toV1dGrowthMinutes(HEAP_WARM_UP_MS)} min; max < ${HEAP_MAX_PLATEAU_FACTOR} × first plateau`;
     const afterWarmUp = series.filter((point) => point.elapsedMs >= HEAP_WARM_UP_MS);
     const max = computeV1dGrowthMax(afterWarmUp);
     const firstPlateau = computeV1dGrowthPlateau(series, HEAP_WARM_UP_MS);
     const slopePerHour = computeV1dGrowthSlopePerHour(series, HEAP_WARM_UP_MS);
     if (series.length === 0) {
-        return toNoData(bound);
+        return toV1dGrowthNoData(bound);
     }
     if (
         max === null || firstPlateau === null || slopePerHour === null ||
-        toLastElapsedMs(series) < HEAP_WARM_UP_MS + MIN_SLOPE_WINDOW_MS
+        toV1dGrowthLastElapsedMs(series) < HEAP_WARM_UP_MS + MIN_SLOPE_WINDOW_MS
     ) {
         return {
             bound,
@@ -226,8 +198,9 @@ function computeHeapAssessment(series: readonly V1dGrowthSeriesPoint[]): V1dGrow
             slopePerHour,
             max: computeV1dGrowthMax(series),
             outcome: 'insufficient',
-            reason: `the run ends ${toMinutes(toLastElapsedMs(series))} min in; the heap check needs ` +
-                `${toMinutes(HEAP_WARM_UP_MS + MIN_SLOPE_WINDOW_MS)} min`
+            reason:
+                `the run ends ${toV1dGrowthMinutes(toV1dGrowthLastElapsedMs(series))} min in; the heap check needs ` +
+                `${toV1dGrowthMinutes(HEAP_WARM_UP_MS + MIN_SLOPE_WINDOW_MS)} min`
         };
     }
     const flat = Math.abs(slopePerHour) <= HEAP_SLOPE_LIMIT_BYTES_PER_HOUR;
@@ -238,35 +211,13 @@ function computeHeapAssessment(series: readonly V1dGrowthSeriesPoint[]): V1dGrow
         slopePerHour,
         max,
         outcome: flat && belowDouble ? 'pass' : 'fail',
-        reason: `slope ${toRounded(slopePerHour / MIB)} MiB/h${flat ? '' : ' exceeds the limit'}; ` +
-            `max ${toRounded(max / MIB)} MiB against the first plateau ${toRounded(firstPlateau.value / MIB)} MiB` +
+        reason: `slope ${toV1dGrowthRounded(slopePerHour / MB)} MB/h${flat ? '' : ' exceeds the limit'}; ` +
+            `max ${toV1dGrowthRounded(max / MB)} MB against the first plateau ` +
+            `${toV1dGrowthRounded(firstPlateau.value / MB)} MB` +
             `${belowDouble ? '' : ', twice it or more'}`
     };
 }
 
-function toNoData(bound: string): V1dGrowthAssessment {
-    return {
-        bound,
-        firstPlateau: null,
-        slopePerHour: null,
-        max: null,
-        outcome: 'no-data',
-        reason: 'no sample carried this reading'
-    };
-}
-
-function toLastElapsedMs(series: readonly V1dGrowthSeriesPoint[]): number {
-    return series.length === 0 ? 0 : series[series.length - 1]!.elapsedMs;
-}
-
-function toMinutes(milliseconds: number): number {
-    return Math.round((milliseconds / MINUTE_MS) * 10) / 10;
-}
-
 function toHours(milliseconds: number): number {
     return Math.round((milliseconds / HOUR_MS) * 10) / 10;
-}
-
-function toRounded(value: number): number {
-    return Math.round(value * 100) / 100;
 }

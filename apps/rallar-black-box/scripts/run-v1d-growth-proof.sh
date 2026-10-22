@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # The ALM V1d growth proof: a hand-launched local stack on a fresh Postgres database, held for the whole window,
-# driving the 15-agent 60-minute principal multicast manifest and the medium-scale churn recipes side by side
+# driving the 15-agent 78-minute principal multicast manifest and the medium-scale churn recipes side by side
 # while a sampler records the database, the admin reads, process memory and the agents' stats every 30 s.
-# At the end it stops everything, drops the database and writes the growth verdict into the run directory.
+# After the window it waits for the manifest when it is due to finish within the drain bound, records the
+# workload's outcome in run.json, stops everything, drops the database and writes the growth verdict.
 #
 # Usage: apps/rallar-black-box/scripts/run-v1d-growth-proof.sh [--minutes 75] [--out <run-dir>]
 # Needs: the dev Postgres container running, Docker, Deno, Node, jq, lsof; nothing else listening on the ports below.
 # Do not edit the worktree while it runs: the headless SPA serves from it.
+# Disk: a 75-minute run directory takes about 3 GB (timing log, control-server storage, churn artefacts).
 set -euo pipefail
 set -m
 
@@ -47,16 +49,18 @@ readonly POSTGRES_PASSWORD=app
 readonly POSTGRES_HOST_PORT=5432
 readonly POSTGRES_ADMIN_DATABASE=appdb
 
-readonly MANIFEST=apps/rallar-black-box/manifests/hetzner/23-rtc-messages-principal-15-agent-60m-2hz-tree.json
+readonly MANIFEST=apps/rallar-black-box/manifests/hetzner/23-rtc-messages-principal-15-agent-78m-2hz-tree.json
 readonly ROW_COUNTS_SQL=apps/rallar-black-box/scripts/v1d-growth-proof-row-counts.sql
 
 readonly SAMPLE_INTERVAL_SECONDS=30
 readonly SERVICE_READY_TIMEOUT_SECONDS=180
 readonly AGENT_REGISTRATION_TIMEOUT_SECONDS=240
 readonly LOGIN_WINDOW_SECONDS=60
-readonly RUNNER_TIMEOUT_MS=4500000
+readonly RUNNER_TIMEOUT_MS=5100000
 readonly RUNNER_POLL_MS=2000
 readonly CHURN_DRAIN_TIMEOUT_SECONDS=300
+readonly MANIFEST_DRAIN_TIMEOUT_SECONDS=900
+readonly MANIFEST_END_MARGIN_SECONDS=300
 readonly STOP_GRACE_SECONDS=20
 readonly CONTROL_SAMPLE_ENVELOPES=2000
 
@@ -68,11 +72,14 @@ readonly USER_RATE_LIMIT=100
 readonly CRDT_DOCUMENT_TYPE_POLICIES_JSON='[{"documentType":"black-box-map","rollout":"production"}]'
 readonly ADMIN_USERNAME=admin
 readonly ADMIN_PASSWORD=admin
+readonly AGENT_PREFIX=controller
 readonly AGENT_PASSWORD_PREFIX=v1d-growth-proof-agent
 
 AGENT_COUNT="$(jq -r '.metadata.participantCount' "$MANIFEST")"
 MESH_MIN_SIZE="$(jq -r '.metadata.rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE' "$MANIFEST")"
-readonly AGENT_COUNT MESH_MIN_SIZE
+MANIFEST_SECONDS="$(jq -r '.metadata.expectedDurationSeconds' "$MANIFEST")"
+DISTRIBUTED_RUN_ID="$(jq -r '.distributedRunId' "$MANIFEST")"
+readonly AGENT_COUNT MESH_MIN_SIZE MANIFEST_SECONDS DISTRIBUTED_RUN_ID
 
 STAMP="$(date -u +%Y%m%dt%H%M%Sz)"
 readonly STAMP
@@ -196,7 +203,7 @@ start_worker() {
 	log "starting one headless worker with $AGENT_COUNT agents"
 	local credentials=() ordinal agent_id
 	for ((ordinal = 1; ordinal <= AGENT_COUNT; ordinal++)); do
-		agent_id="controller-$(printf '%02d' "$ordinal")"
+		agent_id="${AGENT_PREFIX}-$(printf '%02d' "$ordinal")"
 		credentials+=("RALLAR_BLACK_BOX_AGENT_${ordinal}_USERNAME=${agent_id}")
 		credentials+=("RALLAR_BLACK_BOX_AGENT_${ordinal}_PASSWORD=${AGENT_PASSWORD_PREFIX}-${agent_id}")
 	done
@@ -208,7 +215,7 @@ start_worker() {
 		RALLAR_BLACK_BOX_RUN_ID="$CONTROL_RUN_ID" \
 		RALLAR_BLACK_BOX_AGENT_COUNT="$AGENT_COUNT" \
 		RALLAR_BLACK_BOX_AGENT_START_INDEX=1 \
-		RALLAR_BLACK_BOX_AGENT_PREFIX=controller \
+		RALLAR_BLACK_BOX_AGENT_PREFIX="$AGENT_PREFIX" \
 		RALLAR_BLACK_BOX_APPLICATION_ID="$(jq -r '.group.applicationId' "$MANIFEST")" \
 		RALLAR_BLACK_BOX_WORKSPACE_ID="$(jq -r '.group.workspaceId' "$MANIFEST")" \
 		RALLAR_BLACK_BOX_ROOM_ID="$(jq -r '.group.groupId' "$MANIFEST")" \
@@ -322,6 +329,45 @@ count_churn_iterations() {
 	awk -v status="$1" '$3 == status' "$OUT_DIR/churn-iterations.txt" 2>/dev/null | wc -l | tr -d ' '
 }
 
+read_distributed_run() {
+	curl -sf "$CONTROL_BASE_URL/distributed-runs/$DISTRIBUTED_RUN_ID" || echo '{}'
+}
+
+# Waits for the runner while the manifest is due to finish within the drain bound; a short window stops it instead.
+wait_for_manifest() {
+	local started_at_ms due_s deadline
+	started_at_ms="$(read_distributed_run | jq -r '.startedAtEpochMs // empty')"
+	if [[ -z "$started_at_ms" ]]; then
+		return 0
+	fi
+	due_s=$((started_at_ms / 1000 + MANIFEST_SECONDS + MANIFEST_END_MARGIN_SECONDS))
+	deadline=$(($(date +%s) + MANIFEST_DRAIN_TIMEOUT_SECONDS))
+	if ((due_s > deadline)); then
+		return 0
+	fi
+	while kill -0 "$RUNNER_PID" 2>/dev/null && (($(date +%s) < due_s)); do
+		sleep 5
+	done
+}
+
+# The verdict fails without a passed manifest and a clean churn loop, so the workload's outcome joins run.json.
+record_workload() {
+	local runner="$1" distributed failed_run_ids
+	distributed="$(read_distributed_run)"
+	failed_run_ids="$(awk '$3 == "failed" {print $2}' "$OUT_DIR/churn-iterations.txt" 2>/dev/null | jq -R . | jq -s -c .)"
+	jq \
+		--arg runner "$runner" \
+		--argjson distributed "$distributed" \
+		--argjson churnPassed "$(count_churn_iterations passed)" \
+		--argjson churnFailedRunIds "$failed_run_ids" \
+		'.workload = {runner: $runner,
+			manifestStartedAtEpochMs: ($distributed.startedAtEpochMs // null),
+			manifestCompletedAtEpochMs: ($distributed.completedAtEpochMs // null),
+			churnPassed: $churnPassed, churnFailedRunIds: $churnFailedRunIds}' \
+		"$OUT_DIR/run.json" >"$OUT_DIR/run.json.next"
+	mv "$OUT_DIR/run.json.next" "$OUT_DIR/run.json"
+}
+
 tear_down() {
 	if [[ "$TORN_DOWN" == true ]]; then
 		return 0
@@ -383,15 +429,19 @@ CHURN_PID=$!
 while (($(date +%s) < WINDOW_END_EPOCH_S)); do
 	sleep "$SAMPLE_INTERVAL_SECONDS"
 done
-log "window ended; letting the current churn iteration finish"
+log "window ended; letting the current churn iteration and a due manifest finish"
 wait_for_churn_drain
 wait "$SAMPLER_PID" 2>/dev/null || true
+wait_for_manifest
 if kill -0 "$RUNNER_PID" 2>/dev/null; then
-	log "the manifest outlasted the window; stopping the runner"
+	RUNNER_OUTCOME=outlasted-window
+elif wait "$RUNNER_PID" 2>/dev/null; then
+	RUNNER_OUTCOME=passed
 else
-	wait "$RUNNER_PID" 2>/dev/null && log "runner: passed" || log "runner: did not pass (see runner.log)"
+	RUNNER_OUTCOME=failed
 fi
-log "churn iterations: $(count_churn_iterations passed) passed, $(count_churn_iterations failed) failed"
+record_workload "$RUNNER_OUTCOME"
+log "runner: $RUNNER_OUTCOME; churn iterations: $(count_churn_iterations passed) passed, $(count_churn_iterations failed) failed"
 tear_down
 
 log "writing the verdict"

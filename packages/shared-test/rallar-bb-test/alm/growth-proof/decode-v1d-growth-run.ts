@@ -3,6 +3,7 @@ import { Either } from '@shared/resilience/Either.ts';
 
 import { isApiJsonObject, type V1dGrowthSamplePoint } from './v1d-growth-series.ts';
 import type { V1dGrowthRun, V1dGrowthSamples } from './v1d-growth-verdict.ts';
+import type { V1dGrowthRunnerOutcome, V1dGrowthWorkload } from './v1d-growth-workload.ts';
 
 /** The sampler's files of one growth-proof run directory, as text. */
 export interface V1dGrowthRunFiles {
@@ -57,9 +58,45 @@ export function decodeV1dGrowthRun(files: V1dGrowthRunFiles): Either<readonly st
 function decodeV1dGrowthRunSettings(text: string): Either<readonly string[], V1dGrowthRun> {
     const value = decodeJsonLine(text);
     const windowStartedAtEpochMs = isApiJsonObject(value) ? value.windowStartedAtEpochMs : undefined;
-    return isPositiveNumber(windowStartedAtEpochMs)
-        ? Either.ofRight({ windowStartedAtEpochMs })
-        : Either.ofLeft(['run.json windowStartedAtEpochMs is not a time']);
+    if (!isPositiveNumber(windowStartedAtEpochMs)) {
+        return Either.ofLeft(['run.json windowStartedAtEpochMs is not a time']);
+    }
+    const recorded = isApiJsonObject(value) ? value.workload : undefined;
+    if (recorded === undefined) {
+        return Either.ofRight({ windowStartedAtEpochMs, workload: null });
+    }
+    const workload = decodeV1dGrowthWorkload(recorded);
+    return workload === undefined
+        ? Either.ofLeft(['run.json workload is not a recorded runner outcome and churn count'])
+        : Either.ofRight({ windowStartedAtEpochMs, workload });
+}
+
+function decodeV1dGrowthWorkload(value: ApiJsonValue): V1dGrowthWorkload | undefined {
+    if (!isApiJsonObject(value) || !isRunnerOutcome(value.runner) || !Array.isArray(value.churnFailedRunIds)) {
+        return undefined;
+    }
+    const { manifestStartedAtEpochMs, manifestCompletedAtEpochMs, churnPassed } = value;
+    const churnFailedRunIds = value.churnFailedRunIds.filter((runId) => typeof runId === 'string');
+    const decodes = isTimeOrNull(manifestStartedAtEpochMs) && isTimeOrNull(manifestCompletedAtEpochMs) &&
+        typeof churnPassed === 'number' && churnPassed >= 0 &&
+        churnFailedRunIds.length === value.churnFailedRunIds.length;
+    return decodes
+        ? {
+            runner: value.runner,
+            manifestStartedAtEpochMs,
+            manifestCompletedAtEpochMs,
+            churnPassed,
+            churnFailedRunIds
+        }
+        : undefined;
+}
+
+function isRunnerOutcome(value: ApiJsonValue | undefined): value is V1dGrowthRunnerOutcome {
+    return value === 'passed' || value === 'failed' || value === 'outlasted-window';
+}
+
+function isTimeOrNull(value: ApiJsonValue | undefined): value is number | null {
+    return value === null || isPositiveNumber(value);
 }
 
 /** One `{ "atEpochMs": …, "value": … }` object per line. */
@@ -73,14 +110,19 @@ function decodeSampleLines(text: string): DecodedPoints {
     );
 }
 
-/** The API's timing log: the `api-process` `heap-sample` lines among every other line it writes. */
+/**
+ * The API's timing log: the `api-process` `heap-sample` lines among every other line it writes. A sample taken without
+ * a forced full collection measures garbage awaiting collection, so it is skipped.
+ */
 function decodeHeapSampleLines(text: string): DecodedPoints {
     const heapLines = text.split('\n').filter((line) => line.includes('"heap-sample"')).join('\n');
     return decodeLines(
         heapLines,
         (value) =>
             isApiJsonObject(value) && value.type === 'rallar.timing' && value.component === 'api-process' &&
-                value.operation === 'heap-sample' && isPositiveNumber(value.atEpochMs) && isApiJsonObject(value.details)
+                value.operation === 'heap-sample' && isPositiveNumber(value.atEpochMs) &&
+                isApiJsonObject(value.details) &&
+                value.details.forcedGc === true
                 ? [{ atEpochMs: value.atEpochMs, agentId: null, value: value.details }]
                 : undefined
     );

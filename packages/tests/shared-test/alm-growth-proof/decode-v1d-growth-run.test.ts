@@ -32,13 +32,33 @@ function toStatsEnvelope(agentId: string, atEpochMs: number, payload: ApiJsonVal
 }
 
 describe('V1d growth run decoding', () => {
-    it('reads the start of the run window from run.json', () => {
+    it('reads the window start, and no workload while the script has not recorded one', () => {
         const decoded = decodeV1dGrowthRun(toFiles({}));
 
-        expect(decoded.right?.run).toEqual({ windowStartedAtEpochMs: STARTED_AT_EPOCH_MS });
+        expect(decoded.right?.run).toEqual({ windowStartedAtEpochMs: STARTED_AT_EPOCH_MS, workload: null });
         expect(decodeV1dGrowthRun(toFiles({ runJson: '{}' })).left).toEqual([
             'run.json windowStartedAtEpochMs is not a time'
         ]);
+    });
+
+    it('reads the workload outcome the script recorded at the end of the window', () => {
+        const workload = {
+            runner: 'outlasted-window',
+            manifestStartedAtEpochMs: STARTED_AT_EPOCH_MS + 20_000,
+            manifestCompletedAtEpochMs: null,
+            churnPassed: 1,
+            churnFailedRunIds: ['churn-002']
+        };
+        const decoded = decodeV1dGrowthRun(toFiles({
+            runJson: JSON.stringify({ windowStartedAtEpochMs: STARTED_AT_EPOCH_MS, workload })
+        }));
+
+        expect(decoded.right?.run.workload).toEqual(workload);
+        expect(
+            decodeV1dGrowthRun(toFiles({
+                runJson: JSON.stringify({ windowStartedAtEpochMs: STARTED_AT_EPOCH_MS, workload: { runner: 'maybe' } })
+            })).left
+        ).toEqual(['run.json workload is not a recorded runner outcome and churn count']);
     });
 
     it('reads one sample per line and skips a line the sampler tore on its stop', () => {
@@ -73,6 +93,20 @@ describe('V1d growth run decoding', () => {
         expect(decodeV1dGrowthRun(toFiles({ apiTimingLog })).right?.samples['api-heap']).toEqual([
             { atEpochMs: STARTED_AT_EPOCH_MS + 60_000, agentId: null, value: { heapUsed: 62_914_560, forcedGc: true } }
         ]);
+    });
+
+    it('skips a heap sample taken without a forced collection', () => {
+        const apiTimingLog = JSON.stringify({
+            type: 'rallar.timing',
+            component: 'api-process',
+            operation: 'heap-sample',
+            atEpochMs: STARTED_AT_EPOCH_MS + 60_000,
+            details: { heapUsed: 62_914_560, forcedGc: false }
+        });
+        const decoded = decodeV1dGrowthRun(toFiles({ apiTimingLog })).right;
+
+        expect(decoded?.samples['api-heap']).toEqual([]);
+        expect(decoded?.skippedLines).toBe(1);
     });
 
     it('reads each agent stats snapshot once across overlapping polls and totals IndexedDB rows by family', () => {

@@ -14,11 +14,22 @@ import type {
 } from '../../../shared-test/rallar-bb-test/alm/growth-proof/v1d-growth-surface.ts';
 import {
     computeV1dGrowthVerdict,
+    type V1dGrowthRun,
     type V1dGrowthSamples,
     type V1dGrowthVerdictRow
 } from '../../../shared-test/rallar-bb-test/alm/growth-proof/v1d-growth-verdict.ts';
 
 const WINDOW_STARTED_AT_EPOCH_MS = 1_800_000_000_000;
+const COMPLETED_RUN: V1dGrowthRun = {
+    windowStartedAtEpochMs: WINDOW_STARTED_AT_EPOCH_MS,
+    workload: {
+        runner: 'passed',
+        manifestStartedAtEpochMs: WINDOW_STARTED_AT_EPOCH_MS + 20_000,
+        manifestCompletedAtEpochMs: WINDOW_STARTED_AT_EPOCH_MS + 4_740_000,
+        churnPassed: 30,
+        churnFailedRunIds: []
+    }
+};
 const MINUTE_MS = 60_000;
 const SAMPLE_INTERVAL_MS = 30_000;
 const MIB = 1_048_576;
@@ -68,12 +79,25 @@ function computeSingleRow(surface: V1dGrowthSurface, samples: V1dGrowthSamples):
     const verdict = computeV1dGrowthVerdict({
         surveyedSurfaceIds: [surface.id],
         surfaces: [surface],
-        run: { windowStartedAtEpochMs: WINDOW_STARTED_AT_EPOCH_MS },
+        run: COMPLETED_RUN,
         samples
     });
     expect(verdict.rows).toHaveLength(1);
     return verdict.rows[0]!;
 }
+
+const PRINCIPALS: V1dGrowthReader = {
+    source: 'postgres',
+    path: ['tables', 'principals'],
+    absent: 'zero',
+    neverExpiringPath: null
+};
+const DURABLE: V1dGrowthClassification = {
+    growthClass: 'durable',
+    entity: 'principals',
+    entityReader: PRINCIPALS,
+    rowsPerEntity: 5
+};
 
 const TTL_WITHIN_RUN: V1dGrowthClassification = { growthClass: 'ttl-within-run', ttlMs: 10 * MINUTE_MS, sweepMs: MINUTE_MS };
 
@@ -114,22 +138,44 @@ describe('V1d growth verdict', () => {
         expect(failed.max).toBe(257);
     });
 
-    it('passes a durable surface growing linearly with its entities and reports the hourly growth', () => {
-        const durable: V1dGrowthClassification = { growthClass: 'durable', entity: 'one row per principal' };
-        const linear = (minute: number) => toPostgresTable(Math.round(minute * 50));
-        const row = computeSingleRow(toSurface(durable), toSamples({ postgres: toPoints(75, linear) }));
+    it('passes a durable surface whose growth stays within its new entities and reports the hourly growth', () => {
+        const withEntities = (minute: number) => ({
+            tables: { surface_under_test: Math.round(minute * 50), principals: Math.round(minute * 10) }
+        });
+        const row = computeSingleRow(toSurface(DURABLE), toSamples({ postgres: toPoints(75, withEntities) }));
 
         expect(row.outcome).toBe('pass');
         expect(row.slopePerHour).toBeCloseTo(3_000, 0);
-        expect(row.bound).toContain('one row per principal');
+        expect(row.bound).toContain('≤ 5 per new principals');
     });
 
-    it('fails a durable surface whose growth accelerates with traffic volume', () => {
-        const durable: V1dGrowthClassification = { growthClass: 'durable', entity: 'one row per principal' };
-        const accelerating = (minute: number) => toPostgresTable(Math.round(minute * minute * 10));
-        const row = computeSingleRow(toSurface(durable), toSamples({ postgres: toPoints(75, accelerating) }));
+    it('fails a durable surface that grows beyond its new entities', () => {
+        const withoutEntities = (minute: number) => ({
+            tables: { surface_under_test: Math.round(minute * 50), principals: 10 }
+        });
+        const row = computeSingleRow(toSurface(DURABLE), toSamples({ postgres: toPoints(75, withoutEntities) }));
 
         expect(row.outcome).toBe('fail');
+        expect(row.reason).toContain('beyond');
+    });
+
+    it('declares an accepted append-only history: reports its growth, counts it apart from passes, fails nothing', () => {
+        const history: V1dGrowthClassification = {
+            growthClass: 'declared-append-only',
+            history: 'one event per state mutation'
+        };
+        const linear = (minute: number) => toPostgresTable(Math.round(minute * 10));
+        const verdict = computeV1dGrowthVerdict({
+            surveyedSurfaceIds: [1],
+            surfaces: [toSurface(history)],
+            run: COMPLETED_RUN,
+            samples: toSamples({ postgres: toPoints(75, linear) })
+        });
+
+        expect(verdict.passed).toBe(true);
+        expect(verdict.rows[0]).toMatchObject({ outcome: 'declared', growthClass: 'declared-append-only' });
+        expect(verdict.rows[0]?.bound).toContain('+600/h');
+        expect(verdict.rows[0]?.bound).toContain('+14400/day');
     });
 
     it('passes a TTL-beyond-run surface growing linearly and reports its projected bound', () => {
@@ -178,8 +224,8 @@ describe('V1d growth verdict', () => {
         const linear = (minute: number) => toPostgresTable(Math.round(minute * 10));
         const verdict = computeV1dGrowthVerdict({
             surveyedSurfaceIds: [1, 2],
-            surfaces: [toSurface({ growthClass: 'durable', entity: 'one row per principal' })],
-            run: { windowStartedAtEpochMs: WINDOW_STARTED_AT_EPOCH_MS },
+            surfaces: [toSurface({ growthClass: 'count-capped', cap: 1_000 })],
+            run: COMPLETED_RUN,
             samples: toSamples({ postgres: toPoints(75, linear) })
         });
 
@@ -200,7 +246,7 @@ describe('V1d growth verdict', () => {
         const verdict = computeV1dGrowthVerdict({
             surveyedSurfaceIds: [1],
             surfaces: [toSurface({ growthClass: 'count-capped', cap: 10 }, reader)],
-            run: { windowStartedAtEpochMs: WINDOW_STARTED_AT_EPOCH_MS },
+            run: COMPLETED_RUN,
             samples: toSamples({
                 postgres: toPoints(5, () => ({ runtimeState: { byNamespace: { known: 3, unlisted: 4 } } }))
             })
@@ -284,6 +330,52 @@ describe('V1d growth verdict', () => {
 
         expect(row).toMatchObject({ outcome: 'fail', max: 40 });
         expect(row.bound).toContain('rows never expire');
+    });
+
+    it('fails the verdict when the run recorded no workload outcome', () => {
+        const verdict = computeV1dGrowthVerdict({
+            surveyedSurfaceIds: [],
+            surfaces: [],
+            run: { windowStartedAtEpochMs: WINDOW_STARTED_AT_EPOCH_MS, workload: null },
+            samples: toSamples({})
+        });
+
+        expect(verdict.passed).toBe(false);
+        expect(verdict.workloadIssues).toEqual(['the run recorded no workload outcome']);
+    });
+
+    it('fails the verdict when the manifest did not pass or a churn iteration failed, naming the iterations', () => {
+        const verdict = computeV1dGrowthVerdict({
+            surveyedSurfaceIds: [],
+            surfaces: [],
+            run: {
+                windowStartedAtEpochMs: WINDOW_STARTED_AT_EPOCH_MS,
+                workload: {
+                    ...COMPLETED_RUN.workload!,
+                    runner: 'outlasted-window',
+                    churnFailedRunIds: ['churn-007', 'churn-012']
+                }
+            },
+            samples: toSamples({})
+        });
+
+        expect(verdict.passed).toBe(false);
+        expect(verdict.workloadIssues).toEqual([
+            'the manifest runner ended outlasted-window, not passed',
+            'churn iterations failed: churn-007, churn-012'
+        ]);
+    });
+
+    it('fails the verdict when no churn iteration passed', () => {
+        const verdict = computeV1dGrowthVerdict({
+            surveyedSurfaceIds: [],
+            surfaces: [],
+            run: { windowStartedAtEpochMs: WINDOW_STARTED_AT_EPOCH_MS, workload: { ...COMPLETED_RUN.workload!, churnPassed: 0 } },
+            samples: toSamples({})
+        });
+
+        expect(verdict.workloadIssues).toEqual(['no churn iteration passed']);
+        expect(verdict.passed).toBe(false);
     });
 
     it('reads an array length step', () => {

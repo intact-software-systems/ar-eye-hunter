@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "distributedRunId": "hetzner-rtc-messages-principal-15-agent-60m-2hz-tree",
+  "distributedRunId": "hetzner-rtc-messages-principal-15-agent-78m-2hz-tree",
   "controlRunId": "hetzner-manifest-template-control-run",
-  "displayName": "RTC messages principal 15-agent 60m 2 Hz tree",
+  "displayName": "RTC messages principal 15-agent 78m 2 Hz tree",
   "group": {
     "applicationId": "rallar-server",
     "workspaceId": "default",
@@ -15,7 +15,7 @@
         "schemaVersion": 1,
         "recipeId": "rtc-messages-principal-multicast-sender",
         "name": "RTC messages principal multicast sender",
-        "description": "Connect RTC messages and multicast 7200 principal frames at 2 Hz.",
+        "description": "Connect RTC messages and multicast 9360 principal frames at 2 Hz.",
         "continueOnFailure": false,
         "metadata": {
           "profile": "rtc-messages-principal-multicast-sender",
@@ -25,9 +25,9 @@
           "receiverCount": 14,
           "rateHz": 2,
           "intervalMs": 500,
-          "durationSeconds": 3600,
-          "frameCount": 7200,
-          "logicalFanoutMessages": 100800
+          "durationSeconds": 4680,
+          "frameCount": 9360,
+          "logicalFanoutMessages": 131040
         },
         "commands": [
           {
@@ -122,9 +122,9 @@
               "receiverCount": 14,
               "rateHz": 2,
               "intervalMs": 500,
-              "durationSeconds": 3600,
-              "frameCount": 7200,
-              "logicalFanoutMessages": 100800
+              "durationSeconds": 4680,
+              "frameCount": 9360,
+              "logicalFanoutMessages": 131040
             }
           },
           {
@@ -141,9 +141,9 @@
               "receiverCount": 14,
               "rateHz": 2,
               "intervalMs": 500,
-              "durationSeconds": 3600,
-              "frameCount": 7200,
-              "logicalFanoutMessages": 100800,
+              "durationSeconds": 4680,
+              "frameCount": 9360,
+              "logicalFanoutMessages": 131040,
               "purpose": "post-connect-receiver-settle",
               "warmupDurationMs": 5000
             },
@@ -159,9 +159,9 @@
                   "receiverCount": 14,
                   "rateHz": 2,
                   "intervalMs": 500,
-                  "durationSeconds": 3600,
-                  "frameCount": 7200,
-                  "logicalFanoutMessages": 100800
+                  "durationSeconds": 4680,
+                  "frameCount": 9360,
+                  "logicalFanoutMessages": 131040
                 }
               }
             ]
@@ -188,7 +188,7 @@
                       "workspaceId": "default",
                       "groupId": "hetzner-headless-room"
                     },
-                    "count": 7200,
+                    "count": 9360,
                     "intervalMs": 500,
                     "maxInFlight": 64,
                     "drainTimeoutMs": 30000,
@@ -197,7 +197,7 @@
                     "continueOnSendFailure": true,
                     "thresholds": {
                       "minSendSuccessRatio": 0.95,
-                      "maxDroppedFrames": 360,
+                      "maxDroppedFrames": 468,
                       "maxP95SendDurationMs": 2500,
                       "maxP99SendDurationMs": 4000
                     },
@@ -206,12 +206,12 @@
                       "transport": "messages.rtc",
                       "rateHz": 2,
                       "intervalMs": 500,
-                      "durationSeconds": 3600,
-                      "frameCount": 7200,
+                      "durationSeconds": 4680,
+                      "frameCount": 9360,
                       "participantCount": 15,
                       "senderCount": 1,
                       "receiverCount": 14,
-                      "logicalFanoutMessages": 100800
+                      "logicalFanoutMessages": 131040
                     },
                     "send": {
                       "roomId": "hetzner-headless-room",
@@ -230,8 +230,8 @@
                         "seq": "{stream.index}",
                         "rateHz": 2,
                         "intervalMs": 500,
-                        "durationSeconds": 3600,
-                        "totalFrames": 7200,
+                        "durationSeconds": 4680,
+                        "totalFrames": 9360,
                         "tMs": "{stream.elapsedMs}",
                         "position": {
                           "frame": "{stream.iteration}",
@@ -252,9 +252,9 @@
                   {
                     "kind": "loop",
                     "commandId": "rtc-messages-principal-sender-stream-stats-loop",
-                    "count": 121,
+                    "count": 157,
                     "intervalMs": 30000,
-                    "maxCommands": 121,
+                    "maxCommands": 157,
                     "metadata": {
                       "profile": "rtc-messages-principal-multicast-sender",
                       "transport": "messages.rtc",
@@ -263,9 +263,9 @@
                       "receiverCount": 14,
                       "rateHz": 2,
                       "intervalMs": 500,
-                      "durationSeconds": 3600,
-                      "frameCount": 7200,
-                      "logicalFanoutMessages": 100800,
+                      "durationSeconds": 4680,
+                      "frameCount": 9360,
+                      "logicalFanoutMessages": 131040,
                       "purpose": "mid-stream-ledger"
                     },
                     "commands": [
@@ -280,9 +280,9 @@
                           "receiverCount": 14,
                           "rateHz": 2,
                           "intervalMs": 500,
-                          "durationSeconds": 3600,
-                          "frameCount": 7200,
-                          "logicalFanoutMessages": 100800
+                          "durationSeconds": 4680,
+                          "frameCount": 9360,
+                          "logicalFanoutMessages": 131040
                         }
                       }
                     ]
@@ -302,9 +302,9 @@
               "receiverCount": 14,
               "rateHz": 2,
               "intervalMs": 500,
-              "durationSeconds": 3600,
-              "frameCount": 7200,
-              "logicalFanoutMessages": 100800
+              "durationSeconds": 4680,
+              "frameCount": 9360,
+              "logicalFanoutMessages": 131040
             }
           }
         ]
@@ -319,7 +319,7 @@
         "schemaVersion": 1,
         "recipeId": "rtc-messages-principal-multicast-receiver",
         "name": "RTC messages principal multicast receiver",
-        "description": "Connect RTC messages, hold for 3600s, and assert principal multicast delivery.",
+        "description": "Connect RTC messages, hold for 4680s, and assert principal multicast delivery.",
         "continueOnFailure": false,
         "metadata": {
           "profile": "rtc-messages-principal-multicast-receiver",
@@ -329,12 +329,12 @@
           "receiverCount": 14,
           "rateHz": 2,
           "intervalMs": 500,
-          "durationSeconds": 3600,
-          "frameCount": 7200,
-          "expectedInboundMessages": 7200,
-          "minExpectedInboundMessages": 6840,
+          "durationSeconds": 4680,
+          "frameCount": 9360,
+          "expectedInboundMessages": 9360,
+          "minExpectedInboundMessages": 8892,
           "minReceiveRatio": 0.95,
-          "logicalFanoutMessages": 100800
+          "logicalFanoutMessages": 131040
         },
         "commands": [
           {
@@ -429,20 +429,20 @@
               "receiverCount": 14,
               "rateHz": 2,
               "intervalMs": 500,
-              "durationSeconds": 3600,
-              "frameCount": 7200,
-              "expectedInboundMessages": 7200,
-              "minExpectedInboundMessages": 6840,
+              "durationSeconds": 4680,
+              "frameCount": 9360,
+              "expectedInboundMessages": 9360,
+              "minExpectedInboundMessages": 8892,
               "minReceiveRatio": 0.95,
-              "logicalFanoutMessages": 100800
+              "logicalFanoutMessages": 131040
             }
           },
           {
             "kind": "loop",
             "commandId": "rtc-messages-principal-receiver-stats-loop",
-            "count": 122,
+            "count": 158,
             "intervalMs": 30000,
-            "maxCommands": 122,
+            "maxCommands": 158,
             "metadata": {
               "profile": "rtc-messages-principal-multicast-receiver",
               "transport": "messages.rtc",
@@ -451,12 +451,12 @@
               "receiverCount": 14,
               "rateHz": 2,
               "intervalMs": 500,
-              "durationSeconds": 3600,
-              "frameCount": 7200,
-              "expectedInboundMessages": 7200,
-              "minExpectedInboundMessages": 6840,
+              "durationSeconds": 4680,
+              "frameCount": 9360,
+              "expectedInboundMessages": 9360,
+              "minExpectedInboundMessages": 8892,
               "minReceiveRatio": 0.95,
-              "logicalFanoutMessages": 100800
+              "logicalFanoutMessages": 131040
             },
             "commands": [
               {
@@ -470,12 +470,12 @@
                   "receiverCount": 14,
                   "rateHz": 2,
                   "intervalMs": 500,
-                  "durationSeconds": 3600,
-                  "frameCount": 7200,
-                  "expectedInboundMessages": 7200,
-                  "minExpectedInboundMessages": 6840,
+                  "durationSeconds": 4680,
+                  "frameCount": 9360,
+                  "expectedInboundMessages": 9360,
+                  "minExpectedInboundMessages": 8892,
                   "minReceiveRatio": 0.95,
-                  "logicalFanoutMessages": 100800
+                  "logicalFanoutMessages": 131040
                 }
               }
             ]
@@ -491,12 +491,12 @@
               "receiverCount": 14,
               "rateHz": 2,
               "intervalMs": 500,
-              "durationSeconds": 3600,
-              "frameCount": 7200,
-              "expectedInboundMessages": 7200,
-              "minExpectedInboundMessages": 6840,
+              "durationSeconds": 4680,
+              "frameCount": 9360,
+              "expectedInboundMessages": 9360,
+              "minExpectedInboundMessages": 8892,
               "minReceiveRatio": 0.95,
-              "logicalFanoutMessages": 100800
+              "logicalFanoutMessages": 131040
             }
           },
           {
@@ -504,7 +504,7 @@
             "commandId": "rtc-messages-principal-receiver-delivery-threshold",
             "source": "stats.counters.messages",
             "operator": "gte",
-            "expected": 6840,
+            "expected": 8892,
             "metadata": {
               "profile": "rtc-messages-principal-multicast-receiver",
               "transport": "messages.rtc",
@@ -513,15 +513,15 @@
               "receiverCount": 14,
               "rateHz": 2,
               "intervalMs": 500,
-              "durationSeconds": 3600,
-              "frameCount": 7200,
-              "expectedInboundMessages": 7200,
-              "minExpectedInboundMessages": 6840,
+              "durationSeconds": 4680,
+              "frameCount": 9360,
+              "expectedInboundMessages": 9360,
+              "minExpectedInboundMessages": 8892,
               "minReceiveRatio": 0.95,
-              "logicalFanoutMessages": 100800,
+              "logicalFanoutMessages": 131040,
               "receiverDelivery": {
-                "expectedInboundMessages": 7200,
-                "minExpectedInboundMessages": 6840,
+                "expectedInboundMessages": 9360,
+                "minExpectedInboundMessages": 8892,
                 "minReceiveRatio": 0.95
               },
               "roomRef": {
@@ -676,20 +676,20 @@
     "senderCount": 1,
     "receiverCount": 14,
     "rateHz": 2,
-    "expectedDurationSeconds": 3600,
-    "recommendedTerminalTimeoutSeconds": 4500,
+    "expectedDurationSeconds": 4680,
+    "recommendedTerminalTimeoutSeconds": 5100,
     "rtcTopologyEnv": {
       "RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE": "16"
     },
     "receiverDelivery": {
-      "expectedInboundMessages": 7200,
-      "minExpectedInboundMessages": 6840,
+      "expectedInboundMessages": 9360,
+      "minExpectedInboundMessages": 8892,
       "minReceiveRatio": 0.95
     },
     "loadEstimate": {
-      "streamFrames": 7200,
-      "logicalFanoutMessages": 100800
+      "streamFrames": 9360,
+      "logicalFanoutMessages": 131040
     }
   },
-  "description": "One principal headless sender multicasts RTC messages at 2 Hz to 14 receivers for 60 minutes through a forced tree, every agent reading its ALM ledger every 30 s. 2 Hz keeps the hour at 7,200 frames, inside the 10,000-frame bound the agents enforce on one rtc.stream."
+  "description": "One principal headless sender multicasts RTC messages at 2 Hz to 14 receivers for 78 minutes through a forced tree, every agent reading its ALM ledger every 30 s. 78 minutes outlast the growth proof's 75-minute window; 2 Hz keeps them at 9,360 frames, inside the 10,000-frame bound the agents enforce on one rtc.stream."
 }

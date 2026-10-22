@@ -40,6 +40,19 @@ select json_build_object(
             'wsOutbox', count(*) filter (where ri_type_id = 'WS_OUTBOX'),
             'alOutbound', count(*) filter (where ri_type_id like 'AL_OUTBOUND%'),
             'alInbound', count(*) filter (where ri_type_id like 'AL_INBOUND%'),
+            'neverExpireByType', coalesce((
+                select json_object_agg(type_id, rows)
+                from (select ri_type_id as type_id, count(*) as rows from inbox where never_expires group by 1) types
+            ), '{}'::json),
+            'neverExpireByLaneStatus', coalesce((
+                select json_object_agg(lane_status, rows)
+                from (
+                    select split_part(ri_type_id, ':', 1) || ':' || ri_status as lane_status, count(*) as rows
+                    from inbox
+                    where never_expires
+                    group by 1
+                ) lanes
+            ), '{}'::json),
             'byLaneStatus', coalesce((
                 select json_object_agg(lane_status, rows)
                 from (

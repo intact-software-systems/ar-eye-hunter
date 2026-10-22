@@ -80,6 +80,17 @@ function toPageHeapSurface(id: number, name: string, owner: string): V1dGrowthSu
     return { id, name, owner, classification: HEAP, readers: [PAGE_HEAP] };
 }
 
+function toDurable(entity: string, entityNamespace: string, rowsPerEntity: number): V1dGrowthClassification {
+    return { growthClass: 'durable', entity, entityReader: toNamespaceCount(entityNamespace), rowsPerEntity };
+}
+
+/** One row per group, per principal or per membership, each counted from the samples. */
+const PER_GROUP = toDurable('groups', 'group-state:groups', 1);
+const PER_PRINCIPAL = toDurable('principals', 'client-state:principals', 1);
+const PER_MEMBERSHIP = toDurable('memberships', 'group-state:members', 1);
+/** A churn principal joins the medium-scale profile's five groups, and each group's owner adds one membership. */
+const MEMBERSHIPS_PER_PRINCIPAL = toDurable('principals', 'client-state:principals', 6);
+
 /**
  * Every growth surface with its class, bound and readers: the survey's 75 rows, then the runtime-state namespaces
  * the sampler found that the survey did not list.
@@ -90,7 +101,7 @@ export const V1D_GROWTH_SURFACES: readonly V1dGrowthSurface[] = [
         name: 'resource_inbox rows that carry an expiry (retry horizon, WS_INBOX, topology publication)',
         owner: 'packages/shared-server/queuebox/postgres/resource-inbox-maintenance.ts',
         classification: { growthClass: 'ttl-beyond-run', ttlMs: DAY_MS },
-        readers: [toPostgresCount('resourceInbox', 'total')]
+        readers: [toPostgresExpiringCount(['resourceInbox', 'total'], ['resourceInbox', 'neverExpire'])]
     },
     {
         id: 2,
@@ -129,27 +140,47 @@ export const V1D_GROWTH_SURFACES: readonly V1dGrowthSurface[] = [
         id: 6,
         name: 'runtime_state_store group-state:groups',
         owner: 'packages/shared-server/rallar-system/group-state/persistence/group-aggregate-write-descriptors.ts',
-        classification: { growthClass: 'durable', entity: 'one row per group' },
+        classification: PER_GROUP,
         readers: [toNamespaceCount('group-state:groups')]
     },
     {
         id: 7,
-        name: 'runtime_state_store rows keyed per entity that never expire',
-        owner: 'packages/shared-server/rallar-system/group-state, client-state, topology, auth',
-        classification: { growthClass: 'durable', entity: 'one row per group, member, principal or instance' },
+        name: 'runtime_state_store rows keyed per group that never expire',
+        owner: 'packages/shared-server/rallar-system/group-state, topology',
+        classification: PER_GROUP,
         readers: [
-            'group-state:members',
-            'group-state:presence-admissions',
             'group-state:presence-summaries',
             'group-state:connect-trigger-latches',
-            'client-state:principals',
-            'client-state:instances',
             'rtc-topology:snapshots',
             'rtc-topology:accepted-snapshots',
-            'rtc-topology:input-fingerprints',
+            'rtc-topology:input-fingerprints'
+        ].map(toNamespaceCount)
+    },
+    {
+        id: 7,
+        name: 'runtime_state_store rows keyed per principal that never expire',
+        owner: 'packages/shared-server/rallar-system/client-state, auth',
+        classification: PER_PRINCIPAL,
+        readers: [
+            'client-state:principals',
+            'client-state:instances',
             'auth-users:by-username',
             'auth-users:by-client-id'
         ].map(toNamespaceCount)
+    },
+    {
+        id: 7,
+        name: 'runtime_state_store group-state:members',
+        owner: 'packages/shared-server/rallar-system/group-state/membership/group-state-member-put-descriptor.ts',
+        classification: MEMBERSHIPS_PER_PRINCIPAL,
+        readers: [toNamespaceCount('group-state:members')]
+    },
+    {
+        id: 7,
+        name: 'runtime_state_store group-state:presence-admissions',
+        owner: 'packages/shared-server/rallar-system/group-state/presence/group-presence-write-descriptors.ts',
+        classification: PER_MEMBERSHIP,
+        readers: [toNamespaceCount('group-state:presence-admissions')]
     },
     {
         id: 8,
@@ -183,7 +214,8 @@ export const V1D_GROWTH_SURFACES: readonly V1dGrowthSurface[] = [
     },
     {
         id: 11,
-        name: 'server delivered markers (uncapped by ruling; each expires an hour after its track last moved)',
+        name:
+            'server delivered markers (uncapped by ruling; an hour after the track last moved; barely exercised here)',
         owner: 'packages/shared/alm/inbound/admission/al-inbound-delivery-mutations.ts',
         classification: AL_REPOSITORY_ROWS,
         readers: [toPostgresCount('runtimeState', 'alm', 'deliveredMarkers')]
@@ -199,14 +231,14 @@ export const V1D_GROWTH_SURFACES: readonly V1dGrowthSurface[] = [
         id: 13,
         name: 'client_state_events',
         owner: 'packages/shared-server/rallar-system/client-state/mutation/write-client-mutation.ts',
-        classification: { growthClass: 'durable', entity: 'one event per client state mutation (history)' },
+        classification: { growthClass: 'declared-append-only', history: 'one event per client state mutation' },
         readers: [toPostgresCount('tables', 'client_state_events')]
     },
     {
         id: 14,
         name: 'group_state_events',
         owner: 'packages/shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts',
-        classification: { growthClass: 'durable', entity: 'one event per group state mutation (history)' },
+        classification: { growthClass: 'declared-append-only', history: 'one event per group state mutation' },
         readers: [toPostgresCount('tables', 'group_state_events')]
     },
     {
@@ -235,14 +267,17 @@ export const V1D_GROWTH_SURFACES: readonly V1dGrowthSurface[] = [
         id: 18,
         name: 'app_data_store',
         owner: 'packages/shared-server/app-data/postgres/p-sql-app-data-repository.ts',
-        classification: { growthClass: 'durable', entity: 'relic-hunter-server app data; api-v1 writes none' },
+        classification: {
+            growthClass: 'unbounded',
+            missingBound: 'rows expire only when read; no sweep (api-v1 writes none)'
+        },
         readers: [toPostgresCount('tables', 'app_data_store')]
     },
     {
         id: 19,
         name: 'crdt_documents, crdt_updates, crdt_snapshots',
         owner: 'packages/shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts',
-        classification: { growthClass: 'durable', entity: 'CRDT append history; the workload opens no document' },
+        classification: { growthClass: 'declared-append-only', history: 'CRDT append history' },
         readers: [
             toPostgresCount('tables', 'crdt_documents'),
             toPostgresCount('tables', 'crdt_updates'),
@@ -258,10 +293,11 @@ export const V1D_GROWTH_SURFACES: readonly V1dGrowthSurface[] = [
     },
     {
         id: 21,
-        name: 'VersionProbedReadThroughCache entries',
+        name:
+            'VersionProbedReadThroughCache entries (the process has one, the group-audience cache, so row 20 reads it)',
         owner: 'packages/shared/cache/store-backed/version-probed-read-through-cache.ts',
         classification: { growthClass: 'count-capped', cap: 512 },
-        readers: [toRealtimeReading('caches', 'versionProbedReads')]
+        readers: [toRealtimeReading('caches', 'groupAudienceSnapshots')]
     },
     toServerHeapSurface(
         22,
@@ -479,14 +515,20 @@ export const V1D_GROWTH_SURFACES: readonly V1dGrowthSurface[] = [
         id: 64,
         name: 'Rallar Data IndexedDB and its memory mirror',
         owner: 'packages/shared-web/browser/data/browser-rallar-data-repository.ts',
-        classification: { growthClass: 'durable', entity: 'app-owned keys; the workload writes none' },
+        classification: {
+            growthClass: 'unbounded',
+            missingBound: 'no expiry by default and no key cap; the app owns its keys'
+        },
         readers: [toIndexedDbRows('rallar-custom-data')]
     },
     {
         id: 65,
         name: 'CRDT local IndexedDB stores',
         owner: 'packages/shared-web/browser/crdt/browser-crdt-local-store.ts',
-        classification: { growthClass: 'durable', entity: 'CRDT document history; the workload opens no document' },
+        classification: {
+            growthClass: 'unbounded',
+            missingBound: 'no expiry and no cap on the seen, pending and snapshot rows'
+        },
         readers: [toIndexedDbRows('rallar-crdt')]
     },
     toPageHeapSurface(66, 'CRDT engine maps', 'packages/shared/crdt/crdt-operations.ts'),
@@ -556,19 +598,29 @@ export const V1D_GROWTH_SURFACES: readonly V1dGrowthSurface[] = [
         name: 'runtime_state_store group topology configuration (not in the survey)',
         owner:
             'packages/shared-server/rallar-system/topology/config/persistence/group-topology-config-runtime-namespaces.ts',
-        classification: { growthClass: 'durable', entity: 'one row per group' },
+        classification: PER_GROUP,
         readers: [
             'group-topology:config',
-            'group-topology:config-mutation',
             'group-topology:config-generation',
             'group-topology:config-invariant-generation'
         ].map(toNamespaceCount)
     },
     {
+        id: 78,
+        name: 'runtime_state_store group-topology:config-mutation (not in the survey)',
+        owner:
+            'packages/shared-server/rallar-system/topology/config/persistence/group-topology-config-runtime-namespaces.ts',
+        classification: {
+            growthClass: 'unbounded',
+            missingBound: 'one row per configuration mutation, never expiring'
+        },
+        readers: [toNamespaceCount('group-topology:config-mutation')]
+    },
+    {
         id: 79,
         name: 'runtime_state_store group-state:lifecycle-policies (not in the survey)',
         owner: 'packages/shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts',
-        classification: { growthClass: 'durable', entity: 'one row per group' },
+        classification: PER_GROUP,
         readers: [toNamespaceCount('group-state:lifecycle-policies')]
     },
     {

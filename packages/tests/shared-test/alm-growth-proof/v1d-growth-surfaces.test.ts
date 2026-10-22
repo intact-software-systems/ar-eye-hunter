@@ -10,10 +10,11 @@ import {
 } from '../../../shared-test/rallar-bb-test/alm/growth-proof/v1d-growth-surfaces.ts';
 
 describe('V1d growth surface classification', () => {
-    it('classifies every surface of the growth survey once, each with at least one reader', () => {
+    it('classifies every surface of the growth survey, each with at least one reader', () => {
         const ids = V1D_GROWTH_SURFACES.map((surface) => surface.id);
+        const names = V1D_GROWTH_SURFACES.map((surface) => surface.name);
 
-        expect(new Set(ids).size).toBe(ids.length);
+        expect(new Set(names).size).toBe(names.length);
         expect(V1D_GROWTH_SURVEY_SURFACE_IDS).toHaveLength(75);
         expect(V1D_GROWTH_SURVEY_SURFACE_IDS.filter((id) => !ids.includes(id))).toEqual([]);
         expect(V1D_GROWTH_SURFACES.filter((surface) => surface.readers.length === 0)).toEqual([]);
@@ -27,5 +28,17 @@ describe('V1d growth surface classification', () => {
         );
 
         expect(new Set(namespaces).size).toBe(namespaces.length);
+    });
+
+    it('guards the resource_inbox total against rows stamped never to expire', () => {
+        const total = V1D_GROWTH_SURFACES.find((surface) => surface.id === 1);
+
+        expect(total?.classification.growthClass).toBe('ttl-beyond-run');
+        expect(total?.readers).toEqual([{
+            source: 'postgres',
+            path: ['resourceInbox', 'total'],
+            absent: 'zero',
+            neverExpiringPath: ['resourceInbox', 'neverExpire']
+        }]);
     });
 });

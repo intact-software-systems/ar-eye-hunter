@@ -25,14 +25,18 @@ export interface V1dGrowthReader {
 }
 
 /**
- * How a surface may grow during the run, and the bound its predicate holds it to. An unbounded surface fails every run
- * until it gets a bound.
+ * How a surface may grow during the run, and the bound its predicate holds it to.
+ * - `durable`: one row per entity; its growth may not exceed `rowsPerEntity` per entity the entity reader counts new.
+ * - `declared-append-only`: a history the maintainer accepted as declared and reported; its growth is reported, never
+ *   passed or failed.
+ * - `unbounded`: nothing bounds it; it fails every run until it gets a bound.
  */
 export type V1dGrowthClassification =
     | Readonly<{ growthClass: 'count-capped'; cap: number; }>
     | Readonly<{ growthClass: 'ttl-within-run'; ttlMs: number; sweepMs: number; }>
     | Readonly<{ growthClass: 'ttl-beyond-run'; ttlMs: number; }>
-    | Readonly<{ growthClass: 'durable'; entity: string; }>
+    | Readonly<{ growthClass: 'durable'; entity: string; entityReader: V1dGrowthReader; rowsPerEntity: number; }>
+    | Readonly<{ growthClass: 'declared-append-only'; history: string; }>
     | Readonly<{ growthClass: 'heap'; }>
     | Readonly<{ growthClass: 'unbounded'; missingBound: string; }>;
 
