@@ -22,7 +22,6 @@ import {
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import { createALInboundAdmissionStore, type ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -664,7 +663,7 @@ function createTestInboundStore(admission: ALAdmissionMemoryState, clock: { nowM
         supersedenceTrackTtlMs: 300000,
         retention: normalizeALRuntimeStoreRetention(),
         maxOrderingTracks: undefined,
-        maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
+        maxDeliveredMarkers: undefined
     });
 }
 

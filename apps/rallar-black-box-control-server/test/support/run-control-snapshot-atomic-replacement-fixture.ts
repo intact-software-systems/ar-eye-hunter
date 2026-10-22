@@ -38,7 +38,7 @@ export async function runControlSnapshotAtomicReplacementFixture(directory: stri
         snapshotBounds: {},
         flushIntervalMs: 0,
         controlService: {
-            applyRunRetention: () => [],
+            applyCompletedRunRetention: () => [],
             snapshotLifecycleRevision: () => '',
             snapshotRevision: () => ({ content: 'replacement', lifecycle: '' }),
             snapshotForPersistence: () => replacementSnapshot,

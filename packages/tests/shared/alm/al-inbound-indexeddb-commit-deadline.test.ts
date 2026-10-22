@@ -10,7 +10,6 @@ import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundMessageAdmission } from '@shared/alm/inbound/al-inbound-message-admission.ts';
 import { decodeALDeadlinedMessage } from '@shared/alm/inbound/al-inbound-message-deadline.ts';
@@ -52,7 +51,7 @@ it.each(['get', 'put'] as const)('rolls back admission when native %s completion
                 supersedenceTrackTtlMs: 60_000,
                 retention: normalizeALRuntimeStoreRetention(),
                 maxOrderingTracks: undefined,
-                maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
+                maxDeliveredMarkers: undefined
             });
             const planner: ALInboundMessageRuntime.Dependencies['planIncomingMessage'] = (msg, source, observations) =>
                 planALMessageHandling(msg, {

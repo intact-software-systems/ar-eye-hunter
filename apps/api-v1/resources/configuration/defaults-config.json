@@ -48,9 +48,6 @@
   "clientSessions": {
     "disconnectedRetentionMs": 604800000
   },
-  "alm": {
-    "deliveredMarkerCap": 256
-  },
   "stateApi": {
     "strictReadAuthorization": false,
     "rateLimits": {

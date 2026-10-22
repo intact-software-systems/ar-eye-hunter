@@ -23,7 +23,6 @@ import type {
     RtcTopologyExecutionRepository
 } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { type RtcTopologyPublicationRepository } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository.ts';
-import type { ALInboundStoreCounts } from '@shared/alm/storage/al-inbound-store-counts.ts';
 
 import type { ApiV1BackgroundTaskLifecycle } from './api-v1-background-task-lifecycle.ts';
 import type { ApiV1TopologyServices } from './create-api-v1-topology-services.ts';
@@ -52,8 +51,8 @@ export interface ApiV1Runtime extends
     readonly groupRestSnapshotReadSelector: GroupRestSnapshotReadSelector;
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
     readonly almReceiptDiagnostics: RallarAlmReceiptDiagnosticsRecorder;
-    /** What the WS server's inbound stores last stated they hold; the admin realtime read sums its markers. */
-    readonly almInboundStoreCounts: ALInboundStoreCounts;
+    /** The unexpired delivered markers the WS server's shared inbound store holds, read from the store. */
+    readonly readAlmDeliveredMarkers: () => Promise<number>;
     readonly groupCurrentSnapshotCache: GroupStateCurrentSnapshotCache;
     readonly backgroundTasks: ApiV1BackgroundTaskLifecycle;
     readonly topologyServices: ApiV1TopologyServices;
@@ -67,7 +66,7 @@ export interface RequireApiV1RuntimeInput {
     readonly groupRestSnapshotReadSelector: GroupRestSnapshotReadSelector;
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
     readonly almReceiptDiagnostics: RallarAlmReceiptDiagnosticsRecorder;
-    readonly almInboundStoreCounts: ALInboundStoreCounts;
+    readonly readAlmDeliveredMarkers: () => Promise<number>;
     readonly groupCurrentSnapshotCache: GroupStateCurrentSnapshotCache;
     readonly backgroundTasks: ApiV1BackgroundTaskLifecycle;
     readonly topologyServices: ApiV1TopologyServices;
@@ -112,7 +111,7 @@ export function requireApiV1Runtime(input: RequireApiV1RuntimeInput): ApiV1Runti
         groupRestSnapshotReadSelector: input.groupRestSnapshotReadSelector,
         groupFormationMetrics: input.groupFormationMetrics,
         almReceiptDiagnostics: input.almReceiptDiagnostics,
-        almInboundStoreCounts: input.almInboundStoreCounts,
+        readAlmDeliveredMarkers: input.readAlmDeliveredMarkers,
         groupCurrentSnapshotCache: input.groupCurrentSnapshotCache,
         backgroundTasks: input.backgroundTasks,
         topologyServices: input.topologyServices

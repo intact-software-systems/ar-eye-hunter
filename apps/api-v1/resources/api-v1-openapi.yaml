@@ -3826,9 +3826,9 @@ components:
                   type: integer
                   minimum: 0
                   description: >-
-                    The delivered markers the WS server's inbound stores held after their last marker pass in this
-                    process, every sender's summed; an upper bound between passes. The configured cap bounds each
-                    sender's markers, so the total is at most senders times the cap.
+                    The unexpired delivered markers the WS server's shared inbound store holds, read from the store
+                    when asked. The server keeps no count cap; each marker leaves at its expiry, an hour after the
+                    last admission on its track.
                 processLocal:
                   type: boolean
 

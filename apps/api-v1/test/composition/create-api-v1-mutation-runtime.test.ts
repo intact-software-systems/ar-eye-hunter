@@ -7,7 +7,6 @@ import {
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { AppInboxReservationClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-reservation-client.ts';
 import { AppInboxResultWaiter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-result-waiter.ts';
-import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
@@ -84,10 +83,7 @@ function createComposedInboxServices(mutation: ApiV1MutationRuntime): Readonly<R
     const outboxQueueReader = new OutboxQueueReader(mutation.queueBox);
     const wsQBoxServerService = createDefaultWsQueueBoxServerService({
         inboundVolatileStores: undefined,
-        inboundStores: createDefaultPSqlALInboundRuntimeStores({
-            repository: mutation.runtimeStateRepository,
-            maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
-        }),
+        inboundStores: createDefaultPSqlALInboundRuntimeStores({ repository: mutation.runtimeStateRepository }),
         outboundStores: createDefaultPSqlALOutboundRuntimeStores({
             repository: mutation.runtimeStateRepository,
             decodePrepared: decodeWsQueueBoxServerPreparedMessage

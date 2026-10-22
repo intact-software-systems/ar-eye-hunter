@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createPSqlALInboundRuntimeStores } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
+import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 
 import {
     createInboundTestMessage,
@@ -10,70 +11,50 @@ import {
     INBOUND_TEST_SOURCE,
     type InboundTestRuntime
 } from '../../../shared/alm/inbound-runtime-test-fixture.ts';
-import { createPSqlAdmissionTestStorage, type PSqlAdmissionTestStorage } from './create-p-sql-admission-test-storage.ts';
+import { createPSqlAdmissionTestStorage } from './create-p-sql-admission-test-storage.ts';
 
-const NAMESPACE = 'psql-marker-cap';
-const MARKER_CAP = 3;
+const TRACK_TTL_MS = 60_000;
+/** Past the browser's cap, so a server store that capped its markers would already have evicted one. */
+const OPENED_TRACKS = AL_INBOUND_MAX_DELIVERED_MARKERS + 4;
+/** Three hundred PGlite admissions, each opening a track, take several seconds under load. */
+const CHURN_TIMEOUT_MS = 60_000;
 
 beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(Date.UTC(2026, 9, 22, 12));
+    vi.setSystemTime(Date.UTC(2026, 9, 23, 12));
 });
 
 afterEach(() => {
     vi.useRealTimers();
 });
 
-it('keeps the shared server store at its configured marker cap, evicting the oldest, and states the count', async () => {
-    const stated: number[] = [];
-    const storage = await createPSqlAdmissionTestStorage();
-    const fixture = await createCappedServerRuntime(storage, (markers) => stated.push(markers));
-
-    for (let track = 0; track <= MARKER_CAP; track += 1) {
-        await admitAtNextMs(fixture, createTrackMessage(track, 1));
-    }
-
-    expect(await readMarkerHeld(fixture, 0)).toBe(false);
-    expect(await Promise.all([1, 2, 3].map(async (track) => await readMarkerHeld(fixture, track))))
-        .toEqual([true, true, true]);
-    expect(stated).toEqual([1, 2, 3, MARKER_CAP]);
-});
-
-it('still answers every retained marker\'s delivered sequence as completed over PostgreSQL', async () => {
-    const storage = await createPSqlAdmissionTestStorage();
-    const fixture = await createCappedServerRuntime(storage, undefined);
-
-    for (let track = 0; track <= MARKER_CAP; track += 1) {
-        await admitAtNextMs(fixture, createTrackMessage(track, 1));
-        await expect.poll(() => fixture.delivered.length).toBe(track + 1);
-    }
-
+it('keeps every marker of the shared server store until its expiry, counts them, and counts none after it', async () => {
+    const fixture = await createServerRuntime();
     const store = fixture.stores.admissionStore;
-    for (const track of [1, 2, 3]) {
-        expect(await store.readOrderedDelivery(toTrackKey(track), 1)).toEqual({
-            completedThrough: 1,
-            predecessor: undefined
-        });
-    }
-});
 
-async function createCappedServerRuntime(
-    storage: PSqlAdmissionTestStorage,
-    reportDeliveredMarkers: ((markers: number) => void) | undefined
-): Promise<InboundTestRuntime> {
+    for (let track = 0; track < OPENED_TRACKS; track += 1) {
+        await admitAtNextMs(fixture, createTrackMessage(track, 1));
+    }
+
+    expect(await store.readDeliveredMarkerCount(Date.now())).toBe(OPENED_TRACKS);
+    expect(await store.readOrderedDelivery(toALOrderingTrackKey(createTrackMessage(0, 1))!, 1))
+        .toMatchObject({ predecessor: undefined });
+    expect(await store.readDeliveredMarkerCount(Date.now() + TRACK_TTL_MS)).toBe(0);
+}, CHURN_TIMEOUT_MS);
+
+async function createServerRuntime(): Promise<InboundTestRuntime> {
+    const { repository } = await createPSqlAdmissionTestStorage();
     const fixture = createInboundTestRuntime({
         stores: createPSqlALInboundRuntimeStores({
             nowMs: Date.now,
-            repository: storage.repository,
-            namespace: NAMESPACE,
-            orderingTrackTtlMs: 60_000,
-            supersedenceTrackTtlMs: 60_000,
-            retention: undefined,
-            maxDeliveredMarkers: MARKER_CAP,
-            reportDeliveredMarkers
+            repository,
+            namespace: 'psql-marker-count',
+            orderingTrackTtlMs: TRACK_TTL_MS,
+            supersedenceTrackTtlMs: TRACK_TTL_MS,
+            retention: undefined
         }),
         carrier: 'ws',
-        effectWorkerId: 'al-inbound:psql-marker-cap'
+        effectWorkerId: 'al-inbound:psql-marker-count'
     });
     await fixture.runtime.ready();
     return fixture;
@@ -89,14 +70,4 @@ async function admitAtNextMs(fixture: InboundTestRuntime, message: ALMessage): P
 function createTrackMessage(track: number, seq: number): ALMessage {
     const message = createInboundTestMessage({ msgId: `track-${track}-${seq}`, seq });
     return { ...message, ordering: { orderingKey: `track-${track}`, seq } };
-}
-
-function toTrackKey(track: number): string {
-    return toALOrderingTrackKey(createTrackMessage(track, 1))!;
-}
-
-/** A store without a track's marker answers its next delivery as needing a resynchronization. */
-async function readMarkerHeld(fixture: InboundTestRuntime, track: number): Promise<boolean> {
-    const read = await fixture.stores.admissionStore.readOrderedDelivery(toTrackKey(track), 1);
-    return read.predecessor === undefined;
 }

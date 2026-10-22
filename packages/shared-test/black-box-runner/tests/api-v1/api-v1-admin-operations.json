@@ -191,7 +191,7 @@
             "groupAudienceSnapshots": "integer"
           },
           "alm": {
-            "processLocal": true,
+            "processLocal": false,
             "deliveredMarkers": "integer"
           }
         }

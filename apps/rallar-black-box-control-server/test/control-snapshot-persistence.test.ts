@@ -88,7 +88,7 @@ function toCountingControlService(
     onSnapshot: () => void
 ): SnapshotPersistenceFixtureInput['controlService'] {
     return {
-        applyRunRetention: (maxRuns) => service.applyRunRetention(maxRuns),
+        applyCompletedRunRetention: (maxRuns) => service.applyCompletedRunRetention(maxRuns),
         restoreSnapshot: (snapshot) => service.restoreSnapshot(snapshot),
         snapshotLifecycleRevision: () => service.snapshotLifecycleRevision(),
         snapshotRevision: () => service.snapshotRevision(),
@@ -538,7 +538,7 @@ Deno.test('a barrier arrival during a slow snapshot flush is resolved on its soc
             snapshotBounds: {},
             flushIntervalMs: 2_000,
             controlService: {
-                applyRunRetention: () => [],
+                applyCompletedRunRetention: () => [],
                 restoreSnapshot: () => undefined,
                 snapshotLifecycleRevision: () => '',
                 snapshotRevision: () => ({ content: 'slow', lifecycle: '' }),

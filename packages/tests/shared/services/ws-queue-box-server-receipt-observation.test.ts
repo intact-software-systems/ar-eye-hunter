@@ -19,7 +19,6 @@ import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persis
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
@@ -208,7 +207,7 @@ function createObservedInboundStores(): ALInboundRuntimeStores {
             supersedenceTrackTtlMs: 300000,
             retention: normalizeALRuntimeStoreRetention(),
             maxOrderingTracks: undefined,
-            maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
+            maxDeliveredMarkers: undefined
         }),
         workQueue: inbound.workQueue
     };

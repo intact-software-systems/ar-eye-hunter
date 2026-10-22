@@ -120,7 +120,7 @@ function createInput(
         resetGroupFormationMetrics: () => {},
         readAlmReceipts: () => ({ capacity: 256, messages: [] }),
         readCacheSizes: () => ({ groupAudienceSnapshots: 3 }),
-        readAlmDeliveredMarkers: () => 0,
+        readAlmDeliveredMarkers: () => Promise.resolve(0),
         crdtAdminRepository: new InMemoryRallarCrdtLogRepository({
             now: () => NOW_EPOCH_MS
         }),

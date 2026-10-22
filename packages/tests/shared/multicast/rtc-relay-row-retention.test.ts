@@ -13,7 +13,6 @@ import {
     type ALAdmissionMemoryState
 } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import { createVolatileALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { toALInboundMessageKey } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
 import type { ALVolatileInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
@@ -131,7 +130,7 @@ function createObservedVolatileInboundPair(): ObservedVolatileInboundPair {
                 supersedenceTrackTtlMs: 5 * 60_000,
                 retention: normalizeALRuntimeStoreRetention(),
                 maxOrderingTracks: undefined,
-                maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
+                maxDeliveredMarkers: undefined
             }),
             workQueue: backend.workQueue,
             evictExpired: () => backend.evictExpired(),

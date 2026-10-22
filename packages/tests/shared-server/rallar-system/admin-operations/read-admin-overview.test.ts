@@ -58,7 +58,7 @@ describe('ReadAdminOverview', () => {
                     groupFormation: { processLocal: true },
                     almReceipts: { diagnostics: { capacity: 256, messages: [] }, processLocal: true },
                     caches: { groupAudienceSnapshots: 0, processLocal: true },
-                    alm: { deliveredMarkers: 0, processLocal: true }
+                    alm: { deliveredMarkers: 0, processLocal: false }
                 })
         });
 

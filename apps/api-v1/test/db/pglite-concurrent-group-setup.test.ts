@@ -10,7 +10,6 @@ import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persis
 import type { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import { toAuthenticatedGroupMutationQueueKey } from '@shared-server/rallar-system/group-state/inbox/to-authenticated-group-mutation-queue-key.ts';
 import { registerApplicationQueueReaderTasks } from '@shared-server/rallar-system/middleware/rallar-middleware-queue-registration.ts';
-import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { EntityStatus, type Key } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
@@ -149,10 +148,7 @@ function createGroupSetupQueue(mutation: ApiV1MutationRuntime): GroupSetupQueue 
     const outboxQueueReader = new OutboxQueueReader(mutation.queueBox);
     const wsQBoxServerService = createDefaultWsQueueBoxServerService({
         inboundVolatileStores: undefined,
-        inboundStores: createDefaultPSqlALInboundRuntimeStores({
-            repository: mutation.runtimeStateRepository,
-            maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
-        }),
+        inboundStores: createDefaultPSqlALInboundRuntimeStores({ repository: mutation.runtimeStateRepository }),
         outboundStores: createDefaultPSqlALOutboundRuntimeStores({
             repository: mutation.runtimeStateRepository,
             decodePrepared: decodeWsQueueBoxServerPreparedMessage

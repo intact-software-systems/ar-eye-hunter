@@ -863,32 +863,6 @@ Deno.test('configuration decoder requires the heap sample interval and bounds it
     }
 });
 
-Deno.test('configuration decoder requires the delivered-marker cap and bounds it from the ordering-snapshot cap to 65 536', () => {
-    assert.equal(decodeApiV1Configuration(validDecodeApiV1ConfigurationInput()).alm.deliveredMarkerCap, 256);
-    const unnamed = validDecodeApiV1ConfigurationInput();
-    delete ((unnamed.defaultsSource as MutableApiV1ConfigurationSourceObject).alm as MutableApiV1ConfigurationSourceObject)
-        .deliveredMarkerCap;
-    assert.deepEqual(
-        captureConfigurationError(() => decodeApiV1Configuration(unnamed)).issues.map(({ path, code }) => ({ path, code })),
-        [{ path: 'alm.deliveredMarkerCap', code: 'missing-property' }]
-    );
-
-    for (const [cap, valid] of [[255, false], [256, true], [65_536, true], [65_537, false], [256.5, false]] as const) {
-        const input = validDecodeApiV1ConfigurationInput();
-        setPath(input.environmentSource, 'alm.deliveredMarkerCap', cap);
-        if (valid) {
-            assert.equal(decodeApiV1Configuration(input).alm.deliveredMarkerCap, cap);
-            continue;
-        }
-        const error = captureConfigurationError(() => decodeApiV1Configuration(input));
-        assert.deepEqual(
-            error.issues.map(({ path, environmentName }) => ({ path, environmentName })),
-            [{ path: 'alm.deliveredMarkerCap', environmentName: 'RALLAR_ALM_DELIVERED_MARKER_CAP' }],
-            `${cap}`
-        );
-    }
-});
-
 Deno.test('configuration decoder requires the disconnected client session retention and bounds it by the auth session TTL', () => {
     assert.equal(decodeApiV1Configuration(validDecodeApiV1ConfigurationInput()).clientSessions.disconnectedRetentionMs, 604_800_000);
     const unnamed = validDecodeApiV1ConfigurationInput();

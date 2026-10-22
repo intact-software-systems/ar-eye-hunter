@@ -27,7 +27,6 @@ interface ApiV1ConfigurationEnvironmentOverlay extends MutableSourceObject {
     database: MutableSourceObject;
     authentication: MutableSourceObject & { rateLimits: MutableSourceObject; };
     clientSessions: MutableSourceObject;
-    alm: MutableSourceObject;
     stateApi: MutableSourceObject;
     group: MutableSourceObject & { admission: MutableSourceObject; };
     topology: MutableSourceObject & {
@@ -123,7 +122,6 @@ function createEnvironmentOverlay(): ApiV1ConfigurationEnvironmentOverlay {
         database: {},
         authentication: { rateLimits: {} },
         clientSessions: {},
-        alm: {},
         stateApi: {},
         group: { admission: {} },
         topology: {
@@ -258,11 +256,6 @@ const ENVIRONMENT_SETTINGS: readonly EnvironmentSetting[] = [
         name: 'RALLAR_CLIENT_SESSION_DISCONNECTED_RETENTION_MS',
         decode: decodeNumber,
         apply: (source, value) => source.clientSessions.disconnectedRetentionMs = value
-    },
-    {
-        name: 'RALLAR_ALM_DELIVERED_MARKER_CAP',
-        decode: decodeNumber,
-        apply: (source, value) => source.alm.deliveredMarkerCap = value
     },
     {
         name: 'RALLAR_STATE_STRICT_READ_AUTH',
