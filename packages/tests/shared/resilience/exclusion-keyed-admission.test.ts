@@ -164,26 +164,30 @@ describe('exclusion keyed admission', () => {
         expect(runs.started).toEqual(['busy', 'activation', 'join-1', 'join-2', 'ws-1', 'ws-2']);
     });
 
-    it('gives the next freed slot to a run waiting in turn once a scope-wide run waits behind it', async () => {
-        const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, keyedChainsFirst: true });
-        const runs = createGatedRuns();
+    it.each(['scope', 'scope:g'])(
+        'keeps the narrower runs waiting in turn, and a keyless run ahead of them, when a wider %s run attaches behind them',
+        async (widerKey) => {
+            const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, keyedChainsFirst: true });
+            const runs = createGatedRuns();
+            const presenceNames = Array.from({ length: 10 }, (_, index) => `presence-${index}`);
 
-        const results = [
-            admission.admit(undefined, runs.run('busy')),
-            admission.admit(undefined, runs.run('ws-1')),
-            admission.admit('scope:g:aggregate', runs.run('join'))
-        ];
-        await vi.waitFor(() => expect(runs.started).toEqual(['busy']));
-        results.push(admission.admit('scope', runs.run('cleanup')));
-        for (const name of ['busy', 'join', 'ws-1', 'cleanup']) {
-            await vi.waitFor(() => expect(runs.started.at(-1)).toBe(name));
-            runs.finish(name);
+            const results = [
+                admission.admit(undefined, runs.run('busy')),
+                admission.admit(undefined, runs.run('ws-ticket')),
+                ...presenceNames.map((name) => admission.admit(`scope:g:session=${name}`, runs.run(name)))
+            ];
+            await vi.waitFor(() => expect(runs.started).toEqual(['busy']));
+            // A wider run waits behind every presence row, but none of them blocks its scope, so none is promoted.
+            results.push(admission.admit(widerKey, runs.run('wider')));
+            for (const name of ['busy', 'ws-ticket', ...presenceNames, 'wider']) {
+                await vi.waitFor(() => expect(runs.started.at(-1)).toBe(name));
+                runs.finish(name);
+            }
+
+            await Promise.all(results);
+            expect(runs.started).toEqual(['busy', 'ws-ticket', ...presenceNames, 'wider']);
         }
-
-        await Promise.all(results);
-        // The cleanup was released by a run of another key and has nothing behind it, so it asks in turn.
-        expect(runs.started).toEqual(['busy', 'join', 'ws-1', 'cleanup']);
-    });
+    );
 
     it('keeps a keyed run in turn when the run behind it has a sibling key that only shares its text prefix', async () => {
         const admission = new ExclusionKeyedAdmission({ maxConcurrent: 1, keyedChainsFirst: true });

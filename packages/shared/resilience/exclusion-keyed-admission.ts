@@ -4,13 +4,15 @@ export namespace ExclusionKeyedAdmission {
     export interface Config {
         readonly maxConcurrent: number;
         /**
-         * Whether a keyed run that the settlement of an earlier run with the same key released, or a chain head that a
-         * later run with its key waits behind, takes a freed slot ahead of every run waiting in turn; otherwise all wait
-         * in turn. A keyed run waiting in turn goes ahead the moment a later run whose key overlaps its own attaches
-         * behind it. A lone keyed run with no unsettled predecessor, or one whose last predecessor had a prefix or
-         * extension of its key, waits in turn until then, so one settlement prefers at most the runs of its own key and
-         * the chain heads among the runs it released. A continuously fed same-key chain therefore holds one slot for as
-         * long as it is fed, and with as many such chains as slots, runs waiting in turn wait until one chain drains.
+         * Whether a keyed run that the settlement of an earlier run with the same key released, or a chain head, takes a
+         * freed slot ahead of every run waiting in turn; otherwise all wait in turn. A chain head is a run behind which
+         * a later run with its key, or an extension of it, waits; a run waiting in turn becomes one, and goes ahead, the
+         * moment such a run attaches. A wider later run never promotes the narrower runs it waits behind, so a scope-wide
+         * run arriving behind many runs inside its scope moves none of them ahead of the runs waiting in turn. A lone
+         * keyed run with no unsettled predecessor, or one a different key released, waits in turn until then, so one
+         * settlement prefers at most the runs of its own key and the chain heads among the runs it released. A
+         * continuously fed chain therefore holds one slot for as long as it is fed, and with as many such chains as
+         * slots, runs waiting in turn wait until one chain drains.
          */
         readonly keyedChainsFirst: boolean;
     }
@@ -21,7 +23,7 @@ interface KeyedRun {
     /** The later runs that wait for this one, among others, to settle. */
     readonly successors: KeyedRun[];
     unsettledPredecessors: number;
-    /** A later run with this run's key waits behind it. */
+    /** A later run with this run's key, or an extension of it, waits behind it. */
     isChainHead: boolean;
     readonly waitForSlot: (priority: BoundedConcurrencyAdmission.Priority) => void;
     /** Moves the run ahead of the runs waiting in turn while it waits for its slot in turn; absent before it waits. */
@@ -35,7 +37,7 @@ interface KeyedRun {
  * that scope. A run without a key waits only for a slot, and a failed run releases the runs behind it like a settled
  * one. A settling run lines up the runs it released before its slot frees, so a released run of the same key can take
  * that slot; a keyed run that waited on no predecessor, or that a different key released, asks for its slot in turn
- * unless it is a chain head, and is moved ahead once a run it blocks attaches behind it.
+ * unless it is a chain head, and is moved ahead once a run with its key or an extension of it attaches behind it.
  */
 export class ExclusionKeyedAdmission {
     private readonly slots: BoundedConcurrencyAdmission;
@@ -78,17 +80,14 @@ export class ExclusionKeyedAdmission {
         });
     }
 
-    /**
-     * Takes an overlapping successor. A run already waiting in turn for its slot goes ahead; only a same-key successor
-     * makes it a chain head, which its release prefers.
-     */
+    /** Takes an overlapping successor; only one with the run's key or an extension of it makes the run a chain head. */
     private attachChainSuccessor(earlier: KeyedRun, successor: KeyedRun): void {
-        if (!this.keyedChainsFirst) {
+        const extendsEarlierKey = successor.exclusionKey === earlier.exclusionKey ||
+            successor.exclusionKey.startsWith(`${earlier.exclusionKey}:`);
+        if (!this.keyedChainsFirst || !extendsEarlierKey) {
             return;
         }
-        if (earlier.exclusionKey === successor.exclusionKey) {
-            earlier.isChainHead = true;
-        }
+        earlier.isChainHead = true;
         earlier.prefer?.();
     }
 

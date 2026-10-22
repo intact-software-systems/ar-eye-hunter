@@ -69,8 +69,9 @@ export class AppInboxQueueEntryWriter {
      */
     async writeIfAbsent(enqueue: AppInboxEnqueueInput): Promise<AppInboxQueueEntryWriter.Written> {
         const { entry, message } = await this.writeMessage(enqueue);
-        // A message carries a fresh id, so only an entry this write created keeps its serialized message; anything
-        // else reads as kept by an earlier write, which costs the waiter no more than a first read.
+        // A message carries a fresh id, so only an entry this write created keeps its serialized message. A created
+        // entry misread as an earlier write's costs its waiter a first read and the queue wake: the entry then waits
+        // for the engine's next idle pass, up to its 3 s idle ceiling plus jitter.
         return { entry, winner: entry.resource === JSON.stringify(message) };
     }
 
