@@ -286,24 +286,6 @@ describe('V1d growth verdict', () => {
         expect(row.bound).toContain('rows never expire');
     });
 
-    it('caps a per-entity surface at the cap times the entity count of the same sample', () => {
-        const perSender: V1dGrowthClassification = {
-            growthClass: 'count-capped-per-entity',
-            capPerEntity: 256,
-            entity: { source: 'postgres', path: ['tables', 'senders'], absent: 'no-reading', neverExpiringPath: null }
-        };
-        const withinBound = (minute: number) => ({ tables: { surface_under_test: minute < 5 ? 256 : 512, senders: 2 } });
-        const overBound = (minute: number) => ({ tables: { surface_under_test: minute < 5 ? 256 : 513, senders: 2 } });
-        const withoutEntity = () => ({ other: {} });
-
-        expect(computeSingleRow(toSurface(perSender), toSamples({ postgres: toPoints(10, withinBound) })))
-            .toMatchObject({ outcome: 'pass', max: 512 });
-        expect(computeSingleRow(toSurface(perSender), toSamples({ postgres: toPoints(10, overBound) })).outcome)
-            .toBe('fail');
-        expect(computeSingleRow(toSurface(perSender), toSamples({ postgres: toPoints(10, withoutEntity) })).outcome)
-            .toBe('no-data');
-    });
-
     it('reads an array length step', () => {
         const reader: V1dGrowthReader = {
             source: 'admin-realtime',

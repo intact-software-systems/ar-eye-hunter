@@ -74,9 +74,6 @@ function computeV1dGrowthVerdictRow(
         growthClass: classification.growthClass,
         ...computeV1dGrowthAssessment(classification, {
             series: toSeries(reader),
-            entitySeries: classification.growthClass === 'count-capped-per-entity'
-                ? toSeries(classification.entity)
-                : [],
             neverExpiringSeries: reader.neverExpiringPath === null
                 ? []
                 : toSeries({ ...reader, path: reader.neverExpiringPath, neverExpiringPath: null })

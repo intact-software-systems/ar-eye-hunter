@@ -183,13 +183,9 @@ export const V1D_GROWTH_SURFACES: readonly V1dGrowthSurface[] = [
     },
     {
         id: 11,
-        name: 'server delivered markers (per sender; the client sessions bound the senders)',
-        owner: 'packages/shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts',
-        classification: {
-            growthClass: 'count-capped-per-entity',
-            capPerEntity: AL_DELIVERED_MARKERS_PER_SENDER,
-            entity: toNamespaceCount('client-state:sessions')
-        },
+        name: 'server delivered markers (uncapped by ruling; each expires an hour after its track last moved)',
+        owner: 'packages/shared/alm/inbound/admission/al-inbound-delivery-mutations.ts',
+        classification: AL_REPOSITORY_ROWS,
         readers: [toPostgresCount('runtimeState', 'alm', 'deliveredMarkers')]
     },
     {
@@ -388,7 +384,8 @@ export const V1D_GROWTH_SURFACES: readonly V1dGrowthSurface[] = [
     },
     {
         id: 49,
-        name: 'browser delivered markers (per sender in each of the page\'s inbound stores)',
+        name:
+            'browser delivered markers (256 per sender per inbound store; 2 stores; 14 senders, manifest 23\'s other agents)',
         owner: 'packages/shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts',
         classification: {
             growthClass: 'count-capped',
