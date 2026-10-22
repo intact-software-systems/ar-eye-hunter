@@ -1031,8 +1031,10 @@ marked.
    prepared the recordset release, hold lock and `findByKeys`, and PostgreSQL
    cached a Hash Join over a Seq Scan planned while the table was small: a
    16-row release takes 0.44 ms fresh and 7.8, 31 and 101–108 ms at 5 k, 15 k
-   and 50 k rows. They now go out as `unsafe(…, { prepare: false })`; a
-   one-element type or status set claims through `= $n` (`= any` cost the claim
+   and 50 k rows. In a transaction they now travel with their two
+   `set local plan_cache_mode` settings in one pipelined write; the root key
+   read goes out as `unsafe(…, { prepare: false })`; a one-element type or
+   status set claims through `= $n` (`= any` cost the claim
    0.36 → 2.1 ms fresh, 2.4 → 19.5 ms cached at 50 k). RED on real Postgres: 1
    sequential scan per statement after growing 200 → 20,000 rows without
    `analyze` (`seq_scan` from `pg_stat_user_tables`); a BitmapOr claim plan on
@@ -1072,27 +1074,27 @@ same machine, its APP_OUTBOX drain is about 1.75× slower (executor wait per pas
 (15 ms): the plan-cache trap, a strong suspicion, which repair 9 removes. The
 state-write comparison keeps throughput flat or higher (bench 1 uncontended
 +5–6 %, shared +4–10 %) and, on bench 2, shows hot statements +5–6 % per attempt at
-equal conflicts. <!-- rerun --> The medium-scale A-B-A, main against
-`aeed54640`, and the per-shape attribution of the hot statements are pending.
+equal conflicts. The medium-scale A-B-A (main `133df2c0d`, the fixed head, main again; fresh database per leg) puts the fixed head inside or better than both main legs on every metric but the longest full-pass run: release p50 8.1 ms against 20.1 / 15.2 on main (the unfixed head 85), decision / bundle / dispatch 1.5 / 3.4 / 0.8 ms per claimed row against 6.9 / 7.3 / 1.6 and 5.9 / 6.5 / 1.3, executor wait per pass 625 ms against 648 / 546, wait-polls 2,343 against 3,035 / 3,032 (`measure-medium-aba.md`). Per shape, the whole difference is the state-write bench pump's empty AppInbox claim passes (`runAppInboxPumpUntilCompletion` spins `dequeueInbox` on `setTimeout(0)` while a command is in flight): fair claim 5.47 → 6.24, ordered claim 4.88 → 5.63 and overdue-retry claim 4.88 → 5.63 per attempt, every other shape 8.22 → 8.29; per-pass SQL, in-flight time per attempt (73–78 ms) and conflicts are equal, and the candidate's claim transaction takes 2.35 ms against 2.74, so it fits 13–15 % more passes in. Production dequeue is wake-driven, so these statements do not exist there; the reason is recorded against the gate and the pump is a harness follow-up. Bench 3 on the final head passes both contrasts with the candidate faster in every workload (uncontended 258 / 250 → 281 / 281, shared 233 / 226 → 251 / 252, hot 53.5 / 53.6 → 57.0 / 58.2 mutations/s) and 3–5 % fewer hot statements.
 
 Hosted acceptance (uninstrumented, persistent hosted Postgres) on the production
 code of `ac806422d`, before the plan-cache fix:
 
-| Measure                                     | Target                         | #691                      | This head                                                         |
-| ------------------------------------------- | ------------------------------ | ------------------------- | ----------------------------------------------------------------- |
-| Hosted 15 / 30 / 50 primary                 | Pass                           | 9.129 / 15.032 / 27.061 s | 9.987 / 19.528 / 31.213 s, pass, 0 faults                         |
-| A-B-B-A whole-formation primary             | Both contrasts favour the head | −16.801 / −23.572 s       | −2.309 / +8.533 s: **not met**                                    |
-| A-B-B-A connected-barrier wait              | Both contrasts favour the head | +3.442 / −2.567 s         | −0.601 / −0.385 s: met                                            |
-| (a) Connect commit → first page settled p50 | Under 6 s                      | 13.796 s                  | 5.870 s: met                                                      |
-| (b) 16-row batch round trips                | Under 40                       | about 164                 | Postgres pins: bundle 3, dispatch 16, decision 1 round, release 1 |
-| (c) Completion polls in the setup window    | Under 600                      | 779                       | 682: **not met**                                                  |
-| (d) Claimed-join idle                       | Under 0.3 s                    | 1.579 s                   | 0.326 s: **not met**                                              |
-| (d) Last join's end in the window           | Before 35 s                    | 37.3 s                    | 29.354 s: met                                                     |
-| (e) Strict `GET …/groups` p50               | Under 0.4 s                    | 0.447 s                   | 0.313 s: met                                                      |
-| (f) First room view p50, last joiners       | Under 3 s                      | 9.06 s                    | 2.53 s, no RTT-only layout: met                                   |
-| API thread busy share                       | Under 75 %                     | 80.4 %                    | 83.4 %: **not met**                                               |
-| Heap after full GC                          | Flat                           | Rising 60.7 → 125.4 MB    | Flat: met                                                         |
-| On `aeed54640`                              | —                              | —                         | <!-- rerun --> pending                                            |
+| Measure                                                              | Target                                                                                  | #691                      | This head                                                         |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------- | ----------------------------------------------------------------- |
+| Hosted 15 / 30 / 50 primary                                          | Pass                                                                                    | 9.129 / 15.032 / 27.061 s | 9.987 / 19.528 / 31.213 s, pass, 0 faults                         |
+| A-B-B-A whole-formation primary                                      | Both contrasts favour the head                                                          | −16.801 / −23.572 s       | −2.309 / +8.533 s: **not met**                                    |
+| A-B-B-A connected-barrier wait                                       | Both contrasts favour the head                                                          | +3.442 / −2.567 s         | −0.601 / −0.385 s: met                                            |
+| (a) Connect commit → first page settled p50                          | Under 6 s                                                                               | 13.796 s                  | 5.870 s: met                                                      |
+| (b) 16-row batch round trips                                         | Under 40                                                                                | about 164                 | Postgres pins: bundle 3, dispatch 16, decision 1 round, release 1 |
+| (c) Completion polls in the setup window                             | Under 600                                                                               | 779                       | 682: **not met**                                                  |
+| (d) Claimed-join idle                                                | Under 0.3 s                                                                             | 1.579 s                   | 0.326 s: **not met**                                              |
+| (d) Last join's end in the window                                    | Before 35 s                                                                             | 37.3 s                    | 29.354 s: met                                                     |
+| (e) Strict `GET …/groups` p50                                        | Under 0.4 s                                                                             | 0.447 s                   | 0.313 s: met                                                      |
+| (f) First room view p50, last joiners                                | Under 3 s                                                                               | 9.06 s                    | 2.53 s, no RTT-only layout: met                                   |
+| API thread busy share                                                | Under 75 %                                                                              | 80.4 %                    | 83.4 %: **not met**                                               |
+| Heap after full GC                                                   | Flat                                                                                    | Rising 60.7 → 125.4 MB    | Flat: met                                                         |
+| On the fixed head: hosted A-B-B-A                                    | Primary +7.016 / −9.180 s (symmetric −1.082 s); end of formation −5.118 / −4.891 s      | —                         | Primary not met; end of formation met                             |
+| On the fixed head: timing-on 50 (slow window; setup window 57.457 s) | (a) 5.191 s, (e) 0.208 s, (f) 2.66 s; (c) 834 polls, (d) idle 0.754 s, last join 56.3 s | —                         | (a), (e), (f) met; (c), (d) not met                               |
 
 The A-B-B-A legs are A1 39744250013, B1 39745274359, B2 39746134775 and A2
 39747243936, all passing 50/50. Its loss is upstream of the room join: sign-in
@@ -1106,8 +1108,7 @@ session-issue waiter, about 0.16 s per login in series, and one 16-ticket claim
 pass took 1.645 s with no handler running inside a census window of 82.96 s of
 executor wait. The CPU/GC capture 39750110469 cut busy time 5.3 s while the
 window shrank 7.7 s; the Postgres wire is 14.7 % of it, and `cachedError` falls
-0.306 → 0.021 s. <!-- rerun --> The hosted A-B-B-A and the timing-on 50 on
-`aeed54640` are pending.
+0.306 → 0.021 s. On the fixed head `63a39f22a` (four passing legs; two attempts excluded at agent readiness with 47 of 50 agents) the A-B-B-A primary is +7.016 / −9.180 s (symmetric −1.082 s, −3.0 %; baseline drift +12.991 s between the two main legs), not met, and the end of formation −5.118 / −4.891 s (symmetric −5.005 s, −70 %), met; sign-in (+12.350 / −4.762) and SDK connect (+12.041 / −2.465) carry the primary's swing — a whole-API stall during each 50-request burst that main's slow leg shows as well (§2b of the hosted acceptance document; the sign-in investigation). On the fixed head the timing-on 50 (run 39781542777, a slow-window run: setup window 57.457 s) meets (a) connect commit → first page 5.191 s, (e) strict list 0.208 s and (f) first room view 2.66 s with no RTT-only layout, and misses (c) polls 834 (622 tick/status) and (d) claimed-join idle 0.754 s with the last join at 56.3 s: Postgres statement throughput on the shared host fell from about 1,000 per 5 s to 63–464 during the sign-in burst (a by-key inbox point read 2.5 s per execution against 0.28 s) while the API event loop stayed under 175 ms of lag; slow with timing on, so the slow/fast split follows the clock, not the code.
 
 Follow-ups: first the whole-formation loss upstream of the room join (the serial
 login, its PBKDF2 derivation threads under
