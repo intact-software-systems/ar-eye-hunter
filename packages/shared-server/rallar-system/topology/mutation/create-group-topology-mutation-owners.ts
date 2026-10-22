@@ -14,7 +14,6 @@ export interface CreateGroupTopologyMutationOwnersInput {
     readonly nowEpochMs: () => number;
     readonly isPlatformAdmin: (principalId: string) => boolean;
     readonly outboxWriter: RtcTopologyOutboxWriter;
-    /** How long a command's mutation record and recompute outbox row stay after its capture. */
     readonly finishedRetentionMs: number;
 }
 
