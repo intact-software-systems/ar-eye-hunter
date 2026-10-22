@@ -41,4 +41,10 @@ describe('V1d growth surface classification', () => {
             neverExpiringPath: ['resourceInbox', 'neverExpire']
         }]);
     });
+
+    it('bounds a page\'s delivered markers at 256 per inbound store across its two stores', () => {
+        const markers = V1D_GROWTH_SURFACES.find((surface) => surface.id === 49);
+
+        expect(markers?.classification).toEqual({ growthClass: 'count-capped', cap: 512 });
+    });
 });

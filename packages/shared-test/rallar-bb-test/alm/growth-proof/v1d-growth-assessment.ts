@@ -1,7 +1,17 @@
 import type { V1dGrowthPlateau, V1dGrowthSeriesPoint } from './v1d-growth-series.ts';
 
-/** `declared` is an accepted append-only history: reported, never passed or failed. */
-export type V1dGrowthOutcome = 'pass' | 'declared' | 'fail' | 'insufficient' | 'no-data' | 'unclassified';
+/**
+ * `declared` is a history R3 declares and reports: never passed or failed. `unbounded-unexercised` is an unbounded
+ * surface the workload never grew, so nothing proves it bounded: a follow-up, neither a pass nor a fail.
+ */
+export type V1dGrowthOutcome =
+    | 'pass'
+    | 'declared'
+    | 'fail'
+    | 'insufficient'
+    | 'no-data'
+    | 'unclassified'
+    | 'unbounded-unexercised';
 
 /** What one reading of one surface showed against its class's predicate. */
 export interface V1dGrowthAssessment {

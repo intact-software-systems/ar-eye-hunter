@@ -42,10 +42,15 @@ export interface V1dGrowthVerdict {
     readonly windowStartedAtEpochMs: number;
     readonly workload: V1dGrowthWorkload | null;
     readonly workloadIssues: readonly string[];
+    /** The unbounded surfaces the workload never grew: neither passed nor failed, and named for follow-up. */
+    readonly followUps: readonly string[];
     readonly rows: readonly V1dGrowthVerdictRow[];
 }
 
 const NAMESPACE_PATH = ['runtimeState', 'byNamespace'] as const;
+
+/** Outcomes that do not block the verdict; an unexercised surface is listed as a follow-up instead. */
+const SETTLED_OUTCOMES: ReadonlySet<V1dGrowthOutcome> = new Set(['pass', 'declared', 'unbounded-unexercised']);
 
 export function computeV1dGrowthVerdict(input: V1dGrowthVerdictInput): V1dGrowthVerdict {
     const classifiedIds = new Set(input.surfaces.map((surface) => surface.id));
@@ -63,10 +68,13 @@ export function computeV1dGrowthVerdict(input: V1dGrowthVerdictInput): V1dGrowth
     const workloadIssues = computeV1dGrowthWorkloadIssues(input.run.workload);
     return {
         passed: workloadIssues.length === 0 &&
-            rows.every((row) => row.outcome === 'pass' || row.outcome === 'declared'),
+            rows.every((row) => SETTLED_OUTCOMES.has(row.outcome)),
         windowStartedAtEpochMs: input.run.windowStartedAtEpochMs,
         workload: input.run.workload,
         workloadIssues,
+        followUps: rows
+            .filter((row) => row.outcome === 'unbounded-unexercised')
+            .map((row) => `${row.surfaceId ?? '-'} ${row.surface} (${row.reader})`),
         rows
     };
 }

@@ -323,13 +323,28 @@ describe('V1d growth verdict', () => {
             .toBe('pass');
     });
 
-    it('fails an unbounded surface even when it reads flat', () => {
+    it('fails an unbounded surface whose readings rise during the run', () => {
         const unbounded: V1dGrowthClassification = { growthClass: 'unbounded', missingBound: 'rows never expire' };
-        const flat = () => toPostgresTable(40);
-        const row = computeSingleRow(toSurface(unbounded), toSamples({ postgres: toPoints(30, flat) }));
+        const rising = (minute: number) => toPostgresTable(Math.round(minute * 4));
+        const row = computeSingleRow(toSurface(unbounded), toSamples({ postgres: toPoints(30, rising) }));
 
-        expect(row).toMatchObject({ outcome: 'fail', max: 40 });
+        expect(row).toMatchObject({ outcome: 'fail', max: 120 });
         expect(row.bound).toContain('rows never expire');
+    });
+
+    it('reports an unbounded surface that never grows as unexercised: a follow-up, neither a pass nor a fail', () => {
+        const unbounded: V1dGrowthClassification = { growthClass: 'unbounded', missingBound: 'rows never expire' };
+        const flat = () => toPostgresTable(0);
+        const verdict = computeV1dGrowthVerdict({
+            surveyedSurfaceIds: [1],
+            surfaces: [toSurface(unbounded)],
+            run: COMPLETED_RUN,
+            samples: toSamples({ postgres: toPoints(30, flat) })
+        });
+
+        expect(verdict.rows[0]).toMatchObject({ outcome: 'unbounded-unexercised', max: 0 });
+        expect(verdict.passed).toBe(true);
+        expect(verdict.followUps).toEqual(['1 surface under test (postgres tables.surface_under_test)']);
     });
 
     it('fails the verdict when the run recorded no workload outcome', () => {

@@ -7,7 +7,15 @@ export interface V1dGrowthVerdictDocumentInput {
     readonly skippedLines: number;
 }
 
-const OUTCOMES: readonly V1dGrowthOutcome[] = ['pass', 'declared', 'fail', 'insufficient', 'no-data', 'unclassified'];
+const OUTCOMES: readonly V1dGrowthOutcome[] = [
+    'pass',
+    'declared',
+    'fail',
+    'insufficient',
+    'no-data',
+    'unclassified',
+    'unbounded-unexercised'
+];
 const MINUTE_MS = 60_000;
 
 export function toV1dGrowthVerdictMarkdown(input: V1dGrowthVerdictDocumentInput): string {
@@ -25,8 +33,16 @@ export function toV1dGrowthVerdictMarkdown(input: V1dGrowthVerdictDocumentInput)
         ...verdict.workloadIssues.map((issue) => `- ${issue}`),
         '',
         'The slope is the last 15 minutes; everything after the 10-minute warm-up for a heap reading; the whole run for ' +
-        'a durable, declared or unbounded reading. A declared reading is an accepted append-only history: reported, ' +
+        'a durable, declared or unbounded reading. A declared reading is an append-only history R3 declares: reported, ' +
         'not judged. The RTC workload orders few ALM tracks, so the delivered-marker readings do not stress their caps.',
+        ...(verdict.followUps.length === 0
+            ? []
+            : [
+                '',
+                '## Follow-ups: unbounded surfaces the workload never grew',
+                '',
+                ...verdict.followUps.map((followUp) => `- ${toCell(followUp)}`)
+            ]),
         '',
         '| # | surface | reader | class | first plateau | slope per hour | max | bound | verdict |',
         '| -: | --- | --- | --- | --- | --: | --: | --- | --- |',
@@ -35,7 +51,7 @@ export function toV1dGrowthVerdictMarkdown(input: V1dGrowthVerdictDocumentInput)
         '## Reasons',
         '',
         ...verdict.rows
-            .filter((row) => row.outcome !== 'pass')
+            .filter((row) => row.outcome !== 'pass' && row.outcome !== 'unbounded-unexercised')
             .map((row) => `- ${row.surfaceId ?? '-'} ${toCell(row.surface)} (${row.reader}): ${row.reason}`),
         ''
     ].join('\n');
