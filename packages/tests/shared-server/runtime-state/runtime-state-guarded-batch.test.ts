@@ -336,25 +336,29 @@ describe('runtime-state guarded batches', () => {
             })
         ).toThrow(/put/iu);
 
-        expect(() =>
-            validateRuntimeStateGuardedBatchResult(batch, {
-                guard: {
-                    status: 'applied',
-                    operation: 'insert',
-                    namespace: 'guard',
-                    key: 'root',
-                    resultingRevision: 1
-                },
-                effects: [{
-                    status: 'applied',
-                    effectId: 'put',
-                    operation: 'put',
-                    namespace: 'effect',
-                    key: 'put',
-                    resultingRevision: 0
-                }]
-            })
-        ).toThrow(/revision/iu);
+        const insertResult = (resultingRevision: number) => ({
+            guard: {
+                status: 'applied',
+                operation: 'insert',
+                namespace: 'guard',
+                key: 'root',
+                resultingRevision
+            },
+            effects: [{
+                status: 'applied',
+                effectId: 'put',
+                operation: 'put',
+                namespace: 'effect',
+                key: 'put',
+                resultingRevision: 0
+            }]
+        } as const);
+        expect(() => validateRuntimeStateGuardedBatchResult(batch, insertResult(-1))).toThrow(/revision/iu);
+        // An insert that replaced an expired row lands one revision past it.
+        expect(validateRuntimeStateGuardedBatchResult(batch, insertResult(4)).guard).toMatchObject({
+            status: 'applied',
+            resultingRevision: 4
+        });
     });
 
     it('runs guarded batches through the required transaction repository contract', async () => {

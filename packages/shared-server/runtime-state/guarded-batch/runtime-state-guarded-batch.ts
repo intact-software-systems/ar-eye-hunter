@@ -3,6 +3,10 @@ export interface RuntimeStateGuardedBatchIdentity {
     readonly key: string;
 }
 
+/**
+ * Applies where the key holds no row or an expired one, since every read takes an expired row for absent. The row
+ * lands at revision 0, or one past the expired row it replaces, so a writer still holding that revision cannot match.
+ */
 export type RuntimeStateGuardedBatchInsert =
     & RuntimeStateGuardedBatchIdentity
     & Readonly<{

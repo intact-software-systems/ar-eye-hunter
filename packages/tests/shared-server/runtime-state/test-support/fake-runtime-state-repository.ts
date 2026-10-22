@@ -204,6 +204,20 @@ export class FakeRuntimeStateRepository
         return { status: 'applied', revision: 0 };
     }
 
+    /** The guarded-batch and client inserts: a key holding an expired row takes the new row one revision past it. */
+    async insertIfAbsentOrExpired(
+        namespace: string,
+        key: string,
+        value: string,
+        expireAtTimestamp: number
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        const current = this.data.get(this.toKey(namespace, key));
+        if (current === undefined || current.expireAtTimestamp > Date.now()) {
+            return await this.insertIfAbsent(namespace, key, value, expireAtTimestamp);
+        }
+        return await this.upsertIfRevision(namespace, key, value, expireAtTimestamp, current.revision);
+    }
+
     async upsertIfRevision(
         namespace: string,
         key: string,
@@ -320,7 +334,7 @@ async function applyGuardedBatchGuard(
     guard: RuntimeStateGuardedBatchGuard
 ): Promise<RuntimeStateGuardedBatchGuardResult> {
     const result = guard.operation === 'insert'
-        ? await repository.insertIfAbsent(
+        ? await repository.insertIfAbsentOrExpired(
             guard.namespace,
             guard.key,
             guard.value,
@@ -385,7 +399,7 @@ async function applyGuardedBatchEffect(
         };
     }
     const result = effect.operation === 'insert'
-        ? await repository.insertIfAbsent(
+        ? await repository.insertIfAbsentOrExpired(
             effect.namespace,
             effect.key,
             effect.value,

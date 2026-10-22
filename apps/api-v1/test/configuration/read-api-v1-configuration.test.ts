@@ -465,10 +465,10 @@ Deno.test('every committed profile keeps finished AppInbox commands one day unle
     }
     const selected = await readApiV1Configuration(readerInput({
         ...validConfigurationEnvironment('prod-in-memory'),
-        RALLAR_APP_INBOX_FINISHED_RETENTION_MS: '3600000'
+        RALLAR_APP_INBOX_FINISHED_RETENTION_MS: '7200000'
     }));
-    assert.equal(selected.appInbox.finishedRetentionMs, 3_600_000);
-    for (const outOfRange of ['59999', '2592000001']) {
+    assert.equal(selected.appInbox.finishedRetentionMs, 7_200_000);
+    for (const outOfRange of ['3599999', '2592000001']) {
         const error = await captureConfigurationError(readerInput({
             ...validConfigurationEnvironment(),
             RALLAR_APP_INBOX_FINISHED_RETENTION_MS: outOfRange
