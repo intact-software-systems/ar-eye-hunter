@@ -23,14 +23,6 @@ export interface LogicalAppInboxCommand {
 export function toLogicalAppInboxCommand(
     enqueue: AppInboxEnqueueInput
 ): JsonWireValue {
-    if (enqueue.type === AppInboxType.GROUP_QUICK_JOIN) {
-        const command = decodeGroupQuickJoinCommand(enqueue.data);
-        return encodeLogicalCommand({
-            type: enqueue.type,
-            authority: null,
-            data: encodeJsonWireValue({ ...command, actorSessionId: null }, 'Logical Quick Join command')
-        });
-    }
     const stableAuth = toStableAuthCommand(enqueue.type, enqueue.data);
     if (stableAuth) {
         return encodeLogicalCommand({ type: enqueue.type, authority: null, data: stableAuth });
@@ -42,6 +34,14 @@ export function toLogicalAppInboxCommand(
     const stableDomainCommand = toStableDomainCommand(enqueue.type, enqueue.data);
     if (stableDomainCommand) {
         return encodeLogicalCommand({ type: enqueue.type, authority: null, data: stableDomainCommand });
+    }
+    if (enqueue.type === AppInboxType.GROUP_QUICK_JOIN) {
+        const command = decodeGroupQuickJoinCommand(enqueue.data);
+        return encodeLogicalCommand({
+            type: enqueue.type,
+            authority: null,
+            data: encodeJsonWireValue({ ...command, actorSessionId: null }, 'Logical Quick Join command')
+        });
     }
     return encodeLogicalCommand({
         type: enqueue.type,

@@ -145,12 +145,26 @@ verified fixes for session replacement through cleanup, command-bound durable-re
 public HTTP input compatibility, and arena state reset at the subscribed room transition.
 The reviewer has no remaining concrete findings. Fixed PostgreSQL medium scale passed all
 2,842 steps. The isolated local three-run performance comparison retained correct durable
-completion but exceeded the unchanged latency/throughput limits. Use the prescribed pinned hosted
-A-B-B-A comparison to determine whether that regression persists under controlled conditions;
-do not relax thresholds or claim acceptance from the local run. CI also exposed stale API test
+completion but exceeded the unchanged latency/throughput limits. The pinned hosted A-B-B-A run
+[39850482876](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/39850482876)
+also failed: hot throughput fell from 36.9663 to 34.9170 mutations/second (5.54%), beyond the
+unchanged 5% allowance. Every other comparison check passed. Inspect the individual captures and
+changed server paths to identify the cause, then validate an evidence-based correction with the
+same comparative gate. Do not relax thresholds or claim performance acceptance. CI also exposed stale API test
 dependencies and a missing route-ownership inventory entry; those are repaired with focused
 regressions. Complete performance and final publication checks before deleting this implementation
-plan at handoff.
+plan at handoff. The refreshed Branch Release Gate passed on `7d6cc22d1`; performance remains the
+only acceptance blocker.
+
+Performance investigation: the unchanged baseline positions ranged from 34.99 to 39.18 hot
+mutations/second. The candidate had 20 eighth-attempt conflicts versus 13 for the baseline, with
+84.40 versus 51.20 seconds of aggregate planned delay at that attempt. These are observed retry-tail
+differences, not proof that the regression is noise. The only newly added dispatch check on every
+existing logical command was the Quick Join discriminant. Move that strict block after the three
+existing stable-command early returns to restore their prior branch path, then run focused
+correctness tests and a fresh, unchanged hosted comparison on the resulting revision. Independent
+review confirms that this ordering preserves command semantics; its performance effect remains
+unproven until measured.
 
 ## Review focus and completion gates
 
