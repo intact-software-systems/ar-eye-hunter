@@ -1,13 +1,11 @@
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import type { RtcTopologyReplayHydrationOutcome } from '@shared/rtc/rtc-topology-replay-metrics.ts';
 import type { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-state-json-store.ts';
-import type {
-    RtcTopologyReplayDiagnosticsSink,
-    RtcTopologyReplayHydrationOutcome
-} from '../consumer/rtc-topology-replay-diagnostics.ts';
+import type { RtcTopologyReplayDiagnosticsSink } from '../consumer/rtc-topology-replay-diagnostics.ts';
 import { toDeliverableTopologySnapshot } from '../deliverable-topology-snapshot.ts';
 import { materializeRtcTopologyHydrationMessages } from './rtc-topology-hydration-message.ts';
 

@@ -627,6 +627,9 @@ Boolean variables accept `1`, `true`, `yes`, or `on` (case-insensitive); anythin
 variables that are negative or not integers silently fall back to their defaults. Every `*_RETAIN_*` and
 `*_PERSIST_*` bound accepts `all`, `unbounded`, or `none` for no cap.
 
+`RALLAR_BLACK_BOX_RETENTION_MAX_RUNS` bounds the runs the control server holds with or without a storage
+directory; with one it also deletes the swept runs' artifact directories.
+
 Wildcard CORS, unset admin/operator auth, optional run tokens, optional read
 tokens, in-memory storage, and unbounded retention are local-only defaults.
 Enable `RALLAR_PRODUCTION_HARDENING=1` for production so these settings fail

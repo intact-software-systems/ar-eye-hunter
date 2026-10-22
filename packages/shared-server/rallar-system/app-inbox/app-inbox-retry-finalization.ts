@@ -29,7 +29,6 @@ export type AppInboxRetryFinalization =
 
 export interface AppInboxRetryFinalizerDependencies {
     readonly database: PSqlSql;
-    /** How long an exhausted fact and its failure result stay before the expiry sweep removes them. */
     readonly finishedRetentionMs: number;
     readonly timing?: RallarTimingSink;
 }

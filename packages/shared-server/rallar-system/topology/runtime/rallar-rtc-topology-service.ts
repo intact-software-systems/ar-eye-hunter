@@ -4,13 +4,10 @@ import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupTopologyKindSetting } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot, RallarRtcTopologyKind } from '@shared/api/overlay-topology.ts';
+import type { RallarRtcTopologyMetrics } from '@shared/rtc/rallar-rtc-topology-metrics.ts';
 
 import { RtcTopologyPlanner } from '../planning/rtc-topology-planner.ts';
-import {
-    RtcTopologyMetrics,
-    type RallarRtcTopologyMetrics,
-    type RtcTopologyPlanningObservation
-} from './rtc-topology-metrics.ts';
+import { RtcTopologyMetrics, type RtcTopologyPlanningObservation } from './rtc-topology-metrics.ts';
 import { RtcTopologySnapshotRegistry } from './rtc-topology-snapshot-registry.ts';
 
 export interface RallarRtcTopologyServiceOptions {

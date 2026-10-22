@@ -10,9 +10,7 @@ import {
 import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository.ts';
 import {
     createRtcTopologyReplayDiagnostics,
-    type RtcTopologyReplayDiagnosticsSink,
-    type RtcTopologyReplayMetrics,
-    type RtcTopologyReplayWakeSource
+    type RtcTopologyReplayDiagnosticsSink
 } from '@shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-diagnostics.ts';
 import {
     RtcTopologyReplayEntryHandlerService
@@ -33,6 +31,7 @@ import {
 import type {
     RuntimeStateOptimisticTransactionalRepositoryLike
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import type { RtcTopologyReplayMetrics, RtcTopologyReplayWakeSource } from '@shared/rtc/rtc-topology-replay-metrics.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import type { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 

@@ -1,4 +1,5 @@
 import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
+import type { RtcTopologyReplayMetrics, RtcTopologyReplayWakeSource } from '@shared/rtc/rtc-topology-replay-metrics.ts';
 import type { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
@@ -17,10 +18,6 @@ import type { RtcRttInboxService } from '../rtc-rtt/inbox/rtc-rtt-inbox-service.
 import type { TopologyInboxService } from '../topology/inbox/topology-inbox-service.ts';
 import type { RtcTopologyExecutionRepository } from '../topology/persistence/rtc-topology-execution-repository.ts';
 import type { RtcTopologyPublicationRepository } from '../topology/publication/rtc-topology-publication-repository.ts';
-import type {
-    RtcTopologyReplayMetrics,
-    RtcTopologyReplayWakeSource
-} from '../topology/replay/consumer/rtc-topology-replay-diagnostics.ts';
 import type { RtcTopologyDeliveryRuntime } from '../topology/replay/delivery/rtc-topology-delivery-runtime.ts';
 
 export interface RtcTopologyReplayRuntime {

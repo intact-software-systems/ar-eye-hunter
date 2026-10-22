@@ -49,7 +49,6 @@ export namespace AppInboxTransactionWriter {
 
     export interface Config {
         readonly serviceId: string;
-        /** How long a finished fact and its result stay before the expiry sweep removes them. */
         readonly finishedRetentionMs: number;
         readonly timing?: RallarTimingSink;
     }

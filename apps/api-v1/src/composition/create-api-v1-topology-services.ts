@@ -41,16 +41,14 @@ import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import type {
-    RtcTopologyAdminMetrics,
-    RtcTopologyAdminReplayMetrics
-} from '@shared/rtc/rtc-topology-admin-metrics.ts';
+import type { RtcTopologyAdminMetrics } from '@shared/rtc/rtc-topology-admin-metrics.ts';
+import type { RtcTopologyReplayMetrics } from '@shared/rtc/rtc-topology-replay-metrics.ts';
 
 import { RtcTopologyInputFingerprintRepository } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
 import { createApiRtcTopologyAdminMetrics } from '../runtime/rtc-topology/create-api-rtc-topology-admin-metrics.ts';
 
 export interface ApiV1TopologyReplayMetrics {
-    readMetrics(): RtcTopologyAdminReplayMetrics;
+    readMetrics(): RtcTopologyReplayMetrics;
     resetMetrics(): void;
 }
 
