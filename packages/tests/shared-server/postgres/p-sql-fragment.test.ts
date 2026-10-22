@@ -84,6 +84,13 @@ describe('SQL fragments', () => {
         expect(PSqlFragment.getPlannedPerExecutionText(cachedStrings)).toBeUndefined();
     });
 
+    it('accepts as positional parameters only values that bind as themselves', () => {
+        expect(() => PSqlFragment.assertPositionalParameters([null, undefined, 'text', 7, 7n, true, new Date(), [{ id: 1 }], { id: 1 }, Object.create(null)]))
+            .not.toThrow();
+        expect(() => PSqlFragment.assertPositionalParameters([new Map()])).toThrow(TypeError);
+        expect(() => PSqlFragment.assertPositionalParameters([PSqlFragment.of`helper`])).toThrow(TypeError);
+    });
+
     it('accepts only a plain identifier as text', () => {
         expect(() => PSqlFragment.identifier('candidate; drop table x')).toThrow(TypeError);
         expect(() => PSqlFragment.identifier('Candidate')).toThrow(TypeError);

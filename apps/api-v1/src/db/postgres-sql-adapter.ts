@@ -56,6 +56,19 @@ type PostgresTransactionSql = PSqlSql & {
     savepoint<T>(write: (transaction: PSqlSql) => Promise<T>): Promise<T>;
 };
 
+/** A statement planned per execution, as its template call and as its positional text. */
+interface PostgresPlannedStatement {
+    readonly strings: TemplateStringsArray;
+    readonly text: string;
+    readonly values: readonly PSqlParameter[];
+}
+
+/** How a handle sends a statement planned per execution: unprepared at the root, between plan-cache settings in a transaction. */
+type PostgresPlannedStatementStart = <Result>(
+    source: PostgresSqlSource,
+    statement: PostgresPlannedStatement
+) => PromiseLike<Result>;
+
 interface PostgresCountingSql {
     <Result>(strings: TemplateStringsArray, ...values: readonly PSqlParameter[]): Promise<Result>;
     (values: readonly PSqlParameter[]): object;
@@ -67,7 +80,7 @@ export function createPostgresSqlClient(
     census: PostgresStatementCensus | undefined
 ): PostgresSql {
     const recording: PostgresStatementRecording = { counters: { statements: 0, executorWaitMs: 0 }, census };
-    const sql = createCountingSql(client, recording);
+    const sql = createCountingSql(client, recording, startUnpreparedStatement);
     return Object.assign(sql, {
         begin: async <T>(write: (transaction: PSqlSql) => Promise<T>): Promise<T> =>
             await unwrapTransactionResult(
@@ -87,7 +100,7 @@ function createTransactionSql(
     transaction: PostgresTransactionSqlSource,
     recording: PostgresStatementRecording
 ): PostgresTransactionSql {
-    const sql = createCountingSql(transaction, recording);
+    const sql = createCountingSql(transaction, recording, startCustomPlannedStatement);
     const savepoint = async <T>(write: (nested: PSqlSql) => Promise<T>): Promise<T> =>
         await unwrapTransactionResult(
             transaction.savepoint(async (nested) => ({ value: await write(createTransactionSql(nested, recording)) }))
@@ -109,7 +122,8 @@ async function unwrapTransactionResult<T>(result: Promise<Readonly<{ value: T; }
 
 function createCountingSql(
     source: PostgresSqlSource,
-    recording: PostgresStatementRecording
+    recording: PostgresStatementRecording,
+    startPlannedStatement: PostgresPlannedStatementStart
 ): PostgresCountingSql {
     const { counters, census } = recording;
     function sql<Result>(strings: TemplateStringsArray, ...values: readonly PSqlParameter[]): Promise<Result>;
@@ -123,7 +137,11 @@ function createCountingSql(
         }
         counters.statements += 1;
         const calledAt = performance.now();
-        return Promise.resolve(startStatement<Result>(source, stringsOrValues, values)).finally(() => {
+        const text = PSqlFragment.getPlannedPerExecutionText(stringsOrValues);
+        const pending = text === undefined
+            ? source<Result>(stringsOrValues, ...values)
+            : startPlannedStatement<Result>(source, { strings: stringsOrValues, text, values });
+        return Promise.resolve(pending).finally(() => {
             const executorWaitMs = performance.now() - calledAt;
             counters.executorWaitMs += executorWaitMs;
             census?.record({ strings: stringsOrValues, values, executorWaitMs });
@@ -132,15 +150,32 @@ function createCountingSql(
     return sql;
 }
 
-function startStatement<Result>(
+/**
+ * postgres.js sends an unprepared statement with parameters as two round trips, a describe and then the execution; in
+ * auto-commit there is no transaction a plan-cache setting could be scoped to.
+ */
+function startUnpreparedStatement<Result>(
     source: PostgresSqlSource,
-    strings: TemplateStringsArray,
-    values: readonly PSqlParameter[]
+    { text, values }: PostgresPlannedStatement
 ): PromiseLike<Result> {
-    const plannedPerExecutionText = PSqlFragment.getPlannedPerExecutionText(strings);
-    return plannedPerExecutionText === undefined
-        ? source<Result>(strings, ...values)
-        : source.unsafe<Result>(plannedPerExecutionText, values, { prepare: false });
+    PSqlFragment.assertPositionalParameters(values);
+    return source.unsafe<Result>(text, values, { prepare: false });
+}
+
+/**
+ * The prepared statement between two transaction-scoped plan-cache settings, issued together so postgres.js pipelines
+ * them in one write: one round trip, and a plan built with this execution's parameters. The settings are not counted.
+ */
+async function startCustomPlannedStatement<Result>(
+    source: PostgresSqlSource,
+    { strings, values }: PostgresPlannedStatement
+): Promise<Result> {
+    const [, result] = await Promise.all([
+        source`set local plan_cache_mode = force_custom_plan`,
+        source<Result>(strings, ...values),
+        source`set local plan_cache_mode = default`
+    ]);
+    return result;
 }
 
 function isTemplateCall(value: TemplateStringsArray | readonly PSqlParameter[]): value is TemplateStringsArray {

@@ -27,29 +27,37 @@ describe('postgres.js PSqlSql adapter', () => {
 
         expect(harness.events).toEqual([
             'root:query-helper',
-            'root:query',
+            'root:query:select ? as answer',
             'root:begin',
-            'transaction:query',
+            'transaction:query:select ? as answer',
             'root:commit'
         ]);
     });
 
-    it('sends a statement planned per execution unprepared as its positional text, at the root and in a transaction', async () => {
+    it('sends a statement planned per execution unprepared at the root, and between plan-cache settings in one write in a transaction', async () => {
         const harness = createPostgresSqlHarness();
         const sql = toPSqlSql(harness.sql);
         const statement = PSqlFragment.of`select ${42} as answer`.toPlannedPerExecution();
 
         await expect(sql(...statement.toStatement())).resolves.toEqual([{ answer: 42 }]);
-        await sql.begin(async (transaction) => await transaction(...statement.toStatement()));
+        const inTransaction = await sql.begin(async (transaction) => {
+            const pending = transaction(...statement.toStatement());
+            const issuedBeforeAwait = harness.events.length;
+            return { issuedBeforeAwait, rows: await pending };
+        });
         await sql(...PSqlFragment.of`select ${42} as answer`.toStatement());
 
+        expect(inTransaction).toEqual({ issuedBeforeAwait: 5, rows: [{ answer: 42 }] });
         expect(harness.events).toEqual([
             'root:unprepared:select $1 as answer',
             'root:begin',
-            'transaction:unprepared:select $1 as answer',
+            'transaction:query:set local plan_cache_mode = force_custom_plan',
+            'transaction:query:select ? as answer',
+            'transaction:query:set local plan_cache_mode = default',
             'root:commit',
-            'root:query'
+            'root:query:select ? as answer'
         ]);
+        expect(() => sql(...PSqlFragment.of`select ${new Map()}`.toPlannedPerExecution().toStatement())).toThrow(TypeError);
     });
 
     it('preserves savepoints through nested runtime repository transactions', async () => {
@@ -167,7 +175,7 @@ function runQuery(
         return { kind: 'query-helper', values: stringsOrValues };
     }
 
-    events.push(`${scope}:query`);
+    events.push(`${scope}:query:${stringsOrValues.join('?').replace(/\s+/gu, ' ').trim()}`);
     return Promise.resolve([{ answer: values[0] }]);
 }
 

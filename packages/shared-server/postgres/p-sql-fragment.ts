@@ -20,7 +20,8 @@ const PLANNED_PER_EXECUTION_TEXT_BY_STRINGS = new WeakMap<TemplateStringsArray, 
  * `cached`: a driver may prepare the statement once per connection, and PostgreSQL then reuses one generic plan.
  * `per-execution`: the statement is planned with its parameters on every execution. A join of a recordset, which the
  * planner always estimates at 100 rows, needs it: a generic plan built while the joined table is small is a hash join
- * over a scan of the whole table, and it is kept, however large the table grows, until the table is analyzed.
+ * over a scan of the whole table, and it is kept, however large the table grows, until the table is analyzed. The mark
+ * belongs to the statement: a marked fragment spliced into another is planned as that other statement is.
  */
 type PSqlPlanning = 'cached' | 'per-execution';
 
@@ -89,6 +90,17 @@ export class PSqlFragment<Value extends PSqlParameter = PSqlParameter> {
         return PLANNED_PER_EXECUTION_TEXT_BY_STRINGS.get(strings);
     }
 
+    /**
+     * Throws unless every value binds as itself: a primitive, a date, an array or a plain object. A positional text
+     * carries no driver helper, which only a template call would expand in place.
+     */
+    static assertPositionalParameters(values: readonly PSqlParameter[]): void {
+        const helper = values.find((value) => !isPositionalParameter(value));
+        if (helper !== undefined) {
+            throw new TypeError('A statement sent as positional text binds no driver helper');
+        }
+    }
+
     /** This statement, planned with its parameters on every execution instead of by a cached generic plan. */
     toPlannedPerExecution(): PSqlFragment<Value> {
         return new PSqlFragment(this.strings, this.values, 'per-execution');
@@ -125,6 +137,13 @@ function toInternedStatementStrings(
     );
     stringsByText.set(textKey, strings);
     return strings;
+}
+
+function isPositionalParameter(value: PSqlParameter): boolean {
+    if (value === null || typeof value !== 'object' || value instanceof Date || Array.isArray(value)) {
+        return true;
+    }
+    return [Object.prototype, null].includes(Object.getPrototypeOf(value));
 }
 
 /** The text a template call sends: each parameter in its place as `$n`, numbered from one. */

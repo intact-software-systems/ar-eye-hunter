@@ -239,10 +239,10 @@ export class PSqlResourceInboxReservationRepository {
         }
 
         const overdueBefore = new Date(overdueBeforeEpochMs);
-        const rows = await this.sql<ResourceInboxRow[]>`
+        const statement = PSqlFragment.of`
             select *
             from resource_inbox
-            where ri_type_id = any(${[...typeIds]}::text[])
+            where ${PSqlFragment.toTextListPredicate(PSqlFragment.identifier('ri_type_id'), [...typeIds])}
               and ri_status = ${EntityStatus.RETRY}
               and expire_ts > (now() at time zone 'UTC')
               and next_ts <= ${overdueBefore}
@@ -252,6 +252,7 @@ export class PSqlResourceInboxReservationRepository {
                 for update skip locked
             limit ${maxToReserve}
         `;
+        const rows = await this.sql<ResourceInboxRow[]>(...statement.toStatement());
 
         return rowsToMap(rows);
     }

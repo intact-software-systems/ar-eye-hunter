@@ -21,6 +21,7 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 
 import {
     createResourceInboxTestStorage,
+    recordResourceInboxStatements,
     seedResourceInboxRow,
     type ResourceInboxTestStorage
 } from '../../queuebox/resource-inbox-test-storage.ts';
@@ -151,6 +152,42 @@ describe('Postgres list predicates', () => {
             ]);
             for (const plan of plans) {
                 expect(plan).not.toContain('Seq Scan on resource_inbox');
+            }
+        });
+    });
+
+    postgresIt('compare a one-element type or status set by scalar equality in the claim, overdue-retry and presence reads', async () => {
+        await withStorage(async (storage) => {
+            await seedResourceInboxRow(storage.sql, {
+                resourceId: 'retry-overdue',
+                status: EntityStatus.RETRY,
+                attempts: 1,
+                startedAgoSeconds: 140,
+                endedAgoSeconds: 130,
+                nextInSeconds: -120
+            });
+            const recorded: string[] = [];
+            const sql = recordResourceInboxStatements(storage.sql, recorded);
+            const reservations = new PSqlResourceInboxReservationRepository(sql);
+            const inboxOnly = new Set([EnqueuedType.APP_INBOX]);
+
+            await readResourceInboxWorkPresences(sql, WORK_PRESENCE_READS.slice(0, 1));
+            const overdue = await reservations.findOverdueRetryEntriesSkipLocked(inboxOnly, Date.now() - 60_000, {
+                ...RESERVATION,
+                excludedContextIds: NO_EXCLUDED_CONTEXTS
+            });
+            await reservations.reserveEntriesSkipLocked({
+                typeIds: inboxOnly,
+                statusIds: new Set([EntityStatus.NEW]),
+                reservationInput: RESERVATION,
+                contextClaim: undefined
+            });
+
+            expect(toResourceIds(overdue)).toEqual(['retry-overdue']);
+            expect(recorded).toHaveLength(3);
+            for (const statement of recorded) {
+                expect(statement).toMatch(/ri_type_id = \?/u);
+                expect(statement).not.toContain('= any(');
             }
         });
     });
