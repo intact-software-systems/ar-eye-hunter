@@ -114,7 +114,6 @@ export interface CreateApiV1RuntimeInput {
     readonly principalGroupListTiming?: RallarTimingSink;
     readonly wsReceiptObserver?: WsQueueBoxServerReceiptObserver;
     readonly appInboxOptions: AppInboxOptions;
-    readonly appInboxLaneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
     readonly appInboxNewLaneConcurrency: number;
     readonly appInboxNewLaneHeldRows: number;
     readonly disconnectedSessionRetentionMs: number;
@@ -348,7 +347,6 @@ function toMutationRuntimeInput(
         outboxStageTiming: input.outboxStageTiming,
         principalGroupListTiming: input.principalGroupListTiming,
         appInboxOptions: input.appInboxOptions,
-        appInboxLaneBudgetPolicy: input.appInboxLaneBudgetPolicy,
         appInboxNewLaneConcurrency: input.appInboxNewLaneConcurrency,
         appInboxNewLaneHeldRows: input.appInboxNewLaneHeldRows,
         disconnectedSessionRetentionMs: input.disconnectedSessionRetentionMs,

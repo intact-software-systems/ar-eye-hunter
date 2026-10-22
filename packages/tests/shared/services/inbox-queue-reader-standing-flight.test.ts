@@ -10,7 +10,6 @@ import type {
 } from '@shared/queuebox/queue-box-types.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { INBOX_OUTBOX_ENGINE_MAX_IDLE_MS } from '@shared/services/inbox-outbox-engine.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -237,16 +236,15 @@ describe('the AppInbox NEW lane with a standing flight', () => {
     it('requires a flight entry listener for a standing flight, so no settlement goes unjoined', () => {
         const queue = new InMemoryQueueBox();
 
-        expect(() => new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 4, newLaneHeldRows: 4 }))
+        expect(() => new InboxQueueReader(queue, { newLaneConcurrency: 4, newLaneHeldRows: 4 }))
             .toThrow(TypeError);
-        expect(() => new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 4 })).not.toThrow();
+        expect(() => new InboxQueueReader(queue, { newLaneConcurrency: 4 })).not.toThrow();
     });
 
     it('rejects a held-row bound below the lane\'s concurrency or above the largest flight', () => {
         const queue = new InMemoryQueueBox();
         const create = (newLaneHeldRows: number) =>
             new InboxQueueReader(queue, {
-                laneBudgetPolicy: 'fixed-retry-two',
                 newLaneConcurrency: 4,
                 newLaneHeldRows,
                 flightEntryListener: () => undefined
@@ -268,7 +266,6 @@ function createStandingFlightReader(
         : new ClaimRecordingQueueBox();
     const settlements: Promise<void>[] = [];
     const reader = new InboxQueueReader(queue, {
-        laneBudgetPolicy: 'fixed-retry-two',
         newLaneConcurrency: input.newLaneConcurrency,
         newLaneHeldRows: input.newLaneHeldRows,
         flightEntryListener: (settlement) => settlements.push(settlement),
@@ -334,12 +331,5 @@ async function readStatuses(queue: InMemoryQueueBox): Promise<string[]> {
 
 function createResilience(failureThreshold = 10): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResourceInboxResilience.createDefault({
-        circuitBreakerPolicy: new CircuitBreakerPolicy(failureThreshold, duration, duration, duration),
-        initialRate: 1,
-        maxRate: 10,
-        concurrencyIncreaseStep: 1,
-        concurrencyReduceStep: 1,
-        retryPolicy: DEFAULT_RESOURCE_INBOX_RETRY_POLICY
-    });
+    return ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(failureThreshold, duration, duration, duration));
 }

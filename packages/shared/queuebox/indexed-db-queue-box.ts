@@ -6,7 +6,7 @@ import type { IndexedDbOperationObserver } from '../persistence/indexed-db-opera
 import { readIndexedDbRequest, readIndexedDbTransaction } from '../persistence/indexed-db-request.ts';
 import { IndexedDbConnection, openIndexedDbWithStores } from '../persistence/open-indexed-db.ts';
 import type { PersistenceSetItemOptions } from '../persistence/PersistenceProvider.ts';
-import { RateLimiter } from '../resilience/Resilience.ts';
+import { RateLimiter } from '../resilience/rate-limiter.ts';
 import { computeIndexedDbFairnessReservation } from './compute-indexed-db-fairness-reservation.ts';
 import { computeIndexedDbQueueRelease } from './compute-indexed-db-queue-release.ts';
 import { toValidatedResourceInboxReleases } from './compute-resource-inbox-release.ts';

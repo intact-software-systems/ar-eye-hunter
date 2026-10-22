@@ -10,6 +10,7 @@ import {
     type Key,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
+import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 
 const RESOURCE_INBOX_ENTRY_EVENT = 'resource-inbox-entry';
@@ -188,19 +189,16 @@ export class TestResourceInboxResults {
 
 export function createAppInboxTestResilience(firstRetryDelayMs?: number): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResourceInboxResilience.createDefault({
+    return ResourceInboxResilience.create({
         circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-        initialRate: 1,
-        maxRate: 10,
-        concurrencyIncreaseStep: 1,
-        concurrencyReduceStep: 1,
-        retryPolicy: firstRetryDelayMs === undefined ? undefined : {
+        retryPolicy: firstRetryDelayMs === undefined ? DEFAULT_RESOURCE_INBOX_RETRY_POLICY : {
             maxAttempts: 20,
             delaysAfterAttemptMs: [firstRetryDelayMs],
             maxDelayMs: firstRetryDelayMs,
             jitterRatio: 0,
             staleDueThresholdMs: 30_000
-        }
+        },
+        reservationLeaseMs: ResourceInboxResilience.DEFAULT_RESERVATION_LEASE_MS
     });
 }
 

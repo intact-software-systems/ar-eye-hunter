@@ -105,7 +105,7 @@ function createInbox(input: CreateInboxInput): AppCrdtInboxService {
     const database = createUnusedDatabase();
     return new AppCrdtInboxService(
         {
-            inboxQueueReader: new InboxQueueReader(new InMemoryQueueBox(), { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 }),
+            inboxQueueReader: new InboxQueueReader(new InMemoryQueueBox(), { newLaneConcurrency: 1 }),
             resourceInboxRepository: createPSqlResourceInboxRepository(database, () => new Date()).entries,
             resourceInboxResultsRepository: new ResourceInboxResultsRepository(database),
             database,

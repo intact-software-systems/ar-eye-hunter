@@ -3,7 +3,7 @@ import type { WebSocketTicketResponse } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
 import { CircuitBreaker, CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
-import { RateLimiter } from '@shared/resilience/Resilience.ts';
+import { RateLimiter } from '@shared/resilience/rate-limiter.ts';
 
 import { readApiBaseUrl } from '../api-client-config.ts';
 import { ApiHttpError } from '../api/http-error.ts';

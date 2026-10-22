@@ -1,6 +1,6 @@
 import { EntityStatus, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '../../queuebox/ResourceInboxRetryPolicy.ts';
-import { RateLimiter } from '../../resilience/Resilience.ts';
+import { RateLimiter } from '../../resilience/rate-limiter.ts';
 
 /**
  * One lock limiter per lease sweep, in the role `lockEntryRateLimiter` plays in the ResourceInbox

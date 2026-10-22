@@ -23,7 +23,7 @@ describe('group system commands', () => {
             await harness.service.enqueueFormationCriterionCommand(toCommand(BUSY_GROUP, `busy-${index}`), 1);
         }
         await harness.service.enqueueFormationCriterionCommand(toCommand(IDLE_GROUP, 'idle-0'), 1);
-        const reader = new InboxQueueReader(harness.queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+        const reader = new InboxQueueReader(harness.queue, { newLaneConcurrency: 1 });
         const served: string[] = [];
         reader.onInboxMessageDo(AppInboxType.GROUP_FORMATION_CRITERION, {
             onMessage: async (message) => {

@@ -18,7 +18,6 @@ import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-m
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -234,7 +233,7 @@ function createQueueTaskInput(
     return {
         wsQBoxServerService,
         nowEpochMs: Date.now,
-        inboxQueueReader: new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 }),
+        inboxQueueReader: new InboxQueueReader(queue, { newLaneConcurrency: 1 }),
         outboxQueueReader: new OutboxQueueReader(queue),
         appInboxResilience: resilience,
         appOutboxResilience: resilience
@@ -243,12 +242,5 @@ function createQueueTaskInput(
 
 function createResilience(): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResourceInboxResilience.createDefault({
-        circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-        initialRate: 1,
-        maxRate: 10,
-        concurrencyIncreaseStep: 1,
-        concurrencyReduceStep: 1,
-        retryPolicy: DEFAULT_RESOURCE_INBOX_RETRY_POLICY
-    });
+    return ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(10, duration, duration, duration));
 }

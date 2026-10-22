@@ -54,7 +54,6 @@ function createProbedMutationRuntime(database: PSqlSql): ApiV1MutationRuntime {
         nowEpochMs: () => 1_000,
         timing: () => {},
         appInboxOptions: { nowEpochMs: () => 1_000 },
-        appInboxLaneBudgetPolicy: 'fixed-retry-two',
         appInboxNewLaneConcurrency: 1,
         appInboxNewLaneHeldRows: 4,
         disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,

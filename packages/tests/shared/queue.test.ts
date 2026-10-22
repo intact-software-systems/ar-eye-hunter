@@ -180,10 +180,6 @@ describe('enqueue and dequeue', () => {
         const typeId = 'WHACK';
         const types = new Set<string>([typeId]);
         const duration = Temporal.Duration.from({ seconds: 10 });
-        const initialRate = 1;
-        const maxRate = 10;
-        const concurrencyIncreaseStep = 1;
-        const concurrencyReduceStep = 1;
 
         const circuitBreakerPolicy = new CircuitBreakerPolicy(
             10,
@@ -192,13 +188,7 @@ describe('enqueue and dequeue', () => {
             duration
         );
 
-        const resilienceDto = ResourceInboxResilience.createDefault({
-            circuitBreakerPolicy: circuitBreakerPolicy,
-            initialRate: initialRate,
-            maxRate: maxRate,
-            concurrencyIncreaseStep: concurrencyIncreaseStep,
-            concurrencyReduceStep: concurrencyReduceStep
-        });
+        const resilienceDto = ResourceInboxResilience.createDefault(circuitBreakerPolicy);
 
         const helloWorld = 'hello world';
 
@@ -380,13 +370,10 @@ describe('resource inbox retry and fairness lanes', () => {
             ...DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
             maxAttempts: 2
         };
-        const custom = ResourceInboxResilience.createDefault({
+        const custom = ResourceInboxResilience.create({
             circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-            initialRate: 1,
-            maxRate: 10,
-            concurrencyIncreaseStep: 1,
-            concurrencyReduceStep: 1,
-            retryPolicy: retryPolicy
+            retryPolicy: retryPolicy,
+            reservationLeaseMs: ResourceInboxResilience.DEFAULT_RESERVATION_LEASE_MS
         });
 
         expect(custom.toWorkAdvertisementOptions().maxAttempts).toBe(2);
@@ -693,12 +680,9 @@ function toTestResilience(
     retryPolicy = DEFAULT_RESOURCE_INBOX_RETRY_POLICY
 ): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResourceInboxResilience.createDefault({
+    return ResourceInboxResilience.create({
         circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-        initialRate: 1,
-        maxRate: 10,
-        concurrencyIncreaseStep: 1,
-        concurrencyReduceStep: 1,
-        retryPolicy: retryPolicy
+        retryPolicy: retryPolicy,
+        reservationLeaseMs: ResourceInboxResilience.DEFAULT_RESERVATION_LEASE_MS
     });
 }

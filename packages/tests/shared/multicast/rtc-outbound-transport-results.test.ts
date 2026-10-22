@@ -30,7 +30,7 @@ import { RtcOutboundSubmission } from '@shared/multicast/rtc-outbound-submission
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import type { QueueBoxResourceEntryRepository, ResourceInboxReleaseDisposition } from '@shared/queuebox/queue-box-types.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
-import { toRateLimiter } from '@shared/resilience/Resilience.ts';
+import { toRateLimiter } from '@shared/resilience/rate-limiter.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { createDefaultWsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import {

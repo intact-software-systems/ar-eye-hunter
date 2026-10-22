@@ -60,7 +60,6 @@ async function createWsConnectFixture(
     const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date());
     const results = new ResourceInboxResultsRepository(sql);
     const reader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
-        laneBudgetPolicy: 'fixed-retry-two',
         newLaneConcurrency: 1
     });
     const sessions = new AuthSessionRepository(runtime);

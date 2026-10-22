@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 
-import { RateLimiter } from '../../resilience/Resilience.ts';
+import { RateLimiter } from '../../resilience/rate-limiter.ts';
 import { toErrorSummaryLine } from '../../resilience/to-error.ts';
 import { DequeueController, Reservator } from '../dequeue/dequeue-controller.ts';
 import { toDequeuedKeyText, type DequeueLaneFlight } from '../dequeue/dequeue-lane-flight.ts';

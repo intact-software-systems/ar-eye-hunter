@@ -44,7 +44,7 @@ describe('OutboxQueueReader', () => {
 
     it('does not reserve APP_INBOX work', async () => {
         const queue = new InMemoryQueueBox();
-        const inbox = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+        const inbox = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
         const outbox = new OutboxQueueReader(queue);
         const inboxMessages: ALMessage[] = [];
         const outboxMessages: ALMessage[] = [];
@@ -78,7 +78,7 @@ describe('OutboxQueueReader', () => {
 
     it('does not reserve APP_OUTBOX work from the inbox reader', async () => {
         const queue = new InMemoryQueueBox();
-        const inbox = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+        const inbox = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
         const outbox = new OutboxQueueReader(queue);
         const inboxMessages: ALMessage[] = [];
         const outboxMessages: ALMessage[] = [];
@@ -180,11 +180,5 @@ function createAppMessage(typeId: string, direction: string): ALMessage {
 
 function createResilience(): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResourceInboxResilience.createDefault({
-        circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-        initialRate: 1,
-        maxRate: 10,
-        concurrencyIncreaseStep: 1,
-        concurrencyReduceStep: 1
-    });
+    return ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(10, duration, duration, duration));
 }

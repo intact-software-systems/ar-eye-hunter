@@ -13,7 +13,6 @@ import { createDefaultResourceInboxDequeuer, ResourceInboxHandlerEntryError } fr
 import type { ResourceInboxAttemptReleaseTelemetry } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 
 import { reserveNoResourceEntries } from './reserve-no-resource-entries.ts';
@@ -171,12 +170,5 @@ function createQueueRepository(overrides: Partial<DequeueResourceEntryRepository
 
 function resilience(): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResourceInboxResilience.createDefault({
-        circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-        initialRate: 1,
-        maxRate: 10,
-        concurrencyIncreaseStep: 1,
-        concurrencyReduceStep: 1,
-        retryPolicy: DEFAULT_RESOURCE_INBOX_RETRY_POLICY
-    });
+    return ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(10, duration, duration, duration));
 }

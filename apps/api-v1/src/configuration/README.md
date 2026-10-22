@@ -46,6 +46,7 @@ The configuration reader recognizes only these operational overrides:
   configuration reader supplies, and a profile or the environment variable
   overrides that.
 - State API: `RALLAR_STATE_STRICT_READ_AUTH`.
+- Client sessions: `RALLAR_CLIENT_SESSION_DISCONNECTED_RETENTION_MS`.
 - Group admission: `RALLAR_GROUP_DEFAULT_MAX_MEMBERS`,
   `RALLAR_GROUP_JOIN_ADMISSION_PRINCIPAL_RATE_LIMIT`,
   `RALLAR_GROUP_JOIN_ADMISSION_GROUP_RATE_LIMIT`,
@@ -60,12 +61,10 @@ The configuration reader recognizes only these operational overrides:
   `RALLAR_RTC_TOPOLOGY_RTT_REFINEMENT_MIN_INTERVAL_MS`,
   `RALLAR_RTC_TOPOLOGY_RTT_VIVALDI_DELTA_MS`, `RALLAR_RTC_TOPOLOGY_REPLAY`,
   `RALLAR_API_QUEUE_WORKERS`.
-- AppInbox and observability: `RALLAR_APP_INBOX_PHASE_TIMING`, `RALLAR_APP_INBOX_LANE_BUDGET_POLICY`,
-  `RALLAR_APP_INBOX_WAIT_MAX_ELAPSED_MS`, `RALLAR_APP_INBOX_WAIT_RETRY_INTERVAL_MS`,
-  `RALLAR_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MS`, `RALLAR_APP_INBOX_WAIT_JITTER_RATIO`,
-  `RALLAR_TIMING_LOGS`.
-  The lane budget policy is one of `drain`, `fixed-one`, `adaptive-retry` and `fixed-retry-two`; every
-  committed profile serves due retries with `fixed-retry-two`, and the other arms stay selectable.
+- AppInbox and observability: `RALLAR_APP_INBOX_PHASE_TIMING`, `RALLAR_APP_INBOX_NEW_LANE_CONCURRENCY`,
+  `RALLAR_APP_INBOX_NEW_LANE_HELD_ROWS`, `RALLAR_APP_INBOX_WAIT_MAX_ELAPSED_MS`,
+  `RALLAR_APP_INBOX_WAIT_RETRY_INTERVAL_MS`, `RALLAR_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MS`,
+  `RALLAR_APP_INBOX_WAIT_JITTER_RATIO`, `RALLAR_TIMING_LOGS`.
 - ICE: `RALLAR_ICE_MODE`, `RALLAR_ICE_RATE_LIMIT_REQUESTS`, `METERED_APP_NAME`, `METERED_REGION`.
   The request allowance must be a positive integer and overrides `ice.rateLimit.requests`.
   All committed profiles retain 20 requests per 60000ms; cache lifetime remains 300000ms.

@@ -46,7 +46,6 @@ export async function readPGliteAppInboxFailure(
     const results = new ResourceInboxResultsRepository(sql);
     const service = createAppInboxClientRuntime({
         inboxQueueReader: new InboxQueueReader(new PSqlQueueBox(inbox, Temporal.Now.instant), {
-            laneBudgetPolicy: 'fixed-retry-two',
             newLaneConcurrency: 1
         }),
         resourceInboxRepository: inbox.entries,

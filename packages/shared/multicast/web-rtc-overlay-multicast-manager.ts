@@ -68,7 +68,7 @@ import { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inb
 import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import { CircuitBreaker } from '../resilience/circuit-breaker.ts';
 import { Either } from '../resilience/Either.ts';
-import type { RateLimiter } from '../resilience/Resilience.ts';
+import type { RateLimiter } from '../resilience/rate-limiter.ts';
 import { QueueBoxUtilities } from '../services/queue-box-utilities.ts';
 import type { WebRtcConnectionService } from '../services/web-rtc-connection-service.ts';
 import type { TransportFaultPort } from '../transport-faults/transport-fault-port.ts';

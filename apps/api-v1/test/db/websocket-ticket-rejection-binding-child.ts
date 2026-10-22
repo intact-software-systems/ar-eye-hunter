@@ -63,7 +63,6 @@ async function createTicketRejectionFixture(sql: PGliteSql): Promise<TicketRejec
     const sessions = new AuthSessionRepository(runtime);
     const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date());
     const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
-        laneBudgetPolicy: 'fixed-retry-two',
         newLaneConcurrency: 1
     });
     const client = new AppClientInboxService({

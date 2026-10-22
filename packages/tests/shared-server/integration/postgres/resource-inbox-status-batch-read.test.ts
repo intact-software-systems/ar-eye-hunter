@@ -121,7 +121,6 @@ describe('Postgres AppInbox written entry', () => {
                 newResourceId: crypto.randomUUID.bind(crypto),
                 createMessage: createAppInboxQueueMessageFixture,
                 inboxQueueReader: new InboxQueueReader(new PSqlQueueBox(repository, Temporal.Now.instant), {
-                    laneBudgetPolicy: 'fixed-retry-two',
                     newLaneConcurrency: 1
                 })
             }, { serviceId: 'server-1', defaultTopicId: 'app-inbox.client-state' });

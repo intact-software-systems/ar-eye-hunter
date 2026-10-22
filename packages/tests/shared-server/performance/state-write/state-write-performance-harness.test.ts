@@ -28,6 +28,7 @@ import {
     toStateWriteAppInboxExpectations
 } from '../../../../../apps/api-v1/scripts/perf/state-write/api-v1-state-write-app-inbox-evidence.ts';
 import { STATE_WRITE_REASONS } from '../../../../../apps/api-v1/scripts/perf/state-write/api-v1-state-write-regression-reasons.ts';
+import { V1C_CLOSURE_ROWS_READ_REASONS } from '../../../../../apps/api-v1/scripts/perf/state-write/api-v1-state-write-v1c-closure-reasons.ts';
 
 import {
     createDefaultStateWritePerformanceArtifact,
@@ -753,6 +754,31 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
         );
     });
 
+    it('lets the V1c closure reason authorize a rowsRead regression only in shared and hot', () => {
+        const baseline = createDefaultStateWritePerformanceArtifact();
+        const covered = createDefaultStateWritePerformanceArtifact();
+        setRowsReadAdverseRatio(covered, ['shared', 'hot'], 0.5);
+        covered.regressionReasons = [...V1C_CLOSURE_ROWS_READ_REASONS];
+        expect(compareStateWriteArtifacts(baseline, covered)).toEqual([]);
+
+        const uncovered = createDefaultStateWritePerformanceArtifact();
+        setRowsReadAdverseRatio(uncovered, ['uncontended', 'shared', 'hot'], 0.5);
+        uncovered.regressionReasons = [...V1C_CLOSURE_ROWS_READ_REASONS];
+        expect(compareStateWriteArtifacts(baseline, uncovered)).toEqual([
+            expect.stringContaining('uncontended median sql.rowsRead regressed by more than 5% without a recorded reason')
+        ]);
+
+        const otherCounter = createDefaultStateWritePerformanceArtifact();
+        setRowsReadAdverseRatio(otherCounter, ['shared'], 0.5);
+        setResourceAdverseRatio(otherCounter, 0.06);
+        otherCounter.regressionReasons = [...V1C_CLOSURE_ROWS_READ_REASONS];
+        expect(compareStateWriteArtifacts(baseline, otherCounter)).toEqual(
+            expect.arrayContaining([
+                expect.stringContaining('shared median sql.serializedResultBytes regressed by more than 5% without a recorded reason')
+            ])
+        );
+    });
+
     it('preserves scale, retry-exhaustion, latency, throughput, and resource gates', () => {
         const baseline = createDefaultStateWritePerformanceArtifact();
         const candidate = createDefaultStateWritePerformanceArtifact();
@@ -1009,6 +1035,19 @@ function setResourceAdverseRatio(artifact: StateWritePerformanceArtifact, ratio:
     for (const workload of artifact.workloads) {
         for (const sample of workload.samples) {
             sample.sql.serializedResultBytes = Math.round(sample.sql.serializedResultBytes * (1 + ratio));
+        }
+        refreshStateWritePerformanceWorkload(workload);
+    }
+}
+
+function setRowsReadAdverseRatio(
+    artifact: StateWritePerformanceArtifact,
+    workloadNames: readonly string[],
+    ratio: number
+): void {
+    for (const workload of artifact.workloads.filter(({ name }) => workloadNames.includes(name))) {
+        for (const sample of workload.samples) {
+            sample.sql.rowsRead = Math.round(sample.sql.rowsRead * (1 + ratio));
         }
         refreshStateWritePerformanceWorkload(workload);
     }

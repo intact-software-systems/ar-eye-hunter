@@ -169,7 +169,9 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
             await lane.stores.workQueue.enqueue(row);
         }
 
-        await lane.engine.executeOnce();
+        // A single pass can read the clock a millisecond before the readiness probe does and then schedule a
+        // wake nobody serves; the running engine serves it, as in production.
+        lane.engine.start();
 
         await expect.poll(() => lane.native.sent.length).toBe(rows.length);
         const start = phases['admission-commit-start']!;

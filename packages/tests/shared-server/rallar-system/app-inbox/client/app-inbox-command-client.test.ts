@@ -109,7 +109,6 @@ describe('AppInboxCommandClient', () => {
                 newResourceId: crypto.randomUUID.bind(crypto),
                 createMessage: createAppInboxQueueMessageFixture,
                 inboxQueueReader: new InboxQueueReader(new TestResourceInbox(new Map()), {
-                    laneBudgetPolicy: 'fixed-retry-two',
                     newLaneConcurrency: 1
                 })
             }, { serviceId: 'server-12345678', defaultTopicId: writtenKey.topicId, wakeOwningQueue }),

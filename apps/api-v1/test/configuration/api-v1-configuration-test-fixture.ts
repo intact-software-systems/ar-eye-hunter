@@ -107,11 +107,7 @@ export function validConfigurationDefaultsSource(): MutableApiV1ConfigurationSou
                 failureThreshold: 10,
                 openDurationMs: 10_000,
                 resetDurationMs: 10_000,
-                samplingDurationMs: 10_000,
-                initialRate: 1,
-                maxRate: 10,
-                increaseRate: 1,
-                decreaseRate: 1
+                samplingDurationMs: 10_000
             },
             delivery: {
                 publicationRetentionMs: 86_400_000,
@@ -129,7 +125,6 @@ export function validConfigurationDefaultsSource(): MutableApiV1ConfigurationSou
         },
         appInbox: {
             phaseTiming: false,
-            laneBudgetPolicy: 'fixed-retry-two',
             newLaneConcurrency: 4,
             newLaneHeldRows: 16,
             completionWait: {

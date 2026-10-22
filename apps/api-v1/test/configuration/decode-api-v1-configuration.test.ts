@@ -282,10 +282,6 @@ Deno.test('configuration decoder validates every numeric policy boundary without
         ['topology.queueResilience.openDurationMs', 1],
         ['topology.queueResilience.resetDurationMs', 1],
         ['topology.queueResilience.samplingDurationMs', 1],
-        ['topology.queueResilience.initialRate', 1],
-        ['topology.queueResilience.maxRate', 1],
-        ['topology.queueResilience.increaseRate', 1],
-        ['topology.queueResilience.decreaseRate', 1],
         ['topology.delivery.publicationRetentionMs', 1],
         ['topology.delivery.heartbeatIntervalMs', 1],
         ['topology.delivery.leaseDurationMs', 2],
@@ -528,7 +524,7 @@ Deno.test('configuration decoder aggregates deterministic issues from every sour
         topology: { planning: { degreeLimit: 'invalid' } }
     };
     input.secretsSource = {};
-    setPath(input.defaultsSource, 'topology.queueResilience.initialRate', 11);
+    setPath(input.defaultsSource, 'topology.delivery.pageSize', 1_001);
 
     const error = captureConfigurationError(() => decodeApiV1Configuration(input));
 
@@ -539,7 +535,7 @@ Deno.test('configuration decoder aggregates deterministic issues from every sour
             ['profile', 'http.preflightMaxAgeSeconds'],
             ['environment', 'topology.planning.degreeLimit'],
             ['secret', 'authentication.credentialSecret'],
-            ['invariant', 'topology.queueResilience.initialRate']
+            ['invariant', 'topology.delivery.pageSize']
         ]
     );
 });
@@ -742,6 +738,45 @@ Deno.test('configuration decoder rejects a queue resilience source naming the re
         true,
         JSON.stringify(error.issues)
     );
+});
+
+Deno.test('configuration decoder rejects an AppInbox source naming a lane budget policy: the RETRY quota is not configurable', async () => {
+    const input = validDecodeApiV1ConfigurationInput();
+    input.defaultsSource = await readJsonResource('defaults-config.json');
+    assert.equal(Object.hasOwn(decodeApiV1Configuration(input).appInbox, 'laneBudgetPolicy'), false);
+    input.profileSource = { ...validConfigurationProfileSource(), appInbox: { laneBudgetPolicy: 'fixed-retry-two' } };
+
+    const error = captureConfigurationError(() => decodeApiV1Configuration(input));
+
+    assert.equal(
+        error.issues.some((issue) => issue.source === 'profile' && issue.code === 'unknown-property' && issue.path === 'appInbox.laneBudgetPolicy'),
+        true,
+        JSON.stringify(error.issues)
+    );
+});
+
+Deno.test('configuration decoder rejects a queue resilience source naming a rate key: the breaker and the lane budget govern claims', async () => {
+    const rateKeys = ['initialRate', 'maxRate', 'increaseRate', 'decreaseRate'] as const;
+    const defaults = validDecodeApiV1ConfigurationInput();
+    defaults.defaultsSource = await readJsonResource('defaults-config.json');
+    const queueResilience = decodeApiV1Configuration(defaults).topology.queueResilience;
+    assert.deepEqual(rateKeys.filter((key) => Object.hasOwn(queueResilience, key)), []);
+
+    for (const key of rateKeys) {
+        const input = validDecodeApiV1ConfigurationInput();
+        input.profileSource = { ...validConfigurationProfileSource(), topology: { queueResilience: { [key]: 1 } } };
+
+        const error = captureConfigurationError(() => decodeApiV1Configuration(input));
+
+        assert.equal(
+            error.issues.some((issue) =>
+                issue.source === 'profile' && issue.code === 'unknown-property' &&
+                issue.path === `topology.queueResilience.${key}`
+            ),
+            true,
+            JSON.stringify(error.issues)
+        );
+    }
 });
 
 Deno.test('configuration decoder requires the AppInbox flight hold and bounds it by the lane concurrency and the largest flight', () => {

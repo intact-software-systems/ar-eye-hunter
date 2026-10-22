@@ -12,7 +12,7 @@ import {
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
-import { RateLimiter } from '@shared/resilience/Resilience.ts';
+import { RateLimiter } from '@shared/resilience/rate-limiter.ts';
 
 import {
     createOriginReceiverMulticast,

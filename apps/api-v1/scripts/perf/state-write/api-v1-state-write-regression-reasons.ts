@@ -1,4 +1,8 @@
 import type { StateWriteBenchmarkRegressionReason } from './api-v1-state-write-benchmark-artifact.ts';
+import {
+    V1C_CLOSURE_ROWS_READ_REASONS,
+    V1C_CLOSURE_ROWS_READ_REGRESSION_REASON_PROFILE
+} from './api-v1-state-write-v1c-closure-reasons.ts';
 
 const DURABLE_APPEND_RESOURCE_REASON = 'Atomic RTC topology publication now executes one durable per-process stream ' +
     'HEAD CAS and log append CTE inside the accepted or loaded work transaction.';
@@ -127,6 +131,9 @@ export function selectStateWriteRegressionReasons(
     }
     if (profile === COMMANDED_REPLAN_GATE_READS_REGRESSION_REASON_PROFILE) {
         return COMMANDED_REPLAN_GATE_READS_REASONS;
+    }
+    if (profile === V1C_CLOSURE_ROWS_READ_REGRESSION_REASON_PROFILE) {
+        return V1C_CLOSURE_ROWS_READ_REASONS;
     }
     throw new Error('State-write regression reason selection is inconsistent');
 }

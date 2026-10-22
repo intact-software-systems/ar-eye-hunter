@@ -3,7 +3,7 @@ import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
 import { readRateLimiter, readRequestClientKey } from '@shared-server/http/rate-limit-service.ts';
 import type { LoginRequest, RegisterRequest, RegisterResponse } from '@shared/api/api-config.ts';
 import type { ApiMutationFailureJsonObject } from '@shared/api/mutation/api-mutation-failure.ts';
-import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/Resilience.ts';
+import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/rate-limiter.ts';
 
 import * as apiLoginService from '../../services/api-login-service.ts';
 import { authenticationRequired, authorizationDenied } from '../../services/request-auth-service.ts';

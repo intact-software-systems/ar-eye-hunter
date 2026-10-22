@@ -29,10 +29,6 @@ describe('InMemoryQueueBox dequeue for compute', () => {
         const typeId = 'WHACK';
         const types = new Set<string>([typeId]);
         const duration = Temporal.Duration.from({ seconds: 10 });
-        const initialRate = 1;
-        const maxRate = 10;
-        const concurrencyIncreaseStep = 1;
-        const concurrencyReduceStep = 1;
 
         const circuitBreakerPolicy = new CircuitBreakerPolicy(
             10,
@@ -41,13 +37,7 @@ describe('InMemoryQueueBox dequeue for compute', () => {
             duration
         );
 
-        const resilienceDto = ResourceInboxResilience.createDefault({
-            circuitBreakerPolicy: circuitBreakerPolicy,
-            initialRate: initialRate,
-            maxRate: maxRate,
-            concurrencyIncreaseStep: concurrencyIncreaseStep,
-            concurrencyReduceStep: concurrencyReduceStep
-        });
+        const resilienceDto = ResourceInboxResilience.createDefault(circuitBreakerPolicy);
 
         const helloWorld = 'hello world';
         const newEntry: ResourceEntry = {

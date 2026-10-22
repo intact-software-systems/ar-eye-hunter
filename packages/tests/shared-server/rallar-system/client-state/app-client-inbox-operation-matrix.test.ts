@@ -46,7 +46,7 @@ function createClientInboxServiceForRegistration(): AppClientInboxService {
     const results = new TestResourceInboxResults();
     return new AppClientInboxService(
         {
-            inboxQueueReader: new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 }),
+            inboxQueueReader: new InboxQueueReader(queue, { newLaneConcurrency: 1 }),
             resourceInboxRepository: queue,
             resourceInboxResultsRepository: results,
             database: createAppInboxTestDatabase(queue, results),
@@ -82,7 +82,7 @@ describe('AppClientInbox mutation processing', () => {
             'with a non-retryable error',
         async () => {
             const queue = new TestResourceInbox();
-            const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+            const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
             const results = new TestResourceInboxResults();
             const service = new AppClientInboxService(
                 {
@@ -136,7 +136,7 @@ interface MutationProcessingHarness {
 
 function createMutationProcessingHarness(): MutationProcessingHarness {
     const queue = new TestResourceInbox();
-    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
+    const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
     const results = new TestResourceInboxResults();
     const runtimeRepository = new FakeRuntimeStateRepository();
     const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });

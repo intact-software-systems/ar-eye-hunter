@@ -14,6 +14,7 @@ import {
     PLANNED_LAYOUT_PROMOTION_REGRESSION_REASON_PROFILE,
     RTC_TOPOLOGY_REGRESSION_REASON_PROFILE
 } from './api-v1-state-write-regression-reasons.ts';
+import { V1C_CLOSURE_ROWS_READ_REGRESSION_REASON_PROFILE } from './api-v1-state-write-v1c-closure-reasons.ts';
 
 export const STATE_WRITE_REQUIRED_CONCURRENCY = 10;
 
@@ -46,7 +47,8 @@ export interface StateWriteBenchmarkOptions {
         | typeof GROUP_FORMATION_DAMPING_REGRESSION_REASON_PROFILE
         | typeof PLANNED_LAYOUT_PROMOTION_REGRESSION_REASON_PROFILE
         | typeof MEMBER_POLICY_ROW_WIDTH_REGRESSION_REASON_PROFILE
-        | typeof COMMANDED_REPLAN_GATE_READS_REGRESSION_REASON_PROFILE;
+        | typeof COMMANDED_REPLAN_GATE_READS_REGRESSION_REASON_PROFILE
+        | typeof V1C_CLOSURE_ROWS_READ_REGRESSION_REASON_PROFILE;
 }
 
 export function parseBenchmarkOptions(args: readonly string[]): StateWriteBenchmarkOptions {
@@ -132,7 +134,8 @@ function parseRegressionReasonOptions(
         regressionReasonProfile !== GROUP_FORMATION_DAMPING_REGRESSION_REASON_PROFILE &&
         regressionReasonProfile !== PLANNED_LAYOUT_PROMOTION_REGRESSION_REASON_PROFILE &&
         regressionReasonProfile !== MEMBER_POLICY_ROW_WIDTH_REGRESSION_REASON_PROFILE &&
-        regressionReasonProfile !== COMMANDED_REPLAN_GATE_READS_REGRESSION_REASON_PROFILE
+        regressionReasonProfile !== COMMANDED_REPLAN_GATE_READS_REGRESSION_REASON_PROFILE &&
+        regressionReasonProfile !== V1C_CLOSURE_ROWS_READ_REGRESSION_REASON_PROFILE
     ) {
         throw new Error(
             `Unsupported state-write regression reason profile: ${regressionReasonProfile}`
