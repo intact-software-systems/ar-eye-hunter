@@ -363,9 +363,10 @@ function createResilience(
     retryPolicy: ResourceInboxRetryPolicy = DEFAULT_RESOURCE_INBOX_RETRY_POLICY
 ): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResourceInboxResilience.createDefault({
+    return ResourceInboxResilience.create({
         circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-        retryPolicy: retryPolicy
+        retryPolicy: retryPolicy,
+        reservationLeaseMs: ResourceInboxResilience.DEFAULT_RESERVATION_LEASE_MS
     });
 }
 

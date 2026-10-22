@@ -181,9 +181,7 @@ async function runUntilCompleted(harness: HoldHarness, key: Key): Promise<void> 
 
 function createResilience(): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResourceInboxResilience.createDefault({
-        circuitBreakerPolicy: new CircuitBreakerPolicy(100, duration, duration, duration)
-    });
+    return ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(100, duration, duration, duration));
 }
 
 function toSlowEdgeMeasurements(nextHopsBySessionId: Readonly<Record<string, readonly string[]>>): readonly RttMeasurementInfo[] {

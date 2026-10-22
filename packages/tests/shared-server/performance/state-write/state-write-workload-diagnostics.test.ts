@@ -52,9 +52,7 @@ function createRuntime(
             }
         },
         inbox: { dequeueInbox: async () => 0 },
-        resilience: ResourceInboxResilience.createDefault({
-            circuitBreakerPolicy: new CircuitBreakerPolicy(100, duration, duration, duration)
-        }),
+        resilience: ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(100, duration, duration, duration)),
         ...overrides
     };
 }

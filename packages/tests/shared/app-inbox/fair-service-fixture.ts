@@ -25,9 +25,10 @@ export function createQueueMessage(resourceId: string): ALMessage {
 
 export function createQueueResilience(maxAttempts = DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResourceInboxResilience.createDefault({
+    return ResourceInboxResilience.create({
         circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-        retryPolicy: { ...DEFAULT_RESOURCE_INBOX_RETRY_POLICY, maxAttempts }
+        retryPolicy: { ...DEFAULT_RESOURCE_INBOX_RETRY_POLICY, maxAttempts },
+        reservationLeaseMs: ResourceInboxResilience.DEFAULT_RESERVATION_LEASE_MS
     });
 }
 

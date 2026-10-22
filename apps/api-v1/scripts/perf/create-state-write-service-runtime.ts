@@ -247,7 +247,5 @@ function createStateWriteTopologyService({
 
 function createBenchmarkResilience(): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResourceInboxResilience.createDefault({
-        circuitBreakerPolicy: new CircuitBreakerPolicy(100, duration, duration, duration)
-    });
+    return ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(100, duration, duration, duration));
 }

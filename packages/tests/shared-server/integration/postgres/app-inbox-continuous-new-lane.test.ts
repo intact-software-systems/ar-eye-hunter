@@ -8,7 +8,6 @@ import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-cont
 import type { DequeueController } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
@@ -342,8 +341,5 @@ function findOverlappingContextSpans(spans: readonly HandlerSpan[]): string[] {
 
 function createResilience(): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResourceInboxResilience.createDefault({
-        circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-        retryPolicy: DEFAULT_RESOURCE_INBOX_RETRY_POLICY
-    });
+    return ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(10, duration, duration, duration));
 }

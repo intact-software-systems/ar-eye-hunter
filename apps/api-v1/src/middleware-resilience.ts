@@ -2,6 +2,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import { APP_INBOX_RESERVATION_LEASE_MS } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import type { RallarMiddlewareResilience } from '@shared-server/rallar-system/middleware/rallar-middleware-construction.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
+import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import type { ApiV1CircuitBreakerConfiguration } from './configuration/api-v1-configuration.ts';
 
@@ -20,13 +21,14 @@ export function createApiV1QueueResilience(
     configuration: ApiV1CircuitBreakerConfiguration,
     reservationLeaseMs: number
 ): ResourceInboxResilience {
-    return ResourceInboxResilience.createDefault({
+    return ResourceInboxResilience.create({
         circuitBreakerPolicy: new CircuitBreakerPolicy(
             configuration.failureThreshold,
             Temporal.Duration.from({ milliseconds: configuration.openDurationMs }),
             Temporal.Duration.from({ milliseconds: configuration.resetDurationMs }),
             Temporal.Duration.from({ milliseconds: configuration.samplingDurationMs })
         ),
+        retryPolicy: DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
         reservationLeaseMs
     });
 }

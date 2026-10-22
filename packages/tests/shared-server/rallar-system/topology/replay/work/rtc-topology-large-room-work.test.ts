@@ -88,9 +88,7 @@ describe('durable topology work for large rooms', () => {
         const duration = Temporal.Duration.from({ seconds: 10 });
         await reader.dequeueOutbox(
             OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
-            ResourceInboxResilience.createDefault({
-                circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration)
-            })
+            ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(10, duration, duration, duration))
         );
 
         expect(deliveredRevisions).toEqual([{ groupRevision: 4, presenceRevision: 3 }]);

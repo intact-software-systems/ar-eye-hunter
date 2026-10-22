@@ -188,9 +188,7 @@ describe('enqueue and dequeue', () => {
             duration
         );
 
-        const resilienceDto = ResourceInboxResilience.createDefault({
-            circuitBreakerPolicy: circuitBreakerPolicy
-        });
+        const resilienceDto = ResourceInboxResilience.createDefault(circuitBreakerPolicy);
 
         const helloWorld = 'hello world';
 
@@ -372,9 +370,10 @@ describe('resource inbox retry and fairness lanes', () => {
             ...DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
             maxAttempts: 2
         };
-        const custom = ResourceInboxResilience.createDefault({
+        const custom = ResourceInboxResilience.create({
             circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-            retryPolicy: retryPolicy
+            retryPolicy: retryPolicy,
+            reservationLeaseMs: ResourceInboxResilience.DEFAULT_RESERVATION_LEASE_MS
         });
 
         expect(custom.toWorkAdvertisementOptions().maxAttempts).toBe(2);
@@ -681,8 +680,9 @@ function toTestResilience(
     retryPolicy = DEFAULT_RESOURCE_INBOX_RETRY_POLICY
 ): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResourceInboxResilience.createDefault({
+    return ResourceInboxResilience.create({
         circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-        retryPolicy: retryPolicy
+        retryPolicy: retryPolicy,
+        reservationLeaseMs: ResourceInboxResilience.DEFAULT_RESERVATION_LEASE_MS
     });
 }

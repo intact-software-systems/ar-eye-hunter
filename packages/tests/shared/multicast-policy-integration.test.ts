@@ -947,12 +947,12 @@ function createReadableCache<T>(valuesByKey: Record<string, T>): LatestRepositor
 }
 
 function createResourceInboxResilience() {
-    return shared.ResourceInboxResilience.createDefault({
-        circuitBreakerPolicy: new shared.CircuitBreakerPolicy(
+    return shared.ResourceInboxResilience.createDefault(
+        new shared.CircuitBreakerPolicy(
             10,
             Temporal.Duration.from({ seconds: 10 }),
             Temporal.Duration.from({ seconds: 10 }),
             Temporal.Duration.from({ seconds: 10 })
         )
-    });
+    );
 }

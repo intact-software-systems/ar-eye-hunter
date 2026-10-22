@@ -110,9 +110,7 @@ async function createMiddlewareInstance(input: MiddlewareInstanceInput): Promise
         socket.addConnection(new ConnectionContext({ id: sessionId, socket: sockets[sessionId] }));
     }
     const duration = Temporal.Duration.from({ seconds: 10 });
-    const resilience = ResourceInboxResilience.createDefault({
-        circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration)
-    });
+    const resilience = ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(10, duration, duration, duration));
     const fixture = createRallarMiddlewareTestRuntime({
         resilience: { inbox: resilience, outbox: resilience, appOutbox: resilience }
     });

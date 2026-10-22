@@ -37,9 +37,7 @@ describe('InMemoryQueueBox dequeue for compute', () => {
             duration
         );
 
-        const resilienceDto = ResourceInboxResilience.createDefault({
-            circuitBreakerPolicy: circuitBreakerPolicy
-        });
+        const resilienceDto = ResourceInboxResilience.createDefault(circuitBreakerPolicy);
 
         const helloWorld = 'hello world';
         const newEntry: ResourceEntry = {

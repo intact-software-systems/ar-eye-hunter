@@ -67,14 +67,14 @@ const DEQUEUE_MAX_CONSECUTIVE_FAILURES = 10;
 /** The dequeue-admission resilience a composition without its own shared breaker gets. */
 export function createDefaultALOutboundDequeueResilience(): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ milliseconds: DEQUEUE_CIRCUIT_OPEN_MS });
-    return ResourceInboxResilience.createDefault({
-        circuitBreakerPolicy: new CircuitBreakerPolicy(
+    return ResourceInboxResilience.createDefault(
+        new CircuitBreakerPolicy(
             DEQUEUE_MAX_CONSECUTIVE_FAILURES,
             duration,
             duration,
             duration
         )
-    });
+    );
 }
 
 export function createDefaultALOutboundMessageRuntime<TPrepared>(

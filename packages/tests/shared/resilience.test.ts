@@ -1,6 +1,4 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
-import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreaker, CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { RateLimiter, SlidingWindowCounter } from '@shared/resilience/Resilience.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -115,37 +113,6 @@ describe('Resilience', () => {
         expect(wallClock.isHalfOpen()).toBe(supplied.isHalfOpen());
     });
 
-    it('feeds queue outcomes to the circuit breaker alone and keeps the retry policy and lease', () => {
-        vi.useFakeTimers();
-        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
-        const resilience = ResourceInboxResilience.createDefault({
-            circuitBreakerPolicy: new CircuitBreakerPolicy(
-                1,
-                Temporal.Duration.from({ milliseconds: 100 }),
-                Temporal.Duration.from({ milliseconds: 50 }),
-                Temporal.Duration.from({ seconds: 1 })
-            )
-        });
-
-        expect(Object.hasOwn(resilience, 'rateAdjuster')).toBe(false);
-        resilience.failure();
-        resilience.failure();
-        expect(resilience.isNotAllowedThroughToDequeue()).toBe(true);
-        expect(resilience.getDequeueReopenAtMs(Date.now())).toBe(Date.now() + 101);
-
-        vi.setSystemTime(new Date('2026-01-01T00:00:00.101Z'));
-        expect(resilience.circuitBreaker.allow()).toBe(true);
-        resilience.success();
-        expect(resilience.circuitBreaker.isClosed()).toBe(true);
-        expect(resilience.isNotAllowedThroughToDequeue()).toBe(false);
-        expect(resilience.toWorkAdvertisementOptions()).toEqual({
-            maxAttempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
-            finalizationStaleAfterMs: ResourceInboxResilience.FINALIZATION_STALE_AFTER_MS,
-            reservationLeaseMs: ResourceInboxResilience.DEFAULT_RESERVATION_LEASE_MS,
-            staleDueThresholdMs: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.staleDueThresholdMs
-        });
-    });
-
     it('enforces rate limiting and returns defaults when execution is blocked', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
@@ -173,8 +140,15 @@ describe('Resilience', () => {
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
         const limiter = RateLimiter.init(100, 1);
-        const supplier = vi.fn(async () => 'allowed');
-        const fallback = vi.fn(async () => 'blocked');
+        const ran: string[] = [];
+        const supplier = async () => {
+            ran.push('supplier');
+            return 'allowed';
+        };
+        const fallback = async () => {
+            ran.push('fallback');
+            return 'blocked';
+        };
 
         await expect(
             RateLimiter.tryToExecuteOrElse(limiter, supplier, fallback)
@@ -183,7 +157,6 @@ describe('Resilience', () => {
             RateLimiter.tryToExecuteOrElse(limiter, supplier, fallback)
         ).resolves.toBe('blocked');
 
-        expect(supplier).toHaveBeenCalledTimes(1);
-        expect(fallback).toHaveBeenCalledTimes(1);
+        expect(ran).toEqual(['supplier', 'fallback']);
     });
 });

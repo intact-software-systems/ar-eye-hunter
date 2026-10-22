@@ -18,10 +18,10 @@ export namespace ResourceInboxResilience {
         readonly reservationLeaseMs: number;
     }
 
-    export interface DefaultConfig {
+    export interface Input {
         readonly circuitBreakerPolicy: CircuitBreakerPolicy;
-        readonly retryPolicy?: ResourceInboxRetryPolicy;
-        readonly reservationLeaseMs?: number;
+        readonly retryPolicy: ResourceInboxRetryPolicy;
+        readonly reservationLeaseMs: number;
     }
 }
 
@@ -47,9 +47,17 @@ export class ResourceInboxResilience {
         this.reservationLeaseMs = dependencies.reservationLeaseMs;
     }
 
-    static createDefault(config: ResourceInboxResilience.DefaultConfig): ResourceInboxResilience {
+    static createDefault(circuitBreakerPolicy: CircuitBreakerPolicy): ResourceInboxResilience {
+        return ResourceInboxResilience.create({
+            circuitBreakerPolicy,
+            retryPolicy: DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
+            reservationLeaseMs: ResourceInboxResilience.DEFAULT_RESERVATION_LEASE_MS
+        });
+    }
+
+    static create(input: ResourceInboxResilience.Input): ResourceInboxResilience {
         return new ResourceInboxResilience({
-            circuitBreaker: CircuitBreaker.create(config.circuitBreakerPolicy),
+            circuitBreaker: CircuitBreaker.create(input.circuitBreakerPolicy),
             checkReserveTimeouts: createResourceInboxStatusChecks(
                 ResourceInboxResilience.MAX_NUM_DEQUEUE_IN_WINDOW,
                 ResourceInboxResilience.RATE_LIMITER_RESERVED_TIMEOUT_SLIDING_WINDOW_DURATION_MS
@@ -58,8 +66,8 @@ export class ResourceInboxResilience {
                 ResourceInboxResilience.MAX_NUM_DEQUEUE_IN_WINDOW,
                 ResourceInboxResilience.RATE_LIMITER_RESERVED_TIMEOUT_SLIDING_WINDOW_DURATION_MS
             ),
-            retryPolicy: config.retryPolicy ?? DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
-            reservationLeaseMs: config.reservationLeaseMs ?? ResourceInboxResilience.DEFAULT_RESERVATION_LEASE_MS
+            retryPolicy: input.retryPolicy,
+            reservationLeaseMs: input.reservationLeaseMs
         });
     }
 

@@ -62,9 +62,7 @@ function captureDequeueTiming(
 function createDequeueResilience(maxConsecutiveFailures = 10, openMs = 500): ResourceInboxResilience {
     const open = Temporal.Duration.from({ milliseconds: openMs });
     const window = Temporal.Duration.from({ milliseconds: 500 });
-    return ResourceInboxResilience.createDefault({
-        circuitBreakerPolicy: new CircuitBreakerPolicy(maxConsecutiveFailures, open, open, window)
-    });
+    return ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(maxConsecutiveFailures, open, open, window));
 }
 
 function createOutboxQueue(): InMemoryQueueBox {

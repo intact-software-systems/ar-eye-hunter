@@ -143,7 +143,5 @@ function createOutboundMessage(): ALMessage {
 
 function createResilience(): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResourceInboxResilience.createDefault({
-        circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration)
-    });
+    return ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(10, duration, duration, duration));
 }

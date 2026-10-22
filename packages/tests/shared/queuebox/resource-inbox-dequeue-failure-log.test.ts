@@ -207,9 +207,7 @@ async function dequeueOnce(
         newLaneClaimOrder: 'queue',
         maxToReserve: () => 1,
         maxNumToDequeue: 1,
-        resilience: ResourceInboxResilience.createDefault({
-            circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration)
-        }),
+        resilience: ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(10, duration, duration, duration)),
         options: { jitterUnit: () => 0.5, onAttemptReleaseTelemetry: (event) => releases.push(event) }
     })
         .onFailedEntries((released) => {

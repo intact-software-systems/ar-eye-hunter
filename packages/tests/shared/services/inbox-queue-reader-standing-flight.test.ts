@@ -10,7 +10,6 @@ import type {
 } from '@shared/queuebox/queue-box-types.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { INBOX_OUTBOX_ENGINE_MAX_IDLE_MS } from '@shared/services/inbox-outbox-engine.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -332,8 +331,5 @@ async function readStatuses(queue: InMemoryQueueBox): Promise<string[]> {
 
 function createResilience(failureThreshold = 10): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResourceInboxResilience.createDefault({
-        circuitBreakerPolicy: new CircuitBreakerPolicy(failureThreshold, duration, duration, duration),
-        retryPolicy: DEFAULT_RESOURCE_INBOX_RETRY_POLICY
-    });
+    return ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(failureThreshold, duration, duration, duration));
 }
