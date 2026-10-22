@@ -5,11 +5,9 @@ import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-ap
 import type { RallarServerApplication } from '@shared-server/rallar-server/rallar-server-application.ts';
 import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
-import type { GroupStateCurrentSnapshotCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-current-snapshot-cache.ts';
 import { createServerPublishRoomAudienceReader } from '@shared-server/rallar-system/websocket/read-server-publish-room-audience.ts';
 import type { RallarServerWsRouterOptions } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import type { AdminOperationsCacheSizes } from '@shared/api/admin-operations-types.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import type { ApiV1Configuration } from '../configuration/api-v1-configuration.ts';
@@ -298,7 +296,7 @@ function createDefaultApiV1AdminServices(
         readGroupFormationMetrics: runtime.groupFormationMetrics.readMetrics,
         resetGroupFormationMetrics: runtime.groupFormationMetrics.resetMetrics,
         readAlmReceipts: runtime.almReceiptDiagnostics.readDiagnostics,
-        readCacheSizes: () => toApiV1CacheSizes(runtime.groupCurrentSnapshotCache),
+        readCacheSizes: () => ({ groupAudienceSnapshots: runtime.groupCurrentSnapshotCache.size() }),
         readAlmDeliveredMarkers: () => runtime.almInboundStoreCounts.getDeliveredMarkers(),
         crdtAdminRepository: crdtLogRepository,
         topologyQuery: topology.topologyQuery,
@@ -310,12 +308,6 @@ function createDefaultApiV1AdminServices(
     });
 
     return { admin, crdtAdminMutations };
-}
-
-/** The group audience cache owns the process's one version-probed read-through cache, so both read its size. */
-function toApiV1CacheSizes(groupAudience: Pick<GroupStateCurrentSnapshotCache, 'size'>): AdminOperationsCacheSizes {
-    const groupAudienceSnapshots = groupAudience.size();
-    return { groupAudienceSnapshots, versionProbedReads: groupAudienceSnapshots };
 }
 
 interface DefaultApiV1RouteInstallersInput {

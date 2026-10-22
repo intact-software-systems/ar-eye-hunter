@@ -48,7 +48,7 @@ Deno.test('admin services read current websocket status after construction', asy
 
     assert.equal(realtime.websocket.connectionCount, 1);
     assert.equal(realtime.websocket.openConnectionCount, 1);
-    assert.deepEqual(realtime.caches, { groupAudienceSnapshots: 3, versionProbedReads: 3, processLocal: true });
+    assert.deepEqual(realtime.caches, { groupAudienceSnapshots: 3, processLocal: true });
     assert.equal(
         support.facts.find((fact) => fact.label === 'client.websocket.openConnectionCount')?.value,
         1
@@ -119,7 +119,7 @@ function createInput(
         readGroupFormationMetrics: emptyGroupFormationMetrics,
         resetGroupFormationMetrics: () => {},
         readAlmReceipts: () => ({ capacity: 256, messages: [] }),
-        readCacheSizes: () => ({ groupAudienceSnapshots: 3, versionProbedReads: 3 }),
+        readCacheSizes: () => ({ groupAudienceSnapshots: 3 }),
         readAlmDeliveredMarkers: () => 0,
         crdtAdminRepository: new InMemoryRallarCrdtLogRepository({
             now: () => NOW_EPOCH_MS
