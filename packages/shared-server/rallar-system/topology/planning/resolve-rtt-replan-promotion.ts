@@ -1,6 +1,9 @@
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
-/** The browser's overlay transition grace: a layout replaced sooner churns edges still inside it. */
+/**
+ * The browser's overlay transition grace: a layout replaced sooner churns edges still inside it. The api-v1
+ * configuration commits the same value; a test pins the two together.
+ */
 export const DEFAULT_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS = 15_000;
 export const MAX_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS = 120_000;
 
@@ -12,9 +15,17 @@ export type RttReplanPromotion =
     }>
     | Readonly<{
         decision: 'promote';
-        reason: 'no-active-layout' | 'topology-inputs-changed' | 'presence-advanced' | 'layout-at-minimum-age';
-        layoutAgeMs: number | null;
+        reason: 'no-active-layout';
+    }>
+    | Readonly<{
+        decision: 'promote';
+        reason: 'topology-inputs-changed' | 'presence-advanced' | 'layout-at-minimum-age';
+        layoutAgeMs: number;
     }>;
+
+export type PromotedRttReplan = Extract<RttReplanPromotion, { decision: 'promote'; }>;
+
+export type HeldRttReplan = Extract<RttReplanPromotion, { decision: 'hold'; }>;
 
 export interface ResolveRttReplanPromotionInput {
     /** The stored planned layout the replan would replace; null before the first layout. */
@@ -35,7 +46,7 @@ export interface ResolveRttReplanPromotionInput {
 export function resolveRttReplanPromotion(input: ResolveRttReplanPromotionInput): RttReplanPromotion {
     const { stored } = input;
     if (stored?.state !== 'active') {
-        return { decision: 'promote', reason: 'no-active-layout', layoutAgeMs: null };
+        return { decision: 'promote', reason: 'no-active-layout' };
     }
     const layoutAgeMs = input.nowEpochMs - stored.updatedAtEpochMs;
     if (input.storedInputFingerprint !== input.inputFingerprint) {

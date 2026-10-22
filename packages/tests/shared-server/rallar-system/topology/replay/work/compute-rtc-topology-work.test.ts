@@ -11,7 +11,11 @@ import { computeRtcTopologyOutboxInsert } from '@shared-server/rallar-system/top
 import { toStoredRtcTopologySnapshotRow } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { computeGroupTopologyFromAuthority } from '@shared-server/rallar-system/topology/planning/compute-group-topology-from-authority.ts';
 import type { GroupTopologyPlanningAuthority } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
-import { computeRtcTopologyWork } from '@shared-server/rallar-system/topology/replay/work/compute-rtc-topology-work.ts';
+import { computeRtcTopologyWorkWrite } from '@shared-server/rallar-system/topology/replay/work/compute-rtc-topology-work-write.ts';
+import {
+    computeRtcTopologyWork,
+    type ComputeRtcTopologyWorkInput
+} from '@shared-server/rallar-system/topology/replay/work/compute-rtc-topology-work.ts';
 import { computeCoalescedRtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
 import { computeAuthorityTopologyInputFingerprint } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
 import { readRtcTopologyWorkEnvelope, toRtcTopologyExecutionId } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-codec.ts';
@@ -192,6 +196,38 @@ describe('RTC topology RTT-refresh work', () => {
         });
     });
 
+    it('writes a held replan as the frozen path writes: the stored layout targeted, no layout, fingerprint or delivery', () => {
+        const workInput = toRttRefreshWorkInput({
+            accepted: acceptPathLayout(createRtcTopologyMemberIds(6)),
+            current: toLaterGroupRevision(createRtcTopologyGroupSnapshot('group-1', createRtcTopologyMemberIds(6))),
+            nowEpochMs: ACCEPTED_AT_EPOCH_MS + 500
+        });
+
+        const computed = computeRtcTopologyWork(workInput).right;
+
+        if (computed?.accepted.decision !== 'held-young-layout' || computed.write.kind !== 'transaction') {
+            throw new Error('The young layout must hold the RTT-only replan in one transaction');
+        }
+        expect(computed.write.transaction).toMatchObject({ mutation: null, fingerprint: null, delivery: null });
+        expect(computed.write.transaction.promotionWrite).not.toBeNull();
+        const held = computed.accepted;
+        expect(computed.write).toEqual(computeRtcTopologyWorkWrite({
+            accepted: {
+                decision: 'skipped-frozen',
+                work: held.work,
+                group: held.group,
+                promotionRead: held.promotionRead,
+                criterionPetition: held.criterionPetition
+            },
+            entry: workInput.entry,
+            sourceWorkId: workInput.facts.workId,
+            reservationFinish: workInput.reservationFinish,
+            formationAutomationEnabled: workInput.formationAutomationEnabled,
+            serviceId: workInput.serviceId,
+            publisherStreamId: workInput.publisherStreamId
+        }));
+    });
+
     it('names the held decision and its reason on the recompute timing line only while timing is on', () => {
         const held = computeRttRefreshDecision({
             accepted: acceptPathLayout(createRtcTopologyMemberIds(6)),
@@ -257,12 +293,20 @@ interface ComputeRttRefreshDecisionInput {
 }
 
 function computeRttRefreshDecision(input: ComputeRttRefreshDecisionInput) {
+    const computed = computeRtcTopologyWork(toRttRefreshWorkInput(input));
+    if (computed.right === undefined) {
+        throw new Error('The RTT refresh must compute a decision');
+    }
+    return computed.right.accepted;
+}
+
+function toRttRefreshWorkInput(input: ComputeRttRefreshDecisionInput): ComputeRtcTopologyWorkInput {
     const entry = toReservedRttRefreshEntry(input.current);
     const workEnvelope = readRtcTopologyWorkEnvelope(
         decodePersistedALMessage(entry.resource),
         AppOutboxType.RTC_TOPOLOGY_RECOMPUTE
     );
-    const computed = computeRtcTopologyWork({
+    return {
         facts: { workEnvelope, workId: toRtcTopologyExecutionId(workEnvelope), attemptCount: 1, expireAtEpochMs: 4_102_444_800_000 },
         read: {
             mutation: {
@@ -287,11 +331,7 @@ function computeRttRefreshDecision(input: ComputeRttRefreshDecisionInput) {
         formationAutomationEnabled: false,
         serviceId: 'topology-service',
         publisherStreamId: undefined
-    });
-    if (computed.right === undefined) {
-        throw new Error('The RTT refresh must compute a decision');
-    }
-    return computed.right.accepted;
+    };
 }
 
 function toReservedRttRefreshEntry(group: GroupSnapshot): ResourceEntry {

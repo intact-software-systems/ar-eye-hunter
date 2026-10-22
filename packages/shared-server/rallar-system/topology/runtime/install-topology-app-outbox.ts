@@ -39,7 +39,7 @@ export interface InstallTopologyAppOutboxOptions {
     readonly rttRefinementService?: RtcRttRefinementService;
     readonly topologyDelivery?: RtcTopologyDeliveryRuntime;
     readonly nowEpochMs: () => number;
-    /** Absent means timing is off for the topology recompute decision line. */
+    /** Present only while timing is on; absent, no recompute decision line is built or recorded. */
     readonly timing?: RallarTimingSink;
     readonly formationAutomation: GroupFormationAutomationPort;
     readonly formationCriterion?: FormationCriterionPort;

@@ -14,7 +14,7 @@ import {
 } from '../../mutation/rtc-topology-mutations.ts';
 import type { RtcTopologyRttRefreshWork } from '../../mutation/rtc-topology-outbox-entry.ts';
 import type { GroupTopologyPlanningAuthority } from '../../planning/group-topology-planning-authority.ts';
-import type { RttReplanPromotion } from '../../planning/resolve-rtt-replan-promotion.ts';
+import type { HeldRttReplan, PromotedRttReplan } from '../../planning/resolve-rtt-replan-promotion.ts';
 import type { RtcTopologyPublication } from '../../publication/rtc-topology-publication.ts';
 import {
     assertRtcTopologyPublicationOutbox,
@@ -61,7 +61,7 @@ export type AcceptedRtcTopologyWork =
         criterionPetition: CommittedCriterionPetition | null;
         planningObservation: RtcTopologyPlanningObservation | null;
         /** Why an RTT refresh promotes; null for membership work. */
-        rttReplanPromotion: RttReplanPromotion | null;
+        rttReplanPromotion: PromotedRttReplan | null;
     }>
     | Readonly<{
         decision: 'skipped-fingerprint';
@@ -92,7 +92,7 @@ export type AcceptedRtcTopologyWork =
         group: GroupSnapshot;
         promotionRead: TopologyPromotionRead | null;
         criterionPetition: CommittedCriterionPetition;
-        rttReplanPromotion: Extract<RttReplanPromotion, { decision: 'hold'; }>;
+        rttReplanPromotion: HeldRttReplan;
     }>
     | Readonly<{
         decision: 'skipped-rtt-refinement';

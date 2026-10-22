@@ -111,7 +111,8 @@ function constructDefaultRallarServer(
         crdtLogRepository,
         crdtPolicies: configuration.crdt.documentTypePolicies,
         livePublication: wsOptions.livePublication,
-        timing
+        timing,
+        recomputeTiming: toApiOutboxStageTimingSink(configuration.observability, timing)
     });
     const routeInstallers = createDefaultApiV1RouteInstallers({
         configuration,
@@ -213,6 +214,7 @@ function createConfiguredApiV1Runtime(
         nowEpochMs,
         timing,
         outboxStageTiming: toApiOutboxStageTimingSink(configuration.observability, timing),
+        principalGroupListTiming: toApiOutboxStageTimingSink(configuration.observability, timing),
         wsReceiptObserver: createApiV1WsReceiptObserver({
             enabled: configuration.observability.timingLogs,
             timing,

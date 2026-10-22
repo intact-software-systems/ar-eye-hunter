@@ -96,7 +96,7 @@ interface RtcTopologyWorkHandlerOptions {
     readonly wakeQueue?: () => void;
     readonly wakeReplay?: () => void;
     readonly serviceId?: string;
-    /** Absent means timing is off: no recompute decision line is recorded. */
+    /** Present only while timing is on; absent, no recompute decision line is built or recorded. */
     readonly timing?: RallarTimingSink;
 }
 
@@ -426,9 +426,10 @@ function requireTopologyTransactionWrite(
 /**
  * Every decision that keeps the stored layout commits one already validated
  * transaction write. Only the unchanged decision refreshes the input
- * fingerprint: the frozen and held paths must NOT write it, because the
- * stale fingerprint is decision 11's latched signal that the stored layout
- * trails the authority.
+ * fingerprint. The frozen path must NOT write it, because the stale
+ * fingerprint is decision 11's latched signal that the stored layout trails
+ * the authority. The held path writes none because a hold requires the
+ * stored fingerprint to equal the authority's already.
  */
 interface WriteSkippedTopologyWorkInput {
     readonly options: RtcTopologyWorkHandlerOptions;

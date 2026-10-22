@@ -23,6 +23,7 @@ export interface RallarRtcTopologyServiceOptions {
     readonly meshParamK?: number;
     readonly meshExitWidth?: number;
     readonly treeExitWidth?: number;
+    /** api-v1 always passes its required key; like its neighbours, the fallback serves test and bench services. */
     readonly rttReplanMinimumLayoutAgeMs?: number;
     readonly now?: () => number;
     readonly durationNowMs?: () => number;
