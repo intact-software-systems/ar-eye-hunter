@@ -25,12 +25,11 @@ export interface V1dGrowthReader {
 }
 
 /**
- * How a surface may grow during the run, and the bound its predicate holds it to. A per-entity cap is checked against
- * the entity count read from the same sample; an unbounded surface fails every run until it gets a bound.
+ * How a surface may grow during the run, and the bound its predicate holds it to. An unbounded surface fails every run
+ * until it gets a bound.
  */
 export type V1dGrowthClassification =
     | Readonly<{ growthClass: 'count-capped'; cap: number; }>
-    | Readonly<{ growthClass: 'count-capped-per-entity'; capPerEntity: number; entity: V1dGrowthReader; }>
     | Readonly<{ growthClass: 'ttl-within-run'; ttlMs: number; sweepMs: number; }>
     | Readonly<{ growthClass: 'ttl-beyond-run'; ttlMs: number; }>
     | Readonly<{ growthClass: 'durable'; entity: string; }>

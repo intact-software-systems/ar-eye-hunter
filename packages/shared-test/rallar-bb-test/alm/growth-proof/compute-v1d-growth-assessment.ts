@@ -22,8 +22,6 @@ export interface V1dGrowthAssessment {
 
 export interface V1dGrowthSeriesInput {
     readonly series: readonly V1dGrowthSeriesPoint[];
-    /** The entity counts a per-entity cap multiplies, read from the same samples; empty for every other class. */
-    readonly entitySeries: readonly V1dGrowthSeriesPoint[];
     /** The reading's rows stamped never to expire; empty where the store stamps none. */
     readonly neverExpiringSeries: readonly V1dGrowthSeriesPoint[];
 }
@@ -48,8 +46,6 @@ export function computeV1dGrowthAssessment(
     switch (classification.growthClass) {
         case 'count-capped':
             return computeCountCappedAssessment(classification.cap, input.series);
-        case 'count-capped-per-entity':
-            return computePerEntityCapAssessment(classification.capPerEntity, input);
         case 'ttl-within-run':
             return withExpiryHeld(
                 computeTtlWithinRunAssessment(classification.ttlMs, classification.sweepMs, input.series),
@@ -106,31 +102,6 @@ function computeCountCappedAssessment(cap: number, series: readonly V1dGrowthSer
         max,
         outcome: max <= cap ? 'pass' : 'fail',
         reason: max <= cap ? `every reading ≤ ${cap}` : `a reading of ${max} exceeds the cap ${cap}`
-    };
-}
-
-function computePerEntityCapAssessment(capPerEntity: number, input: V1dGrowthSeriesInput): V1dGrowthAssessment {
-    const entityAt = new Map(input.entitySeries.map((point) => [point.elapsedMs, point.value]));
-    const joined = input.series.flatMap((point) => {
-        const entities = entityAt.get(point.elapsedMs);
-        return entities === undefined ? [] : [{ ...point, bound: entities * capPerEntity }];
-    });
-    const latestBound = joined.length === 0 ? 0 : joined[joined.length - 1]!.bound;
-    const bound = `≤ ${capPerEntity} × entities (latest ${latestBound})`;
-    const max = computeV1dGrowthMax(joined);
-    if (max === null) {
-        return toNoData(bound);
-    }
-    const over = joined.find((point) => point.value > point.bound);
-    return {
-        bound,
-        firstPlateau: computeV1dGrowthPlateau(joined, 0),
-        slopePerHour: computeV1dGrowthSlopePerHour(joined, toLastElapsedMs(joined) - LAST_WINDOW_MS),
-        max,
-        outcome: over === undefined ? 'pass' : 'fail',
-        reason: over === undefined
-            ? `every reading ≤ ${capPerEntity} × the entity count of its sample`
-            : `${over.value} at ${toMinutes(over.elapsedMs)} min exceeds ${over.bound}`
     };
 }
 
