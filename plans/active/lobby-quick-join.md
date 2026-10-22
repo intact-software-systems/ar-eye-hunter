@@ -148,23 +148,29 @@ The reviewer has no remaining concrete findings. Fixed PostgreSQL medium scale p
 completion but exceeded the unchanged latency/throughput limits. The pinned hosted A-B-B-A run
 [39850482876](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/39850482876)
 also failed: hot throughput fell from 36.9663 to 34.9170 mutations/second (5.54%), beyond the
-unchanged 5% allowance. Every other comparison check passed. Inspect the individual captures and
-changed server paths to identify the cause, then validate an evidence-based correction with the
-same comparative gate. Do not relax thresholds or claim performance acceptance. CI also exposed stale API test
+unchanged 5% allowance. Every other comparison check passed. The revised hosted comparison below
+satisfies performance acceptance while retaining that earlier failure. CI also exposed stale API test
 dependencies and a missing route-ownership inventory entry; those are repaired with focused
-regressions. Complete performance and final publication checks before deleting this implementation
-plan at handoff. The refreshed Branch Release Gate passed on `7d6cc22d1`; performance remains the
-only acceptance blocker.
+regressions. Complete final CI and publication checks before deleting this implementation plan at
+handoff. The refreshed Branch Release Gate passed on `7d6cc22d1`. On `307ad05f4`, every lane except
+unit tests passed; two attempts exhausted the 20-minute unit-job limit after Chromium setup took
+almost 14 and 12 minutes. Neither reported an assertion failure. The unit job now allows 30 minutes
+including setup, with a separate 20-minute test-step limit. Independent review accepted this narrow
+budget correction; a completed green run is still required.
 
 Performance investigation: the unchanged baseline positions ranged from 34.99 to 39.18 hot
 mutations/second. The candidate had 20 eighth-attempt conflicts versus 13 for the baseline, with
 84.40 versus 51.20 seconds of aggregate planned delay at that attempt. These are observed retry-tail
 differences, not proof that the regression is noise. The only newly added dispatch check on every
-existing logical command was the Quick Join discriminant. Move that strict block after the three
-existing stable-command early returns to restore their prior branch path, then run focused
-correctness tests and a fresh, unchanged hosted comparison on the resulting revision. Independent
-review confirms that this ordering preserves command semantics; its performance effect remains
-unproven until measured.
+existing logical command was the Quick Join discriminant. Revision `307ad05f4` moved that strict
+block after the three existing stable-command early returns. Independent review, 384 focused tests,
+and native API/benchmark checks confirmed preserved command semantics. The fresh hosted A-B-B-A
+comparison [39856889387](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/39856889387)
+passed the unchanged comparator and 5% limits, pooling 18 measured runs per role and workload.
+Hot throughput was 31.9418 baseline versus 32.1421 candidate mutations/second, with no exhausted
+commands or atomic-completion failures. This satisfies acceptance but does not prove that the
+dispatch reorder caused the difference between runs. Full captures and their manifest remain in
+the workflow artifacts and ignored local `tmp/perf/`.
 
 ## Review focus and completion gates
 
