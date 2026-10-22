@@ -2647,7 +2647,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AdminOperationResultResponse'
+                $ref: '#/components/schemas/AdminMetricsResetResultResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2701,7 +2701,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AdminOperationResultResponse'
+                $ref: '#/components/schemas/AdminPruneExpiredResultResponse'
         '401':
           $ref: '#/components/responses/ApiMutationFailure'
         '403':
@@ -3764,8 +3764,7 @@ components:
                 topologyMetrics:
                   $ref: '#/components/schemas/RtcTopologyAdminMetrics'
                 groupFormationMetrics:
-                  type: object
-                  additionalProperties: true
+                  $ref: '#/components/schemas/RallarGroupFormationMetrics'
             state:
               type: object
               additionalProperties: true
@@ -3807,7 +3806,12 @@ components:
                   type: boolean
             groupFormation:
               type: object
-              additionalProperties: true
+              required: [processLocal]
+              properties:
+                metrics:
+                  $ref: '#/components/schemas/RallarGroupFormationMetrics'
+                processLocal:
+                  type: boolean
             almReceipts:
               type: object
               required: [diagnostics, processLocal]
@@ -4271,6 +4275,181 @@ components:
           metrics.reset: '#/components/schemas/AdminMetricsResetResultResponse'
           maintenance.prune-expired: '#/components/schemas/AdminPruneExpiredResultResponse'
 
+    RallarGroupFormationMetrics:
+      type: object
+      required: [
+        groupMutationCount,
+        presenceSummaryExpansionCount,
+        presenceSummaryWsRowCount,
+        presenceSummaryTopologyEntryCount,
+        topologyRecomputeTriggeredCount,
+        wsOutboxSendCountByTopicId,
+        wsOutboxRecipientCountByTopicId,
+        wsEgressBytesByTopicId,
+        wsOutboxNoLocalRecipientCount,
+        wsOutboundRejectedWorkCount,
+        rttAcceptedWriteCount,
+        rttTopologyEffectCount,
+      ]
+      properties:
+        groupMutationCount:
+          type: object
+          required: [join, presenceConnect, heartbeat, disconnect, membership, stageTransition, activationStatus, other]
+          properties:
+            join:
+              type: object
+              required: [write, noOp, rejected]
+              properties:
+                write:
+                  type: integer
+                  minimum: 0
+                noOp:
+                  type: integer
+                  minimum: 0
+                rejected:
+                  type: integer
+                  minimum: 0
+            presenceConnect:
+              type: object
+              required: [write, noOp, rejected]
+              properties:
+                write:
+                  type: integer
+                  minimum: 0
+                noOp:
+                  type: integer
+                  minimum: 0
+                rejected:
+                  type: integer
+                  minimum: 0
+            heartbeat:
+              type: object
+              required: [write, noOp, rejected]
+              properties:
+                write:
+                  type: integer
+                  minimum: 0
+                noOp:
+                  type: integer
+                  minimum: 0
+                rejected:
+                  type: integer
+                  minimum: 0
+            disconnect:
+              type: object
+              required: [write, noOp, rejected]
+              properties:
+                write:
+                  type: integer
+                  minimum: 0
+                noOp:
+                  type: integer
+                  minimum: 0
+                rejected:
+                  type: integer
+                  minimum: 0
+            membership:
+              type: object
+              required: [write, noOp, rejected]
+              properties:
+                write:
+                  type: integer
+                  minimum: 0
+                noOp:
+                  type: integer
+                  minimum: 0
+                rejected:
+                  type: integer
+                  minimum: 0
+            stageTransition:
+              type: object
+              required: [write, noOp, rejected]
+              properties:
+                write:
+                  type: integer
+                  minimum: 0
+                noOp:
+                  type: integer
+                  minimum: 0
+                rejected:
+                  type: integer
+                  minimum: 0
+            activationStatus:
+              type: object
+              required: [write, noOp, rejected]
+              properties:
+                write:
+                  type: integer
+                  minimum: 0
+                noOp:
+                  type: integer
+                  minimum: 0
+                rejected:
+                  type: integer
+                  minimum: 0
+            other:
+              type: object
+              required: [write, noOp, rejected]
+              properties:
+                write:
+                  type: integer
+                  minimum: 0
+                noOp:
+                  type: integer
+                  minimum: 0
+                rejected:
+                  type: integer
+                  minimum: 0
+        presenceSummaryExpansionCount:
+          type: integer
+          minimum: 0
+        presenceSummaryWsRowCount:
+          type: object
+          required: [event, snapshot, directory]
+          properties:
+            event:
+              type: integer
+              minimum: 0
+            snapshot:
+              type: integer
+              minimum: 0
+            directory:
+              type: integer
+              minimum: 0
+        presenceSummaryTopologyEntryCount:
+          type: integer
+          minimum: 0
+        topologyRecomputeTriggeredCount:
+          type: integer
+          minimum: 0
+        wsOutboxSendCountByTopicId:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+        wsOutboxRecipientCountByTopicId:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+        wsEgressBytesByTopicId:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+        wsOutboxNoLocalRecipientCount:
+          type: integer
+          minimum: 0
+        wsOutboundRejectedWorkCount:
+          type: integer
+          minimum: 0
+        rttAcceptedWriteCount:
+          type: integer
+          minimum: 0
+        rttTopologyEffectCount:
+          type: integer
+          minimum: 0
+
     AdminMetricsResetSnapshot:
       type: object
       description: Carries exactly the categories the request reset.
@@ -4278,8 +4457,7 @@ components:
         rtcTopology:
           $ref: '#/components/schemas/RtcTopologyAdminMetrics'
         groupFormation:
-          type: object
-          additionalProperties: true
+          $ref: '#/components/schemas/RallarGroupFormationMetrics'
 
     AdminMetricsResetResultResponse:
       allOf:

@@ -160,6 +160,86 @@
           "serverId": "string",
           "health": {
             "status": "string"
+          },
+          "realtime": {
+            "topologyMetrics": {
+              "topologyUpdateCount": "integer",
+              "topologyWorkComputeDurationMs": "any",
+              "topologyChangedCount": "integer",
+              "topologyUnchangedCount": "integer",
+              "updatesWithRttMeasurementCount": "integer",
+              "updatesWithoutRttMeasurementCount": "integer",
+              "starPlanCount": "integer",
+              "starPlanDurationMs": "any",
+              "noRttTreePlanCount": "integer",
+              "noRttTreePlanDurationMs": "any",
+              "noRttMeshPlanCount": "integer",
+              "noRttMeshPlanDurationMs": "any",
+              "weightedPlanCount": "integer",
+              "weightedPlanDurationMs": "any",
+              "weightedRoomGraphBuildCount": "integer",
+              "weightedRoomGraphBuildDurationMs": "any",
+              "weightedRoomGraphSparseFallbackCount": "integer",
+              "incrementalPlanCount": "integer",
+              "incrementalPlanFallbackFullCount": "integer",
+              "incrementalPlanInvariantFallbackCount": "integer",
+              "hysteresisHeldKindCount": "integer",
+              "topologyPublishAttemptCount": "integer",
+              "topologyPublishedCount": "integer",
+              "topologyPublishSkippedUnchangedCount": "integer",
+              "topologyRebuildSkippedFingerprintCount": "integer",
+              "topologyPlanFrozenCount": "integer",
+              "topologyRemovalRequestCount": "integer",
+              "topologyRemovedCount": "integer",
+              "topologyRemoveMissCount": "integer",
+              "topologySnapshotCount": "integer",
+              "replay": {
+                "wakeCountBySource": {
+                  "startup": "integer",
+                  "notification": "integer",
+                  "local-commit": "integer",
+                  "poll": "integer"
+                },
+                "drainCountByOutcome": {
+                  "caught-up": "integer",
+                  "yielded": "integer",
+                  "failed": "integer",
+                  "lease-lost": "integer"
+                },
+                "entryCountByOutcome": {
+                  "delivered": "integer",
+                  "current-repair": "integer",
+                  "no-local-recipient": "integer",
+                  "send-failed": "integer",
+                  "corrupt": "integer"
+                },
+                "cursorCountByOutcome": {
+                  "advanced": "integer",
+                  "conflict": "integer",
+                  "gap": "integer"
+                },
+                "hydrationCountByOutcome": {
+                  "sent": "integer",
+                  "unauthorized": "integer",
+                  "no-topology": "integer",
+                  "retry": "integer",
+                  "stale-generation": "integer"
+                },
+                "drainAttemptCount": "integer",
+                "drainCompletionCount": "integer",
+                "drainFailureCount": "integer",
+                "pageCount": "integer",
+                "replayedEntryCount": "integer",
+                "directCurrentRepairCount": "integer",
+                "noLocalRecipientCount": "integer",
+                "sendFailureCount": "integer",
+                "cursorConflictCount": "integer",
+                "gapCount": "integer",
+                "corruptReferenceCount": "integer",
+                "totalDrainDurationMs": "any",
+                "maxObservedLagEntries": "integer"
+              }
+            }
           }
         }
       }
@@ -193,8 +273,298 @@
           "alm": {
             "processLocal": false,
             "deliveredMarkers": "integer"
+          },
+          "rtcTopology": {
+            "processLocal": true,
+            "metrics": {
+              "topologyUpdateCount": "integer",
+              "topologyWorkComputeDurationMs": "any",
+              "topologyChangedCount": "integer",
+              "topologyUnchangedCount": "integer",
+              "updatesWithRttMeasurementCount": "integer",
+              "updatesWithoutRttMeasurementCount": "integer",
+              "starPlanCount": "integer",
+              "starPlanDurationMs": "any",
+              "noRttTreePlanCount": "integer",
+              "noRttTreePlanDurationMs": "any",
+              "noRttMeshPlanCount": "integer",
+              "noRttMeshPlanDurationMs": "any",
+              "weightedPlanCount": "integer",
+              "weightedPlanDurationMs": "any",
+              "weightedRoomGraphBuildCount": "integer",
+              "weightedRoomGraphBuildDurationMs": "any",
+              "weightedRoomGraphSparseFallbackCount": "integer",
+              "incrementalPlanCount": "integer",
+              "incrementalPlanFallbackFullCount": "integer",
+              "incrementalPlanInvariantFallbackCount": "integer",
+              "hysteresisHeldKindCount": "integer",
+              "topologyPublishAttemptCount": "integer",
+              "topologyPublishedCount": "integer",
+              "topologyPublishSkippedUnchangedCount": "integer",
+              "topologyRebuildSkippedFingerprintCount": "integer",
+              "topologyPlanFrozenCount": "integer",
+              "topologyRemovalRequestCount": "integer",
+              "topologyRemovedCount": "integer",
+              "topologyRemoveMissCount": "integer",
+              "topologySnapshotCount": "integer",
+              "replay": {
+                "wakeCountBySource": {
+                  "startup": "integer",
+                  "notification": "integer",
+                  "local-commit": "integer",
+                  "poll": "integer"
+                },
+                "drainCountByOutcome": {
+                  "caught-up": "integer",
+                  "yielded": "integer",
+                  "failed": "integer",
+                  "lease-lost": "integer"
+                },
+                "entryCountByOutcome": {
+                  "delivered": "integer",
+                  "current-repair": "integer",
+                  "no-local-recipient": "integer",
+                  "send-failed": "integer",
+                  "corrupt": "integer"
+                },
+                "cursorCountByOutcome": {
+                  "advanced": "integer",
+                  "conflict": "integer",
+                  "gap": "integer"
+                },
+                "hydrationCountByOutcome": {
+                  "sent": "integer",
+                  "unauthorized": "integer",
+                  "no-topology": "integer",
+                  "retry": "integer",
+                  "stale-generation": "integer"
+                },
+                "drainAttemptCount": "integer",
+                "drainCompletionCount": "integer",
+                "drainFailureCount": "integer",
+                "pageCount": "integer",
+                "replayedEntryCount": "integer",
+                "directCurrentRepairCount": "integer",
+                "noLocalRecipientCount": "integer",
+                "sendFailureCount": "integer",
+                "cursorConflictCount": "integer",
+                "gapCount": "integer",
+                "corruptReferenceCount": "integer",
+                "totalDrainDurationMs": "any",
+                "maxObservedLagEntries": "integer"
+              }
+            }
           }
         }
+      }
+    },
+    {
+      "name": "resetOnlyTheRtcTopologyMetrics",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/operations/metrics/reset",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "body": {
+          "requestId": "adminops-metrics-reset-{runId}",
+          "categories": [
+            "rtc-topology"
+          ],
+          "reason": "black-box-admin-operations-metrics-reset"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "operation": "metrics.reset",
+          "status": "completed",
+          "changed": true,
+          "before": {
+            "rtcTopology": {
+              "topologyUpdateCount": "integer",
+              "topologyWorkComputeDurationMs": "any",
+              "topologyChangedCount": "integer",
+              "topologyUnchangedCount": "integer",
+              "updatesWithRttMeasurementCount": "integer",
+              "updatesWithoutRttMeasurementCount": "integer",
+              "starPlanCount": "integer",
+              "starPlanDurationMs": "any",
+              "noRttTreePlanCount": "integer",
+              "noRttTreePlanDurationMs": "any",
+              "noRttMeshPlanCount": "integer",
+              "noRttMeshPlanDurationMs": "any",
+              "weightedPlanCount": "integer",
+              "weightedPlanDurationMs": "any",
+              "weightedRoomGraphBuildCount": "integer",
+              "weightedRoomGraphBuildDurationMs": "any",
+              "weightedRoomGraphSparseFallbackCount": "integer",
+              "incrementalPlanCount": "integer",
+              "incrementalPlanFallbackFullCount": "integer",
+              "incrementalPlanInvariantFallbackCount": "integer",
+              "hysteresisHeldKindCount": "integer",
+              "topologyPublishAttemptCount": "integer",
+              "topologyPublishedCount": "integer",
+              "topologyPublishSkippedUnchangedCount": "integer",
+              "topologyRebuildSkippedFingerprintCount": "integer",
+              "topologyPlanFrozenCount": "integer",
+              "topologyRemovalRequestCount": "integer",
+              "topologyRemovedCount": "integer",
+              "topologyRemoveMissCount": "integer",
+              "topologySnapshotCount": "integer",
+              "replay": {
+                "wakeCountBySource": {
+                  "startup": "integer",
+                  "notification": "integer",
+                  "local-commit": "integer",
+                  "poll": "integer"
+                },
+                "drainCountByOutcome": {
+                  "caught-up": "integer",
+                  "yielded": "integer",
+                  "failed": "integer",
+                  "lease-lost": "integer"
+                },
+                "entryCountByOutcome": {
+                  "delivered": "integer",
+                  "current-repair": "integer",
+                  "no-local-recipient": "integer",
+                  "send-failed": "integer",
+                  "corrupt": "integer"
+                },
+                "cursorCountByOutcome": {
+                  "advanced": "integer",
+                  "conflict": "integer",
+                  "gap": "integer"
+                },
+                "hydrationCountByOutcome": {
+                  "sent": "integer",
+                  "unauthorized": "integer",
+                  "no-topology": "integer",
+                  "retry": "integer",
+                  "stale-generation": "integer"
+                },
+                "drainAttemptCount": "integer",
+                "drainCompletionCount": "integer",
+                "drainFailureCount": "integer",
+                "pageCount": "integer",
+                "replayedEntryCount": "integer",
+                "directCurrentRepairCount": "integer",
+                "noLocalRecipientCount": "integer",
+                "sendFailureCount": "integer",
+                "cursorConflictCount": "integer",
+                "gapCount": "integer",
+                "corruptReferenceCount": "integer",
+                "totalDrainDurationMs": "any",
+                "maxObservedLagEntries": "integer"
+              }
+            }
+          },
+          "after": {
+            "rtcTopology": {
+              "topologyUpdateCount": 0,
+              "topologyWorkComputeDurationMs": "any",
+              "topologyChangedCount": "integer",
+              "topologyUnchangedCount": "integer",
+              "updatesWithRttMeasurementCount": "integer",
+              "updatesWithoutRttMeasurementCount": "integer",
+              "starPlanCount": "integer",
+              "starPlanDurationMs": "any",
+              "noRttTreePlanCount": "integer",
+              "noRttTreePlanDurationMs": "any",
+              "noRttMeshPlanCount": "integer",
+              "noRttMeshPlanDurationMs": "any",
+              "weightedPlanCount": "integer",
+              "weightedPlanDurationMs": "any",
+              "weightedRoomGraphBuildCount": "integer",
+              "weightedRoomGraphBuildDurationMs": "any",
+              "weightedRoomGraphSparseFallbackCount": "integer",
+              "incrementalPlanCount": "integer",
+              "incrementalPlanFallbackFullCount": "integer",
+              "incrementalPlanInvariantFallbackCount": "integer",
+              "hysteresisHeldKindCount": "integer",
+              "topologyPublishAttemptCount": "integer",
+              "topologyPublishedCount": "integer",
+              "topologyPublishSkippedUnchangedCount": "integer",
+              "topologyRebuildSkippedFingerprintCount": "integer",
+              "topologyPlanFrozenCount": "integer",
+              "topologyRemovalRequestCount": "integer",
+              "topologyRemovedCount": "integer",
+              "topologyRemoveMissCount": "integer",
+              "topologySnapshotCount": "integer",
+              "replay": {
+                "wakeCountBySource": {
+                  "startup": "integer",
+                  "notification": "integer",
+                  "local-commit": "integer",
+                  "poll": "integer"
+                },
+                "drainCountByOutcome": {
+                  "caught-up": "integer",
+                  "yielded": "integer",
+                  "failed": "integer",
+                  "lease-lost": "integer"
+                },
+                "entryCountByOutcome": {
+                  "delivered": "integer",
+                  "current-repair": "integer",
+                  "no-local-recipient": "integer",
+                  "send-failed": "integer",
+                  "corrupt": "integer"
+                },
+                "cursorCountByOutcome": {
+                  "advanced": "integer",
+                  "conflict": "integer",
+                  "gap": "integer"
+                },
+                "hydrationCountByOutcome": {
+                  "sent": "integer",
+                  "unauthorized": "integer",
+                  "no-topology": "integer",
+                  "retry": "integer",
+                  "stale-generation": "integer"
+                },
+                "drainAttemptCount": "integer",
+                "drainCompletionCount": "integer",
+                "drainFailureCount": "integer",
+                "pageCount": "integer",
+                "replayedEntryCount": "integer",
+                "directCurrentRepairCount": "integer",
+                "noLocalRecipientCount": "integer",
+                "sendFailureCount": "integer",
+                "cursorConflictCount": "integer",
+                "gapCount": "integer",
+                "corruptReferenceCount": "integer",
+                "totalDrainDurationMs": "any",
+                "maxObservedLagEntries": "integer"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "theResetReportsOnlyTheRequestedCategory",
+      "type": "assert",
+      "actual": {
+        "before": "{resultsByName.resetOnlyTheRtcTopologyMetrics.0.actual.body.before.groupFormation}",
+        "after": "{resultsByName.resetOnlyTheRtcTopologyMetrics.0.actual.body.after.groupFormation}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "comparators": [
+          {
+            "path": "before",
+            "equals": "MISSING"
+          },
+          {
+            "path": "after",
+            "equals": "MISSING"
+          }
+        ]
       }
     },
     {
