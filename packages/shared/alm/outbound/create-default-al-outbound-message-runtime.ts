@@ -73,11 +73,7 @@ export function createDefaultALOutboundDequeueResilience(): ResourceInboxResilie
             duration,
             duration,
             duration
-        ),
-        initialRate: 1,
-        maxRate: 10,
-        concurrencyIncreaseStep: 1,
-        concurrencyReduceStep: 1
+        )
     });
 }
 

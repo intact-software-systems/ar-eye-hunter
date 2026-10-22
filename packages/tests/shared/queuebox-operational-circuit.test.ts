@@ -20,11 +20,7 @@ describe('QueueBox operational failure circuit', () => {
     it('opens after genuine handler failures and leaves later work pending', async () => {
         const duration = Temporal.Duration.from({ seconds: 10 });
         const resilience = ResourceInboxResilience.createDefault({
-            circuitBreakerPolicy: new CircuitBreakerPolicy(1, duration, duration, duration),
-            initialRate: 1,
-            maxRate: 10,
-            concurrencyIncreaseStep: 1,
-            concurrencyReduceStep: 1
+            circuitBreakerPolicy: new CircuitBreakerPolicy(1, duration, duration, duration)
         });
         const queue = new InMemoryQueueBox();
         const first = toResourceEntry('operational-failure', { value: 1 });
@@ -67,11 +63,7 @@ describe('QueueBox operational failure circuit', () => {
     it.each([false, true])('keeps durable rejection neutral while preserving operational failure in a mixed batch: %s', async (includeOperationalFailure) => {
         const duration = Temporal.Duration.from({ seconds: 10 });
         const resilience = ResourceInboxResilience.createDefault({
-            circuitBreakerPolicy: new CircuitBreakerPolicy(0, duration, duration, duration),
-            initialRate: 2,
-            maxRate: 10,
-            concurrencyIncreaseStep: 1,
-            concurrencyReduceStep: 1
+            circuitBreakerPolicy: new CircuitBreakerPolicy(0, duration, duration, duration)
         });
         const queue = new InMemoryQueueBox();
         const rejected = toResourceEntry('command-rejection', { value: 1 });
@@ -116,11 +108,7 @@ describe('QueueBox operational failure circuit', () => {
     it('keeps a handler conflict value neutral for the admission rate, as a thrown conflict was', async () => {
         const duration = Temporal.Duration.from({ seconds: 10 });
         const resilience = ResourceInboxResilience.createDefault({
-            circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-            initialRate: 1,
-            maxRate: 10,
-            concurrencyIncreaseStep: 1,
-            concurrencyReduceStep: 1
+            circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration)
         });
         const signals: string[] = [];
         resilience.success = () => {

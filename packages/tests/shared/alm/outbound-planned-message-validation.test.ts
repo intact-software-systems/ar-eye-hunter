@@ -54,11 +54,7 @@ describe('outbound planner validation boundary', () => {
                     Temporal.Duration.from('PT1S'),
                     Temporal.Duration.from('PT1S'),
                     Temporal.Duration.from('PT1S')
-                ),
-                initialRate: 1,
-                maxRate: 10,
-                concurrencyIncreaseStep: 1,
-                concurrencyReduceStep: 1
+                )
             })
         };
         const runtime = createDefaultOutboundTestRuntime({

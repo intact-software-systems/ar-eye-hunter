@@ -37,7 +37,6 @@ import {
     type StateWriteSqlMetrics
 } from './create-instrumented-state-write-sql.ts';
 import { STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS } from './state-write-wait-options.ts';
-import { STATE_WRITE_REQUIRED_CONCURRENCY } from './state-write/api-v1-state-write-benchmark-options.ts';
 import type { StateWriteBenchmarkDiagnosticPhase } from './state-write/state-write-benchmark-diagnostics.ts';
 
 export interface StateWriteServiceRuntimeContext {
@@ -249,10 +248,6 @@ function createStateWriteTopologyService({
 function createBenchmarkResilience(): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
     return ResourceInboxResilience.createDefault({
-        circuitBreakerPolicy: new CircuitBreakerPolicy(100, duration, duration, duration),
-        initialRate: STATE_WRITE_REQUIRED_CONCURRENCY,
-        maxRate: STATE_WRITE_REQUIRED_CONCURRENCY,
-        concurrencyIncreaseStep: 1,
-        concurrencyReduceStep: 1
+        circuitBreakerPolicy: new CircuitBreakerPolicy(100, duration, duration, duration)
     });
 }

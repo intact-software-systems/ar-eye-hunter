@@ -53,11 +53,7 @@ function createRuntime(
         },
         inbox: { dequeueInbox: async () => 0 },
         resilience: ResourceInboxResilience.createDefault({
-            circuitBreakerPolicy: new CircuitBreakerPolicy(100, duration, duration, duration),
-            initialRate: 10,
-            maxRate: 10,
-            concurrencyIncreaseStep: 1,
-            concurrencyReduceStep: 1
+            circuitBreakerPolicy: new CircuitBreakerPolicy(100, duration, duration, duration)
         }),
         ...overrides
     };

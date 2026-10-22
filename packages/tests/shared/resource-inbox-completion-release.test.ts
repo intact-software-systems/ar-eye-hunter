@@ -31,11 +31,7 @@ describe('ResourceInbox post-release completion hints', () => {
         });
         const duration = Temporal.Duration.from({ seconds: 10 });
         const resilience = ResourceInboxResilience.createDefault({
-            circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-            initialRate: 2,
-            maxRate: 10,
-            concurrencyIncreaseStep: 1,
-            concurrencyReduceStep: 1
+            circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration)
         });
         const controller = createDefaultResourceInboxDequeuer({
             repository: {
@@ -80,11 +76,7 @@ describe('ResourceInbox post-release completion hints', () => {
             });
             const duration = Temporal.Duration.from({ seconds: 10 });
             const resilience = ResourceInboxResilience.createDefault({
-                circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-                initialRate: 2,
-                maxRate: 10,
-                concurrencyIncreaseStep: 1,
-                concurrencyReduceStep: 1
+                circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration)
             });
             const options = {
                 completionNotifications,
@@ -153,11 +145,7 @@ describe('ResourceInbox post-release completion hints', () => {
             maxToReserve: () => 1,
             maxNumToDequeue: 1,
             resilience: ResourceInboxResilience.createDefault({
-                circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-                initialRate: 2,
-                maxRate: 10,
-                concurrencyIncreaseStep: 1,
-                concurrencyReduceStep: 1
+                circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration)
             }),
             options: {
                 completionNotifications: ResourceInboxCompletionNotifications.createDefault((key) => relayed.push(key)),

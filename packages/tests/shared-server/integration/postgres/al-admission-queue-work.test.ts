@@ -248,11 +248,7 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         });
         const duration = Temporal.Duration.from({ seconds: 10 });
         const resilience = ResourceInboxResilience.createDefault({
-            circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-            initialRate: 1,
-            maxRate: 10,
-            concurrencyIncreaseStep: 1,
-            concurrencyReduceStep: 1
+            circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration)
         });
         const types = new Set([entry.typeId]);
         const controller = createDefaultResourceInboxDequeuer<string>({
@@ -302,11 +298,7 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         await backend.workQueue.enqueue(entry);
         const duration = Temporal.Duration.from({ seconds: 10 });
         const resilience = ResourceInboxResilience.createDefault({
-            circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-            initialRate: 1,
-            maxRate: 10,
-            concurrencyIncreaseStep: 1,
-            concurrencyReduceStep: 1
+            circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration)
         });
         let admitType = true;
         const controller = createDefaultResourceInboxDequeuer<string>({

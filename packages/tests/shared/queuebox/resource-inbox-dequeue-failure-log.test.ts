@@ -208,11 +208,7 @@ async function dequeueOnce(
         maxToReserve: () => 1,
         maxNumToDequeue: 1,
         resilience: ResourceInboxResilience.createDefault({
-            circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-            initialRate: 1,
-            maxRate: 10,
-            concurrencyIncreaseStep: 1,
-            concurrencyReduceStep: 1
+            circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration)
         }),
         options: { jitterUnit: () => 0.5, onAttemptReleaseTelemetry: (event) => releases.push(event) }
     })

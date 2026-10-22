@@ -89,11 +89,7 @@ describe('durable topology work for large rooms', () => {
         await reader.dequeueOutbox(
             OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
             ResourceInboxResilience.createDefault({
-                circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-                initialRate: 1,
-                maxRate: 10,
-                concurrencyIncreaseStep: 1,
-                concurrencyReduceStep: 1
+                circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration)
             })
         );
 

@@ -52,11 +52,7 @@ describe('middleware pre-admission', () => {
             socket.addConnection(new ConnectionContext({ id: 'receiver', socket: receiver }));
             const duration = Temporal.Duration.from({ seconds: 10 });
             const resilience = ResourceInboxResilience.createDefault({
-                circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-                initialRate: 1,
-                maxRate: 10,
-                concurrencyIncreaseStep: 1,
-                concurrencyReduceStep: 1
+                circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration)
             });
             const fixture = createRallarMiddlewareTestRuntime({ resilience: { inbox: resilience, outbox: resilience, appOutbox: resilience } });
             const signalingBackend = new InMemoryAdmissionBackend(admission, Date.now);

@@ -149,13 +149,6 @@ export interface ApiV1TopologyReplayConfiguration {
     readonly queueWorkers: 'enabled' | 'disabled';
 }
 
-export interface ApiV1QueueResilienceConfiguration extends ApiV1CircuitBreakerConfiguration {
-    readonly initialRate: number;
-    readonly maxRate: number;
-    readonly increaseRate: number;
-    readonly decreaseRate: number;
-}
-
 export interface ApiV1TopologyDeliveryConfiguration {
     readonly publicationRetentionMs: number;
     readonly heartbeatIntervalMs: number;
@@ -175,7 +168,7 @@ export interface ApiV1TopologyConfiguration {
     readonly recompute: ApiV1TopologyRecomputeConfiguration;
     readonly rttRefinement: ApiV1TopologyRttRefinementConfiguration;
     readonly replay: ApiV1TopologyReplayConfiguration;
-    readonly queueResilience: ApiV1QueueResilienceConfiguration;
+    readonly queueResilience: ApiV1CircuitBreakerConfiguration;
     readonly delivery: ApiV1TopologyDeliveryConfiguration;
 }
 

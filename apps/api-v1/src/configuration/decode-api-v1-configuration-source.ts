@@ -158,11 +158,7 @@ const CONFIGURATION_KEYS_BY_PATH: Readonly<Record<string, ReadonlySet<string>>> 
         'failureThreshold',
         'openDurationMs',
         'resetDurationMs',
-        'samplingDurationMs',
-        'initialRate',
-        'maxRate',
-        'increaseRate',
-        'decreaseRate'
+        'samplingDurationMs'
     ]),
     'topology.delivery': new Set([
         'publicationRetentionMs',

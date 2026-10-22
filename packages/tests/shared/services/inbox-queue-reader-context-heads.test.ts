@@ -342,10 +342,6 @@ function createResilience(failureThreshold = 10): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
     return ResourceInboxResilience.createDefault({
         circuitBreakerPolicy: new CircuitBreakerPolicy(failureThreshold, duration, duration, duration),
-        initialRate: 1,
-        maxRate: 10,
-        concurrencyIncreaseStep: 1,
-        concurrencyReduceStep: 1,
         retryPolicy: DEFAULT_RESOURCE_INBOX_RETRY_POLICY
     });
 }

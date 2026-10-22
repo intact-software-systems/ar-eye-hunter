@@ -384,7 +384,6 @@ function decodeGroup(
 function decodeTopology(
     decoder: ApiV1ConfigurationValueDecoder
 ): ApiV1TopologyConfiguration {
-    const circuitBreaker = decodeCircuitBreaker(decoder, 'topology.queueResilience');
     return {
         planning: {
             topologyKind: decoder.enumeration(
@@ -431,13 +430,7 @@ function decodeTopology(
                 ['enabled', 'disabled'] as const
             )
         },
-        queueResilience: {
-            ...circuitBreaker,
-            initialRate: decoder.integer('topology.queueResilience.initialRate', 1),
-            maxRate: decoder.integer('topology.queueResilience.maxRate', 1),
-            increaseRate: decoder.integer('topology.queueResilience.increaseRate', 1),
-            decreaseRate: decoder.integer('topology.queueResilience.decreaseRate', 1)
-        },
+        queueResilience: decodeCircuitBreaker(decoder, 'topology.queueResilience'),
         delivery: {
             publicationRetentionMs: decoder.integer(
                 'topology.delivery.publicationRetentionMs',

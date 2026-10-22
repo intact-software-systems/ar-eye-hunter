@@ -1833,7 +1833,7 @@ moved or changed test.
       "interactionRequirement": {
         "interactionKind": "count",
         "ownedPort": "ResourceInboxResilience.failure and ResourceInboxResilience.success",
-        "observableEffect": "These ports feed the circuit breaker and rate adjuster: failure reduces or resets adaptation while success advances recovery and the success window.",
+        "observableEffect": "These ports feed the circuit breaker: failure counts toward tripping it while success recloses it and clears its failure window.",
         "requiredConstraint": "This mixed result batch emits exactly one failure signal and exactly one completion signal. The waiting item adds no adaptive feedback.",
         "failureRationale": "Final queue statuses and attempts do not expose duplicate or omitted adaptive signals. A later success can reset prior breaker failure state, so final adaptive state also need not reveal erroneous readiness/failure accounting. This contract concerns the result batch, not a universal per-message callback count."
       }

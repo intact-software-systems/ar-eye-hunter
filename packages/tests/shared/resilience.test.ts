@@ -1,6 +1,8 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
+import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreaker, CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
-import { RateAdjuster, RateLimiter, SlidingWindowCounter } from '@shared/resilience/Resilience.ts';
+import { RateLimiter, SlidingWindowCounter } from '@shared/resilience/Resilience.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 describe('Resilience', () => {
@@ -113,56 +115,35 @@ describe('Resilience', () => {
         expect(wallClock.isHalfOpen()).toBe(supplied.isHalfOpen());
     });
 
-    it('increases and reduces the calculated rate based on success and failure', () => {
-        const adjuster = RateAdjuster.create(
-            RateAdjuster.toPolicy(1, 4, 1, 1, 2, 1_000)
-        );
+    it('feeds queue outcomes to the circuit breaker alone and keeps the retry policy and lease', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+        const resilience = ResourceInboxResilience.createDefault({
+            circuitBreakerPolicy: new CircuitBreakerPolicy(
+                1,
+                Temporal.Duration.from({ milliseconds: 100 }),
+                Temporal.Duration.from({ milliseconds: 50 }),
+                Temporal.Duration.from({ seconds: 1 })
+            )
+        });
 
-        adjuster.success();
-        expect(adjuster.calculateRate()).toBe(1);
+        expect(Object.hasOwn(resilience, 'rateAdjuster')).toBe(false);
+        resilience.failure();
+        resilience.failure();
+        expect(resilience.isNotAllowedThroughToDequeue()).toBe(true);
+        expect(resilience.getDequeueReopenAtMs(Date.now())).toBe(Date.now() + 101);
 
-        adjuster.success();
-        expect(adjuster.calculateRate()).toBe(2);
-
-        adjuster.failure();
-        expect(adjuster.calculateRate()).toBe(1);
-    });
-
-    it('adjusts the rate from a supplied clock exactly as it does from the wall clock', () => {
-        const policy = RateAdjuster.toPolicy(1, 4, 1, 1, 2, 1_000);
-        const supplied = RateAdjuster.createWithTs(policy, 0);
-        const wallClock = RateAdjuster.create(policy);
-
-        supplied.successAt(0);
-        wallClock.success();
-        expect(supplied.calculateRateAt(0)).toBe(1);
-        expect(wallClock.calculateRate()).toBe(1);
-
-        supplied.successAt(0);
-        wallClock.success();
-        expect(supplied.calculateRateAt(0)).toBe(2);
-        expect(wallClock.calculateRate()).toBe(2);
-
-        supplied.failureAt(0);
-        wallClock.failure();
-        expect(supplied.calculateRateAt(0)).toBe(1);
-        expect(wallClock.calculateRate()).toBe(1);
-    });
-
-    // The wall-clock test above cannot reach this: it needs the adjust window
-    // to roll, which real time inside one test run never does.
-    it('ages successes out of the adjust window on the supplied clock', () => {
-        const adjuster = RateAdjuster.createWithTs(
-            RateAdjuster.toPolicy(1, 4, 1, 1, 2, 1_000),
-            0
-        );
-
-        adjuster.successAt(0);
-        adjuster.successAt(100);
-        expect(adjuster.calculateRateAt(100)).toBe(2);
-
-        adjuster.successAt(2_000);
-        expect(adjuster.calculateRateAt(2_000)).toBe(2);
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.101Z'));
+        expect(resilience.circuitBreaker.allow()).toBe(true);
+        resilience.success();
+        expect(resilience.circuitBreaker.isClosed()).toBe(true);
+        expect(resilience.isNotAllowedThroughToDequeue()).toBe(false);
+        expect(resilience.toWorkAdvertisementOptions()).toEqual({
+            maxAttempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
+            finalizationStaleAfterMs: ResourceInboxResilience.FINALIZATION_STALE_AFTER_MS,
+            reservationLeaseMs: ResourceInboxResilience.DEFAULT_RESERVATION_LEASE_MS,
+            staleDueThresholdMs: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.staleDueThresholdMs
+        });
     });
 
     it('enforces rate limiting and returns defaults when execution is blocked', async () => {

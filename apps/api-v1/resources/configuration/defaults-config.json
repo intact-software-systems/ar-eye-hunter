@@ -100,11 +100,7 @@
       "failureThreshold": 10,
       "openDurationMs": 10000,
       "resetDurationMs": 10000,
-      "samplingDurationMs": 10000,
-      "initialRate": 1,
-      "maxRate": 10,
-      "increaseRate": 1,
-      "decreaseRate": 1
+      "samplingDurationMs": 10000
     },
     "delivery": {
       "publicationRetentionMs": 86400000,
