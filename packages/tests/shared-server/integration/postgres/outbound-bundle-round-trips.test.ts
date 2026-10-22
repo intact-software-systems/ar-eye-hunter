@@ -69,7 +69,9 @@ describe('Postgres outbound admission bundle', () => {
             const committingFrom = Date.now();
 
             try {
-                await lane.engine.executeOnce();
+                // A single pass can read the clock a millisecond before the readiness probe does and then schedule a
+                // wake nobody serves; the running engine serves it, as in production.
+                lane.engine.start();
                 await expect.poll(() => countSent(lane, messages), SETTLE_POLL).toBe(GROUP_SIZE);
                 await expect.poll(() => readQueueRows(sql), SETTLE_POLL)
                     .toEqual(toExpectedQueueRows());
@@ -138,7 +140,7 @@ describe('Postgres outbound admission bundle', () => {
             );
 
             try {
-                await lane.engine.executeOnce();
+                lane.engine.start();
                 await expect.poll(() => countSent(lane, others), SETTLE_POLL).toBe(others.length);
             }
             finally {
