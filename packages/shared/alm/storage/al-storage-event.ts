@@ -1,3 +1,4 @@
+import type { ALInboundDeliveredMarkersReport } from '../inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import type { ALInboundOrderingTracksReport } from '../inbound/admission/evict-al-inbound-ordering-tracks-past-cap.ts';
 import type { ALInboundResyncCursor } from '../inbound/al-inbound-resync-required.ts';
 import type { ALStorageResetEvent, ALStorageResetSink } from '../open-indexed-db-admission-database.ts';
@@ -33,7 +34,8 @@ export type ALStoragePersistOutcome = 'granted' | 'denied' | 'unsupported';
  * reset observation names the affected database, not a store. A recovery of a store two lanes share names the lane
  * after the store id, as `<store id>/<lane>`. `recovery-owner-invoked` names no store either: the
  * browser states it, with the cursor it handed a channel's recovery owner, on this same port. `ordering-tracks` is the
- * number of ordering snapshots an inbound store holds after the eviction pass a new track runs (D191).
+ * number of ordering snapshots an inbound store holds after the eviction pass a new track runs (D191);
+ * `delivered-markers` the number of delivered markers it holds after the pass a new marker runs.
  */
 export type ALStorageEvent =
     | Readonly<{ kind: 'reset'; storeId: string; event: ALStorageResetEvent; }>
@@ -41,7 +43,8 @@ export type ALStorageEvent =
     | (Readonly<{ kind: 'health'; storeId: string; }> & ALStorageHealthState)
     | Readonly<{ kind: 'persist'; outcome: ALStoragePersistOutcome; }>
     | (Readonly<{ kind: 'recovery-owner-invoked'; }> & ALInboundResyncCursor)
-    | Readonly<{ kind: 'ordering-tracks'; storeId: string; tracks: number; }>;
+    | Readonly<{ kind: 'ordering-tracks'; storeId: string; tracks: number; }>
+    | Readonly<{ kind: 'delivered-markers'; storeId: string; markers: number; }>;
 
 export type ALStorageEventSink = (event: ALStorageEvent) => void;
 
@@ -51,6 +54,13 @@ export function createPassThroughALStorageEventSink(): ALStorageEventSink {
 
 export function toALOrderingTracksReport(storage: ALStorageEventSink, storeId: string): ALInboundOrderingTracksReport {
     return (tracks) => storage({ kind: 'ordering-tracks', storeId, tracks });
+}
+
+export function toALDeliveredMarkersReport(
+    storage: ALStorageEventSink,
+    storeId: string
+): ALInboundDeliveredMarkersReport {
+    return (markers) => storage({ kind: 'delivered-markers', storeId, markers });
 }
 
 export function toALStorageResetSink(

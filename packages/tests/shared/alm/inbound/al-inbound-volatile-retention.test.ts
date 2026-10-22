@@ -13,6 +13,7 @@ import {
 import {
     normalizeALRuntimeStoreRetention
 } from '@shared/alm/ALStoreRetention.ts';
+import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import { evictTerminalVolatileInboundMessages } from '@shared/alm/inbound/admission/evict-terminal-volatile-inbound-messages.ts';
 import {
     createALInboundAdmissionStore,
@@ -355,7 +356,8 @@ function toStoreInput(backend: InMemoryAdmissionBackend): CreateALInboundAdmissi
         orderingTrackTtlMs: 60_000,
         supersedenceTrackTtlMs: 60_000,
         retention: normalizeALRuntimeStoreRetention(),
-        maxOrderingTracks: undefined
+        maxOrderingTracks: undefined,
+        maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
     };
 }
 

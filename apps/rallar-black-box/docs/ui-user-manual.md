@@ -67,6 +67,7 @@ Useful query parameters:
 - `rallarLogoutOnClose=1`: log out during real-provider close/reset cleanup instead of only disconnecting
 - `rallarLeaveRoomOnClose=0`: opt out of the default best-effort room leave during real-provider close/reset cleanup
 - `statsIntervalMs`: periodic control stats interval
+- `browserCensusIntervalMs`: browser census interval; `0`, the default, turns it off, otherwise 5000 to 600000
 - `reportUploadUrl`: optional REST endpoint for final reports
 
 ## Recipe Console Navigation

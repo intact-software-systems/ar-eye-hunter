@@ -13,6 +13,7 @@ import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { decodeALInboundWorkEntry, type ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-work-entry.ts';
@@ -303,7 +304,8 @@ it('retains predecessor completion through the longest admitted deadline across 
         orderingTrackTtlMs: 100,
         supersedenceTrackTtlMs: 100,
         retention: normalizeALRuntimeStoreRetention({ bufferedMessageTtlMs: 50, durableEffectTtlMs: 500 }),
-        maxOrderingTracks: undefined
+        maxOrderingTracks: undefined,
+        maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
     });
     const engine = new InboxOutboxEngine();
     onTestFinished(() => engine.stop());
@@ -363,7 +365,8 @@ it.each(['before-delivery', 'during-delivery'] as const)('does not reconstruct l
         orderingTrackTtlMs: 100,
         supersedenceTrackTtlMs: 100,
         retention: normalizeALRuntimeStoreRetention({ durableEffectTtlMs: 500 }),
-        maxOrderingTracks: undefined
+        maxOrderingTracks: undefined,
+        maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
     });
     const engine = new InboxOutboxEngine();
     onTestFinished(() => engine.stop());
@@ -425,7 +428,8 @@ it.each(['volatile', 'local-inbox'] as const)('keeps one buffered work owner acr
         orderingTrackTtlMs: 60_000,
         supersedenceTrackTtlMs: 60_000,
         retention: normalizeALRuntimeStoreRetention(),
-        maxOrderingTracks: undefined
+        maxOrderingTracks: undefined,
+        maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
     });
     const delivered: string[] = [];
     const failedAttemptReleased = Promise.withResolvers<void>();
@@ -506,7 +510,8 @@ it.each(['FAILED', 'NON_RETRYABLE', 'expired', 'missing', 'malformed'] as const)
             orderingTrackTtlMs: 60_000,
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention(),
-            maxOrderingTracks: undefined
+            maxOrderingTracks: undefined,
+            maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
         });
         const engine = new InboxOutboxEngine();
         onTestFinished(() => engine.stop());
@@ -599,7 +604,8 @@ it('keeps waiting ordered work unclaimed and drains all 256 messages after resta
         orderingTrackTtlMs: 60_000,
         supersedenceTrackTtlMs: 60_000,
         retention: normalizeALRuntimeStoreRetention(),
-        maxOrderingTracks: undefined
+        maxOrderingTracks: undefined,
+        maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
     });
     const delivered: number[] = [];
     let unavailable = true;

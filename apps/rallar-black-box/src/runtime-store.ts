@@ -166,7 +166,8 @@ class RallarBlackBoxRuntimeStore {
         this.controlClient = createDefaultRallarBlackBoxControlClient({
             runtime: this.runtime,
             heartbeatIntervalMs: this.bootstrapConfig.heartbeatIntervalMs,
-            statsIntervalMs: this.bootstrapConfig.statsIntervalMs
+            statsIntervalMs: this.bootstrapConfig.statsIntervalMs,
+            browserCensusIntervalMs: this.bootstrapConfig.browserCensusIntervalMs
         });
         this.controlClient.subscribe((control) => {
             this.snapshot = {

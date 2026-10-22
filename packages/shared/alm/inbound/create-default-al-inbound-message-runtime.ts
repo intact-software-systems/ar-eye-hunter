@@ -7,6 +7,7 @@ import { InboxOutboxEngine } from '../../services/inbox-outbox-engine.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '../al-admission-backend.ts';
 import { DEFAULT_AL_REPOSITORY_TTL_MS, normalizeALRuntimeStoreRetention } from '../ALStoreRetention.ts';
 import { ALWAYS_OWNED_AL_DURABLE_WORK, type ALDurableWorkOwnership } from '../work/al-durable-work-ownership.ts';
+import { AL_INBOUND_MAX_DELIVERED_MARKERS } from './admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import { createALInboundAdmissionStore } from './al-inbound-admission-store.ts';
 import {
     ALInboundMessageRuntime,
@@ -78,7 +79,8 @@ function createLocalALInboundRuntimeStores(nowMs: () => number): ALInboundRuntim
             orderingTrackTtlMs: DEFAULT_AL_REPOSITORY_TTL_MS,
             supersedenceTrackTtlMs: 5 * 60_000,
             retention: normalizeALRuntimeStoreRetention(),
-            maxOrderingTracks: undefined
+            maxOrderingTracks: undefined,
+            maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
         }),
         workQueue
     };

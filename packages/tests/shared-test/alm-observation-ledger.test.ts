@@ -57,21 +57,24 @@ const SENDER_REPORT = toReport({
     own: { admissions: 7, bytes: 2_800 },
     inbound: { admissions: 5, bytes: 2_000 },
     overloaded: false,
-    orderingTracks: 4
+    orderingTracks: 4,
+    deliveredMarkers: 4
 });
 const RECEIVER_REPORT = toReport({
     usage: { admissions: 30, bytes: 1_200, oldestAgeMs: 900, tracks: 0 },
     own: { admissions: 2, bytes: 80 },
     inbound: { admissions: 28, bytes: 1_120 },
     overloaded: true,
-    orderingTracks: 256
+    orderingTracks: 256,
+    deliveredMarkers: 256
 });
 const LATER_SENDER_REPORT = toReport({
     usage: { admissions: 0, bytes: 0, oldestAgeMs: 0, tracks: 0 },
     own: { admissions: 0, bytes: 0 },
     inbound: { admissions: 0, bytes: 0 },
     overloaded: false,
-    orderingTracks: 0
+    orderingTracks: 0,
+    deliveredMarkers: 0
 });
 
 describe('the ALM observation ledger readings', () => {

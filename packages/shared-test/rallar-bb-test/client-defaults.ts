@@ -35,6 +35,7 @@ export const RALLAR_BLACK_BOX_CLIENT_DEFAULTS = {
     timeoutMs: 20_000,
     heartbeatIntervalMs: 10_000,
     statsIntervalMs: 5_000,
+    browserCensusIntervalMs: 0,
     runnerAgentCount: 1,
     rallarRegister: false,
     rallarAuthStorage: 'local',
@@ -47,6 +48,17 @@ export const RALLAR_BLACK_BOX_CLIENT_DEFAULTS = {
 } as const;
 
 const PROVIDER_MODE_NAMES = RALLAR_BLACK_BOX_PROVIDER_MODES.join(', ');
+const MIN_BROWSER_CENSUS_INTERVAL_MS = 5_000;
+const MAX_BROWSER_CENSUS_INTERVAL_MS = 600_000;
+
+export const RALLAR_BLACK_BOX_BROWSER_CENSUS_INTERVAL_EXPECTATION =
+    `0 or an integer from ${MIN_BROWSER_CENSUS_INTERVAL_MS} to ${MAX_BROWSER_CENSUS_INTERVAL_MS}`;
+
+/** Zero turns the census off; a running census opens every database of the page, so it never runs more often. */
+export function isRallarBlackBoxBrowserCensusIntervalMs(value: number): boolean {
+    return value === 0 ||
+        (Number.isInteger(value) && value >= MIN_BROWSER_CENSUS_INTERVAL_MS && value <= MAX_BROWSER_CENSUS_INTERVAL_MS);
+}
 
 /**
  * Every configuration producer writes control.providerMode, so it is the only key read. A configuration without

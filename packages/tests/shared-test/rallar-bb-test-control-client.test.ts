@@ -5,6 +5,8 @@ import {
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts';
 import { createBlackBoxBrowserRallarRuntimeDependency } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
 import { BlackBoxRallarVolatileLimits } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts';
+import { readIndexedDbRequest, waitForIndexedDbTransaction } from '@shared/persistence/indexed-db-request.ts';
+import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
 import {
     createDefaultRallarBlackBoxControlClient,
@@ -34,13 +36,16 @@ import {
     createRallarBlackBoxBrowserControlAgent
 } from '../../shared-test/rallar-bb-test/browser-control-agent.ts';
 import { createSpaBrowserRallarRuntime } from '../../shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
+import { readBrowserCensus } from '../../shared-test/rallar-bb-test/control-client/read-browser-census.ts';
 import { createDefaultRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import type {
     RallarBlackBoxTestCommand,
+    RallarBlackBoxTestRecord,
     RallarBlackBoxTestRuntime,
     RallarBlackBoxTestState
 } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { decodeRecord } from '../../shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 import { isJsonRecordValue } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { createBrowserTestStorage } from './browser-test-storage.ts';
 import { FakeControlSocket } from './rallar-bb-runtime/fake-control-socket.ts';
@@ -56,6 +61,8 @@ function toClientOptions(
         fetch: () => Promise.reject(new Error('This client uploads no final report.')),
         heartbeatIntervalMs: 60_000,
         statsIntervalMs: 5_000,
+        browserCensusIntervalMs: 0,
+        readBrowserCensus: async () => ({}),
         reconnectBaseMs: 600,
         reconnectMaxMs: 5_000,
         maxFrameBytes: RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES
@@ -95,6 +102,39 @@ function toResultEnvelopes(socket: FakeControlSocket, commandId: string): Contro
             envelope.kind === 'result' &&
             envelope.commandId === commandId
         );
+}
+
+const CENSUS_DATABASE_READING = {
+    indexedDb: { databases: [{ name: 'rallar-crdt', version: 1, stores: [{ name: 'updates', rows: 3 }] }], uncounted: [] }
+};
+
+/** Writes the one database the census readings above count. */
+async function writeCensusDatabase(factory: IDBFactory): Promise<void> {
+    const request = factory.open('rallar-crdt', 1);
+    request.onupgradeneeded = () => request.result.createObjectStore('updates');
+    const db = await readIndexedDbRequest(request);
+    const transaction = db.transaction('updates', 'readwrite');
+    for (const row of [1, 2, 3]) {
+        transaction.objectStore('updates').put({ row }, row);
+    }
+    await waitForIndexedDbTransaction(transaction);
+    db.close();
+}
+
+/** The factory with every database the census opens counted. */
+function createCountingIndexedDb(factory: IDBFactory): { readonly indexedDb: IDBFactory; readonly opens: () => number; } {
+    let opens = 0;
+    const indexedDb = Object.assign(Object.create(factory) as IDBFactory, {
+        open: (name: string, version?: number) => {
+            opens += 1;
+            return factory.open(name, version);
+        }
+    });
+    return { indexedDb, opens: () => opens };
+}
+
+function toStatsPayloads(socket: FakeControlSocket): RallarBlackBoxTestRecord[] {
+    return toEventEnvelopes(socket, 'stats').map((envelope) => decodeRecord(decodeRecord(envelope.payload).payload));
 }
 
 function toEventEnvelopes(socket: FakeControlSocket, kind: 'stats' | 'report'): ControlEventEnvelope[] {
@@ -1215,6 +1255,70 @@ describe('shared rallar black-box control client', () => {
         }
     });
 
+    it('reads no census and opens no database while the browser census is off', async () => {
+        const factory = new IDBFactory();
+        await writeCensusDatabase(factory);
+        const counting = createCountingIndexedDb(factory);
+        vi.useFakeTimers();
+        const socket = new FakeControlSocket();
+        const client = new RallarBlackBoxControlClient({
+            ...toClientOptions(createDefaultRallarBlackBoxTestRuntime(), () => socket),
+            statsIntervalMs: 1_000,
+            readBrowserCensus: async () => await readBrowserCensus({ indexedDb: counting.indexedDb, performance: undefined })
+        });
+
+        try {
+            connectToRunOne(client);
+            socket.open();
+            await vi.advanceTimersByTimeAsync(30_000);
+
+            const stats = toStatsPayloads(socket);
+            expect(stats).toHaveLength(31);
+            expect(stats.filter((payload) => 'browser' in payload)).toEqual([]);
+            expect(counting.opens()).toBe(0);
+        }
+        finally {
+            client.dispose();
+            vi.useRealTimers();
+        }
+    });
+
+    it('reads the census on its own interval and sends each reading in a stats of its own', async () => {
+        const factory = new IDBFactory();
+        await writeCensusDatabase(factory);
+        const counting = createCountingIndexedDb(factory);
+        vi.useFakeTimers();
+        const socket = new FakeControlSocket();
+        const client = new RallarBlackBoxControlClient({
+            ...toClientOptions(createDefaultRallarBlackBoxTestRuntime(), () => socket),
+            statsIntervalMs: 1_000,
+            browserCensusIntervalMs: 5_000,
+            readBrowserCensus: async () => await readBrowserCensus({ indexedDb: counting.indexedDb, performance: undefined })
+        });
+
+        try {
+            connectToRunOne(client);
+            socket.open();
+            await vi.advanceTimersByTimeAsync(10_500);
+
+            const stats = toStatsPayloads(socket);
+            expect(stats.filter((payload) => !('browser' in payload))).toHaveLength(11);
+            expect(stats.filter((payload) => 'browser' in payload).map((payload) => payload.browser)).toEqual([
+                CENSUS_DATABASE_READING,
+                CENSUS_DATABASE_READING
+            ]);
+            expect(counting.opens()).toBe(2);
+
+            client.disconnect();
+            await vi.advanceTimersByTimeAsync(10_000);
+            expect(counting.opens()).toBe(2);
+        }
+        finally {
+            client.dispose();
+            vi.useRealTimers();
+        }
+    });
+
     it('sends and uploads a redacted final report', async () => {
         const socket = new FakeControlSocket();
         const runtime = createDefaultRallarBlackBoxTestRuntime();
@@ -1437,7 +1541,8 @@ describe('shared rallar black-box control client', () => {
         const client = createDefaultRallarBlackBoxControlClient({
             runtime,
             heartbeatIntervalMs: 60_000,
-            statsIntervalMs: 0
+            statsIntervalMs: 0,
+            browserCensusIntervalMs: 0
         });
         vi.stubGlobal('WebSocket', function PageWebSocket () {
             return socket;

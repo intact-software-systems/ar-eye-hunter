@@ -4,6 +4,7 @@ import { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/au
 import type { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { ClientRestSnapshotReadSelector } from '@shared-server/rallar-system/client-state/snapshot/client-rest-snapshot-read-selector.ts';
 import type { GroupRestSnapshotReadSelector } from '@shared-server/rallar-system/group-state/snapshot/group-rest-snapshot-read-selector.ts';
+import type { GroupStateCurrentSnapshotCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-current-snapshot-cache.ts';
 import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/rallar-middleware-runtime.ts';
 import {
     createRallarAlmReceiptDiagnosticsRecorder,
@@ -47,6 +48,7 @@ Deno.test('requireApiV1Runtime preserves every complete API capability identity'
     );
     assert.equal(complete.groupFormationMetrics, additions.groupFormationMetrics);
     assert.equal(complete.almReceiptDiagnostics, additions.almReceiptDiagnostics);
+    assert.equal(complete.groupCurrentSnapshotCache, additions.groupCurrentSnapshotCache);
     assert.equal(complete.backgroundTasks, additions.backgroundTasks);
     assert.equal(complete.topologyServices, additions.topologyServices);
     assert.equal(complete.relicGameMutations, additions.relicGameMutations);
@@ -118,6 +120,7 @@ interface RuntimeAdditions extends ApiV1RelicServices {
     readonly groupRestSnapshotReadSelector: GroupRestSnapshotReadSelector;
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
     readonly almReceiptDiagnostics: RallarAlmReceiptDiagnosticsRecorder;
+    readonly groupCurrentSnapshotCache: GroupStateCurrentSnapshotCache;
     readonly backgroundTasks: ApiV1BackgroundTaskLifecycle;
     readonly topologyServices: ApiV1TopologyServices;
 }
@@ -152,6 +155,7 @@ function createRuntimeAdditions(): RuntimeAdditions {
             nowEpochMs: Date.now,
             capacity: RALLAR_ALM_RECEIPT_DIAGNOSTICS_CAPACITY
         }),
+        groupCurrentSnapshotCache: {} as GroupStateCurrentSnapshotCache,
         backgroundTasks: {} as ApiV1BackgroundTaskLifecycle,
         topologyServices: {} as ApiV1TopologyServices
     };

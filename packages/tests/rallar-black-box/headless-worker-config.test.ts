@@ -51,6 +51,25 @@ describe('rallar-black-box headless worker config', () => {
         ).toThrow(/routine browser diagnostics/i);
     });
 
+    it('keeps the browser census off unless the environment selects an interval of 0 or 5000 to 600000', () => {
+        const off = readHeadlessWorkerConfig({ env: recordingWorkerEnvironment });
+        expect(off.browserCensusIntervalMs).toBe(0);
+        expect(new URL(off.agents[0].url).searchParams.get('browserCensusIntervalMs')).toBe('0');
+
+        const on = readHeadlessWorkerConfig({
+            env: { ...recordingWorkerEnvironment, RALLAR_BLACK_BOX_BROWSER_CENSUS_INTERVAL_MS: '5000' }
+        });
+        expect(on.browserCensusIntervalMs).toBe(5_000);
+        expect(new URL(on.agents[0].url).searchParams.get('browserCensusIntervalMs')).toBe('5000');
+
+        for (const value of ['4999', '600001', '-1', '5s']) {
+            expect(() =>
+                readHeadlessWorkerConfig({
+                    env: { ...recordingWorkerEnvironment, RALLAR_BLACK_BOX_BROWSER_CENSUS_INTERVAL_MS: value }
+                }), value).toThrow(/RALLAR_BLACK_BOX_BROWSER_CENSUS_INTERVAL_MS must be 0 or an integer from 5000 to 600000/);
+        }
+    });
+
     it('builds control-agent URLs for multiple browser agents', () => {
         const config = readHeadlessWorkerConfig({
             env: {
@@ -648,6 +667,7 @@ describe('rallar-black-box headless worker config', () => {
             controlUrl: 'wss://control.example.test/control',
             apiBaseUrl: 'https://api.example.test',
             headlessEntry: 'operator-spa',
+            browserCensusIntervalMs: 0,
             runId: 'run-direct',
             agentPrefix: 'direct',
             agentCount: 1,

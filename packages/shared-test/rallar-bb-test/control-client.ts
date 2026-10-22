@@ -11,6 +11,7 @@ import {
     toUnavailableRecipeHistoryResult
 } from './control-client/control-recipe-event-history.ts';
 import { deleteBrowserStorageEntries } from './control-client/delete-browser-storage-entries.ts';
+import { createDefaultBrowserCensusReader } from './control-client/read-browser-census.ts';
 import {
     decodeControlAgentFleetLocation,
     toControlAgentIdentity
@@ -46,6 +47,7 @@ import {
     createEventHistory,
     type RallarBlackBoxEventHistory
 } from './runtime/event-history.ts';
+import type { RallarBlackBoxBrowserCensus } from './runtime/runtime-stats-contracts.ts';
 import { toRuntimeStats } from './runtime/to-runtime-stats.ts';
 
 export type RallarBlackBoxControlConnectionState =
@@ -119,6 +121,10 @@ export interface RallarBlackBoxControlClientOptions {
     readonly heartbeatIntervalMs: number;
     /** Zero turns periodic stats off. */
     readonly statsIntervalMs: number;
+    /** Zero turns the browser census off; otherwise each reading is sent in a stats of its own at this interval. */
+    readonly browserCensusIntervalMs: number;
+    /** Never rejects. */
+    readonly readBrowserCensus: () => Promise<RallarBlackBoxBrowserCensus>;
     readonly reconnectBaseMs: number;
     readonly reconnectMaxMs: number;
     /** A larger serialized frame is not sent: a bounded diagnostic and a capture gap stand in for it, and a bounded failed result for a result. */
@@ -168,13 +174,17 @@ const DEFAULT_RECONNECT_MAX_MS = 5_000;
 const TERMINAL_RUNTIME_STATUSES: readonly RallarBlackBoxTestRuntimeStatus[] = ['completed', 'failed', 'cancelled'];
 
 export function createDefaultRallarBlackBoxControlClient(
-    input: Pick<RallarBlackBoxControlClientOptions, 'runtime' | 'heartbeatIntervalMs' | 'statsIntervalMs'>
+    input: Pick<
+        RallarBlackBoxControlClientOptions,
+        'runtime' | 'heartbeatIntervalMs' | 'statsIntervalMs' | 'browserCensusIntervalMs'
+    >
 ): RallarBlackBoxControlClient {
     return new RallarBlackBoxControlClient({
         ...input,
         now: Date.now,
         webSocketFactory: (url) => new WebSocket(url),
         fetch: (request, init) => globalThis.fetch(request, init),
+        readBrowserCensus: createDefaultBrowserCensusReader(),
         reconnectBaseMs: DEFAULT_RECONNECT_BASE_MS,
         reconnectMaxMs: DEFAULT_RECONNECT_MAX_MS,
         maxFrameBytes: RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES
@@ -209,6 +219,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
     private removeSocketListeners: (() => void) | undefined;
     private heartbeatTimer: ReturnType<typeof globalThis.setInterval> | undefined;
     private statsTimer: ReturnType<typeof globalThis.setInterval> | undefined;
+    private censusTimer: ReturnType<typeof globalThis.setInterval> | undefined;
     private reconnectTimer: ReturnType<typeof globalThis.setTimeout> | undefined;
     private readonly reconnectBackoff: FailureBackoff;
     private manualClose = false;
@@ -358,7 +369,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
         this.sendCompletedResults();
         this.sendNewEvents(this.options.runtime.state());
         this.sendHeartbeat();
-        this.sendStats();
+        this.sendStats(undefined);
         this.startHeartbeat();
         this.startStats();
     };
@@ -628,16 +639,17 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
         this.heartbeatTimer = globalThis.setInterval(() => this.sendHeartbeat(), this.options.heartbeatIntervalMs);
     }
 
-    private sendStats(): void {
+    private sendStats(browser: RallarBlackBoxBrowserCensus | undefined): void {
         const connection = this.assertConnection();
         const atEpochMs = this.options.now();
+        const stats = toRuntimeStats(this.options.runtime.state(), atEpochMs);
         const event: RallarBlackBoxTestEvent = {
             eventId: `control-stats-${this.statsEventSequence++}`,
             kind: 'stats',
             topic: 'rallar.bb.stats',
             atEpochMs,
             severity: 'info',
-            payload: toRuntimeStats(this.options.runtime.state(), atEpochMs)
+            payload: browser === undefined ? stats : { ...stats, browser }
         };
         this.sendEnvelope({
             kind: 'stats',
@@ -654,7 +666,21 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
     private startStats(): void {
         this.stopStats();
         if (this.options.statsIntervalMs > 0) {
-            this.statsTimer = globalThis.setInterval(() => this.sendStats(), this.options.statsIntervalMs);
+            this.statsTimer = globalThis.setInterval(() => this.sendStats(undefined), this.options.statsIntervalMs);
+        }
+        if (this.options.browserCensusIntervalMs > 0) {
+            this.censusTimer = globalThis.setInterval(
+                () => void this.sendBrowserCensusStats(),
+                this.options.browserCensusIntervalMs
+            );
+        }
+    }
+
+    /** A census that settles after the census stopped is dropped. */
+    private async sendBrowserCensusStats(): Promise<void> {
+        const browser = await this.options.readBrowserCensus();
+        if (this.censusTimer !== undefined) {
+            this.sendStats(browser);
         }
     }
 
@@ -942,6 +968,8 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
     private stopStats(): void {
         globalThis.clearInterval(this.statsTimer);
         this.statsTimer = undefined;
+        globalThis.clearInterval(this.censusTimer);
+        this.censusTimer = undefined;
     }
 
     private stopReconnectTimer(): void {

@@ -101,6 +101,7 @@ describe('runtime construction', () => {
             own: { admissions: 2, bytes: 600 },
             inbound: { admissions: 1, bytes: 312 },
             orderingTracks: 3,
+            deliveredMarkers: 3,
             limits: AL_VOLATILE_SESSION_LIMITS,
             overloaded: false
         };

@@ -86,7 +86,7 @@ export class BlackBoxRallarCloseOperation {
             this.#input.rallar.diagnostics.faults.clear();
             this.#input.rallar.diagnostics.storageFaults.clear();
             this.#input.rallar.diagnostics.congestion.reset();
-            this.#input.rallar.diagnostics.orderingTracks.reset();
+            this.#input.rallar.diagnostics.inboundStoreCounts.reset();
         });
     };
 

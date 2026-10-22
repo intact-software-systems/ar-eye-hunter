@@ -28,6 +28,7 @@ import {
     createBrowserALVolatileInboundRuntimeStores,
     createBrowserALVolatileOutboundRuntimeStores,
     resolveBrowserRtcOverlayALOutboundRuntimeStores,
+    resolveBrowserSessionALInboundRuntimeStores,
     resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
@@ -809,7 +810,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         await deleteBrowserALRuntimeEntriesForSession(sessionId, { currentScope: SCOPE, storage: diagnosticsPorts.storage });
         expect(await volatile.workQueue.getAllKeys()).toHaveLength(1);
     });
-    it('states the ordering snapshots of the session inbound memory pair as the store\'s volatile lane', async () => {
+    it('states the ordering snapshots and delivered markers of the session inbound memory pair as its volatile lane', async () => {
         const stated: ALStorageEvent[] = [];
         const storeId = toBrowserSessionALInboundRuntimeStoreId('ordering-tracks');
         const volatile = createBrowserALVolatileInboundRuntimeStores(
@@ -823,7 +824,31 @@ describe('Browser AL runtime IndexedDB stores', () => {
         await inbound.runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'track-1', seq: 1 }), INBOUND_TEST_SOURCE);
         await inbound.runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'track-2', seq: 2 }), INBOUND_TEST_SOURCE);
 
-        expect(stated).toEqual([{ kind: 'ordering-tracks', storeId: `${storeId}/volatile`, tracks: 1 }]);
+        expect(stated).toEqual([
+            { kind: 'ordering-tracks', storeId: `${storeId}/volatile`, tracks: 1 },
+            { kind: 'delivered-markers', storeId: `${storeId}/volatile`, markers: 1 }
+        ]);
+    });
+
+    it('states the delivered markers of the session inbound IndexedDB pair under the store id', async () => {
+        const stated: ALStorageEvent[] = [];
+        const sessionId = `markers-${crypto.randomUUID()}`;
+        configureBrowserALRuntimeStores(sessionId, {
+            scope: SCOPE,
+            diagnosticsPorts: toRallarDiagnosticsPorts({ storage: (event) => stated.push(event) })
+        });
+        const inbound = createInboundTestRuntime({
+            carrier: 'ws',
+            stores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
+            effectWorkerId: 'al-inbound:markers'
+        });
+        await inbound.runtime.ready();
+
+        await inbound.runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'track-1', seq: 1 }), INBOUND_TEST_SOURCE);
+
+        expect(stated.filter((event) => event.kind === 'delivered-markers')).toEqual([
+            { kind: 'delivered-markers', storeId: toBrowserSessionALInboundRuntimeStoreId(sessionId), markers: 1 }
+        ]);
     });
 });
 

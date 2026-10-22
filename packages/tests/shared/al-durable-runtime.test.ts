@@ -15,6 +15,7 @@ import {
     InMemoryAdmissionBackend,
     type ALAdmissionMemoryState
 } from '@shared/alm/al-admission-backend.ts';
+import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { ALOutboundDispatchPlan, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -285,7 +286,8 @@ function createRetainedInboundStoreSet(
                 orderingTrackTtlMs: 5 * 60_000,
                 supersedenceTrackTtlMs: 5 * 60_000,
                 retention: normalizeALRuntimeStoreRetention(),
-                maxOrderingTracks: undefined
+                maxOrderingTracks: undefined,
+                maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
             })
         }
     };

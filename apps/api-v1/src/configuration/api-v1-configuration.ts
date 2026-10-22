@@ -189,6 +189,12 @@ export interface ApiV1AppInboxConfiguration {
      */
     readonly newLaneHeldRows: number;
     readonly completionWait: ApiV1AppInboxCompletionWaitConfiguration;
+    /**
+     * How long a finished command's fact, result, derived outbox rows and idempotency record stay before the expiry
+     * sweeps remove them (`MIN_APP_INBOX_FINISHED_RETENTION_MS` to `MAX_APP_INBOX_FINISHED_RETENTION_MS`). A replay
+     * inside the window returns the stored result; after it the command executes again.
+     */
+    readonly finishedRetentionMs: number;
 }
 
 interface ApiV1IceCommonConfiguration {
@@ -252,6 +258,8 @@ export interface ApiV1BlackBoxConfiguration {
 
 export interface ApiV1ObservabilityConfiguration {
     readonly timingLogs: boolean;
+    /** While timing logs are on, the API logs one heap sample per interval (1 000 to 3 600 000). */
+    readonly heapSampleIntervalMs: number;
     readonly startupSummary: boolean;
 }
 

@@ -9,7 +9,12 @@ Deno.test('explicit authenticated release waits for browser acknowledgement and 
     const server = await startControlServer({ RALLAR_BLACK_BOX_ADMIN_TOKEN: ADMIN_TOKEN, RALLAR_BLACK_BOX_REQUIRE_RUN_TOKEN: '1' });
     const identity = { runId: 'release-api', agentId: 'agent' };
     const runtime = createDefaultRallarBlackBoxTestRuntime();
-    const client = createDefaultRallarBlackBoxControlClient({ runtime, heartbeatIntervalMs: 60_000, statsIntervalMs: 0 });
+    const client = createDefaultRallarBlackBoxControlClient({
+        runtime,
+        heartbeatIntervalMs: 60_000,
+        statsIntervalMs: 0,
+        browserCensusIntervalMs: 0
+    });
     try {
         const tokenResponse = await fetch(`${server.baseUrl}/runs/${identity.runId}/agents/${identity.agentId}/tokens`, {
             method: 'POST',

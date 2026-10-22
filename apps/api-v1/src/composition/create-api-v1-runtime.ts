@@ -126,6 +126,7 @@ export interface CreateApiV1RuntimeInput {
     readonly appInboxOptions: AppInboxOptions;
     readonly appInboxNewLaneConcurrency: number;
     readonly appInboxNewLaneHeldRows: number;
+    readonly appInboxFinishedRetentionMs: number;
     readonly disconnectedSessionRetentionMs: number;
     readonly groupCapacity: GroupPolicyCapacityConfig;
     readonly groupFormationRecomputeDebounceMs: number;
@@ -266,6 +267,7 @@ export function constructApiV1Runtime(
         ...selectors,
         groupFormationMetrics: mutation.groupFormationMetrics,
         almReceiptDiagnostics,
+        groupCurrentSnapshotCache: mutation.groupCurrentSnapshotCache,
         topologyServices: topology,
         backgroundTasks: input.backgroundTasks
     });
@@ -397,6 +399,7 @@ function toMutationRuntimeInput(
         appInboxOptions: input.appInboxOptions,
         appInboxNewLaneConcurrency: input.appInboxNewLaneConcurrency,
         appInboxNewLaneHeldRows: input.appInboxNewLaneHeldRows,
+        appInboxFinishedRetentionMs: input.appInboxFinishedRetentionMs,
         disconnectedSessionRetentionMs: input.disconnectedSessionRetentionMs,
         groupCapacity: input.groupCapacity,
         groupFormationRecomputeDebounceMs: input.groupFormationRecomputeDebounceMs,
@@ -560,6 +563,7 @@ function createTopologyInboxService(
         mutationOwners: topology.topologyMutationOwners
     }, {
         serviceId: mutation.serviceId,
+        finishedRetentionMs: mutation.appInboxFinishedRetentionMs,
         timing: input.timing,
         options: mutation.appInboxOptions,
         wakeOwningQueue: wakeQueueEngine
@@ -581,6 +585,7 @@ function createRtcRttInboxService(
         mutationDependencies: topology.rtcRttMutationDependencies
     }, {
         serviceId: mutation.serviceId,
+        finishedRetentionMs: mutation.appInboxFinishedRetentionMs,
         timing: input.timing,
         options: mutation.appInboxOptions,
         wakeOwningQueue: wakeQueueEngine

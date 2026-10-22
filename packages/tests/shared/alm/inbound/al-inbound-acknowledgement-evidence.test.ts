@@ -13,7 +13,6 @@ import {
     createBlackBoxRallarDiagnosticsPorts
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts';
 import type { BlackBoxRallarEvent } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
-import { createBlackBoxRallarOrderingTracks } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-ordering-tracks.ts';
 import { toRallarBlackBoxRuntimeDiagnostic } from '@shared-test/rallar-bb-test/diagnostics.ts';
 import { decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -22,12 +21,14 @@ import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent, ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { decodeALInboundWorkEntry, toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { ALInboundAcknowledgementEvidence } from '@shared/alm/inbound/control/al-inbound-acknowledgement-evidence.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
+import { ALInboundStoreCounts } from '@shared/alm/storage/al-inbound-store-counts.ts';
 import { ALWorkBatchObservations } from '@shared/alm/work/al-work-batch-observations.ts';
 import { createCountingIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { createScriptedStorageFaultPort } from '@shared/persistence/storage-fault-port.ts';
@@ -63,7 +64,8 @@ class AcknowledgementFixture {
         retention: normalizeALRuntimeStoreRetention(),
         orderingTrackTtlMs: 60_000,
         supersedenceTrackTtlMs: 60_000,
-        maxOrderingTracks: undefined
+        maxOrderingTracks: undefined,
+        maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
     });
     readonly engine = new InboxOutboxEngine();
     readonly message: ALMessage = {
@@ -90,7 +92,7 @@ class AcknowledgementFixture {
             storage: createCountingIndexedDbOperationObserver(),
             storageFaults: createScriptedStorageFaultPort(),
             congestion: createBlackBoxRallarCongestionCounters(),
-            orderingTracks: createBlackBoxRallarOrderingTracks()
+            inboundStoreCounts: new ALInboundStoreCounts()
         }
     ).inboundDiagnostics;
     readonly sendGate = Promise.withResolvers<void>();

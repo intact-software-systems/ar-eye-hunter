@@ -5,10 +5,6 @@ import {
     type BlackBoxRallarCongestionCounters
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-congestion-counters.ts';
 import {
-    createBlackBoxRallarOrderingTracks,
-    type BlackBoxRallarOrderingTracks
-} from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-ordering-tracks.ts';
-import {
     type BlackBoxBrowserAuthDependency,
     type BlackBoxBrowserCrdtDependency,
     type BlackBoxBrowserDeliveriesDependency,
@@ -47,6 +43,7 @@ import type { RallarRealtimeHandler } from '@shared-web/browser/rallar-realtime-
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 import type { ALDeliveryAdmissionVerdict, ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { ALInboundStoreCounts } from '@shared/alm/storage/al-inbound-store-counts.ts';
 import {
     AL_VOLATILE_SESSION_LIMITS,
     type ALVolatileSessionReport
@@ -385,7 +382,7 @@ let scriptedFaults = createScriptedTransportFaultPort();
 let countingStorage = createCountingIndexedDbOperationObserver();
 let scriptedStorageFaults = createScriptedStorageFaultPort();
 let congestionCounters = createBlackBoxRallarCongestionCounters();
-let orderingTracks = createBlackBoxRallarOrderingTracks();
+let inboundStoreCounts = new ALInboundStoreCounts();
 let deliveryRegistry = createFacadeDeliveryRegistry();
 let deliverySequence = 0;
 
@@ -421,8 +418,8 @@ const diagnostics: BlackBoxBrowserDiagnosticsDependency = {
     get congestion(): BlackBoxRallarCongestionCounters {
         return congestionCounters;
     },
-    get orderingTracks(): BlackBoxRallarOrderingTracks {
-        return orderingTracks;
+    get inboundStoreCounts(): ALInboundStoreCounts {
+        return inboundStoreCounts;
     }
 };
 
@@ -497,7 +494,7 @@ export function resetBrowserRuntimeFacadeTestDouble(): void {
     countingStorage = createCountingIndexedDbOperationObserver();
     scriptedStorageFaults = createScriptedStorageFaultPort();
     congestionCounters = createBlackBoxRallarCongestionCounters();
-    orderingTracks = createBlackBoxRallarOrderingTracks();
+    inboundStoreCounts = new ALInboundStoreCounts();
     deliveryRegistry = createFacadeDeliveryRegistry();
     facadeBehavior.login.mockResolvedValue(facadeSession);
     facadeBehavior.registerAndLogin.mockResolvedValue(facadeSession);

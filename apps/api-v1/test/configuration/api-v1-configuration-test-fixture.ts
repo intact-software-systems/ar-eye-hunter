@@ -132,7 +132,8 @@ export function validConfigurationDefaultsSource(): MutableApiV1ConfigurationSou
                 retryIntervalMs: 250,
                 maxRetryIntervalMs: 1_000,
                 jitterRatio: 0.1
-            }
+            },
+            finishedRetentionMs: 86_400_000
         },
         ice: {
             mode: 'local',
@@ -161,6 +162,7 @@ export function validConfigurationDefaultsSource(): MutableApiV1ConfigurationSou
         },
         observability: {
             timingLogs: true,
+            heapSampleIntervalMs: 30_000,
             startupSummary: true
         }
     };

@@ -29,6 +29,7 @@ function snapshot(): RallarBlackBoxBrowserControlAgentSnapshot {
             agentId: 'agent-1',
             heartbeatIntervalMs: 10_000,
             statsIntervalMs: 5_000,
+            browserCensusIntervalMs: 0,
             environment: 'hetzner',
             apiBaseUrl: 'https://api.example.test',
             applicationId: 'rallar-server',

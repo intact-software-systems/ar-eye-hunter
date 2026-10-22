@@ -15,6 +15,7 @@ import {
 } from '@shared/al-contracts/al-contract.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { isStateSnapshotTopic } from '@shared/api/state-snapshot-page.ts';
@@ -69,7 +70,8 @@ describe('middleware pre-admission', () => {
                         orderingTrackTtlMs: 60_000,
                         supersedenceTrackTtlMs: 60_000,
                         retention: normalizeALRuntimeStoreRetention(),
-                        maxOrderingTracks: undefined
+                        maxOrderingTracks: undefined,
+                        maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS
                     }),
                     workQueue: signalingBackend.workQueue
                 }
