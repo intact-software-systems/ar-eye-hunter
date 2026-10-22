@@ -23,6 +23,7 @@ import { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-
 import { EntityStatus, isKeysEqual } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
@@ -59,6 +60,7 @@ Deno.test('PGlite AppInbox success committed by its handler transaction updates 
             options: { waitMaxElapsedMsecs: 5_000, waitRetryIntervalMsecs: 1, waitMaxRetryIntervalMsecs: 2, waitJitterRatio: 0 }
         }).commandClient;
         const handlerRuntime = createAppInboxHandlerRuntime({
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             inboxQueueReader,
             resultRepository: new ResourceInboxResultsRepository(recordingSql),
             database: recordingSql,

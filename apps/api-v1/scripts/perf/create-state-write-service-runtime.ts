@@ -127,6 +127,7 @@ export function createStateWriteServiceRuntime(input: CreateStateWriteServiceRun
         {
             serviceId,
             disconnectedSessionRetentionMs: defaults.clientSessions.disconnectedRetentionMs,
+            finishedRetentionMs: defaults.appInbox.finishedRetentionMs,
             timing,
             options: STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS.client
         }
@@ -139,6 +140,7 @@ export function createStateWriteServiceRuntime(input: CreateStateWriteServiceRun
         },
         {
             serviceId,
+            finishedRetentionMs: defaults.appInbox.finishedRetentionMs,
             timing,
             options: STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS.group
         }
@@ -187,6 +189,7 @@ function createStateWriteDomainServices(
         runtimeRepository,
         groupStateEventStore,
         serviceId,
+        finishedRetentionMs: defaults.appInbox.finishedRetentionMs,
         timing,
         // deno-lint-ignore require-await -- The benchmark supplies the asynchronous layout-read port.
         readPlannedLayoutRow: async () => null,
@@ -239,6 +242,7 @@ function createStateWriteTopologyService({
         },
         {
             serviceId,
+            finishedRetentionMs: defaults.appInbox.finishedRetentionMs,
             timing,
             options: STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS.group
         }

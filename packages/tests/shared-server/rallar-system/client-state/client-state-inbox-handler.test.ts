@@ -80,6 +80,7 @@ import {
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { TestResourceInbox, TestResourceInboxResults } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { readClientExpiryTestEnqueueData } from './app-client-inbox-expiry-fixtures.ts';
 import {
     authorisedConnectOperationInput,
@@ -162,7 +163,7 @@ describe('ClientStateInboxHandler phases', () => {
                 sessionId: 'session-1'
             }, false)
         } as const;
-        const completionFacts = { entry: context.entry, completedAtEpochMs: 4_000 };
+        const completionFacts = { entry: context.entry, completedAtEpochMs: 4_000, finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS };
         const computed = computeClientMutationOperation({
             command,
             read,
@@ -570,6 +571,7 @@ function createHandlerFixture(options: HandlerFixtureOptions): ClientHandlerFixt
     const writesByTransaction: number[] = [];
     const runtimeRepository = new FakeRuntimeStateRepository();
     const handler = new ClientStateInboxHandler({
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         mutationService: createHandlerMutationService(options, { actions, writesByTransaction, runtimeRepository }),
         sessionGenerationLifecycle: {
             read: async (identity) => {
@@ -728,7 +730,7 @@ function createHandlerTransactionWriter(
     return {
         readCompletionFacts: (context) => {
             actions.push('completion.read');
-            return { entry: context.entry, completedAtEpochMs: NOW_EPOCH_MS };
+            return { entry: context.entry, completedAtEpochMs: NOW_EPOCH_MS, finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS };
         },
         writeComputedMutation: async (_context, computed, write) => {
             actions.push('transaction');

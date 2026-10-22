@@ -254,6 +254,10 @@ export type ClientMutationFacts = Readonly<{
     eventId: string;
     commandHash: string;
     attemptCount: number;
+    /**
+     * When the command's idempotency record and the outbox rows it derives expire: a replay of its request inside
+     * the window returns the stored result, and once the expiry sweep removes the record the request executes again.
+     */
     expireAtEpochMs: number;
     /** How long a session that ended keeps its row before the runtime-state expiry sweep removes it. */
     disconnectedSessionRetentionMs: number;

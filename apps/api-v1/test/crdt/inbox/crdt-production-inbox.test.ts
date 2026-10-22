@@ -36,6 +36,7 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { createApiCrdtInboxFactory } from '../../../src/crdt/create-api-crdt-inbox-factory.ts';
 import { createApiCrdtInboxService } from '../../../src/crdt/create-api-crdt-inbox-service.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
@@ -108,6 +109,7 @@ Deno.test(
             const authorityReads: string[] = [];
             let wakes = 0;
             const factory = createApiCrdtInboxFactory({
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 resourceInboxRepository: resourceInbox.entries,
                 resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
                 database: sql,
@@ -362,6 +364,7 @@ function createProductionCrdtInboxHarness(input: ProductionServiceInput): Produc
         newLaneConcurrency: 1
     });
     const service = createApiCrdtInboxService({
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         inboxQueueReader,
         resourceInboxRepository: resourceInbox.entries,
         resourceInboxResultsRepository: new ResourceInboxResultsRepository(queueSql),

@@ -17,6 +17,7 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { pauseNextAuthorisedWsConnectRead } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/app-inbox-ws-close-test-harness.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { putAuthorisedWsTestTicket } from '../../../../packages/tests/shared-server/rallar-system/client-state/authorised-ws-test-ticket.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/client-state/test-disconnected-session-retention.ts';
 import { TestWebSocket } from '../../../../packages/tests/shared/websocket/test-web-socket.ts';
@@ -75,7 +76,13 @@ async function createWsConnectFixture(
             clientStateEventStore: events,
             serviceId: 'ws-ticket-connect'
         })
-    }, { serviceId: 'ws-ticket-connect', disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS, timing: undefined, options: OPTIONS });
+    }, {
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+        serviceId: 'ws-ticket-connect',
+        disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,
+        timing: undefined,
+        options: OPTIONS
+    });
     const socketServer = new JsonWebSocketServer();
     const upgradedSockets: TestWebSocket[] = [];
     const app = new Hono();

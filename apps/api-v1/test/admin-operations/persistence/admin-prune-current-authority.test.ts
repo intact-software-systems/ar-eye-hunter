@@ -7,6 +7,7 @@ import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { createApiAdminInboxService } from '../../../src/admin-operations/create-api-admin-inbox-service.ts';
 import { createApiV1TestQueueResilience } from '../../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from '../../db/pglite-app-inbox-test-runtime.ts';
@@ -24,6 +25,7 @@ Deno.test('production admin prune rereads current admin authority before creatin
         const now = await readPGliteDatabaseEpochMs(sql);
         let wakeCount = 0;
         const appAdmin = createApiAdminInboxService({
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             inboxQueueReader: inbox,
             outboxQueueReader: outbox,
             wakeQueueEngine: () => {
@@ -89,6 +91,7 @@ Deno.test('committed initial admin page work wakes the queue after its transacti
         const now = await readPGliteDatabaseEpochMs(sql);
         let wakeCount = 0;
         const appAdmin = createApiAdminInboxService({
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             inboxQueueReader: inbox,
             outboxQueueReader: outbox,
             wakeQueueEngine: () => {

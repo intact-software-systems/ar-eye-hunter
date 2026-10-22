@@ -491,6 +491,10 @@ export interface GroupMutationIngressFacts {
      * presence timestamps the request defaulted, and the skew checks against them. Never for a decision at execution.
      */
     readonly nowEpochMs: number;
+    /**
+     * When the command's idempotency record and the outbox rows it derives expire: a replay of its request inside
+     * the window returns the stored result, and once the expiry sweep removes the record the request executes again.
+     */
     readonly expireAtEpochMs: number;
     readonly serviceId: string;
     readonly eventId: string;

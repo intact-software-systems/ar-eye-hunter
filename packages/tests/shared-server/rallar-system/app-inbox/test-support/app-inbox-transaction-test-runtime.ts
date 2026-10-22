@@ -57,6 +57,7 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { TestResourceInbox } from './app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from './test-app-inbox-finished-retention.ts';
 
 const NOW_EPOCH_MS = Date.parse('2026-07-22T12:00:00.000Z');
 
@@ -138,6 +139,7 @@ class AtomicAppInboxService {
         this.commandClient = clientRuntime.commandClient;
         this.queueEntryWriter = clientRuntime.queueEntryWriter;
         const handlerRuntime = createAppInboxHandlerRuntime({
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             inboxQueueReader: dependencies.inboxQueueReader,
             resultRepository: dependencies.resourceInboxResultsRepository,
             database: dependencies.database,
@@ -485,20 +487,13 @@ class AtomicDatabase {
             return [toAtomicResultRow(result)];
         }
         if (query.includes('update resource_inbox') && query.includes('ri_status = \'reserved\'')) {
-            return this.finalizeReservation(values);
+            return this.finalizeReservation(toAtomicReservationFinish(query, values));
         }
         throw new Error(`Unexpected raw transaction SQL in atomic test database: ${query}`);
     }
 
-    private finalizeReservation(values: readonly PSqlParameter[]): PSqlRows {
-        const [status, completedAt, topicId, resourceId, contextId, attempts] = values;
-        if (
-            (status !== EntityStatus.COMPLETED && status !== EntityStatus.FAILED && status !== EntityStatus.NON_RETRYABLE) ||
-            !(completedAt instanceof Date) || typeof topicId !== 'string' ||
-            typeof resourceId !== 'string' || typeof contextId !== 'string' || typeof attempts !== 'number'
-        ) {
-            throw new TypeError('Invalid atomic reservation SQL parameters');
-        }
+    private finalizeReservation(finish: AtomicReservationFinish): PSqlRows {
+        const { status, completedAt, expiresAt, topicId, resourceId, contextId, attempts } = finish;
         if (this.loseReservation) {
             return [];
         }
@@ -510,6 +505,9 @@ class AtomicDatabase {
         this.requireWorking().inbox.set(key, {
             ...stored,
             status,
+            audit: expiresAt === null
+                ? stored.audit
+                : { ...stored.audit, expiryTs: Temporal.Instant.fromEpochMilliseconds(expiresAt.getTime()) },
             dequeueAudit: {
                 ...stored.dequeueAudit,
                 endTs: Temporal.Instant.fromEpochMilliseconds(completedAt.getTime()),
@@ -551,6 +549,33 @@ class AtomicDatabase {
         }
         return this.working;
     }
+}
+
+interface AtomicReservationFinish {
+    readonly status: ResourceEntry['status'];
+    readonly completedAt: Date;
+    /** Null for a finish that keeps the row's own expiry. */
+    readonly expiresAt: Date | null;
+    readonly topicId: string;
+    readonly resourceId: string;
+    readonly contextId: string;
+    readonly attempts: number;
+}
+
+function toAtomicReservationFinish(query: string, values: readonly PSqlParameter[]): AtomicReservationFinish {
+    const retained = query.includes('expire_ts = ?');
+    const [status, completedAt, ...rest] = values;
+    const expiresAt = retained ? rest.shift() : null;
+    const [topicId, resourceId, contextId, attempts] = rest;
+    if (
+        (status !== EntityStatus.COMPLETED && status !== EntityStatus.FAILED && status !== EntityStatus.NON_RETRYABLE) ||
+        !(completedAt instanceof Date) || !(expiresAt === null || expiresAt instanceof Date) ||
+        typeof topicId !== 'string' || typeof resourceId !== 'string' || typeof contextId !== 'string' ||
+        typeof attempts !== 'number'
+    ) {
+        throw new TypeError('Invalid atomic reservation SQL parameters');
+    }
+    return { status, completedAt, expiresAt, topicId, resourceId, contextId, attempts };
 }
 
 export interface DequeueExhaustedAtomicEntryInput {
@@ -799,7 +824,7 @@ function cloneState(state: AtomicState): AtomicState {
  */
 export async function dequeueExhaustedAtomicEntry(input: DequeueExhaustedAtomicEntryInput): Promise<void> {
     const { harness, lane, options } = input;
-    const finalizeRetry = createAppInboxRetryFinalizer({ database: harness.database.sql });
+    const finalizeRetry = createAppInboxRetryFinalizer({ finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS, database: harness.database.sql });
     let reserved = false;
     const reserveOnce = <T>(value: T): Map<Key, T> => {
         if (reserved) {

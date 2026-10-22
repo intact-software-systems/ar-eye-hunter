@@ -237,12 +237,16 @@ async function executeResultAndReservationSql(
         return undefined;
     }
     await input.options.onStage?.('reservation-finish');
-    const status = readEntityStatus(input.values[0], 'Reservation status');
-    const completedAt = readDateParameter(input.values[1], 'Reservation completion');
-    const topicId = readStringParameter(input.values[2], 'Reservation topic ID');
-    const resourceId = readStringParameter(input.values[3], 'Reservation resource ID');
-    const contextId = readStringParameter(input.values[4], 'Reservation context ID');
-    const attempts = readNonNegativeIntegerParameter(input.values[5], 'Reservation attempts');
+    const [statusValue, completedAtValue, ...rest] = input.values;
+    const status = readEntityStatus(statusValue, 'Reservation status');
+    const completedAt = readDateParameter(completedAtValue, 'Reservation completion');
+    const expiresAt = input.query.includes('expire_ts = ?')
+        ? readDateParameter(rest.shift(), 'Reservation retention expiry')
+        : null;
+    const topicId = readStringParameter(rest[0], 'Reservation topic ID');
+    const resourceId = readStringParameter(rest[1], 'Reservation resource ID');
+    const contextId = readStringParameter(rest[2], 'Reservation context ID');
+    const attempts = readNonNegativeIntegerParameter(rest[3], 'Reservation attempts');
     const current = await input.repositories.inbox.getItem({ topicId, resourceId, contextId });
     if (
         !current ||
@@ -255,6 +259,9 @@ async function executeResultAndReservationSql(
     const entry: ResourceEntry = {
         ...current,
         status,
+        audit: expiresAt === null
+            ? current.audit
+            : { ...current.audit, expiryTs: Temporal.Instant.fromEpochMilliseconds(expiresAt.getTime()) },
         dequeueAudit: {
             ...current.dequeueAudit,
             endTs: Temporal.Instant.fromEpochMilliseconds(completedAt.getTime()),

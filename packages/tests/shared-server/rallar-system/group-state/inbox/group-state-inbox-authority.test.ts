@@ -28,6 +28,7 @@ import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state
 
 import { type GroupMutationReceipt } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { authSession } from '../group-state-test-runtime.ts';
 import {
     createAuthorityHarness,
@@ -297,6 +298,7 @@ describe('GroupStateInboxService authenticated authority', () => {
         const eventStore = new InMemoryGroupStateEventStore();
         const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
         const groupStateService = createGroupStateService({
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             runtimeRepository,
             serviceId: 'server-12345678',
             readPlannedLayoutRow: async () => null,
@@ -316,6 +318,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                 }
             },
             {
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 serviceId: 'server-12345678'
             }
         );

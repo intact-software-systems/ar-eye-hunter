@@ -12,6 +12,7 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { TestResourceInbox, TestResourceInboxResults } from '../test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../test-support/app-inbox-test-database.ts';
 import { createAtomicHarness, createResilience } from '../test-support/app-inbox-transaction-test-runtime.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../test-support/test-app-inbox-finished-retention.ts';
 
 describe('AppInbox completion clock ownership', () => {
     it('persists completion using the default clock selected when the runtime is constructed', async () => {
@@ -22,6 +23,7 @@ describe('AppInbox completion clock ownership', () => {
         Date.now = () => 1_784_721_600_123;
         try {
             const runtime = createAppInboxHandlerRuntime({
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 inboxQueueReader: new InboxQueueReader(queue, { newLaneConcurrency: 1 }),
                 resultRepository: results,
                 database: harness.database.sql,
@@ -60,6 +62,7 @@ describe('AppInbox completion clock ownership', () => {
         const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1, nowEpochMs: () => 1_784_721_600_000 });
         let completionClock = () => 1_784_721_600_456;
         createAppInboxHandlerRuntime({
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             inboxQueueReader: reader,
             resultRepository: results,
             database: createAppInboxTestDatabase(queue, results),

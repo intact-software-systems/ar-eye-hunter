@@ -56,6 +56,8 @@ export namespace TopologyInboxService {
 
     export interface Config {
         readonly serviceId: string;
+        /** How long a finished command's fact and result stay before the expiry sweep removes them. */
+        readonly finishedRetentionMs: number;
         readonly timing?: RallarTimingSink;
         readonly options?: AppInboxOptions;
         readonly wakeOwningQueue?: () => void;
@@ -99,6 +101,7 @@ export class TopologyInboxService {
             resultRepository: dependencies.resourceInboxResultsRepository,
             database: dependencies.database,
             serviceId: config.serviceId,
+            finishedRetentionMs: config.finishedRetentionMs,
             timing: config.timing,
             options: config.options
         });

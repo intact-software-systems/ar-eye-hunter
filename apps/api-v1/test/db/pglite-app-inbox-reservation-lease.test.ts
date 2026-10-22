@@ -24,6 +24,7 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import {
     createApiV1TestMiddlewareResilience,
     createApiV1TestQueueResilience
@@ -49,6 +50,7 @@ Deno.test('PGlite AppInbox reclaims a reservation abandoned past its lease and r
             options: { waitMaxElapsedMsecs: 5_000, waitRetryIntervalMsecs: 1, waitMaxRetryIntervalMsecs: 2, waitJitterRatio: 0 }
         }).commandClient;
         const handlerRuntime = createAppInboxHandlerRuntime({
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             inboxQueueReader,
             resultRepository: results,
             database: sql,

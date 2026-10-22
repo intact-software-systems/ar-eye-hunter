@@ -31,13 +31,14 @@ import {
     toExhaustion,
     toRecovery
 } from '../test-support/app-inbox-transaction-test-runtime.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../test-support/test-app-inbox-finished-retention.ts';
 
 afterEach(() => vi.useRealTimers());
 
 describe('Committed AppInbox completion publication', () => {
     it.each(['exhaustion', 'recovery'] as const)('refuses a losing %s reservation before reaching result replacement', async (lane) => {
         const harness = createAtomicHarness({ attempts: lane === 'exhaustion' ? 20 : 21, loseReservation: true, failResultWrite: true });
-        const finalizer = createAppInboxRetryFinalizer({ database: harness.database.sql });
+        const finalizer = createAppInboxRetryFinalizer({ finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS, database: harness.database.sql });
         // A result replacement at this owned SQL port fails independently of reservation ownership.
         await expect(finalizer(lane === 'exhaustion' ? toExhaustion(harness.entry) : toRecovery(harness.entry, 21))).rejects.toBeInstanceOf(
             AppInboxReservationConflictError
@@ -70,6 +71,7 @@ describe('Committed AppInbox completion publication', () => {
             options
         });
         const handler = createAppInboxHandlerRuntime({
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             inboxQueueReader,
             resultRepository: results,
             database: harness.database.sql,
@@ -112,6 +114,7 @@ describe('Committed AppInbox completion publication', () => {
             options
         });
         const handler = createAppInboxHandlerRuntime({
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             inboxQueueReader,
             resultRepository: results,
             database: harness.database.sql,
@@ -153,6 +156,7 @@ describe('Committed AppInbox completion publication', () => {
             const completionNotifications = ResourceInboxCompletionNotifications.createDefault();
             const dependencies = { database: harness.database.sql, nowEpochMs: () => 1000, completionNotifications };
             const writer = new AppInboxTransactionWriter(dependencies, {
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 serviceId: 'test',
                 timing: () => {
                     throw new Error('diagnostic failure');
@@ -167,6 +171,7 @@ describe('Committed AppInbox completion publication', () => {
                 woke = true;
             });
             const computed = computeAppInboxCompletion({
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 entry: harness.entry,
                 completedAtEpochMs: 1000,
                 status,
@@ -190,13 +195,19 @@ describe('Committed AppInbox completion publication', () => {
         const harness = createAtomicHarness(options);
         const completionNotifications = ResourceInboxCompletionNotifications.createDefault();
         const dependencies = { database: harness.database.sql, nowEpochMs: () => 1000, completionNotifications };
-        const writer = new AppInboxTransactionWriter(dependencies, { serviceId: 'test' });
+        const writer = new AppInboxTransactionWriter(dependencies, { finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS, serviceId: 'test' });
         const subscription = completionNotifications.subscribe(harness.entry.key);
         let woke = false;
         void subscription.wait(1000).then(() => {
             woke = true;
         });
-        const computed = computeAppInboxCompletion({ entry: harness.entry, completedAtEpochMs: 1000, status: EntityStatus.COMPLETED, durableResult: null });
+        const computed = computeAppInboxCompletion({
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+            entry: harness.entry,
+            completedAtEpochMs: 1000,
+            status: EntityStatus.COMPLETED,
+            durableResult: null
+        });
         await expect(writer.writeComputedMutation(harness.context, computed, async () => {})).rejects.toBeInstanceOf(Error);
         await vi.advanceTimersByTimeAsync(0);
         expect(woke).toBe(false);
@@ -210,13 +221,19 @@ describe('Committed AppInbox completion publication', () => {
         const harness = createAtomicHarness();
         const completionNotifications = ResourceInboxCompletionNotifications.createDefault();
         const dependencies = { database: harness.database.sql, nowEpochMs: () => 1000, completionNotifications };
-        const writer = new AppInboxTransactionWriter(dependencies, { serviceId: 'test' });
+        const writer = new AppInboxTransactionWriter(dependencies, { finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS, serviceId: 'test' });
         const subscription = completionNotifications.subscribe(harness.entry.key);
         let woke = false;
         const pending = subscription.wait(1000).then(() => {
             woke = true;
         });
-        const computed = computeAppInboxCompletion({ entry: harness.entry, completedAtEpochMs: 1000, status: EntityStatus.NON_RETRYABLE, durableResult: null });
+        const computed = computeAppInboxCompletion({
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+            entry: harness.entry,
+            completedAtEpochMs: 1000,
+            status: EntityStatus.NON_RETRYABLE,
+            durableResult: null
+        });
         await writer.writeComputedQueueFailure(
             computeResourceInboxAttempt({
                 entry: harness.entry,
@@ -269,10 +286,16 @@ describe('Committed AppInbox completion publication', () => {
         const completionNotifications = ResourceInboxCompletionNotifications.createDefault((key) => relayed.push(key));
         const writer = new AppInboxTransactionWriter(
             { database: harness.database.sql, nowEpochMs: () => 1000, completionNotifications },
-            { serviceId: 'test' }
+            { finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS, serviceId: 'test' }
         );
         const context = { ...harness.context, enqueue: { ...harness.context.enqueue, type } };
-        const computed = computeAppInboxCompletion({ entry: harness.entry, completedAtEpochMs: 1000, status: EntityStatus.COMPLETED, durableResult: null });
+        const computed = computeAppInboxCompletion({
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+            entry: harness.entry,
+            completedAtEpochMs: 1000,
+            status: EntityStatus.COMPLETED,
+            durableResult: null
+        });
 
         await writer.writeComputedMutation(context, computed, async () => {});
 
@@ -311,9 +334,15 @@ describe('Committed AppInbox completion publication', () => {
                 nowEpochMs: () => 1000,
                 completionNotifications: ResourceInboxCompletionNotifications.createDefault((key) => relayed.push(key))
             },
-            { serviceId: 'test' }
+            { finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS, serviceId: 'test' }
         );
-        const computed = computeAppInboxCompletion({ entry: harness.entry, completedAtEpochMs: 1000, status: EntityStatus.NON_RETRYABLE, durableResult: null });
+        const computed = computeAppInboxCompletion({
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+            entry: harness.entry,
+            completedAtEpochMs: 1000,
+            status: EntityStatus.NON_RETRYABLE,
+            durableResult: null
+        });
 
         await writer.writeComputedQueueFailure(
             computeResourceInboxAttempt({

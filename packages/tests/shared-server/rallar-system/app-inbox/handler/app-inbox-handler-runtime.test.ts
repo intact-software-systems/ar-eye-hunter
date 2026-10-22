@@ -6,6 +6,7 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { createQueueResilience } from '../../../../shared/app-inbox/fair-service-fixture.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../test-support/test-app-inbox-finished-retention.ts';
 
 describe('createAppInboxHandlerRuntime', () => {
     it('leaves the dequeue-pass observer to the reader owner when several services compose on one reader with phase timing', async () => {
@@ -22,6 +23,7 @@ describe('createAppInboxHandlerRuntime', () => {
         });
         for (const serviceId of ['group-state', 'client-state']) {
             createAppInboxHandlerRuntime({
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 inboxQueueReader: reader,
                 resultRepository: { replace: async (entry) => entry, findByKey: async () => undefined },
                 database: createIdleDatabase(),

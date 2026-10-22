@@ -40,6 +40,7 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { createAppInboxTestDatabase, type AppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import {
     createResilience,
     TestResourceInbox,
@@ -1038,6 +1039,7 @@ class AdminInboxHarness {
             computeRetryExpiryAtEpochMs: (captured) => this.computeRetryExpiry(captured),
             createAdminPruneIdempotencyIdentity: (input) => this.createIdentity(input)
         }, {
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             serviceId: 'admin-inbox-test-server',
             pageSize: 25,
             timing: (event) => recordAdminPrunePhase(this.events, this.timingEvents, event),

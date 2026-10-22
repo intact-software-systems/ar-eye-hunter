@@ -51,6 +51,7 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import { createTestGroup } from '../../../../create-test-group.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 
 const NOW_EPOCH_MS = 1_000;
 const GROUP_REF: GroupRef = {
@@ -124,7 +125,7 @@ describe('TopologyAppInboxHandler', () => {
             transactionWriter: {
                 readCompletionFacts: (context) => {
                     phases.push('completion');
-                    return { entry: context.entry, completedAtEpochMs: NOW_EPOCH_MS };
+                    return { entry: context.entry, completedAtEpochMs: NOW_EPOCH_MS, finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS };
                 },
                 writeComputedMutation: async (_context, computed, write) => {
                     phases.push('transaction');
@@ -160,7 +161,8 @@ describe('TopologyAppInboxHandler', () => {
             transactionWriter: {
                 readCompletionFacts: (context) => ({
                     entry: context.entry,
-                    completedAtEpochMs: NOW_EPOCH_MS
+                    completedAtEpochMs: NOW_EPOCH_MS,
+                    finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS
                 }),
                 writeComputedMutation: async () => {
                     throw new Error('Validation failures must not open a transaction');
@@ -222,7 +224,8 @@ describe('TopologyAppInboxHandler', () => {
                     phases.push('completion');
                     return {
                         entry: messageContext.entry,
-                        completedAtEpochMs: NOW_EPOCH_MS
+                        completedAtEpochMs: NOW_EPOCH_MS,
+                        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS
                     };
                 },
                 writeComputedMutation: async () => unreachableTransaction()
@@ -268,7 +271,7 @@ describe('TopologyAppInboxHandler', () => {
             transactionWriter: {
                 readCompletionFacts: (context) => {
                     phases.push('completion');
-                    return { entry: context.entry, completedAtEpochMs: NOW_EPOCH_MS };
+                    return { entry: context.entry, completedAtEpochMs: NOW_EPOCH_MS, finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS };
                 },
                 writeComputedMutation: async (_context, computed, write) => {
                     phases.push('transaction');

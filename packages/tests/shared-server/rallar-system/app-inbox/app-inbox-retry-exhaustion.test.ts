@@ -33,6 +33,7 @@ import {
     toPersistedAppInboxResource,
     toRecovery
 } from './test-support/app-inbox-transaction-test-runtime.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from './test-support/test-app-inbox-finished-retention.ts';
 
 const NOW_EPOCH_MS = Date.parse('2026-07-22T12:00:00.000Z');
 
@@ -42,6 +43,7 @@ describe('AppInbox retry exhaustion', () => {
         const telemetry: ResourceInboxRetryExhaustion[] = [];
         const releasedEntryKeys: Key[] = [];
         const onRetryExhausted = createAppInboxRetryFinalizer({
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             database: harness.database.sql
         });
         let reserved = false;
@@ -215,6 +217,7 @@ describe('AppInbox retry exhaustion', () => {
                 entryTopicId: topicId
             });
             const finalizeRetry = createAppInboxRetryFinalizer({
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 database: harness.database.sql
             });
             if (lane === 'initial') {
@@ -263,6 +266,7 @@ describe('AppInbox retry exhaustion', () => {
     it('rolls back a lost recovery reservation and finalizes its successor', async () => {
         const harness = createAtomicHarness({ attempts: 21, loseReservation: true });
         const recover = createAppInboxRetryFinalizer({
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             database: harness.database.sql
         });
 

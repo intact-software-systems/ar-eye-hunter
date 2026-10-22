@@ -49,6 +49,7 @@ import type { OnQueuedMessageCallback } from '@shared/services/queue-message-cal
 
 import { TestResourceInbox, TestResourceInboxResults } from '../test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../test-support/app-inbox-test-database.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../test-support/test-app-inbox-finished-retention.ts';
 
 const SCOPE: StateScope = {
     applicationId: 'ar-eye-hunter',
@@ -773,6 +774,7 @@ class TestAppInboxRuntime {
             wakeOwningQueue: config.wakeOwningQueue
         });
         this.handlers = createAppInboxHandlerRuntime({
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             inboxQueueReader: dependencies.inboxQueueReader,
             resultRepository: dependencies.resourceInboxResultsRepository,
             database: dependencies.database,

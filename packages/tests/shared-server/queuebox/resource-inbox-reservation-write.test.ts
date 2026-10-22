@@ -1,7 +1,10 @@
 import { expect, it } from 'vitest';
 
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { writeResourceInboxReservationFinish } from '@shared-server/queuebox/postgres/resource-inbox-reservation-write.ts';
+import {
+    writeResourceInboxReservationFinish,
+    writeResourceInboxRetainedReservationFinish
+} from '@shared-server/queuebox/postgres/resource-inbox-reservation-write.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
 it('refuses to finish a reservation after database time advances past its expiry', async () => {
@@ -36,6 +39,34 @@ it('refuses to finish a reservation after database time advances past its expiry
     expect(endTsParameterIndex).toBeGreaterThanOrEqual(0);
     expect(statement.values[endTsParameterIndex]).toBe(completedAt);
     expect(statement.values.filter((value) => value === completedAt)).toHaveLength(1);
+});
+
+it('keeps a retained finish\'s row until the retention expiry it binds', async () => {
+    const completedAt = new Date('2026-09-04T10:00:00.000Z');
+    const expiresAt = new Date('2026-09-05T10:00:00.000Z');
+    const statements: Array<Readonly<{ strings: readonly string[]; values: readonly PSqlParameter[]; }>> = [];
+    const transaction = createReservationFinishTransaction(
+        new Date('2026-09-04T10:00:01.000Z'),
+        new Date('9999-12-31T23:59:59.999Z'),
+        statements
+    );
+
+    const finished = await writeResourceInboxRetainedReservationFinish(transaction, {
+        key: { topicId: 'topic-1', resourceId: 'resource-1', contextId: 'context-1' },
+        expectedAttempts: 1,
+        status: EntityStatus.COMPLETED,
+        completedAt,
+        expiresAt
+    });
+
+    expect(finished).toBe(true);
+    const statement = statements[0];
+    if (statement === undefined) {
+        throw new Error('Expected the retained reservation finish SQL statement');
+    }
+    const expiryParameterIndex = statement.strings.findIndex((text) => /expire_ts =\s*$/u.test(text));
+    expect(expiryParameterIndex).toBeGreaterThanOrEqual(0);
+    expect(statement.values[expiryParameterIndex]).toBe(expiresAt);
 });
 
 function createReservationFinishTransaction(

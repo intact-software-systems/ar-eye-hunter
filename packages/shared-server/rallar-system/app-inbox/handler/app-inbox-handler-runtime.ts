@@ -19,6 +19,8 @@ export interface CreateAppInboxHandlerRuntimeInput {
     readonly resultRepository: AppInboxResultRepository;
     readonly database: PSqlSql;
     readonly serviceId: string;
+    /** How long a finished fact and its result stay before the expiry sweep removes them. */
+    readonly finishedRetentionMs: number;
     readonly timing?: RallarTimingSink;
     readonly options?: AppInboxOptions;
     /** The timer seam of the attempt deadlines; absent, the process timers. */
@@ -37,6 +39,7 @@ export function createAppInboxHandlerRuntime(
         },
         {
             serviceId: input.serviceId,
+            finishedRetentionMs: input.finishedRetentionMs,
             timing: input.timing
         }
     );
