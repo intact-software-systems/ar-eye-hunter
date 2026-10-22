@@ -379,7 +379,8 @@ async function verifyIdenticalOutboxCollisionRollback(): Promise<void> {
         const input = await command({
             commandId: 'identical-outbox-collision-command',
             updateId: 'identical-outbox-collision-update',
-            capturedAtEpochMs: 1_000
+            // A live collision row: an outbox insert takes an expired row for absent.
+            capturedAtEpochMs: Date.now()
         });
         const computed = await computeValidatedWrite(service, input);
         const entries = readCollisionEntries(computed);

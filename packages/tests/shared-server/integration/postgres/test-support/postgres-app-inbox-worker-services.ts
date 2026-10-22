@@ -163,7 +163,8 @@ function createPostgresAppInboxTopology(composition: CreatePostgresAppInboxTopol
         planning: topologyRuntimeOwners.planning,
         nowEpochMs: () => input.atEpochMs,
         isPlatformAdmin: () => false,
-        outboxWriter: new RtcTopologyOutboxWriter({ recordWrite: () => undefined })
+        outboxWriter: new RtcTopologyOutboxWriter({ recordWrite: () => undefined }),
+        finishedRetentionMs: input.finishedRetentionMs
     });
     return new TopologyInboxService(
         {

@@ -83,6 +83,7 @@ export function createRallarMiddlewareTestRuntime(
         topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000 })
     });
     const topologyMutationOwners = createGroupTopologyMutationOwners({
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         groupStateRepository: groupsRepository,
         configRepository: topologyConfigRepository,
         planning: topologyRuntimeOwners.planning,

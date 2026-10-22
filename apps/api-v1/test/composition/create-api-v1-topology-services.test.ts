@@ -14,6 +14,8 @@ import type { GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/a
 
 import type { GroupFormationRttMutationEvent } from '@shared-server/rallar-system/observability/formation-metrics.ts';
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
+import { createRtcTopologyAdminReplayMetrics } from '../../../../packages/tests/shared-server/rallar-system/admin-operations/test-support/create-rtc-topology-admin-metrics.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { FakeRuntimeStateRepository } from '../../../../packages/tests/shared-server/runtime-state/test-support/fake-runtime-state-repository.ts';
 import { ReadBatchFakeRuntimeStateRepository } from '../../../../packages/tests/shared-server/runtime-state/test-support/read-batch-fake-runtime-state-repository.ts';
 import { createApiV1TopologyServices, type CreateApiV1TopologyServicesInput } from '../../src/composition/create-api-v1-topology-services.ts';
@@ -42,7 +44,7 @@ Deno.test('topology composition installs canonical owners and RTT policy inputs'
     assert.deepEqual(services.adminClientIds, ['admin']);
     assert.deepEqual(services.readRtcTopologyMetrics(), {
         ...services.rtcTopologyService.readMetrics(),
-        replay: { replayWakeCount: 2 }
+        replay: createRtcTopologyAdminReplayMetrics({ drainAttemptCount: 2 })
     });
 
     await seedReportingPairGroup(services.groupStateRepository, snapshot);
@@ -104,7 +106,7 @@ function createServicesInput(
         groupFormationRttMutation: (event) => formationEvents.push(event),
         topologyOutboxWritten: () => undefined,
         topologyReplayMetrics: {
-            readMetrics: () => ({ replayWakeCount: 2 }),
+            readMetrics: () => createRtcTopologyAdminReplayMetrics({ drainAttemptCount: 2 }),
             resetMetrics: () => {}
         },
         adminClientIds: ['admin'],
@@ -113,7 +115,8 @@ function createServicesInput(
             minIntervalMs: 30_000,
             vivaldiDeltaThresholdMs: 5
         },
-        nowEpochMs: () => NOW_EPOCH_MS
+        nowEpochMs: () => NOW_EPOCH_MS,
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS
     };
 }
 

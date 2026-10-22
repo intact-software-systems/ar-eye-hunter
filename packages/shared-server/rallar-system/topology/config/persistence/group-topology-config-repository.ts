@@ -230,7 +230,6 @@ export class GroupTopologyConfigRepository extends GroupTopologyConfigSourceRepo
             return undefined;
         }
         decodeGroupTopologyMutationEntry(raw, ref, requestId);
-        assertRetainedGroupTopologyEntry(raw, 'mutation record');
         const stored = await this.toLiveJsonEntryValue(
             GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
             raw

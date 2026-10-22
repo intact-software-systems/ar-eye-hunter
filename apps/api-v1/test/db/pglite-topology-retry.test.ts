@@ -98,6 +98,7 @@ Deno.test(
                 topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => nowEpochMs })
             });
             const topologyMutation = createGroupTopologyMutationOwners({
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 groupStateRepository: groupRepository,
                 configRepository,
                 planning: topologyRuntime.planning,
@@ -303,6 +304,7 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
         });
         const outboxWriter = new RtcTopologyOutboxWriter({ recordWrite: () => undefined });
         const baselineMutation = createGroupTopologyMutationOwners({
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             groupStateRepository: groupRepository,
             configRepository,
             planning: topologyRuntime.planning,
@@ -330,6 +332,7 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
         let readsAtFirstRetryRelease = 0;
         let staleReadCount = 0;
         const topologyMutation = createGroupTopologyMutationOwners({
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             groupStateRepository: groupRepository,
             configRepository,
             planning: topologyRuntime.planning,
@@ -501,6 +504,7 @@ Deno.test(
                 topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000 })
             });
             const service = createGroupTopologyMutationOwners({
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 groupStateRepository: pausingGroupState,
                 configRepository: topology,
                 planning: topologyRuntime.planning,

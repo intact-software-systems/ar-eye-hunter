@@ -337,7 +337,8 @@ function createRuntimeTopology(
         adminClientIds: input.adminClientIds,
         rtcTopologyOptions: input.rtcTopologyOptions,
         rttRefinementGateConfig: input.rttRefinementGateConfig,
-        nowEpochMs: input.nowEpochMs
+        nowEpochMs: input.nowEpochMs,
+        finishedRetentionMs: input.appInboxFinishedRetentionMs
     });
     return { rtcTopology, topology };
 }

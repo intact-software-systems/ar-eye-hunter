@@ -438,7 +438,8 @@ function configRead(): GroupTopologyConfigMutationAttemptRead {
         },
         policyNowEpochMs: NOW_EPOCH_MS,
         isPlatformAdmin: false,
-        serverDefaults: {}
+        serverDefaults: {},
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS
     };
 }
 
@@ -469,7 +470,12 @@ function configWriteComputed(): Extract<GroupTopologyConfigMutationComputed, { o
         ),
         result: { kind: 'config', config }
     } satisfies Omit<Extract<GroupTopologyConfigMutationComputed, { outcome: 'write'; }>, 'runtimeWrites'>;
-    return { ...computed, runtimeWrites: computeTopologyConfigRuntimeWrites(computed) };
+    return {
+        ...computed,
+        runtimeWrites: computeTopologyConfigRuntimeWrites(computed, {
+            expireAtEpochMs: NOW_EPOCH_MS + TEST_APP_INBOX_FINISHED_RETENTION_MS
+        })
+    };
 }
 
 function reconfigureRead(): GroupTopologyReconfigureRead {

@@ -2,6 +2,7 @@ import { assertGroupTopologyConfigMutationRecord } from '@shared-server/rallar-s
 import { computeTopologyConfigMutation } from '@shared-server/rallar-system/topology/config/mutation/compute-topology-config-mutation.ts';
 import { validateTopologyConfigMutation } from '@shared-server/rallar-system/topology/config/mutation/validate-topology-config-mutation.ts';
 import { describe, expect, it } from 'vitest';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import {
     createDefaultTopologyConfigMutationTestInput,
     createTopologyTestAuthorityGuard,
@@ -115,7 +116,8 @@ function deterministicMutationInput() {
             attemptCount: 1,
             isPlatformAdmin: false,
             resolvedOverrideExpiresAtEpochMs: null,
-            deleteTarget: null
+            deleteTarget: null,
+            expireAtEpochMs: 1_000 + TEST_APP_INBOX_FINISHED_RETENTION_MS
         },
         serverDefaults: {}
     });
