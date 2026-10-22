@@ -66,8 +66,10 @@ describe('ResetAdminMetrics', () => {
         });
     });
 
-    it('reports only the requested category in the before and after snapshots', async () => {
-        const formationMetrics = emptyGroupFormationMetrics();
+    it('captures the requested category before the reset and reads it again after', async () => {
+        const formationBefore = emptyGroupFormationMetrics();
+        const formationAfter = { ...formationBefore, presenceSummaryExpansionCount: 0 };
+        let formationMetrics = { ...formationBefore, presenceSummaryExpansionCount: 5 };
         const resetMetrics = new ResetAdminMetrics({
             nowEpochMs: () => NOW_EPOCH_MS,
             rtcTopology: {
@@ -76,7 +78,9 @@ describe('ResetAdminMetrics', () => {
             },
             groupFormation: {
                 read: () => formationMetrics,
-                reset: () => {}
+                reset: () => {
+                    formationMetrics = formationAfter;
+                }
             }
         });
 
@@ -85,8 +89,10 @@ describe('ResetAdminMetrics', () => {
             request: { categories: ['group-formation'] }
         });
 
-        expect(result.before).toEqual({ groupFormation: formationMetrics });
-        expect(result.after).toEqual({ groupFormation: formationMetrics });
+        expect(result.before).toEqual({
+            groupFormation: { ...formationBefore, presenceSummaryExpansionCount: 5 }
+        });
+        expect(result.after).toEqual({ groupFormation: formationAfter });
     });
 });
 
