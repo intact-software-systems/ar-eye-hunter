@@ -69,7 +69,9 @@ async function measurePageDispatch(sql: PSqlSql, runId: string): Promise<void> {
             await lane.stores.workQueue.enqueue(row);
         }
 
-        await lane.engine.executeOnce();
+        // A single pass can read the clock a millisecond before the readiness probe does and then schedule a wake
+        // nobody serves; the running engine serves it, as in production.
+        lane.engine.start();
         await expect.poll(() => lane.dispatch.settled(), { timeout: 45_000 }).toBe(true);
 
         const dispatched = lane.dispatch.statements(log.statements);
