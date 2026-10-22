@@ -2,13 +2,16 @@ import { describe, expect, it } from 'vitest';
 
 import { RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import {
+    CANONICAL_JSON_MAX_DEPTH,
     canonicalControlRetentionJson,
     CONTROL_RETENTION_PLAN_LIMITS,
-    ControlRetentionPlanLimitError
+    ControlRetentionPlanLimitError,
+    toCanonicalJson
 } from '@shared-test/rallar-bb-test/control-retention-canonical.ts';
 import {
     computeResultCaptureReceipt,
     RESULT_CAPTURE_LIMITS,
+    ResultCaptureLimitError,
     toCanonicalResultCaptureJson
 } from '@shared-test/rallar-bb-test/result-release/result-release-protocol.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
@@ -180,7 +183,7 @@ it('rejects digest budget failures explicitly and retains original payloads', as
 
 it('bounds result capture by the admitted control frame, not by the retention plan', async () => {
     expect(RESULT_CAPTURE_LIMITS).toEqual({
-        canonicalDepth: 64,
+        canonicalDepth: CANONICAL_JSON_MAX_DEPTH,
         canonicalNodes: RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES / 2,
         stringCharacters: RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES,
         canonicalUtf8Bytes: RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES
@@ -197,6 +200,28 @@ it('bounds result capture by the admitted control frame, not by the retention pl
             maximum: RESULT_CAPTURE_LIMITS.canonicalNodes
         })
     );
+});
+
+it('fails closed on values the standard control frame does not bound', () => {
+    const toLimitError = (limit: keyof typeof RESULT_CAPTURE_LIMITS) => new ResultCaptureLimitError(limit);
+    // A browser-side undefined-valued key counts as a node although it encodes to nothing.
+    expect(() =>
+        toCanonicalJson({ a: undefined, b: undefined }, {
+            limits: { ...RESULT_CAPTURE_LIMITS, canonicalNodes: 2 },
+            toLimitError
+        })
+    ).toThrow(expect.objectContaining({ limit: 'canonicalNodes' }));
+    // A server admitting frames above 2 MB can hand capture a value larger than the frame bound.
+    expect(() => toCanonicalResultCaptureJson('x'.repeat(RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES))).toThrow(
+        expect.objectContaining({ limit: 'canonicalUtf8Bytes' })
+    );
+    // A non-standard number spelling re-encodes longer than it arrived: '[1e20]' is 6 bytes on the wire.
+    expect(() =>
+        toCanonicalJson(JSON.parse('[1e20]'), {
+            limits: { ...RESULT_CAPTURE_LIMITS, canonicalUtf8Bytes: '[1e20]'.length },
+            toLimitError
+        })
+    ).toThrow(expect.objectContaining({ limit: 'canonicalUtf8Bytes' }));
 });
 
 it('history aliases cannot fabricate assertions after releasing the latest result', async () => {

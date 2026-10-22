@@ -14,10 +14,13 @@ export interface CanonicalJsonBudget {
     readonly toLimitError: (limit: CanonicalJsonLimit) => Error;
 }
 
+/** The encoder's recursion bound; no admission bound limits JSON depth, so every owner keeps this one. */
+export const CANONICAL_JSON_MAX_DEPTH = 64;
+
 export const CONTROL_RETENTION_PLAN_LIMITS = Object.freeze({
     candidates: 1_000,
     collectionItems: 100_000,
-    canonicalDepth: 64,
+    canonicalDepth: CANONICAL_JSON_MAX_DEPTH,
     canonicalNodes: 100_000,
     stringCharacters: 1024 * 1024,
     canonicalUtf8Bytes: 8 * 1024 * 1024

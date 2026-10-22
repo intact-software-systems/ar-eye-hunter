@@ -175,10 +175,8 @@ Deno.test('a result beyond its capture budget is persisted in full but never cer
     });
     try {
         const result = await runtime.execute({ kind: 'health', commandId: 'large' }, identity);
-        assertEquals(
-            (await recorder.record({ kind: 'result', protocolVersion: 1, ...identity, commandId: result.commandId, ok: result.ok, result })).left !== undefined,
-            true
-        );
+        const recorded = await recorder.record({ kind: 'result', protocolVersion: 1, ...identity, commandId: result.commandId, ok: result.ok, result });
+        assertEquals(recorded.left, `Result capture exceeded the stringCharacters bound of ${RESULT_CAPTURE_LIMITS.stringCharacters}.`);
         const stored = JSON.parse(await Deno.readTextFile(`${storageDir}/runs/large/results.jsonl`));
         assertEquals(stored.fullResult, JSON.parse(JSON.stringify(result)));
         assertEquals((await recorder.readResultReceipts(identity, ['large'])).left !== undefined, true);

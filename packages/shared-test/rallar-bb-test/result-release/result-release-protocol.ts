@@ -4,6 +4,7 @@ import { Either } from '@shared/resilience/Either.ts';
 import { decodeRallarBlackBoxTestResult } from '../composite-results.ts';
 import { RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES, type ControlClientIdentity } from '../control-protocol.ts';
 import {
+    CANONICAL_JSON_MAX_DEPTH,
     toCanonicalJson,
     type CanonicalJsonBudget,
     type CanonicalJsonLimit,
@@ -14,12 +15,14 @@ import type { RallarBlackBoxTestResult } from '../rallar-black-box-test-contract
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 
 /**
- * An admitted result arrives inside one control frame, so the frame's UTF-8 bytes bound its encoding: no string is
- * longer than the frame and every node spends at least two bytes with its separator. Admission bounds no depth, so
- * capture keeps the encoder's recursion bound.
+ * A result parsed from one standard control frame is bounded by that frame's UTF-8 bytes: no string is longer than
+ * the frame and every node spends at least two bytes with its separator. Values the frame does not bound
+ * (undefined-valued keys counted in the browser, frames a larger RALLAR_BLACK_BOX_MAX_REQUEST_BYTES admits, number
+ * spellings such as 1e20 that re-encode longer) can exceed these limits and then fail closed: persisted, never
+ * certified.
  */
 export const RESULT_CAPTURE_LIMITS: CanonicalJsonLimits = Object.freeze({
-    canonicalDepth: 64,
+    canonicalDepth: CANONICAL_JSON_MAX_DEPTH,
     canonicalNodes: RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES / 2,
     stringCharacters: RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES,
     canonicalUtf8Bytes: RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES
