@@ -1,6 +1,6 @@
 import type {
     AdminMetricsResetRequest,
-    AdminOperationResultResponse,
+    AdminMetricsResetResultResponse,
     AdminOperationsCrdtResponse,
     AdminOperationsOverviewResponse,
     AdminOperationsQueuesResponse,
@@ -37,7 +37,7 @@ export interface AdminOperationUseCases {
     readonly system: AdminOperationUseCase<AdminOperationReadRequest, AdminOperationsSystemResponse>;
     readonly metricsReset: AdminOperationUseCase<
         AdminOperationWriteRequest<AdminMetricsResetRequest>,
-        AdminOperationResultResponse
+        AdminMetricsResetResultResponse
     >;
     readonly crdtIntegrity: AdminOperationUseCase<
         AdminOperationWriteRequest<VerifyAdminCrdtIntegrity.Request>,

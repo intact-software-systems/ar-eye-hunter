@@ -2,12 +2,13 @@ import {
     ADMIN_METRICS_RESET_CATEGORIES,
     type AdminMetricsResetCategory,
     type AdminMetricsResetRequest,
-    type AdminOperationResultResponse
+    type AdminMetricsResetResultResponse,
+    type AdminMetricsResetSnapshot
 } from '@shared/api/admin-operations-types.ts';
 import type { RallarGroupFormationMetrics } from '@shared/rtc/group-formation-metrics.ts';
+import type { RtcTopologyAdminMetrics } from '@shared/rtc/rtc-topology-admin-metrics.ts';
 
 import type { RallarTimingSink } from '../observability/timing.ts';
-import { decodeJsonWireValue, type JsonWireValue } from '../protocol/json-wire-identity.ts';
 import type { AdminOperationWriteRequest } from './admin-operation-request.ts';
 import { createAdminOperationBaseResponse } from './admin-operation-response.ts';
 import { runTimedAdminOperation } from './run-timed-admin-operation.ts';
@@ -17,17 +18,12 @@ interface AdminMetricOwner<TMetrics> {
     readonly reset: () => void;
 }
 
-interface AdminMetricsSnapshot {
-    rtcTopology?: JsonWireValue;
-    groupFormation?: RallarGroupFormationMetrics;
-}
-
 export namespace ResetAdminMetrics {
     export interface Options {
         readonly nowEpochMs: () => number;
         readonly serverId?: string;
         readonly timing?: RallarTimingSink;
-        readonly rtcTopology: AdminMetricOwner<object>;
+        readonly rtcTopology: AdminMetricOwner<RtcTopologyAdminMetrics>;
         readonly groupFormation: AdminMetricOwner<RallarGroupFormationMetrics>;
     }
 }
@@ -41,7 +37,7 @@ export class ResetAdminMetrics {
 
     async execute(
         input: AdminOperationWriteRequest<AdminMetricsResetRequest>
-    ): Promise<AdminOperationResultResponse> {
+    ): Promise<AdminMetricsResetResultResponse> {
         const categories = input.request.categories ?? ADMIN_METRICS_RESET_CATEGORIES;
         return await runTimedAdminOperation({
             timing: this.options.timing,
@@ -68,13 +64,12 @@ export class ResetAdminMetrics {
 
     private reset(
         categories: readonly AdminMetricsResetCategory[]
-    ): AdminOperationResultResponse {
-        const before: AdminMetricsSnapshot = {};
-        const after: AdminMetricsSnapshot = {};
-
+    ): AdminMetricsResetResultResponse {
+        const before = this.readCategories(categories);
         for (const category of categories) {
-            this.resetCategory(category, before, after);
+            this.resetCategory(category);
         }
+        const after = this.readCategories(categories);
 
         return {
             ...createAdminOperationBaseResponse({
@@ -89,26 +84,18 @@ export class ResetAdminMetrics {
         };
     }
 
-    private resetCategory(
-        category: AdminMetricsResetCategory,
-        before: AdminMetricsSnapshot,
-        after: AdminMetricsSnapshot
-    ): void {
+    private readCategories(categories: readonly AdminMetricsResetCategory[]): AdminMetricsResetSnapshot {
+        return {
+            ...(categories.includes('rtc-topology') && { rtcTopology: this.options.rtcTopology.read() }),
+            ...(categories.includes('group-formation') && { groupFormation: this.options.groupFormation.read() })
+        };
+    }
+
+    private resetCategory(category: AdminMetricsResetCategory): void {
         if (category === 'rtc-topology') {
-            before.rtcTopology = decodeJsonWireValue(
-                this.options.rtcTopology.read(),
-                'RTC topology metrics before reset'
-            );
             this.options.rtcTopology.reset();
-            after.rtcTopology = decodeJsonWireValue(
-                this.options.rtcTopology.read(),
-                'RTC topology metrics after reset'
-            );
             return;
         }
-
-        before.groupFormation = this.options.groupFormation.read();
         this.options.groupFormation.reset();
-        after.groupFormation = this.options.groupFormation.read();
     }
 }
