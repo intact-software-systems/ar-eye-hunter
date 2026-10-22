@@ -153,6 +153,11 @@ export type AdminOperationsRealtimeResponse =
             processLocal: boolean;
         }>;
         caches: AdminOperationsCacheSizes & Readonly<{ processLocal: boolean; }>;
+        /**
+         * `deliveredMarkers`: the delivered markers the WS server's inbound stores held after their last marker pass in
+         * this process, every sender's summed; an upper bound between passes. The cap bounds each sender's markers.
+         */
+        alm: Readonly<{ deliveredMarkers: number; processLocal: boolean; }>;
     }>;
 
 export type AdminOperationsStateResponse =

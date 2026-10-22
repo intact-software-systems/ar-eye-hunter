@@ -3,10 +3,12 @@ import {
     MIN_APP_INBOX_FINISHED_RETENTION_MS
 } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import { MAX_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS } from '@shared-server/rallar-system/topology/planning/resolve-rtt-replan-promotion.ts';
+import { AL_INBOUND_MAX_ORDERING_TRACKS } from '@shared/alm/inbound/admission/evict-al-inbound-ordering-tracks-past-cap.ts';
 import { decodeRallarCrdtDocumentTypePolicies } from '@shared/crdt/mod.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import type {
+    ApiV1AlmConfiguration,
     ApiV1AppInboxConfiguration,
     ApiV1AuthenticationConfiguration,
     ApiV1BlackBoxConfiguration,
@@ -79,6 +81,7 @@ export function decodeApiV1Configuration(
         hardwareConcurrency: input.hardwareConcurrency
     });
     const clientSessions = decodeClientSessions(decoder, authentication);
+    const alm = decodeAlm(decoder);
     const stateApi = decodeStateApi(decoder);
     const group = decodeGroup(decoder);
     const topology = decodeTopology(decoder);
@@ -114,6 +117,7 @@ export function decodeApiV1Configuration(
         database,
         authentication,
         clientSessions,
+        alm,
         stateApi,
         group,
         topology,
@@ -325,6 +329,14 @@ function decodeAuthentication(
             )
         }
     };
+}
+
+/**
+ * At least the browser's ordering-snapshot cap, so a store at both caps still marks every track it orders; at most
+ * 65 536, since each new marker's pass lists every marker the store holds.
+ */
+function decodeAlm(decoder: ApiV1ConfigurationValueDecoder): ApiV1AlmConfiguration {
+    return { deliveredMarkerCap: decoder.integer('alm.deliveredMarkerCap', AL_INBOUND_MAX_ORDERING_TRACKS, 65_536) };
 }
 
 function decodeClientSessions(

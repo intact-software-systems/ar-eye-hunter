@@ -1,3 +1,4 @@
+import { ALInboundStoreCounts } from '@shared/alm/storage/al-inbound-store-counts.ts';
 import assert from 'node:assert/strict';
 
 import { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
@@ -47,6 +48,7 @@ Deno.test('requireApiV1Runtime preserves every complete API capability identity'
     );
     assert.equal(complete.groupFormationMetrics, additions.groupFormationMetrics);
     assert.equal(complete.almReceiptDiagnostics, additions.almReceiptDiagnostics);
+    assert.equal(complete.almInboundStoreCounts, additions.almInboundStoreCounts);
     assert.equal(complete.groupCurrentSnapshotCache, additions.groupCurrentSnapshotCache);
     assert.equal(complete.backgroundTasks, additions.backgroundTasks);
     assert.equal(complete.topologyServices, additions.topologyServices);
@@ -117,6 +119,7 @@ interface RuntimeAdditions {
     readonly groupRestSnapshotReadSelector: GroupRestSnapshotReadSelector;
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
     readonly almReceiptDiagnostics: RallarAlmReceiptDiagnosticsRecorder;
+    readonly almInboundStoreCounts: ALInboundStoreCounts;
     readonly groupCurrentSnapshotCache: GroupStateCurrentSnapshotCache;
     readonly backgroundTasks: ApiV1BackgroundTaskLifecycle;
     readonly topologyServices: ApiV1TopologyServices;
@@ -150,6 +153,7 @@ function createRuntimeAdditions(): RuntimeAdditions {
             nowEpochMs: Date.now,
             capacity: RALLAR_ALM_RECEIPT_DIAGNOSTICS_CAPACITY
         }),
+        almInboundStoreCounts: new ALInboundStoreCounts(),
         groupCurrentSnapshotCache: {} as GroupStateCurrentSnapshotCache,
         backgroundTasks: {} as ApiV1BackgroundTaskLifecycle,
         topologyServices: {} as ApiV1TopologyServices

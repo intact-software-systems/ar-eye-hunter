@@ -19,6 +19,8 @@ export namespace ReadAdminRealtime {
         readonly readGroupFormationMetrics: () => RallarGroupFormationMetrics;
         readonly readAlmReceipts: () => AdminOperationsAlmReceiptDiagnostics;
         readonly readCacheSizes: () => AdminOperationsCacheSizes;
+        /** The delivered markers this process's inbound stores last stated they hold, summed. */
+        readonly readAlmDeliveredMarkers: () => number;
     }
 }
 
@@ -67,6 +69,10 @@ export class ReadAdminRealtime {
             },
             caches: {
                 ...this.options.readCacheSizes(),
+                processLocal: true
+            },
+            alm: {
+                deliveredMarkers: this.options.readAlmDeliveredMarkers(),
                 processLocal: true
             }
         });

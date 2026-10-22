@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 
+import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
+
 import { ApiV1ConfigurationError } from '../../src/configuration/api-v1-configuration-error.ts';
 import type { ApiV1ConfigurationSourceValue } from '../../src/configuration/decode-api-v1-configuration-source.ts';
 import {
@@ -502,6 +504,18 @@ Deno.test('every committed profile keeps disconnected client sessions seven days
             outOfRange
         );
     }
+});
+
+Deno.test('every committed profile caps delivered markers at the shared default unless the environment selects another cap', async () => {
+    for (const profile of ['dev', 'prod', 'prod-hardened', 'prod-in-memory'] as const) {
+        const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));
+        assert.equal(configuration.alm.deliveredMarkerCap, AL_INBOUND_MAX_DELIVERED_MARKERS, profile);
+    }
+    const selected = await readApiV1Configuration(readerInput({
+        ...validConfigurationEnvironment('prod-in-memory'),
+        RALLAR_ALM_DELIVERED_MARKER_CAP: '1024'
+    }));
+    assert.equal(selected.alm.deliveredMarkerCap, 1_024);
 });
 
 function readerInput(

@@ -55,6 +55,9 @@ export function validConfigurationDefaultsSource(): MutableApiV1ConfigurationSou
         clientSessions: {
             disconnectedRetentionMs: 604_800_000
         },
+        alm: {
+            deliveredMarkerCap: 256
+        },
         stateApi: {
             strictReadAuthorization: false,
             rateLimits: {

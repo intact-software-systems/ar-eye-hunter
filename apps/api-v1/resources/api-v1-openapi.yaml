@@ -3786,7 +3786,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/AdminOperationBaseResponse'
         - type: object
-          required: [almReceipts, caches]
+          required: [almReceipts, caches, alm]
           properties:
             websocket:
               type: object
@@ -3818,6 +3818,19 @@ components:
                   type: integer
                   minimum: 0
                   description: Values every version-probed read-through cache of the process keeps.
+                processLocal:
+                  type: boolean
+            alm:
+              type: object
+              required: [deliveredMarkers, processLocal]
+              properties:
+                deliveredMarkers:
+                  type: integer
+                  minimum: 0
+                  description: >-
+                    The delivered markers the WS server's inbound stores held after their last marker pass in this
+                    process, every sender's summed; an upper bound between passes. The configured cap bounds each
+                    sender's markers, so the total is at most senders times the cap.
                 processLocal:
                   type: boolean
 

@@ -47,6 +47,8 @@ The configuration reader recognizes only these operational overrides:
   overrides that.
 - State API: `RALLAR_STATE_STRICT_READ_AUTH`.
 - Client sessions: `RALLAR_CLIENT_SESSION_DISCONNECTED_RETENTION_MS`.
+- ALM: `RALLAR_ALM_DELIVERED_MARKER_CAP` (`alm.deliveredMarkerCap`, delivered markers per sender in each inbound
+  store, committed default 256, 256 to 65 536).
 - Group admission: `RALLAR_GROUP_DEFAULT_MAX_MEMBERS`,
   `RALLAR_GROUP_JOIN_ADMISSION_PRINCIPAL_RATE_LIMIT`,
   `RALLAR_GROUP_JOIN_ADMISSION_GROUP_RATE_LIMIT`,

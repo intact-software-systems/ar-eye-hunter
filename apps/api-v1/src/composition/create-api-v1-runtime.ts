@@ -40,8 +40,11 @@ import { WsOutboxProvenanceReader } from '@shared-server/rallar-system/websocket
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { RuntimeStateExpiryWorker } from '@shared-server/runtime-state/postgres/runtime-state-expiry-worker.ts';
 import { createVolatileALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import type { ALInboundDeliveredMarkersReport } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import type { ALVolatileInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALOutboundCapturedPolicyTiming } from '@shared/alm/outbound/admission/al-outbound-captured-policy-timing.ts';
+import { ALInboundStoreCounts } from '@shared/alm/storage/al-inbound-store-counts.ts';
+import { toALDeliveredMarkersReport } from '@shared/alm/storage/al-storage-event.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { WsQueueBoxServerReceiptObserver } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
@@ -118,6 +121,8 @@ export interface CreateApiV1RuntimeInput {
     readonly appInboxNewLaneHeldRows: number;
     readonly appInboxFinishedRetentionMs: number;
     readonly disconnectedSessionRetentionMs: number;
+    /** The most delivered markers each of the WS server's inbound stores keeps per sender (`alm.deliveredMarkerCap`). */
+    readonly almDeliveredMarkerCap: number;
     readonly groupCapacity: GroupPolicyCapacityConfig;
     readonly groupFormationRecomputeDebounceMs: number;
     readonly groupFormationRecomputeMaxWaitMs: number;
@@ -145,6 +150,7 @@ interface StartMutationInfrastructureInput {
     readonly mutation: ApiV1MutationRuntime;
     readonly operations: ApiV1RuntimeConstructionOperations;
     readonly startupGeneration: RuntimeStateExpiryStartupGeneration;
+    readonly almInboundStoreCounts: ALInboundStoreCounts;
 }
 
 interface CreateSharedMiddlewareInput {
@@ -162,6 +168,8 @@ interface CreateSharedMiddlewareInput {
     readonly outboxStageTiming?: RallarTimingSink;
     readonly wsReceiptObserver?: WsQueueBoxServerReceiptObserver;
     readonly almReceiptDiagnostics: RallarAlmReceiptDiagnosticsRecorder;
+    readonly almDeliveredMarkerCap: number;
+    readonly almInboundStoreCounts: ALInboundStoreCounts;
     readonly nowEpochMs: () => number;
 }
 
@@ -195,6 +203,8 @@ interface ConfigureWsRuntimeStoresInput {
     readonly repository: ApiV1MutationRuntime['runtimeStateRepository'];
     readonly outboundReleaseTiming: PSqlQueueReleaseTiming.Port | undefined;
     readonly capturedPolicyTiming: ALOutboundCapturedPolicyTiming.Capability | undefined;
+    readonly maxDeliveredMarkers: number;
+    readonly reportDeliveredMarkers: ALInboundDeliveredMarkersReport;
 }
 
 export function createApiV1Runtime(input: CreateApiV1RuntimeInput): ApiV1Runtime {
@@ -217,6 +227,7 @@ export function constructApiV1Runtime(
         nowEpochMs: input.nowEpochMs,
         capacity: RALLAR_ALM_RECEIPT_DIAGNOSTICS_CAPACITY
     });
+    const almInboundStoreCounts = new ALInboundStoreCounts();
     const appInboxCompletionNotices = createApiV1AppInboxCompletionNotices({
         mode: input.databasePubSubMode,
         notification: input.databaseNotification,
@@ -225,7 +236,7 @@ export function constructApiV1Runtime(
     const mutation = operations.createMutationRuntime(toMutationRuntimeInput(input, appInboxCompletionNotices));
     const { rtcTopology, topology } = createRuntimeTopology(input, mutation, operations);
     input.backgroundTasks.register(rtcTopology.stop);
-    startMutationInfrastructure({ runtime: input, mutation, operations, startupGeneration });
+    startMutationInfrastructure({ runtime: input, mutation, operations, startupGeneration, almInboundStoreCounts });
     const runtime = operations.createMiddleware({
         mutation,
         appInboxCompletionNotices,
@@ -241,6 +252,8 @@ export function constructApiV1Runtime(
         outboxStageTiming: input.outboxStageTiming,
         wsReceiptObserver: input.wsReceiptObserver,
         almReceiptDiagnostics,
+        almDeliveredMarkerCap: input.almDeliveredMarkerCap,
+        almInboundStoreCounts,
         nowEpochMs: input.nowEpochMs
     });
     rtcTopology.topologyReplay.attach({ wsQueueBoxServerService: runtime.wsQBoxServerService });
@@ -254,6 +267,7 @@ export function constructApiV1Runtime(
         ...selectors,
         groupFormationMetrics: mutation.groupFormationMetrics,
         almReceiptDiagnostics,
+        almInboundStoreCounts,
         groupCurrentSnapshotCache: mutation.groupCurrentSnapshotCache,
         topologyServices: topology,
         backgroundTasks: input.backgroundTasks
@@ -262,7 +276,7 @@ export function constructApiV1Runtime(
 
 /** The mutation runtime's stores and expiry workers start before middleware owns its queue. */
 function startMutationInfrastructure(input: StartMutationInfrastructureInput): void {
-    const { runtime, mutation, operations, startupGeneration } = input;
+    const { runtime, mutation, operations, startupGeneration, almInboundStoreCounts } = input;
     const outboundReleaseTiming = runtime.outboxStageTiming === undefined ? undefined : createRallarPSqlReleaseTiming({
         timing: runtime.outboxStageTiming,
         serviceId: runtime.serviceId,
@@ -288,7 +302,12 @@ function startMutationInfrastructure(input: StartMutationInfrastructureInput): v
         name: runtime.wsRuntimeName,
         repository: mutation.runtimeStateRepository,
         outboundReleaseTiming,
-        capturedPolicyTiming
+        capturedPolicyTiming,
+        maxDeliveredMarkers: runtime.almDeliveredMarkerCap,
+        reportDeliveredMarkers: toALDeliveredMarkersReport(
+            (event) => almInboundStoreCounts.observe(event),
+            toServerWsQBoxALRuntimeStoreId(runtime.wsRuntimeName)
+        )
     });
     operations.startResourceInboxExpiry(mutation);
     operations.startRuntimeStateExpiry({
@@ -370,7 +389,9 @@ const PRODUCTION_OPERATIONS: ApiV1RuntimeConstructionOperations = {
         configureServerWsQBoxALRuntimeStores(input.name, {
             repository: input.repository,
             outboundReleaseTiming: input.outboundReleaseTiming,
-            capturedPolicyTiming: input.capturedPolicyTiming
+            capturedPolicyTiming: input.capturedPolicyTiming,
+            maxDeliveredMarkers: input.maxDeliveredMarkers,
+            reportDeliveredMarkers: input.reportDeliveredMarkers
         });
     },
     startResourceInboxExpiry,
@@ -423,7 +444,7 @@ function createSharedMiddleware(
         findGroupSnapshotByRef: (ref) => mutation.groupSnapshotCache.findByRef(ref),
         findClientSnapshotByRef: (ref) => findCurrentClientSnapshot(mutation.clientSnapshotCache, ref),
         inboundStores,
-        inboundVolatileStores: createServerWsQBoxALVolatileInboundRuntimeStores(input.wsRuntimeName),
+        inboundVolatileStores: createServerWsQBoxALVolatileInboundRuntimeStores(input),
         outboundStores: resolveServerWsQBoxALOutboundRuntimeStores(input.wsRuntimeName),
         wsDeliveryDiagnostics: mutation.groupFormationMetrics.wsDelivery,
         wsOutboundDiagnostics: mutation.groupFormationMetrics.outboundWork,
@@ -471,11 +492,18 @@ function createMiddlewareTimingOptions(
 }
 
 /** No volatile budget: the server sends nothing of its own on this lane, and an arrival is never refused. */
-function createServerWsQBoxALVolatileInboundRuntimeStores(wsRuntimeName: string): ALVolatileInboundRuntimeStores {
-    return createVolatileALInboundRuntimeStores(
-        { namespace: `${toServerWsQBoxALRuntimeStoreId(wsRuntimeName)}:volatile` },
-        undefined
-    );
+function createServerWsQBoxALVolatileInboundRuntimeStores(
+    input: Pick<CreateSharedMiddlewareInput, 'wsRuntimeName' | 'almDeliveredMarkerCap' | 'almInboundStoreCounts'>
+): ALVolatileInboundRuntimeStores {
+    const storeId = `${toServerWsQBoxALRuntimeStoreId(input.wsRuntimeName)}:volatile`;
+    return createVolatileALInboundRuntimeStores({
+        namespace: storeId,
+        maxDeliveredMarkers: input.almDeliveredMarkerCap,
+        reportDeliveredMarkers: toALDeliveredMarkersReport(
+            (event) => input.almInboundStoreCounts.observe(event),
+            storeId
+        )
+    }, undefined);
 }
 
 function createApiV1QueuePubSubBridge(
