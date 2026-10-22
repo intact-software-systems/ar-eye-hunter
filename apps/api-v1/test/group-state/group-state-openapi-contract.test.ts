@@ -46,6 +46,13 @@ const GROUP_PATH = '/api/state/apps/{applicationId}/workspaces/{workspaceId}/gro
 const GROUP_ID_PATH = `${GROUP_PATH}/{groupId}`;
 const GROUP_OPERATION_CONTRACTS: readonly GroupOperationContract[] = [
     {
+        path: `${GROUP_PATH}/quick-join`,
+        method: 'post',
+        requestSchema: 'QuickJoinGroupRequest',
+        status: '200',
+        responseSchema: { reference: 'QuickJoinGroupResult' }
+    },
+    {
         path: GROUP_PATH,
         method: 'get',
         status: '200',

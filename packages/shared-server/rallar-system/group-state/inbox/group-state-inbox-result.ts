@@ -21,7 +21,7 @@ export type GroupPresenceInboxDurableResult = GroupMutationReceipt | InactiveGro
 export type GroupStateInboxDurableResult = GroupPresenceInboxDurableResult | GroupJoinCodeWritten | GroupStateWritten;
 
 export interface ComputeGroupStateInboxResultInput {
-    readonly command: GroupStateMutationCommand;
+    readonly command: Pick<GroupStateMutationCommand, 'command' | 'facts'>;
     readonly read: GroupMutationRead;
     readonly computed: Exclude<GroupMutationComputed, { outcome: 'idempotency-conflict' | 'rejected'; }>;
     readonly currentSnapshot: GroupSnapshot | undefined;
@@ -130,7 +130,7 @@ export function validateGroupStateInboxResult(
 }
 
 interface ToGroupMutationResultInput {
-    readonly command: GroupStateMutationCommand;
+    readonly command: Pick<GroupStateMutationCommand, 'command' | 'facts'>;
     readonly receipt: GroupMutationReceipt;
     readonly snapshot: GroupSnapshot;
     readonly event: GroupEvent | null;

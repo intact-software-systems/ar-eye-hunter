@@ -7,6 +7,7 @@ import type {
 import type {
     GroupStateInboxDurableResult
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
+import type { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import type {
     CachedGroupStateService
 } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
@@ -319,6 +320,7 @@ export interface GroupStateRouteDependencies {
         request: GroupStateRouteRequest
     ) => Promise<GroupStateRouteAuthSession>;
     readonly processGroupAppInbox: ProcessGroupAppInbox;
+    readonly processQuickJoin: GroupStateInboxService['processQuickJoinUntilCompletion'];
     readonly groupAdmissionQuota: GroupAdmissionQuota;
     readonly strictReadAuthorization: boolean;
     readonly groupDefaultMaxMembers: number | null;

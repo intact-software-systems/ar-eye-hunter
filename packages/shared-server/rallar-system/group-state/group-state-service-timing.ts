@@ -21,7 +21,10 @@ interface GroupStateTimingDetails {
     readonly sessionId?: string;
 }
 
-type GroupStateTimedOperation = Exclude<keyof GroupStateService, 'compute' | 'validate' | 'sessionGenerationLifecycle'>;
+type GroupStateTimedOperation = Exclude<
+    keyof GroupStateService,
+    'compute' | 'validate' | 'sessionGenerationLifecycle' | 'quickJoin'
+>;
 
 interface TimeGroupStateOperationInput<T> {
     readonly timing: RallarTimingSink;
@@ -42,6 +45,7 @@ export function createTimedGroupStateService(
     const timedInput = { timing, serviceId: input.serviceId };
     return {
         sessionGenerationLifecycle: service.sessionGenerationLifecycle,
+        quickJoin: service.quickJoin,
         ...createTimedIngressCaptureOperations(service, timedInput),
         ...createTimedSnapshotOperations(service, timedInput),
         ...createTimedEventOperations(service, timedInput),

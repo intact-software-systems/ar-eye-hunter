@@ -863,6 +863,49 @@ paths:
           $ref: '#/components/responses/ApiMutationFailure'
         '404':
           $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/quick-join/requests/{requestId}:
+    post:
+      tags: [Group State]
+      summary: Select and join an available open group
+      description: |
+        Selects within this application and workspace by distinct online member
+        count descending, then group ID ascending. Applies the same membership,
+        capacity and lifecycle admission policy as manual join. Never creates a
+        group or pending admission request. Joined and unavailable outcomes are
+        durable for this caller and request ID; conflicting reuse returns 409.
+        Room membership does not enroll the caller in an application activity.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuickJoinGroupRequest'
+      responses:
+        '200':
+          description: Committed membership snapshot or no available group.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuickJoinGroupResult'
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '401':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '403':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '409':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '429':
+          $ref: '#/components/responses/RateLimitedApiMutationFailure'
+        '503':
+          $ref: '#/components/responses/ApiMutationFailure'
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/{requestId}:
     post:
       tags: [Group State]
@@ -6124,6 +6167,40 @@ components:
           type: string
         groupId:
           type: string
+
+    QuickJoinGroupRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          enum: [party, room, team, custom]
+        q:
+          type: string
+          description: Case-insensitive display-name substring, trimmed before matching.
+        includeEmpty:
+          type: boolean
+          default: false
+          description: Include groups with no distinct online members.
+
+    QuickJoinGroupResult:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [status, snapshot]
+          properties:
+            status:
+              type: string
+              enum: [joined]
+            snapshot:
+              $ref: '#/components/schemas/GroupSnapshot'
+        - type: object
+          additionalProperties: false
+          required: [status]
+          properties:
+            status:
+              type: string
+              enum: [unavailable]
 
     GroupDirectoryEntry:
       type: object

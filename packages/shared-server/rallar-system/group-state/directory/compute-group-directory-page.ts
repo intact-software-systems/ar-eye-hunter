@@ -31,7 +31,10 @@ export function computeGroupDirectoryPage(
     };
 }
 
-function matchesGroupDirectoryQuery(snapshot: GroupSnapshot, query: GroupDirectoryQuery): boolean {
+export function matchesGroupDirectoryQuery(
+    snapshot: GroupSnapshot,
+    query: Pick<GroupDirectoryQuery, 'kind' | 'q' | 'includeEmpty'>
+): boolean {
     return (query.kind === null || snapshot.group.kind === query.kind) &&
         (query.q === null || snapshot.group.displayName.toLowerCase().includes(query.q)) &&
         (query.includeEmpty || snapshot.onlineMemberCount > 0);
@@ -41,7 +44,7 @@ function matchesGroupDirectoryQuery(snapshot: GroupSnapshot, query: GroupDirecto
  * Online counts change between page requests, so a room can move across the cursor and be repeated
  * or skipped. Pages are a best-effort view of a live lobby, not a consistent snapshot.
  */
-function compareGroupDirectoryOrder(left: GroupSnapshot, right: GroupSnapshot): number {
+export function compareGroupDirectoryOrder(left: GroupSnapshot, right: GroupSnapshot): number {
     if (left.onlineMemberCount !== right.onlineMemberCount) {
         return right.onlineMemberCount - left.onlineMemberCount;
     }

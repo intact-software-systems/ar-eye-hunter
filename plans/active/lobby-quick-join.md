@@ -36,8 +36,9 @@ Current repo skills and standards govern implementation, not historical plan con
 
 ## Operation contract and decisions
 
-`POST /api/state/apps/:applicationId/workspaces/:workspaceId/groups/quick-join` accepts an authenticated
-request and the existing request-ID convention. Sparse caller selection has `kind`, `q`, and
+`POST /api/state/apps/:applicationId/workspaces/:workspaceId/groups/quick-join/requests/:requestId` accepts an authenticated
+request and the existing path-only request-ID convention. Route inspection confirmed body/header IDs
+are rejected by the canonical API ingress. Sparse caller selection has `kind`, `q`, and
 `includeEmpty`; use the directory's normalization and defaults (any kind, no name filter, exclude
 empty rooms). Persist a complete normalized command with explicit nulls, actor/session, scope, and
 request ID. Reject malformed input and unknown fields. Browser input carries scoped operation options
@@ -92,7 +93,7 @@ add a second application-specific matching algorithm or implicitly enlist a Reli
 
 ## Increment 1: authoritative admission
 
-Primary owners: new shared `group-quick-join` contract and group-state Quick Join owner, existing
+Primary owners: shared `api/mutation/group-quick-join.ts` contract and group-state Quick Join owner, existing
 `group-state/inbox/group-state-inbox-service.ts`, AppInbox type registration, API group route
 registration, OpenAPI, and shared-test REST recipes. Keep the exact queue registration, admission
 policy, first guard, durable result, and post-commit effect navigable from one concrete entry.
@@ -111,6 +112,12 @@ policy, first guard, durable result, and post-commit effect navigable from one c
    successful selection, unavailable with no pending member, and request-ID replay/conflict.
 5. Run the focused group/admission/inbox tests, API Deno checks/tests, and relevant REST black-box
    command. Commit a coherent server increment and keep the draft stacked PR current.
+
+Increment 1 evidence: canonical admission and durable AppInbox completion are implemented. Focused
+server checks passed (48 tests), real PostgreSQL admission/convergence checks passed (12 tests), API
+route/OpenAPI checks passed (46 tests), and the memory-backed REST matrix passed all 64 recipes,
+including 17 new Quick Join steps. Review moved the shared contract beside the existing mutation
+protocol contracts and tightened persisted-input types. No legacy or migration path was added.
 
 ## Increment 2: browser workflow and application
 
@@ -132,13 +139,13 @@ test; change Relic production code only if the common API requires a concrete co
 
 ## Review focus and completion gates
 
-| Risk | Required evidence |
-| --- | --- |
-| Selection/admission diverge or overfill | Canonical policy cases plus last-place AppInbox race and fallback |
-| Replay selects twice or loses atomicity | Durable replay/conflict, receipt/result/outbox linkage and forced rollback |
-| Invalid authority/corruption becomes unavailable | Expired/replaced/tampered session, strict decoder and corrupt-policy failures |
-| Browser commits a stale/partial switch | Presence failure, old session, unavailable preservation and leave-failure tests |
-| Room count is mistaken for activity participation | Distinct-principal ranking and AR Eye/Relic consumer behavior |
+| Risk                                              | Required evidence                                                               |
+| ------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Selection/admission diverge or overfill           | Canonical policy cases plus last-place AppInbox race and fallback               |
+| Replay selects twice or loses atomicity           | Durable replay/conflict, receipt/result/outbox linkage and forced rollback      |
+| Invalid authority/corruption becomes unavailable  | Expired/replaced/tampered session, strict decoder and corrupt-policy failures   |
+| Browser commits a stale/partial switch            | Presence failure, old session, unavailable preservation and leave-failure tests |
+| Room count is mistaken for activity participation | Distinct-principal ranking and AR Eye/Relic consumer behavior                   |
 
 - Focused baseline before edits: 20 tests in the four membership/admission/retry/browser workflow
   files passed at parent `97cdef5e855973ab368dfdedd6a4056629a3f8d2`.
