@@ -19,7 +19,9 @@ work stays outcome-shaped until its prerequisites and product evidence are avail
 Across these slices, add no legacy path, duplicated implementation, or migration code. Prefer
 existing repository patterns and keep code, tests, documentation, and plans consistent. Each slice
 uses test-driven development and one current PR; wait for the maintainer to merge it before starting
-the next slice.
+the next slice unless the maintainer explicitly requests a stack. The maintainer selected Quick Join
+(slice 1) next, stacked on the slice 0 foundation in PR #696. Finish that slice and wait for its merge
+before continuing.
 
 ## Current foundation
 
@@ -99,8 +101,8 @@ all-or-none admission decisions before it becomes a platform promise.
 
 | Priority    | Outcomes                                                                                                |
 | ----------- | ------------------------------------------------------------------------------------------------------- |
-| First       | Slice 0 reliability; share links/codes (4); visibility choices (5); reconnect/recent-room behavior (6). |
-| Next        | Quick Join (1), designed and validated against both AR Eye and Relic (9).                               |
+| Current     | Slice 1 Quick Join on slice 0 reliability, designed and validated against both AR Eye and Relic (9).    |
+| Next        | Share links/codes (4); visibility choices (5); reconnect/recent-room behavior (6).                       |
 | Then        | Automatic directory freshness (7), introducing push when the experience needs it.                       |
 | Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them.             |
 | Later       | Latency ranking (2), scheduled rooms (8), and a separate tournament capability.                         |
