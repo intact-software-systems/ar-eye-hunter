@@ -184,12 +184,19 @@ outside the policy and an unreadable policy keep that bounded server window. The
 coalesced-work computation puts the series anchor (`windowOpenedAtEpochMs`) on every row, keeps it
 through each merge, and restarts it for a successor row or revived terminal row. Readers require
 that current shape directly; there is no predecessor-format decoder. A queued replan of a live
-planned layout is floored at the layout's last write plus the minimum layout age (1 000 ms), decided
-when the change is queued. The change that brings the present members up to the group's expected
+planned layout is floored at the layout's last write plus the queued-replan floor
+`GROUP_MINIMUM_LAYOUT_AGE_MS` (1 000 ms), decided when the change is queued. The change that brings the present members up to the group's expected
 member count — its `maxMembers`, or the consulted policy's `admission.untilMemberCount` when that
 closes first — is due at once, and its series carries the `expected-members-arrived` reason so later
 changes of that series no longer extend it (D288); the server's default bound is 4 500 ms. RTT refreshes are the machinery's own work and are queued directly as
-new rows, outside this window.
+new rows, outside this window. A separate, longer age governs them: the RTT re-plan minimum layout
+age `topology.planning.rttReplanMinimumLayoutAgeMs` (15 000 ms by default, the browser overlay
+transition grace; `RALLAR_RTC_TOPOLOGY_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS`). An RTT refresh whose
+topology inputs and presence are unchanged, and whose plan would replace an active layout younger
+than that age, is held (`resolveRttReplanPromotion`): the work commits `held-young-layout`, the
+stored layout and its fingerprint stay, and the criterion is petitioned with the stored layout. A
+join, leave, leader, configuration or presence change promotes at once. A held refresh promotes at
+the next RTT refinement, which the refinement gate allows no sooner than its 30 s interval floor.
 
 The stage triggers (product decision 8, `establishment.planTrigger` and `connectTrigger`) ride the
 durable formation timer, the same epoch-fenced outbox entry the deadline and retry legs use, and only
@@ -586,8 +593,9 @@ command it asks for — `activateGroup` with `observedRate` and a `degraded` fla
 `failGroupFormation` with `observedRate` — or `null`. Two producers call it.
 
 **The evidence leg** is the RTC topology work handler (`create-rtc-topology-work-handler.ts`).
-After every topology work item commits — a published layout, an unchanged or frozen plan, or a
-fingerprint skip, for group-revision and RTT-refresh work alike — it petitions the criterion with the
+After every topology work item commits — a published layout, an unchanged or frozen plan, a held
+RTT replan (`held-young-layout`), or a fingerprint skip, for group-revision and RTT-refresh work
+alike — it petitions the criterion with the
 planned row the commit made durable and the authority's evidence, then the stage trigger and the
 activation-status observer. It costs nothing while no work arrives; RTT-refresh items the refinement
 gate defers reach the criterion only through the damped edge-trigger below.
@@ -1117,6 +1125,10 @@ writing this document:
   `formation-criterion-observer.ts`, `create-rtc-topology-work-handler.ts`,
   `create-formation-timer-work-handler.ts`: the evaluator, the evidence-leg petition and the damped
   edge-trigger, the planning work handler that calls them, and the time leg.
+- `packages/shared-server/rallar-system/topology/planning/resolve-rtt-replan-promotion.ts` and
+  `topology/replay/work/compute-rtc-topology-work.ts`: the RTT re-plan hold and the
+  `held-young-layout` work decision; `topology/replay/work/rtc-topology-work-timing.ts`: the
+  recompute's timing line, built only with timing on.
 - `packages/shared/api/group-lifecycle/resolve-group-topology-work-disposition.ts` and
   `packages/shared-server/rallar-system/topology/planning/resolve-topology-plan-action.ts`: the
   per-stage planning gate (FORMING suppression, dialing freeze, replanning hold) and its enqueue twin.
