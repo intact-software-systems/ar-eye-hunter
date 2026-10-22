@@ -188,8 +188,7 @@
           },
           "caches": {
             "processLocal": true,
-            "groupAudienceSnapshots": "integer",
-            "versionProbedReads": "integer"
+            "groupAudienceSnapshots": "integer"
           },
           "alm": {
             "processLocal": true,

@@ -28,13 +28,14 @@ describe('ReadAdminRealtime', () => {
             readRtcTopologyMetrics: () => ({ recomputeCount: 2 }),
             readGroupFormationMetrics: () => formationMetrics,
             readAlmReceipts: () => ({ capacity: 256, messages: [] }),
-            readCacheSizes: () => ({ groupAudienceSnapshots: 7, versionProbedReads: 7 }),
+            readCacheSizes: () => ({ groupAudienceSnapshots: 7 }),
             readAlmDeliveredMarkers: () => 259
         });
 
-        await expect(readRealtime.execute({
-            adminSession: createAdminSession()
-        })).resolves.toMatchObject({
+        const realtime = await readRealtime.execute({ adminSession: createAdminSession() });
+
+        expect(realtime.caches).toEqual({ groupAudienceSnapshots: 7, processLocal: true });
+        expect(realtime).toMatchObject({
             generatedAtEpochMs: NOW_EPOCH_MS,
             serverId: 'test-server',
             websocket: {
@@ -52,7 +53,6 @@ describe('ReadAdminRealtime', () => {
                 processLocal: true
             },
             almReceipts: { diagnostics: { capacity: 256, messages: [] }, processLocal: true },
-            caches: { groupAudienceSnapshots: 7, versionProbedReads: 7, processLocal: true },
             alm: { deliveredMarkers: 259, processLocal: true }
         });
     });

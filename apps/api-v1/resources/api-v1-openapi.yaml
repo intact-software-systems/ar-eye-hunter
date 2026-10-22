@@ -3907,16 +3907,14 @@ components:
             caches:
               type: object
               description: Entries this process's in-memory caches hold, counted when read.
-              required: [groupAudienceSnapshots, versionProbedReads, processLocal]
+              required: [groupAudienceSnapshots, processLocal]
               properties:
                 groupAudienceSnapshots:
                   type: integer
                   minimum: 0
-                  description: Groups whose current snapshot the group audience cache keeps, each absent group's null among them.
-                versionProbedReads:
-                  type: integer
-                  minimum: 0
-                  description: Values every version-probed read-through cache of the process keeps.
+                  description: >-
+                    Groups whose current snapshot the group audience cache keeps, each absent group's null among them;
+                    that cache holds the process's only version-probed read-through cache today.
                 processLocal:
                   type: boolean
             alm:

@@ -125,10 +125,11 @@ export interface AdminOperationsAlmReceiptDiagnostics {
 
 /** Entries this process's in-memory caches hold, counted when read. */
 export interface AdminOperationsCacheSizes {
-    /** Groups whose current snapshot the group audience cache keeps, each absent group's null among them. */
+    /**
+     * Groups whose current snapshot the group audience cache keeps, each absent group's null among them; that cache
+     * holds the process's only version-probed read-through cache today.
+     */
     readonly groupAudienceSnapshots: number;
-    /** Values every version-probed read-through cache of the process keeps. */
-    readonly versionProbedReads: number;
 }
 
 export type AdminOperationsRealtimeResponse =
