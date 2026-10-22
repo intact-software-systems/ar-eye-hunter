@@ -3,6 +3,13 @@ import { describe, expect, it } from 'vitest';
 
 import { MUTATION_ROUTE_INVENTORY, validateMutationRouteInventory } from '../../routing/mutation-routing-inventory.ts';
 
+interface QuickJoinRouteMutationCase {
+    readonly name: string;
+    readonly filePath: string;
+    readonly before: string;
+    readonly after: string;
+}
+
 const ROOT_ROUTES = 'apps/api-v1/src/group-state/register-group-state-routes.ts';
 const PRESENCE_ROUTES = 'apps/api-v1/src/group-state/register-group-presence-routes.ts';
 const QUICK_JOIN_ROUTE = 'apps/api-v1/src/group-state/register-group-quick-join-route.ts';
@@ -20,11 +27,26 @@ describe('group HTTP mutation route construction', () => {
     });
 
     it.each([
-        ['missing root registration', ROOT_ROUTES, 'registerGroupQuickJoinRoute(app, dependencies);', ''],
-        ['wrong root arguments', ROOT_ROUTES, 'registerGroupQuickJoinRoute(app, dependencies);', 'registerGroupQuickJoinRoute(dependencies, app);'],
-        ['wrong HTTP method', QUICK_JOIN_ROUTE, 'app.post(', 'app.get('],
-        ['disconnected handler', QUICK_JOIN_ROUTE, 'dependencies.processQuickJoin(', 'dependencies.unrelatedOperation(']
-    ])('rejects Quick Join with %s', (_name, filePath, before, after) => {
+        {
+            name: 'missing root registration',
+            filePath: ROOT_ROUTES,
+            before: 'registerGroupQuickJoinRoute(app, dependencies);',
+            after: ''
+        },
+        {
+            name: 'wrong root arguments',
+            filePath: ROOT_ROUTES,
+            before: 'registerGroupQuickJoinRoute(app, dependencies);',
+            after: 'registerGroupQuickJoinRoute(dependencies, app);'
+        },
+        { name: 'wrong HTTP method', filePath: QUICK_JOIN_ROUTE, before: 'app.post(', after: 'app.get(' },
+        {
+            name: 'disconnected handler',
+            filePath: QUICK_JOIN_ROUTE,
+            before: 'dependencies.processQuickJoin(',
+            after: 'dependencies.unrelatedOperation('
+        }
+    ])('rejects Quick Join with $name', ({ filePath, before, after }: QuickJoinRouteMutationCase) => {
         const source = readFileSync(filePath, 'utf8');
         const changed = source.replace(before, after);
         expect(changed).not.toBe(source);

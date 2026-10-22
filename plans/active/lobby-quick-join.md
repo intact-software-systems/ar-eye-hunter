@@ -144,8 +144,13 @@ Playwright test passed unavailable then joined behavior. The independent review 
 verified fixes for session replacement through cleanup, command-bound durable-result validation,
 public HTTP input compatibility, and arena state reset at the subscribed room transition.
 The reviewer has no remaining concrete findings. Fixed PostgreSQL medium scale passed all
-2,842 steps. Complete the isolated performance comparison and final publication checks before
-deleting this implementation plan at handoff.
+2,842 steps. The isolated local three-run performance comparison retained correct durable
+completion but exceeded the unchanged latency/throughput limits. Use the prescribed pinned hosted
+A-B-B-A comparison to determine whether that regression persists under controlled conditions;
+do not relax thresholds or claim acceptance from the local run. CI also exposed stale API test
+dependencies and a missing route-ownership inventory entry; those are repaired with focused
+regressions. Complete performance and final publication checks before deleting this implementation
+plan at handoff.
 
 ## Review focus and completion gates
 

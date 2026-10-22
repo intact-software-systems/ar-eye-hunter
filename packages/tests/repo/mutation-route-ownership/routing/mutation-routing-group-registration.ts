@@ -380,7 +380,8 @@ function readString(node: MutationRoutingAstNode | undefined): string | undefine
 }
 
 function asNode(value: unknown): MutationRoutingAstNode | undefined {
-    return value && typeof value === 'object' && !Array.isArray(value)
+    return value && typeof value === 'object' && !Array.isArray(value) &&
+            'type' in value && typeof value.type === 'string'
         ? (value as MutationRoutingAstNode)
         : undefined;
 }

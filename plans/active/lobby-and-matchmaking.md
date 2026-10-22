@@ -136,16 +136,30 @@ plan is removed with its delivery; the PR owns validation and review evidence.
 
 ## Slice 1: Quick Join
 
-Automatically admit a caller to a suitable existing room in one authoritative operation. The browser
-surface is `rallar.rooms.quickJoin()`; apps use “Quick Join” where that accurately describes the result.
-Selection and final admission share current policy, and conflict retries restart from fresh state.
-Two callers racing for the last place cannot both receive it; the other caller finds another room or
-receives an unavailable result. Do not promise global snapshot isolation across all candidate rooms.
+Implemented in [PR #697](https://github.com/intact-software-systems/ar-eye-hunter/pull/697), awaiting
+validation and maintainer merge. `rallar.rooms.quickJoin()` admits the caller to a suitable existing
+room through one authoritative AppInbox operation. Its REST endpoint is
+`POST …/groups/quick-join/requests/:requestId`; selection accepts `kind`, `q`, and `includeEmpty` with
+the directory's defaults. Candidates are open rooms in the exact scope, excluding existing active
+memberships, ranked by distinct online members descending and group ID ascending.
 
-The default never creates a room or places someone in an approval queue. The app supplies its
-participation requirements and handles the empty result through the start-and-share experience above.
-AppInbox owns mutations and retry; define the operation contract and concurrency evidence when this
-slice enters the implementation horizon.
+Selection uses canonical admission windows, effective capacity, and membership policy. Conflict
+retries restart from fresh state. Two callers racing for the last place cannot both receive it; the
+other caller finds another room or receives `{ status: 'unavailable' }`. A successful admission
+returns `{ status: 'joined', snapshot }`. Matching request replay preserves either durable result;
+reusing the request ID with different selection semantics fails with a conflict. Global snapshot
+isolation across candidate rooms is not promised.
+
+The browser connects presence and switches only after admission. Unavailable preserves the current
+room; a partial switch failure exposes the admitted room. Session replacement cannot publish an old
+operation's room state. AR Eye offers pending, unavailable, joined, and failure feedback and retains
+New Arena. The shared facade is validated with Relic-shaped rooms, while expedition participation
+remains a separate application action.
+
+Quick Join creates no room, approval request, or activity-seat reservation. Applications supply their
+room-selection criteria and handle unavailable through the start-and-share experience above. The PR
+owns concurrency, browser, performance, and review evidence. Wait for its merge before planning the
+next slice.
 
 ## Slice 2: latency-ranked discovery
 
