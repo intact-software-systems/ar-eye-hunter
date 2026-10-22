@@ -107,7 +107,7 @@ export async function lockObservedResourceInboxEntries(
         join resource_inbox on ${OBSERVED_ROW_PREDICATE}
         order by observed.position
         for update of resource_inbox
-    `;
+    `.toPlannedPerExecution();
     return await sql<Pick<ResourceInboxRow, 'ri_row_id'>[]>(...statement.toStatement());
 }
 
@@ -133,7 +133,7 @@ export async function replaceObservedResourceInboxEntries(
             as observed(${OBSERVED_RECORDSET_COLUMNS}, ${RESOURCE_INBOX_ENTRY_CONTENT_RECORDSET_COLUMNS})
         where ${OBSERVED_ROW_PREDICATE}
         returning resource_inbox.*
-    `;
+    `.toPlannedPerExecution();
     return await sql<ResourceInboxRow[]>(...statement.toStatement());
 }
 

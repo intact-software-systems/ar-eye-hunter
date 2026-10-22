@@ -155,6 +155,30 @@ describe('Postgres list predicates', () => {
         });
     });
 
+    postgresIt('claim one type and status by an ordered scan of the claim index that stops at the batch', async () => {
+        await withStorage(async (storage) => {
+            await seedEligibleBacklog(storage.sql);
+            const plans: PlanNode[][] = [];
+            const reservations = new PSqlResourceInboxReservationRepository(toJsonExplainingSql(storage.sql, plans));
+
+            await reservations.reserveEntriesSkipLocked({
+                typeIds: new Set([EnqueuedType.WS_OUTBOX]),
+                statusIds: new Set([EntityStatus.NEW]),
+                reservationInput: { maxToReserve: 16, maxAttempts: 5 },
+                contextClaim: undefined
+            });
+
+            const inboxScans = plans.flat().filter((node) => node['Relation Name'] === 'resource_inbox');
+            expect(inboxScans).toContainEqual(expect.objectContaining({
+                'Node Type': 'Index Scan',
+                'Index Name': 'resource_inbox_ix',
+                Alias: 'candidate'
+            }));
+            expect(inboxScans.map((node) => node['Node Type'])).not.toContain('Seq Scan');
+            expect(inboxScans.map((node) => node['Node Type'])).not.toContain('Bitmap Heap Scan');
+        });
+    });
+
     postgresIt('bind runtime-state key and namespace lists as one array parameter and keep the primary key path', async () => {
         await withStorage(async (storage) => {
             await storage.sql`
@@ -255,6 +279,23 @@ async function seedBulkResourceInboxRows(sql: PSqlSql): Promise<void> {
     await sql`analyze resource_inbox`;
 }
 
+/** A WS outbox backlog of 2,500 new rows among 25,000, most of the table completed. */
+async function seedEligibleBacklog(sql: PSqlSql): Promise<void> {
+    await sql`
+        insert into resource_inbox (ri_resource_id, ri_topic_id, ri_resource, ri_type_id, ri_status,
+            fk_ext_bank_id, system_date, created_by, created_ts, expire_ts, ri_attempts, start_ts, end_ts)
+        select 'request-' || series, 'app-inbox.test', '{}',
+            case when series % 2 = 0 then 'WS_OUTBOX' else 'APP_INBOX' end,
+            case when series % 10 = 0 then 'NEW' else 'COMPLETED' end,
+            'context-' || (series % 300), '2026-10-22', 'server-1',
+            (now() at time zone 'UTC') + series * interval '1 microsecond',
+            (now() at time zone 'UTC') + interval '1 day', case when series % 10 = 0 then 0 else 1 end,
+            case when series % 10 <> 0 then (now() at time zone 'UTC') end,
+            case when series % 10 <> 0 then (now() at time zone 'UTC') end
+        from generate_series(1, 25000) as series`;
+    await sql`analyze resource_inbox`;
+}
+
 /** The indexes a plan reads, by name, each once. */
 function toIndexNames(plan: string): readonly string[] {
     return [...new Set([...plan.matchAll(/(?:Index Scan using|Index Scan on|Index Only Scan using) (\w+)/gu)].map((match) => match[1]))].sort();
@@ -279,6 +320,40 @@ function toHelperRecordingSql(source: PSqlSql, helperCalls: (readonly PSqlParame
         return source<Result>(stringsOrValues as TemplateStringsArray, ...values);
     }
     return Object.assign(recording, { begin: source.begin.bind(source) });
+}
+
+interface PlanNode {
+    readonly 'Node Type': string;
+    readonly 'Relation Name'?: string;
+    readonly 'Index Name'?: string;
+    readonly Alias?: string;
+    readonly Plans?: readonly PlanNode[];
+}
+
+/** Runs each statement under `explain (format json)` instead, keeps every node of its plan, and answers no rows. */
+function toJsonExplainingSql(source: PSqlSql, explained: PlanNode[][]): PSqlSql {
+    function explaining<Result>(strings: TemplateStringsArray, ...values: readonly PSqlParameter[]): Promise<Result>;
+    function explaining(values: readonly PSqlParameter[]): object;
+    function explaining<Result>(
+        stringsOrValues: TemplateStringsArray | readonly PSqlParameter[],
+        ...values: readonly PSqlParameter[]
+    ): Promise<Result> | object {
+        if (!Object.hasOwn(stringsOrValues, 'raw')) {
+            return source(stringsOrValues as readonly PSqlParameter[]);
+        }
+        const strings = stringsOrValues as TemplateStringsArray;
+        const explainStrings = [`explain (format json) ${strings[0]}`, ...strings.slice(1)];
+        const template = Object.assign(explainStrings, { raw: explainStrings });
+        return source<{ 'QUERY PLAN': readonly { readonly Plan: PlanNode; }[]; }[]>(template, ...values).then((rows) => {
+            explained.push(rows.flatMap((row) => row['QUERY PLAN'].flatMap((plan) => toPlanNodes(plan.Plan))));
+            return [] as Result;
+        });
+    }
+    return Object.assign(explaining, { begin: source.begin.bind(source) });
+}
+
+function toPlanNodes(node: PlanNode): readonly PlanNode[] {
+    return [node, ...(node.Plans ?? []).flatMap(toPlanNodes)];
 }
 
 /** Runs each statement under `explain` instead, keeps the plan text, and answers no rows. */

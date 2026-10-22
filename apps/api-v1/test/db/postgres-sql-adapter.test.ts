@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 
 import { createPSqlCounterScope } from '@shared-server/postgres/create-p-sql-counter-scope.ts';
+import { PSqlFragment } from '@shared-server/postgres/p-sql-fragment.ts';
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 
 import {
@@ -15,6 +16,8 @@ interface RecordedCall {
     readonly handle: 'root' | 'transaction' | 'savepoint';
     readonly text: string;
     readonly values: readonly PSqlParameter[];
+    /** Present on a statement sent as text: the options it was sent with. */
+    readonly options?: object;
 }
 
 interface FakePostgresClient {
@@ -112,6 +115,29 @@ Deno.test('with a census, every statement of the root, transaction and savepoint
     assert.deepEqual(census.takeShapes(), [], 'a take empties the census');
 });
 
+Deno.test('a statement planned per execution is sent unprepared as its positional text, counted and recorded like any other', async () => {
+    const fake = createFakePostgresClient();
+    const census = new PostgresStatementCensus();
+    const sql = createPostgresSqlClient(fake.client, census);
+    const statement = PSqlFragment.of`select * from rows where id = ${7} and name = ${'seven'}`;
+
+    await sql(...statement.toPlannedPerExecution().toStatement());
+    await sql.begin(async (transaction) => {
+        await transaction(...statement.toPlannedPerExecution().toStatement());
+    });
+    await sql(...statement.toStatement());
+
+    assert.deepEqual(fake.calls.map((call) => [call.handle, call.text, call.values, call.options]), [
+        ['root', 'select * from rows where id = $1 and name = $2', [7, 'seven'], { prepare: false }],
+        ['transaction', 'select * from rows where id = $1 and name = $2', [7, 'seven'], { prepare: false }],
+        ['root', 'select * from rows where id = ? and name = ?', [7, 'seven'], undefined]
+    ]);
+    assert.equal(sql.getExecutorCounters().statements, 3);
+    assert.deepEqual(census.takeShapes().map(({ shape, count }) => [shape, count]), [
+        ['select * from rows where id = ? and name = ?', 3]
+    ]);
+});
+
 Deno.test('without a census the client records nothing beside its counters', async () => {
     const fake = createFakePostgresClient();
     const sql = createPostgresSqlClient(fake.client, undefined);
@@ -168,5 +194,10 @@ function createFakeHandle(handle: RecordedCall['handle'], calls: RecordedCall[])
         calls.push({ handle, text: (stringsOrValues as TemplateStringsArray).join('?'), values });
         return Promise.resolve((handle === 'root' ? [{ one: 1 }] : []) as Result);
     }
-    return sql;
+    return Object.assign(sql, {
+        unsafe: <Result>(text: string, values: readonly PSqlParameter[], options: { readonly prepare: false; }) => {
+            calls.push({ handle, text, values, options });
+            return Promise.resolve([] as Result);
+        }
+    });
 }

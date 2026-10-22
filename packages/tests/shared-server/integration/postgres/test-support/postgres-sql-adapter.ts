@@ -1,7 +1,9 @@
+import { PSqlFragment } from '@shared-server/postgres/p-sql-fragment.ts';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 
 interface PostgresSqlAdapterSource {
     (...arguments_: never[]): object;
+    unsafe(...arguments_: never[]): object;
 }
 
 interface PostgresRootSqlAdapterSource extends PostgresSqlAdapterSource {
@@ -36,7 +38,7 @@ export function toPSqlSql(rawSql: PostgresRootSqlAdapterSource): PSqlSql {
         stringsOrValues: TemplateStringsArray | Parameters<PSqlSql>[0],
         ...values: Parameters<PSqlSql>[0]
     ) {
-        return Reflect.apply(rawSql, rawSql, [stringsOrValues, ...values]);
+        return startStatement(rawSql, stringsOrValues, values);
     }
     sql.begin = async <T>(
         write: (transaction: PSqlSql) => Promise<T>
@@ -63,7 +65,7 @@ function toSavepointPSqlSql(
         stringsOrValues: TemplateStringsArray | Parameters<PSqlSql>[0],
         ...values: Parameters<PSqlSql>[0]
     ) {
-        return Reflect.apply(rawSql, rawSql, [stringsOrValues, ...values]);
+        return startStatement(rawSql, stringsOrValues, values);
     }
     const savepoint = async <T>(
         write: (transaction: PSqlSql) => Promise<T>
@@ -76,4 +78,18 @@ function toSavepointPSqlSql(
     sql.begin = savepoint;
     sql.savepoint = savepoint;
     return sql;
+}
+
+/** As the API's adapter does: a statement planned per execution is sent unprepared, as its positional text. */
+function startStatement(
+    rawSql: PostgresSqlAdapterSource,
+    stringsOrValues: TemplateStringsArray | Parameters<PSqlSql>[0],
+    values: Parameters<PSqlSql>[0]
+): object {
+    const plannedPerExecutionText = Object.hasOwn(stringsOrValues, 'raw')
+        ? PSqlFragment.getPlannedPerExecutionText(stringsOrValues as TemplateStringsArray)
+        : undefined;
+    return plannedPerExecutionText === undefined
+        ? Reflect.apply(rawSql, rawSql, [stringsOrValues, ...values])
+        : Reflect.apply(rawSql.unsafe, rawSql, [plannedPerExecutionText, values, { prepare: false }]);
 }

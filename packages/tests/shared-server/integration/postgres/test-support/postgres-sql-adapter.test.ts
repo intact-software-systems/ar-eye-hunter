@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { PSqlFragment } from '@shared-server/postgres/p-sql-fragment.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { toPSqlSql } from './postgres-sql-adapter.ts';
 
@@ -30,6 +31,24 @@ describe('postgres.js PSqlSql adapter', () => {
             'root:begin',
             'transaction:query',
             'root:commit'
+        ]);
+    });
+
+    it('sends a statement planned per execution unprepared as its positional text, at the root and in a transaction', async () => {
+        const harness = createPostgresSqlHarness();
+        const sql = toPSqlSql(harness.sql);
+        const statement = PSqlFragment.of`select ${42} as answer`.toPlannedPerExecution();
+
+        await expect(sql(...statement.toStatement())).resolves.toEqual([{ answer: 42 }]);
+        await sql.begin(async (transaction) => await transaction(...statement.toStatement()));
+        await sql(...PSqlFragment.of`select ${42} as answer`.toStatement());
+
+        expect(harness.events).toEqual([
+            'root:unprepared:select $1 as answer',
+            'root:begin',
+            'transaction:unprepared:select $1 as answer',
+            'root:commit',
+            'root:query'
         ]);
     });
 
@@ -84,11 +103,13 @@ interface PostgresSqlHarness {
 
 interface HarnessRootSql {
     (...arguments_: never[]): object;
+    unsafe(...arguments_: never[]): object;
     begin<T>(write: (transaction: HarnessTransactionSql) => Promise<T>): Promise<T>;
 }
 
 interface HarnessTransactionSql {
     (...arguments_: never[]): object;
+    unsafe(...arguments_: never[]): object;
     savepoint<T>(write: (transaction: HarnessTransactionSql) => Promise<T>): Promise<T>;
 }
 
@@ -98,6 +119,7 @@ function createPostgresSqlHarness(): PostgresSqlHarness {
         return runQuery('transaction', argumentsList, events);
     }
     const transaction: HarnessTransactionSql = Object.assign(transactionQuery, {
+        unsafe: (...statement: HarnessUnsafeStatement): object => runUnpreparedQuery('transaction', statement, events),
         savepoint: async <T>(
             write: (transactionSql: HarnessTransactionSql) => Promise<T>
         ): Promise<T> => {
@@ -117,6 +139,7 @@ function createPostgresSqlHarness(): PostgresSqlHarness {
         return runQuery('root', argumentsList, events);
     }
     const sql: HarnessRootSql = Object.assign(rootQuery, {
+        unsafe: (...statement: HarnessUnsafeStatement): object => runUnpreparedQuery('root', statement, events),
         begin: async <T>(write: (transactionSql: HarnessTransactionSql) => Promise<T>): Promise<T> => {
             events.push('root:begin');
             try {
@@ -145,6 +168,18 @@ function runQuery(
     }
 
     events.push(`${scope}:query`);
+    return Promise.resolve([{ answer: values[0] }]);
+}
+
+/** postgres.js `unsafe(text, values, options)`. */
+type HarnessUnsafeStatement = [text: string, values: readonly number[], options: { readonly prepare: boolean; }];
+
+function runUnpreparedQuery(
+    scope: 'root' | 'transaction',
+    [text, values, options]: HarnessUnsafeStatement,
+    events: string[]
+): object {
+    events.push(`${scope}:${options.prepare ? 'prepared' : 'unprepared'}:${text}`);
     return Promise.resolve([{ answer: values[0] }]);
 }
 

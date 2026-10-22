@@ -1,11 +1,25 @@
+import { PSqlFragment } from '@shared-server/postgres/p-sql-fragment.ts';
 import type { PSqlExecutorCounters, PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 
 import type { PostgresStatementCensus } from './postgres-statement-census.ts';
 
-/** The postgres.js surface this adapter forwards: a template call returns a thenable, a values call a query fragment. */
+/** postgres.js sends an unprepared statement unnamed, which PostgreSQL plans with its parameters on each execution. */
+export interface PostgresUnpreparedStatementOptions {
+    readonly prepare: false;
+}
+
+/**
+ * The postgres.js surface this adapter forwards: a template call returns a thenable, a values call a query fragment,
+ * and `unsafe` sends a statement planned per execution as its positional text.
+ */
 export interface PostgresSqlSource {
     <Result>(strings: TemplateStringsArray, ...values: readonly PSqlParameter[]): PromiseLike<Result>;
     (values: readonly PSqlParameter[]): object;
+    unsafe<Result>(
+        text: string,
+        values: readonly PSqlParameter[],
+        options: PostgresUnpreparedStatementOptions
+    ): PromiseLike<Result>;
 }
 
 export interface PostgresTransactionSqlSource extends PostgresSqlSource {
@@ -109,13 +123,24 @@ function createCountingSql(
         }
         counters.statements += 1;
         const calledAt = performance.now();
-        return Promise.resolve(source<Result>(stringsOrValues, ...values)).finally(() => {
+        return Promise.resolve(startStatement<Result>(source, stringsOrValues, values)).finally(() => {
             const executorWaitMs = performance.now() - calledAt;
             counters.executorWaitMs += executorWaitMs;
             census?.record({ strings: stringsOrValues, values, executorWaitMs });
         });
     }
     return sql;
+}
+
+function startStatement<Result>(
+    source: PostgresSqlSource,
+    strings: TemplateStringsArray,
+    values: readonly PSqlParameter[]
+): PromiseLike<Result> {
+    const plannedPerExecutionText = PSqlFragment.getPlannedPerExecutionText(strings);
+    return plannedPerExecutionText === undefined
+        ? source<Result>(strings, ...values)
+        : source.unsafe<Result>(plannedPerExecutionText, values, { prepare: false });
 }
 
 function isTemplateCall(value: TemplateStringsArray | readonly PSqlParameter[]): value is TemplateStringsArray {

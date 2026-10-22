@@ -521,8 +521,8 @@ function toReservationStatement(
 function toEligibleRowPredicate(alias: 'candidate' | 'head', eligibility: ResourceInboxEligibility): PSqlFragment {
     const row = PSqlFragment.identifier(alias);
     return PSqlFragment.of`(
-        ${row}.ri_type_id = any(${eligibility.typeIds}::text[])
-        and ${row}.ri_status = any(${eligibility.statusIds}::text[])
+        ${PSqlFragment.toTextListPredicate(PSqlFragment.of`${row}.ri_type_id`, eligibility.typeIds)}
+        and ${PSqlFragment.toTextListPredicate(PSqlFragment.of`${row}.ri_status`, eligibility.statusIds)}
         and ${row}.ri_status <> ${EntityStatus.FAILED}
         and ${row}.expire_ts > (now() at time zone 'UTC')
         and ${row}.ri_attempts < ${eligibility.maxAttempts}

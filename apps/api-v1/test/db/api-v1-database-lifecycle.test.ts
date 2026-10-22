@@ -34,6 +34,17 @@ Deno.test('PostgreSQL client adapter counts the statements of a complete current
             ),
         /required API-v1 capabilities/u
     );
+    const withoutUnsafe = {
+        begin: () => Promise.resolve(),
+        notify: () => Promise.resolve(),
+        listen: () => Promise.resolve(),
+        end: () => Promise.resolve()
+    };
+    assert.throws(
+        () => toApiV1PostgresClient(Object.assign(() => Promise.resolve([]), withoutUnsafe), undefined),
+        /required API-v1 capabilities/u,
+        'a client that cannot send a statement unprepared cannot plan one per execution'
+    );
 });
 
 Deno.test('database lifecycle constructs PostgreSQL application and listener pools explicitly', async () => {
@@ -305,7 +316,8 @@ function fakePostgresClient(max: number, events: string[]): ApiV1PostgresClient 
         end: () => {
             events.push(`postgres:close:${max}`);
             return Promise.resolve();
-        }
+        },
+        unsafe: () => Promise.resolve([])
     });
 }
 

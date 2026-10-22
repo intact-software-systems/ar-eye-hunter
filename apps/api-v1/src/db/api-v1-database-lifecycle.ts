@@ -372,7 +372,8 @@ export function toApiV1PostgresClient(
         !hasCallableProperty(client, 'begin') ||
         !hasCallableProperty(client, 'notify') ||
         !hasCallableProperty(client, 'listen') ||
-        !hasCallableProperty(client, 'end')
+        !hasCallableProperty(client, 'end') ||
+        !hasCallableProperty(client, 'unsafe')
     ) {
         throw new TypeError('Postgres client does not expose the required API-v1 capabilities.');
     }

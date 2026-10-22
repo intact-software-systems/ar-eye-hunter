@@ -56,6 +56,34 @@ describe('SQL fragments', () => {
         expect(toStatement(true).slice(1)).toEqual([true]);
     });
 
+    it('compares a column with one listed text as a scalar parameter and with several as one array parameter', () => {
+        const column = PSqlFragment.of`${PSqlFragment.identifier('candidate')}.ri_type_id`;
+
+        const [oneStrings, ...oneValues] = PSqlFragment.toTextListPredicate(column, ['WS_OUTBOX']).toStatement();
+        const [severalStrings, ...severalValues] = PSqlFragment.toTextListPredicate(column, ['WS_OUTBOX', 'APP_INBOX'])
+            .toStatement();
+
+        expect([...oneStrings]).toEqual(['candidate.ri_type_id = ', '']);
+        expect(oneValues).toEqual(['WS_OUTBOX']);
+        expect([...severalStrings]).toEqual(['candidate.ri_type_id = any(', '::text[])']);
+        expect(severalValues).toEqual([['WS_OUTBOX', 'APP_INBOX']]);
+    });
+
+    it('marks a statement planned per execution with its positional text, apart from the cached statement of equal text', () => {
+        const toFragment = (attempts: number) => PSqlFragment.of`select * from resource_inbox where ri_attempts < ${attempts} limit ${1}`;
+
+        const [cachedStrings] = toFragment(3).toStatement();
+        const [plannedStrings, ...plannedValues] = toFragment(3).toPlannedPerExecution().toStatement();
+        const [againStrings] = toFragment(4).toPlannedPerExecution().toStatement();
+
+        expect([...plannedStrings]).toEqual([...cachedStrings]);
+        expect(plannedStrings).not.toBe(cachedStrings);
+        expect(againStrings).toBe(plannedStrings);
+        expect(plannedValues).toEqual([3, 1]);
+        expect(PSqlFragment.getPlannedPerExecutionText(plannedStrings)).toBe('select * from resource_inbox where ri_attempts < $1 limit $2');
+        expect(PSqlFragment.getPlannedPerExecutionText(cachedStrings)).toBeUndefined();
+    });
+
     it('accepts only a plain identifier as text', () => {
         expect(() => PSqlFragment.identifier('candidate; drop table x')).toThrow(TypeError);
         expect(() => PSqlFragment.identifier('Candidate')).toThrow(TypeError);

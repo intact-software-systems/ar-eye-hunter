@@ -6,6 +6,7 @@ import {
 } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
+import { PSqlFragment } from '../../postgres/p-sql-fragment.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import {
     ResourceInboxRowCorruptionError,
@@ -58,7 +59,7 @@ export class PSqlResourceInboxEntryReader {
             resourceId: key.resourceId,
             contextId: key.contextId
         }));
-        const rows = await this.sql<ResourceInboxRow[]>`
+        const statement = PSqlFragment.of`
             select resource_inbox.*
             from jsonb_to_recordset(${requested}::jsonb)
                 as requested("topicId" text, "resourceId" text, "contextId" text)
@@ -67,7 +68,8 @@ export class PSqlResourceInboxEntryReader {
              and resource_inbox.ri_resource_id = requested."resourceId"
              and resource_inbox.fk_ext_bank_id = requested."contextId"
             where resource_inbox.expire_ts > ${now}
-        `;
+        `.toPlannedPerExecution();
+        const rows = await this.sql<ResourceInboxRow[]>(...statement.toStatement());
         const found = new Map(rows.map((row) => {
             const entry = toDomain(row);
             return [toKeyAsString(entry.key), entry];
