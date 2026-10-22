@@ -114,10 +114,13 @@ function executeResourceInboxQuery(input: ResourceInboxQueryExecution): PSqlRows
 }
 
 function executeResourceInboxInsert(input: ResourceInboxQueryExecution): PSqlRows {
-    if (input.query.includes('from jsonb_to_recordset(')) {
-        return executeResourceInboxInserts(input);
-    }
-    const incoming = toRowFromInsert(input.values, input.state.nextRowId);
+    return input.query.includes('from jsonb_to_recordset(')
+        ? executeResourceInboxInserts(input)
+        : applyResourceInboxInsertRow(input, toRowFromInsert(input.values, input.state.nextRowId));
+}
+
+/** One inserted row, as the statement's conflict clause treats a row already stored under its key. */
+function applyResourceInboxInsertRow(input: ResourceInboxQueryExecution, incoming: ResourceInboxRow): PSqlRows {
     const key = toCompositeKey(incoming);
     const existing = input.state.rows.get(key);
 
@@ -167,11 +170,10 @@ function executeResourceInboxInserts(input: ResourceInboxQueryExecution): PSqlRo
         'attempts'
     ];
     return inserts.flatMap((insert: Readonly<Record<string, PSqlParameter>>) =>
-        executeResourceInboxInsert({
-            ...input,
-            query: input.query.replace('from jsonb_to_recordset(', 'from recordset('),
-            values: columns.map((column) => insert[column])
-        })
+        applyResourceInboxInsertRow(
+            input,
+            toRowFromInsert(columns.map((column) => insert[column]), input.state.nextRowId)
+        )
     );
 }
 

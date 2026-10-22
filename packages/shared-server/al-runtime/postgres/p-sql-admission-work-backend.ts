@@ -2,10 +2,11 @@ import { Temporal } from '@js-temporal/polyfill';
 
 import type { ALAdmissionBackendEntry } from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionDecoder } from '@shared/alm/al-admission-decoder.ts';
-import type {
-    ALAdmissionReadSession,
-    ALAdmissionWorkBackend,
-    ALAdmissionWorkWriteContext
+import {
+    assertALAdmissionFence,
+    type ALAdmissionReadSession,
+    type ALAdmissionWorkBackend,
+    type ALAdmissionWorkWriteContext
 } from '@shared/alm/al-admission-work-backend.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import { requireLivePersistenceWrite } from '@shared/persistence/persistence-write-deadline.ts';
@@ -216,9 +217,7 @@ class PSqlAdmissionWorkWriteBuffer extends PSqlAdmissionMutationCollector implem
     }
 
     async setFence<V>(key: string, value: V, expireAtTimestamp?: number): Promise<void> {
-        if (this.fenceKey !== undefined && this.fenceKey !== key) {
-            throw new TypeError('An admission commit is fenced on one row');
-        }
+        assertALAdmissionFence(this.fenceKey, key);
         this.fenceKey = key;
         await this.set(key, value, expireAtTimestamp);
     }

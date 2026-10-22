@@ -130,7 +130,10 @@ export class PSqlAdmissionMutationCollector implements ALAdmissionWriteContext {
      */
     computeStateWrite(fenceKey: string | undefined): PSqlAdmissionStateWrite | undefined {
         const rows = this.mutations();
-        const fence = rows.find((row) => row.key === fenceKey) ?? rows[0];
+        const fence = fenceKey === undefined ? rows[0] : rows.find((row) => row.key === fenceKey);
+        if (fenceKey !== undefined && fence === undefined) {
+            throw new TypeError('The fence of an admission commit writes no row');
+        }
         if (fence === undefined) {
             return undefined;
         }

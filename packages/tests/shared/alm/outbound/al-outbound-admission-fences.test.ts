@@ -130,6 +130,19 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
         expect(fences).toEqual([toALOutboundVersionKey(FENCE_NAMESPACE, bundle.senderId)]);
     });
 
+    it('rejects a second fence in one commit and writes nothing', async () => {
+        const fixture = await createFenceFixture(storage);
+        const before = await fixture.readAdmissionState();
+
+        await expect(fixture.backend.write(async (transaction) => {
+            await transaction.setFence(`${FENCE_NAMESPACE}:version:first`, 1);
+            await transaction.setFence(`${FENCE_NAMESPACE}:version:first`, 2);
+            await transaction.setFence(`${FENCE_NAMESPACE}:version:second`, 1);
+        })).rejects.toThrow('An admission commit is fenced on one row');
+
+        expect(await fixture.readAdmissionState()).toBe(before);
+    });
+
     it('aborts a moved supersedence observation without a write or a revision bump', async () => {
         const fixture = await createFenceFixture(storage);
         const stale = await readSupersedingBundle(fixture.store, createSupersedingMessage('sender-a', 1));

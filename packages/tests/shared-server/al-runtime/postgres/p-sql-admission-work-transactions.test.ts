@@ -178,6 +178,18 @@ describe('AL admission persistence-ready queue work', () => {
         expect(await backend.read('effect:b', (value) => value)).toBe('b');
     });
 
+    it('rejects a commit whose named fence writes no row instead of fencing it on another row', async () => {
+        const { sql } = await createPSqlAdmissionTestStorage();
+        const backend = new PSqlAdmissionWorkBackend({ sql, namespace: 'admission', nowMs: Date.now });
+
+        await expect(backend.write(async (write) => {
+            await write.setFence('version', 1, Date.now() - 1);
+            await write.set('effect:a', 'a');
+        })).rejects.toThrow('The fence of an admission commit writes no row');
+
+        expect(await backend.read('effect:a', (value) => value)).toBeUndefined();
+    });
+
     it('writes none of a commit whose fence moved after the commit read it', async () => {
         const { sql } = await createPSqlAdmissionTestStorage();
         const backend = new PSqlAdmissionWorkBackend({ sql, namespace: 'admission', nowMs: Date.now });

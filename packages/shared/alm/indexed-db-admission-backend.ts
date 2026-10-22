@@ -21,6 +21,7 @@ import type { ALAdmissionDecoder } from './al-admission-decoder.ts';
 import { decodeALAdmissionNumber } from './al-admission-value-validation.ts';
 import {
     AL_ADMISSION_WORK_COMPLETED_RETENTION,
+    assertALAdmissionFence,
     type ALAdmissionReadSession,
     type ALAdmissionWorkBackend,
     type ALAdmissionWorkWriteContext
@@ -402,6 +403,7 @@ class IndexedDbAdmissionWriteBuffer implements ALAdmissionWorkWriteContext {
     readonly #observedPrefixes = new Map<string, readonly string[]>();
     readonly #workObservations = new Map<string, StoredResourceEntry | undefined>();
     readonly #pendingWork = new Map<string, ComputedIndexedDbQueuePut>();
+    #fenceKey: string | undefined;
     readonly #session: IndexedDbAdmissionReadSession;
     readonly #nowMs: () => number;
     readonly #newWriteToken: () => string;
@@ -474,6 +476,8 @@ class IndexedDbAdmissionWriteBuffer implements ALAdmissionWorkWriteContext {
 
     /** One IndexedDB transaction fences every observed row at once, so its fence is a row like any other. */
     async setFence<V>(key: string, value: V, expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP): Promise<void> {
+        assertALAdmissionFence(this.#fenceKey, key);
+        this.#fenceKey = key;
         await this.set(key, value, expireAtTimestamp);
     }
 

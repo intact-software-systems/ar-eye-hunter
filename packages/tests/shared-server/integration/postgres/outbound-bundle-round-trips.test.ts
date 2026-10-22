@@ -14,6 +14,7 @@ import {
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
+import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -31,6 +32,7 @@ const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.ski
 const GROUP_SIZE = 16;
 const SETTLE_POLL = { timeout: 20_000 };
 const WS_SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
+const VERSION_TTL_MS = normalizeALRuntimeStoreRetention(undefined).versionTtlMs;
 
 interface RecordedStatement {
     readonly transaction: number | null;
@@ -62,7 +64,9 @@ describe('Postgres outbound admission bundle', () => {
         await withRunStorage(async ({ sql, runId }) => {
             const log: StatementLog = { statements: [], transactions: 0 };
             const lane = createWsDequeueLane(recordStatements(sql, log, null), runId);
-            const messages = await writeProvedWsRows(lane, runId);
+            const proved = await writeProvedWsRows(lane, runId);
+            const messages = proved.map(({ message }) => message);
+            const committingFrom = Date.now();
 
             try {
                 await lane.engine.executeOnce();
@@ -74,7 +78,16 @@ describe('Postgres outbound admission bundle', () => {
                 await lane.dispose();
             }
 
+            const committedBy = Date.now();
             expect(await readStateRows(sql, lane)).toEqual(toExpectedStateRows(lane, messages));
+            for (const sent of await readSentRows(sql, lane)) {
+                expect(sent).toMatchObject(toExpectedSentRow(lane, proved, sent));
+            }
+            const stateExpiries = await readStateExpiries(sql, lane);
+            expect(new Set(stateExpiries).size).toBe(1);
+            expect(stateExpiries[0]! - committingFrom).toBeGreaterThanOrEqual(VERSION_TTL_MS);
+            expect(stateExpiries[0]! - committedBy).toBeLessThanOrEqual(VERSION_TTL_MS);
+            expect(await readQueueExpiries(sql, proved)).toEqual(proved.map(toQueueExpiries));
             const commits = readVersionCommits(log, lane);
             expect(commits).toHaveLength(1);
             expect(commits[0]!.map(({ text, rowCount }) => [toStatementKind(text), rowCount])).toEqual([
@@ -115,7 +128,7 @@ describe('Postgres outbound admission bundle', () => {
     postgresIt('fails a member whose message id another sender owns alone, and commits the others', async () => {
         await withRunStorage(async ({ sql, runId }) => {
             const lane = createWsDequeueLane(sql, runId);
-            const messages = await writeProvedWsRows(lane, runId);
+            const messages = (await writeProvedWsRows(lane, runId)).map(({ message }) => message);
             const [corrupt, ...others] = messages;
             await lane.repository.upsert(
                 lane.namespace,
@@ -207,8 +220,8 @@ function createWsDequeueLane(sql: PSqlSql, runId: string): WsDequeueLane {
 }
 
 /** Raw WS rows of one sender to one connected peer, each with the producer proof its dequeue verifies. */
-async function writeProvedWsRows(lane: WsDequeueLane, runId: string): Promise<ALMessage[]> {
-    const messages: ALMessage[] = [];
+async function writeProvedWsRows(lane: WsDequeueLane, runId: string): Promise<ProvedWsRow[]> {
+    const rows: ProvedWsRow[] = [];
     for (let index = 0; index < GROUP_SIZE; index += 1) {
         const message = newALUnicastMessage(
             lane.senderId,
@@ -237,15 +250,29 @@ async function writeProvedWsRows(lane: WsDequeueLane, runId: string): Promise<AL
             proof.expiresAtMs
         );
         await lane.workQueue.enqueue(entry);
-        messages.push(message);
+        rows.push({ message, entry });
     }
-    return messages;
+    return rows;
+}
+
+interface ProvedWsRow {
+    readonly message: ALMessage;
+    readonly entry: ResourceEntry;
 }
 
 interface StateRowSummary {
     readonly key: string;
-    readonly owner: string | undefined;
+    readonly value: string | undefined;
     readonly revision: number;
+}
+
+interface StoredExpiryRow {
+    readonly expire_at: string;
+}
+
+interface StoredQueueExpiryRow {
+    readonly ri_resource: string;
+    readonly expire_ts: string;
 }
 
 function countSent(lane: WsDequeueLane, messages: readonly ALMessage[]): number {
@@ -253,7 +280,7 @@ function countSent(lane: WsDequeueLane, messages: readonly ALMessage[]): number 
     return messages.filter((message) => frames.some((frame) => frame.includes(message.id.msgId))).length;
 }
 
-/** The state rows of the lane's namespace, its prefix dropped, each owner row with its stored owner. */
+/** The state rows of the lane's namespace, its prefix dropped; every row but a sent row with its stored value. */
 async function readStateRows(sql: PSqlSql, lane: WsDequeueLane): Promise<readonly StateRowSummary[]> {
     const rows = await sql<StoredStateRow[]>`
         select store_key, store_value, revision from runtime_state_store
@@ -264,7 +291,7 @@ async function readStateRows(sql: PSqlSql, lane: WsDequeueLane): Promise<readonl
         const key = row.store_key.slice(lane.namespace.length + 1);
         return {
             key,
-            owner: key.startsWith('msg-owner:') ? row.store_value : undefined,
+            value: key.startsWith('sent:') ? undefined : row.store_value,
             revision: Number(row.revision)
         };
     });
@@ -275,12 +302,62 @@ function toExpectedStateRows(lane: WsDequeueLane, messages: readonly ALMessage[]
     return [
         ...messages.map((message) => ({
             key: `msg-owner:${message.id.msgId}`,
-            owner: JSON.stringify(lane.senderId),
+            value: JSON.stringify(lane.senderId),
             revision: 0
         })),
-        ...messages.map((message) => ({ key: `sent:${message.id.msgId}`, owner: undefined, revision: 0 })),
-        { key: `version:${lane.senderId}`, owner: undefined, revision: 0 }
+        ...messages.map((message) => ({ key: `sent:${message.id.msgId}`, value: undefined, revision: 0 })),
+        { key: `version:${lane.senderId}`, value: JSON.stringify({ senderId: lane.senderId, version: 1 }), revision: 0 }
     ].sort((left, right) => left.key < right.key ? -1 : left.key > right.key ? 1 : 0);
+}
+
+/** Each sent row's stored value, decoded. */
+async function readSentRows(sql: PSqlSql, lane: WsDequeueLane): Promise<readonly object[]> {
+    const rows = await sql<StoredStateRow[]>`
+        select store_key, store_value, revision from runtime_state_store
+        where store_namespace = ${lane.namespace} and store_key like ${`${lane.namespace}:sent:%`}
+    `;
+    expect(rows).toHaveLength(GROUP_SIZE);
+    return rows.map((row) => JSON.parse(row.store_value) as object);
+}
+
+/** What the parent stored for a sent message: its WS row as the reference, and the policy it was admitted under. */
+function toExpectedSentRow(lane: WsDequeueLane, proved: readonly ProvedWsRow[], sent: object): object {
+    const row = proved.find(({ message }) => JSON.stringify(sent).includes(message.id.msgId))!;
+    return {
+        msgId: row.message.id.msgId,
+        reference: {
+            key: row.entry.key,
+            typeId: 'WS_OUTBOX',
+            scope: lane.namespace,
+            msgId: row.message.id.msgId,
+            senderId: lane.senderId,
+            expiresAtMs: row.entry.audit.expiryTs.epochMilliseconds
+        },
+        unicastPeerId: 'peer',
+        policy: { admittedAudience: ['peer'], recipientScope: WS_SCOPE }
+    };
+}
+
+async function readStateExpiries(sql: PSqlSql, lane: WsDequeueLane): Promise<readonly number[]> {
+    const rows = await sql<StoredExpiryRow[]>`
+        select to_char(expire_at_ts at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as expire_at
+        from runtime_state_store
+        where store_namespace = ${lane.namespace}
+    `;
+    return rows.map((row) => Date.parse(row.expire_at));
+}
+
+/** Per message, in the order given, the expiry of each of its queue rows. */
+async function readQueueExpiries(sql: PSqlSql, proved: readonly ProvedWsRow[]): Promise<readonly number[][]> {
+    const rows = await sql<StoredQueueExpiryRow[]>`
+        select ri_resource, to_char(expire_ts, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as expire_ts from resource_inbox
+    `;
+    return proved.map(({ message }) => rows.filter((row) => row.ri_resource.includes(message.id.msgId)).map((row) => Date.parse(row.expire_ts)));
+}
+
+/** The parent wrote each message's identity and own-work rows to expire with the WS row they admit. */
+function toQueueExpiries({ entry }: ProvedWsRow): number[] {
+    return Array.from({ length: 3 }, () => entry.audit.expiryTs.epochMilliseconds);
 }
 
 /** Each queue row as its topic, status and attempts. */
