@@ -56,3 +56,11 @@ and it has no status list.
   physical commit → browser ≤ 2 s target, the shared tick's status reads, the
   claimed-join idle, the API thread's busy share, the medium-scale APP_OUTBOX
   drain and the deferrals D410 lists.
+- Normalise thrown values at the three caught-value boundaries recorded as
+  reviewed in the Release 7 closure (`packages/shared/cache/Command.ts`,
+  `packages/shared/cache/PullPushCommand.ts`, `apps/api-v1/src/routes/ice-route.ts`'s
+  error mapper) with `toError`, type the callbacks as `Error`, and delete those
+  three `unknown` dispositions. Callers then receive wrapped errors for non-`Error`
+  throws, which is why the closure did not change it.
+- The topology and configuration commands read the group's whole roster and every session (`read-topology-config-mutation.ts` → `read-group-state-authority.ts`; 201 rows per call in the state-write bench's hot workload, identical before V1c): narrow the read to the decision surface.
+- The coalesced completion poll reads every waiting command's status row each tick; a terminal-status filter would cut the rows at the cost of the non-terminal telemetry the wait does not need.
