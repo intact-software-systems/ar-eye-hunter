@@ -902,7 +902,7 @@ Deno.test('configuration decoder requires the disconnected client session retent
     );
 });
 
-Deno.test('configuration decoder requires the finished AppInbox retention and bounds it from one minute to thirty days', () => {
+Deno.test('configuration decoder requires the finished AppInbox retention and bounds it from one hour to thirty days', () => {
     assert.equal(decodeApiV1Configuration(validDecodeApiV1ConfigurationInput()).appInbox.finishedRetentionMs, 86_400_000);
     const unnamed = validDecodeApiV1ConfigurationInput();
     delete ((unnamed.defaultsSource as MutableApiV1ConfigurationSourceObject).appInbox as MutableApiV1ConfigurationSourceObject)
@@ -914,11 +914,11 @@ Deno.test('configuration decoder requires the finished AppInbox retention and bo
 
     for (
         const [retentionMs, valid] of [
-            [59_999, false],
-            [60_000, true],
+            [3_599_999, false],
+            [3_600_000, true],
             [2_592_000_000, true],
             [2_592_000_001, false],
-            [60_000.5, false]
+            [3_600_000.5, false]
         ] as const
     ) {
         const input = validDecodeApiV1ConfigurationInput();

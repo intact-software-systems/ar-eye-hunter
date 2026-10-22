@@ -66,12 +66,18 @@ async function writeRuntimeState(
     operation: ClientRuntimePersistenceOperation
 ): Promise<void> {
     if (operation.kind === 'insert') {
+        // Every read takes an expired row for absent, so the insert replaces one, one revision past it.
         const rows = await transaction<Array<{ revision: number | string; }>>`
             insert into runtime_state_store (store_namespace, store_key, store_value,
                                              expire_at_ts, updated_ts, revision)
             values (${operation.namespace}, ${operation.key}, ${operation.value},
                     ${operation.expireAtIsoTimestamp}, now(), 0)
-            on conflict (store_namespace, store_key) do nothing
+            on conflict (store_namespace, store_key) do update
+                set store_value = excluded.store_value,
+                    expire_at_ts = excluded.expire_at_ts,
+                    updated_ts = now(),
+                    revision = runtime_state_store.revision + 1
+                where runtime_state_store.expire_at_ts <= now()
             returning revision
         `;
         requireApplied(rows);

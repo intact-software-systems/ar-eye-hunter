@@ -107,20 +107,16 @@ function validateGuardResult(
         ['status', 'operation', 'namespace', 'key', 'resultingRevision'],
         'guard'
     );
-    const expectedRevision = guard.operation === 'insert'
-        ? 0
-        : guard.expectedRevision + 1;
-    requireExactRevision(
-        result.resultingRevision,
-        expectedRevision,
-        'guard resulting revision'
-    );
+    const resultingRevision = requireResultRevision(result.resultingRevision, 'guard resulting revision');
+    if (guard.operation === 'update' && resultingRevision !== guard.expectedRevision + 1) {
+        throw invalidResult('guard resulting revision does not match');
+    }
     return {
         status: 'applied',
         operation: guard.operation,
         namespace: guard.namespace,
         key: guard.key,
-        resultingRevision: expectedRevision
+        resultingRevision
     };
 }
 
@@ -209,9 +205,6 @@ function validateEffectResult(
         result.resultingRevision,
         `${label} resulting revision`
     );
-    if (effect.operation === 'insert' && resultingRevision !== 0) {
-        throw invalidResult(`${label} insert resulting revision must be 0`);
-    }
     if (
         effect.operation === 'update' &&
         resultingRevision !== effect.expectedRevision + 1

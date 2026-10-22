@@ -138,6 +138,28 @@ describe('Postgres retention of finished AppInbox commands', () => {
             expect(await readDisplayName(harness, principalId)).toBe('First');
         });
     }, 60_000);
+    postgresIt('executes a request again on its first attempt after the window, before any sweep', async () => {
+        await withRetentionHarness(async (harness) => {
+            const principalId = `principal-${harness.runId}`;
+            const authority = await putSession(harness, principalId);
+            const requestId = `rename-unswept-${harness.runId}`;
+            await upsertPrincipal(harness, { authority, principalId, requestId, displayName: 'First' });
+            await upsertPrincipal(harness, {
+                authority,
+                principalId,
+                requestId: `rename-unswept-second-${harness.runId}`,
+                displayName: 'Second'
+            });
+
+            await waitOutShortRetention();
+            expect(await countIdempotencyRecords(harness.sql, principalId)).toBe(2);
+
+            const executed = await upsertPrincipal(harness, { authority, principalId, requestId, displayName: 'First' });
+            expect(executed.result.event?.eventType).toBe('principal-updated');
+            expect(await readDisplayName(harness, principalId)).toBe('First');
+            expect(await readFactAttempts(harness.sql, requestId)).toEqual([1]);
+        });
+    }, 60_000);
 });
 
 describe('Postgres retention of a group request\'s idempotency', () => {
@@ -176,6 +198,39 @@ describe('Postgres retention of a group request\'s idempotency', () => {
                 'First'
             );
             expect(await readGroupDisplayName(harness, fixture.groupRef.groupId)).toBe('First');
+        });
+    }, 60_000);
+
+    postgresIt('executes a group request again on its first attempt after the window, before any sweep', async () => {
+        await withRetentionHarness(async (harness) => {
+            const fixture = await seedGroupFormation({
+                sql: harness.sql,
+                scope: harness.scope,
+                activeMemberIds: [],
+                atEpochMs: Date.now(),
+                requestIdFor: (semanticId) => `${semanticId}-${harness.runId}`
+            });
+            const authority = createPostgresAppInboxTestAuthority('alice', 'alice-session');
+            await harness.short.authSessions.putSession(authority);
+            const groupId = fixture.groupRef.groupId;
+            const requestId = `rename-group-unswept-${harness.runId}`;
+            await renameGroup(harness, { authority, groupId, requestId }, 'First');
+            await renameGroup(
+                harness,
+                { authority, groupId, requestId: `rename-group-unswept-second-${harness.runId}` },
+                'Second'
+            );
+
+            await waitOutShortRetention();
+            expect(await countGroupIdempotencyRecords(harness.sql, harness.runId)).toBe(3);
+
+            await renameGroup(
+                { ...harness, short: harness.createLaterShortRuntime() },
+                { authority, groupId, requestId },
+                'First'
+            );
+            expect(await readGroupDisplayName(harness, groupId)).toBe('First');
+            expect(await readFactAttempts(harness.sql, requestId)).toEqual([1]);
         });
     }, 60_000);
 });
@@ -403,6 +458,15 @@ async function readTickStatuses(sql: PSqlSql, atEpochMs: number): Promise<readon
           and ri_resource like ${`%${atEpochMs}%`}
     `;
     return rows.map((row) => row.ri_status);
+}
+
+/** The attempt count of every AppInbox fact the request id keys. */
+async function readFactAttempts(sql: PSqlSql, requestId: string): Promise<readonly number[]> {
+    const rows = await sql<{ ri_attempts: number; }[]>`
+        select ri_attempts from resource_inbox
+        where ri_type_id = ${EnqueuedType.APP_INBOX} and ri_resource like ${`%${requestId}%`}
+    `;
+    return rows.map((row) => Number(row.ri_attempts));
 }
 
 async function countTickResults(sql: PSqlSql, atEpochMs: number): Promise<number> {
