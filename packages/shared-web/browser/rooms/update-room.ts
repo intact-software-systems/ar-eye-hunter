@@ -6,7 +6,6 @@ import type { RallarStateSnapshotAcceptanceInput } from '@shared-web/browser/sta
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts';
-import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 
 import type {
@@ -20,11 +19,18 @@ import {
     updateStateGroupDetails,
     updateStateGroupMetadata
 } from './room-group-state-mutation-workflows.ts';
-import type { GroupRef, GroupSnapshot, StateScope, UpdateStateGroupBody } from './room-group-state-translation.ts';
+import type {
+    GroupJoinCodeResponse,
+    GroupRef,
+    GroupSnapshot,
+    StateScope,
+    UpdateStateGroupBody
+} from './room-group-state-translation.ts';
+import { captureRoomSession } from './room-session-fence.ts';
 import type { RallarRoomStateStorePort } from './room-state-store.ts';
 import { toRoomTarget } from './room-target.ts';
 
-export interface RunRoomTargetMutationInput {
+export interface RunRoomTargetMutationInput<TResult extends GroupSnapshot | GroupJoinCodeResponse = GroupSnapshot> {
     readonly room: string | GroupRef | RallarRoomTargetInput;
     readonly options: RallarScopedOperationOptions;
     readonly stateStore: RallarRoomStateStorePort;
@@ -36,17 +42,18 @@ export interface RunRoomTargetMutationInput {
     readonly resolveOperationScope: (scope?: StateScope) => StateScope | undefined;
     readonly runAuthAwareOperation: <T>(operation: () => Promise<T>) => Promise<T>;
     readonly acceptSnapshots: (input: RallarStateSnapshotAcceptanceInput) => Promise<void>;
-    readonly execute: (input: RunRoomTargetMutationExecutionInput) => Promise<GroupSnapshot>;
+    readonly execute: (input: RunRoomTargetMutationExecutionInput<TResult>) => Promise<TResult>;
 }
 
-interface RunRoomTargetMutationExecutionInput {
+interface RunRoomTargetMutationExecutionInput<TResult> {
     readonly roomId: string;
     readonly session: AuthSession;
     readonly scope: StateScope;
-    readonly policies: CommandsOrchestratorPolicies<GroupSnapshot>;
+    readonly policies: CommandsOrchestratorPolicies<TResult>;
     readonly generationId: string;
     readonly context: ApiMiddleware;
     readonly signal: AbortSignal | undefined;
+    readonly assertCurrent: () => void;
 }
 
 interface UpdateRoomOperationInput extends Omit<RunRoomTargetMutationInput, 'room' | 'options' | 'execute'> {
@@ -66,30 +73,41 @@ interface ChangeRoomLifecycleInput extends RoomLifecycleOperationInput {
     readonly status: 'archived' | 'deleted';
 }
 
-export async function runRoomTargetMutation(
-    input: RunRoomTargetMutationInput
-): Promise<GroupSnapshot> {
-    return await input.runAuthAwareOperation(async () => {
-        const target = toRoomTarget(input.room, input.options);
-        const operationOptions = input.resolveOperationOptions(target.options);
-        const context = await input.connect(operationOptions);
-        const session = input.requireSession();
-        const scope = target.options.scope ??
-            (target.roomRef
-                ? toStateScope(target.roomRef)
-                : (input.resolveOperationScope(target.options.scope) ?? defaultStateScope()));
-        const snapshot = await input.execute({
-            roomId: target.roomId,
-            session,
-            scope,
-            policies: toRallarWorkflowPolicies<GroupSnapshot>(operationOptions),
-            generationId: context.middleware.heartbeat.generationId,
-            context,
-            signal: operationOptions.signal
-        });
-        await input.acceptSnapshots({ context, clients: [], groups: [snapshot], scope });
-        return snapshot;
+export async function runRoomTargetMutation<TResult extends GroupSnapshot | GroupJoinCodeResponse>(
+    input: RunRoomTargetMutationInput<TResult>
+): Promise<TResult> {
+    return await input.runAuthAwareOperation(() => runAuthenticatedRoomTargetMutation(input));
+}
+
+async function runAuthenticatedRoomTargetMutation<TResult extends GroupSnapshot | GroupJoinCodeResponse>(
+    input: RunRoomTargetMutationInput<TResult>
+): Promise<TResult> {
+    const target = toRoomTarget(input.room, input.options);
+    const operationOptions = input.resolveOperationOptions(target.options);
+    const fence = captureRoomSession(input.requireSession, operationOptions.signal);
+    fence.assertCurrent();
+    const context = await input.connect(operationOptions);
+    fence.assertCurrent(context);
+    const scope = target.options.scope ??
+        (target.roomRef
+            ? toStateScope(target.roomRef)
+            : (input.resolveOperationScope(target.options.scope) ?? defaultStateScope()));
+    const result = await input.execute({
+        roomId: target.roomId,
+        session: fence.session,
+        scope,
+        policies: toRallarWorkflowPolicies<TResult>(operationOptions),
+        generationId: context.middleware.heartbeat.generationId,
+        context,
+        signal: operationOptions.signal,
+        assertCurrent: () => fence.assertCurrent(context)
     });
+    fence.assertCurrent(context);
+    const response: GroupSnapshot | GroupJoinCodeResponse = result;
+    const snapshot = 'snapshot' in response ? response.snapshot : response;
+    await input.acceptSnapshots({ context, clients: [], groups: [snapshot], scope });
+    fence.assertCurrent(context);
+    return result;
 }
 
 export async function updateRoom(
@@ -127,30 +145,32 @@ export async function deleteRoom(
 export async function updateRoomMetadata(
     input: UpdateRoomMetadataOperationInput
 ): Promise<GroupSnapshot> {
-    return await input.runAuthAwareOperation(async () => {
-        const operationOptions = input.resolveOperationOptions(input.options);
-        const context = await input.connect(operationOptions);
-        const session = input.requireSession();
-        const roomRef = typeof input.room === 'string'
-            ? (toGroupRefFromScope(input.room, input.resolveOperationScope()) ??
-                input.stateStore.findGroupSnapshot(input.room)?.group)
-            : input.room;
-        const roomId = typeof input.room === 'string' ? input.room : input.room.groupId;
-        const scope = input.options.scope ?? (roomRef ? toStateScope(roomRef) : input.resolveOperationScope());
-        if (!roomId) {
-            throw new Error('Cannot update room metadata: room is required.');
-        }
-        const snapshot = await updateStateGroupMetadata({
-            groupId: roomId,
-            patch: input.patch,
-            principalId: session.clientId,
-            sessionId: session.sessionId,
-            scope,
-            policies: toRallarWorkflowPolicies(operationOptions)
-        });
-        await input.acceptSnapshots({ context, clients: [], groups: [snapshot], scope });
-        return snapshot;
+    return await input.runAuthAwareOperation(() => updateAuthenticatedRoomMetadata(input));
+}
+
+async function updateAuthenticatedRoomMetadata(input: UpdateRoomMetadataOperationInput): Promise<GroupSnapshot> {
+    const operationOptions = input.resolveOperationOptions(input.options);
+    const context = await input.connect(operationOptions);
+    const session = input.requireSession();
+    const roomRef = typeof input.room === 'string'
+        ? (toGroupRefFromScope(input.room, input.resolveOperationScope()) ??
+            input.stateStore.findGroupSnapshot(input.room)?.group)
+        : input.room;
+    const roomId = typeof input.room === 'string' ? input.room : input.room.groupId;
+    const scope = input.options.scope ?? (roomRef ? toStateScope(roomRef) : input.resolveOperationScope());
+    if (!roomId) {
+        throw new Error('Cannot update room metadata: room is required.');
+    }
+    const snapshot = await updateStateGroupMetadata({
+        groupId: roomId,
+        patch: input.patch,
+        principalId: session.clientId,
+        sessionId: session.sessionId,
+        scope,
+        policies: toRallarWorkflowPolicies(operationOptions)
     });
+    await input.acceptSnapshots({ context, clients: [], groups: [snapshot], scope });
+    return snapshot;
 }
 
 async function changeRoomLifecycle(

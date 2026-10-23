@@ -1,5 +1,5 @@
 {
-  "description": "Group directory contract: a non-member lists joinable open groups as safe entries, with kind and name filters, a stable keyset-paged order, an empty lobby hidden by default, members excluded once they can read the room in full, ETag revalidation with 304, and typed 400/401 failures.",
+  "description": "Group directory contract: safe discoverable entries for both game names, generic filters and best-effort keyset paging, forming approval-based rooms, caller-specific conditional reads through CORS, and uncached typed failures.",
   "variables": {
     "apiPrimary": {
       "env": "RALLAR_API_BASE_URL",
@@ -37,7 +37,10 @@
     "betaId": "dir-beta-{runId}",
     "partyId": "dir-party-{runId}",
     "privateId": "dir-private-{runId}",
-    "gammaId": "dir-gamma-{runId}"
+    "browserOrigin": {
+      "env": "RALLAR_DIRECTORY_BROWSER_ORIGIN",
+      "default": "https://ar-eye-hunter.pages.dev"
+    }
   },
   "execution": {
     "correlation": {
@@ -63,6 +66,29 @@
     }
   ],
   "steps": [
+    {
+      "name": "allowConditionalDirectoryPreflight",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "OPTIONS",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory",
+        "headers": {
+          "Origin": "{browserOrigin}",
+          "Access-Control-Request-Method": "GET",
+          "Access-Control-Request-Headers": "content-type,authorization,x-client-id,if-none-match"
+        },
+        "outputs": {
+          "directoryAllowedHeaders": "headers.access-control-allow-headers"
+        }
+      },
+      "expect": {
+        "status": 204,
+        "headers": {
+          "access-control-allow-origin": "{browserOrigin}"
+        }
+      }
+    },
     {
       "name": "loginAlice",
       "type": "http",
@@ -154,7 +180,7 @@
         },
         "body": {
           "groupId": "{alphaId}",
-          "displayName": "Directory Arena Alpha {runId}",
+          "displayName": "AR Eye Hunter Arena {runId}",
           "kind": "room",
           "joinMode": "open",
           "createdByPrincipalId": "{aliceClientId}"
@@ -183,10 +209,13 @@
         },
         "body": {
           "groupId": "{betaId}",
-          "displayName": "Directory Arena Beta {runId}",
+          "displayName": "Relic Hunters Expedition {runId}",
           "kind": "room",
           "joinMode": "open",
-          "createdByPrincipalId": "{aliceClientId}"
+          "createdByPrincipalId": "{aliceClientId}",
+          "lifecyclePolicy": {
+            "preset": "managed"
+          }
         }
       },
       "expect": {
@@ -287,10 +316,13 @@
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true",
         "headers": {
           "Authorization": "{bobAuthHeader}",
-          "x-client-id": "{bobClientId}"
+          "x-client-id": "{bobClientId}",
+          "Origin": "{browserOrigin}"
         },
         "outputs": {
-          "directoryEtag": "headers.etag"
+          "directoryEtag": "headers.etag",
+          "nonMemberListsOpenRoomsOnlyExposedHeaders": "headers.access-control-expose-headers",
+          "nonMemberListsOpenRoomsOnlyVary": "headers.vary"
         }
       },
       "expect": {
@@ -304,7 +336,8 @@
               },
               "joinMode": "open",
               "maxMembers": "integer",
-              "isFull": false
+              "isFull": false,
+              "displayName": "AR Eye Hunter Arena {runId}"
             },
             {
               "groupRef": {
@@ -312,7 +345,9 @@
               },
               "joinMode": "open",
               "maxMembers": "integer",
-              "isFull": false
+              "isFull": false,
+              "displayName": "Relic Hunters Expedition {runId}",
+              "lifecycleState": "forming"
             },
             {
               "groupRef": {
@@ -324,6 +359,12 @@
             }
           ],
           "nextCursor": null
+        },
+        "headers": {
+          "cache-control": "private, no-cache",
+          "access-control-allow-origin": "{browserOrigin}",
+          "access-control-allow-credentials": "true",
+          "etag": "string"
         }
       }
     },
@@ -350,7 +391,8 @@
               },
               "joinMode": "open",
               "maxMembers": "integer",
-              "isFull": false
+              "isFull": false,
+              "displayName": "AR Eye Hunter Arena {runId}"
             },
             {
               "groupRef": {
@@ -358,7 +400,52 @@
               },
               "joinMode": "open",
               "maxMembers": "integer",
-              "isFull": false
+              "isFull": false,
+              "displayName": "Relic Hunters Expedition {runId}",
+              "lifecycleState": "forming"
+            }
+          ],
+          "nextCursor": null
+        }
+      }
+    },
+    {
+      "name": "unknownPeerLatencyKeepsBothGamesDiscoverable",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true&kind=room&order=peer-rtt",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "entries": [
+            {
+              "groupRef": {
+                "groupId": "{alphaId}"
+              },
+              "joinMode": "open",
+              "maxMembers": "integer",
+              "isFull": false,
+              "displayName": "AR Eye Hunter Arena {runId}",
+              "peerRttMs": null
+            },
+            {
+              "groupRef": {
+                "groupId": "{betaId}"
+              },
+              "joinMode": "open",
+              "maxMembers": "integer",
+              "isFull": false,
+              "displayName": "Relic Hunters Expedition {runId}",
+              "lifecycleState": "forming",
+              "peerRttMs": null
             }
           ],
           "nextCursor": null
@@ -396,6 +483,60 @@
       }
     },
     {
+      "name": "findArenaByName",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true&kind=room&q=AR%20EYE",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "entries": [
+            {
+              "groupRef": {
+                "groupId": "{alphaId}"
+              }
+            }
+          ],
+          "nextCursor": null
+        }
+      }
+    },
+    {
+      "name": "findExpeditionByName",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true&kind=room&q=RELIC%20HUNTERS",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "entries": [
+            {
+              "groupRef": {
+                "groupId": "{betaId}"
+              }
+            }
+          ],
+          "nextCursor": null
+        }
+      }
+    },
+    {
       "name": "firstPageIsStable",
       "type": "http",
       "connection": "primary",
@@ -425,6 +566,52 @@
             }
           ],
           "nextCursor": "string"
+        }
+      }
+    },
+    {
+      "name": "rejectUnknownLatencyOrder",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?order=nearest",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "comparison": "compatible-complete",
+        "body": {
+          "code": "invalid-group-directory-query"
+        },
+        "headers": {
+          "cache-control": "no-store"
+        }
+      }
+    },
+    {
+      "name": "rejectOccupancyCursorForLatencyOrder",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?order=peer-rtt&cursor={firstCursor}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "comparison": "compatible-complete",
+        "body": {
+          "code": "invalid-group-directory-query"
+        },
+        "headers": {
+          "cache-control": "no-store"
         }
       }
     },
@@ -500,7 +687,8 @@
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
+          "x-client-id": "{aliceClientId}",
+          "If-None-Match": "{directoryEtag}"
         }
       },
       "expect": {
@@ -522,11 +710,22 @@
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}",
-          "If-None-Match": "{directoryEtag}"
+          "If-None-Match": "{directoryEtag}",
+          "Origin": "{browserOrigin}"
+        },
+        "outputs": {
+          "directoryIsRevalidatedWithTheEtagExposedHeaders": "headers.access-control-expose-headers",
+          "directoryIsRevalidatedWithTheEtagVary": "headers.vary"
         }
       },
       "expect": {
-        "status": 304
+        "status": 304,
+        "headers": {
+          "cache-control": "private, no-cache",
+          "access-control-allow-origin": "{browserOrigin}",
+          "access-control-allow-credentials": "true",
+          "etag": "{directoryEtag}"
+        }
       }
     },
     {
@@ -640,13 +839,17 @@
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?limit=0",
         "headers": {
           "Authorization": "{bobAuthHeader}",
-          "x-client-id": "{bobClientId}"
+          "x-client-id": "{bobClientId}",
+          "If-None-Match": "{directoryEtag}"
         }
       },
       "expect": {
         "status": 400,
         "body": {
           "code": "invalid-group-directory-query"
+        },
+        "headers": {
+          "cache-control": "no-store"
         }
       }
     },
@@ -659,13 +862,17 @@
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?limit=201",
         "headers": {
           "Authorization": "{bobAuthHeader}",
-          "x-client-id": "{bobClientId}"
+          "x-client-id": "{bobClientId}",
+          "If-None-Match": "{directoryEtag}"
         }
       },
       "expect": {
         "status": 400,
         "body": {
           "code": "invalid-group-directory-query"
+        },
+        "headers": {
+          "cache-control": "no-store"
         }
       }
     },
@@ -678,13 +885,17 @@
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?kind=lobby",
         "headers": {
           "Authorization": "{bobAuthHeader}",
-          "x-client-id": "{bobClientId}"
+          "x-client-id": "{bobClientId}",
+          "If-None-Match": "{directoryEtag}"
         }
       },
       "expect": {
         "status": 400,
         "body": {
           "code": "invalid-group-directory-query"
+        },
+        "headers": {
+          "cache-control": "no-store"
         }
       }
     },
@@ -697,13 +908,17 @@
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=1",
         "headers": {
           "Authorization": "{bobAuthHeader}",
-          "x-client-id": "{bobClientId}"
+          "x-client-id": "{bobClientId}",
+          "If-None-Match": "{directoryEtag}"
         }
       },
       "expect": {
         "status": 400,
         "body": {
           "code": "invalid-group-directory-query"
+        },
+        "headers": {
+          "cache-control": "no-store"
         }
       }
     },
@@ -716,13 +931,17 @@
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?cursor=!!!",
         "headers": {
           "Authorization": "{bobAuthHeader}",
-          "x-client-id": "{bobClientId}"
+          "x-client-id": "{bobClientId}",
+          "If-None-Match": "{directoryEtag}"
         }
       },
       "expect": {
         "status": 400,
         "body": {
           "code": "invalid-group-directory-query"
+        },
+        "headers": {
+          "cache-control": "no-store"
         }
       }
     },
@@ -732,12 +951,163 @@
       "connection": "primary",
       "request": {
         "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory"
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory",
+        "headers": {
+          "If-None-Match": "{directoryEtag}"
+        }
       },
       "expect": {
         "status": 401,
         "body": {
           "error": "Unauthorized: Missing bearer token"
+        },
+        "headers": {
+          "cache-control": "no-store"
+        }
+      }
+    },
+    {
+      "name": "preflightAllowsValidator",
+      "type": "set",
+      "output": "preflightAllowsValidator",
+      "transform": {
+        "includes": [
+          {
+            "path": "outputs.directoryAllowedHeaders"
+          },
+          "If-None-Match"
+        ]
+      }
+    },
+    {
+      "name": "nonMemberListsOpenRoomsOnlyExposesValidator",
+      "type": "set",
+      "output": "nonMemberListsOpenRoomsOnlyExposesValidator",
+      "transform": {
+        "includes": [
+          {
+            "path": "outputs.nonMemberListsOpenRoomsOnlyExposedHeaders"
+          },
+          "ETag"
+        ]
+      }
+    },
+    {
+      "name": "nonMemberListsOpenRoomsOnlyVariesByCaller",
+      "type": "set",
+      "output": "nonMemberListsOpenRoomsOnlyVariesByCaller",
+      "transform": {
+        "includes": [
+          {
+            "path": "outputs.nonMemberListsOpenRoomsOnlyVary"
+          },
+          "Authorization"
+        ]
+      }
+    },
+    {
+      "name": "nonMemberListsOpenRoomsOnlyVariesByClient",
+      "type": "set",
+      "output": "nonMemberListsOpenRoomsOnlyVariesByClient",
+      "transform": {
+        "includes": [
+          {
+            "path": "outputs.nonMemberListsOpenRoomsOnlyVary"
+          },
+          "x-client-id"
+        ]
+      }
+    },
+    {
+      "name": "nonMemberListsOpenRoomsOnlyVariesByOrigin",
+      "type": "set",
+      "output": "nonMemberListsOpenRoomsOnlyVariesByOrigin",
+      "transform": {
+        "includes": [
+          {
+            "path": "outputs.nonMemberListsOpenRoomsOnlyVary"
+          },
+          "Origin"
+        ]
+      }
+    },
+    {
+      "name": "directoryIsRevalidatedWithTheEtagExposesValidator",
+      "type": "set",
+      "output": "directoryIsRevalidatedWithTheEtagExposesValidator",
+      "transform": {
+        "includes": [
+          {
+            "path": "outputs.directoryIsRevalidatedWithTheEtagExposedHeaders"
+          },
+          "ETag"
+        ]
+      }
+    },
+    {
+      "name": "directoryIsRevalidatedWithTheEtagVariesByCaller",
+      "type": "set",
+      "output": "directoryIsRevalidatedWithTheEtagVariesByCaller",
+      "transform": {
+        "includes": [
+          {
+            "path": "outputs.directoryIsRevalidatedWithTheEtagVary"
+          },
+          "Authorization"
+        ]
+      }
+    },
+    {
+      "name": "directoryIsRevalidatedWithTheEtagVariesByClient",
+      "type": "set",
+      "output": "directoryIsRevalidatedWithTheEtagVariesByClient",
+      "transform": {
+        "includes": [
+          {
+            "path": "outputs.directoryIsRevalidatedWithTheEtagVary"
+          },
+          "x-client-id"
+        ]
+      }
+    },
+    {
+      "name": "directoryIsRevalidatedWithTheEtagVariesByOrigin",
+      "type": "set",
+      "output": "directoryIsRevalidatedWithTheEtagVariesByOrigin",
+      "transform": {
+        "includes": [
+          {
+            "path": "outputs.directoryIsRevalidatedWithTheEtagVary"
+          },
+          "Origin"
+        ]
+      }
+    },
+    {
+      "name": "verifyConditionalCorsHeaders",
+      "type": "assert",
+      "actual": {
+        "preflightAllowsValidator": "{preflightAllowsValidator}",
+        "nonMemberListsOpenRoomsOnlyExposesValidator": "{nonMemberListsOpenRoomsOnlyExposesValidator}",
+        "nonMemberListsOpenRoomsOnlyVariesByCaller": "{nonMemberListsOpenRoomsOnlyVariesByCaller}",
+        "nonMemberListsOpenRoomsOnlyVariesByClient": "{nonMemberListsOpenRoomsOnlyVariesByClient}",
+        "nonMemberListsOpenRoomsOnlyVariesByOrigin": "{nonMemberListsOpenRoomsOnlyVariesByOrigin}",
+        "directoryIsRevalidatedWithTheEtagExposesValidator": "{directoryIsRevalidatedWithTheEtagExposesValidator}",
+        "directoryIsRevalidatedWithTheEtagVariesByCaller": "{directoryIsRevalidatedWithTheEtagVariesByCaller}",
+        "directoryIsRevalidatedWithTheEtagVariesByClient": "{directoryIsRevalidatedWithTheEtagVariesByClient}",
+        "directoryIsRevalidatedWithTheEtagVariesByOrigin": "{directoryIsRevalidatedWithTheEtagVariesByOrigin}"
+      },
+      "expect": {
+        "body": {
+          "preflightAllowsValidator": true,
+          "nonMemberListsOpenRoomsOnlyExposesValidator": true,
+          "nonMemberListsOpenRoomsOnlyVariesByCaller": true,
+          "nonMemberListsOpenRoomsOnlyVariesByClient": true,
+          "nonMemberListsOpenRoomsOnlyVariesByOrigin": true,
+          "directoryIsRevalidatedWithTheEtagExposesValidator": true,
+          "directoryIsRevalidatedWithTheEtagVariesByCaller": true,
+          "directoryIsRevalidatedWithTheEtagVariesByClient": true,
+          "directoryIsRevalidatedWithTheEtagVariesByOrigin": true
         }
       }
     }

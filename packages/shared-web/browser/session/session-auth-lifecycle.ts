@@ -228,11 +228,17 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
     }
 
     public async endUnauthorizedSession(error: Error, session: AuthSession | undefined): Promise<void> {
-        if (!(error instanceof ApiHttpError) || error.status !== 401) {
-            return;
-        }
-        if (session) {
-            await this.endAuthSession('unauthorized', { revoke: false, session });
+        const seen = new Set<Error>();
+        let cause: unknown = error;
+        while (cause instanceof Error && !seen.has(cause)) {
+            if (cause instanceof ApiHttpError && cause.status === 401) {
+                if (session) {
+                    await this.endAuthSession('unauthorized', { revoke: false, session });
+                }
+                return;
+            }
+            seen.add(cause);
+            cause = cause.cause;
         }
     }
 

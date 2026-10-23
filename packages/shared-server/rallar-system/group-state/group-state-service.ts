@@ -40,6 +40,7 @@ import { GroupConnectTriggerLatchRepository } from './persistence/group-connect-
 import { GroupStateRepository } from './persistence/group-state-repository.ts';
 import type { GroupStateMutationExactAuthSession } from './persistence/read-exact-group-state-mutation.ts';
 import { readGroupSessionCleanupCandidates } from './presence/group-session-cleanup.ts';
+import { GroupQuickJoinService } from './quick-join/group-quick-join-service.ts';
 
 export class GroupMutationIdempotencyConflictError extends Error {
     readonly status = 409;
@@ -76,6 +77,15 @@ export function createGroupStateRuntime(
     };
     const service: GroupStateService = {
         sessionGenerationLifecycle: createWsSessionGenerationLifecycleService(runtime),
+        quickJoin: new GroupQuickJoinService(
+            { repository: repositoryFor(runtime), authSessions },
+            {
+                capacity: dependencies.capacity ?? { defaultMaxMembers: null },
+                serviceId: dependencies.serviceId,
+                finishedRetentionMs: dependencies.finishedRetentionMs,
+                now
+            }
+        ),
         ...createIngressCaptureOperations(owners),
         ...createQueryOperations(owners),
         ...createMutationOperations(owners)

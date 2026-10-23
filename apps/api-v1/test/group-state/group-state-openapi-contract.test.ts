@@ -7,9 +7,15 @@ interface OpenApiSchema {
     readonly $ref?: string;
     readonly type?: string;
     readonly items?: { readonly $ref?: string; };
+    readonly enum?: readonly string[];
+    readonly default?: string;
+    readonly nullable?: boolean;
+    readonly required?: readonly string[];
+    readonly properties?: Readonly<Record<string, OpenApiSchema>>;
 }
 
 interface OpenApiOperation {
+    readonly parameters?: readonly { readonly name?: string; readonly schema?: OpenApiSchema; }[];
     readonly security?: readonly Record<string, readonly string[]>[];
     readonly requestBody?: {
         readonly content?: {
@@ -27,6 +33,7 @@ interface OpenApiOperation {
 
 interface OpenApiDocument {
     readonly paths: Readonly<Record<string, Readonly<Record<string, OpenApiOperation>>>>;
+    readonly components: { readonly schemas: Readonly<Record<string, OpenApiSchema>>; };
 }
 
 interface GroupResponseSchemaContract {
@@ -45,6 +52,13 @@ interface GroupOperationContract {
 const GROUP_PATH = '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups';
 const GROUP_ID_PATH = `${GROUP_PATH}/{groupId}`;
 const GROUP_OPERATION_CONTRACTS: readonly GroupOperationContract[] = [
+    {
+        path: `${GROUP_PATH}/quick-join`,
+        method: 'post',
+        requestSchema: 'QuickJoinGroupRequest',
+        status: '200',
+        responseSchema: { reference: 'QuickJoinGroupResult' }
+    },
     {
         path: GROUP_PATH,
         method: 'get',
@@ -213,6 +227,19 @@ Deno.test(
         }
     }
 );
+
+Deno.test('directory OpenAPI exposes opt-in peer ordering and mandatory nullable RTT', async () => {
+    const response = await installApiDocumentationRoutes(new Hono()).request('/api/openapi.json');
+    const document = await response.json() as OpenApiDocument;
+    const operation = document.paths['/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory'].get;
+    const order = operation.parameters?.find((parameter) => parameter.name === 'order')?.schema;
+    assert.deepEqual(order?.enum, ['online-members', 'peer-rtt']);
+    assert.equal(order?.default, 'online-members');
+    const entry = document.components.schemas.GroupDirectoryEntry;
+    assert.ok(entry.required?.includes('peerRttMs'));
+    assert.equal(entry.properties?.peerRttMs.type, 'number');
+    assert.equal(entry.properties?.peerRttMs.nullable, true);
+});
 
 function assertOpenApiRequestSchema(
     operation: OpenApiOperation,

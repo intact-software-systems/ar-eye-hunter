@@ -206,6 +206,21 @@ arena, leave the old arena" flows.
 
 `rooms.join(roomIdOrRef, options?)` joins a room. By default it leaves the current room if different. `rooms.join({ roomId })` and `rooms.join({ roomRef })` are also supported; if both are present, `roomId` must match `roomRef.groupId`. Pass `joinCode` for code-protected groups. Invite-only membership uses `rooms.acceptInvite(...)`; the `inviteToken` option is reserved for token-verifier invite flows and is not accepted as standalone admission proof. Use `leaveCurrent: false` when the browser should stay in the previous room too.
 
+`rooms.quickJoin(input?)` admits the caller to an eligible existing open room. Selection accepts
+`kind`, `q`, and `includeEmpty`; omitted fields mean any kind, no name filter, and exclude empty.
+The input also accepts scoped operation options and `leaveCurrent`. The result is
+`{ status: 'joined', snapshot }` after presence and current-room switching, or
+`{ status: 'unavailable' }` with the current room preserved. Selection ranks distinct online
+members descending, then group ID ascending, and reuses normal capacity and lifecycle admission.
+No room, pending approval request, or application activity participant is created.
+
+The REST command is `POST /api/state/apps/:applicationId/workspaces/:workspaceId/groups/quick-join/requests/:requestId`.
+Matching request-ID replay returns the stored joined or unavailable result; conflicting reuse
+returns 409. Browser HTTP retries retain one command identity and never reselect after admission.
+If presence or adoption fails after admission, `RallarQuickJoinPartialFailureError` carries
+`joinedRoom` and `cause`; recover that admitted room explicitly. Leaving the previous room can
+raise `RallarRoomSwitchPartialFailureError` with `operation: 'quick-join'` while the new room remains current.
+
 `rooms.enter(roomIdOrRef, options?)` joins a room and returns a
 `RallarRoomSession` bound to that room.
 

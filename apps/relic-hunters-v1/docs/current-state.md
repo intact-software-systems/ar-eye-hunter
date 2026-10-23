@@ -1,186 +1,91 @@
 # Current State
 
-Last reviewed: 2026-05-19.
+Last reviewed: 2026-10-23.
 
-## Scope
+## Scope and ownership
 
-This document covers the current SPA in `apps/relic-hunters-v1`, the paired
-server in `apps/relic-hunter-server-v1`, and the shared game model/rules in
+The SPA is `apps/relic-hunters-v1`, the paired authority is
+`apps/relic-hunter-server-v1`, and shared game contracts/rules live in
 `packages/relic-hunters`.
 
-## Application Shape
+- `src/app.tsx` composes the named `GameHudLayout` regions. Lobby, party, plan,
+  map, intel, timeline, score, and overlay presentation live under `src/game/hud/`.
+- `src/game/relic-hunters-runtime.ts` owns the authenticated connection, room
+  adoption, command delivery, accepted snapshots, subscriptions, and recovery.
+  `relic-hunters-browser.ts` binds its external ports to the public Rallar facade.
+  `use-relic-hunters.ts` subscribes React to that one runtime owner.
+- `use-relic-turn.ts` owns the local draft, legal target selection, round clock,
+  keyboard controls, and review continuation. `use-relic-playback.ts` owns HUD
+  reveal timing. `use-relic-preferences.ts` owns language, help, and ambient audio.
+- `game-view-model.ts` derives current-player state, legal actions, objectives,
+  warnings, and submission blockers from the accepted public snapshot.
+- `src/game/ai/` owns the advisory planning companion and its presentation.
+  Generated proposals must pass domain validation before they can prime a draft.
+- `RelicSceneNext.tsx` is the active procedural neon facility renderer. Its
+  camera/facility model is `scene/relicSceneNextModel.ts`; cosmetic room-scoped
+  motion is `scene/networking.ts`. `OpeningRelicScene.tsx` renders while no
+  expedition snapshot is available. The retired castle renderer and disabled
+  intro/onboarding implementation are removed.
 
-- `src/App.tsx` is still the main orchestration point for authentication, room
-  selection, lobby state, action drafting, event reveal timing, audio, overlays,
-  map panels, victory/defeat panels, and many display helpers.
-- `src/game/hud/GameHudLayout.tsx` provides named HUD regions for scene, top,
-  side, bottom, floating prompts, and overlays. This reduced free-floating UI
-  overlap, but the root app still owns most component state.
-- `src/game/game-view-model.ts` centralizes the client-facing gameplay view
-  model: current player, current room, legal targets, objective text, warnings,
-  turn status, and action blockers.
-- `src/game/ai/` owns the browser AI planning companion: redacted context
-  building, stable RallarAI request keys, deterministic mock generation,
-  proposal validation, WS proposal sharing, and the React hook consumed by the
-  side-panel companion UI.
-- `src/game/relic-hunters-runtime.ts` wraps Rallar/auth/room APIs, relic
-  commands on the Rallar WS `command` channel (REST before the server id is
-  known), WS snapshot fanout with receipts, and RTC snapshot repair. React
-  consumes it through `src/game/useRelicHunters.ts`.
-- `packages/relic-hunters/src/expedition-blueprint.ts` owns the server-side
-  expedition blueprint contract, JSON schema, procedural fallback generator, and
-  domain validation for optional maze/castle/reward variation.
-- `apps/relic-hunter-server-v1/src/relic-expedition-ai.ts` owns the optional
-  server-side RallarAI setup path. It is disabled by default, can use mock or
-  Ollama providers, and falls back to validated procedural setup if generation
-  fails.
-- `src/game/RelicScene.tsx` is still a large Babylon scene runtime, but the
-  React effect now calls a `createRelicSceneRuntime` boundary for Babylon setup.
-  The same file still owns most sync/effect helpers, local movement, prompts,
-  labels, and player/relic meshes.
-- `src/game/scene/renderLoop.ts` owns the capped render-loop scheduler.
-- `src/game/scene/networking.ts` owns cosmetic RTC position send/receive. The
-  scene consumes it through a small runtime-state shape instead of importing
-  Rallar directly, and outbound avatar positions now target Rallar's ready RTC
-  peers as explicit next hops. Accepted public game snapshots are also shared
-  over RTC as a repair path so UI/gameplay state does not depend only on avatar
-  position packets. Incoming RTC avatar positions are used only while they are
-  fresh and still match the player's authoritative snapshot room.
-- `src/game/scene/movement.ts` owns the scene-pick-to-move-action bridge. When a
-  player clicks a legal adjacent room in planning, the scene primes a move plan
-  for that room instead of merely selecting it.
-- `src/game/scene/castleKit.ts` owns the first reusable Japanese castle kit
-  builders for room shell pieces: stone bases, plaster walls, timber rails,
-  roof tiles, doorway frames, lacquer columns, lanterns, banners, torii gates,
-  garden rocks, cherry trees, and a bridge builder for later corridor work.
-- `src/game/scene/roomIdentity.ts` owns the room-kind-to-visual-role mapping:
-  gatehouse, main corridor, armory/storage, main shrine, secret cell, treasury,
-  haunted barracks, and garden watchtower.
-- `src/game/scene/cameraModes.ts` owns the first scene camera-mode boundary.
-  Idle planning now renders from a raised tactical overview, while active roam,
-  clue inspection, lobby, review reveal, finale, and event focus remain distinct
-  presentation modes.
-  Recent avatar movement now keeps the close follow camera briefly before
-  easing back to the tactical overview. The scene also exposes camera controls
-  for a temporary room flyover, persistent tactical overview, and persistent
-  avatar follow.
-- `src/game/scene/avatarPresentation.ts` owns the first presentation-only
-  avatar state boundary for idle, moving, arriving, locked, escaped, and
-  defeated hunters.
-- `src/game/scene/lightingPresets.ts` owns the first presentation-only lighting
-  preset boundary for day, sunset, night, and lantern room moods.
-- `src/game/scene/assetPipeline.ts` records the current procedural-first asset
-  pipeline decision and the gate for a future measured hybrid glTF path.
-- `src/game/scene/sceneCost.ts` owns the first active-effect-room selector used
-  to cap active room lights and particle systems in tactical/full-map scenes.
-- Round resolution now enters a shared `review` phase before the next planning
-  turn. The server resolves submitted plans, clears locked actions, publishes
-  the full event list, and waits for a `continue-review` command before
-  advancing to the next round or final scoring.
-- `docs/scene-contracts.md` records the scene data contracts for room world
-  positions, interactive mesh metadata, avatar targets, prompt behavior, and
-  baseline visual tolerances.
-- `docs/asset-pipeline-decision.md` records the S7 asset decision, build-size
-  output, browser scene metrics, future model folder shape, and follow-up work.
-- The opening and lobby surfaces mount a lightweight Babylon ambient scene. The
-  full gameplay `RelicScene` mounts for planning, review, and finished
-  expedition phases so authentication, room joining, and Keeper controls remain
-  responsive.
-- The Babylon render path is capped at 45 fps for gameplay and 30 fps for the
-  opening scene, uses lighter shadows and ambient
-  occlusion, and paints an early clear frame before the heavier scene setup so
-  the canvas is reliably nonblank under parallel browser load.
-- The latest visual pass raises the gameplay scene cap to 45 fps, switches the
-  Babylon canvases to high-DPI/native scaling, lowers fog/bloom/glow/grain/SSAO
-  blur, disables depth of field, sharpens shadows, and increases avatar roam and
-  remote interpolation speed so rooms and hunters read more crisply.
-- Review snapshots queue each new animation cue for sequential Babylon playback
-  instead of spawning every reveal effect at once. The finale cue now highlights
-  winners escaping while defeated or losing hunters remain in rooms shaken by
-  the collapse.
-- `preserveDrawingBuffer` is disabled. Browser checks now use the canvas
-  `data-scene-ready` signal emitted after Babylon renders a frame instead of
-  relying on retained WebGL back buffers.
-- The signed-in side panel has sticky section jumps and uses a wider/two-column
-  layout on extra-wide desktop screens. The bottom HUD now stays in the scene
-  column on desktop, leaving the right menu full-height so Rooms, Party/Plan,
-  Map, and Intel remain reachable. The side region is now a stretched scroll
-  container on desktop, and mobile removes side-panel clipping so the page can
-  scroll through the full menu.
-- The first-load intro cinematic is currently disabled so authentication and
-  room entry are immediately reachable while the playable loop is being
-  stabilized. If it is re-enabled, it must not block underlying SPA controls.
-- The first-round onboarding modal is also disabled for now. The help dialog
-  remains available from the top bar, but tutorial overlays should not block the
-  room/join/planning loop.
+## Room entry and participation
 
-## Validation
+Relic uses the `rallar-server/default` scope. The shared `RallarRoomEntry` owner
+captures a scoped reference and optional code from a link or the visible manual
+entry form, retains it in tab-local storage through authentication, and resumes
+it before ordinary startup room selection. A new link replaces a saved room.
+Denial leaves the destination visible with correction, retry, and cancel controls.
+Successful entry retains the room reference and principal identity without its code.
+There is no bare-room-ID restore or storage migration fallback.
 
-Current targeted validation:
+The lobby supports public, code, and invite-only creation through
+`rooms.createAndSwitch`. Code hosts can copy the room link and rotate the code;
+the UI displays the server-returned expiry. Invite-only hosts invite and revoke
+existing account references. A hunter's own account reference is shown in their
+profile; the app does not invent a username directory.
 
-```text
+Creation waits for the initiating session's presence before reporting the new
+room ready. Session changes fence late completions. Failure to leave the previous
+room does not undo an already admitted new room.
+
+Room admission remains separate from **Join Expedition**. The Keeper starts the
+expedition, hunters submit plans, the authority resolves them into a shared review
+phase, and a continuation advances to planning or final scoring. Returning members
+can re-enter after code rotation; an old code cannot admit a new account.
+
+## Transport and authority
+
+Gameplay commands use the Rallar WS command channel when a server identity is
+known. REST is used before that identity is available, and reset uses its REST
+endpoint. A failed WS attempt is never resent through REST. Snapshot hydration,
+WS delivery, RTC repair, and timeout repair all use the same acceptance policy.
+Room membership and cosmetic avatar motion never authorize game actions.
+
+Disconnected expedition hunters remain in game state. After the round deadline,
+an active hunter can resolve the submitted plans and skip missing ones. Reset
+rebuilds the roster. The runtime repairs a missed timeout-resolution snapshot and
+cancels its subscriptions/timers when the room or session changes.
+
+## Validation commands
+
+```sh
 npm --workspace relic-hunters-v1 run test
 npm --workspace relic-hunters-v1 run typecheck
 npm --workspace relic-hunters-v1 run build
-npx vitest run packages/tests/relic-hunters/relic-expedition-blueprint.test.ts packages/tests/relic-hunters/relic-expedition-ai.test.ts packages/tests/relic-hunters/relic-server-service.test.ts
-npx vitest run packages/tests/relic-hunters/relic-web-app.browser.test.ts packages/tests/shared-web/rallar-ai.test.ts
-cd apps/relic-hunter-server-v1 && deno task check
-npx playwright test --config apps/relic-hunters-v1/playwright.config.ts tests/playwright/relic-hunters/web.spec.ts --grep "large-screen side menus|core lobby layouts|Rallar browser bootstrap"
-RELIC_SCENE_BASELINE_WRITE=1 npx playwright test --config apps/relic-hunters-v1/playwright.config.ts tests/playwright/relic-hunters/web.spec.ts --grep "scene upgrade baselines"
+npx vitest run packages/tests/relic-hunters
 npm run test:playwright:relic
 npm run test:playwright:relic:full-stack
 ```
 
-For this review, `npm --workspace relic-hunters-v1 run test`,
-`npm --workspace relic-hunters-v1 run typecheck`,
-`npm --workspace relic-hunters-v1 run build`, and
-`npx playwright test --config apps/relic-hunters-v1/playwright.config.ts tests/playwright/relic-hunters/web.spec.ts --grep "renders a nonblank Babylon scene"`
-pass. The app workspace test script now runs the Relic Hunters Vitest suite under
-`apps/relic-hunters-v1/tests`, including the RTC avatar routing, stale-room RTC
-avatar rejection, scene movement priming, camera return timing, flyover pose
-planning, review summary/objective, review snapshot ordering, and RTC snapshot
-repair regressions. The server and broader Playwright commands remain the
-targeted validation set from the previous propagation pass. The package-level browser app
-test now also covers timed-out round repair from an authoritative force-resolved
-snapshot. The scene upgrade baseline writer also passes and writes eight
-screenshots under `baseline/screenshots/scene-upgrades/` plus
-`baseline/screenshots/scene-upgrades/scene-upgrade-metrics.json`. Planning
-baseline scenarios also assert the gameplay canvas
-`data-camera-mode="tactical"` contract.
-Root `npm test` has historically failed in two shared-test suites unrelated to
-Relic Hunters because Node's default ESM loader rejects HTTPS imports:
-`packages/tests/shared-test/execute-black-box-rtc-client-provider.test.ts` and
-`packages/tests/shared-test/scenario-black-box-rtc-config.test.ts`.
+The full-stack command starts a fresh paired server and browser app. Its scenarios
+cover two-browser gameplay propagation and private-room entry, sharing, rotation,
+and return. The active pull request records exact pass/fail results; this command
+catalog is not a claim that every check has passed on every revision.
 
-## Main Risks
+## Remaining risks
 
-- Multiplayer state still depends on all clients accepting the correct room
-  snapshot from a mix of REST command responses and Rallar WS snapshot pushes.
-  The real `RELIC_HUNTERS_FULL_STACK=1` propagation run now passes, but lower
-  level WS disruption and repair paths are still not separately simulated.
-- The runtime has diagnostics, single-browser/server Playwright coverage, and a
-  gated two-browser full-stack spec. Default validation only compiles/skips that
-  full-stack spec unless the real server/database environment is enabled.
-- Remote avatar tracking, RTC snapshot repair, and timed-out round repair now
-  have focused coverage, but there is not yet a full browser-level visual
-  assertion that two live Babylon scenes interpolate each other's avatars and
-  converge after a missed WS update.
-- `RelicScene.tsx` remains risky to change because scene sync, labels, event
-  effects, and player controls are still tightly coupled, though Babylon setup,
-  render-loop scheduling, and RTC position sync now have clearer boundaries.
-  This is now tracked by Iteration 14.
-- The app is visually dense. The large-screen side menu is easier to navigate,
-  but many panels and overlays still compete for attention during planning and
-  event reveal.
-- Server rules serialize writes per game. Current product policy is explicit
-  and timer-based: disconnected/stale joined players remain in the expedition,
-  but after the round timer expires an active hunter can force the round to
-  resolve and skip missing plans. Reset still rebuilds the expedition roster.
-
-## Working Agreement
-
-Keep these docs up to date when changing the SPA, gameplay rules, server command
-flow, or Babylon scene behavior. If a bug requires changes outside
-`apps/relic-hunters-v1`, `apps/relic-hunter-server-v1`, or
-`packages/relic-hunters`, document it as a separate iteration or follow-up
-before touching that area.
+The scene still owns substantial rendering and interaction code, and the HUD is
+dense. Visual or transport changes need focused browser evidence. Snapshot
+convergence tests do not prove visual interpolation under every WS/RTC disruption.
+The shared review phase has no per-viewer acknowledgement barrier, so one accepted
+continuation can advance a slower viewer. These are existing behavior boundaries;
+private-room admission does not change them.

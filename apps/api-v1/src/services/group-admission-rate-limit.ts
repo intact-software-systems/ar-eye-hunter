@@ -1,9 +1,10 @@
 import { readRateLimiter } from '@shared-server/http/rate-limit-service.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 import { RateLimiterPolicy } from '@shared/resilience/rate-limiter.ts';
 import type { ApiV1GroupAdmissionConfiguration } from '../configuration/api-v1-configuration.ts';
 
-export type GroupAdmissionRateLimitFamily = 'join-admission' | 'presence-connect';
+export type GroupAdmissionRateLimitFamily = 'join-admission' | 'presence-connect' | 'quick-join';
 
 export interface GroupAdmissionRateLimitFamilyPolicies {
     readonly principal: RateLimiterPolicy;
@@ -19,18 +20,13 @@ export interface GroupAdmissionQuota {
     require(input: GroupAdmissionQuotaInput): void;
 }
 
-export interface GroupAdmissionQuotaInput {
-    readonly family: GroupAdmissionRateLimitFamily;
-    readonly groupRef: GroupRef;
-    readonly principalId: string;
-}
+export type GroupAdmissionQuotaInput =
+    | Readonly<{ family: 'join-admission' | 'presence-connect'; groupRef: GroupRef; principalId: string; }>
+    | Readonly<{ family: 'quick-join'; scope: StateScope; principalId: string; }>;
 
-export interface GroupAdmissionRateLimitDecisionInput {
-    readonly family: GroupAdmissionRateLimitFamily;
-    readonly groupRef: GroupRef;
-    readonly principalId: string;
-    readonly config: GroupAdmissionRateLimitConfig;
-}
+export type GroupAdmissionRateLimitDecisionInput =
+    & GroupAdmissionQuotaInput
+    & Readonly<{ config: GroupAdmissionRateLimitConfig; }>;
 
 export type GroupAdmissionRateLimitDecision = 'allowed' | 'over-limit';
 
@@ -90,18 +86,20 @@ export function toGroupAdmissionRateLimitConfig(
 export function readGroupAdmissionRateLimitDecision(
     input: GroupAdmissionRateLimitDecisionInput
 ): GroupAdmissionRateLimitDecision {
-    const policies = input.family === 'join-admission'
-        ? input.config.joinAdmission
-        : input.config.presenceConnect;
-    const groupKey = toGroupKey(input.groupRef);
+    const policies = input.family === 'presence-connect'
+        ? input.config.presenceConnect
+        : input.config.joinAdmission;
+    const partition = input.family === 'quick-join'
+        ? [input.scope.applicationId, input.scope.workspaceId]
+        : [input.groupRef.applicationId, input.groupRef.workspaceId, input.groupRef.groupId];
     const principalLimiter = readRateLimiter(
         `group-admission:${input.family}:principal`,
-        `${groupKey}:${input.principalId}`,
+        JSON.stringify([...partition, input.principalId]),
         policies.principal
     );
     const groupLimiter = readRateLimiter(
         `group-admission:${input.family}:group`,
-        groupKey,
+        JSON.stringify(partition),
         policies.group
     );
     if (!principalLimiter.isAllowed() || !groupLimiter.isAllowed()) {
@@ -114,8 +112,4 @@ export function readGroupAdmissionRateLimitDecision(
 
 function toWindowPolicy(windowMs: number, maxNumberToAllow: number): RateLimiterPolicy {
     return new RateLimiterPolicy(windowMs, maxNumberToAllow);
-}
-
-function toGroupKey(groupRef: GroupRef): string {
-    return `${groupRef.applicationId}:${groupRef.workspaceId}:${groupRef.groupId}`;
 }

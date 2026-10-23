@@ -2,12 +2,13 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { expect, vi } from 'vitest';
 
-import type { RallarAuthState, RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
+import type { RallarAuthState, RallarDirectorStatus, RallarFacade } from '@shared-web/browser/rallar.ts';
 import type { RallarGameMatchStatus, RallarGamePeerReadiness } from '@shared-web/game/mod.ts';
 
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
+import { arenaRoomEntry } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/arena-room-entry.ts';
 import { useRallarArena, type ArenaConnection } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/use-rallar-arena.ts';
 import type { ArenaRallarGameMatchHandle } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
 import { createInitialArenaState, toArenaSnapshot } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
@@ -74,6 +75,7 @@ const mockMatch = vi.hoisted(() => ({
     requestSync: vi.fn<ArenaRallarGameMatchHandle['requestSync']>(() => Promise.resolve({ status: 'sent' }))
 }));
 const mockRallar = vi.hoisted(() => ({
+    session: vi.fn(),
     auth: {
         restore: vi.fn(),
         onChange: vi.fn(),
@@ -87,6 +89,7 @@ const mockRallar = vi.hoisted(() => ({
         onChange: vi.fn(),
         refresh: vi.fn(),
         directory: vi.fn(),
+        quickJoin: vi.fn<RallarFacade['rooms']['quickJoin']>(),
         create: vi.fn(),
         createAndSwitch: vi.fn(),
         join: vi.fn()
@@ -166,6 +169,8 @@ export class ArenaRuntimeTestHarness {
     private mounted: ArenaRuntimeTestHarness.Mounted | undefined;
 
     reset(): void {
+        arenaRoomEntry.stop();
+        arenaRoomEntry.cancel();
         this.current = undefined;
         resetArenaSessionFixture();
         resetArenaRoomsFixture();
@@ -210,6 +215,7 @@ export class ArenaRuntimeTestHarness {
 }
 
 export async function emitAuthState(state: RallarAuthState): Promise<void> {
+    mockRallar.session.mockReturnValue(state.session);
     await act(async () => {
         for (const listener of authListeners) {
             await listener(state);
@@ -230,6 +236,7 @@ function resetArenaSessionFixture(): void {
     authListeners.clear();
     unsubscribe.mockClear();
     mockRallar.auth.restore.mockReturnValue(session);
+    mockRallar.session.mockReturnValue(session);
     mockRallar.auth.onChange.mockImplementation((listener) => {
         authListeners.add(listener);
         return unsubscribe;
@@ -272,6 +279,7 @@ function resetArenaRoomsFixture(): void {
         currentRoomId: undefined
     });
     mockRallar.rooms.directory.mockResolvedValue({ entries: [], nextCursor: null });
+    mockRallar.rooms.quickJoin.mockReset().mockResolvedValue({ status: 'unavailable' });
     mockRallar.rooms.create.mockReset();
     mockRallar.rooms.createAndSwitch.mockReset();
     mockRallar.director.onStatus.mockReturnValue(vi.fn());

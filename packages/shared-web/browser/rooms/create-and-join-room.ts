@@ -7,17 +7,23 @@ import {
 import type { RallarStateSnapshotAcceptanceInput } from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef, toStateScope } from '@shared/api/api-type-utils.ts';
-import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 
 import { leaveRoom } from './leave-room.ts';
 import type { RallarCreateRoomInput, RallarRoomSwitchPartialFailureError } from './rallar-room-contracts.ts';
 import { requireOwnWsConnectionGenerationId } from './require-own-ws-connection-generation-id.ts';
 import type { GroupRef, GroupSnapshot, StateScope } from './room-group-state-translation.ts';
-import { createAndJoinStateGroup, type StateGroupWorkflowValue } from './room-group-state-workflows.ts';
+import {
+    createAndJoinStateGroup,
+    createRoomJoinPartialFailureError,
+    type StateGroupWorkflowValue
+} from './room-group-state-workflows.ts';
+import { captureRoomSession, type RoomSessionFence } from './room-session-fence.ts';
 import type { RallarRoomStateStorePort } from './room-state-store.ts';
 
 export interface CreateAndJoinRoomInput {
     readonly room: string | RallarCreateRoomInput;
+    readonly sessionFence?: RoomSessionFence;
     readonly stateStore: RallarRoomStateStorePort;
     readonly connect: (options?: RallarOperationOptions) => Promise<ApiMiddleware>;
     readonly requireSession: () => AuthSession;
@@ -30,28 +36,41 @@ export interface CreateAndJoinRoomInput {
 }
 
 export async function createAndJoinRoom(input: CreateAndJoinRoomInput): Promise<GroupSnapshot> {
-    return await input.runAuthAwareOperation(async () => {
-        const createInput = typeof input.room === 'string' ? { displayName: input.room } : input.room;
-        const operationOptions = input.resolveOperationOptions(createInput);
-        const context = await input.connect(operationOptions);
-        const session = input.requireSession();
-        const scope = input.resolveOperationScope(createInput.scope);
-        const options = toCreateOptions(createInput);
-        const snapshot = await createAndJoinStateGroup({
-            displayName: createInput.displayName,
-            principalId: session.clientId,
-            sessionId: session.sessionId,
-            generationId: context.middleware.heartbeat.generationId,
-            connectionGenerationId: await requireOwnWsConnectionGenerationId(context, operationOptions.signal),
-            scope,
-            policies: toRallarWorkflowPolicies<StateGroupWorkflowValue>(operationOptions),
-            requestedGroupId: createInput.groupId,
-            options
-        });
+    return await input.runAuthAwareOperation(() => createAuthenticatedRoom(input));
+}
+
+async function createAuthenticatedRoom(input: CreateAndJoinRoomInput): Promise<GroupSnapshot> {
+    const createInput = typeof input.room === 'string' ? { displayName: input.room } : input.room;
+    const operationOptions = input.resolveOperationOptions(createInput);
+    const fence = input.sessionFence ?? captureRoomSession(input.requireSession, operationOptions.signal);
+    fence.assertCurrent();
+    const context = await input.connect(operationOptions);
+    fence.assertCurrent(context);
+    const session = fence.session;
+    const scope = input.resolveOperationScope(createInput.scope);
+    const snapshot = await createAndJoinStateGroup({
+        displayName: createInput.displayName,
+        principalId: session.clientId,
+        sessionId: session.sessionId,
+        generationId: context.middleware.heartbeat.generationId,
+        connectionGenerationId: await requireOwnWsConnectionGenerationId(context, operationOptions.signal),
+        scope,
+        policies: toRallarWorkflowPolicies<StateGroupWorkflowValue>(operationOptions),
+        requestedGroupId: createInput.groupId,
+        options: toCreateOptions(createInput),
+        authSession: session,
+        assertCurrent: () => fence.assertCurrent(context)
+    });
+    try {
+        fence.assertCurrent(context);
         input.stateStore.setCurrentRoom(snapshot);
         await input.acceptSnapshots({ context, clients: [], groups: [snapshot], scope });
+        fence.assertCurrent(context);
         return snapshot;
-    });
+    }
+    catch (cause) {
+        throw createRoomJoinPartialFailureError(snapshot, toError(cause));
+    }
 }
 
 export interface CreateAndSwitchRoomInput extends CreateAndJoinRoomInput {
@@ -62,21 +81,27 @@ export interface CreateAndSwitchRoomInput extends CreateAndJoinRoomInput {
 }
 
 interface CreateRoomSwitchPartialFailureErrorInput {
-    readonly operation: 'create-and-switch' | 'join';
+    readonly operation: RallarRoomSwitchPartialFailureError['operation'];
     readonly joinedRoom: GroupSnapshot;
     readonly previousRoomRef: GroupRef;
     readonly leaveError: RallarRoomSwitchPartialFailureError['leaveError'];
 }
 
 export async function createAndSwitchRoom(input: CreateAndSwitchRoomInput): Promise<GroupSnapshot> {
+    return await input.runAuthAwareOperation(() => createAndSwitchAuthenticatedRoom(input));
+}
+
+async function createAndSwitchAuthenticatedRoom(input: CreateAndSwitchRoomInput): Promise<GroupSnapshot> {
     const createInput = typeof input.room === 'string' ? { displayName: input.room } : input.room;
     const previousRoomRef = input.stateStore.resolveCurrentRoomRef();
     const leaveOptions = toRallarOperationOptions(input.resolveOperationOptions(createInput));
-    const snapshot = await createAndJoinRoom(input);
+    const sessionFence = captureRoomSession(input.requireSession, leaveOptions.signal);
+    const snapshot = await createAndJoinRoom({ ...input, sessionFence });
     if (previousRoomRef && !isSameGroupRef(previousRoomRef, snapshot.group)) {
         try {
             await input.leaveRoom({
                 ...input,
+                sessionFence,
                 input: {
                     ...leaveOptions,
                     roomId: previousRoomRef.groupId,
@@ -91,7 +116,7 @@ export async function createAndSwitchRoom(input: CreateAndSwitchRoomInput): Prom
                 operation: 'create-and-switch',
                 joinedRoom: snapshot,
                 previousRoomRef,
-                leaveError: error
+                leaveError: toError(error)
             });
         }
     }
@@ -101,7 +126,7 @@ export async function createAndSwitchRoom(input: CreateAndSwitchRoomInput): Prom
 export function createRoomSwitchPartialFailureError(
     input: CreateRoomSwitchPartialFailureErrorInput
 ): RallarRoomSwitchPartialFailureError {
-    const message = input.leaveError instanceof Error ? input.leaveError.message : String(input.leaveError);
+    const message = input.leaveError.message;
     const joinedRoomId = input.joinedRoom.group.groupId;
     const previousRoomId = input.previousRoomRef.groupId;
     return Object.assign(

@@ -642,20 +642,38 @@ paths:
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory:
     get:
       tags: [Group State]
-      summary: List joinable open groups
+      summary: List discoverable open groups
       description: |
-        Lists active groups whose `joinMode` is `open` and that the caller may
-        join but cannot yet read in full. Entries carry no member roster,
+        Lists business-active groups whose `joinMode` is `open` and that the caller
+        can discover but cannot yet read in full. Forming groups remain discoverable.
+        Discovery does not guarantee admission or activity readiness: joining rechecks
+        current credentials, capacity, admission windows, and approval policy.
+        Entries carry no member roster,
         sessions, or metadata. Groups the caller already reads in full are
         returned by the group snapshot list instead. Rooms with nobody online
         are omitted unless `includeEmpty` is true. Entries are ordered by
         online member count (descending), then group id, and paged with an
-        opaque keyset cursor. Online counts change between requests, so paging
+        opaque keyset cursor. With `order=peer-rtt`, equal occupancy is ordered by
+        known peer RTT ascending, unknown RTT last, then group id. `peerRttMs` is
+        the slowest existing direct RTT from the authenticated session to every
+        live room session, requiring complete coverage and samples less than 60
+        seconds old and not future-dated. It is null otherwise and for default
+        ordering. Unknown rooms remain discoverable. Measurements require earlier
+        authorized peer contact and are bounded; no pre-join probes are started.
+        Peer RTT does not measure command completion. Cursors belong to their
+        requested order. Online counts and measurements change between requests, so paging
         is best-effort: a room whose count changes can repeat or be skipped
         across pages. `maxMembers` is the effective cap admission enforces,
-        including the server default when the group sets none. The response
-        carries an `ETag`; send it back in `If-None-Match` to receive `304`
-        while the page is unchanged.
+        including the server default when the group sets none. `isFull` reports only
+        this membership cap. Consumers should deduplicate entries across pages.
+        Successful responses use `Cache-Control: private, no-cache` and vary on
+        `Authorization`, `x-client-id`, and the CORS origin. They carry an `ETag`;
+        send it back in `If-None-Match` to receive a bodyless `304` while the page
+        is unchanged. Authorization, visibility, scope, and query validity are
+        rechecked before revalidation. Errors use `Cache-Control: no-store` and
+        are never converted to `304`. Allowed browser origins can read `ETag`
+        and send `If-None-Match` through CORS. A `304` reduces body transfer;
+        it does not promise fewer server reads or less computation.
       security:
         - bearerAuth: []
           clientIdHeader: []
@@ -672,7 +690,7 @@ paths:
         - name: q
           in: query
           required: false
-          description: Case-insensitive substring of the group display name.
+          description: Trimmed, case-insensitive substring of the group display name.
           schema:
             type: string
         - name: limit
@@ -697,6 +715,14 @@ paths:
           schema:
             type: boolean
             default: false
+        - name: order
+          in: query
+          required: false
+          description: Optional peer RTT tie-breaker after online member count.
+          schema:
+            type: string
+            enum: [online-members, peer-rtt]
+            default: online-members
         - name: If-None-Match
           in: header
           required: false
@@ -705,10 +731,19 @@ paths:
             type: string
       responses:
         '200':
-          description: A page of joinable open groups.
+          description: A page of discoverable open groups, subject to admission rechecking.
           headers:
             ETag:
               description: Validator for this page.
+              schema:
+                type: string
+            Cache-Control:
+              description: Caller-specific content must be revalidated before reuse.
+              schema:
+                type: string
+                enum: ['private, no-cache']
+            Vary:
+              description: Authorization, x-client-id, and the CORS Origin variation.
               schema:
                 type: string
           content:
@@ -716,11 +751,30 @@ paths:
               schema:
                 $ref: '#/components/schemas/GroupDirectoryPage'
         '304':
-          description: The page is unchanged since the supplied `ETag`.
+          description: The currently authorized page is unchanged; the response has no body.
+          headers:
+            ETag:
+              description: Validator for this page, exposed to allowed browser origins.
+              schema:
+                type: string
+            Cache-Control:
+              schema:
+                type: string
+                enum: ['private, no-cache']
+            Vary:
+              description: Authorization, x-client-id, and the CORS Origin variation.
+              schema:
+                type: string
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '500':
+          description: Latency evidence is unavailable or failed integrity validation; no directory page is returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/{requestId}:
     post:
       tags: [Group State]
@@ -830,6 +884,49 @@ paths:
         '403':
           $ref: '#/components/responses/ApiMutationFailure'
         '404':
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/quick-join/requests/{requestId}:
+    post:
+      tags: [Group State]
+      summary: Select and join an available open group
+      description: |
+        Selects within this application and workspace by distinct online member
+        count descending, then group ID ascending. Applies the same membership,
+        capacity and lifecycle admission policy as manual join. Never creates a
+        group or pending admission request. Joined and unavailable outcomes are
+        durable for this caller and request ID; conflicting reuse returns 409.
+        Room membership does not enroll the caller in an application activity.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuickJoinGroupRequest'
+      responses:
+        '200':
+          description: Committed membership snapshot or no available group.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuickJoinGroupResult'
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '401':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '403':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '409':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '429':
+          $ref: '#/components/responses/RateLimitedApiMutationFailure'
+        '503':
           $ref: '#/components/responses/ApiMutationFailure'
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/{requestId}:
     post:
@@ -6626,6 +6723,40 @@ components:
         groupId:
           type: string
 
+    QuickJoinGroupRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          enum: [party, room, team, custom]
+        q:
+          type: string
+          description: Case-insensitive display-name substring, trimmed before matching.
+        includeEmpty:
+          type: boolean
+          default: false
+          description: Include groups with no distinct online members.
+
+    QuickJoinGroupResult:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [status, snapshot]
+          properties:
+            status:
+              type: string
+              enum: [joined]
+            snapshot:
+              $ref: '#/components/schemas/GroupSnapshot'
+        - type: object
+          additionalProperties: false
+          required: [status]
+          properties:
+            status:
+              type: string
+              enum: [unavailable]
+
     GroupDirectoryEntry:
       type: object
       required:
@@ -6638,6 +6769,7 @@ components:
         - maxMembers
         - isFull
         - lifecycleState
+        - peerRttMs
       properties:
         groupRef:
           $ref: '#/components/schemas/GroupRef'
@@ -6664,6 +6796,12 @@ components:
         lifecycleState:
           type: string
           enum: [dormant, forming, planned, connecting, active, reconfiguring, reconnecting]
+        peerRttMs:
+          type: number
+          nullable: true
+          minimum: 0
+          exclusiveMinimum: true
+          description: Slowest recent direct peer RTT in milliseconds with complete live-session coverage; null when unknown or not requested.
 
     GroupDirectoryPage:
       type: object

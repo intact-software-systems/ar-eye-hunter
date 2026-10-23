@@ -7,9 +7,11 @@ import type {
 import type {
     GroupStateInboxDurableResult
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
+import type { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import type {
     CachedGroupStateService
 } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
+import type { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
 import type {
     StateSyncCacheHydrationInput,
     StateSyncCacheHydrationResult
@@ -315,10 +317,12 @@ export interface GroupStateRouteScopeContext {
 
 export interface GroupStateRouteDependencies {
     readonly groupStateService: GroupStateRouteService;
+    readonly rtcRttRepository: Pick<RtcRttRepository, 'listMeasurementEntriesForEndpoints'>;
     readonly requireApiAuthSession: (
         request: GroupStateRouteRequest
     ) => Promise<GroupStateRouteAuthSession>;
     readonly processGroupAppInbox: ProcessGroupAppInbox;
+    readonly processQuickJoin: GroupStateInboxService['processQuickJoinUntilCompletion'];
     readonly groupAdmissionQuota: GroupAdmissionQuota;
     readonly strictReadAuthorization: boolean;
     readonly groupDefaultMaxMembers: number | null;

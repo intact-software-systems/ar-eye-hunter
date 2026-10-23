@@ -60,6 +60,18 @@ refused alternative is using one word for both sides, or translating inside
 each call site. One boundary keeps the protocol identity stable and the browser
 API readable.
 
+`RallarRoomEntry`, exposed through the narrow `rallar-room-entry.ts` browser
+entry, owns the pending destination through authentication and tab reload.
+It captures incoming links before startup, gives a newer invitation priority,
+removes the code after admission, and fences obsolete account, destination,
+and cancellation results. Tab storage records intent; existing server admission
+commands decide membership through AppInbox.
+
+Separate per-app restoration and bare-ID saved rooms were refused because they
+can replace an invitation with stale or incorrectly scoped state. Both games
+consume the shared entry owner and retain their own participation rules.
+`examples/browser-startup-room/README.md` shows the browser sequence.
+
 ## Data, CRDT, Motion, and Game stay separate
 
 These are different authorities, not different transports for the same fact.
@@ -138,7 +150,8 @@ to and invites one adapter to write another feature's tables.
 `packages/shared-web/browser/rallar.ts` is the canonical browser object for an
 app that uses several Rallar surfaces. Apps that need a smaller bundle use a
 narrow entry: `rallar-core.ts`, `rallar-realtime.ts`, `rallar-messages.ts`,
-`rallar-data.ts`, `rallar-crdt.ts`, or `rallar-media-calls.ts`.
+`rallar-data.ts`, `rallar-crdt.ts`, `rallar-media-calls.ts`, or
+`rallar-room-entry.ts`.
 
 The refused alternatives are a second aggregate facade, or making feature
 controllers import the aggregate entry. Controllers depend inward. Room-scoped

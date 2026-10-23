@@ -1,15 +1,21 @@
 // @vitest-environment happy-dom
-import { createElement } from 'react';
-import { act } from 'react';
+import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { toRallarRoomSummary } from '@shared-web/browser/rooms/room-group-state-translation.ts';
+import type { GroupDirectoryEntry } from '@shared/api/group-directory/group-directory-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import App from '../../../apps/ar-eye-hunter-v1/src/app.tsx';
-import type { MatchDelivery } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/arena-connection-contracts.ts';
-import type { ArenaConnection } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/use-rallar-arena.ts';
+import type { ArenaConnection, MatchDelivery } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/arena-connection-contracts.ts';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -85,6 +91,58 @@ describe('AR Eye Hunter diagnostics lifecycle', () => {
         expect(mockArena.refreshDiagnostics).toHaveBeenCalledTimes(2);
     });
 
+    it.each(['idle', 'loading', 'ready', 'error'] as const)('shows empty-lobby guidance only after a ready directory, currently %s', async (status) => {
+        mockArena.current = createArenaConnection({
+            rooms: [],
+            openRoomsStatus: status,
+            openRoomsError: status === 'error' ? 'unavailable' : undefined
+        });
+        root = createRoot(container);
+        await act(async () => root?.render(createElement(App)));
+        await act(async () => findButton('Ops').click());
+        const operations = container.querySelector('[aria-label="Arena operations"]');
+        expect(operations?.textContent?.includes('Create an arena or join from another browser session.')).toBe(status === 'ready');
+        expect(operations?.textContent?.includes('Loading open arenas…')).toBe(status === 'loading');
+        expect(operations?.textContent?.includes('Could not load open arenas')).toBe(status === 'error');
+    });
+
+    it.each(['error', 'loading'] as const)('labels retained directory rows during %s and treats capacity as a request-time admission check', async (status) => {
+        const openRoom: GroupDirectoryEntry = {
+            groupRef: { applicationId: 'ar-eye-hunter', workspaceId: 'default', groupId: 'open' },
+            displayName: 'AR Eye Hunter Arena: Available',
+            kind: 'room',
+            joinMode: 'open',
+            memberCount: 1,
+            onlineMemberCount: 1,
+            maxMembers: 2,
+            isFull: false,
+            lifecycleState: 'forming',
+            peerRttMs: null
+        };
+        mockArena.current = createArenaConnection({
+            rooms: [],
+            openRoomsStatus: status,
+            openRoomsError: status === 'error' ? 'unavailable' : undefined,
+            openRooms: [openRoom, {
+                ...openRoom,
+                groupRef: { ...openRoom.groupRef, groupId: 'full' },
+                displayName: 'AR Eye Hunter Arena: Full',
+                memberCount: 2,
+                isFull: true
+            }]
+        });
+        root = createRoot(container);
+        await act(async () => root?.render(createElement(App)));
+        await act(async () => findButton('Ops').click());
+        const operations = container.querySelector('[aria-label="Arena operations"]');
+        expect(operations?.textContent).toContain('Last loaded arenas — refresh to check availability.');
+        const rows = [...(operations?.querySelectorAll<HTMLButtonElement>('.room-row') ?? [])];
+        expect(rows[0].textContent).toContain('Request to join');
+        expect(rows[0].disabled).toBe(false);
+        expect(rows[1].textContent).toContain('Full');
+        expect(rows[1].disabled).toBe(true);
+    });
+
     it.each(
         [
             { state: 'pending', evidence: 'queued', reason: undefined, label: 'pending (queued)' },
@@ -127,20 +185,23 @@ describe('AR Eye Hunter diagnostics lifecycle', () => {
     it.each(
         [
             { delivery: undefined, label: 'no match output' },
-            { delivery: matchDelivery({ state: 'queued', receiptMode: undefined, expected: [], confirmed: [] }), label: 'pending (queued)' },
-            { delivery: matchDelivery({ state: 'queued', receiptMode: 'receiver', expected: ['b', 'c'], confirmed: [] }), label: 'waiting for 2 of 2' },
-            { delivery: matchDelivery({ state: 'queued', receiptMode: 'receiver', expected: ['b', 'c'], confirmed: ['b'] }), label: 'waiting for 1 of 2' },
+            { delivery: createMatchDelivery({ state: 'queued', receiptMode: undefined, expected: [], confirmed: [] }), label: 'pending (queued)' },
+            { delivery: createMatchDelivery({ state: 'queued', receiptMode: 'receiver', expected: ['b', 'c'], confirmed: [] }), label: 'waiting for 2 of 2' },
             {
-                delivery: matchDelivery({ state: 'acknowledged', receiptMode: 'receiver', expected: ['b', 'c'], confirmed: ['b', 'c'] }),
+                delivery: createMatchDelivery({ state: 'queued', receiptMode: 'receiver', expected: ['b', 'c'], confirmed: ['b'] }),
+                label: 'waiting for 1 of 2'
+            },
+            {
+                delivery: createMatchDelivery({ state: 'acknowledged', receiptMode: 'receiver', expected: ['b', 'c'], confirmed: ['b', 'c'] }),
                 label: 'acknowledged by all 2'
             },
-            { delivery: matchDelivery({ state: 'acknowledged', receiptMode: 'receiver', expected: [], confirmed: [] }), label: 'acknowledged by all 0' },
+            { delivery: createMatchDelivery({ state: 'acknowledged', receiptMode: 'receiver', expected: [], confirmed: [] }), label: 'acknowledged by all 0' },
             {
-                delivery: matchDelivery({ state: 'expired', receiptMode: 'receiver', expected: ['b', 'c'], confirmed: ['b'] }),
+                delivery: createMatchDelivery({ state: 'expired', receiptMode: 'receiver', expected: ['b', 'c'], confirmed: ['b'] }),
                 label: 'expired with 1 of 2 confirmed'
             },
             {
-                delivery: matchDelivery({ state: 'rejected', receiptMode: undefined, expected: [], confirmed: [], reason: 'membership denied' }),
+                delivery: createMatchDelivery({ state: 'rejected', receiptMode: undefined, expected: [], confirmed: [], reason: 'membership denied' }),
                 label: 'rejected: membership denied'
             }
         ] as const
@@ -197,7 +258,7 @@ interface MatchDeliveryFixtureInput {
     readonly reason?: string;
 }
 
-function matchDelivery(input: MatchDeliveryFixtureInput): MatchDelivery {
+function createMatchDelivery(input: MatchDeliveryFixtureInput): MatchDelivery {
     return {
         output: 'director-match-ended',
         state: input.state,
@@ -223,7 +284,9 @@ function createArenaRoomSnapshot(): GroupSnapshot {
 
 const arenaConnectionDefaults: Omit<ArenaConnection, 'session' | 'rooms' | 'connectionState' | 'error' | 'roomId'> = {
     openRooms: [],
+    openRoomsStatus: 'idle',
     openRoomsError: undefined,
+    directoryOrder: 'online-members',
     directorStatus: {
         role: 'none',
         state: 'none',
@@ -279,7 +342,9 @@ const arenaConnectionDefaults: Omit<ArenaConnection, 'session' | 'rooms' | 'conn
     register: vi.fn(),
     logout: vi.fn(),
     refreshRooms: vi.fn(),
+    changeDirectoryOrder: vi.fn(),
     createArenaRoom: vi.fn(),
+    quickJoinArenaRoom: vi.fn(),
     joinRoom: vi.fn(),
     appointSelfAsDirector: vi.fn(),
     refreshDiagnostics: mockArena.refreshDiagnostics,

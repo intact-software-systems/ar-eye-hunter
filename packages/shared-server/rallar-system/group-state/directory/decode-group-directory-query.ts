@@ -1,13 +1,16 @@
 import {
     GROUP_DIRECTORY_DEFAULT_LIMIT,
-    GROUP_DIRECTORY_MAX_LIMIT
+    GROUP_DIRECTORY_MAX_LIMIT,
+    type GroupDirectoryOrder
 } from '@shared/api/group-directory/group-directory-types.ts';
 import type { Group } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
 export interface GroupDirectoryCursor {
+    readonly order: GroupDirectoryOrder;
     readonly onlineMemberCount: number;
     readonly groupId: string;
+    readonly peerRttMs: number | null;
 }
 
 export interface GroupDirectoryQuery {
@@ -16,12 +19,16 @@ export interface GroupDirectoryQuery {
     readonly limit: number;
     readonly after: GroupDirectoryCursor | null;
     readonly includeEmpty: boolean;
+    readonly order: GroupDirectoryOrder;
 }
 
 const GROUP_KINDS: readonly Group['kind'][] = ['party', 'room', 'team', 'custom'];
 
 export function encodeGroupDirectoryCursor(cursor: GroupDirectoryCursor): string {
-    const bytes = new TextEncoder().encode(JSON.stringify([cursor.onlineMemberCount, cursor.groupId]));
+    const tuple = cursor.order === 'online-members'
+        ? [cursor.onlineMemberCount, cursor.groupId]
+        : [cursor.order, cursor.onlineMemberCount, cursor.peerRttMs, cursor.groupId];
+    const bytes = new TextEncoder().encode(JSON.stringify(tuple));
     return btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(''))
         .replaceAll('+', '-')
         .replaceAll('/', '_')
@@ -32,18 +39,31 @@ export function decodeGroupDirectoryQuery(
     searchParams: URLSearchParams
 ): Either<readonly string[], GroupDirectoryQuery> {
     const issues: string[] = [];
-    const kind = readKind(searchParams, issues);
-    const limit = readLimit(searchParams, issues);
-    const after = readCursor(searchParams, issues);
-    const includeEmpty = readIncludeEmpty(searchParams, issues);
+    const kind = decodeKind(searchParams, issues);
+    const limit = decodeLimit(searchParams, issues);
+    const order = decodeOrder(searchParams, issues);
+    const after = decodeCursor(searchParams, order, issues);
+    const includeEmpty = decodeIncludeEmpty(searchParams, issues);
     const q = searchParams.get('q')?.trim().toLowerCase() || null;
 
     return issues.length > 0
         ? Either.ofLeft(issues)
-        : Either.ofRight({ kind, q, limit, after, includeEmpty });
+        : Either.ofRight({ kind, q, limit, after, includeEmpty, order });
 }
 
-function readKind(searchParams: URLSearchParams, issues: string[]): Group['kind'] | null {
+function decodeOrder(searchParams: URLSearchParams, issues: string[]): GroupDirectoryOrder {
+    const value = searchParams.get('order');
+    if (value === null || value === 'online-members') {
+        return 'online-members';
+    }
+    if (value === 'peer-rtt') {
+        return value;
+    }
+    issues.push('order must be online-members or peer-rtt');
+    return 'online-members';
+}
+
+function decodeKind(searchParams: URLSearchParams, issues: string[]): Group['kind'] | null {
     const value = searchParams.get('kind');
     if (value === null) {
         return null;
@@ -56,7 +76,7 @@ function readKind(searchParams: URLSearchParams, issues: string[]): Group['kind'
     return kind;
 }
 
-function readLimit(searchParams: URLSearchParams, issues: string[]): number {
+function decodeLimit(searchParams: URLSearchParams, issues: string[]): number {
     const value = searchParams.get('limit');
     if (value === null) {
         return GROUP_DIRECTORY_DEFAULT_LIMIT;
@@ -69,7 +89,7 @@ function readLimit(searchParams: URLSearchParams, issues: string[]): number {
     return limit;
 }
 
-function readIncludeEmpty(searchParams: URLSearchParams, issues: string[]): boolean {
+function decodeIncludeEmpty(searchParams: URLSearchParams, issues: string[]): boolean {
     const value = searchParams.get('includeEmpty');
     if (value === null || value === 'false') {
         return false;
@@ -80,14 +100,19 @@ function readIncludeEmpty(searchParams: URLSearchParams, issues: string[]): bool
     return value === 'true';
 }
 
-function readCursor(searchParams: URLSearchParams, issues: string[]): GroupDirectoryCursor | null {
+function decodeCursor(
+    searchParams: URLSearchParams,
+    order: GroupDirectoryOrder,
+    issues: string[]
+): GroupDirectoryCursor | null {
     const value = searchParams.get('cursor');
     if (value === null) {
         return null;
     }
     const cursor = parseCursor(value);
-    if (!cursor) {
-        issues.push('cursor is not a cursor issued by this endpoint');
+    if (!cursor || cursor.order !== order) {
+        issues.push('cursor is not a cursor issued for this directory order');
+        return null;
     }
     return cursor;
 }
@@ -111,7 +136,15 @@ function decodeCursorTuple(value: unknown): GroupDirectoryCursor | null {
         typeof value[0] === 'number' && Number.isSafeInteger(value[0]) && value[0] >= 0 &&
         typeof value[1] === 'string' && value[1].length > 0
     ) {
-        return { onlineMemberCount: value[0], groupId: value[1] };
+        return { order: 'online-members', onlineMemberCount: value[0], groupId: value[1], peerRttMs: null };
+    }
+    if (
+        Array.isArray(value) && value.length === 4 && value[0] === 'peer-rtt' &&
+        typeof value[1] === 'number' && Number.isSafeInteger(value[1]) && value[1] >= 0 &&
+        (value[2] === null || (typeof value[2] === 'number' && Number.isFinite(value[2]) && value[2] > 0)) &&
+        typeof value[3] === 'string' && value[3].length > 0
+    ) {
+        return { order: 'peer-rtt', onlineMemberCount: value[1], peerRttMs: value[2], groupId: value[3] };
     }
     return null;
 }

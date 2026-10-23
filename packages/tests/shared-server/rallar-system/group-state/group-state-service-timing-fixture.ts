@@ -7,8 +7,7 @@ export type PromiseReturningMethodKey<Service> = {
         never;
 }[keyof Service];
 
-export type PromiseReturningGroupStateServiceKey = PromiseReturningMethodKey<GroupStateService>;
-type PromiseReturningTimedGroupStateServiceKey = Exclude<PromiseReturningGroupStateServiceKey, 'write'>;
+type PromiseReturningTimedGroupStateServiceKey = Exclude<PromiseReturningMethodKey<GroupStateService>, 'write'>;
 
 export const TIMED_ASYNC_OPERATIONS = [
     'authorizeMutation',
@@ -44,20 +43,18 @@ type HasExactTimedAsyncOperationCoverage = [
 
 export const TIMED_ASYNC_OPERATION_COVERAGE: HasExactTimedAsyncOperationCoverage = true;
 
-type GroupStateServiceOperationArguments<Operation extends PromiseReturningGroupStateServiceKey> = Exclude<GroupStateService[Operation], undefined> extends (
-    ...arguments_: infer Arguments
-) => Promise<infer Result> ? Arguments :
-    never;
+type GroupStateServiceOperationArguments<Operation extends PromiseReturningMethodKey<GroupStateService>> =
+    Exclude<GroupStateService[Operation], undefined> extends (
+        ...arguments_: infer Arguments
+    ) => Promise<infer Result> ? Arguments :
+        never;
 
-type GroupStateServiceOperationResult<Operation extends PromiseReturningGroupStateServiceKey> = Exclude<GroupStateService[Operation], undefined> extends
+type GroupStateServiceOperationResult<Operation extends PromiseReturningMethodKey<GroupStateService>> = Exclude<GroupStateService[Operation], undefined> extends
     (...arguments_: never[]) => Promise<infer Result> ? Result :
     never;
 
-export type TimedOperationArguments<Operation extends TimedAsyncOperation> = GroupStateServiceOperationArguments<Operation>;
-export type TimedOperationResult<Operation extends TimedAsyncOperation> = GroupStateServiceOperationResult<Operation>;
-
 export type TimedOperationArgument = {
-    readonly [Operation in TimedAsyncOperation]: TimedOperationArguments<Operation>[number];
+    readonly [Operation in TimedAsyncOperation]: GroupStateServiceOperationArguments<Operation>[number];
 }[TimedAsyncOperation];
 
 type FakeAsyncOperation = TimedAsyncOperation | 'write';
@@ -66,7 +63,7 @@ type TimingSentinelOperation = FakeAsyncOperation | 'compute';
 export type TimedOperationInvocation = {
     readonly [Operation in TimedAsyncOperation]: Readonly<{
         operation: Operation;
-        arguments: TimedOperationArguments<Operation>;
+        arguments: GroupStateServiceOperationArguments<Operation>;
     }>;
 }[TimedAsyncOperation];
 
@@ -123,6 +120,7 @@ export function createGroupStateServiceTimingFake(
         return sentinels[operation];
     };
     const service: GroupStateService = {
+        quickJoin: Object.freeze({}) as never,
         sessionGenerationLifecycle: Object.freeze({}) as never,
         ...createIngressCaptureFake(record),
         ...createQueryFake(record),
@@ -222,7 +220,7 @@ function createMutationFake(
 }
 
 export type TimedOperationResults = {
-    readonly [Operation in TimedAsyncOperation]: TimedOperationResult<Operation>;
+    readonly [Operation in TimedAsyncOperation]: GroupStateServiceOperationResult<Operation>;
 };
 
 export async function invokeEveryTimedGroupStateOperation(
@@ -240,7 +238,7 @@ export async function invokeEveryTimedGroupStateOperation(
 export async function invokeTimedGroupStateOperation<Operation extends TimedAsyncOperation>(
     service: GroupStateService,
     operation: Operation
-): Promise<TimedOperationResult<Operation>> {
+): Promise<GroupStateServiceOperationResult<Operation>> {
     return await TIMED_OPERATION_INVOCATIONS[operation](service);
 }
 
@@ -300,7 +298,7 @@ const timingTransaction = (() => undefined) as never;
 const timingComputed = {} as never;
 
 type TimedOperationArgumentsByOperation = {
-    readonly [Operation in TimedAsyncOperation]: TimedOperationArguments<Operation>;
+    readonly [Operation in TimedAsyncOperation]: GroupStateServiceOperationArguments<Operation>;
 };
 
 export const TIMED_OPERATION_ARGUMENTS: TimedOperationArgumentsByOperation = {
@@ -334,7 +332,7 @@ export const UNTIMED_WRITE_ARGUMENTS: Parameters<GroupStateService['write']> = [
 type TimedOperationInvocations = {
     readonly [Operation in TimedAsyncOperation]: (
         service: GroupStateService
-    ) => Promise<TimedOperationResult<Operation>>;
+    ) => Promise<GroupStateServiceOperationResult<Operation>>;
 };
 
 const TIMED_OPERATION_INVOCATIONS: TimedOperationInvocations = {
@@ -374,7 +372,7 @@ const TIMED_OPERATION_INVOCATIONS: TimedOperationInvocations = {
     readCausalRevision: async (service) => await service.readCausalRevision(...TIMED_OPERATION_ARGUMENTS.readCausalRevision),
     readIssuedAuthSession: async (service) => await service.readIssuedAuthSession(...TIMED_OPERATION_ARGUMENTS.readIssuedAuthSession),
     listEvents: async (service) => await service.listEvents(...TIMED_OPERATION_ARGUMENTS.listEvents),
-    listRecentEvents: async (service) => await service.listRecentEvents!(...TIMED_OPERATION_ARGUMENTS.listRecentEvents),
+    listRecentEvents: async (service) => await service.listRecentEvents(...TIMED_OPERATION_ARGUMENTS.listRecentEvents),
     listEventPage: async (service) => await service.listEventPage(...TIMED_OPERATION_ARGUMENTS.listEventPage),
     observeSnapshot: async (service) => await service.observeSnapshot(...TIMED_OPERATION_ARGUMENTS.observeSnapshot),
     read: async (service) => await service.read(...TIMED_OPERATION_ARGUMENTS.read),

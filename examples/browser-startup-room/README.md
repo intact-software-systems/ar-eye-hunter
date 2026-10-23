@@ -52,3 +52,69 @@ subscriptions.unsubscribe();
 new one. `rooms.session(...)` returns a room-bound handle. Use that handle for
 `room.message(...)` and `room.realtime(...)` so app code does not need to pass
 `roomRef` on every send.
+
+To enter an existing open room, expose a separate Quick Join action:
+
+```ts
+const result = await rallar.rooms.quickJoin({ kind: 'room', q: 'demo arena' });
+if (result.status === 'joined') {
+    const room = rallar.rooms.session(result.snapshot.group);
+    renderCurrentRoom(room);
+}
+else {
+    showMessage('No available room. Try again or create one.');
+}
+```
+
+Quick Join excludes empty rooms by default; pass `includeEmpty: true` to include them.
+The server ranks eligible rooms by distinct online members, then room ID, and applies
+normal admission and capacity rules. It creates no room or pending approval request.
+An unavailable result preserves the current room. A joined result connects presence,
+switches the current room, and leaves the previous room unless `leaveCurrent: false`.
+Room membership does not enlist a player in an application-owned match or expedition.
+
+If admission succeeded but presence or adoption failed, `RallarQuickJoinPartialFailureError`
+exposes `joinedRoom` and the original `cause`. A failure to leave the previous room uses
+`RallarRoomSwitchPartialFailureError` with `operation: 'quick-join'`, and the new room
+stays current. Recover that room explicitly instead of automatically selecting another.
+
+For private links or a saved destination, capture entry before startup. This is an
+alternative to unconditional room creation above; a pending invitation takes priority.
+
+```ts
+import { RallarRoomEntry, toRoomEntryUrl } from '@shared-web/browser/rallar-room-entry.ts';
+
+const scope = { applicationId: 'demo-game', workspaceId: 'default' };
+rallar.configure({ apiBaseUrl: 'http://localhost:8080', ...scope });
+const entry = RallarRoomEntry.createBrowser(rallar, { scope });
+const unsubscribe = entry.onChange(renderRoomEntry);
+entry.start();
+
+// Keep the entry owner alive while the application displays its sign-in form.
+// After restoring a session or completing sign-in:
+await rallar.start({ connect: true, refreshRooms: entry.getState().status === 'idle' });
+await entry.resume();
+
+// Manual entry uses a complete scoped reference and the same lifecycle.
+entry.enter({ roomRef: { ...scope, groupId: 'shared-room' }, joinCode: 'HOST-CODE' });
+await entry.resume();
+
+// A host shares the authoritative code and expiry returned by rotation.
+const rotated = await rallar.rooms.rotateJoinCode({ ...scope, groupId: 'shared-room' });
+const link = toRoomEntryUrl(window.location.href, {
+    roomRef: rotated.snapshot.group,
+    joinCode: rotated.joinCode
+});
+link.fold(showEntryError, (url) => renderShareLink(url, rotated.expiresAtEpochMs));
+
+// Component cleanup.
+unsubscribe();
+entry.stop();
+```
+
+Render `entry.getState()` with correction, retry (`resume`), and cancel (`cancel`)
+controls. A fresh link replaces the saved destination. Successful admission removes
+the code from tab storage and binds the saved room to the principal. Authentication,
+cancellation, and destination changes fence late completions. An invite-only link
+uses `joinCode: null`; the host must first invite the guest's account reference.
+Room entry does not enroll that account in application-owned gameplay.

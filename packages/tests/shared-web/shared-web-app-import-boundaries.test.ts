@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { analyzeSourceFile, type SourceAnalysis } from '../helpers/source-analysis';
@@ -26,20 +25,13 @@ describe('shared-web app import boundaries', () => {
     });
 
     it('keeps Relic on its runtime adapter boundary without the broad shared-web barrel', () => {
-        const runtimeSource = readSource(
-            'apps/relic-hunters-v1/src/game/relic-hunters-runtime.ts'
-        );
         const relicSources = [
             'apps/relic-hunters-v1/src/main.tsx',
             'apps/relic-hunters-v1/src/game/relic-hunters-runtime.ts',
+            'apps/relic-hunters-v1/src/game/relic-hunters-browser.ts',
             'apps/relic-hunters-v1/src/game/scene/networking.ts',
             'apps/relic-hunters-v1/src/game/ai/useRelicPlanningAi.ts'
         ];
-
-        expect(runtimeSource).toContain('export type RelicHuntersRuntimeDeps');
-        expect(runtimeSource).toContain(
-            'constructor(deps: RelicHuntersRuntimeDeps = browserRelicRuntimeDeps())'
-        );
 
         for (const sourcePath of relicSources) {
             const analysis = readSourceAnalysis(sourcePath);
@@ -70,9 +62,12 @@ function collectSideEffectImports(analysis: SourceAnalysis): readonly string[] {
         .map((entry) => entry.specifier);
 }
 
-function collectNamedImports(
-    analysis: SourceAnalysis
-): readonly Readonly<{ moduleSpecifier: string; importedName: string; }>[] {
+interface NamedImport {
+    readonly moduleSpecifier: string;
+    readonly importedName: string;
+}
+
+function collectNamedImports(analysis: SourceAnalysis): readonly NamedImport[] {
     return analysis.imports.flatMap((entry) =>
         entry.namedImports.map((namedImport) => ({
             moduleSpecifier: entry.specifier,
@@ -91,8 +86,4 @@ function collectDynamicImports(analysis: SourceAnalysis): readonly string[] {
 
 function readSourceAnalysis(filePath: string): SourceAnalysis {
     return analyzeSourceFile(path.join(repoRoot, filePath));
-}
-
-function readSource(filePath: string): string {
-    return readFileSync(path.join(repoRoot, filePath), 'utf8');
 }

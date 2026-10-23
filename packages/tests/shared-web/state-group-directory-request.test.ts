@@ -1,4 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { listStateGroupDirectory } from '@shared-web/browser/state-read/state-snapshot-http-api.ts';
@@ -28,12 +35,13 @@ describe('browser group directory request', () => {
             q: 'eye hunter',
             limit: 20,
             cursor: 'abc',
-            includeEmpty: true
+            includeEmpty: true,
+            order: 'peer-rtt'
         }, { authSession: null })).resolves.toEqual(page);
 
         expect(fetchMock.mock.calls[0]?.[0]).toBe(DIRECTORY_URL);
         expect(fetchMock.mock.calls[1]?.[0]).toBe(
-            `${DIRECTORY_URL}?kind=room&q=eye+hunter&limit=20&cursor=abc&includeEmpty=true`
+            `${DIRECTORY_URL}?kind=room&q=eye+hunter&limit=20&cursor=abc&includeEmpty=true&order=peer-rtt`
         );
     });
 });

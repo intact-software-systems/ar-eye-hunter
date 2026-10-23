@@ -66,7 +66,8 @@ vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'
     })
 }));
 
-vi.mock(import('@shared-web/browser/rooms/room-group-state-workflows.ts'), () => ({
+vi.mock(import('@shared-web/browser/rooms/room-group-state-workflows.ts'), async (importOriginal) => ({
+    ...await importOriginal(),
     createAndJoinStateGroup: roomWorkflowMocks.createAndJoinStateGroup,
     joinStateGroup: roomWorkflowMocks.joinStateGroup,
     leaveStateGroup: roomWorkflowMocks.leaveStateGroup
@@ -79,7 +80,8 @@ vi.mock(import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts
     deleteStateGroup: roomWorkflowMocks.deleteStateGroup
 }));
 
-vi.mock(import('@shared-web/browser/rooms/room-membership-group-state-workflows.ts'), () => ({
+vi.mock(import('@shared-web/browser/rooms/room-membership-group-state-workflows.ts'), async (importOriginal) => ({
+    ...await importOriginal(),
     createStateGroupInvite: roomWorkflowMocks.createStateGroupInvite,
     acceptStateGroupInvite: roomWorkflowMocks.acceptStateGroupInvite,
     removeStateGroupMember: roomWorkflowMocks.removeStateGroupMember,

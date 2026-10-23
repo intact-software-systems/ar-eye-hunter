@@ -6,7 +6,11 @@ import type { StateScope } from '@shared/api/state-types.ts';
 
 import { readApiBaseUrl } from '../api-client-config.ts';
 import { executeHttpRequest, type ApiRequestOptions } from '../api/http-request.ts';
-import { defaultStateScope, toStateGroupHttpPath, toStateScopeHttpPath } from '../api/state-http-path.ts';
+import {
+    defaultStateScope,
+    toStateGroupHttpPath,
+    toStateScopeHttpPath
+} from '../api/state-http-path.ts';
 import { readStateGroupSnapshot } from './point-read.ts';
 
 export async function listStateClients(
@@ -65,6 +69,9 @@ function toGroupDirectoryQueryString(request: GroupDirectoryRequest): string {
     }
     if (request.includeEmpty !== undefined) {
         query.set('includeEmpty', String(request.includeEmpty));
+    }
+    if (request.order !== undefined) {
+        query.set('order', request.order);
     }
     const serialized = query.toString();
     return serialized.length > 0 ? `?${serialized}` : '';

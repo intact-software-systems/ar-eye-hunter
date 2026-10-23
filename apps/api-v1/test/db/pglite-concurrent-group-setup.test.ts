@@ -10,6 +10,7 @@ import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persis
 import type { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import { toAuthenticatedGroupMutationQueueKey } from '@shared-server/rallar-system/group-state/inbox/to-authenticated-group-mutation-queue-key.ts';
 import { registerApplicationQueueReaderTasks } from '@shared-server/rallar-system/middleware/rallar-middleware-queue-registration.ts';
+import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { EntityStatus, type Key } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
@@ -184,6 +185,7 @@ function createGroupSetupApp(mutation: ApiV1MutationRuntime, groupInbox: GroupSt
     const app = new Hono();
     registerGroupStateRoutes(app, {
         groupStateService: mutation.groupStateService,
+        rtcRttRepository: new RtcRttRepository(mutation.runtimeStateRepository),
         requireApiAuthSession: (request) => requireApiAuthSession(request, mutation.authSessionRepository),
         processGroupAppInbox: async (authority, enqueue) => {
             assert.ok(enqueue.resourceId);
@@ -195,6 +197,7 @@ function createGroupSetupApp(mutation: ApiV1MutationRuntime, groupInbox: GroupSt
                 throw toApiMutationRouteFailure(failure);
             }, (value) => value);
         },
+        processQuickJoin: (input, authority) => groupInbox.processQuickJoinUntilCompletion(input, authority),
         groupAdmissionQuota: createGroupAdmissionQuota(defaults.group.admission),
         strictReadAuthorization: true,
         groupDefaultMaxMembers: defaults.group.defaultMaxMembers,

@@ -13,6 +13,15 @@ interface PublicSurfaceSnapshot {
 
 const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
     {
+        filePath: 'packages/shared-web/browser/rallar-room-entry.ts',
+        expected: {
+            values: ['RallarRoomEntry', 'readRoomEntryDestination', 'toRoomEntryUrl'],
+            types: [],
+            starExports: [],
+            namespaceExports: []
+        }
+    },
+    {
         filePath: 'packages/shared-web/browser/rallar.ts',
         expected: {
             values: [
@@ -61,6 +70,8 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'CommandsOrchestrator',
                 'CommandsOrchestratorPolicies',
                 'CreateRallarDataFacadeInput',
+                'GroupJoinCodeResponse',
+                'QuickJoinGroupResult',
                 'RallarAdvancedFacade',
                 'RallarAuthChangeListener',
                 'RallarAuthChangeReason',
@@ -156,6 +167,8 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarPeopleState',
                 'RallarPerson',
                 'RallarProductFacade',
+                'RallarQuickJoinPartialFailureError',
+                'RallarQuickJoinRoomInput',
                 'RallarReadinessEvaluation',
                 'RallarReadinessExpectation',
                 'RallarReadinessStatus',
@@ -185,6 +198,8 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarRoomFormationWaitStatus',
                 'RallarRoomGovernanceOptions',
                 'RallarRoomInviteOptions',
+                'RallarRoomJoinCodeOptions',
+                'RallarRoomJoinPartialFailureError',
                 'RallarRoomLayout',
                 'RallarRoomLayoutEvent',
                 'RallarRoomLayoutListener',
@@ -332,6 +347,8 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'ApiMiddleware',
                 'CommandsOrchestrator',
                 'CommandsOrchestratorPolicies',
+                'GroupJoinCodeResponse',
+                'QuickJoinGroupResult',
                 'RallarApiClientConfig',
                 'RallarAuthChangeListener',
                 'RallarAuthChangeReason',
@@ -368,6 +385,8 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarPeopleEventOptions',
                 'RallarPeopleState',
                 'RallarPerson',
+                'RallarQuickJoinPartialFailureError',
+                'RallarQuickJoinRoomInput',
                 'RallarRegisterOptions',
                 'RallarReplayEventsResult',
                 'RallarReplayPeopleEventsOptions',
@@ -381,6 +400,8 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarRoomFormationStatus',
                 'RallarRoomFormationWaitResult',
                 'RallarRoomFormationWaitStatus',
+                'RallarRoomJoinCodeOptions',
+                'RallarRoomJoinPartialFailureError',
                 'RallarRoomLayout',
                 'RallarRoomLayoutEvent',
                 'RallarRoomLayoutListener',

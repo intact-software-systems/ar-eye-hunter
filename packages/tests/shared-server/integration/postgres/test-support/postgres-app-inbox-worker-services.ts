@@ -8,6 +8,7 @@ import {
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
+import { createAppInboxRetryFinalizer } from '@shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
@@ -202,13 +203,19 @@ function createTopologyRuntimeRepository(
 
 function createPostgresAppInboxWorkerInbox(
     resourceInbox: PSqlResourceInboxRepository,
-    input: Pick<CreatePostgresAppInboxWorkerServicesInput, 'newLaneConcurrency' | 'newLaneHeldRows' | 'flightEntryListener' | 'trace'>
+    input: Pick<
+        CreatePostgresAppInboxWorkerServicesInput,
+        'sql' | 'finishedRetentionMs' | 'newLaneConcurrency' | 'newLaneHeldRows' | 'flightEntryListener' | 'trace'
+    >
 ): InboxQueueReader {
+    const finalizeRetry = createAppInboxRetryFinalizer({ database: input.sql, finishedRetentionMs: input.finishedRetentionMs });
     return new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
         newLaneConcurrency: input.newLaneConcurrency,
         newLaneHeldRows: input.newLaneHeldRows,
         flightEntryListener: input.flightEntryListener,
         toComputeExclusionKey: (_key, attempt) => toGroupCommandExclusionKey(attempt.entry),
+        onRetryExhausted: finalizeRetry,
+        onRetryExhaustionRecovery: finalizeRetry,
         onAttemptReleaseTelemetry: (event) =>
             input.trace.attempts.push({
                 resourceId: event.key.resourceId,

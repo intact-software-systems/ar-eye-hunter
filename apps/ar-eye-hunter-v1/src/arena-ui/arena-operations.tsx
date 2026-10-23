@@ -2,7 +2,14 @@ import { useState, type FormEvent } from 'react';
 
 import type { ArenaConnection } from '../game/arena-runtime/arena-connection-contracts.ts';
 import { GAME_ROOM_NAME } from '../game/types.ts';
-import { toDirectorAttemptLabel, toDirectorLabel, toMatchLabel, toShortId } from './to-arena-labels.ts';
+import { ArenaPrivateRooms } from './arena-private-rooms.tsx';
+import { ArenaRoomEntry } from './arena-room-entry.tsx';
+import {
+    toDirectorAttemptLabel,
+    toDirectorLabel,
+    toMatchLabel,
+    toShortId
+} from './to-arena-labels.ts';
 
 interface ArenaOperationsProps {
     readonly arena: ArenaConnection;
@@ -40,9 +47,10 @@ export function ArenaOperations(props: ArenaOperationsProps) {
     };
     return (
         <section className="hud hud--side" aria-label="Arena operations">
+            <ArenaRoomEntry arena={arena} />
             {arena.connectionState === 'signed-out' || !arena.session
                 ? <ArenaAuthForm fields={fields} setFields={setFields} submit={submit} />
-                : <ArenaSessionPanel {...props} />}
+                : <ArenaSessionPanel key={arena.session.sessionId} {...props} />}
             {arena.error && <div className="panel error-panel">{arena.error}</div>}
             <div className="panel compact">
                 <div className="control-grid">
@@ -129,11 +137,16 @@ function ArenaSessionPanel({ arena, localColor, matchRemainingMs }: ArenaOperati
                     <span>{toShortId(arena.session?.sessionId ?? '')}</span>
                 </div>
             </div>
+            <label>
+                Account reference<input value={arena.session?.clientId ?? ''} readOnly />
+            </label>
+            <ArenaQuickJoin arena={arena} />
             <div className="room-actions">
-                <button type="button" onClick={arena.createArenaRoom}>New Arena</button>
+                <button type="button" onClick={() => void arena.createArenaRoom()}>New Arena</button>
                 <button type="button" onClick={arena.refreshRooms}>Refresh</button>
                 <button type="button" onClick={arena.logout}>Logout</button>
             </div>
+            <ArenaPrivateRooms arena={arena} />
             <div className="director-panel">
                 <div>
                     <span>Director</span>
@@ -165,6 +178,35 @@ function ArenaSessionPanel({ arena, localColor, matchRemainingMs }: ArenaOperati
     );
 }
 
+function ArenaQuickJoin({ arena }: Pick<ArenaOperationsProps, 'arena'>) {
+    const [status, setStatus] = useState<'idle' | 'joining' | 'joined' | 'unavailable' | 'error'>('idle');
+    const [error, setError] = useState<string | undefined>();
+    const join = async () => {
+        setStatus('joining');
+        setError(undefined);
+        try {
+            const result = await arena.quickJoinArenaRoom();
+            setStatus(result ?? 'idle');
+        }
+        catch (error) {
+            setError(error instanceof Error ? error.message : String(error));
+            setStatus('error');
+        }
+    };
+    return (
+        <div className="stack">
+            <button type="button" className="primary" onClick={join} disabled={status === 'joining'}>
+                {status === 'joining' ? 'Joining…' : 'Quick Join'}
+            </button>
+            <p className="muted" role="status">
+                {status === 'unavailable' && 'No available arena. Try again or create one.'}
+                {status === 'joined' && 'Joined arena.'}
+                {status === 'error' && error}
+            </p>
+        </div>
+    );
+}
+
 function ArenaMatchControls({ arena, matchRemainingMs }: Pick<ArenaOperationsProps, 'arena' | 'matchRemainingMs'>) {
     const match = arena.arenaSnapshot?.match;
     return (
@@ -190,40 +232,80 @@ function ArenaMatchControls({ arena, matchRemainingMs }: Pick<ArenaOperationsPro
     );
 }
 
+function ArenaLatencyPreference({ arena }: Pick<ArenaOperationsProps, 'arena'>) {
+    return (
+        <>
+            <label className="directory-latency-preference">
+                <input
+                    type="checkbox"
+                    checked={arena.directoryOrder === 'peer-rtt'}
+                    onChange={(event) =>
+                        void arena.changeDirectoryOrder(event.target.checked ? 'peer-rtt' : 'online-members')}
+                />
+                Prefer lower peer latency
+            </label>
+            {arena.directoryOrder === 'peer-rtt' && (
+                <p className="muted">
+                    Occupancy comes first. Recent peer RTT breaks ties; unmeasured rooms stay available.
+                </p>
+            )}
+        </>
+    );
+}
+
 function ArenaRoomList({ arena }: Pick<ArenaOperationsProps, 'arena'>) {
     const rooms = arena.rooms.filter((room) =>
         room.name.toLowerCase().includes('eye hunter') || room.name === GAME_ROOM_NAME
     );
     return (
-        <div className="room-list">
-            {rooms.length === 0 && arena.openRooms.length === 0 && (
-                <p className="muted">Create an arena or join from another browser session.</p>
-            )}
-            {rooms.map((room) => (
-                <button
-                    type="button"
-                    key={room.roomId}
-                    className={room.roomId === arena.roomId ? 'room-row active' : 'room-row'}
-                    onClick={() => arena.joinRoom(room.roomId)}
-                >
-                    <span>{room.name}</span>
-                    <small>{room.onlineMemberCount} online</small>
-                </button>
-            ))}
-            {arena.openRooms.length > 0 && <p className="muted">Open arenas</p>}
-            {arena.openRooms.map((room) => (
-                <button
-                    type="button"
-                    key={room.groupRef.groupId}
-                    className="room-row"
-                    disabled={room.isFull}
-                    onClick={() => arena.joinRoom(room.groupRef.groupId)}
-                >
-                    <span>{room.displayName}</span>
-                    <small>{room.isFull ? 'Full' : `${room.onlineMemberCount} online · Join`}</small>
-                </button>
-            ))}
-            {arena.openRoomsError && <p className="muted">Could not load open arenas: {arena.openRoomsError}</p>}
-        </div>
+        <>
+            <ArenaLatencyPreference arena={arena} />
+            <div className="room-list">
+                {arena.openRoomsStatus === 'loading' && <p className="muted">Loading open arenas…</p>}
+                {arena.openRoomsStatus === 'ready' && rooms.length === 0 && arena.openRooms.length === 0 && (
+                    <p className="muted">Create an arena or join from another browser session.</p>
+                )}
+                {arena.openRoomsStatus === 'error' && (
+                    <p className="muted">Could not load open arenas: {arena.openRoomsError}</p>
+                )}
+                {arena.openRoomsStatus !== 'ready' && arena.openRooms.length > 0 && (
+                    <p className="muted">Last loaded arenas — refresh to check availability.</p>
+                )}
+                {rooms.map((room) => (
+                    <button
+                        type="button"
+                        key={room.roomId}
+                        className={room.roomId === arena.roomId ? 'room-row active' : 'room-row'}
+                        onClick={() => arena.joinRoom(room.roomId)}
+                    >
+                        <span>{room.name}</span>
+                        <small>{room.onlineMemberCount} online</small>
+                    </button>
+                ))}
+                {arena.openRooms.length > 0 && <p className="muted">Open arenas</p>}
+                {arena.openRooms.map((room) => (
+                    <button
+                        type="button"
+                        key={room.groupRef.groupId}
+                        className="room-row"
+                        disabled={room.isFull}
+                        onClick={() => arena.joinRoom(room.groupRef.groupId)}
+                    >
+                        <span>{room.displayName}</span>
+                        <small>
+                            {room.isFull ? 'Full' : `${room.onlineMemberCount} online · Request to join`}
+                            {arena.directoryOrder === 'peer-rtt' && (
+                                <>
+                                    <br />
+                                    {room.peerRttMs === null
+                                        ? 'Peer latency unknown'
+                                        : `${Math.round(room.peerRttMs)} ms peer RTT`}
+                                </>
+                            )}
+                        </small>
+                    </button>
+                ))}
+            </div>
+        </>
     );
 }

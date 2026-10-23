@@ -13,7 +13,8 @@ import type { ALReceiptMode } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { AuthSessionStorageKind } from '@shared/api/auth.ts';
-import type { GroupDirectoryEntry } from '@shared/api/group-directory/group-directory-types.ts';
+import type { GroupDirectoryEntry, GroupDirectoryOrder } from '@shared/api/group-directory/group-directory-types.ts';
+import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import type { ArenaLinkState, ArenaPresenceNotice } from '../squadLink.ts';
 import type {
@@ -133,7 +134,9 @@ export interface ArenaConnection {
     readonly roomId?: string;
     readonly rooms: readonly RallarRoomSummary[];
     readonly openRooms: readonly GroupDirectoryEntry[];
+    readonly openRoomsStatus: 'idle' | 'loading' | 'ready' | 'error';
     readonly openRoomsError: string | undefined;
+    readonly directoryOrder: GroupDirectoryOrder;
     readonly directorStatus: RallarDirectorStatus;
     readonly rtcLanes: readonly RtcLaneStatus[];
     readonly directorAttempt: DirectorAttemptState;
@@ -165,7 +168,9 @@ export interface ArenaConnection {
     ): Promise<void>;
     logout(): Promise<void>;
     refreshRooms(): Promise<void>;
-    createArenaRoom(): Promise<void>;
+    changeDirectoryOrder(order: GroupDirectoryOrder): Promise<void>;
+    createArenaRoom(joinMode?: GroupJoinMode): Promise<GroupSnapshot | undefined>;
+    quickJoinArenaRoom(): Promise<'joined' | 'unavailable' | undefined>;
     joinRoom(roomId: string): Promise<void>;
     appointSelfAsDirector(): Promise<void>;
     refreshDiagnostics(options?: ArenaDiagnosticsRefreshOptions): Promise<void>;

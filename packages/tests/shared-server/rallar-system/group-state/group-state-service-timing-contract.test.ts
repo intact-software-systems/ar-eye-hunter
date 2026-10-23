@@ -18,7 +18,6 @@ import {
     TIMED_ASYNC_OPERATION_COVERAGE,
     TIMED_ASYNC_OPERATIONS,
     TIMED_OPERATION_ARGUMENTS,
-    type PromiseReturningGroupStateServiceKey,
     type PromiseReturningMethodKey,
     type TimedAsyncOperation,
     type TimedOperationArgument
@@ -36,7 +35,7 @@ interface OptionalAsyncCoverageProbe {
 
 describe('group-state service timing contract', () => {
     it('covers every Promise-returning service method except transaction-bound write', () => {
-        expectTypeOf<TimedAsyncOperation>().toEqualTypeOf<Exclude<PromiseReturningGroupStateServiceKey, 'write'>>();
+        expectTypeOf<TimedAsyncOperation>().toEqualTypeOf<Exclude<PromiseReturningMethodKey<GroupStateService>, 'write'>>();
         expectTypeOf<PromiseReturningMethodKey<OptionalAsyncCoverageProbe>>().toEqualTypeOf<'required' | 'optional'>();
         expect(TIMED_ASYNC_OPERATION_COVERAGE).toBe(true);
         expect(new Set(TIMED_ASYNC_OPERATIONS).size).toBe(TIMED_ASYNC_OPERATIONS.length);

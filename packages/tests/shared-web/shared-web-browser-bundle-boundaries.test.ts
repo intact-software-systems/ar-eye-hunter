@@ -99,6 +99,12 @@ const budgetedEntries: readonly BundleBoundary[] = [
         brotliBudgetKiB: budgetFor('browser/rallar-media-calls.ts')
     },
     {
+        label: 'browser/rallar-room-entry.ts',
+        entry: 'packages/shared-web/browser/rallar-room-entry.ts',
+        output: 'rallar-room-entry.boundary.min.js',
+        brotliBudgetKiB: budgetFor('browser/rallar-room-entry.ts')
+    },
+    {
         // This public entry point contains types only.
         label: 'browser/rallar-messages.ts',
         entry: 'packages/shared-web/browser/rallar-messages.ts',
@@ -161,6 +167,17 @@ describe('shared-web browser bundle boundaries', () => {
             expect(inputs, `${result.label} should not include full rallar composer`).not
                 .toContain('packages/shared-web/browser/rallar.ts');
         }
+    });
+
+    it('keeps optional room entry independent of the facade and storage engines', () => {
+        const entry = budgetedEntries.find((boundary) => boundary.label === 'browser/rallar-room-entry.ts');
+        if (!entry) {
+            throw new Error('Missing room-entry bundle boundary');
+        }
+        const inputs = Object.keys(bundleForBoundary(entry).metafile.inputs);
+        expect(inputs).not.toContain('packages/shared-web/browser/rallar.ts');
+        expect(inputs).not.toContainEqual(expect.stringContaining('node_modules/@js-temporal/polyfill'));
+        expect(inputs).not.toContainEqual(expect.stringContaining('indexed-db'));
     });
 
     it('keeps measured browser entry points under their Brotli budgets', () => {

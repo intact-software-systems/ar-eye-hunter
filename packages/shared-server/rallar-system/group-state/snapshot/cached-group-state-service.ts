@@ -46,6 +46,7 @@ export function createCachedGroupStateService(
 ): CachedGroupStateService {
     return {
         sessionGenerationLifecycle: options.durable.sessionGenerationLifecycle,
+        quickJoin: options.durable.quickJoin,
         authorizeMutation: async (descriptor, authority) =>
             await options.durable.authorizeMutation(descriptor, authority),
         captureMutationIngress: async (descriptor, authority) =>

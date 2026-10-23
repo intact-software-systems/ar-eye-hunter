@@ -25,13 +25,16 @@ import * as clientStateRoutes from '../client-state-routes.ts';
 
 export interface ApiV1StateSnapshotRouteRuntime {
     readonly authSessionRepository: object;
+    readonly topologyServices: Readonly<{
+        rttRepository: Pick<ApiV1Runtime['topologyServices']['rttRepository'], 'listMeasurementEntriesForEndpoints'>;
+    }>;
     readonly appClientInboxService: Pick<
         ApiV1Runtime['appClientInboxService'],
         'processAuthenticatedEntryUntilCompletion'
     >;
     readonly groupStateInboxService: Pick<
         ApiV1Runtime['groupStateInboxService'],
-        'processAuthenticatedGroupEntryUntilCompletion'
+        'processAuthenticatedGroupEntryUntilCompletion' | 'processQuickJoinUntilCompletion'
     >;
     readonly clientStateService: Pick<
         ApiV1Runtime['clientStateService'],
@@ -100,12 +103,15 @@ export function createStateSnapshotReadRouteRegistrars<Runtime extends ApiV1Stat
         group: (app: Hono) =>
             groupStateRoutes.registerGroupStateRoutes(app, {
                 groupStateService: runtime.groupStateService,
+                rtcRttRepository: runtime.topologyServices.rttRepository,
                 strictReadAuthorization: policy.strictReadAuthorization,
                 groupDefaultMaxMembers: policy.groupDefaultMaxMembers,
                 nowEpochMs: policy.nowEpochMs,
                 requireApiAuthSession: (request) =>
                     operations.requireApiAuthSession(request, runtime.authSessionRepository),
                 groupAdmissionQuota,
+                processQuickJoin: (input, authority) =>
+                    runtime.groupStateInboxService.processQuickJoinUntilCompletion(input, authority),
                 processGroupAppInbox: async (
                     authority: GroupStateRouteAuthSession,
                     enqueue: AuthenticatedGroupMutationEnqueue

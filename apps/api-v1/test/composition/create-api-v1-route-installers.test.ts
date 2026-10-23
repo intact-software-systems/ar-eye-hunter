@@ -73,86 +73,9 @@ const TEST_OPERATIONS: ApiV1RouteInstallerOperations<ApiV1RouteInstallerRuntime>
 
 function createInput(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRuntime, ApiV1RouteInstallerTopology> {
     return {
-        runtime: {
-            wsQBoxServerService: { socket: new JsonWebSocketServer() },
-            authSessionRepository: {},
-            appAuthInboxService: {
-                registerUser: rejectUnusedOperation,
-                issueSession: rejectUnusedOperation,
-                logoutSession: rejectUnusedOperation,
-                replayLogoutSessionWithCredentialProof: rejectUnusedOperation,
-                issueWebSocketTicket: rejectUnusedOperation,
-                issueAgentSessionTickets: rejectUnusedOperation,
-                consumeAgentSessionTicket: rejectUnusedOperation
-            },
-            passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 1 }),
-            appClientInboxService: {
-                writeAuthorisedWsClientConnect: rejectUnusedOperation,
-                enqueueAuthorisedWsClientDisconnect: rejectUnusedOperation,
-                processAuthenticatedEntryUntilCompletion: rejectUnusedOperation
-            },
-            groupStateInboxService: {
-                processAuthenticatedGroupEntryUntilCompletion: rejectUnusedOperation
-            },
-            topologyInboxService: {
-                processAuthenticatedEntryUntilCompletion: rejectUnusedOperation,
-                processAuthenticatedEntryUntilCompletionResult: rejectUnusedOperation,
-                processAuthenticatedHttpEntryUntilCompletionResult: rejectUnusedOperation
-            },
-            clientStateService: {
-                listEventPage: rejectUnusedOperation,
-                listEvents: rejectUnusedOperation,
-                listRecentEvents: rejectUnusedOperation,
-                listSnapshots: rejectUnusedOperation,
-                readCurrentSnapshot: rejectUnusedOperation,
-                readPresenceSnapshot: rejectUnusedOperation,
-                readSnapshot: rejectUnusedOperation
-            },
-            groupStateService: {
-                listEventPage: rejectUnusedOperation,
-                listEvents: rejectUnusedOperation,
-                listRecentEvents: rejectUnusedOperation,
-                listSnapshots: rejectUnusedOperation,
-                listSnapshotsForPrincipal: rejectUnusedOperation,
-                readCurrentSnapshot: rejectUnusedOperation,
-                readSnapshot: rejectUnusedOperation
-            },
-            clientRestSnapshotReadSelector: { read: rejectUnusedOperation },
-            groupRestSnapshotReadSelector: { read: rejectUnusedOperation },
-            groupsRepository: { readSnapshot: rejectUnusedOperation },
-            clientsRepository: { readSnapshot: rejectUnusedOperation }
-        },
+        runtime: createRuntime(),
         topology: createTopology(),
-        admin: {
-            operations: {
-                overview: { execute: rejectUnusedOperation },
-                queues: { execute: rejectUnusedOperation },
-                realtime: { execute: rejectUnusedOperation },
-                state: { execute: rejectUnusedOperation },
-                crdt: { execute: rejectUnusedOperation },
-                system: { execute: rejectUnusedOperation },
-                metricsReset: { execute: rejectUnusedOperation },
-                topologyRecompute: { execute: rejectUnusedOperation },
-                prune: { execute: rejectUnusedOperation },
-                crdtIntegrity: { execute: rejectUnusedOperation },
-                crdtDebugExport: { execute: rejectUnusedOperation },
-                crdtCompact: { execute: rejectUnusedOperation },
-                crdtLifecycle: { execute: rejectUnusedOperation },
-                crdtErase: { execute: rejectUnusedOperation }
-            },
-            support: {
-                explainClient: rejectUnusedOperation,
-                explainGroup: rejectUnusedOperation,
-                explainRequest: rejectUnusedOperation,
-                explainCrdtDocument: rejectUnusedOperation,
-                explainQueueItem: rejectUnusedOperation
-            },
-            statistics: {
-                readWorkspaceSummary: rejectUnusedOperation,
-                readGroupStats: rejectUnusedOperation,
-                readMyRealtimeStatus: rejectUnusedOperation
-            }
-        },
+        admin: createAdmin(),
         crdtLogRepository: new InMemoryRallarCrdtLogRepository({ now: () => 1_000 }),
         crdtMutations: {
             writeCrdtAdminMutation: () => Promise.reject(new Error('mutation not used'))
@@ -197,6 +120,93 @@ function createInput(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRunti
         strictReadAuthorization: false,
         nowEpochMs: () => 1_000,
         createTokenId: () => 'token-id'
+    };
+}
+
+function createRuntime(): ApiV1RouteInstallerRuntime {
+    return {
+        wsQBoxServerService: { socket: new JsonWebSocketServer() },
+        authSessionRepository: {},
+        appAuthInboxService: {
+            registerUser: rejectUnusedOperation,
+            issueSession: rejectUnusedOperation,
+            logoutSession: rejectUnusedOperation,
+            replayLogoutSessionWithCredentialProof: rejectUnusedOperation,
+            issueWebSocketTicket: rejectUnusedOperation,
+            issueAgentSessionTickets: rejectUnusedOperation,
+            consumeAgentSessionTicket: rejectUnusedOperation
+        },
+        passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 1 }),
+        appClientInboxService: {
+            writeAuthorisedWsClientConnect: rejectUnusedOperation,
+            enqueueAuthorisedWsClientDisconnect: rejectUnusedOperation,
+            processAuthenticatedEntryUntilCompletion: rejectUnusedOperation
+        },
+        groupStateInboxService: {
+            processAuthenticatedGroupEntryUntilCompletion: rejectUnusedOperation,
+            processQuickJoinUntilCompletion: rejectUnusedOperation
+        },
+        topologyInboxService: {
+            processAuthenticatedEntryUntilCompletion: rejectUnusedOperation,
+            processAuthenticatedEntryUntilCompletionResult: rejectUnusedOperation,
+            processAuthenticatedHttpEntryUntilCompletionResult: rejectUnusedOperation
+        },
+        clientStateService: {
+            listEventPage: rejectUnusedOperation,
+            listEvents: rejectUnusedOperation,
+            listRecentEvents: rejectUnusedOperation,
+            listSnapshots: rejectUnusedOperation,
+            readCurrentSnapshot: rejectUnusedOperation,
+            readPresenceSnapshot: rejectUnusedOperation,
+            readSnapshot: rejectUnusedOperation
+        },
+        groupStateService: {
+            listEventPage: rejectUnusedOperation,
+            listEvents: rejectUnusedOperation,
+            listRecentEvents: rejectUnusedOperation,
+            listSnapshots: rejectUnusedOperation,
+            listSnapshotsForPrincipal: rejectUnusedOperation,
+            readCurrentSnapshot: rejectUnusedOperation,
+            readSnapshot: rejectUnusedOperation
+        },
+        clientRestSnapshotReadSelector: { read: rejectUnusedOperation },
+        groupRestSnapshotReadSelector: { read: rejectUnusedOperation },
+        topologyServices: { rttRepository: { listMeasurementEntriesForEndpoints: rejectUnusedOperation } },
+        groupsRepository: { readSnapshot: rejectUnusedOperation },
+        clientsRepository: { readSnapshot: rejectUnusedOperation }
+    };
+}
+
+function createAdmin(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRuntime, ApiV1RouteInstallerTopology>['admin'] {
+    return {
+        operations: {
+            overview: { execute: rejectUnusedOperation },
+            queues: { execute: rejectUnusedOperation },
+            realtime: { execute: rejectUnusedOperation },
+            state: { execute: rejectUnusedOperation },
+            crdt: { execute: rejectUnusedOperation },
+            system: { execute: rejectUnusedOperation },
+            metricsReset: { execute: rejectUnusedOperation },
+            topologyRecompute: { execute: rejectUnusedOperation },
+            prune: { execute: rejectUnusedOperation },
+            crdtIntegrity: { execute: rejectUnusedOperation },
+            crdtDebugExport: { execute: rejectUnusedOperation },
+            crdtCompact: { execute: rejectUnusedOperation },
+            crdtLifecycle: { execute: rejectUnusedOperation },
+            crdtErase: { execute: rejectUnusedOperation }
+        },
+        support: {
+            explainClient: rejectUnusedOperation,
+            explainGroup: rejectUnusedOperation,
+            explainRequest: rejectUnusedOperation,
+            explainCrdtDocument: rejectUnusedOperation,
+            explainQueueItem: rejectUnusedOperation
+        },
+        statistics: {
+            readWorkspaceSummary: rejectUnusedOperation,
+            readGroupStats: rejectUnusedOperation,
+            readMyRealtimeStatus: rejectUnusedOperation
+        }
     };
 }
 

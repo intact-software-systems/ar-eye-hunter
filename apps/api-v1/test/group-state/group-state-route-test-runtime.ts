@@ -1,6 +1,11 @@
 import { type GroupStateWritten } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { AuditStamp, GroupEvent, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+    AuditStamp,
+    GroupEvent,
+    GroupMember,
+    GroupSnapshot
+} from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 
@@ -33,12 +38,14 @@ export interface GroupStateRouteTestRuntimeInput {
     readonly groupDefaultMaxMembers?: number | null;
     readonly nowEpochMs?: () => number;
     readonly groupService?: Partial<GroupStateRouteService>;
+    readonly rtcRttRepository?: GroupStateRouteDependencies['rtcRttRepository'];
     readonly requireApiAuthSession?: GroupStateRouteDependencies[
         'requireApiAuthSession'
     ];
     readonly processGroupAppInbox?: GroupStateRouteDependencies[
         'processGroupAppInbox'
     ];
+    readonly processQuickJoin?: GroupStateRouteDependencies['processQuickJoin'];
     readonly groupAdmissionQuota?: GroupAdmissionQuota;
     readonly hydrateStateSyncSnapshotCaches?: GroupStateRouteDependencies[
         'hydrateStateSyncSnapshotCaches'
@@ -92,8 +99,10 @@ export function createGroupStateRouteTestDependencies(
     const requireApiAuthSession = input.requireApiAuthSession ?? (() => Promise.resolve(session));
     return {
         groupStateService: createGroupStateRouteService(input.groupService),
+        rtcRttRepository: input.rtcRttRepository ?? { listMeasurementEntriesForEndpoints: () => Promise.resolve([]) },
         requireApiAuthSession,
         processGroupAppInbox: input.processGroupAppInbox ?? defaultProcessGroupAppInbox,
+        processQuickJoin: input.processQuickJoin ?? (() => Promise.reject(new Error('Unexpected Quick Join mutation'))),
         groupAdmissionQuota: input.groupAdmissionQuota ?? createGroupAdmissionQuota({
             windowMs: 60_000,
             joinPrincipal: 60,
@@ -431,56 +440,25 @@ function createGroupStateRouteMemberWithStatus(
         principalId,
         role: 'member',
         updated: auditStamp,
+        joined: auditStamp,
+        left: null,
+        removed: null,
+        banned: null,
         invitedByPrincipalId: null,
         invitationExpiresAtEpochMs: null
     } as const;
     switch (status) {
         case 'invited':
         case 'pending':
-            return {
-                ...base,
-                status,
-                joined: null,
-                left: null,
-                removed: null,
-                banned: null
-            };
+            return { ...base, status, joined: null };
         case 'active':
-            return {
-                ...base,
-                status,
-                joined: auditStamp,
-                left: null,
-                removed: null,
-                banned: null
-            };
+            return { ...base, status };
         case 'left':
-            return {
-                ...base,
-                status,
-                joined: auditStamp,
-                left: auditStamp,
-                removed: null,
-                banned: null
-            };
+            return { ...base, status, left: auditStamp };
         case 'removed':
-            return {
-                ...base,
-                status,
-                joined: auditStamp,
-                left: null,
-                removed: auditStamp,
-                banned: null
-            };
+            return { ...base, status, removed: auditStamp };
         case 'banned':
-            return {
-                ...base,
-                status,
-                joined: auditStamp,
-                left: null,
-                removed: null,
-                banned: auditStamp
-            };
+            return { ...base, status, banned: auditStamp };
     }
 }
 

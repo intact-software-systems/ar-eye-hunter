@@ -1478,6 +1478,32 @@
       "description": "Group directory contract: a non-member lists joinable open groups as safe entries, with kind and name filters, a stable keyset-paged order, an empty lobby hidden by default, members excluded once they can read the room in full, ETag revalidation with 304, and typed 400/401 failures."
     },
     {
+      "id": "api-v1-group-quick-join",
+      "recipe": "tests/api-v1/api-v1-group-quick-join.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-quick-join",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "Authoritative Quick Join: scoped room admission, unavailable without pending membership, durable replay, conflicting request reuse, strict input and authentication."
+    },
+    {
       "id": "api-v1-group-list-principal-groups",
       "recipe": "tests/api-v1/api-v1-group-list-principal-groups.json",
       "category": "api-v1-black-box",
@@ -2689,7 +2715,7 @@
           }
         ]
       },
-      "description": "No-browser API-v1 code-protected admission: group-code-required and group-code-invalid are returned by no recipe in the corpus. A code group refuses a join carrying no code and a join carrying the wrong one, the current code admits, a rotation invalidates the old code while the new one admits, and an expired code is refused even for a principal who is already an active member. Rotation is refused for a non-member and again for an active regular member -- the server returns the same envelope for both, so only the second probe pins the owner/admin rule. Both sides normalise the code identically, so the typed form and the returned form are interchangeable."
+      "description": "No-browser API-v1 code-protected admission: group-code-required and group-code-invalid are returned by no recipe in the corpus. A code group refuses a join carrying no code and a join carrying the wrong one, the current code admits, a rotation invalidates the old code while the new one admits, and an expired code refuses a new entrant while an active member can return after rotation or expiry. Rotation is refused for a non-member and again for an active regular member -- the server returns the same envelope for both, so only the second probe pins the owner/admin rule. Both sides normalise the code identically, so the typed form and the returned form are interchangeable."
     },
     {
       "id": "api-v1-group-invite-admission",

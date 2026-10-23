@@ -6,7 +6,7 @@
     ],
     "owner": "Knut-Helge Vik",
     "command": "npm run test:playwright:relic",
-    "reason": "No lane installs the Relic Hunters browser stack. 2026-09-29 run: 24 passed, 1 failed (web.spec.ts camera-mode flyover), 1 skipped; fix or delete before wiring a lane."
+    "reason": "The Relic browser CI lane selects the full-stack private-entry suite; these standalone browser/server tests remain manual. 2026-09-29 run: 24 passed, 1 failed (web.spec.ts camera-mode flyover), 1 skipped; fix or delete before adding these tests to the lane."
   },
   {
     "paths": [
@@ -14,7 +14,7 @@
     ],
     "owner": "Knut-Helge Vik",
     "command": "npm run test:playwright:relic:full-stack",
-    "reason": "Needs the Relic Hunters game server and a browser pair; no lane starts that stack."
+    "reason": "Runs the separate two-browser propagation workload. The Relic full-stack CI command selects only the private-entry suite, so this scenario remains manual."
   },
   {
     "paths": [
