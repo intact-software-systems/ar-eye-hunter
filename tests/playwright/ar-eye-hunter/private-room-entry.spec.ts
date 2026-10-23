@@ -1,10 +1,10 @@
 import {
     expect,
     test,
-    type CDPSession,
     type Page
 } from '@playwright/test';
-import { writeFile } from 'node:fs/promises';
+
+import { arenaRoomTest } from './arena-room-fixture.ts';
 
 test('keeps manual private-room entry through signed-out reload and allows cancellation', async ({ page }) => {
     const operations = await openOperations(page, '/');
@@ -44,127 +44,92 @@ test('shows a wrong-scope invitation without sending an admission request', asyn
         .toHaveCount(0);
 });
 
-test(
+arenaRoomTest(
     'shares a code arena through sign-in, participation, rotation, and member reload',
-    async ({ browser }, testInfo) => {
+    async ({ page: host, guest }, testInfo) => {
         test.skip(
             process.env.RALLAR_ARENA_FULL_STACK !== '1',
             'Requires the local API-v1 memory fixture on port 8080.'
         );
-        const hostContext = await browser.newContext();
-        const guestContext = await browser.newContext();
-        const profiles = new Map<string, CDPSession>();
-        try {
-            const host = await hostContext.newPage();
-            const guest = await guestContext.newPage();
-            for (const participant of [{ name: 'host', page: host }, { name: 'guest', page: guest }]) {
-                const profiler = await participant.page.context().newCDPSession(participant.page);
-                await profiler.send('Profiler.enable');
-                await profiler.send('Profiler.start');
-                profiles.set(participant.name, profiler);
-            }
-            const hostOperations = await openOperations(host, '/');
-            await signIn(host, 'alice');
-            const create = hostOperations.getByRole('button', { name: 'New code arena', exact: true });
-            await expect(create).toBeVisible();
-            await create.click();
-            const linkField = hostOperations.getByLabel('Room link', { exact: true });
-            await expect(linkField).toHaveValue(/#rallar-room\?.*joinCode=/);
-            const originalLink = await linkField.inputValue();
-            const reference = new URLSearchParams(new URL(originalLink).hash.slice('#rallar-room?'.length)).get(
-                'groupId'
-            );
-            expect(reference).toBeTruthy();
-            const guestOperations = await openOperations(guest, originalLink);
-            await expect(guestOperations.getByText(`Sign in to enter ${reference}.`, { exact: true })).toBeVisible();
-            await signIn(guest, 'bob');
-            await expect(guestOperations.getByText(`Entered ${reference}.`, { exact: true })).toBeVisible();
+        const hostOperations = await openOperations(host, '/');
+        await signIn(host, 'alice');
+        const create = hostOperations.getByRole('button', { name: 'New code arena', exact: true });
+        await expect(create).toBeVisible();
+        await create.click();
+        const linkField = hostOperations.getByLabel('Room link', { exact: true });
+        await expect(linkField).toHaveValue(/#rallar-room\?.*joinCode=/);
+        const originalLink = await linkField.inputValue();
+        const reference = new URLSearchParams(new URL(originalLink).hash.slice('#rallar-room?'.length)).get(
+            'groupId'
+        );
+        expect(reference).toBeTruthy();
+        const guestOperations = await openOperations(guest, originalLink);
+        await expect(guestOperations.getByText(`Sign in to enter ${reference}.`, { exact: true })).toBeVisible();
+        await signIn(guest, 'bob');
+        await expect(guestOperations.getByText(`Entered ${reference}.`, { exact: true })).toBeVisible();
 
-            const appoint = hostOperations.getByRole('button', { name: 'Appoint this SPA', exact: true });
-            if (await appoint.isEnabled()) {
-                await appoint.click();
-            }
-            await expect(hostOperations.getByRole('button', { name: '1m', exact: true })).toBeEnabled({
-                timeout: 20_000
-            });
-            await hostOperations.getByRole('button', { name: '1m', exact: true }).click();
-            await expect(guestOperations.locator('.match-panel strong')).toHaveText(/^[01]:\d{2}$/, {
-                timeout: 20_000
-            });
-            await guest.screenshot({ path: testInfo.outputPath('private-arena-participating.png'), fullPage: true });
-            await hostOperations.getByRole('button', { name: 'Rotate room code', exact: true }).click();
-            await expect(linkField).toHaveValue(/#rallar-room\?.*joinCode=/);
-            await expect(linkField).not.toHaveValue(originalLink);
-            await guest.reload();
-            await openOperationsPanel(guest);
-            await expect(guestOperations.getByText(`Entered ${reference}.`, { exact: true })).toBeVisible();
+        const appoint = hostOperations.getByRole('button', { name: 'Appoint this SPA', exact: true });
+        if (await appoint.isEnabled()) {
+            await appoint.click();
         }
-        finally {
-            try {
-                for (const [name, profiler] of profiles) {
-                    const { profile } = await profiler.send('Profiler.stop');
-                    await writeFile(testInfo.outputPath(`${name}.cpuprofile`), JSON.stringify(profile));
-                }
-            }
-            finally {
-                await hostContext.close();
-                await guestContext.close();
-            }
-        }
+        await expect(hostOperations.getByRole('button', { name: '1m', exact: true })).toBeEnabled({
+            timeout: 20_000
+        });
+        await hostOperations.getByRole('button', { name: '1m', exact: true }).click();
+        await expect(guestOperations.locator('.match-panel strong')).toHaveText(/^[01]:\d{2}$/, {
+            timeout: 20_000
+        });
+        await guest.screenshot({ path: testInfo.outputPath('private-arena-participating.png'), fullPage: true });
+        await hostOperations.getByRole('button', { name: 'Rotate room code', exact: true }).click();
+        await expect(linkField).toHaveValue(/#rallar-room\?.*joinCode=/);
+        await expect(linkField).not.toHaveValue(originalLink);
+        await guest.reload();
+        await openOperationsPanel(guest);
+        await expect(guestOperations.getByText(`Entered ${reference}.`, { exact: true })).toBeVisible();
     }
 );
 
-test(
+arenaRoomTest(
     'requires an account invitation, honors revocation, and accepts a reissued invitation',
-    async ({ browser }, testInfo) => {
+    async ({ page: host, guest }, testInfo) => {
         test.skip(
             process.env.RALLAR_ARENA_FULL_STACK !== '1',
             'Requires the local API-v1 memory fixture on port 8080.'
         );
-        const hostContext = await browser.newContext();
-        const guestContext = await browser.newContext();
-        try {
-            const host = await hostContext.newPage();
-            const guest = await guestContext.newPage();
-            const hostOperations = await openOperations(host, '/');
-            await signIn(host, 'alice');
-            await openOperations(guest, '/');
-            await signIn(guest, 'bob');
-            const guestAccountReference = await guest.getByLabel('Account reference', { exact: true }).inputValue();
-            await hostOperations.getByRole('button', { name: 'New invite-only arena', exact: true }).click();
-            const linkField = hostOperations.getByLabel('Room link', { exact: true });
-            await expect(linkField).toHaveValue(/#rallar-room\?/);
-            const link = await linkField.inputValue();
-            expect(link).not.toContain('joinCode=');
-            const reference = new URLSearchParams(new URL(link).hash.slice('#rallar-room?'.length)).get('groupId');
-            const guestOperations = await openOperations(guest, link);
-            await expect(guestOperations.getByRole('alert')).toContainText('Room entry was denied.');
-            await hostOperations.getByLabel('Invite account reference', { exact: true }).fill(guestAccountReference);
-            await hostOperations.getByRole('button', { name: 'Invite account', exact: true }).click();
-            await hostOperations.getByRole('button', { name: 'Revoke invitation', exact: true }).click();
-            await expect(hostOperations.getByRole('button', { name: 'Revoke invitation', exact: true })).toHaveCount(0);
-            await guestOperations.getByRole('button', { name: 'Retry room entry', exact: true }).click();
-            await expect(guestOperations.getByRole('alert')).toContainText('Room entry was denied.');
-            await hostOperations.getByRole('button', { name: 'Invite account', exact: true }).click();
-            await expect(hostOperations.getByRole('button', { name: 'Revoke invitation', exact: true })).toHaveCount(1);
-            await guestOperations.getByRole('button', { name: 'Retry room entry', exact: true }).click();
-            await expect(guestOperations.getByText(`Entered ${reference}.`, { exact: true })).toBeVisible();
-            await guest.screenshot({ path: testInfo.outputPath('private-arena-invited.png'), fullPage: true });
-        }
-        finally {
-            await hostContext.close();
-            await guestContext.close();
-        }
+        const hostOperations = await openOperations(host, '/');
+        await signIn(host, 'alice');
+        await openOperations(guest, '/');
+        await signIn(guest, 'bob');
+        const guestAccountReference = await guest.getByLabel('Account reference', { exact: true }).inputValue();
+        await hostOperations.getByRole('button', { name: 'New invite-only arena', exact: true }).click();
+        const linkField = hostOperations.getByLabel('Room link', { exact: true });
+        await expect(linkField).toHaveValue(/#rallar-room\?/);
+        const link = await linkField.inputValue();
+        expect(link).not.toContain('joinCode=');
+        const reference = new URLSearchParams(new URL(link).hash.slice('#rallar-room?'.length)).get('groupId');
+        const guestOperations = await openOperations(guest, link);
+        await expect(guestOperations.getByRole('alert')).toContainText('Room entry was denied.');
+        await hostOperations.getByLabel('Invite account reference', { exact: true }).fill(guestAccountReference);
+        await hostOperations.getByRole('button', { name: 'Invite account', exact: true }).click();
+        await hostOperations.getByRole('button', { name: 'Revoke invitation', exact: true }).click();
+        await expect(hostOperations.getByRole('button', { name: 'Revoke invitation', exact: true })).toHaveCount(0);
+        await guestOperations.getByRole('button', { name: 'Retry room entry', exact: true }).click();
+        await expect(guestOperations.getByRole('alert')).toContainText('Room entry was denied.');
+        await hostOperations.getByRole('button', { name: 'Invite account', exact: true }).click();
+        await expect(hostOperations.getByRole('button', { name: 'Revoke invitation', exact: true })).toHaveCount(1);
+        await guestOperations.getByRole('button', { name: 'Retry room entry', exact: true }).click();
+        await expect(guestOperations.getByText(`Entered ${reference}.`, { exact: true })).toBeVisible();
+        await guest.screenshot({ path: testInfo.outputPath('private-arena-invited.png'), fullPage: true });
     }
 );
 
-test('rejects a rotated code after registration, accepts correction, and prioritizes a new invitation', async ({ browser }) => {
-    test.skip(process.env.RALLAR_ARENA_FULL_STACK !== '1', 'Requires the local API-v1 memory fixture on port 8080.');
-    const hostContext = await browser.newContext();
-    const guestContext = await browser.newContext();
-    try {
-        const host = await hostContext.newPage();
-        const guest = await guestContext.newPage();
+arenaRoomTest(
+    'rejects a rotated code after registration, accepts correction, and prioritizes a new invitation',
+    async ({ page: host, guest }) => {
+        test.skip(
+            process.env.RALLAR_ARENA_FULL_STACK !== '1',
+            'Requires the local API-v1 memory fixture on port 8080.'
+        );
         const hostOperations = await openOperations(host, '/');
         await signIn(host, 'alice');
         await hostOperations.getByRole('button', { name: 'New code arena', exact: true }).click();
@@ -201,11 +166,7 @@ test('rejects a rotated code after registration, accepts correction, and priorit
         await expect(guestOperations.getByText(`Entered ${reference}.`, { exact: true })).toHaveCount(0);
         await expect(guest).not.toHaveURL(/joinCode=/);
     }
-    finally {
-        await hostContext.close();
-        await guestContext.close();
-    }
-});
+);
 
 async function signIn(page: Page, username: string): Promise<void> {
     const operations = page.getByRole('region', { name: 'Arena operations' });

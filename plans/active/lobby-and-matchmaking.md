@@ -23,8 +23,9 @@ the next slice unless the maintainer explicitly requests a stack. PR #696 delive
 foundation, PR #697 delivered Quick Join, and
 [PR #699](https://github.com/intact-software-systems/ar-eye-hunter/pull/699) delivered slice 2 using
 the maintainer's selected existing-measurement scope.
-[PR #700](https://github.com/intact-software-systems/ar-eye-hunter/pull/700) implements shareable
-private-room entry in both games. Wait for its maintainer merge before planning the next slice.
+[PR #700](https://github.com/intact-software-systems/ar-eye-hunter/pull/700) completes shareable
+private-room entry in both games. Its implementation plan is retired with this delivery; the PR
+owns final validation and review. Wait for its maintainer merge before planning the next slice.
 
 ## Current foundation
 
@@ -102,9 +103,9 @@ all-or-none admission decisions before it becomes a platform promise.
 
 ## Delivery priorities
 
-| Priority    | Outcomes                                                                                    |
-| ----------- | ------------------------------------------------------------------------------------------- |
-| Current     | Share links/codes (4), carrying private-room entry through authentication and reload.       |
+| Priority    | Outcomes                                                                                  |
+| ----------- | ----------------------------------------------------------------------------------------- |
+| Current     | Maintainer review and merge of share links/codes (4), implemented in PR #700.               |
 | Next        | Visibility choices (5); reconnect/recent-room behavior (6).                                 |
 | Then        | Automatic directory freshness (7), introducing push when the experience needs it.           |
 | Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them. |
@@ -215,7 +216,8 @@ Room admission remains separate from joining an expedition or participating in a
 uses one connection/runtime owner and removes the affected bare-ID restoration and duplicate hook.
 Both games have browser evidence for sharing through authentication, actual participation, rotation,
 reload, rejected credentials, and a replacement invitation. The PR owns current validation and
-review evidence; the next slice begins only after its maintainer merge.
+review evidence. The completed implementation plan is removed with this delivery; the next slice
+begins only after its maintainer merge.
 
 ## Slice 5: unlisted rooms
 

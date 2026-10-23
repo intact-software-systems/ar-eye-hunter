@@ -1,4 +1,8 @@
-import { defineConfig, devices, type PlaywrightTestConfig } from '@playwright/test';
+import {
+    defineConfig,
+    devices,
+    type PlaywrightTestConfig
+} from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 
 const fullStackEnabled = process.env.RELIC_HUNTERS_FULL_STACK === '1' ||
@@ -16,6 +20,7 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
                 url: 'http://127.0.0.1:8090/api/config',
                 env: {
                     RALLAR_AUTH_CREDENTIAL_SECRET: randomUUID(),
+                    RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET: randomUUID(),
                     RALLAR_LOGIN_USER_RATE_LIMIT: '100'
                 },
                 reuseExistingServer: false,
