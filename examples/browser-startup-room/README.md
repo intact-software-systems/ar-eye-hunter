@@ -52,3 +52,28 @@ subscriptions.unsubscribe();
 new one. `rooms.session(...)` returns a room-bound handle. Use that handle for
 `room.message(...)` and `room.realtime(...)` so app code does not need to pass
 `roomRef` on every send.
+
+To enter an existing open room, expose a separate Quick Join action:
+
+```ts
+const result = await rallar.rooms.quickJoin({ kind: 'room', q: 'demo arena' });
+if (result.status === 'joined') {
+    const room = rallar.rooms.session(result.snapshot.group);
+    renderCurrentRoom(room);
+}
+else {
+    showMessage('No available room. Try again or create one.');
+}
+```
+
+Quick Join excludes empty rooms by default; pass `includeEmpty: true` to include them.
+The server ranks eligible rooms by distinct online members, then room ID, and applies
+normal admission and capacity rules. It creates no room or pending approval request.
+An unavailable result preserves the current room. A joined result connects presence,
+switches the current room, and leaves the previous room unless `leaveCurrent: false`.
+Room membership does not enlist a player in an application-owned match or expedition.
+
+If admission succeeded but presence or adoption failed, `RallarQuickJoinPartialFailureError`
+exposes `joinedRoom` and the original `cause`. A failure to leave the previous room uses
+`RallarRoomSwitchPartialFailureError` with `operation: 'quick-join'`, and the new room
+stays current. Recover that room explicitly instead of automatically selecting another.

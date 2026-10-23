@@ -23,7 +23,11 @@ export default defineConfig({
     projects: [
         {
             name: 'desktop-delivery',
-            testMatch: ['**/director-capability-delivery.spec.ts', '**/open-arena-directory.spec.ts'],
+            testMatch: [
+                '**/director-capability-delivery.spec.ts',
+                '**/open-arena-directory.spec.ts',
+                '**/quick-join.spec.ts'
+            ],
             use: {
                 ...devices['Desktop Chrome'],
                 browserName: 'chromium'

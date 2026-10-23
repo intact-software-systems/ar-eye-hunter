@@ -229,6 +229,21 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'asNodes'
     }),
+    // Group registration reads Babel's untrusted fields only after object/array
+    // and mandatory type-string guards. The AST record retains scalar checks at each
+    // consumer; neither helper admits unchecked values as domain contracts.
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-group-registration.ts',
+        rule: 'boundary.unknown',
+        symbol: 'asNode',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-group-registration.ts',
+        rule: 'boundary.unknown',
+        symbol: 'asNodes',
+        maximumMagnitude: 1
+    }),
     // Canonical filesystem JSON must be a record with a record imports member;
     // every target is checked as a string before the import mapping leaves.
     Object.freeze({
@@ -940,33 +955,6 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: undefined,
         maximumMagnitude: 1
-    }),
-    // These exact generic JSON boundaries guard arrays, objects and primitives
-    // before recursive projection. Only comparison, serialization or its opaque
-    // representation leaves; no unknown input becomes trusted domain state.
-    // Persisted ordering preserves ALM fingerprint bytes and non-JSON conversion.
-    // The overflow cap covers its current magnitude; detailed findings have no
-    // numeric magnitude. Every future touched use still needs whole-owner review.
-    Object.freeze({
-        path: 'packages/shared/repository/state-utils.ts',
-        rule: 'boundary.unknown',
-        symbol: 'jsonEquals'
-    }),
-    Object.freeze({
-        path: 'packages/shared/repository/state-utils.ts',
-        rule: 'boundary.unknown',
-        symbol: 'stableJsonStringify'
-    }),
-    Object.freeze({
-        path: 'packages/shared/repository/state-utils.ts',
-        rule: 'boundary.unknown',
-        symbol: 'toStableJson'
-    }),
-    Object.freeze({
-        path: 'packages/shared/repository/state-utils.ts',
-        rule: 'boundary.unknown',
-        symbol: 'toOrderedJson',
-        maximumMagnitude: 3
     }),
     // These exact JSON readers reject malformed input at the external boundary
     // and recursively produce only RtcBaselineJson. No unknown values propagate
@@ -2350,28 +2338,6 @@ export const reviewedDispositions = Object.freeze([
     }),
     ...reviewedScenarioDispositions,
     ...reviewedBrowserDispositions,
-    // The OpenAPI schema clone walks a JSON schema document whose nodes are objects, arrays and scalars until
-    // the self reference is rewritten; the JSON response serialises an already-validated value. Both are
-    // serialisation owners, not domain inputs; a touched use still needs the whole-owner review.
-    Object.freeze({
-        path: 'apps/rallar-black-box-control-server/src/routes/swagger-routes.ts',
-        rule: 'boundary.unknown',
-        symbol: 'cloneJsonSchema',
-        maximumMagnitude: 3
-    }),
-    Object.freeze({
-        path: 'apps/rallar-black-box-control-server/src/routes/swagger-routes.ts',
-        rule: 'boundary.unknown',
-        symbol: 'jsonResponse',
-        maximumMagnitude: 1
-    }),
-    // The swagger module's JSON record alias names the raw schema document shape the two owners above walk.
-    Object.freeze({
-        path: 'apps/rallar-black-box-control-server/src/routes/swagger-routes.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined,
-        maximumMagnitude: 1
-    }),
     // Recipe failure details and outputs are recipe-authored JSON the control server carries verbatim into the
     // artifact bundle; the consumer decodes them against the recipe's own contract. Three contract fields, no
     // owner function; a fourth use needs its own review.

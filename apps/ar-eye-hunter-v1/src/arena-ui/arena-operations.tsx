@@ -42,7 +42,7 @@ export function ArenaOperations(props: ArenaOperationsProps) {
         <section className="hud hud--side" aria-label="Arena operations">
             {arena.connectionState === 'signed-out' || !arena.session
                 ? <ArenaAuthForm fields={fields} setFields={setFields} submit={submit} />
-                : <ArenaSessionPanel {...props} />}
+                : <ArenaSessionPanel key={arena.session.sessionId} {...props} />}
             {arena.error && <div className="panel error-panel">{arena.error}</div>}
             <div className="panel compact">
                 <div className="control-grid">
@@ -129,6 +129,7 @@ function ArenaSessionPanel({ arena, localColor, matchRemainingMs }: ArenaOperati
                     <span>{toShortId(arena.session?.sessionId ?? '')}</span>
                 </div>
             </div>
+            <ArenaQuickJoin arena={arena} />
             <div className="room-actions">
                 <button type="button" onClick={arena.createArenaRoom}>New Arena</button>
                 <button type="button" onClick={arena.refreshRooms}>Refresh</button>
@@ -161,6 +162,35 @@ function ArenaSessionPanel({ arena, localColor, matchRemainingMs }: ArenaOperati
                 <span className="event-kind">{arena.activeEvent?.kind ?? arena.aiStatus}</span>
             </div>
             <ArenaRoomList arena={arena} />
+        </div>
+    );
+}
+
+function ArenaQuickJoin({ arena }: Pick<ArenaOperationsProps, 'arena'>) {
+    const [status, setStatus] = useState<'idle' | 'joining' | 'joined' | 'unavailable' | 'error'>('idle');
+    const [error, setError] = useState<string | undefined>();
+    const join = async () => {
+        setStatus('joining');
+        setError(undefined);
+        try {
+            const result = await arena.quickJoinArenaRoom();
+            setStatus(result ?? 'idle');
+        }
+        catch (error) {
+            setError(error instanceof Error ? error.message : String(error));
+            setStatus('error');
+        }
+    };
+    return (
+        <div className="stack">
+            <button type="button" className="primary" onClick={join} disabled={status === 'joining'}>
+                {status === 'joining' ? 'Joining…' : 'Quick Join'}
+            </button>
+            <p className="muted" role="status">
+                {status === 'unavailable' && 'No available arena. Try again or create one.'}
+                {status === 'joined' && 'Joined arena.'}
+                {status === 'error' && error}
+            </p>
         </div>
     );
 }

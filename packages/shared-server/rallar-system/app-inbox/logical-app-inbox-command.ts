@@ -5,6 +5,7 @@ import { toDescriptorCommand } from '../group-state/group-mutation-authority.ts'
 import type { GroupMutationDescriptor } from '../group-state/group-state-service-contracts.ts';
 import { decodeGroupMutationDescriptor } from '../group-state/inbox/decode-group-state-inbox-authority.ts';
 import { assertGroupMutationCommand } from '../group-state/mutation/command-validation/assert-group-mutation-command.ts';
+import { decodeGroupQuickJoinCommand } from '../group-state/quick-join/group-quick-join-codec.ts';
 import { encodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../protocol/json-wire-identity.ts';
 import { decodeRtcRttAppInboxCommand } from '../rtc-rtt/inbox/rtc-rtt-app-inbox-authority.ts';
 import {
@@ -33,6 +34,14 @@ export function toLogicalAppInboxCommand(
     const stableDomainCommand = toStableDomainCommand(enqueue.type, enqueue.data);
     if (stableDomainCommand) {
         return encodeLogicalCommand({ type: enqueue.type, authority: null, data: stableDomainCommand });
+    }
+    if (enqueue.type === AppInboxType.GROUP_QUICK_JOIN) {
+        const command = decodeGroupQuickJoinCommand(enqueue.data);
+        return encodeLogicalCommand({
+            type: enqueue.type,
+            authority: null,
+            data: encodeJsonWireValue({ ...command, actorSessionId: null }, 'Logical Quick Join command')
+        });
     }
     return encodeLogicalCommand({
         type: enqueue.type,

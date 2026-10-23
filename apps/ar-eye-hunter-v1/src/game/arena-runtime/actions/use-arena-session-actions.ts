@@ -5,6 +5,7 @@ import { rallar } from '@shared-web/browser/rallar.ts';
 import type { RallarDirectorStatus, RallarRoomSummary } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupDirectoryEntry } from '@shared/api/group-directory/group-directory-types.ts';
+import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
 import { createRallarAiFunnyRoomName, createRallarAiRoomNameSeed } from '@shared/rallar-ai/mod.ts';
 
 import { GAME_ROOM_NAME } from '../../types.ts';
@@ -53,7 +54,14 @@ export function useArenaSessionActions(
     input: ArenaSessionActionsInput
 ): Pick<
     ArenaConnection,
-    'login' | 'register' | 'logout' | 'refreshRooms' | 'createArenaRoom' | 'joinRoom' | 'appointSelfAsDirector'
+    | 'login'
+    | 'register'
+    | 'logout'
+    | 'refreshRooms'
+    | 'createArenaRoom'
+    | 'quickJoinArenaRoom'
+    | 'joinRoom'
+    | 'appointSelfAsDirector'
 > {
     const authentication = useArenaAuthentication(input);
     const rooms = useArenaRoomActions(input);
@@ -198,7 +206,7 @@ async function refreshArenaRooms(input: ArenaSessionActionsInput): Promise<void>
 
 function useArenaRoomActions(
     input: ArenaSessionActionsInput
-): Pick<ArenaConnection, 'refreshRooms' | 'createArenaRoom' | 'joinRoom'> {
+): Pick<ArenaConnection, 'refreshRooms' | 'createArenaRoom' | 'quickJoinArenaRoom' | 'joinRoom'> {
     const refreshRooms = useCallback(() => refreshArenaRooms(input), [
         input.sessionRef,
         input.directoryGenerationRef,
@@ -221,7 +229,66 @@ function useArenaRoomActions(
         input.clearRoomScopedArenaState,
         refreshRooms
     ]);
-    return { refreshRooms, createArenaRoom, joinRoom };
+    const quickJoinArenaRoom = useCallback(() => quickJoinArena(input, refreshRooms), [
+        input.sessionRef,
+        input.setRoomId,
+        input.clearRoomScopedArenaState,
+        refreshRooms
+    ]);
+    return { refreshRooms, createArenaRoom, quickJoinArenaRoom, joinRoom };
+}
+
+async function quickJoinArena(
+    input: ArenaSessionActionsInput,
+    refreshRooms: ArenaConnection['refreshRooms']
+): Promise<'joined' | 'unavailable' | undefined> {
+    const session = input.sessionRef.current;
+    if (!session) {
+        return undefined;
+    }
+    const isCurrent = () =>
+        input.sessionRef.current?.sessionId === session.sessionId &&
+        input.sessionRef.current?.clientId === session.clientId;
+    let result: QuickJoinGroupResult;
+    try {
+        result = await rallar.rooms.quickJoin({ kind: 'room', q: OPEN_ARENA_DIRECTORY_QUERY });
+    }
+    catch (error) {
+        if (!isCurrent()) {
+            return undefined;
+        }
+        if (
+            error instanceof Error && error.name === 'RallarRoomSwitchPartialFailureError' &&
+            'operation' in error && error.operation === 'quick-join'
+        ) {
+            adoptQuickJoinedArena(input, rallar.rooms.state().currentRoomId);
+            try {
+                await refreshRooms();
+            }
+            finally {
+                // The room is already current; retain the cleanup failure for the user even if refresh fails too.
+                throw error;
+            }
+        }
+        throw error;
+    }
+    if (!isCurrent()) {
+        return undefined;
+    }
+    if (result.status === 'joined') {
+        adoptQuickJoinedArena(input, result.snapshot.group.groupId);
+        await refreshRooms();
+    }
+    return result.status;
+}
+
+function adoptQuickJoinedArena(input: ArenaSessionActionsInput, roomId: string | undefined): void {
+    // The room subscription normally adopts first, while previous-room cleanup is still pending.
+    if (input.roomIdRef.current !== roomId) {
+        input.clearRoomScopedArenaState();
+        input.roomIdRef.current = roomId;
+        input.setRoomId(roomId);
+    }
 }
 
 async function createAndSelectArenaRoom(

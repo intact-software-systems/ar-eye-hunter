@@ -3,12 +3,58 @@ import { describe, expect, it } from 'vitest';
 
 import { MUTATION_ROUTE_INVENTORY, validateMutationRouteInventory } from '../../routing/mutation-routing-inventory.ts';
 
+interface QuickJoinRouteMutationCase {
+    readonly name: string;
+    readonly filePath: string;
+    readonly before: string;
+    readonly after: string;
+}
+
 const ROOT_ROUTES = 'apps/api-v1/src/group-state/register-group-state-routes.ts';
 const PRESENCE_ROUTES = 'apps/api-v1/src/group-state/register-group-presence-routes.ts';
+const QUICK_JOIN_ROUTE = 'apps/api-v1/src/group-state/register-group-quick-join-route.ts';
 const ROOT_PRESENCE_CALL = '  registerGroupPresenceRoutes(app, dependencies, authorization);';
 const PRIVATE_PRESENCE_CALL = '  registerConnectGroupPresenceRoute(app, dependencies, authorization);';
 
 describe('group HTTP mutation route construction', () => {
+    it('traces the single Quick Join route to its dedicated AppInbox owner', () => {
+        expect(MUTATION_ROUTE_INVENTORY.find((entry) => entry.type === 'GROUP_QUICK_JOIN')).toMatchObject({
+            sourcePath: QUICK_JOIN_ROUTE,
+            enqueueMarker: 'processQuickJoin',
+            owner: 'GroupStateInboxService.processQuickJoin'
+        });
+        expect(validateMutationRouteInventory(MUTATION_ROUTE_INVENTORY)).toEqual([]);
+    });
+
+    it.each([
+        {
+            name: 'missing root registration',
+            filePath: ROOT_ROUTES,
+            before: 'registerGroupQuickJoinRoute(app, dependencies);',
+            after: ''
+        },
+        {
+            name: 'wrong root arguments',
+            filePath: ROOT_ROUTES,
+            before: 'registerGroupQuickJoinRoute(app, dependencies);',
+            after: 'registerGroupQuickJoinRoute(dependencies, app);'
+        },
+        { name: 'wrong HTTP method', filePath: QUICK_JOIN_ROUTE, before: 'app.post(', after: 'app.get(' },
+        {
+            name: 'disconnected handler',
+            filePath: QUICK_JOIN_ROUTE,
+            before: 'dependencies.processQuickJoin(',
+            after: 'dependencies.unrelatedOperation('
+        }
+    ])('rejects Quick Join with $name', ({ filePath, before, after }: QuickJoinRouteMutationCase) => {
+        const source = readFileSync(filePath, 'utf8');
+        const changed = source.replace(before, after);
+        expect(changed).not.toBe(source);
+        expect(validateMutationRouteInventory(MUTATION_ROUTE_INVENTORY, {
+            sourceOverrides: new Map([[filePath, changed]])
+        })).toEqual(expect.arrayContaining([expect.stringContaining('GROUP_QUICK_JOIN')]));
+    });
+
     it('follows an imported family binding renamed locally at the root', () => {
         const source = readFileSync(ROOT_ROUTES, 'utf8');
         const renamed = source.replace('import { registerGroupPresenceRoutes }', 'import { registerGroupPresenceRoutes as mountPresence }')

@@ -3,7 +3,6 @@ import { toRallarWorkflowPolicies, type RallarOperationOptions } from '@shared-w
 import type { RallarStateSnapshotAcceptanceInput } from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts';
-import type { ClientSnapshot } from '@shared/api/client-types.ts';
 
 import type { RallarLeaveRoomOptions } from './rallar-room-contracts.ts';
 import type { GroupRef, GroupSnapshot, StateScope } from './room-group-state-translation.ts';
@@ -12,6 +11,10 @@ import type { RallarRoomStateStorePort } from './room-state-store.ts';
 
 export interface LeaveRoomInput {
     readonly input?: string | RallarLeaveRoomOptions;
+    readonly sessionFence?: {
+        readonly session: AuthSession;
+        readonly assertCurrent: () => void;
+    };
     readonly stateStore: RallarRoomStateStorePort;
     readonly connect: (options?: RallarOperationOptions) => Promise<ApiMiddleware>;
     readonly requireSession: () => AuthSession;
@@ -28,8 +31,10 @@ export async function leaveRoom(input: LeaveRoomInput): Promise<GroupSnapshot | 
     return await input.runAuthAwareOperation(async () => {
         const leaveOptions = typeof input.input === 'string' ? { roomId: input.input } : (input.input ?? {});
         const operationOptions = input.resolveOperationOptions(leaveOptions);
+        input.sessionFence?.assertCurrent();
         const context = await input.connect(operationOptions);
-        const session = input.requireSession();
+        input.sessionFence?.assertCurrent();
+        const session = input.sessionFence?.session ?? input.requireSession();
         const explicitScope = input.resolveOperationScope(leaveOptions.scope);
         const roomRef = leaveOptions.roomRef ??
             (leaveOptions.roomId
@@ -49,13 +54,17 @@ export async function leaveRoom(input: LeaveRoomInput): Promise<GroupSnapshot | 
             sessionId: session.sessionId,
             generationId: context.middleware.heartbeat.generationId,
             scope,
+            authSession: session,
+            assertCurrent: input.sessionFence?.assertCurrent,
             policies: toRallarWorkflowPolicies<StateGroupWorkflowValue>(operationOptions)
         });
+        input.sessionFence?.assertCurrent();
         input.stateStore.clearCurrentRoomIfMatches(
             roomRef ?? roomId,
             leaveOptions.clearCurrent ?? true
         );
         await input.acceptSnapshots({ context, clients: [], groups: [snapshot], scope });
+        input.sessionFence?.assertCurrent();
         return snapshot;
     });
 }

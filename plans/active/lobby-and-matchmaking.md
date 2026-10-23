@@ -19,7 +19,9 @@ work stays outcome-shaped until its prerequisites and product evidence are avail
 Across these slices, add no legacy path, duplicated implementation, or migration code. Prefer
 existing repository patterns and keep code, tests, documentation, and plans consistent. Each slice
 uses test-driven development and one current PR; wait for the maintainer to merge it before starting
-the next slice.
+the next slice unless the maintainer explicitly requests a stack. The maintainer selected Quick Join
+(slice 1) next. PR #696 merged the slice 0 foundation; PR #697 now targets main. Finish that slice and wait for its merge
+before continuing.
 
 ## Current foundation
 
@@ -97,13 +99,13 @@ all-or-none admission decisions before it becomes a platform promise.
 
 ## Delivery priorities
 
-| Priority    | Outcomes                                                                                                |
-| ----------- | ------------------------------------------------------------------------------------------------------- |
-| First       | Slice 0 reliability; share links/codes (4); visibility choices (5); reconnect/recent-room behavior (6). |
-| Next        | Quick Join (1), designed and validated against both AR Eye and Relic (9).                               |
-| Then        | Automatic directory freshness (7), introducing push when the experience needs it.                       |
-| Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them.             |
-| Later       | Latency ranking (2), scheduled rooms (8), and a separate tournament capability.                         |
+| Priority    | Outcomes                                                                                             |
+| ----------- | ---------------------------------------------------------------------------------------------------- |
+| Current     | Slice 1 Quick Join on slice 0 reliability, designed and validated against both AR Eye and Relic (9). |
+| Next        | Share links/codes (4); visibility choices (5); reconnect/recent-room behavior (6).                   |
+| Then        | Automatic directory freshness (7), introducing push when the experience needs it.                    |
+| Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them.          |
+| Later       | Latency ranking (2), scheduled rooms (8), and a separate tournament capability.                      |
 
 Relic validation is a constraint throughout, not a dependency postponed to slice 9. Operator
 reliability work may ship independently where a concrete operational need warrants it.
@@ -134,16 +136,30 @@ plan is removed with its delivery; the PR owns validation and review evidence.
 
 ## Slice 1: Quick Join
 
-Automatically admit a caller to a suitable existing room in one authoritative operation. The browser
-surface is `rallar.rooms.quickJoin()`; apps use “Quick Join” where that accurately describes the result.
-Selection and final admission share current policy, and conflict retries restart from fresh state.
-Two callers racing for the last place cannot both receive it; the other caller finds another room or
-receives an unavailable result. Do not promise global snapshot isolation across all candidate rooms.
+Implemented and validated in [PR #697](https://github.com/intact-software-systems/ar-eye-hunter/pull/697),
+awaiting maintainer merge. `rallar.rooms.quickJoin()` admits the caller to a suitable existing
+room through one authoritative AppInbox operation. Its REST endpoint is
+`POST …/groups/quick-join/requests/:requestId`; selection accepts `kind`, `q`, and `includeEmpty` with
+the directory's defaults. Candidates are open rooms in the exact scope, excluding existing active
+memberships, ranked by distinct online members descending and group ID ascending.
 
-The default never creates a room or places someone in an approval queue. The app supplies its
-participation requirements and handles the empty result through the start-and-share experience above.
-AppInbox owns mutations and retry; define the operation contract and concurrency evidence when this
-slice enters the implementation horizon.
+Selection uses canonical admission windows, effective capacity, and membership policy. Conflict
+retries restart from fresh state. Two callers racing for the last place cannot both receive it; the
+other caller finds another room or receives `{ status: 'unavailable' }`. A successful admission
+returns `{ status: 'joined', snapshot }`. Matching request replay preserves either durable result;
+reusing the request ID with different selection semantics fails with a conflict. Global snapshot
+isolation across candidate rooms is not promised.
+
+The browser connects presence and switches only after admission. Unavailable preserves the current
+room; a partial switch failure exposes the admitted room. Session replacement cannot publish an old
+operation's room state. AR Eye offers pending, unavailable, joined, and failure feedback and retains
+New Arena. The shared facade is validated with Relic-shaped rooms, while expedition participation
+remains a separate application action.
+
+Quick Join creates no room, approval request, or activity-seat reservation. Applications supply their
+room-selection criteria and handle unavailable through the start-and-share experience above. The PR
+owns concurrency, browser, performance, and review evidence. Wait for its merge before planning the
+next slice.
 
 ## Slice 2: latency-ranked discovery
 

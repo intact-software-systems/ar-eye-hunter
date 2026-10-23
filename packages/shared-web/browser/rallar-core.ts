@@ -67,6 +67,8 @@ export type {
     RallarPeopleEventOptions,
     RallarPeopleState,
     RallarPerson,
+    RallarQuickJoinPartialFailureError,
+    RallarQuickJoinRoomInput,
     RallarRegisterOptions,
     RallarReplayEventsResult,
     RallarReplayPeopleEventsOptions,
@@ -149,3 +151,5 @@ export type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-vol
 
 export { RallarRtcCaptureConnectionRequiredError } from '@shared-web/browser/connection/rallar-rtc-capture-connection-required-error.ts';
 export { RallarRtcCaptureUnverifiedError } from '@shared-web/browser/connection/rallar-rtc-capture-unverified-error.ts';
+
+export type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';

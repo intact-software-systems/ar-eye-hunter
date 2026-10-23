@@ -53,6 +53,7 @@ import type {
     GroupMutationSnapshotRead
 } from './mutation/group-mutation-contracts.ts';
 import type { GroupSessionCleanupInput } from './presence/group-session-cleanup.ts';
+import type { GroupQuickJoinService } from './quick-join/group-quick-join-service.ts';
 
 import type {
     GroupConnectAppInboxPayload,
@@ -177,6 +178,7 @@ export type GroupStateService =
     & GroupStateMutationService
     & Readonly<{
         sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
+        quickJoin: GroupQuickJoinService;
         authorizeMutation(
             descriptor: GroupMutationDescriptor,
             authority: IssuedAuthSession

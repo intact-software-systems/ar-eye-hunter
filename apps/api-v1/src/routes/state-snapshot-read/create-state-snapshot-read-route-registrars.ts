@@ -31,7 +31,7 @@ export interface ApiV1StateSnapshotRouteRuntime {
     >;
     readonly groupStateInboxService: Pick<
         ApiV1Runtime['groupStateInboxService'],
-        'processAuthenticatedGroupEntryUntilCompletion'
+        'processAuthenticatedGroupEntryUntilCompletion' | 'processQuickJoinUntilCompletion'
     >;
     readonly clientStateService: Pick<
         ApiV1Runtime['clientStateService'],
@@ -106,6 +106,8 @@ export function createStateSnapshotReadRouteRegistrars<Runtime extends ApiV1Stat
                 requireApiAuthSession: (request) =>
                     operations.requireApiAuthSession(request, runtime.authSessionRepository),
                 groupAdmissionQuota,
+                processQuickJoin: (input, authority) =>
+                    runtime.groupStateInboxService.processQuickJoinUntilCompletion(input, authority),
                 processGroupAppInbox: async (
                     authority: GroupStateRouteAuthSession,
                     enqueue: AuthenticatedGroupMutationEnqueue

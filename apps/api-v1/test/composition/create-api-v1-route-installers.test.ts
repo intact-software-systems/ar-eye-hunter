@@ -92,7 +92,8 @@ function createInput(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRunti
                 processAuthenticatedEntryUntilCompletion: rejectUnusedOperation
             },
             groupStateInboxService: {
-                processAuthenticatedGroupEntryUntilCompletion: rejectUnusedOperation
+                processAuthenticatedGroupEntryUntilCompletion: rejectUnusedOperation,
+                processQuickJoinUntilCompletion: rejectUnusedOperation
             },
             topologyInboxService: {
                 processAuthenticatedEntryUntilCompletion: rejectUnusedOperation,

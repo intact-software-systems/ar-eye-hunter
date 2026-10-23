@@ -2,15 +2,28 @@ import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade
 import { toRallarWorkflowPolicies, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef, toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts';
-import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
+import { CommandCancelledError } from '@shared/cache/Command.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 
 import { createRoomSwitchPartialFailureError } from './create-and-join-room.ts';
 import { leaveRoom, type LeaveRoomInput } from './leave-room.ts';
-import type { RallarJoinRoomInput, RallarJoinRoomOptions, RallarRoomSession } from './rallar-room-contracts.ts';
+import type {
+    RallarJoinRoomInput,
+    RallarJoinRoomOptions,
+    RallarQuickJoinPartialFailureError,
+    RallarQuickJoinRoomInput,
+    RallarRoomSession,
+    RallarRoomSwitchOperation
+} from './rallar-room-contracts.ts';
 import { requireOwnWsConnectionGenerationId } from './require-own-ws-connection-generation-id.ts';
-import type { GroupRef, GroupSnapshot, StateScope } from './room-group-state-translation.ts';
-import { joinStateGroup, type StateGroupWorkflowValue } from './room-group-state-workflows.ts';
-import type { RallarRoomStateStorePort } from './room-state-store.ts';
+import type { GroupRef, GroupSnapshot } from './room-group-state-translation.ts';
+import {
+    createStateGroupPresenceCommand,
+    joinStateGroup,
+    quickJoinStateGroup,
+    type StateGroupWorkflowValue
+} from './room-group-state-workflows.ts';
 import { assertValidRoomTarget, toJoinRoomTarget } from './room-target.ts';
 
 export interface JoinRoomInput extends Omit<LeaveRoomInput, 'input'> {
@@ -20,11 +33,10 @@ export interface JoinRoomInput extends Omit<LeaveRoomInput, 'input'> {
 }
 
 interface LeavePreviousRoomAfterJoinInput {
-    readonly input: JoinRoomInput;
+    readonly input: Omit<LeaveRoomInput, 'input'>;
+    readonly operation: RallarRoomSwitchOperation;
     readonly joinedRoom: GroupSnapshot;
     readonly currentRoomRef: GroupRef | undefined;
-    readonly targetRoomRef: GroupRef | undefined;
-    readonly targetRoomId: string;
     readonly leaveCurrent: boolean | undefined;
     readonly operationOptions: RallarOperationOptions;
 }
@@ -69,13 +81,119 @@ export async function joinRoom(input: JoinRoomInput): Promise<GroupSnapshot> {
             input,
             joinedRoom: snapshot,
             currentRoomRef,
-            targetRoomRef: roomRef,
-            targetRoomId: roomId,
+            operation: 'join',
             leaveCurrent: joinInput.options.leaveCurrent,
             operationOptions
         });
         return snapshot;
     });
+}
+
+export interface QuickJoinRoomInput extends Omit<LeaveRoomInput, 'input'> {
+    readonly options: RallarQuickJoinRoomInput;
+}
+
+interface ConnectQuickJoinedRoomInput {
+    readonly dependencies: QuickJoinRoomInput;
+    readonly context: ApiMiddleware;
+    readonly session: AuthSession;
+    readonly options: RallarOperationOptions;
+    readonly joinedRoom: GroupSnapshot;
+    readonly assertCurrent: () => void;
+}
+
+export async function quickJoinRoom(input: QuickJoinRoomInput): Promise<QuickJoinGroupResult> {
+    return await input.runAuthAwareOperation(async () => {
+        const options = input.resolveOperationOptions(input.options);
+        const session = input.requireSession();
+        const context = await input.connect(options);
+        const currentRoomRef = input.stateStore.resolveCurrentRoomRef();
+        const scope = input.resolveOperationScope(input.options.scope);
+        const assertCurrent = (): void => {
+            if (options.signal?.aborted) {
+                throw new CommandCancelledError();
+            }
+            if (
+                input.requireSession().sessionId !== session.sessionId ||
+                context.session.sessionId !== session.sessionId
+            ) {
+                throw new DOMException('Quick Join belongs to an obsolete session', 'AbortError');
+            }
+        };
+        assertCurrent();
+        const result = await quickJoinStateGroup({
+            request: { kind: input.options.kind, q: input.options.q, includeEmpty: input.options.includeEmpty },
+            scope,
+            authSession: session,
+            policies: toRallarWorkflowPolicies<QuickJoinGroupResult>(options)
+        });
+        if (result.status === 'unavailable') {
+            assertCurrent();
+            return result;
+        }
+        const snapshot = await connectQuickJoinedRoom({
+            dependencies: input,
+            context,
+            session,
+            options,
+            joinedRoom: result.snapshot,
+            assertCurrent
+        });
+        await leavePreviousRoomAfterJoin({
+            input: { ...input, sessionFence: { session, assertCurrent } },
+            operation: 'quick-join',
+            joinedRoom: snapshot,
+            currentRoomRef,
+            leaveCurrent: input.options.leaveCurrent,
+            operationOptions: options
+        });
+        assertCurrent();
+        return { status: 'joined', snapshot };
+    });
+}
+
+async function connectQuickJoinedRoom(input: ConnectQuickJoinedRoomInput): Promise<GroupSnapshot> {
+    try {
+        return await input.dependencies.runAuthAwareOperation(async () => {
+            input.assertCurrent();
+            const scope = toStateScope(input.joinedRoom.group);
+            const connectionGenerationId = await requireOwnWsConnectionGenerationId(
+                input.context,
+                input.options.signal
+            );
+            input.assertCurrent();
+            const snapshot = await createStateGroupPresenceCommand({
+                groupId: input.joinedRoom.group.groupId,
+                principalId: input.session.clientId,
+                sessionId: input.session.sessionId,
+                generationId: input.context.middleware.heartbeat.generationId,
+                connectionGenerationId,
+                scope,
+                authSession: input.session,
+                policies: toRallarWorkflowPolicies<StateGroupWorkflowValue>(input.options)
+            }).run();
+            input.assertCurrent();
+            if (!snapshot) {
+                throw new Error('Quick Join presence did not produce a snapshot.');
+            }
+            input.dependencies.stateStore.setCurrentRoom(snapshot);
+            await input.dependencies.acceptSnapshots({
+                context: input.context,
+                clients: [],
+                groups: [snapshot],
+                scope
+            });
+            input.assertCurrent();
+            return snapshot;
+        });
+    }
+    catch (cause) {
+        const error: RallarQuickJoinPartialFailureError = Object.assign(
+            new Error(`Joined room ${input.joinedRoom.group.groupId}, but entering it failed.`, { cause }),
+            { name: 'RallarQuickJoinPartialFailureError' as const, joinedRoom: input.joinedRoom }
+        );
+        throw error;
+    }
 }
 
 export async function enterRoom(input: JoinRoomInput): Promise<RallarRoomSession> {
@@ -85,11 +203,7 @@ export async function enterRoom(input: JoinRoomInput): Promise<RallarRoomSession
 
 async function leavePreviousRoomAfterJoin(input: LeavePreviousRoomAfterJoinInput): Promise<void> {
     const { currentRoomRef } = input;
-    const joinsCurrentRoom = currentRoomRef
-        ? input.targetRoomRef
-            ? isSameGroupRef(currentRoomRef, input.targetRoomRef)
-            : currentRoomRef.groupId === input.targetRoomId
-        : false;
+    const joinsCurrentRoom = currentRoomRef && isSameGroupRef(currentRoomRef, input.joinedRoom.group);
     if (!(input.leaveCurrent ?? true) || !currentRoomRef || joinsCurrentRoom) {
         return;
     }
@@ -108,10 +222,10 @@ async function leavePreviousRoomAfterJoin(input: LeavePreviousRoomAfterJoinInput
     }
     catch (error) {
         throw createRoomSwitchPartialFailureError({
-            operation: 'join',
+            operation: input.operation,
             joinedRoom: input.joinedRoom,
             previousRoomRef: currentRoomRef,
-            leaveError: error
+            leaveError: toError(error)
         });
     }
 }

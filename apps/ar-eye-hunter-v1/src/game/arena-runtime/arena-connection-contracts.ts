@@ -167,6 +167,7 @@ export interface ArenaConnection {
     logout(): Promise<void>;
     refreshRooms(): Promise<void>;
     createArenaRoom(): Promise<void>;
+    quickJoinArenaRoom(): Promise<'joined' | 'unavailable' | undefined>;
     joinRoom(roomId: string): Promise<void>;
     appointSelfAsDirector(): Promise<void>;
     refreshDiagnostics(options?: ArenaDiagnosticsRefreshOptions): Promise<void>;

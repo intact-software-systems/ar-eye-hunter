@@ -149,6 +149,8 @@ export type {
     RallarPeopleState,
     RallarPerson,
     RallarProductFacade,
+    RallarQuickJoinPartialFailureError,
+    RallarQuickJoinRoomInput,
     RallarRealtimeBinarySendInput,
     RallarRealtimeHandler,
     RallarRealtimeHealthOptions,
@@ -304,3 +306,5 @@ export type {
 } from '@shared/alm/storage/al-storage-event.ts';
 export type { ALStorageUnavailable, ALStorageUnavailableCause } from '@shared/alm/storage/al-storage-unavailable.ts';
 export type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+
+export type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';

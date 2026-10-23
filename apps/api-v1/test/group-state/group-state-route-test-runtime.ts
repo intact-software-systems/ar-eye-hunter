@@ -39,6 +39,7 @@ export interface GroupStateRouteTestRuntimeInput {
     readonly processGroupAppInbox?: GroupStateRouteDependencies[
         'processGroupAppInbox'
     ];
+    readonly processQuickJoin?: GroupStateRouteDependencies['processQuickJoin'];
     readonly groupAdmissionQuota?: GroupAdmissionQuota;
     readonly hydrateStateSyncSnapshotCaches?: GroupStateRouteDependencies[
         'hydrateStateSyncSnapshotCaches'
@@ -94,6 +95,7 @@ export function createGroupStateRouteTestDependencies(
         groupStateService: createGroupStateRouteService(input.groupService),
         requireApiAuthSession,
         processGroupAppInbox: input.processGroupAppInbox ?? defaultProcessGroupAppInbox,
+        processQuickJoin: input.processQuickJoin ?? (() => Promise.reject(new Error('Unexpected Quick Join mutation'))),
         groupAdmissionQuota: input.groupAdmissionQuota ?? createGroupAdmissionQuota({
             windowMs: 60_000,
             joinPrincipal: 60,

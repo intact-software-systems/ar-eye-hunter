@@ -48,7 +48,11 @@ async function readGroupStateRouteRequestBody(
     context: GroupStateRouteRequestContext
 ): Promise<GroupStateRouteRequestBodyRead> {
     try {
-        return Either.ofRight(await context.req.json());
+        const body = await context.req.json();
+        if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+            throw new TypeError('Group mutation request body must be an object');
+        }
+        return Either.ofRight(body);
     }
     catch (error) {
         if (!ABORTED_REQUEST_BODY_ERRORS.some((abortedError) => error instanceof abortedError)) {

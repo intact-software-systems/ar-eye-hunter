@@ -2,7 +2,7 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { expect, vi } from 'vitest';
 
-import type { RallarAuthState, RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
+import type { RallarAuthState, RallarDirectorStatus, RallarFacade } from '@shared-web/browser/rallar.ts';
 import type { RallarGameMatchStatus, RallarGamePeerReadiness } from '@shared-web/game/mod.ts';
 
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -87,6 +87,7 @@ const mockRallar = vi.hoisted(() => ({
         onChange: vi.fn(),
         refresh: vi.fn(),
         directory: vi.fn(),
+        quickJoin: vi.fn<RallarFacade['rooms']['quickJoin']>(),
         create: vi.fn(),
         createAndSwitch: vi.fn(),
         join: vi.fn()
@@ -272,6 +273,7 @@ function resetArenaRoomsFixture(): void {
         currentRoomId: undefined
     });
     mockRallar.rooms.directory.mockResolvedValue({ entries: [], nextCursor: null });
+    mockRallar.rooms.quickJoin.mockReset().mockResolvedValue({ status: 'unavailable' });
     mockRallar.rooms.create.mockReset();
     mockRallar.rooms.createAndSwitch.mockReset();
     mockRallar.director.onStatus.mockReturnValue(vi.fn());

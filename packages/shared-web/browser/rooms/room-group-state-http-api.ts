@@ -1,4 +1,5 @@
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
+import type { QuickJoinGroupRequest, QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
 
 import { readApiBaseUrl } from '../api-client-config.ts';
 import { executeHttpRequest, type ApiMutationRequestOptions } from '../api/http-request.ts';
@@ -29,11 +30,14 @@ import type {
     StateScope
 } from './room-group-state-translation.ts';
 
-interface RoomGroupRequestInput<TRequest> {
-    readonly groupId: string;
+interface RoomScopeRequestInput<TRequest> {
     readonly request: TRequest;
     readonly options: ApiMutationRequestOptions;
     readonly scope?: StateScope;
+}
+
+interface RoomGroupRequestInput<TRequest> extends RoomScopeRequestInput<TRequest> {
+    readonly groupId: string;
 }
 
 interface TargetRoomGroupRequestInput<TRequest> extends RoomGroupRequestInput<TRequest> {
@@ -82,6 +86,17 @@ async function createStateGroup(input: CreateStateGroupHttpInput): Promise<Group
     const scope = input.scope ?? defaultStateScope();
     return await mutateRoomGroupState({
         path: `${toStateScopeHttpPath(scope)}/groups`,
+        method: 'POST',
+        request: input.request,
+        options: input.options
+    });
+}
+
+async function quickJoinStateGroup(
+    input: RoomScopeRequestInput<Omit<QuickJoinGroupRequest, 'requestId'>>
+): Promise<QuickJoinGroupResult> {
+    return await mutateRoomGroupState({
+        path: `${toStateScopeHttpPath(input.scope ?? defaultStateScope())}/groups/quick-join`,
         method: 'POST',
         request: input.request,
         options: input.options
@@ -215,7 +230,9 @@ async function disconnectStateGroupPresenceSession(
     );
 }
 
-async function commandStateGroupLifecycle(input: CommandStateGroupLifecycleHttpInput): Promise<GroupSnapshot> {
+async function commandStateGroupLifecycle(
+    input: CommandStateGroupLifecycleHttpInput
+): Promise<GroupSnapshot> {
     return await postRoomGroupState({ ...input, request: input.request.body }, `/lifecycle/${input.request.command}`);
 }
 
@@ -264,6 +281,7 @@ export const roomGroupStateHttpApi = Object.freeze({
     updateGroup: updateStateGroup,
     appointDirector: appointStateGroupDirector,
     joinGroup: joinStateGroup,
+    quickJoin: quickJoinStateGroup,
     createInvite: createStateGroupInvite,
     revokeInvite: revokeStateGroupInvite,
     acceptInvite: acceptStateGroupInvite,

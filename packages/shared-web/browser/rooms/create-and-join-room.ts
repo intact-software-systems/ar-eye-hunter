@@ -7,7 +7,7 @@ import {
 import type { RallarStateSnapshotAcceptanceInput } from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef, toStateScope } from '@shared/api/api-type-utils.ts';
-import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 
 import { leaveRoom } from './leave-room.ts';
 import type { RallarCreateRoomInput, RallarRoomSwitchPartialFailureError } from './rallar-room-contracts.ts';
@@ -62,7 +62,7 @@ export interface CreateAndSwitchRoomInput extends CreateAndJoinRoomInput {
 }
 
 interface CreateRoomSwitchPartialFailureErrorInput {
-    readonly operation: 'create-and-switch' | 'join';
+    readonly operation: RallarRoomSwitchPartialFailureError['operation'];
     readonly joinedRoom: GroupSnapshot;
     readonly previousRoomRef: GroupRef;
     readonly leaveError: RallarRoomSwitchPartialFailureError['leaveError'];
@@ -91,7 +91,7 @@ export async function createAndSwitchRoom(input: CreateAndSwitchRoomInput): Prom
                 operation: 'create-and-switch',
                 joinedRoom: snapshot,
                 previousRoomRef,
-                leaveError: error
+                leaveError: toError(error)
             });
         }
     }

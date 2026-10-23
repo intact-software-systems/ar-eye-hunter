@@ -1,0 +1,480 @@
+{
+  "variables": {
+    "apiPrimary": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    },
+    "applicationId": "quick-join-{runId}",
+    "workspaceId": "default-{runId}",
+    "aliceUsername": {
+      "env": "RALLAR_ALICE_USERNAME",
+      "default": "alice"
+    },
+    "alicePassword": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "bobUsername": {
+      "env": "RALLAR_BOB_USERNAME",
+      "default": "bob"
+    },
+    "bobPassword": {
+      "env": "RALLAR_BOB_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "alphaId": "dir-alpha-{runId}",
+    "betaId": "dir-beta-{runId}"
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "primary": {
+      "type": "http",
+      "baseUrl": "{apiPrimary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ],
+  "description": "Authoritative Quick Join: scoped room admission, unavailable without pending membership, durable replay, conflicting request reuse, strict input and authentication.",
+  "steps": [
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-quick-join-alice-{runId}",
+        "body": {
+          "username": "{aliceUsername}",
+          "password": "{alicePassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceSessionId": "body.sessionId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-quick-join-bob-{runId}",
+        "body": {
+          "username": "{bobUsername}",
+          "password": "{bobPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobSessionId": "body.sessionId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createAlpha",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/bb-quick-create-alpha-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{alphaId}",
+          "displayName": "AR Eye Hunter",
+          "kind": "room",
+          "joinMode": "open",
+          "maxMembers": 2,
+          "createdByPrincipalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{alphaId}",
+            "activeMemberCount": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "createBeta",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/bb-quick-create-beta-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{betaId}",
+          "displayName": "Relic Hunters",
+          "kind": "room",
+          "joinMode": "open",
+          "maxMembers": 2,
+          "createdByPrincipalId": "{aliceClientId}",
+          "lifecyclePolicy": {
+            "formation": "phased",
+            "manager": {
+              "selection": "assigned",
+              "assignedPrincipalIds": [
+                "{aliceClientId}"
+              ]
+            },
+            "admission": {
+              "mode": "manager-approval"
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{betaId}",
+            "activeMemberCount": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "emptyDefault",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/quick-join/requests/bb-quick-join-empty-default-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "unavailable"
+        }
+      }
+    },
+    {
+      "name": "joinArena",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/quick-join/requests/bb-quick-join-arena-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "kind": "room",
+          "q": " EYE HUNTER ",
+          "includeEmpty": true
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "joined",
+          "snapshot": {
+            "group": {
+              "groupId": "{alphaId}",
+              "activeMemberCount": 2
+            },
+            "members": [
+              {
+                "principalId": "{aliceClientId}",
+                "status": "active"
+              },
+              {
+                "principalId": "{bobClientId}",
+                "status": "active"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "replayArena",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/quick-join/requests/bb-quick-join-arena-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "kind": "room",
+          "q": " EYE HUNTER ",
+          "includeEmpty": true
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "joined",
+          "snapshot": {
+            "group": {
+              "groupId": "{alphaId}",
+              "activeMemberCount": 2
+            },
+            "members": [
+              {
+                "principalId": "{aliceClientId}",
+                "status": "active"
+              },
+              {
+                "principalId": "{bobClientId}",
+                "status": "active"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "conflictingSelection",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/quick-join/requests/bb-quick-join-arena-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "kind": "room",
+          "q": "relic",
+          "includeEmpty": true
+        }
+      },
+      "expect": {
+        "status": 409
+      }
+    },
+    {
+      "name": "approvalUnavailable",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/quick-join/requests/bb-quick-join-approval-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "q": "relic",
+          "includeEmpty": true
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "unavailable"
+        }
+      }
+    },
+    {
+      "name": "approvalRosterUnchanged",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{betaId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "activeMemberCount": 1
+          },
+          "members": [
+            {
+              "principalId": "{aliceClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "alreadyJoinedUnavailable",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/quick-join/requests/bb-quick-join-already-joined-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "kind": "room",
+          "q": " EYE HUNTER ",
+          "includeEmpty": true
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "unavailable"
+        }
+      }
+    },
+    {
+      "name": "replayUnavailable",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/quick-join/requests/bb-quick-join-empty-default-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "unavailable"
+        }
+      }
+    },
+    {
+      "name": "rejectUnknownSelector",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/quick-join/requests/bb-quick-join-unknown-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "cursor": "unexpected"
+        }
+      },
+      "expect": {
+        "status": 400
+      }
+    },
+    {
+      "name": "authenticationRequired",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/quick-join/requests/bb-quick-no-auth-{runId}",
+        "headers": {},
+        "body": {}
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "name": "workspaceIsolated",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/isolated-{runId}/groups/quick-join/requests/bb-quick-isolated-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "includeEmpty": true
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "unavailable"
+        }
+      }
+    }
+  ]
+}

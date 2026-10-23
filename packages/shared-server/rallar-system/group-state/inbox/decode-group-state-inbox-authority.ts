@@ -1,4 +1,4 @@
-import { requireExactKeys, requireString } from '../../protocol/exact-object-decoding.ts';
+import { requireExactKeys, requireRecord, requireString } from '../../protocol/exact-object-decoding.ts';
 import type { JsonWireObject, JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts';
 import type {
@@ -64,10 +64,10 @@ function decodeNullableGroupMutationAuthorityProof(
     return value === null ? null : decodeGroupMutationAuthorityProof(value);
 }
 
-function decodeGroupMutationAuthorityProof(
-    value: JsonWireValue | undefined
+export function decodeGroupMutationAuthorityProof(
+    value: unknown
 ): GroupMutationAuthorityProof {
-    const proof = requireJsonWireObject(value, 'Group mutation authority proof');
+    const proof = requireRecord(value, 'Group mutation authority proof');
     requireExactKeys(
         proof,
         [

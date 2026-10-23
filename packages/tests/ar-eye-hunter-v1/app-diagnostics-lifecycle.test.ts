@@ -332,6 +332,7 @@ const arenaConnectionDefaults: Omit<ArenaConnection, 'session' | 'rooms' | 'conn
     logout: vi.fn(),
     refreshRooms: vi.fn(),
     createArenaRoom: vi.fn(),
+    quickJoinArenaRoom: vi.fn(),
     joinRoom: vi.fn(),
     appointSelfAsDirector: vi.fn(),
     refreshDiagnostics: mockArena.refreshDiagnostics,

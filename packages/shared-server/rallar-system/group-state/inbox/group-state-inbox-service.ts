@@ -1,3 +1,6 @@
+import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { jsonEquals } from '@shared/repository/state-utils.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
@@ -15,12 +18,17 @@ import { GROUP_STATE_APP_INBOX_TOPIC } from '../../app-inbox/app-inbox-topics.ts
 import type { AppInboxCommandClient } from '../../app-inbox/client/app-inbox-command-client.ts';
 import type { AppInboxQueueEntryWriter } from '../../app-inbox/client/app-inbox-queue-entry-writer.ts';
 import { createAppInboxClientRuntime } from '../../app-inbox/client/create-app-inbox-client-runtime.ts';
+import {
+    computeAppInboxCompletion,
+    validateAppInboxCompletion
+} from '../../app-inbox/handler/app-inbox-completion-computation.ts';
 import { AppInboxHandlerRegistry } from '../../app-inbox/handler/app-inbox-handler-registry.ts';
 import { createAppInboxHandlerRuntime } from '../../app-inbox/handler/app-inbox-handler-runtime.ts';
 import { AppInboxTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import type { GroupFormationGroupMutationSink } from '../../observability/formation-metrics.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
+import { computeSha256CanonicalJson } from '../../protocol/canonical-json.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts';
 import type { AuthorizedGroupMutation, GroupStateService } from '../group-state-service-contracts.ts';
@@ -35,6 +43,8 @@ import type {
 import {
     decodeGroupPresenceSessionCleanupAppInboxPayload
 } from '../presence/group-presence-session-cleanup-app-inbox-payload.ts';
+import { decodeGroupQuickJoinCommand, decodeQuickJoinGroupResult } from '../quick-join/group-quick-join-codec.ts';
+import type { GroupQuickJoinCommand, GroupQuickJoinInput } from '../quick-join/group-quick-join-contracts.ts';
 import { decodeGroupStateAppInboxCommand } from './decode-group-state-app-inbox-command.ts';
 import {
     GROUP_MUTATION_INBOX_TYPES,
@@ -125,7 +135,7 @@ export class GroupStateInboxService {
             nowEpochMs: this.nowEpochMs
         });
         this.registerMessageHandlers();
-        this.handlers.assertRegistrationComplete(GROUP_MUTATION_INBOX_TYPES);
+        this.handlers.assertRegistrationComplete([...GROUP_MUTATION_INBOX_TYPES, AppInboxType.GROUP_QUICK_JOIN]);
     }
 
     async enqueueExpiredPresenceSessions(atEpochMs: number): Promise<number> {
@@ -229,6 +239,70 @@ export class GroupStateInboxService {
         );
     }
 
+    async processQuickJoinUntilCompletion(
+        input: GroupQuickJoinInput,
+        authority: IssuedAuthSession
+    ): Promise<Either<AppInboxFailure, QuickJoinGroupResult>> {
+        const command = this.groupStateService.quickJoin.authorize(input, authority);
+        const received: AppInboxEnqueueInput = {
+            type: AppInboxType.GROUP_QUICK_JOIN,
+            topicId: GROUP_STATE_APP_INBOX_TOPIC,
+            resourceId: command.requestId,
+            contextId: `quick-join:${
+                computeSha256CanonicalJson({ scope: input.scope, principalId: authority.clientId })
+            }`,
+            senderId: authority.clientId,
+            data: encodeAppInboxCommand(command, 'Quick Join command')
+        };
+        return await this.commandClient.reserveMaterializedAndWaitForResult({
+            received,
+            placeholder: { ...received, data: null },
+            materialize: async () => ({
+                ...received,
+                authority: encodeAppInboxCommand(
+                    await this.groupStateService.quickJoin.capture(command, authority),
+                    'Quick Join ingress'
+                )
+            })
+        }, (value) => decodeQuickJoinGroupResult(value, command));
+    }
+
+    private async processQuickJoin(
+        command: GroupQuickJoinCommand,
+        context: AppInboxMessageContext<QuickJoinGroupResult>
+    ): Promise<QuickJoinGroupResult> {
+        const service = this.groupStateService.quickJoin;
+        const read = await service.read(context.enqueue.authority, context.entry.dequeueAudit.attempts);
+        if (!jsonEquals(command, read.command)) {
+            throw new GroupMutationAuthorizationError('Quick Join ingress and command differ');
+        }
+        const computed = service.compute(read);
+        const mutationIssue = service.validate(read, computed)[0];
+        if (mutationIssue) {
+            throw mutationIssue.cause;
+        }
+        const completionInput = {
+            ...this.transactionWriter.readCompletionFacts(context),
+            durableResult: computed.result,
+            status: EntityStatus.COMPLETED
+        };
+        const completion = computeAppInboxCompletion(completionInput);
+        const issue = validateAppInboxCompletion(completionInput, completion)[0];
+        if (issue) {
+            throw issue.cause;
+        }
+        const result = await this.transactionWriter.writeComputedMutation(
+            context,
+            completion,
+            async (transaction) => await service.write(transaction, computed)
+        );
+        this.wakeQueue?.();
+        if (result.status === 'joined') {
+            await this.groupStateService.observeSnapshot(result.snapshot);
+        }
+        return result;
+    }
+
     private async authorizeAuthenticatedGroupMutation(
         enqueue: AuthenticatedGroupMutationEnqueue,
         authority: IssuedAuthSession
@@ -242,6 +316,12 @@ export class GroupStateInboxService {
     }
 
     private registerMessageHandlers(): void {
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_QUICK_JOIN,
+            decodeCommand: decodeGroupQuickJoinCommand,
+            encodeResult: (result: QuickJoinGroupResult) => encodeAppInboxResult(result, 'Quick Join result'),
+            handle: async (command, context) => await this.processQuickJoin(command, context)
+        });
         const encodeGroupStateResult = (result: GroupStateInboxDurableResult) =>
             encodeAppInboxResult(result, 'Group state AppInbox result');
         const writeGroupStateMutation = async (

@@ -194,6 +194,7 @@ function createGroupSetupApp(mutation: ApiV1MutationRuntime, groupInbox: GroupSt
                 throw toApiMutationRouteFailure(failure);
             }, (value) => value);
         },
+        processQuickJoin: (input, authority) => groupInbox.processQuickJoinUntilCompletion(input, authority),
         groupAdmissionQuota: createGroupAdmissionQuota(defaults.group.admission),
         strictReadAuthorization: true,
         groupDefaultMaxMembers: defaults.group.defaultMaxMembers,
