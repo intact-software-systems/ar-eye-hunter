@@ -55,12 +55,14 @@ test('shares a code expedition, plays together, and returns after code rotation'
         await hostPage.getByRole('button', { name: 'Rotate room code', exact: true }).click();
         await expect(hostPage.getByLabel('Room link', { exact: true })).not.toHaveValue(link);
         await expect(hostPage.getByLabel('Room link', { exact: true })).not.toHaveValue('');
+        const currentLink = await hostPage.getByLabel('Room link', { exact: true }).inputValue();
+        await hostPage.screenshot({ path: 'tmp/private-room-entry/relic-host.png', fullPage: true });
+        // The host's assertions are complete; release its software WebGL renderer before reload.
+        await hostPage.goto('about:blank');
         await guestPage.reload();
         await expect(guestPage.locator('.turn-plan-status .panel-label')).toHaveText('Round 2');
-        await hostPage.screenshot({ path: 'tmp/private-room-entry/relic-host.png', fullPage: true });
         await guestPage.screenshot({ path: 'tmp/private-room-entry/relic-guest.png', fullPage: true });
-        const currentLink = await hostPage.getByLabel('Room link', { exact: true }).inputValue();
-        await Promise.all([hostPage.goto('about:blank'), guestPage.goto('about:blank')]);
+        await guestPage.goto('about:blank');
         await outsiderPage.goto(link);
         await expect(outsiderPage.getByRole('alert')).toContainText('Room entry was denied');
         const fields = new URLSearchParams(new URL(currentLink).hash.slice('#rallar-room?'.length));

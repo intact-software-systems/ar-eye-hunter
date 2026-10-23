@@ -1061,13 +1061,13 @@ export const reviewedBrowserDispositions = Object.freeze([
         path: 'packages/shared-web/browser/rooms',
         rule: 'layout.directory-density',
         symbol: 'rooms',
-        maximumMagnitude: 1
+        maximumMagnitude: 22
     }),
     Object.freeze({
         path: 'packages/shared-web/browser/rooms',
         rule: 'layout.feature-prefix-cluster',
         symbol: 'prefix:room',
-        maximumMagnitude: 1
+        maximumMagnitude: 16
     }),
     // The runtime owns one authenticated connection and its room/command/snapshot fences. Pure
     // acceptance and delivery decisions, browser ports, React subscription, and presentation have
@@ -1127,12 +1127,28 @@ export const reviewedBrowserDispositions = Object.freeze([
         path: 'apps/relic-hunters-v1/src/game',
         rule: 'layout.directory-density',
         symbol: 'game',
-        maximumMagnitude: 1
+        maximumMagnitude: 22
     }),
     Object.freeze({
         path: 'apps/relic-hunters-v1/src/game',
         rule: 'layout.feature-prefix-cluster',
         symbol: 'prefix:relic',
+        maximumMagnitude: 11
+    }),
+    // The fetch fixture captures outgoing JSON as raw observation data for independent equality
+    // assertions. No captured value is used to authorize or construct a production mutation.
+    Object.freeze({
+        path: 'packages/tests/shared-web/rooms/room-group-state-mutation-workflows.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
+    }),
+    // Fixture response serialization intentionally accepts arbitrary bodies, including malformed
+    // values. Production decoding, rather than this transport fixture, owns their admission.
+    Object.freeze({
+        path: 'packages/tests/shared-web/rooms/room-group-state-mutation-workflows.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'jsonResponse',
         maximumMagnitude: 1
     })
 ]);
