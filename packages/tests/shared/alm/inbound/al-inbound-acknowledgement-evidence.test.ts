@@ -7,6 +7,7 @@ import {
     vi
 } from 'vitest';
 
+import { ALInboundStoreCounts } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/al-inbound-store-counts.ts';
 import { createBlackBoxRallarCongestionCounters } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-congestion-counters.ts';
 import {
     BlackBoxRallarRuntimeDiagnostics,
@@ -27,7 +28,6 @@ import type { ALInboundRuntimeDiagnosticsEvent, ALInboundRuntimeDiagnosticsSink 
 import { decodeALInboundWorkEntry, toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { ALInboundAcknowledgementEvidence } from '@shared/alm/inbound/control/al-inbound-acknowledgement-evidence.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
-import { ALInboundStoreCounts } from '@shared/alm/storage/al-inbound-store-counts.ts';
 import { ALWorkBatchObservations } from '@shared/alm/work/al-work-batch-observations.ts';
 import { createCountingIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { createScriptedStorageFaultPort } from '@shared/persistence/storage-fault-port.ts';

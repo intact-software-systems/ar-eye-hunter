@@ -104,7 +104,7 @@ describe('RTC topology complete write computation', () => {
                 workEnvelope,
                 workId: toRtcTopologyExecutionId(workEnvelope),
                 attemptCount: entry.dequeueAudit.attempts,
-                expireAtEpochMs: entry.audit.expiryTs.epochMilliseconds
+                derivedExpireAtEpochMs: entry.audit.expiryTs.epochMilliseconds
             },
             entry,
             reservationFinish: { ...fixture.reservationFinish, key: entry.key, expectedAttempts: 1, completedAt: new Date(2_000) },
@@ -541,7 +541,7 @@ function createCompleteWorkInput(): ComputeRtcTopologyWorkInput {
             },
             workId: 'work-1',
             attemptCount: entry.dequeueAudit.attempts,
-            expireAtEpochMs: entry.audit.expiryTs.epochMilliseconds
+            derivedExpireAtEpochMs: entry.audit.expiryTs.epochMilliseconds
         },
         read: {
             mutation: { snapshot: null, publicationClaim: null },
@@ -607,6 +607,7 @@ function createWriteInput(): ComputeRtcTopologyWorkWriteInput {
         accepted,
         entry,
         sourceWorkId: 'rtc-topology:group-1:work-1:0',
+        derivedExpireAtEpochMs: entry.audit.expiryTs.epochMilliseconds,
         reservationFinish: {
             key: entry.key,
             expectedAttempts: entry.dequeueAudit.attempts,

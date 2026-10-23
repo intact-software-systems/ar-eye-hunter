@@ -3890,7 +3890,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/AdminOperationBaseResponse'
         - type: object
-          required: [almReceipts, caches, alm]
+          required: [websocket, rtcTopology, groupFormation, almReceipts, caches, alm]
           properties:
             websocket:
               type: object
@@ -3950,39 +3950,38 @@ components:
       type: object
       description: >-
         The planning counters, with the replay consumer's counters under `replay`.
-      required: [
-        topologyUpdateCount,
-        topologyWorkComputeDurationMs,
-        topologyChangedCount,
-        topologyUnchangedCount,
-        updatesWithRttMeasurementCount,
-        updatesWithoutRttMeasurementCount,
-        starPlanCount,
-        starPlanDurationMs,
-        noRttTreePlanCount,
-        noRttTreePlanDurationMs,
-        noRttMeshPlanCount,
-        noRttMeshPlanDurationMs,
-        weightedPlanCount,
-        weightedPlanDurationMs,
-        weightedRoomGraphBuildCount,
-        weightedRoomGraphBuildDurationMs,
-        weightedRoomGraphSparseFallbackCount,
-        incrementalPlanCount,
-        incrementalPlanFallbackFullCount,
-        incrementalPlanInvariantFallbackCount,
-        hysteresisHeldKindCount,
-        topologyPublishAttemptCount,
-        topologyPublishedCount,
-        topologyPublishSkippedUnchangedCount,
-        topologyRebuildSkippedFingerprintCount,
-        topologyPlanFrozenCount,
-        topologyRemovalRequestCount,
-        topologyRemovedCount,
-        topologyRemoveMissCount,
-        topologySnapshotCount,
-        replay,
-      ]
+      required:
+        - topologyUpdateCount
+        - topologyWorkComputeDurationMs
+        - topologyChangedCount
+        - topologyUnchangedCount
+        - updatesWithRttMeasurementCount
+        - updatesWithoutRttMeasurementCount
+        - starPlanCount
+        - starPlanDurationMs
+        - noRttTreePlanCount
+        - noRttTreePlanDurationMs
+        - noRttMeshPlanCount
+        - noRttMeshPlanDurationMs
+        - weightedPlanCount
+        - weightedPlanDurationMs
+        - weightedRoomGraphBuildCount
+        - weightedRoomGraphBuildDurationMs
+        - weightedRoomGraphSparseFallbackCount
+        - incrementalPlanCount
+        - incrementalPlanFallbackFullCount
+        - incrementalPlanInvariantFallbackCount
+        - hysteresisHeldKindCount
+        - topologyPublishAttemptCount
+        - topologyPublishedCount
+        - topologyPublishSkippedUnchangedCount
+        - topologyRebuildSkippedFingerprintCount
+        - topologyPlanFrozenCount
+        - topologyRemovalRequestCount
+        - topologyRemovedCount
+        - topologyRemoveMissCount
+        - topologySnapshotCount
+        - replay
       properties:
         topologyUpdateCount:
           type: integer
@@ -4073,26 +4072,25 @@ components:
 
     RtcTopologyAdminReplayMetrics:
       type: object
-      required: [
-        wakeCountBySource,
-        drainCountByOutcome,
-        entryCountByOutcome,
-        cursorCountByOutcome,
-        hydrationCountByOutcome,
-        drainAttemptCount,
-        drainCompletionCount,
-        drainFailureCount,
-        pageCount,
-        replayedEntryCount,
-        directCurrentRepairCount,
-        noLocalRecipientCount,
-        sendFailureCount,
-        cursorConflictCount,
-        gapCount,
-        corruptReferenceCount,
-        totalDrainDurationMs,
-        maxObservedLagEntries,
-      ]
+      required:
+        - wakeCountBySource
+        - drainCountByOutcome
+        - entryCountByOutcome
+        - cursorCountByOutcome
+        - hydrationCountByOutcome
+        - drainAttemptCount
+        - drainCompletionCount
+        - drainFailureCount
+        - pageCount
+        - replayedEntryCount
+        - directCurrentRepairCount
+        - noLocalRecipientCount
+        - sendFailureCount
+        - cursorConflictCount
+        - gapCount
+        - corruptReferenceCount
+        - totalDrainDurationMs
+        - maxObservedLagEntries
       properties:
         wakeCountBySource:
           type: object
@@ -4376,20 +4374,19 @@ components:
 
     RallarGroupFormationMetrics:
       type: object
-      required: [
-        groupMutationCount,
-        presenceSummaryExpansionCount,
-        presenceSummaryWsRowCount,
-        presenceSummaryTopologyEntryCount,
-        topologyRecomputeTriggeredCount,
-        wsOutboxSendCountByTopicId,
-        wsOutboxRecipientCountByTopicId,
-        wsEgressBytesByTopicId,
-        wsOutboxNoLocalRecipientCount,
-        wsOutboundRejectedWorkCount,
-        rttAcceptedWriteCount,
-        rttTopologyEffectCount,
-      ]
+      required:
+        - groupMutationCount
+        - presenceSummaryExpansionCount
+        - presenceSummaryWsRowCount
+        - presenceSummaryTopologyEntryCount
+        - topologyRecomputeTriggeredCount
+        - wsOutboxSendCountByTopicId
+        - wsOutboxRecipientCountByTopicId
+        - wsEgressBytesByTopicId
+        - wsOutboxNoLocalRecipientCount
+        - wsOutboundRejectedWorkCount
+        - rttAcceptedWriteCount
+        - rttTopologyEffectCount
       properties:
         groupMutationCount:
           type: object

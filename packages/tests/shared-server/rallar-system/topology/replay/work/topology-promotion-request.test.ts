@@ -14,6 +14,7 @@ import {
     computeTopologyPromotionRequest,
     readTopologyPromotion
 } from '@shared-server/rallar-system/topology/replay/work/topology-promotion-request.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { describe, expect, it } from 'vitest';
 import { createTestGroup } from '../../../../../create-test-group.ts';
@@ -42,7 +43,8 @@ describe('topology promotion request write', () => {
             serviceId: 'topology-service',
             entry: promotionEntry(),
             sourceWorkId: 'rtc-topology:group-1:work-1',
-            target: null
+            target: null,
+            expireAtEpochMs: 3_601_000
         })).toBeNull();
         expect(calls).toEqual(['group', 'policy']);
     });
@@ -64,6 +66,34 @@ describe('topology promotion request write', () => {
 
         expect(read).toEqual({ group, policy: null });
         expect(policyReads).toBe(0);
+    });
+
+    it('stamps the promotion with the expiry its attempt decided, not its source row\'s', () => {
+        const group = createTestGroup({ lifecycleState: 'active' });
+        const promotion = computeTopologyPromotionRequest({
+            read: { group, policy: { status: 'absent' } },
+            serviceId: 'topology-service',
+            entry: promotionEntry(),
+            sourceWorkId: 'rtc-topology:group-1:work-1',
+            target: {
+                groupRef: group,
+                overlayId: toScopedOverlayId(group),
+                name: 'candidate',
+                topology: 'tree',
+                activeSessionIds: [],
+                nextHopsBySessionId: {},
+                degreeLimit: 2,
+                version: 1,
+                state: 'active',
+                sourceGroupStateCausalRevision: { groupRevision: 4, presenceRevision: 0 },
+                createdByClientId: 'server',
+                createdAtEpochMs: 1000,
+                updatedAtEpochMs: 1000
+            },
+            expireAtEpochMs: 3_601_000
+        });
+
+        expect(promotion?.audit.expiryTs.epochMilliseconds).toBe(3_601_000);
     });
 
     it('rejects an immutable ResourceInbox collision', async () => {

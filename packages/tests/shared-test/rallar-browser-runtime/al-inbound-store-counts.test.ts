@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { ALInboundStoreCounts } from '@shared/alm/storage/al-inbound-store-counts.ts';
+import { ALInboundStoreCounts } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/al-inbound-store-counts.ts';
 
 it('sums each store\'s latest ordering-snapshot and delivered-marker statements apart', () => {
     const counts = new ALInboundStoreCounts();

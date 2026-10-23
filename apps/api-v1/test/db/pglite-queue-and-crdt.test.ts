@@ -598,6 +598,7 @@ Deno.test(
             const outboxQueueReader = new OutboxQueueReader(queue);
             const handler = createRtcTopologyWorkHandler({
                 nowEpochMs: () => nowEpochMs,
+                finishedRetentionMs: 3_600_000,
                 outboxQueueReader,
                 database: sql,
                 topologyPlanning: topologyManagement.planning,

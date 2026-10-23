@@ -476,7 +476,10 @@ function createTopologyOwners(
 interface InstallTestTopologyOutboxOptions {
     readonly topologyPlanning: GroupTopologyRuntimeOwners['planning'];
     readonly rtcTopologyAppOutbox:
-        & Omit<InstallTopologyAppOutboxOptions, 'senderId' | 'findGroupSnapshotByRef' | 'readPlannedTopologySnapshot' | 'topologyPlanning' | 'nowEpochMs'>
+        & Omit<
+            InstallTopologyAppOutboxOptions,
+            'senderId' | 'findGroupSnapshotByRef' | 'readPlannedTopologySnapshot' | 'topologyPlanning' | 'nowEpochMs' | 'finishedRetentionMs'
+        >
         & Readonly<{
             findGroupSnapshotByRef?: GroupTopologyGroupSnapshotReader;
         }>;
@@ -495,7 +498,8 @@ function installTestTopologyOutbox(
         // that owns this reader never runs.
         readPlannedTopologySnapshot: async () => undefined,
         topologyPlanning: options.topologyPlanning,
-        nowEpochMs: Date.now
+        nowEpochMs: Date.now,
+        finishedRetentionMs: 3_600_000
     });
 }
 

@@ -4,10 +4,13 @@ import {
     it
 } from 'vitest';
 
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+
 import {
     V1D_GROWTH_SURFACES,
     V1D_GROWTH_SURVEY_SURFACE_IDS
 } from '../../../shared-test/rallar-bb-test/alm/growth-proof/v1d-growth-surfaces.ts';
+import { computeV1dGrowthVerdict } from '../../../shared-test/rallar-bb-test/alm/growth-proof/v1d-growth-verdict.ts';
 
 describe('V1d growth surface classification', () => {
     it('classifies every surface of the growth survey, each with at least one reader', () => {
@@ -38,8 +41,54 @@ describe('V1d growth surface classification', () => {
             source: 'postgres',
             path: ['resourceInbox', 'total'],
             absent: 'zero',
-            neverExpiringPath: ['resourceInbox', 'neverExpire']
+            neverExpiringPath: ['resourceInbox', 'neverExpireSettled']
         }]);
+    });
+
+    // An APP_INBOX fact is stamped never to expire until its finish gives it the retention expiry, so the facts in
+    // flight at a sample come and go; only the settled rows say whether something never expires.
+    it('passes the resource_inbox total while its in-flight facts come and go, and fails it when settled rows rise', () => {
+        const total = V1D_GROWTH_SURFACES.find((surface) => surface.id === 1)!;
+        const windowStartedAtEpochMs = 1_800_000_000_000;
+        const toSamples = (settledAt: (sample: number) => number) =>
+            Array.from({ length: 151 }, (_value, sample) => ({
+                atEpochMs: windowStartedAtEpochMs + sample * 30_000,
+                agentId: null,
+                value: {
+                    resourceInbox: {
+                        total: 1_000 + sample * 10,
+                        neverExpire: (sample % 4) * 4 + settledAt(sample),
+                        neverExpireSettled: settledAt(sample)
+                    }
+                } satisfies ApiJsonValue
+            }));
+        const computeOutcome = (settledAt: (sample: number) => number) =>
+            computeV1dGrowthVerdict({
+                surveyedSurfaceIds: [1],
+                surfaces: [total],
+                run: {
+                    windowStartedAtEpochMs,
+                    workload: {
+                        runner: 'passed',
+                        manifestStartedAtEpochMs: windowStartedAtEpochMs,
+                        manifestCompletedAtEpochMs: windowStartedAtEpochMs + 4_500_000,
+                        churnPassed: 1,
+                        churnFailedRunIds: []
+                    }
+                },
+                samples: {
+                    postgres: toSamples(settledAt),
+                    'admin-system': [],
+                    'admin-queues': [],
+                    'admin-realtime': [],
+                    'api-heap': [],
+                    'process-rss': [],
+                    'browser-stats': []
+                }
+            }).rows[0]?.outcome;
+
+        expect(computeOutcome(() => 0)).toBe('pass');
+        expect(computeOutcome((sample) => sample)).toBe('fail');
     });
 
     it('bounds a page\'s delivered markers at 256 per inbound store across its two stores', () => {

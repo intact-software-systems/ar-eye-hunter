@@ -268,6 +268,7 @@ function createTopologyOutboxQueueReader(harness: TopologyRetentionHarness): Out
         AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
         createRtcTopologyWorkHandler({
             nowEpochMs: Date.now,
+            finishedRetentionMs: 3_600_000,
             outboxQueueReader,
             database: harness.sql,
             topologyPlanning: topologyOwners.planning,

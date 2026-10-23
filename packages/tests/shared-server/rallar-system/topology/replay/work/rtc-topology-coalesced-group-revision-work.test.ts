@@ -222,7 +222,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
         }
         expect(merged.id.ts).toBe(unexpiredBaseEpochMs);
         expect(merged.audit.createdTs).toBe(unexpiredBaseEpochMs);
-        expect(merged.constraints.expiresAtMs).toBe(unexpiredExpireAtEpochMs);
+        expect(merged.constraints.expiresAtMs).toBe(unexpiredExpireAtEpochMs + 200);
         expect(isCanonicalRtcTopologyWorkEntry(second.entryWrite.entry)).toBe(true);
 
         const reserved: ResourceEntry = {
@@ -245,7 +245,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
         ).toBe(true);
     });
 
-    it('keeps the original message identity through a terminal revival', () => {
+    it('keeps the original message identity through a terminal revival and takes the revival\'s later expiry', () => {
         const unexpiredBaseEpochMs = 1_800_000_000_000;
         const unexpiredExpireAtEpochMs = unexpiredBaseEpochMs + 3_600_000;
         const first = computeCoalescedRtcTopologyGroupRevisionWork({
@@ -280,9 +280,54 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             throw new TypeError('Revived topology message requires constraints');
         }
         expect(revivedMessage.id.ts).toBe(unexpiredBaseEpochMs);
-        expect(revivedMessage.constraints.expiresAtMs).toBe(unexpiredExpireAtEpochMs);
-        expect(revived.entryWrite.entry.audit).toEqual(first.entryWrite.entry.audit);
+        expect(revivedMessage.constraints.expiresAtMs).toBe(unexpiredExpireAtEpochMs + 5_000);
+        expect(revived.entryWrite.entry.audit).toEqual({
+            ...first.entryWrite.entry.audit,
+            expiryTs: Temporal.Instant.fromEpochMilliseconds(unexpiredExpireAtEpochMs + 5_000)
+        });
+        expect(revived.entryWrite.expiresAt).toBe(
+            Temporal.Instant.fromEpochMilliseconds(unexpiredExpireAtEpochMs + 5_000).toString()
+        );
         expect(isCanonicalRtcTopologyWorkEntry(revived.entryWrite.entry)).toBe(true);
+    });
+
+    // The head lives as long as its group changes: a change shortly before the head's first expiry keeps it visible
+    // to the queue for the change's own retention window, and an earlier deadline never shortens it.
+    it('extends a pending head\'s expiry to the merged change\'s, never shortening it', () => {
+        const head = computeCoalescedRtcTopologyGroupRevisionWork({
+            aggregateRef: GROUP_REF,
+            groupSnapshot: createGroupSnapshot(4, 3),
+            requestedAtEpochMs: BASE_EPOCH_MS,
+            expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
+            timing: createServerTopologyReplanTiming(DEBOUNCE_MS),
+            senderId: 'server-1',
+            origin: 'automatic',
+            previousEntry: null
+        }).entryWrite.entry;
+        const mergeAt = (requestedAtEpochMs: number, expireAtEpochMs: number, previousEntry: ResourceEntry) =>
+            computeCoalescedRtcTopologyGroupRevisionWork({
+                aggregateRef: GROUP_REF,
+                groupSnapshot: createGroupSnapshot(4, 4),
+                requestedAtEpochMs,
+                expireAtEpochMs,
+                timing: createServerTopologyReplanTiming(DEBOUNCE_MS),
+                senderId: 'server-1',
+                origin: 'automatic',
+                previousEntry
+            });
+        const lateChangeAtEpochMs = EXPIRE_AT_EPOCH_MS - 1_000;
+
+        const extended = mergeAt(lateChangeAtEpochMs, lateChangeAtEpochMs + 3_600_000, head);
+        expect(extended.operation).toBe('replace-pending');
+        expect(extended.entryWrite.entry.audit.expiryTs.epochMilliseconds).toBe(lateChangeAtEpochMs + 3_600_000);
+        expect(decodePersistedALMessage(extended.entryWrite.entry.resource).constraints?.expiresAtMs)
+            .toBe(lateChangeAtEpochMs + 3_600_000);
+        expect(extended.operation === 'replace-pending' && extended.replacement.expiresAt)
+            .toBe(Temporal.Instant.fromEpochMilliseconds(lateChangeAtEpochMs + 3_600_000).toString());
+        expect(isCanonicalRtcTopologyWorkEntry(extended.entryWrite.entry)).toBe(true);
+
+        const kept = mergeAt(BASE_EPOCH_MS + 1, BASE_EPOCH_MS + 2, head);
+        expect(kept.entryWrite.entry.audit.expiryTs.epochMilliseconds).toBe(EXPIRE_AT_EPOCH_MS);
     });
 
     it('keeps the newer predecessor revision when the incoming revision is older', () => {

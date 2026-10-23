@@ -108,6 +108,7 @@ function constructDefaultRallarServer(
         database,
         serviceId: myServerId,
         nowEpochMs,
+        finishedRetentionMs: configuration.appInbox.finishedRetentionMs,
         topology,
         crdtLogRepository,
         crdtPolicies: configuration.crdt.documentTypePolicies,

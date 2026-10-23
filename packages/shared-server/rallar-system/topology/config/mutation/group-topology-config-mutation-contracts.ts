@@ -72,8 +72,8 @@ export interface GroupTopologyConfigMutationFacts {
     readonly policyNowEpochMs: number;
     readonly attemptCount: number;
     /**
-     * When the command's mutation record and its recompute outbox row expire: a replay of its request inside the
-     * window returns the stored receipt, and once the record expires the request executes again.
+     * When the command's mutation record and its recompute outbox row expire: its ingress plus `finishedRetentionMs`
+     * (the contract on `MIN_APP_INBOX_FINISHED_RETENTION_MS`).
      */
     readonly expireAtEpochMs: number;
 }

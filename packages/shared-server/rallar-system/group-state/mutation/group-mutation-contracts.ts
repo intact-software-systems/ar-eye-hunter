@@ -492,8 +492,8 @@ export interface GroupMutationIngressFacts {
      */
     readonly nowEpochMs: number;
     /**
-     * When the command's idempotency record and the outbox rows it derives expire: a replay of its request inside
-     * the window returns the stored result, and once the expiry sweep removes the record the request executes again.
+     * When the command's idempotency record and the outbox rows it derives expire: its ingress plus
+     * `finishedRetentionMs` (the contract on `MIN_APP_INBOX_FINISHED_RETENTION_MS`).
      */
     readonly expireAtEpochMs: number;
     readonly serviceId: string;

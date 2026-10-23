@@ -6,6 +6,7 @@ import { toError } from '@shared/resilience/to-error.ts';
 import {
     controlRunSnapshotUrlFromControlUrl,
     readHeadlessWorkerConfig,
+    toHeadlessWorkerLaunchOptions,
     type HeadlessWorkerAgentConfig,
     type HeadlessWorkerBrowserEngine,
     type HeadlessWorkerConfig
@@ -80,12 +81,10 @@ try {
             `engine=${config.browserEngine} ` +
             `spa=${config.spaUrl} control=${config.controlUrl}`
     );
-    // The worker owns SIGINT and SIGTERM: Playwright's own handlers would close the browser under the pages' disconnect.
+    const launchOptions = toHeadlessWorkerLaunchOptions(config);
     const launchedBrowser = await browserTypes[config.browserEngine].launch({
-        headless: config.headless,
-        timeout: config.launchTimeoutMs,
-        handleSIGINT: false,
-        handleSIGTERM: false
+        ...launchOptions,
+        args: [...launchOptions.args]
     });
     browser = launchedBrowser;
 

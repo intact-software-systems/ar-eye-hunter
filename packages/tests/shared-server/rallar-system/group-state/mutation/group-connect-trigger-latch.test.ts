@@ -113,6 +113,28 @@ function automaticRead(): GroupMutationRead {
     };
 }
 
+describe('publication connect requests', () => {
+    it('stamps the wake with the expiry its attempt decided, not its source row\'s', () => {
+        const source = computeGroupConnectTriggerEntry({
+            work: { kind: 'intent', ...IDENTITY, wakeIdentity: 'source' },
+            senderId: 'origin',
+            createdAtEpochMs: 1000,
+            expireAtEpochMs: 2000
+        });
+
+        const [wake] = computePublicationConnectTriggerRequests({
+            automationEnabled: true,
+            target: PLANNED,
+            sourceWorkId: 'source-work:1',
+            entry: source,
+            expireAtEpochMs: 3_601_000
+        });
+
+        expect(wake?.audit.expiryTs.epochMilliseconds).toBe(3_601_000);
+        expect(wake?.audit.createdTs).toEqual(source.audit.createdTs);
+    });
+});
+
 describe('connect intent handoff', () => {
     it('keeps intent when publication is absent and reissues against the current publication without consuming on submission', async () => {
         const runtime = new FakeRuntimeStateRepository();
@@ -345,7 +367,8 @@ describe('retry handoff commit races and replay', () => {
             automationEnabled: true,
             target: PLANNED,
             sourceWorkId: 'source-work:1',
-            entry: source
+            entry: source,
+            expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP
         });
         const writes = requests.map(computeAppOutboxInsert);
         expect(requests).toHaveLength(1);
@@ -385,13 +408,15 @@ describe('retry handoff commit races and replay', () => {
             automationEnabled: true,
             target: PLANNED,
             sourceWorkId: 'source-work:1',
-            entry: source
+            entry: source,
+            expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP
         });
         const next = computePublicationConnectTriggerRequests({
             automationEnabled: true,
             target: { ...PLANNED, version: 2 },
             sourceWorkId: 'source-work:1',
-            entry: source
+            entry: source,
+            expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP
         });
         const firstWrite = computeAppOutboxInsert(first[0]!);
         const nextWrite = computeAppOutboxInsert(next[0]!);

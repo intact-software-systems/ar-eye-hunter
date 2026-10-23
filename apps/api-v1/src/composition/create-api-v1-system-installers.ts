@@ -34,6 +34,7 @@ export interface CreateApiV1SystemInstallersInput {
     readonly database: PSqlSql;
     readonly serviceId: string;
     readonly nowEpochMs: () => number;
+    readonly finishedRetentionMs: number;
     readonly topology: ApiV1TopologyServices;
     readonly crdtLogRepository: RallarCrdtAdminReadRepository;
     readonly crdtPolicies: readonly RallarCrdtDocumentTypePolicy[];
@@ -106,6 +107,7 @@ function createTopologyAppOutboxOptions(
         rttRefinementService: topology.rttRefinementService,
         topologyDelivery: runtime.rtcTopologyDelivery,
         nowEpochMs: topology.rtcTopologyOptions.now ?? Date.now,
+        finishedRetentionMs: input.finishedRetentionMs,
         timing: input.recomputeTiming,
         formationAutomation: {
             latches: new GroupConnectTriggerLatchRepository(new PSqlRuntimeStateRepository(input.database)),

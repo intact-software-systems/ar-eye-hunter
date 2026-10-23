@@ -190,9 +190,10 @@ export interface ApiV1AppInboxConfiguration {
     readonly newLaneHeldRows: number;
     readonly completionWait: ApiV1AppInboxCompletionWaitConfiguration;
     /**
-     * How long a finished command's fact, result, derived outbox rows and idempotency record stay before the expiry
-     * sweeps remove them (`MIN_APP_INBOX_FINISHED_RETENTION_MS` to `MAX_APP_INBOX_FINISHED_RETENTION_MS`). A replay
-     * inside the window returns the stored result; after it the command executes again.
+     * The finished-retention window R (`MIN_APP_INBOX_FINISHED_RETENTION_MS` to `MAX_APP_INBOX_FINISHED_RETENTION_MS`):
+     * a command's idempotency record and derived rows expire at its ingress plus R, its fact and result at its
+     * completion plus R. A replay before the fact expires returns the stored result; after it the command executes
+     * again.
      */
     readonly finishedRetentionMs: number;
 }

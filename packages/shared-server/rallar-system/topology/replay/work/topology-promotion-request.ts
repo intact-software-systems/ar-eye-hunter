@@ -34,6 +34,8 @@ interface ComputeTopologyPromotionRequestInput {
     readonly entry: ResourceEntry;
     readonly sourceWorkId: string;
     readonly target: RallarOverlayTopologySnapshot | null;
+    /** The expiry the attempt decided for the rows it derives. */
+    readonly expireAtEpochMs: number;
 }
 
 /**
@@ -97,6 +99,6 @@ export function computeTopologyPromotionRequest(
         sourceWorkId: input.sourceWorkId,
         senderId: input.serviceId ?? 'topology-promotion',
         createdAtEpochMs: input.entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds,
-        expireAtEpochMs: input.entry.audit.expiryTs.epochMilliseconds
+        expireAtEpochMs: input.expireAtEpochMs
     });
 }

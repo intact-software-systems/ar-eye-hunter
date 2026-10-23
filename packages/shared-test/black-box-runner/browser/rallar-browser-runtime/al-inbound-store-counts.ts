@@ -1,4 +1,4 @@
-import type { ALStorageEvent } from './al-storage-event.ts';
+import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 
 /**
  * The ordering snapshots and the delivered markers a runtime's inbound stores hold: each store states a count after

@@ -4,6 +4,7 @@ import {
     it
 } from 'vitest';
 
+import { ALInboundStoreCounts } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/al-inbound-store-counts.ts';
 import { createBlackBoxRallarCongestionCounters } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-congestion-counters.ts';
 import {
     BlackBoxRallarRuntimeDiagnostics,
@@ -22,7 +23,6 @@ import {
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
-import { ALInboundStoreCounts } from '@shared/alm/storage/al-inbound-store-counts.ts';
 import { createCountingIndexedDbOperationObserver, createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { createScriptedStorageFaultPort } from '@shared/persistence/storage-fault-port.ts';
 import { createScriptedTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';

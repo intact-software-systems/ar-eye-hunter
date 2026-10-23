@@ -85,14 +85,27 @@ export class ResetAdminMetrics {
     }
 
     private readCategories(categories: readonly AdminMetricsResetCategory[]): AdminMetricsResetSnapshot {
-        const snapshot: { rtcTopology?: RtcTopologyAdminMetrics; groupFormation?: RallarGroupFormationMetrics; } = {};
-        if (categories.includes('rtc-topology')) {
-            snapshot.rtcTopology = this.options.rtcTopology.read();
+        const rtcTopology = this.readRtcTopologyPart(categories);
+        const groupFormation = this.readGroupFormationPart(categories);
+        return { ...rtcTopology, ...groupFormation };
+    }
+
+    private readRtcTopologyPart(
+        categories: readonly AdminMetricsResetCategory[]
+    ): Pick<AdminMetricsResetSnapshot, 'rtcTopology'> {
+        if (!categories.includes('rtc-topology')) {
+            return {};
         }
-        if (categories.includes('group-formation')) {
-            snapshot.groupFormation = this.options.groupFormation.read();
+        return { rtcTopology: this.options.rtcTopology.read() };
+    }
+
+    private readGroupFormationPart(
+        categories: readonly AdminMetricsResetCategory[]
+    ): Pick<AdminMetricsResetSnapshot, 'groupFormation'> {
+        if (!categories.includes('group-formation')) {
+            return {};
         }
-        return snapshot;
+        return { groupFormation: this.options.groupFormation.read() };
     }
 
     private resetCategory(category: AdminMetricsResetCategory): void {

@@ -71,7 +71,7 @@ describe('RTC topology group-revision work', () => {
                 workEnvelope,
                 workId: toRtcTopologyExecutionId(workEnvelope),
                 attemptCount: 1,
-                expireAtEpochMs: 10_000
+                derivedExpireAtEpochMs: 10_000
             },
             read: {
                 mutation: {
@@ -240,6 +240,7 @@ describe('RTC topology RTT-refresh work', () => {
             },
             entry: workInput.entry,
             sourceWorkId: workInput.facts.workId,
+            derivedExpireAtEpochMs: workInput.facts.derivedExpireAtEpochMs,
             reservationFinish: workInput.reservationFinish,
             formationAutomationEnabled: workInput.formationAutomationEnabled,
             serviceId: workInput.serviceId,
@@ -326,7 +327,7 @@ function toRttRefreshWorkInput(input: ComputeRttRefreshDecisionInput): ComputeRt
         AppOutboxType.RTC_TOPOLOGY_RECOMPUTE
     );
     return {
-        facts: { workEnvelope, workId: toRtcTopologyExecutionId(workEnvelope), attemptCount: 1, expireAtEpochMs: 4_102_444_800_000 },
+        facts: { workEnvelope, workId: toRtcTopologyExecutionId(workEnvelope), attemptCount: 1, derivedExpireAtEpochMs: 4_102_444_800_000 },
         read: {
             mutation: {
                 snapshot: {

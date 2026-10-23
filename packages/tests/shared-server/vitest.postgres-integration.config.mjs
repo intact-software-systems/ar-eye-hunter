@@ -31,6 +31,7 @@ export default {
             'packages/tests/relic-hunters/relic-game-mutation.test.ts',
             'packages/tests/relic-hunters/relic-game-publication.test.ts',
             'packages/tests/relic-hunters/relic-game-retention.test.ts',
+            'packages/tests/shared-server/rallar-system/topology/replay/work/rtc-topology-coalesced-head-retention.test.ts',
             ...topologyConcurrencyTests
         ]
     }

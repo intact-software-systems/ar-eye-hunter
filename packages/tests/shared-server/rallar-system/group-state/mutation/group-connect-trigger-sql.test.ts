@@ -377,6 +377,7 @@ function createPublicationHandlerHarness(sql: PSqlSql, applicationId: string): P
     });
     const handler = createRtcTopologyWorkHandler({
         nowEpochMs: Date.now,
+        finishedRetentionMs: 3_600_000,
         outboxQueueReader,
         database: sql,
         topologyPlanning: topology.planning,
