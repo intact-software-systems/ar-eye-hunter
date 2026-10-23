@@ -280,8 +280,18 @@ The adjusted AR fixture passed all ten scenarios locally in four minutes. Its wo
 14 cases, test typechecking found no new errors, and changed-style and reachability checks passed.
 Fresh review found no unresolved fixture issue.
 
-The next two steps are (1) verify the adjusted browser fixture in hosted CI, then (2) publish passing
-CI evidence and the completed slice and wait for the maintainer to merge.
+The hosted production-preview run still failed four AR multiplayer scenarios. Trace timing shows
+successful admission/presence responses while ordinary browser actions take seconds; Quick Join
+finished its joined-state assertions before timing out during cleanup. Local profiling confirmed
+shader/context initialization cost but did not reproduce the hosted delay after warmup. Explicit
+ANGLE/SwiftShader selection, already used by Relic, is the next controlled fixture experiment.
+Scenario workloads, assertions, and deadlines remain unchanged during this comparison.
+The explicit backend passed all ten local AR scenarios in 4.3 minutes; fresh review found no
+configuration or coverage issue. Hosted verification remains pending. The preceding hosted run
+finished with all other validation lanes passing.
+
+The next two steps are (1) measure that backend choice locally and in hosted CI, then (2) resolve any
+remaining failure, publish passing evidence, and wait for the maintainer to merge.
 
 ## Final validation and delivery
 

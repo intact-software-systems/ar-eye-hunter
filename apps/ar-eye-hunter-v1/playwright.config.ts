@@ -61,7 +61,12 @@ export default defineConfig({
             ],
             use: {
                 ...devices['Desktop Chrome'],
-                browserName: 'chromium'
+                browserName: 'chromium',
+                launchOptions: fullStackEnabled
+                    ? {
+                        args: ['--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader']
+                    }
+                    : undefined
             }
         },
         {
