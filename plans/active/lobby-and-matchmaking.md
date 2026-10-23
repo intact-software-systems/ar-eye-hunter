@@ -236,8 +236,11 @@ to an open unlisted room still enforces scope, authorization, capacity, and life
 preserves existing memberships, presence, and application participation.
 
 Both games provide unlisted creation, scoped links, and owner/admin List/Unlist controls with failure
-and retry states. Outsider room lists hide unlisted and credential-protected rooms; active members
-retain their rooms. Hosting responses belong to their operation, session, and room, so an older code
+and retry states. Both consume scoped safe directory summaries for public discovery; Relic keeps
+these separate from member snapshots, paginates and deduplicates them, and fences refreshes by
+request and session. Loading, failed refresh, retained results, and empty success have distinct
+states. Outsider room lists hide unlisted and credential-protected rooms; active members retain
+their rooms. Hosting responses belong to their operation, session, and room, so an older code
 response cannot replace a newer one after switching rooms. Visible browser journeys cover shared
 play through listing changes. Automatic freshness remains slice 7. The PR owns detailed validation
 and review evidence; its completed implementation plan and design are removed with this delivery.

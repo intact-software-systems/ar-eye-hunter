@@ -262,7 +262,13 @@
         }
       },
       "expect": {
-        "status": 409
+        "status": 409,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "app-inbox-idempotency-conflict",
+          "status": 409
+        }
       }
     },
     {
@@ -380,7 +386,13 @@
         }
       },
       "expect": {
-        "status": 403
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "authorization-denied",
+          "status": 403
+        }
       }
     },
     {
@@ -602,7 +614,13 @@
         }
       },
       "expect": {
-        "status": 400
+        "status": 400,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "api-mutation-request-invalid",
+          "status": 400
+        }
       }
     }
   ]

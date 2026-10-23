@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 
-import { toGroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 
 import { colorForId } from '../color.ts';
 import { shortId } from '../lang.ts';
@@ -138,18 +138,45 @@ function RelicCredentialFields({ credentials, setCredentials }: RelicCredentialF
 function RelicRoomsList({ game }: RelicSessionProps) {
     const rooms = game.rooms.filter((room) =>
         room.name.toLowerCase().includes('relic hunters') &&
-        ((room.joinMode === 'open' && toGroupDirectoryListing(room.snapshot.group.metadata) === 'listed') ||
-            room.snapshot.members.some((member) =>
-                member.principalId === game.session?.clientId && member.status === 'active'
-            ))
+        room.snapshot.members.some((member) =>
+            member.principalId === game.session?.clientId && member.status === 'active'
+        )
     );
+    const publicRooms = game.directory.entries.filter((entry) =>
+        !rooms.some((room) => isSameGroupRef(room.roomRef, entry.groupRef))
+    );
+    const rows = [
+        ...rooms.map((room) => ({
+            roomId: room.roomId,
+            name: room.name,
+            onlineMemberCount: room.onlineMemberCount,
+            full: false
+        })),
+        ...publicRooms.map((entry) => ({
+            roomId: entry.groupRef.groupId,
+            name: entry.displayName,
+            onlineMemberCount: entry.onlineMemberCount,
+            full: entry.isFull
+        }))
+    ];
     return (
-        <div className="room-list">
-            {rooms.map((room) => (
+        <div className="room-list" aria-busy={game.directory.status === 'loading'}>
+            {game.directory.status === 'loading' && <p role="status">Loading public expeditions…</p>}
+            {game.directory.status === 'error' && (
+                <p role="alert">
+                    Could not refresh public expeditions. Try Refresh.
+                    {publicRooms.length > 0 && ' Previous results are shown.'}
+                </p>
+            )}
+            {game.directory.status === 'ready' && game.directory.entries.length === 0 && (
+                <p>No public expeditions found.</p>
+            )}
+            {rows.map((room) => (
                 <button
                     type="button"
                     key={room.roomId}
                     data-room-id={room.roomId}
+                    disabled={room.full || !game.diagnostics.middlewareConnected}
                     className={room.roomId === game.roomId ? 'room-row active' : 'room-row'}
                     onClick={() => {
                         if (room.roomId !== game.roomId) {
@@ -158,7 +185,7 @@ function RelicRoomsList({ game }: RelicSessionProps) {
                     }}
                 >
                     <span>{room.name}</span>
-                    <small>{room.onlineMemberCount} online</small>
+                    <small>{room.onlineMemberCount} online{room.full && ' · Full'}</small>
                 </button>
             ))}
         </div>

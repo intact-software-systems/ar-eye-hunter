@@ -123,6 +123,12 @@ const sameLogicalActionRequestIdentityReuse: readonly SameLogicalActionRequestId
         requestId: 'upsert-principal-scope-{runId}'
     },
     {
+        actionNames: ['hideRoom', 'rejectChangedReuse', 'replayHide'],
+        file: `${apiV1RecipeDirectory}/api-v1-group-directory-listing.json`,
+        kind: 'sequential-replay',
+        requestId: 'bb-unlisted-hideRoom-{runId}'
+    },
+    {
         actionNames: [
             'firstCrdtHttpMutation',
             'rejectChangedCrdtHttpIntent',
@@ -373,7 +379,7 @@ describe('API-v1 recipe mutation identity cutover', () => {
         expect(reuse).toEqual(expectedReuse);
     });
 
-    it('preserves legacy auth failures for reads and non-AppInbox routes', () => {
+    it('keeps read and non-AppInbox auth failures outside mutation envelopes', () => {
         for (
             const [file, stepName] of [
                 ['api-v1-auth-session.json', 'rejectMissingBearerToken'],

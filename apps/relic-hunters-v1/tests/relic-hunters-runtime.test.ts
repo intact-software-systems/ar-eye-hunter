@@ -17,6 +17,7 @@ import type {
     RallarStartOptions
 } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { GroupDirectoryEntry, GroupDirectoryPage, GroupDirectoryRequest } from '@shared/api/group-directory/group-directory-types.ts';
 import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createGroupSnapshotFixture } from '../../../packages/tests/shared-web/authoritative-group-fixtures.ts';
@@ -31,6 +32,92 @@ afterEach(() => {
 });
 
 describe('RelicHuntersRuntime', () => {
+    it('loads safe public directory pages without turning them into member snapshots', async () => {
+        const backend = new RelicRuntimeBackend();
+        backend.setRooms({ rooms: [], currentRoomId: undefined, members: [] });
+        const first = directoryEntry('first');
+        const second = directoryEntry('second');
+        const requests: GroupDirectoryRequest[] = [];
+        backend.listDirectory = async (request) => {
+            requests.push(request);
+            return request.cursor
+                ? { entries: [first, second], nextCursor: null }
+                : { entries: [first], nextCursor: 'next-page' };
+        };
+        const runtime = startRuntime(backend);
+        await runtime.start();
+        expect(runtime.getState().directory).toEqual({ status: 'ready', entries: [first, second], error: undefined });
+        expect(requests).toEqual([
+            { kind: 'room', q: 'relic hunters', limit: 50 },
+            { kind: 'room', q: 'relic hunters', limit: 50, cursor: 'next-page' }
+        ]);
+        expect(runtime.getState().rooms).toEqual([]);
+        expect(runtime.getState().snapshot).toBeUndefined();
+        expect(backend.reads).toEqual([]);
+    });
+
+    it('retains directory entries on failure and recovers to a successfully empty directory', async () => {
+        const backend = new RelicRuntimeBackend();
+        const listed = directoryEntry('listed');
+        backend.listDirectory = async () => ({ entries: [listed], nextCursor: null });
+        const runtime = startRuntime(backend);
+        await runtime.start();
+        expect(runtime.getState().directory.entries).toEqual([listed]);
+        backend.listDirectory = async () => {
+            throw new Error('Directory unavailable');
+        };
+        await runtime.getState().refreshRooms();
+        expect(runtime.getState().directory).toEqual({ status: 'error', entries: [listed], error: 'Directory unavailable' });
+        backend.listDirectory = async () => ({ entries: [], nextCursor: null });
+        await runtime.getState().refreshRooms();
+        expect(runtime.getState().directory).toEqual({ status: 'ready', entries: [], error: undefined });
+    });
+
+    it.each(['success', 'failure'] as const)('ignores an older directory %s after a newer refresh completes', async (outcome) => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = startRuntime(backend);
+        await runtime.start();
+        expect(runtime.getState().directory.status).toBe('ready');
+        const readStarted = Promise.withResolvers<void>();
+        const oldRead = Promise.withResolvers<GroupDirectoryPage>();
+        backend.listDirectory = () => {
+            readStarted.resolve();
+            return oldRead.promise;
+        };
+        const older = runtime.getState().refreshRooms();
+        await readStarted.promise;
+        const latest = directoryEntry('latest');
+        backend.listDirectory = async () => ({ entries: [latest], nextCursor: null });
+        await runtime.getState().refreshRooms();
+        if (outcome === 'success') {
+            oldRead.resolve({ entries: [directoryEntry('obsolete')], nextCursor: null });
+        }
+        else {
+            oldRead.reject(new Error('The old directory request failed'));
+        }
+        await older;
+        expect(runtime.getState().directory).toEqual({ status: 'ready', entries: [latest], error: undefined });
+    });
+
+    it('discards a pending directory response when the account signs out', async () => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = startRuntime(backend);
+        await runtime.start();
+        expect(runtime.getState().directory.status).toBe('ready');
+        const readStarted = Promise.withResolvers<void>();
+        const oldRead = Promise.withResolvers<GroupDirectoryPage>();
+        backend.listDirectory = () => {
+            readStarted.resolve();
+            return oldRead.promise;
+        };
+        const pending = runtime.getState().refreshRooms();
+        await readStarted.promise;
+        backend.signOut();
+        oldRead.resolve({ entries: [directoryEntry('old-account')], nextCursor: null });
+        await pending;
+        expect(runtime.getState().directory).toEqual({ status: 'idle', entries: [], error: undefined });
+    });
+
     it('hydrates the current expedition, accepts newer events, and stops delivery on cleanup', async () => {
         const backend = new RelicRuntimeBackend();
         const runtime = startRuntime(backend);
@@ -380,6 +467,9 @@ class RelicRuntimeBackend implements RelicHuntersRuntime.Dependencies {
     public async refreshRooms() {
         return this.state;
     }
+    public async listDirectory(_request: GroupDirectoryRequest): Promise<GroupDirectoryPage> {
+        return { entries: [], nextCursor: null };
+    }
     public async waitForPresence(roomId: string, options: RallarRoomPresenceWaitOptions): Promise<RallarRoomPresenceWaitResult> {
         const result = (status: RallarRoomPresenceWaitResult['status']): RallarRoomPresenceWaitResult => ({
             status,
@@ -506,4 +596,19 @@ function stateFor(roomId: string): RallarRoomState {
 
 function relicSnapshot(roomId: string, atEpochMs: number): RelicPublicSnapshot {
     return toPublicRelicSnapshot(createRelicGame(roomId, roomId, atEpochMs));
+}
+
+function directoryEntry(groupId: string): GroupDirectoryEntry {
+    return {
+        groupRef: { applicationId: 'rallar-server', workspaceId: 'default', groupId },
+        displayName: `Relic Hunters Expedition: ${groupId}`,
+        kind: 'room',
+        joinMode: 'open',
+        memberCount: 1,
+        onlineMemberCount: 1,
+        maxMembers: null,
+        isFull: false,
+        lifecycleState: 'active',
+        peerRttMs: null
+    };
 }

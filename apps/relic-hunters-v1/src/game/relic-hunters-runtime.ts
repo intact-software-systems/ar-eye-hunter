@@ -25,6 +25,11 @@ import type {
 } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
+import type {
+    GroupDirectoryEntry,
+    GroupDirectoryPage,
+    GroupDirectoryRequest
+} from '@shared/api/group-directory/group-directory-types.ts';
 import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
 import { createRallarAiFunnyRoomName, createRallarAiRoomNameSeed } from '@shared/rallar-ai/mod.ts';
 import type { RallarGameAuthorityClientStatus } from '@shared/rallar-game/mod.ts';
@@ -120,6 +125,7 @@ export namespace RelicHuntersRuntime {
         onAuthChange(listener: RallarAuthChangeListener): RallarUnsubscribe;
         roomState(): RallarRoomState;
         refreshRooms(): Promise<RallarRoomState>;
+        listDirectory(request: GroupDirectoryRequest): Promise<GroupDirectoryPage>;
         waitForPresence(roomId: string, options: RallarRoomPresenceWaitOptions): Promise<RallarRoomPresenceWaitResult>;
         onRoomsChange(handler: (state: RallarRoomState) => void): RallarUnsubscribe;
         onSnapshotMessage(handler: (event: RelicServerEvent) => void): RallarUnsubscribe;
@@ -141,6 +147,12 @@ export namespace RelicHuntersRuntime {
         resetGame(roomId: string): Promise<RelicPublicSnapshot | undefined>;
     }
 
+    export interface Directory {
+        readonly status: 'idle' | 'loading' | 'ready' | 'error';
+        readonly entries: readonly GroupDirectoryEntry[];
+        readonly error: string | undefined;
+    }
+
     export interface Connection {
         readonly roomEntry: RallarRoomEntry;
         readonly session: AuthSession | undefined;
@@ -149,6 +161,7 @@ export namespace RelicHuntersRuntime {
         readonly error: string | undefined;
         readonly roomId: string | undefined;
         readonly rooms: readonly RallarRoomSummary[];
+        readonly directory: Directory;
         readonly snapshot: RelicPublicSnapshot | undefined;
         readonly roundTransition: RelicRoundTransitionEvent | undefined;
         readonly lastHunterEvent: RelicHunterEvent | undefined;
@@ -191,6 +204,7 @@ export class RelicHuntersRuntime {
     private transport: RallarSubscriptionScope | undefined;
     private roomListeners: RallarSubscriptionScope | undefined;
     private snapshotRequest = 0;
+    private directoryRequest = 0;
     private repairInterval: ReturnType<typeof setInterval> | undefined;
     private roundRepairTimer: ReturnType<typeof setTimeout> | undefined;
     private roundRepairInterval: ReturnType<typeof setInterval> | undefined;
@@ -207,6 +221,7 @@ export class RelicHuntersRuntime {
             error: undefined,
             roomId: undefined,
             rooms: [],
+            directory: { status: 'idle', entries: [], error: undefined },
             snapshot: undefined,
             roundTransition: undefined,
             lastHunterEvent: undefined,
@@ -313,6 +328,7 @@ export class RelicHuntersRuntime {
             diagnostics: initialRelicDiagnostics(state.session),
             roomId: undefined,
             rooms: [],
+            directory: { status: 'idle', entries: [], error: undefined },
             snapshot: undefined,
             roundTransition: undefined,
             lastHunterEvent: undefined
@@ -334,6 +350,7 @@ export class RelicHuntersRuntime {
             diagnostics: initialRelicDiagnostics(undefined),
             roomId: undefined,
             rooms: [],
+            directory: { status: 'idle', entries: [], error: undefined },
             snapshot: undefined,
             roundTransition: undefined,
             lastHunterEvent: undefined,
@@ -344,6 +361,7 @@ export class RelicHuntersRuntime {
     private invalidateConnection(): void {
         this.generation++;
         this.snapshotRequest++;
+        this.directoryRequest++;
         this.bootstrap?.abort();
         this.bootstrap = undefined;
         this.connectionStarts.clear();
@@ -418,6 +436,9 @@ export class RelicHuntersRuntime {
             }
             this.adoptRoom(roomState, false);
             await this.completeBootstrap(attempt);
+            if (this.current(attempt)) {
+                await this.refreshRooms(this.deps.roomState());
+            }
         }
         catch (error) {
             if (!this.current(attempt)) {
@@ -712,14 +733,49 @@ export class RelicHuntersRuntime {
         }
     }
 
-    private async refreshRooms(): Promise<void> {
+    private async refreshRooms(knownRoomState?: RallarRoomState): Promise<void> {
         const attempt = this.attempt();
         if (!attempt) {
             return;
         }
-        const state = await this.deps.refreshRooms();
-        if (this.current(attempt)) {
+        const request = ++this.directoryRequest;
+        this.publish({ directory: { ...this.connection.directory, status: 'loading', error: undefined } });
+        try {
+            const state = knownRoomState ?? await this.deps.refreshRooms();
+            if (!this.current(attempt) || request !== this.directoryRequest) {
+                return;
+            }
             this.adoptRoom(state, true);
+            const entries = new Map<string, GroupDirectoryEntry>();
+            let cursor: string | null = null;
+            do {
+                const page = await this.deps.listDirectory({
+                    kind: 'room',
+                    q: 'relic hunters',
+                    limit: 50,
+                    ...(cursor === null ? {} : { cursor })
+                });
+                if (!this.current(attempt) || request !== this.directoryRequest) {
+                    return;
+                }
+                for (const entry of page.entries) {
+                    entries.set(entry.groupRef.groupId, entry);
+                }
+                cursor = page.nextCursor;
+            }
+            while (cursor !== null);
+            this.publish({ directory: { status: 'ready', entries: [...entries.values()], error: undefined } });
+        }
+        catch (error) {
+            if (this.current(attempt) && request === this.directoryRequest) {
+                this.publish({
+                    directory: {
+                        ...this.connection.directory,
+                        status: 'error',
+                        error: toError(error).message
+                    }
+                });
+            }
         }
     }
 

@@ -26,6 +26,7 @@ export function browserRelicRuntimeDeps(): RelicHuntersRuntime.Dependencies {
         subscriptions: () => rallar.subscriptions(),
         roomState: () => rallar.rooms.state(),
         refreshRooms: () => rallar.rooms.refresh(),
+        listDirectory: (request) => rallar.rooms.directory(request, { scope: RELIC_ROOM_SCOPE }),
         waitForPresence: (roomId, options) => rallar.rooms.waitForPresence(roomId, options),
         onRoomsChange: (handler) => rallar.rooms.onChange(handler),
         onSnapshotMessage: (handler) =>

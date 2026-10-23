@@ -83,8 +83,10 @@ so conflict redelivery retains concurrent metadata changes and exact replay reta
 
 Directory and Quick Join share one listing reader. Hiding invalidates the next conditional directory
 read and prevents a stale Quick Join candidate from committing. It does not revoke membership or
-presence. A scoped link still enters through ordinary admission. Both game lists also respect the
-setting when a development server exposes broader readable snapshots; listing is not access control.
+presence. A scoped link still enters through ordinary admission. Both games discover public rooms
+through scoped safe directory summaries and keep those summaries separate from member snapshots.
+Relic paginates and deduplicates directory results, retains visibly stale results after failure, and
+fences obsolete request and session responses. Listing is not access control.
 
 ## Data, CRDT, Motion, and Game stay separate
 
