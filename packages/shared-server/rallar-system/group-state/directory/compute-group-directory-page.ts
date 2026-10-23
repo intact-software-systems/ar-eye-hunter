@@ -40,7 +40,7 @@ export function computeGroupDirectoryPage(
                 groupId: snapshot.group.groupId,
                 onlineMemberCount: snapshot.onlineMemberCount,
                 peerRttMs: query.order === 'peer-rtt'
-                    ? computeRoomPeerRtt(snapshot, peerRtt, input.nowEpochMs)
+                    ? computeGroupPeerRtt(snapshot, peerRtt, input.nowEpochMs)
                     : null
             }
         }))
@@ -113,7 +113,7 @@ function computeRecentPeerRtt(input: ComputeGroupDirectoryPageInput): ReadonlyMa
     return values;
 }
 
-function computeRoomPeerRtt(
+function computeGroupPeerRtt(
     snapshot: GroupSnapshot,
     peerRtt: ReadonlyMap<string, number>,
     nowEpochMs: number

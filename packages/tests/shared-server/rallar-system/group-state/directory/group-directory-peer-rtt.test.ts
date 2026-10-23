@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { computeGroupDirectoryPage } from '@shared-server/rallar-system/group-state/directory/compute-group-directory-page.ts';
 import { decodeGroupDirectoryQuery } from '@shared-server/rallar-system/group-state/directory/decode-group-directory-query.ts';

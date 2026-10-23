@@ -2,7 +2,12 @@ import { useState, type FormEvent } from 'react';
 
 import type { ArenaConnection } from '../game/arena-runtime/arena-connection-contracts.ts';
 import { GAME_ROOM_NAME } from '../game/types.ts';
-import { toDirectorAttemptLabel, toDirectorLabel, toMatchLabel, toShortId } from './to-arena-labels.ts';
+import {
+    toDirectorAttemptLabel,
+    toDirectorLabel,
+    toMatchLabel,
+    toShortId
+} from './to-arena-labels.ts';
 
 interface ArenaOperationsProps {
     readonly arena: ArenaConnection;

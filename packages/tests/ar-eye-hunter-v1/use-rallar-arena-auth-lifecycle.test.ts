@@ -13,10 +13,21 @@ import {
 import { act } from 'react';
 
 import { readApiConfig, readIceCandidates } from '@shared-web/browser/connection/connection-http-api.ts';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { createRallarGameEnvelope } from '@shared-web/game/mod.ts';
-import type { GroupDirectoryEntry, GroupDirectoryPage, GroupDirectoryRequest } from '@shared/api/group-directory/group-directory-types.ts';
+import type {
+    GroupDirectoryEntry,
+    GroupDirectoryPage,
+    GroupDirectoryRequest
+} from '@shared/api/group-directory/group-directory-types.ts';
 
 import { createArenaRallarGameMatch } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
 import { createInitialVitalsState } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
@@ -540,10 +551,10 @@ describe('useRallarArena auth lifecycle', () => {
         await waitForState(() => arena.current?.connectionState === 'connected');
         const older = Promise.withResolvers<GroupDirectoryPage>();
         const fast = { ...directoryArena('fast'), peerRttMs: 20 };
-        const unknown = directoryArena('unknown');
+        const unmeasured = directoryArena('unknown');
         mockRallar.rooms.directory.mockReturnValueOnce(older.promise)
             .mockResolvedValueOnce({ entries: [fast], nextCursor: 'peer-page-2' })
-            .mockResolvedValueOnce({ entries: [unknown], nextCursor: null });
+            .mockResolvedValueOnce({ entries: [unmeasured], nextCursor: null });
         let previousRefresh: Promise<void> | undefined;
         await act(async () => {
             previousRefresh = arena.current?.refreshRooms();
@@ -565,7 +576,7 @@ describe('useRallarArena auth lifecycle', () => {
             await previousRefresh;
         });
         expect(arena.current?.directoryOrder).toBe('peer-rtt');
-        expect(arena.current?.openRooms).toEqual([fast, unknown]);
+        expect(arena.current?.openRooms).toEqual([fast, unmeasured]);
         expect(arena.current?.openRoomsStatus).toBe('ready');
         expect(arena.current?.openRoomsError).toBeUndefined();
         expect(mockRallar.rooms.directory).toHaveBeenCalledTimes(3);

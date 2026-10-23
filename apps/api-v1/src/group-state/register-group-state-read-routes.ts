@@ -1,4 +1,8 @@
-import { Hono, type Context, type Next } from 'jsr:@hono/hono@4.11.9';
+import {
+    Hono,
+    type Context,
+    type Next
+} from 'jsr:@hono/hono@4.11.9';
 import { etag, RETAINED_304_HEADERS } from 'jsr:@hono/hono@4.11.9/etag';
 
 import { computeGroupDirectoryPage } from '@shared-server/rallar-system/group-state/directory/compute-group-directory-page.ts';
@@ -8,6 +12,7 @@ import {
 } from '@shared-server/rallar-system/group-state/directory/decode-group-directory-query.ts';
 import { readStateEventListQuery } from '@shared-server/rallar-system/state-events/state-event-listing.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/topology/persistence/rtc-topology-errors.ts';
+import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupDirectoryPage } from '@shared/api/group-directory/group-directory-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -148,18 +153,28 @@ async function readGroupDirectoryPage(
         isGroupStateRouteSnapshotDirectoryListed(snapshot, request.principalId, nowEpochMs)
     );
     const measurements = request.query.order === 'peer-rtt' && request.requesterSessionId !== null && listed.length > 0
-        ? await dependencies.rtcRttRepository.listMeasurementEntriesForEndpoints([request.requesterSessionId])
-            .catch((cause: unknown) => {
-                throw new GroupDirectoryLatencyReadError(cause instanceof Error ? cause : new Error(String(cause)));
-            })
+        ? await readGroupDirectoryRttMeasurements(dependencies.rtcRttRepository, request.requesterSessionId)
         : [];
     return computeGroupDirectoryPage(listed, {
         query: request.query,
         defaultMaxMembers: dependencies.groupDefaultMaxMembers,
         requesterSessionId: request.requesterSessionId,
-        rttMeasurements: measurements.map((measurement) => measurement.value),
+        rttMeasurements: measurements,
         nowEpochMs
     });
+}
+
+async function readGroupDirectoryRttMeasurements(
+    repository: GroupStateRouteDependencies['rtcRttRepository'],
+    requesterSessionId: string
+): Promise<readonly RttMeasurementInfo[]> {
+    try {
+        const entries = await repository.listMeasurementEntriesForEndpoints([requesterSessionId]);
+        return entries.map((entry) => entry.value);
+    }
+    catch (cause) {
+        throw new GroupDirectoryLatencyReadError(cause instanceof Error ? cause : new Error(String(cause)));
+    }
 }
 
 async function readGroupSnapshot(

@@ -1,4 +1,9 @@
-import { expect, test, type Page, type Route } from '@playwright/test';
+import {
+    expect,
+    test,
+    type Page,
+    type Route
+} from '@playwright/test';
 
 import type { AuthSession } from '../../../packages/shared/api/api-config.ts';
 import type { GroupDirectoryEntry } from '../../../packages/shared/api/group-directory/group-directory-types.ts';
@@ -103,10 +108,10 @@ test(
             orders.push(order);
             const slow = { ...directoryArena('A slow', false), peerRttMs: order === 'peer-rtt' ? 90 : null };
             const fast = { ...directoryArena('Z fast', false), peerRttMs: order === 'peer-rtt' ? 20 : null };
-            const unknown = directoryArena('B unknown', false);
+            const unmeasured = directoryArena('B unknown', false);
             await route.fulfill({
                 json: {
-                    entries: order === 'peer-rtt' ? [fast, slow, unknown] : [slow, unknown, fast],
+                    entries: order === 'peer-rtt' ? [fast, slow, unmeasured] : [slow, unmeasured, fast],
                     nextCursor: null
                 }
             });

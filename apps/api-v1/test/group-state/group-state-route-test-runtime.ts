@@ -1,6 +1,11 @@
 import { type GroupStateWritten } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { AuditStamp, GroupEvent, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+    AuditStamp,
+    GroupEvent,
+    GroupMember,
+    GroupSnapshot
+} from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 

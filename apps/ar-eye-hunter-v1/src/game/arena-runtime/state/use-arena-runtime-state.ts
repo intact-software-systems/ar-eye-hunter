@@ -9,14 +9,22 @@ import {
 } from 'react';
 
 import { readWebSocketTicketBackoffState } from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
-import { rallar, type RallarDirectorStatus, type RallarRoomSummary } from '@shared-web/browser/rallar.ts';
+import {
+    rallar,
+    type RallarDirectorStatus,
+    type RallarRoomSummary
+} from '@shared-web/browser/rallar.ts';
 import type { RallarGameDiagnostics } from '@shared-web/game/mod.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupDirectoryEntry, GroupDirectoryOrder } from '@shared/api/group-directory/group-directory-types.ts';
 
 import type { AvatarProfile } from '../../avatarProfile.ts';
 import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
-import type { ArenaLinkState, ArenaPresenceNotice, ArenaPresencePlayerSummary } from '../../squadLink.ts';
+import type {
+    ArenaLinkState,
+    ArenaPresenceNotice,
+    ArenaPresencePlayerSummary
+} from '../../squadLink.ts';
 import type {
     ArenaEvent,
     ArenaSnapshot,
