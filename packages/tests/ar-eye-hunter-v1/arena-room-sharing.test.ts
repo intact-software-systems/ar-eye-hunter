@@ -126,6 +126,59 @@ it('keeps rotation disabled while creation publishes its initial code', async ()
     }
 });
 
+it.each(['success', 'failure'] as const)('ignores a superseded rotation %s after hosting another room and returning', async (outcome) => {
+    const { session, snapshot, arena } = createHostFixture();
+    const other = { ...snapshot, group: { ...snapshot.group, groupId: 'another-arena' } };
+    facade.session.mockReturnValue(session);
+    facade.rooms.state.mockReturnValue({ currentRoomRef: snapshot.group });
+    const oldRotation = Promise.withResolvers<GroupJoinCodeResponse>();
+    facade.rooms.rotateJoinCode.mockReturnValueOnce(oldRotation.promise);
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    try {
+        await act(async () => root.render(createElement(ArenaRoomHosting, { arena })));
+        const rotate = () => {
+            const button = [...container.querySelectorAll('button')].find((candidate) => candidate.textContent === 'Rotate room code');
+            if (!button) {
+                throw new Error('The host must be able to rotate the room code');
+            }
+            expect(button.disabled).toBe(false);
+            button.click();
+        };
+        await act(async () => rotate());
+        for (const current of [other, snapshot]) {
+            facade.rooms.state.mockReturnValue({ currentRoomRef: current.group });
+            facade.rooms.rotateJoinCode.mockResolvedValueOnce({ joinCode: 'latest-code', expiresAtEpochMs: 4_000_000_000_000, snapshot: current });
+            await act(async () =>
+                root.render(createElement(ArenaRoomHosting, {
+                    arena: {
+                        ...arena,
+                        roomId: current.group.groupId,
+                        rooms: [{ ...arena.rooms[0], roomId: current.group.groupId, roomRef: current.group, snapshot: current }]
+                    }
+                }))
+            );
+            await act(async () => rotate());
+        }
+        expect(container.querySelector('input')?.value).toContain('latest-code');
+        await act(async () => {
+            if (outcome === 'success') {
+                oldRotation.resolve({ joinCode: 'obsolete-code', expiresAtEpochMs: 4_000_000_000_000, snapshot });
+            }
+            else {
+                oldRotation.reject(new Error('The obsolete rotation failed'));
+            }
+        });
+        expect(container.querySelector('input')?.value).toContain('latest-code');
+        expect(container.querySelector('[role="alert"]')).toBeNull();
+    }
+    finally {
+        await act(async () => root.unmount());
+        container.remove();
+    }
+});
+
 function createHostFixture() {
     const session: AuthSession = {
         clientId: 'host',
