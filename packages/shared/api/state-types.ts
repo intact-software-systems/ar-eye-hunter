@@ -9,15 +9,21 @@ import type {
 import type { GroupDirectoryListing } from './group-directory/group-directory-listing.ts';
 import type { GroupLayoutIdentity } from './group-lifecycle/group-layout-identity.ts';
 import type { GroupLifecyclePolicyInput } from './group-lifecycle/group-lifecycle-policy.ts';
-import type { Group, GroupJoinMode, GroupMemberStatus, GroupRole, GroupSnapshot, GroupStatus } from './group-types.ts';
+import type {
+    Group,
+    GroupJoinMode,
+    GroupMemberStatus,
+    GroupRef,
+    GroupRole,
+    GroupSnapshot,
+    GroupStatus
+} from './group-types.ts';
 
 export const DEFAULT_STATE_APPLICATION_ID = 'rallar-server';
 export const DEFAULT_STATE_WORKSPACE_ID = 'default';
 
-export interface StateScope {
-    readonly applicationId: string;
-    readonly workspaceId: string;
-}
+/** The application/workspace projection of a scoped group identity. */
+export type StateScope = Pick<GroupRef, 'applicationId' | 'workspaceId'>;
 
 export interface MutationActorInput {
     readonly actorPrincipalId?: string;

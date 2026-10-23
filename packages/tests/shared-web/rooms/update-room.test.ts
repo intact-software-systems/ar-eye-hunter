@@ -55,7 +55,8 @@ it('removes a key the facade patches to null from the metadata the room update s
     roomWorkflowMocks.updateStateGroupMetadata.mockImplementation(workflows.updateStateGroupMetadata);
     const base = createRoomSnapshot('room-1', ['session-1'], { applicationId: 'rallar-server', workspaceId: 'default' });
     const stored = { ...base, group: { ...base.group, metadata: { k: 1, keep: true } } };
-    const sentBodies: object[] = [];
+    // Captured HTTP JSON is untrusted until the request assertions below.
+    const sentBodies: unknown[] = [];
     vi.stubGlobal(
         'fetch',
         vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -81,7 +82,8 @@ it('sends listing-only intent through HTTP and adopts the authoritative metadata
     roomWorkflowMocks.updateStateGroupDetails.mockImplementation(workflows.updateStateGroupDetails);
     const base = createRoomSnapshot('room-1', ['session-1']);
     const hidden = { ...base, group: { ...base.group, metadata: { rallarDirectoryListing: 'unlisted', theme: 'forest' } } };
-    const sentBodies: object[] = [];
+    // Captured HTTP JSON is untrusted until the request assertions below.
+    const sentBodies: unknown[] = [];
     vi.stubGlobal('fetch', async (_input: RequestInfo | URL, init?: RequestInit) => {
         sentBodies.push(JSON.parse(String(init?.body)));
         return toJsonResponse(hidden);

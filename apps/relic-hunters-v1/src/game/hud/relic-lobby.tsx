@@ -138,7 +138,7 @@ function RelicCredentialFields({ credentials, setCredentials }: RelicCredentialF
 function RelicRoomsList({ game }: RelicSessionProps) {
     const rooms = game.rooms.filter((room) =>
         room.name.toLowerCase().includes('relic hunters') &&
-        (toGroupDirectoryListing(room.snapshot.group.metadata) === 'listed' ||
+        ((room.joinMode === 'open' && toGroupDirectoryListing(room.snapshot.group.metadata) === 'listed') ||
             room.snapshot.members.some((member) =>
                 member.principalId === game.session?.clientId && member.status === 'active'
             ))

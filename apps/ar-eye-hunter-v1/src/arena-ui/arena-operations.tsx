@@ -258,7 +258,7 @@ function ArenaLatencyPreference({ arena }: Pick<ArenaOperationsProps, 'arena'>) 
 function ArenaRoomList({ arena }: Pick<ArenaOperationsProps, 'arena'>) {
     const rooms = arena.rooms.filter((room) =>
         (room.name.toLowerCase().includes('eye hunter') || room.name === GAME_ROOM_NAME) &&
-        (toGroupDirectoryListing(room.snapshot.group.metadata) === 'listed' ||
+        ((room.joinMode === 'open' && toGroupDirectoryListing(room.snapshot.group.metadata) === 'listed') ||
             room.snapshot.members.some((member) =>
                 member.principalId === arena.session?.clientId && member.status === 'active'
             ))
