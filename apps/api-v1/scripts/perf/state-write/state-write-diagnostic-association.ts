@@ -4,6 +4,7 @@ import type { ResourceInboxAttemptReleaseTelemetry } from '@shared/queuebox/reso
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
 import {
+    readStateWriteBenchmarkClientIndex,
     toStateWriteAppInboxExpectations,
     type StateWriteAppInboxExpectation
 } from './api-v1-state-write-app-inbox-evidence.ts';
@@ -50,7 +51,16 @@ const OPERATIONS: Readonly<Record<string, readonly string[]>> = {
         'GROUP_UPDATE',
         'TOPOLOGY_CONFIG_PUT'
     ],
-    'client-state-service': ['mutation.read', 'mutation.compute', 'mutation.validate', 'mutation.write'],
+    'client-state-service': [
+        'mutation.read',
+        'mutation.read-state',
+        'mutation.read-receipt',
+        'mutation.read-audience-groups',
+        'mutation.read-audience-clients',
+        'mutation.compute',
+        'mutation.validate',
+        'mutation.write'
+    ],
     'group-state-service': [
         'authorizeMutation',
         'captureMutationIngress',
@@ -76,6 +86,11 @@ const OPERATIONS: Readonly<Record<string, readonly string[]>> = {
     'state-write-benchmark-sql': ['read', 'write', 'outbox', 'other'],
     'state-write-benchmark-phase': ['transaction']
 };
+
+const CLIENT_MUTATIONS = new Map([
+    ['CLIENT_PRINCIPAL_UPSERT', 'upsertPrincipal'],
+    ['CLIENT_INSTANCE_UPSERT', 'upsertInstance']
+]);
 
 export function createStateWriteDiagnosticAssociationIndex(
     phase: StateWriteDiagnosticPhase
@@ -127,19 +142,7 @@ export function toStateWriteTimingAssociation(
     if (!operation) {
         return undefined;
     }
-    const matchesIdentity = event.component === 'app-inbox'
-        ? matchesLogicalEnqueueDetails(event, operation.expectation)
-        : matchesPhysicalDetails(event, operation.expectation);
-    if (!matchesIdentity) {
-        return undefined;
-    }
-    if (event.component === 'app-inbox' && observingStack !== operation.originatingStack) {
-        return undefined;
-    }
-    if (
-        event.component === 'app-inbox-handler' && event.operation !== 'queue-retry' &&
-        event.operation !== operation.expectation.topicId
-    ) {
+    if (!matchesTimingOperation(event, operation, observingStack)) {
         return undefined;
     }
     const attempt = event.details?.attempt;
@@ -203,10 +206,7 @@ function toUnassociatedTimingAssociation(
     event: RallarTimingEvent,
     observingStack: number | 'unavailable'
 ): StateWriteDiagnosticAssociation | undefined {
-    if (
-        event.component === 'app-inbox' || event.component === 'app-inbox-phase' ||
-        event.component === 'app-inbox-handler' || event.component === 'client-state-service'
-    ) {
+    if (['app-inbox', 'app-inbox-phase', 'app-inbox-handler', 'client-state-service'].includes(event.component)) {
         return undefined;
     }
     return {
@@ -222,6 +222,36 @@ function matchesLogicalEnqueueDetails(event: RallarTimingEvent, expectation: Sta
         event.details?.contextId === expectation.logicalContextId &&
         event.details?.topicId === expectation.topicId &&
         event.details?.type === expectation.topicId;
+}
+
+function matchesTimingOperation(
+    event: RallarTimingEvent,
+    operation: StateWriteDiagnosticOperation,
+    observingStack: number | 'unavailable'
+): boolean {
+    switch (event.component) {
+        case 'app-inbox':
+            return observingStack === operation.originatingStack &&
+                matchesLogicalEnqueueDetails(event, operation.expectation);
+        case 'client-state-service':
+            return matchesClientTimingIdentity(event, operation.expectation) &&
+                matchesPhysicalDetails(event, operation.expectation);
+        case 'app-inbox-handler':
+            return (event.operation === 'queue-retry' || event.operation === operation.expectation.topicId) &&
+                matchesPhysicalDetails(event, operation.expectation);
+        default:
+            return matchesPhysicalDetails(event, operation.expectation);
+    }
+}
+
+function matchesClientTimingIdentity(event: RallarTimingEvent, expectation: StateWriteAppInboxExpectation): boolean {
+    const mutationOperation = CLIENT_MUTATIONS.get(expectation.topicId);
+    if (mutationOperation === undefined) {
+        return false;
+    }
+    const principalId = `client-${readStateWriteBenchmarkClientIndex(expectation.commandId)}`;
+    return (event.principalId === undefined || event.principalId === principalId) &&
+        (event.details?.mutationOperation === undefined || event.details.mutationOperation === mutationOperation);
 }
 
 function matchesPhysicalDetails(event: RallarTimingEvent, expectation: StateWriteAppInboxExpectation): boolean {

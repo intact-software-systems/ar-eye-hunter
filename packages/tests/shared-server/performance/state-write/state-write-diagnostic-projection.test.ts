@@ -11,9 +11,14 @@ import { toPhysicalAppInboxQueueKey } from '@shared-server/rallar-system/app-inb
 import { AppInboxCommandClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-command-client.ts';
 import { AppInboxQueueEntryWriter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-queue-entry-writer.ts';
 import type { AppInboxResultWaiter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-result-waiter.ts';
+import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
+import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
+import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 import { toAuthenticatedGroupMutationQueueKey } from '@shared-server/rallar-system/group-state/inbox/to-authenticated-group-mutation-queue-key.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { decodeJsonWireText, type JsonWireObject } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-client-state-event-store.ts';
 import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import type { ResourceInboxAttemptReleaseTelemetry } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import { EntityStatus, type Key } from '@shared/queuebox/ResourceEntry.ts';
@@ -25,8 +30,10 @@ import {
     STATE_WRITE_DIAGNOSTIC_BUDGET,
     type StateWriteDiagnosticPhase
 } from '../../../../../apps/api-v1/scripts/perf/state-write/state-write-diagnostic-projection.ts';
+import { createBenchmarkAuthSession } from '../../../../../apps/api-v1/scripts/perf/state-write/state-write-workload.ts';
 import { TestResourceInbox } from '../../rallar-system/app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxQueueMessageFixture } from '../../rallar-system/app-inbox/test-support/create-app-inbox-queue-message-fixture.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 const profile = {
     logicalResourceId: 'PRIVATE:profile-instance:0-profile',
@@ -137,6 +144,128 @@ function createRelease(): ResourceInboxAttemptReleaseTelemetry {
 }
 
 describe('state-write diagnostic projection', () => {
+    it('retains the real client read phases with their command association and rejects contradictory identities', async () => {
+        const phase = createPhase();
+        const principalId = 'client-0';
+        const session = createBenchmarkAuthSession(phase.scope, principalId, 'client-session-0');
+        const command = toClientMutationCommand(
+            toUpsertClientPrincipalMutationInput({
+                scope: phase.scope,
+                principalId,
+                request: { username: principalId, requestId: profile.logicalResourceId },
+                defaultCommandId: profile.logicalResourceId
+            }),
+            {
+                nowEpochMs: session.issuedAtEpochMs,
+                serviceId: 'PRIVATE-worker-b',
+                eventId: 'PRIVATE-read-event',
+                attemptCount: 1,
+                expireAtEpochMs: session.expiresAtEpochMs,
+                disconnectedSessionRetentionMs: 60_000
+            },
+            toClientMutationIssuedSessionAuthority(session, phase.scope, 'upsertPrincipal')
+        );
+        const events: RallarTimingEvent[] = [];
+        const service = createClientStateService({
+            runtimeRepository: new FakeRuntimeStateRepository(),
+            clientStateEventStore: new InMemoryClientStateEventStore(),
+            serviceId: 'PRIVATE-worker-b',
+            timing: (event) => events.push(event)
+        });
+        await service.read(command);
+
+        const result = computeStateWriteDiagnosticPhase({ ...phase, timingEvents: events }, budget, 65_536);
+
+        expect(result.complete).toBe(true);
+        const records = readRecords(result.serialized);
+        expect(records.filter((record) => record.record === 'timing').map((record) => record.operation)).toEqual(
+            expect.arrayContaining([
+                'mutation.read-state',
+                'mutation.read-receipt',
+                'mutation.read-audience-groups',
+                'mutation.read-audience-clients',
+                'mutation.read'
+            ])
+        );
+        for (const record of records.filter((entry) => entry.record === 'timing')) {
+            expect(record.association).toEqual({
+                kind: 'command-operation',
+                commandOrdinal: 0,
+                operation: 'profile',
+                originatingStack: 0,
+                observingStack: 1,
+                attempt: 'unavailable'
+            });
+        }
+        expect(records.at(-1)).toMatchObject({ timing: { total: 5, retained: 5, rejected: 0, truncated: 0 } });
+        expect(result.serialized).not.toContain('PRIVATE');
+        expect(result.serialized).not.toContain(principalId);
+
+        const contradictions = events.flatMap((event) => [
+            { ...event, requestId: 'PRIVATE-unknown' },
+            { ...event, applicationId: 'PRIVATE-wrong-application' },
+            { ...event, workspaceId: 'PRIVATE-wrong-workspace' },
+            { ...event, serviceId: 'PRIVATE-unknown-worker' },
+            { ...event, principalId: 'PRIVATE-wrong-principal' },
+            { ...event, details: { topicId: 'GROUP_UPDATE' } }
+        ]);
+        const rejected = computeStateWriteDiagnosticPhase({ ...phase, timingEvents: contradictions }, budget, 65_536);
+        expect(rejected.complete).toBe(false);
+        expect(readRecords(rejected.serialized).at(-1)).toMatchObject({
+            timing: { total: 30, retained: 0, rejected: 30, truncated: 0 }
+        });
+    });
+
+    it.each(['profile', 'instance'] as const)('retains only matching %s principal and mutation identity', (operation) => {
+        const entry = operation === 'profile' ? profile : instance;
+        const mutationOperation = operation === 'profile' ? 'upsertPrincipal' : 'upsertInstance';
+        const event = {
+            ...createEvent(entry.logicalResourceId, { ...entry.physicalKey, mutationOperation }),
+            component: 'client-state-service',
+            operation: 'mutation.compute',
+            principalId: 'client-0'
+        };
+        const result = computeStateWriteDiagnosticPhase(
+            {
+                ...createPhase(),
+                timingEvents: [
+                    event,
+                    { ...event, principalId: 'PRIVATE-wrong-principal' },
+                    { ...event, details: { ...event.details, mutationOperation: operation === 'profile' ? 'upsertInstance' : 'upsertPrincipal' } }
+                ]
+            },
+            budget,
+            65_536
+        );
+
+        expect(result.complete).toBe(false);
+        const records = readRecords(result.serialized);
+        expect(records.at(-1)).toMatchObject({ timing: { total: 3, retained: 1, rejected: 2, truncated: 0 } });
+        expect(records.find((record) => record.record === 'timing')?.association).toEqual({
+            kind: 'command-operation',
+            commandOrdinal: 0,
+            operation,
+            originatingStack: 0,
+            observingStack: 1,
+            attempt: 'unavailable'
+        });
+        expect(result.serialized).not.toContain('PRIVATE');
+        expect(result.serialized).not.toContain('client-0');
+    });
+
+    it('rejects client read timing attributed to a known group command', () => {
+        const events = ['mutation.read', 'mutation.read-state'].map((operation) => ({
+            ...createEvent(config.physicalKey.resourceId, config.physicalKey),
+            component: 'client-state-service',
+            operation
+        }));
+
+        const result = computeStateWriteDiagnosticPhase({ ...createPhase(), timingEvents: events }, budget, 65_536);
+
+        expect(result.complete).toBe(false);
+        expect(readRecords(result.serialized).at(-1)).toMatchObject({ timing: { total: 2, retained: 0, rejected: 2 } });
+    });
+
     it.each([-Number.MAX_SAFE_INTEGER, -1, 0, 1, Number.MAX_SAFE_INTEGER])('retains signed observation %s with redacted not-ready identity', (duration) => {
         const release: ResourceInboxAttemptReleaseTelemetry = {
             ...createRelease(),
