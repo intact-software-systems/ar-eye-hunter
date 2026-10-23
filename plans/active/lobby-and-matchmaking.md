@@ -20,9 +20,10 @@ Across these slices, add no legacy path, duplicated implementation, or migration
 existing repository patterns and keep code, tests, documentation, and plans consistent. Each slice
 uses test-driven development and one current PR; wait for the maintainer to merge it before starting
 the next slice unless the maintainer explicitly requests a stack. PR #696 delivered the slice 0
-foundation and PR #697 delivered Quick Join. [PR #699](https://github.com/intact-software-systems/ar-eye-hunter/pull/699)
-implements slice 2 from main using the maintainer's selected existing-measurement scope. Wait for
-the maintainer's merge before planning the next slice.
+foundation, PR #697 delivered Quick Join, and
+[PR #699](https://github.com/intact-software-systems/ar-eye-hunter/pull/699) delivered slice 2 using
+the maintainer's selected existing-measurement scope. The next slice is shareable private-room entry,
+grounded in those merged capabilities and the existing invitation/code operations.
 
 ## Current foundation
 
@@ -100,13 +101,13 @@ all-or-none admission decisions before it becomes a platform promise.
 
 ## Delivery priorities
 
-| Priority    | Outcomes                                                                                                     |
-| ----------- | ------------------------------------------------------------------------------------------------------------ |
-| Current     | Slice 2 opt-in peer RTT ranking using existing measurements, with unknown results where coverage is missing. |
-| Next        | Share links/codes (4); visibility choices (5); reconnect/recent-room behavior (6).                           |
-| Then        | Automatic directory freshness (7), introducing push when the experience needs it.                            |
-| Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them.                  |
-| Later       | Scheduled rooms (8) and a separate tournament capability.                                                    |
+| Priority    | Outcomes                                                                                    |
+| ----------- | ------------------------------------------------------------------------------------------- |
+| Current     | Share links/codes (4), carrying private-room entry through authentication and reload.       |
+| Next        | Visibility choices (5); reconnect/recent-room behavior (6).                                 |
+| Then        | Automatic directory freshness (7), introducing push when the experience needs it.           |
+| Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them. |
+| Later       | Scheduled rooms (8) and a separate tournament capability.                                   |
 
 Relic validation is a constraint throughout, not a dependency postponed to slice 9. Operator
 reliability work may ship independently where a concrete operational need warrants it.
