@@ -1,7 +1,7 @@
 import { RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import { assert, assertEquals } from '@std/assert';
 
-import { registerAgent, waitForPathMissing, waitForSocketClose, waitForSocketOpen } from './support/control-api-test-agent.ts';
+import { registerAgent, waitForSocketOpen } from './support/control-api-test-agent.ts';
 import { ADMIN_TOKEN, adminHeaders, canBindLoopback, getJson, startControlServer } from './support/control-api-test-server.ts';
 import { toDistributedManifest } from './support/control-service-test-fixtures.ts';
 
@@ -344,7 +344,7 @@ Deno.test('retention preview is authorized, non-destructive, and guarded before 
     }
 });
 
-Deno.test('automatic retention closes deleted-run sockets and artifact files', async () => {
+Deno.test('automatic retention past its cap keeps a live run, its socket and its artifact files', async () => {
     if (!(await canBindLoopback())) {
         return;
     }
@@ -360,26 +360,20 @@ Deno.test('automatic retention closes deleted-run sockets and artifact files', a
     let newSocket: WebSocket | undefined;
     try {
         oldSocket = await registerAgent(server.baseUrl, 'auto-old', 'agent-old');
-        const oldArtifactDir = `${storageDir}/runs/auto-old`;
-        await Deno.mkdir(oldArtifactDir, { recursive: true });
-        await Deno.writeTextFile(
-            `${oldArtifactDir}/sentinel.jsonl`,
-            'remove-on-auto-prune\n'
-        );
+        const oldArtifactFile = `${storageDir}/runs/auto-old/sentinel.jsonl`;
+        await Deno.mkdir(`${storageDir}/runs/auto-old`, { recursive: true });
+        await Deno.writeTextFile(oldArtifactFile, 'kept-while-live\n');
 
-        const oldSocketClose = waitForSocketClose(oldSocket);
         newSocket = await registerAgent(server.baseUrl, 'auto-new', 'agent-new');
-        const close = await oldSocketClose;
-
-        assertEquals(close.code, 1000);
-        assertEquals(close.reason, 'run deleted');
-        await waitForPathMissing(oldArtifactDir);
         const runs = await getJson<{ runs: readonly { runId: string; }[]; }>(
             server.baseUrl,
             '/runs'
         );
-        assertEquals(runs.runs.map((entry) => entry.runId), ['auto-new']);
+
+        assertEquals(runs.runs.map((entry) => entry.runId).sort(), ['auto-new', 'auto-old']);
+        assertEquals(oldSocket.readyState, WebSocket.OPEN);
         assertEquals(newSocket.readyState, WebSocket.OPEN);
+        assertEquals(await Deno.readTextFile(oldArtifactFile), 'kept-while-live\n');
     }
     finally {
         oldSocket?.close();

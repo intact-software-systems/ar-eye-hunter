@@ -187,6 +187,19 @@ describe('runtime-state conditional writes', () => {
         expect(unconditionalDeletes).toBe(0);
     });
 
+    // The port's contract, which the Postgres repository keeps: an expired row is absent to the insert.
+    it('inserts over an expired row one revision past it, and conflicts on a live one', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        await repository.insertIfAbsent('state', 'key', 'expired', Date.now() - 1);
+        await repository.upsertIfRevision('state', 'key', 'expired', Date.now() - 1, 0);
+
+        expect(await repository.insertIfAbsent('state', 'key', 'replaced', NEVER_EXPIRE_AT_TIMESTAMP))
+            .toEqual({ status: 'applied', revision: 2 });
+        expect(await repository.insertIfAbsent('state', 'key', 'live duplicate', NEVER_EXPIRE_AT_TIMESTAMP))
+            .toEqual({ status: 'conflict' });
+        expect((await repository.findEntry('state', 'key'))?.value).toBe('replaced');
+    });
+
     it('applies writes only when the expected revision matches', async () => {
         const repository = new FakeRuntimeStateRepository();
 

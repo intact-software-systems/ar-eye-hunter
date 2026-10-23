@@ -40,7 +40,10 @@ import { WsOutboxProvenanceReader } from '@shared-server/rallar-system/websocket
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { RuntimeStateExpiryWorker } from '@shared-server/runtime-state/postgres/runtime-state-expiry-worker.ts';
 import { createVolatileALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
-import type { ALVolatileInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type {
+    ALInboundRuntimeStores,
+    ALVolatileInboundRuntimeStores
+} from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALOutboundCapturedPolicyTiming } from '@shared/alm/outbound/admission/al-outbound-captured-policy-timing.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -116,6 +119,7 @@ export interface CreateApiV1RuntimeInput {
     readonly appInboxOptions: AppInboxOptions;
     readonly appInboxNewLaneConcurrency: number;
     readonly appInboxNewLaneHeldRows: number;
+    readonly appInboxFinishedRetentionMs: number;
     readonly disconnectedSessionRetentionMs: number;
     readonly groupCapacity: GroupPolicyCapacityConfig;
     readonly groupFormationRecomputeDebounceMs: number;
@@ -161,6 +165,7 @@ interface CreateSharedMiddlewareInput {
     readonly outboxStageTiming?: RallarTimingSink;
     readonly wsReceiptObserver?: WsQueueBoxServerReceiptObserver;
     readonly almReceiptDiagnostics: RallarAlmReceiptDiagnosticsRecorder;
+    readonly inboundStores: ALInboundRuntimeStores;
     readonly nowEpochMs: () => number;
 }
 
@@ -174,6 +179,7 @@ export interface ApiV1RuntimeConstructionOperations {
     createRtcTopologyRuntime(input: CreateApiRtcTopologyRuntimeInput): ApiRtcTopologyRuntime;
     createTopologyServices(input: CreateApiV1TopologyServicesInput): ApiV1TopologyServices;
     configureWsRuntimeStores(input: ConfigureWsRuntimeStoresInput): void;
+    resolveWsInboundStores(wsRuntimeName: string): ALInboundRuntimeStores;
     startResourceInboxExpiry(
         mutation: Pick<ApiV1MutationRuntime, 'resourceInboxRepository' | 'resourceInboxResultsRepository'>
     ): void;
@@ -225,6 +231,7 @@ export function constructApiV1Runtime(
     const { rtcTopology, topology } = createRuntimeTopology(input, mutation, operations);
     input.backgroundTasks.register(rtcTopology.stop);
     startMutationInfrastructure({ runtime: input, mutation, operations, startupGeneration });
+    const inboundStores = operations.resolveWsInboundStores(input.wsRuntimeName);
     const runtime = operations.createMiddleware({
         mutation,
         appInboxCompletionNotices,
@@ -240,6 +247,7 @@ export function constructApiV1Runtime(
         outboxStageTiming: input.outboxStageTiming,
         wsReceiptObserver: input.wsReceiptObserver,
         almReceiptDiagnostics,
+        inboundStores,
         nowEpochMs: input.nowEpochMs
     });
     rtcTopology.topologyReplay.attach({ wsQueueBoxServerService: runtime.wsQBoxServerService });
@@ -253,6 +261,8 @@ export function constructApiV1Runtime(
         ...selectors,
         groupFormationMetrics: mutation.groupFormationMetrics,
         almReceiptDiagnostics,
+        readAlmDeliveredMarkers: () => inboundStores.admissionStore.readDeliveredMarkerCount(input.nowEpochMs()),
+        groupCurrentSnapshotCache: mutation.groupCurrentSnapshotCache,
         topologyServices: topology,
         backgroundTasks: input.backgroundTasks
     });
@@ -327,7 +337,8 @@ function createRuntimeTopology(
         adminClientIds: input.adminClientIds,
         rtcTopologyOptions: input.rtcTopologyOptions,
         rttRefinementGateConfig: input.rttRefinementGateConfig,
-        nowEpochMs: input.nowEpochMs
+        nowEpochMs: input.nowEpochMs,
+        finishedRetentionMs: input.appInboxFinishedRetentionMs
     });
     return { rtcTopology, topology };
 }
@@ -349,6 +360,7 @@ function toMutationRuntimeInput(
         appInboxOptions: input.appInboxOptions,
         appInboxNewLaneConcurrency: input.appInboxNewLaneConcurrency,
         appInboxNewLaneHeldRows: input.appInboxNewLaneHeldRows,
+        appInboxFinishedRetentionMs: input.appInboxFinishedRetentionMs,
         disconnectedSessionRetentionMs: input.disconnectedSessionRetentionMs,
         groupCapacity: input.groupCapacity,
         groupFormationRecomputeDebounceMs: input.groupFormationRecomputeDebounceMs,
@@ -370,6 +382,7 @@ const PRODUCTION_OPERATIONS: ApiV1RuntimeConstructionOperations = {
             capturedPolicyTiming: input.capturedPolicyTiming
         });
     },
+    resolveWsInboundStores: resolveServerWsQBoxALInboundRuntimeStores,
     startResourceInboxExpiry,
     startRuntimeStateExpiry,
     createMiddleware: createSharedMiddleware,
@@ -398,7 +411,7 @@ function createSharedMiddleware(
     input: CreateSharedMiddlewareInput
 ): RallarMiddlewareRuntime {
     const { mutation, rtcTopology } = input;
-    const inboundStores = resolveServerWsQBoxALInboundRuntimeStores(input.wsRuntimeName);
+    const { inboundStores } = input;
     const relayedAckNotices = createApiV1RelayedAckNotices({
         mode: input.databasePubSubMode,
         notification: input.databaseNotification,
@@ -510,6 +523,7 @@ function createTopologyInboxService(
         mutationOwners: topology.topologyMutationOwners
     }, {
         serviceId: mutation.serviceId,
+        finishedRetentionMs: mutation.appInboxFinishedRetentionMs,
         timing: input.timing,
         options: mutation.appInboxOptions,
         wakeOwningQueue: wakeQueueEngine
@@ -531,6 +545,7 @@ function createRtcRttInboxService(
         mutationDependencies: topology.rtcRttMutationDependencies
     }, {
         serviceId: mutation.serviceId,
+        finishedRetentionMs: mutation.appInboxFinishedRetentionMs,
         timing: input.timing,
         options: mutation.appInboxOptions,
         wakeOwningQueue: wakeQueueEngine

@@ -20,6 +20,7 @@ import { putAuthorisedWsTestTicket } from '../../client-state/authorised-ws-test
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../client-state/test-disconnected-session-retention.ts';
 import { TestResourceInbox, TestResourceInboxResults } from './app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase, type AppInboxTestDatabase } from './app-inbox-test-database.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from './test-app-inbox-finished-retention.ts';
 
 // Anchor the seed clock to the real processing clock. The AppInbox stamps and
 // captures messages at Date.now(), so a fixed far-future base would make seeded
@@ -100,6 +101,7 @@ export async function createAppInboxWsCloseHarness(
     const authSession = issuedSession('owner', 'owner-session');
     await authSessions.putSession(authSession);
     const groupState = createGroupStateService({
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         runtimeRepository,
         groupStateEventStore: database.groupEventStore,
         serviceId: 'server-12345678',
@@ -174,7 +176,11 @@ function installWsCloseReader(
     return {
         client: new AppClientInboxService(
             { ...shared, clientStateService: dependencies.clientState },
-            { serviceId: 'server-12345678', disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS }
+            {
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+                serviceId: 'server-12345678',
+                disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
+            }
         ),
         group: new GroupStateInboxService(
             {
@@ -184,7 +190,7 @@ function installWsCloseReader(
                     readEvent: (ref, eventId) => dependencies.database.groupEventStore.readGroupEvent(ref, eventId)
                 }
             },
-            { serviceId: 'server-12345678' }
+            { finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS, serviceId: 'server-12345678' }
         )
     };
 }

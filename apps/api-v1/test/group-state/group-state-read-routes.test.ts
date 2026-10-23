@@ -17,6 +17,7 @@ import {
 } from '../../src/group-state/group-state-route-authorization.ts';
 import { registerGroupStateReadRoutes } from '../../src/group-state/register-group-state-read-routes.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import {
     createDeletedGroupStateRouteSnapshot,
     createGroupStateRouteAuthSession,
@@ -56,6 +57,7 @@ async function createSeededGroupStateService(
         await seedRouteGroup(repository, seeded);
     }
     const durable = createGroupStateService({
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         runtimeRepository,
         groupStateEventStore: runtimeRepository.groupStateEventStore,
         serviceId: 'group-list-route-test',

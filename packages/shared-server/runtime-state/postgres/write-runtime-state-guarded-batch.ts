@@ -48,7 +48,12 @@ export async function writeRuntimeStateGuardedBatch(
                    0
             from guard_input
             where operation = 'insert'
-            on conflict (store_namespace, store_key) do nothing
+            on conflict (store_namespace, store_key) do update
+                set store_value = excluded.store_value,
+                    expire_at_ts = excluded.expire_at_ts,
+                    updated_ts = now(),
+                    revision = runtime_state_store.revision + 1
+                where runtime_state_store.expire_at_ts <= now()
             returning 'insert'::text as operation,
                       store_namespace,
                       store_key,
@@ -108,7 +113,12 @@ export async function writeRuntimeStateGuardedBatch(
             from effect_input descriptor
             cross join authority
             where descriptor.operation = 'insert'
-            on conflict (store_namespace, store_key) do nothing
+            on conflict (store_namespace, store_key) do update
+                set store_value = excluded.store_value,
+                    expire_at_ts = excluded.expire_at_ts,
+                    updated_ts = now(),
+                    revision = runtime_state_store.revision + 1
+                where runtime_state_store.expire_at_ts <= now()
             returning store_namespace, store_key, revision
         ),
         effect_update as (

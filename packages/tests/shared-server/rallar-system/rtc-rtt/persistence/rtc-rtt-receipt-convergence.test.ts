@@ -102,6 +102,7 @@ describe('RTC RTT receipt convergence', () => {
 
     it('converges concurrent identical RTT writers through the immutable receipt winner', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
+        runtimeRepository.nowEpochMs = () => 1;
         runtimeRepository.serializeTransactions = true;
         const repository = new RtcRttRepository(runtimeRepository, {
             now: () => 1

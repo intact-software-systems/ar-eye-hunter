@@ -203,7 +203,7 @@ function isDistributedProtocolControllerHeadlessPath(changedPath) {
         isWithin(changedPath, 'apps/rallar-black-box/src/hetzner') ||
         isWithin(changedPath, 'apps/rallar-black-box/src/legacy/runner/distributed') ||
         changedPath.startsWith('apps/rallar-black-box/src/distributed-') ||
-        changedPath.startsWith('apps/rallar-black-box/src/headless-worker-') ||
+        isWithin(changedPath, 'apps/rallar-black-box/src/headless-worker') ||
         changedPath.startsWith('apps/rallar-black-box/src/recipe-console/control/distributed-') ||
         /^apps\/rallar-black-box\/scripts\/[^/]*(?:distributed|hetzner)[^/]*$/u.test(changedPath)
     );

@@ -1,6 +1,7 @@
 import type { ALReceiptMode } from '../al-contracts/al-policy.ts';
 import type { ALDeliverySettlement } from '../alm/delivery/al-delivery-lifecycle.ts';
 import type { RallarGroupFormationMetrics } from '../rtc/group-formation-metrics.ts';
+import type { RtcTopologyAdminMetrics } from '../rtc/rtc-topology-admin-metrics.ts';
 import type { GroupTopologyConfigPatch } from './graph-topology-management-types.ts';
 import type { GroupRef } from './group-types.ts';
 import type { StateScope } from './state-types.ts';
@@ -14,18 +15,9 @@ export const ADMIN_PRUNE_EXPIRED_CATEGORIES = [
     'app-data'
 ] as const;
 
-export const ADMIN_OPERATION_RESULT_STATUSES = [
-    'completed',
-    'dry-run',
-    'skipped',
-    'failed'
-] as const;
-
 export type AdminMetricsResetCategory = (typeof ADMIN_METRICS_RESET_CATEGORIES)[number];
 
 export type AdminPruneExpiredCategory = (typeof ADMIN_PRUNE_EXPIRED_CATEGORIES)[number];
-
-export type AdminOperationResultStatus = (typeof ADMIN_OPERATION_RESULT_STATUSES)[number];
 
 export type AdminOperationWarning = Readonly<{
     code: string;
@@ -67,7 +59,7 @@ export type AdminOperationsOverviewResponse =
             expiredRows: number;
         }>;
         realtime?: Readonly<{
-            topologyMetrics?: unknown;
+            topologyMetrics: RtcTopologyAdminMetrics;
             groupFormationMetrics?: RallarGroupFormationMetrics;
         }>;
         state?: Readonly<{
@@ -123,6 +115,15 @@ export interface AdminOperationsAlmReceiptDiagnostics {
     readonly messages: readonly AdminOperationsAlmReceiptEntry[];
 }
 
+/** Entries this process's in-memory caches hold, counted when read. */
+export interface AdminOperationsCacheSizes {
+    /**
+     * Groups whose current snapshot the group audience cache keeps, each absent group's null among them; that cache
+     * holds the process's only version-probed read-through cache today.
+     */
+    readonly groupAudienceSnapshots: number;
+}
+
 export type AdminOperationsRealtimeResponse =
     & AdminOperationBaseResponse
     & Readonly<{
@@ -133,7 +134,7 @@ export type AdminOperationsRealtimeResponse =
             openConnectionIds: readonly string[];
         }>;
         rtcTopology: Readonly<{
-            metrics?: unknown;
+            metrics: RtcTopologyAdminMetrics;
             processLocal: boolean;
         }>;
         groupFormation: Readonly<{
@@ -144,6 +145,12 @@ export type AdminOperationsRealtimeResponse =
             diagnostics: AdminOperationsAlmReceiptDiagnostics;
             processLocal: boolean;
         }>;
+        caches: AdminOperationsCacheSizes & Readonly<{ processLocal: boolean; }>;
+        /**
+         * `deliveredMarkers`: the unexpired delivered markers the WS server's shared inbound store holds, read from the
+         * store when asked; uncapped, each marker leaves at its expiry.
+         */
+        alm: Readonly<{ deliveredMarkers: number; processLocal: boolean; }>;
     }>;
 
 export type AdminOperationsStateResponse =
@@ -227,13 +234,34 @@ export type AdminPruneExpiredRequest = Readonly<{
     reason?: string;
 }>;
 
-export type AdminOperationResultResponse =
-    & AdminOperationBaseResponse
-    & Readonly<{
-        operation: string;
-        status: AdminOperationResultStatus;
-        changed: boolean;
-        before?: unknown;
-        after?: unknown;
-        results?: readonly unknown[];
-    }>;
+export interface AdminMetricsResetSnapshot {
+    readonly rtcTopology?: RtcTopologyAdminMetrics;
+    readonly groupFormation?: RallarGroupFormationMetrics;
+}
+
+/** `before` and `after` carry exactly the categories the request reset. */
+export interface AdminMetricsResetResultResponse extends AdminOperationBaseResponse {
+    readonly operation: 'metrics.reset';
+    readonly status: 'completed';
+    readonly changed: boolean;
+    readonly before: AdminMetricsResetSnapshot;
+    readonly after: AdminMetricsResetSnapshot;
+}
+
+export type AdminPruneExpiredCategoryResult = Readonly<{
+    category: AdminPruneExpiredCategory;
+    expiredRows: number;
+    deletedRows: number;
+    dryRun: boolean;
+}>;
+
+export interface AdminPruneExpiredResultResponse extends AdminOperationBaseResponse {
+    readonly serverId: string;
+    readonly operation: 'maintenance.prune-expired';
+    readonly status: 'dry-run' | 'queued' | 'completed';
+    readonly changed: boolean;
+    readonly jobId: string;
+    readonly results: readonly AdminPruneExpiredCategoryResult[];
+}
+
+export type AdminOperationResultResponse = AdminMetricsResetResultResponse | AdminPruneExpiredResultResponse;

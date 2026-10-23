@@ -1,13 +1,12 @@
+import type { RtcTopologyReplayWakeSource } from '@shared/rtc/rtc-topology-replay-metrics.ts';
+
 import { RtcTopologyDeliveryLeaseLostError } from '../delivery/rtc-topology-delivery-stream-service.ts';
 import type {
     RtcTopologyReplayEntryHandler,
     RtcTopologyReplayPort,
     RtcTopologyReplayServicePolicy
 } from './rtc-topology-replay-contracts.ts';
-import type {
-    RtcTopologyReplayDiagnosticsSink,
-    RtcTopologyReplayWakeSource
-} from './rtc-topology-replay-diagnostics.ts';
+import type { RtcTopologyReplayDiagnosticsSink } from './rtc-topology-replay-diagnostics.ts';
 import { RtcTopologyReplayDrain } from './rtc-topology-replay-drain.ts';
 import { RtcTopologyReplayPageProcessor } from './rtc-topology-replay-page-processor.ts';
 import {

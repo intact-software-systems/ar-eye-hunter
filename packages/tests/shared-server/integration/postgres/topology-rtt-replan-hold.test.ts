@@ -117,6 +117,7 @@ function createHoldHarness(sql: PSqlSql, startEpochMs: number): HoldHarness {
         AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
         createRtcTopologyWorkHandler({
             nowEpochMs: now,
+            finishedRetentionMs: 3_600_000,
             outboxQueueReader,
             database: sql,
             topologyPlanning: topologyManagement.planning,

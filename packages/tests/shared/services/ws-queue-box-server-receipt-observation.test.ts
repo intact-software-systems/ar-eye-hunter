@@ -206,7 +206,8 @@ function createObservedInboundStores(): ALInboundRuntimeStores {
             orderingTrackTtlMs: 300000,
             supersedenceTrackTtlMs: 300000,
             retention: normalizeALRuntimeStoreRetention(),
-            maxOrderingTracks: undefined
+            maxOrderingTracks: undefined,
+            maxDeliveredMarkers: undefined
         }),
         workQueue: inbound.workQueue
     };

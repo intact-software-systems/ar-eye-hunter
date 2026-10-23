@@ -98,6 +98,8 @@ export namespace ClientStateInboxHandler {
         readonly wakeQueue?: () => void;
         readonly serviceId: string;
         readonly disconnectedSessionRetentionMs: number;
+        /** How long a command's idempotency record and state-sync outbox rows stay after it was enqueued. */
+        readonly finishedRetentionMs: number;
     }
 }
 
@@ -526,20 +528,25 @@ function throwClientMutationIdempotencyConflict(
 function toClientMutationPersistedFacts(
     context: AppInboxExecutionMetadata,
     commandId: string,
-    dependencies: Pick<ClientStateInboxHandler.Input, 'serviceId' | 'disconnectedSessionRetentionMs'>
+    dependencies: Pick<
+        ClientStateInboxHandler.Input,
+        'serviceId' | 'disconnectedSessionRetentionMs' | 'finishedRetentionMs'
+    >
 ): Omit<ClientMutationPersistedFacts, 'commandHash'> {
     return {
         nowEpochMs: context.message.id.ts,
         serviceId: dependencies.serviceId,
+        // The enqueue instant makes the event one per execution: a request executed again after its retention window.
         eventId: `client-event:${
             JSON.stringify([
                 context.entry.key.contextId,
                 context.entry.key.topicId,
-                commandId
+                commandId,
+                context.message.id.ts
             ])
         }`,
         attemptCount: context.entry.dequeueAudit.attempts,
-        expireAtEpochMs: Number(context.entry.audit.expiryTs.epochMilliseconds),
+        expireAtEpochMs: context.message.id.ts + dependencies.finishedRetentionMs,
         disconnectedSessionRetentionMs: dependencies.disconnectedSessionRetentionMs
     };
 }

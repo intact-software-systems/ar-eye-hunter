@@ -39,6 +39,7 @@ import type {
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { createTestGroupStateRuntime } from '../../../rallar-system/group-state/group-state-test-runtime.ts';
 import { createRuntimeStatePostgresSql } from '../../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 import { createPostgresTestRequestIdFactory } from './create-postgres-test-request-id-factory.ts';
@@ -241,6 +242,7 @@ function createJoinReadHarness(sql: PSqlSql, groupRef: GroupRef): PostgresGroupJ
         resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
         database: sql,
         groupStateService: createGroupStateService({
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             runtimeRepository: probe,
             groupStateEventStore: groupEventStore,
             serviceId: 'join-read-worker',
@@ -249,6 +251,7 @@ function createJoinReadHarness(sql: PSqlSql, groupRef: GroupRef): PostgresGroupJ
         }),
         resultReader: createTestGroupStateRepository(probe, groupEventStore)
     }, {
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         serviceId: 'join-read-worker',
         options: {
             nowEpochMs: () => Date.now() + laneClockOffsetMs,

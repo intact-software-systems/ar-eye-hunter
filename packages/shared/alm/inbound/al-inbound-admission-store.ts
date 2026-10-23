@@ -29,6 +29,11 @@ import {
     type ALSupersedenceAcceptance
 } from '../compute-al-supersedence-observation.ts';
 import { markTerminalVolatileAdmissionRow } from '../storage/in-memory-admission-work-write-buffer.ts';
+import { ALInboundDeliveredMarkerIndex } from './admission/al-inbound-delivered-marker-index.ts';
+import {
+    evictALInboundDeliveredMarkersPastCap,
+    type ALInboundDeliveredMarkersReport
+} from './admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import {
     evictALInboundOrderingTracksPastCap,
     type ALInboundOrderingTracksReport
@@ -350,6 +355,14 @@ export interface CreateALInboundAdmissionStoreInput {
      * nothing reads the count. A store without a cap states nothing.
      */
     readonly reportOrderingTracks?: ALInboundOrderingTracksReport;
+    /**
+     * The most delivered markers the store keeps: the browser's stores pass `AL_INBOUND_MAX_DELIVERED_MARKERS`, and the
+     * next new marker past it evicts the least recently admitted track's marker unless that track still buffers a
+     * release. `undefined` keeps every marker until its expiry, as the server's stores do, and runs no pass.
+     */
+    readonly maxDeliveredMarkers: number | undefined;
+    /** Hears how many delivered markers the store holds after each new marker's pass; absent where nothing reads it. */
+    readonly reportDeliveredMarkers?: ALInboundDeliveredMarkersReport;
 }
 
 export interface ALInboundAdmissionStore extends ALReadyable {
@@ -384,6 +397,9 @@ export interface ALInboundAdmissionStore extends ALReadyable {
     commitBundle(
         bundle: ALInboundCommitBundle
     ): Promise<'committed' | 'conflict' | 'expired'>;
+
+    /** The unexpired delivered markers the store holds, read from the store itself; bounded by their expiry. */
+    readDeliveredMarkerCount(nowMs: number): Promise<number>;
 }
 
 export function createALInboundAdmissionStore(
@@ -392,7 +408,8 @@ export function createALInboundAdmissionStore(
     return new ProviderBackedALInboundAdmissionStore({
         ...input,
         durability: 'durable',
-        reportOrderingTracks: input.reportOrderingTracks
+        reportOrderingTracks: input.reportOrderingTracks,
+        reportDeliveredMarkers: input.reportDeliveredMarkers
     });
 }
 
@@ -402,7 +419,8 @@ export function createVolatileALInboundAdmissionStore(
     return new ProviderBackedALInboundAdmissionStore({
         ...input,
         durability: 'volatile',
-        reportOrderingTracks: input.reportOrderingTracks
+        reportOrderingTracks: input.reportOrderingTracks,
+        reportDeliveredMarkers: input.reportDeliveredMarkers
     });
 }
 
@@ -423,6 +441,8 @@ namespace ProviderBackedALInboundAdmissionStore {
         readonly durability: ALStoreDurability;
         readonly maxOrderingTracks: number | undefined;
         readonly reportOrderingTracks: ALInboundOrderingTracksReport | undefined;
+        readonly maxDeliveredMarkers: number | undefined;
+        readonly reportDeliveredMarkers: ALInboundDeliveredMarkersReport | undefined;
     }
 }
 
@@ -437,11 +457,20 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
     private readonly nowMs: () => number;
     private readonly maxOrderingTracks: number | undefined;
     private readonly reportOrderingTracks: ALInboundOrderingTracksReport | undefined;
+    private readonly maxDeliveredMarkers: number | undefined;
+    private readonly reportDeliveredMarkers: ALInboundDeliveredMarkersReport | undefined;
+    /** Absent for a store without a marker cap. */
+    private readonly deliveredMarkers: ALInboundDeliveredMarkerIndex | undefined;
 
     constructor(input: ProviderBackedALInboundAdmissionStore.Dependencies) {
         this.namespace = input.namespace;
         this.maxOrderingTracks = input.maxOrderingTracks;
         this.reportOrderingTracks = input.reportOrderingTracks;
+        this.maxDeliveredMarkers = input.maxDeliveredMarkers;
+        this.reportDeliveredMarkers = input.reportDeliveredMarkers;
+        this.deliveredMarkers = input.maxDeliveredMarkers === undefined
+            ? undefined
+            : new ALInboundDeliveredMarkerIndex();
         this.orderingTrackTtlMs = input.orderingTrackTtlMs;
         this.supersedenceTrackTtlMs = input.supersedenceTrackTtlMs;
         this.retention = input.retention;
@@ -657,7 +686,15 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         }
 
         const status = await this.writeValidatedBundle(validated.right!);
-        if (status === 'committed' && this.maxOrderingTracks !== undefined && opensALInboundOrderingTrack(bundle)) {
+        if (status === 'committed') {
+            await this.evictPastCaps(bundle);
+        }
+        return status;
+    }
+
+    /** Only a bundle that opens a track or writes its track's first marker can take the store past a cap. */
+    private async evictPastCaps(bundle: ALInboundCommitBundle): Promise<void> {
+        if (this.maxOrderingTracks !== undefined && opensALInboundOrderingTrack(bundle)) {
             await evictALInboundOrderingTracksPastCap({
                 backend: this.backend,
                 orderingPrefix: this.toOrderingPrefix(),
@@ -665,7 +702,40 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
                 report: this.reportOrderingTracks
             });
         }
-        return status;
+        if (this.deliveredMarkers !== undefined && this.maxDeliveredMarkers !== undefined) {
+            await this.evictDeliveredMarkersPastCap(bundle, this.deliveredMarkers, this.maxDeliveredMarkers);
+        }
+    }
+
+    /** Every committed marker write reaches the index; only a track's first marker runs the pass. */
+    private async evictDeliveredMarkersPastCap(
+        bundle: ALInboundCommitBundle,
+        index: ALInboundDeliveredMarkerIndex,
+        maxMarkers: number
+    ): Promise<void> {
+        for (const mutation of bundle.mutations) {
+            if (mutation.kind === 'set-delivery-progress') {
+                index.record({ trackKey: mutation.trackKey, expireAtTimestamp: mutation.value.expireAtTimestamp });
+            }
+        }
+        if (writesALInboundFirstDeliveredMarker(bundle)) {
+            await evictALInboundDeliveredMarkersPastCap({
+                backend: this.backend,
+                deliveredPrefix: this.toDeliveredPrefix(),
+                bufferedPrefix: `${this.namespace}:buffered:`,
+                index,
+                maxMarkers,
+                nowMs: this.nowMs(),
+                report: this.reportDeliveredMarkers
+            });
+        }
+    }
+
+    async readDeliveredMarkerCount(nowMs: number): Promise<number> {
+        const held = await this.backend.readWithin((session) =>
+            session.list(this.toDeliveredPrefix(), decodeALInboundDeliveryProgress)
+        );
+        return held.filter((marker) => marker.value.expireAtTimestamp > nowMs).length;
     }
 
     private async writeValidatedBundle(
@@ -908,6 +978,10 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         return `${this.toOrderingPrefix()}${trackKey}`;
     }
 
+    private toDeliveredPrefix(): string {
+        return `${this.namespace}:delivered:`;
+    }
+
     private toOrderingPrefix(): string {
         return `${this.namespace}:ordering:`;
     }
@@ -933,6 +1007,12 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
 function opensALInboundOrderingTrack(bundle: ALInboundCommitBundle): boolean {
     return bundle.observations.ordering?.snapshot === undefined &&
         bundle.mutations.some((mutation) => mutation.kind === 'set-ordering');
+}
+
+/** A bundle that writes a marker its track did not hold: the only commit that can take the markers past their cap. */
+function writesALInboundFirstDeliveredMarker(bundle: ALInboundCommitBundle): boolean {
+    return bundle.observations.deliveryProgress?.value === undefined &&
+        bundle.mutations.some((mutation) => mutation.kind === 'set-delivery-progress');
 }
 
 /**

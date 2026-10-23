@@ -12,9 +12,9 @@ import {
 import {
     createGroupMutationAuthorityProof,
     GroupMutationAuthorizationError,
+    toGroupMutationEventId,
     verifyLiveGroupMutationSession
 } from '../group-mutation-authority.ts';
-import { GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS } from '../group-state-service-contracts.ts';
 import { constantTimeHexEqual } from '../mutation/group-state-crypto.ts';
 import { readGroupMutationWithSnapshot } from '../mutation/read/read-group-mutation.ts';
 import { toGroupMutationAttemptFacts } from '../mutation/to-group-mutation-attempt-facts.ts';
@@ -45,6 +45,11 @@ export namespace GroupQuickJoinService {
     export interface Config {
         readonly capacity: GroupPolicyCapacityConfig;
         readonly serviceId: string;
+        /**
+         * How long a command's idempotency record and the outbox rows derived from it stay after its ingress; the
+         * AppInbox finish gives the command's fact and result the same window.
+         */
+        readonly finishedRetentionMs: number;
         readonly now: () => number;
     }
 }
@@ -82,14 +87,15 @@ export class GroupQuickJoinService {
             ...command,
             actorSessionId: null
         }, 'Quick Join semantic command'));
+        const nowEpochMs = this.config.now();
         const payload: Omit<GroupQuickJoinIngress, 'authorityProof'> = {
             command,
             facts: {
                 commandHash,
-                nowEpochMs: this.config.now(),
-                expireAtEpochMs: GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS,
+                nowEpochMs,
+                expireAtEpochMs: nowEpochMs + this.config.finishedRetentionMs,
                 serviceId: this.config.serviceId,
-                eventId: `quick-join-event:${commandHash.slice('sha256:'.length)}`,
+                eventId: toGroupMutationEventId(commandHash, nowEpochMs),
                 resolvedJoinCode: null,
                 joinCodeVerifier: null,
                 internalAuthority: 'none',

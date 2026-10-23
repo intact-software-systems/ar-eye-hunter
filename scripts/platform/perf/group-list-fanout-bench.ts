@@ -4,6 +4,7 @@ import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import { toGroupMemberPolicy } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import type { AuditStamp, Group, GroupMember, GroupPresenceSession } from '@shared/api/group-types.ts';
+import defaults from '../../../apps/api-v1/resources/configuration/defaults-config.json' with { type: 'json' };
 import { CountingRuntimeStateRepository } from './counting-runtime-state-repository.ts';
 
 const GROUPS = Number(
@@ -50,6 +51,7 @@ async function main(): Promise<void> {
         groupStateEventStore,
         now: () => 1_700_000_000_000,
         serviceId: 'group-list-fanout-bench',
+        finishedRetentionMs: defaults.appInbox.finishedRetentionMs,
         readPlannedLayoutRow: async () => null,
         readAcceptedLayoutRow: async () => null
     });

@@ -12,11 +12,14 @@ import {
 } from 'vitest';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import { computeRtcTopologyOutboxInsert } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository.ts';
+import { readRtcTopologyWorkEnvelope, toRtcTopologyExecutionId } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-codec.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 
 import {
@@ -124,13 +127,11 @@ describe('Postgres topology APP_OUTBOX concurrency', () => {
 });
 
 function topologyWorkId(serializedMessage: string): string {
-    const message = JSON.parse(serializedMessage) as ALMessage;
-    const envelope = JSON.parse(message.payload.resource) as Readonly<{
-        topicId: string;
-        contextId: string;
-        resourceId: string;
-    }>;
-    return [envelope.topicId, envelope.contextId, envelope.resourceId, 0].join(':');
+    const message = decodePersistedALMessage(serializedMessage);
+    return toRtcTopologyExecutionId(
+        readRtcTopologyWorkEnvelope(message, AppOutboxType.RTC_TOPOLOGY_RECOMPUTE),
+        message.id.ts
+    );
 }
 
 function requireDatabaseUrl(): string {

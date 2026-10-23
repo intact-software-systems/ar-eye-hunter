@@ -1,37 +1,6 @@
-import type { EvolvePlannedTopologyFullRebuildReason } from '../planning/evolve-planned-topology.ts';
+import type { RallarRtcTopologyMetrics } from '@shared/rtc/rallar-rtc-topology-metrics.ts';
 
-export interface RallarRtcTopologyMetrics {
-    readonly topologyUpdateCount: number;
-    readonly topologyWorkComputeDurationMs: number;
-    readonly topologyChangedCount: number;
-    readonly topologyUnchangedCount: number;
-    readonly updatesWithRttMeasurementCount: number;
-    readonly updatesWithoutRttMeasurementCount: number;
-    readonly starPlanCount: number;
-    readonly starPlanDurationMs: number;
-    readonly noRttTreePlanCount: number;
-    readonly noRttTreePlanDurationMs: number;
-    readonly noRttMeshPlanCount: number;
-    readonly noRttMeshPlanDurationMs: number;
-    readonly weightedPlanCount: number;
-    readonly weightedPlanDurationMs: number;
-    readonly weightedRoomGraphBuildCount: number;
-    readonly weightedRoomGraphBuildDurationMs: number;
-    readonly weightedRoomGraphSparseFallbackCount: number;
-    readonly incrementalPlanCount: number;
-    readonly incrementalPlanFallbackFullCount: number;
-    readonly incrementalPlanInvariantFallbackCount: number;
-    readonly hysteresisHeldKindCount: number;
-    readonly topologyPublishAttemptCount: number;
-    readonly topologyPublishedCount: number;
-    readonly topologyPublishSkippedUnchangedCount: number;
-    readonly topologyRebuildSkippedFingerprintCount: number;
-    readonly topologyPlanFrozenCount: number;
-    readonly topologyRemovalRequestCount: number;
-    readonly topologyRemovedCount: number;
-    readonly topologyRemoveMissCount: number;
-    readonly topologySnapshotCount: number;
-}
+import type { EvolvePlannedTopologyFullRebuildReason } from '../planning/evolve-planned-topology.ts';
 
 export interface RtcTopologyPlanningObservation {
     readonly relevantRttMeasurementCount: number;

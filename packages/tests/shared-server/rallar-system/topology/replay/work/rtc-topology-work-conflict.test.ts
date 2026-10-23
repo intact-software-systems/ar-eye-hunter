@@ -59,6 +59,7 @@ describe('RTC topology queue conflict boundary', () => {
         });
         const handler = createRtcTopologyWorkHandler({
             nowEpochMs: () => 1_000,
+            finishedRetentionMs: 3_600_000,
             outboxQueueReader: new OutboxQueueReader(queue),
             database,
             executionRepository: new RtcTopologyExecutionRepository(runtime),

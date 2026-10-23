@@ -30,6 +30,7 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { TestResourceInbox, TestResourceInboxResults } from '../../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase, type AppInboxTestDatabase } from '../../app-inbox/test-support/app-inbox-test-database.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { authSession } from '../group-state-test-runtime.ts';
 
 export { TestResourceInbox, TestResourceInboxResults };
@@ -83,6 +84,7 @@ export async function createAuthorityHarness(
     const results = new TestResourceInboxResults();
     const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
     const durableGroupStateService = createGroupStateService({
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         runtimeRepository,
         groupStateEventStore: database.groupEventStore,
         serviceId: 'server-12345678',
@@ -178,6 +180,7 @@ function createAuthorityAppInboxService(
             }
         },
         {
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             serviceId: 'server-12345678',
             timing: input.timing,
             options: input.serviceOptions,

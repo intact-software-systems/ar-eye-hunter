@@ -50,6 +50,11 @@ export class VersionProbedReadThroughCache<K, V> {
         return value;
     }
 
+    /** The values kept, including any past their valid instant that no read or eviction sweep has removed yet. */
+    public size(): number {
+        return this.entries.size();
+    }
+
     /** The values in key order; every kept key is probed by one store read, and changed or unkept keys are read in order. */
     public async readMany(keys: readonly K[]): Promise<VersionProbedReads<V>> {
         const nowEpochMs = this.dependencies.nowEpochMs();

@@ -7,6 +7,7 @@ import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-manage
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { createTestGroup } from '../../../../../create-test-group.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 
 export interface CreateTopologyConfigMutationTestInput {
     readonly operation: 'putConfig' | 'putOverride';
@@ -63,7 +64,8 @@ function createTopologyConfigMutationTestInput(
         policyNowEpochMs: 1_000,
         attemptCount: 1,
         isPlatformAdmin: false,
-        resolvedOverrideExpiresAtEpochMs: operation === 'putOverride' ? 6_000 : null
+        resolvedOverrideExpiresAtEpochMs: operation === 'putOverride' ? 6_000 : null,
+        expireAtEpochMs: 1_000 + TEST_APP_INBOX_FINISHED_RETENTION_MS
     };
     return { command, read, facts, serverDefaults: {} } as const;
 }
@@ -131,7 +133,7 @@ export function createTopologyTestAuthorityGuard(revision = 0) {
 export function deepFreezeTopologyTestValue<T>(value: T): T {
     if (value && typeof value === 'object') {
         Object.freeze(value);
-        for (const nested of Object.values(value as Record<string, unknown>)) {
+        for (const nested of Object.values(value)) {
             deepFreezeTopologyTestValue(nested);
         }
     }

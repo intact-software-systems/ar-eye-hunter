@@ -10,6 +10,7 @@ import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgre
 import type { RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { GroupMember, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { createApiV1TestPGliteDatabaseLifecycle } from './api-v1-test-pglite-database.ts';
 import { canonicalAuditStamp, groupFixture } from './pglite-state-mutation-test-runtime.ts';
 
@@ -316,6 +317,27 @@ Deno.test('a cached snapshot is read again, without the session, once a presence
     }
 });
 
+Deno.test('the cache sizes the groups it keeps and never keeps more than its entries cap', async () => {
+    const seeded = await seedCache(2);
+    try {
+        const refs = ['second-room', 'third-room'].map((groupId) => ({ ...REF, groupId }));
+        for (const ref of refs) {
+            await seeded.repository.putGroup(groupFixture(ref, `Kept ${ref.groupId}`));
+            await seeded.repository.putMember({ ...createMember('alice', 'owner'), ...ref });
+        }
+        assert.equal(seeded.cache.size(), 0);
+
+        await seeded.cache.readSnapshots([REF, refs[0]!]);
+        assert.equal(seeded.cache.size(), 2);
+        await seeded.cache.readSnapshot(refs[1]!);
+
+        assert.equal(seeded.cache.size(), 2);
+    }
+    finally {
+        await seeded.close();
+    }
+});
+
 Deno.test('a principal in 21 unchanged kept groups costs one version statement for all of them, and a changed group one probe plus one value read', async () => {
     const seeded = await seedCache(32);
     try {
@@ -365,6 +387,7 @@ Deno.test('the cached principal group list answers in group-key order, as the sc
         await seeded.repository.putGroup(groupFixture(longer, 'Longer room id'));
         await seeded.repository.putMember({ ...createMember('alice', 'owner'), ...longer });
         const durable = createGroupStateService({
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             runtimeRepository: seeded.runtime,
             groupStateEventStore: new InMemoryGroupStateEventStore(),
             serviceId: 'pglite-principal-group-list',

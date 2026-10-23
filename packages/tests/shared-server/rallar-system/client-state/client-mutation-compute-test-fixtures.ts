@@ -25,6 +25,7 @@ import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { ClientInstance, ClientPrincipal, ClientSession } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { EntityStatus, NEVER_EXPIRE_TS, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 export const TEST_SCOPE: StateScope = {
@@ -248,7 +249,7 @@ export function authorisedConnectOperationInput(): ComputeAuthorisedWsConnectOpe
             persistedExpireAtEpochMs: null,
             state: null
         },
-        completionFacts: { entry: completionEntry(), completedAtEpochMs: 8_000 }
+        completionFacts: { entry: completionEntry(), completedAtEpochMs: 8_000, finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS }
     };
 }
 

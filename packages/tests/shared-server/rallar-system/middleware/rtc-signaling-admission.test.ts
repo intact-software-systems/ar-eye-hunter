@@ -69,7 +69,8 @@ describe('middleware pre-admission', () => {
                         orderingTrackTtlMs: 60_000,
                         supersedenceTrackTtlMs: 60_000,
                         retention: normalizeALRuntimeStoreRetention(),
-                        maxOrderingTracks: undefined
+                        maxOrderingTracks: undefined,
+                        maxDeliveredMarkers: undefined
                     }),
                     workQueue: signalingBackend.workQueue
                 }

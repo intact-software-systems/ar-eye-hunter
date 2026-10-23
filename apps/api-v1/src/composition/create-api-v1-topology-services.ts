@@ -41,12 +41,14 @@ import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import type { RtcTopologyAdminMetrics } from '@shared/rtc/rtc-topology-admin-metrics.ts';
+import type { RtcTopologyReplayMetrics } from '@shared/rtc/rtc-topology-replay-metrics.ts';
 
 import { RtcTopologyInputFingerprintRepository } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
 import { createApiRtcTopologyAdminMetrics } from '../runtime/rtc-topology/create-api-rtc-topology-admin-metrics.ts';
 
 export interface ApiV1TopologyReplayMetrics {
-    readMetrics(): object;
+    readMetrics(): RtcTopologyReplayMetrics;
     resetMetrics(): void;
 }
 
@@ -63,6 +65,8 @@ export interface CreateApiV1TopologyServicesInput {
     readonly rtcTopologyOptions: RallarRtcTopologyServiceConfig;
     readonly rttRefinementGateConfig: RtcRttRefinementGateConfig;
     readonly nowEpochMs: () => number;
+    /** How long a topology command's mutation record and recompute outbox row stay after its capture. */
+    readonly finishedRetentionMs: number;
 }
 
 export interface ApiV1TopologyServices {
@@ -82,7 +86,7 @@ export interface ApiV1TopologyServices {
     readonly rttRefinementGate: RtcRttRefinementGate;
     readonly rttRefinementService: RtcRttRefinementService;
     readonly adminClientIds: readonly string[];
-    readonly readRtcTopologyMetrics: () => object;
+    readonly readRtcTopologyMetrics: () => RtcTopologyAdminMetrics;
     readonly resetRtcTopologyMetrics: () => void;
 }
 
@@ -151,7 +155,8 @@ export function createApiV1TopologyServices(
         },
         nowEpochMs,
         isPlatformAdmin: (principalId) => input.adminClientIds.includes(principalId),
-        outboxWriter
+        outboxWriter,
+        finishedRetentionMs: input.finishedRetentionMs
     });
     const topologyConfigMutation = topologyMutationOwners.configMutation;
     const topologyReconfigureMutation = topologyMutationOwners.reconfigureMutation;

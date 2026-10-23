@@ -34,6 +34,7 @@ import {
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { createGroupStateTransactionBoundaryHarness } from './group-state-transaction-boundary-fixture.ts';
 
 const EXPECTED_CREATE_GROUP_DURABLE_JSON = '{"status":"created","result":{"snapshot":' +
@@ -65,7 +66,7 @@ const EXPECTED_CREATE_GROUP_DURABLE_JSON = '{"status":"created","result":{"snaps
     '"invitationExpiresAtEpochMs":null}],"activeSessions":[],"memberCount":1,' +
     '"onlineMemberCount":0},"event":{"applicationId":"ar-eye-hunter",' +
     '"workspaceId":"default","groupId":"transaction-boundary-room",' +
-    '"eventId":"group-event:3e85b5e31f6a320e249e7fd18bf180c7ce3a15825453b7549a25897e91bc41c7",' +
+    '"eventId":"group-event:fbdfdfc402306c873dc6c84ca13bf30269461fbce386b89a99b67d3838169c77",' +
     '"eventType":"group-created","snapshotVersion":1,' +
     '"causalRevision":{"groupRevision":1,"presenceRevision":0},' +
     '"occurredAtEpochMs":1785628800000,"actor":{"kind":"session",' +
@@ -163,7 +164,7 @@ describe('group-state AppInbox transaction result boundary', () => {
         const transactionWriter: GroupStateInboxHandlerDependencies['transactionWriter'] = {
             readCompletionFacts: (context: AppInboxExecutionMetadata): AppInboxCompletionFacts => {
                 actions.push('completion');
-                return { entry: context.entry, completedAtEpochMs: context.message.id.ts };
+                return { entry: context.entry, completedAtEpochMs: context.message.id.ts, finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS };
             },
             writeComputedMutation: async <Result>(
                 _context: AppInboxExecutionMetadata,

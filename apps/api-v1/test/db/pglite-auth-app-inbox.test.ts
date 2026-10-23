@@ -15,6 +15,7 @@ import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-w
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
@@ -49,6 +50,7 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
                 passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 2 })
             },
             {
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 serviceId: 'pglite-auth',
                 timing: undefined,
                 options: {
@@ -199,6 +201,7 @@ Deno.test('PGlite AppAuth rereads registered-user policy after enqueue', async (
                 passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 2 })
             },
             {
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 serviceId: 'pglite-auth-policy',
                 timing: undefined,
                 options: {
@@ -285,6 +288,7 @@ Deno.test(
                     passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 2 })
                 },
                 {
+                    finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                     serviceId: 'pglite-auth-delayed-facts',
                     options: {
                         waitMaxElapsedMsecs: 5_000,

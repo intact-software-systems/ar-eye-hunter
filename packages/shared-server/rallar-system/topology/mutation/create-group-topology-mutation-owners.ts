@@ -14,6 +14,7 @@ export interface CreateGroupTopologyMutationOwnersInput {
     readonly nowEpochMs: () => number;
     readonly isPlatformAdmin: (principalId: string) => boolean;
     readonly outboxWriter: RtcTopologyOutboxWriter;
+    readonly finishedRetentionMs: number;
 }
 
 export interface GroupTopologyMutationOwners {
@@ -31,14 +32,16 @@ export function createGroupTopologyMutationOwners(
             serverDefaults: input.serverDefaults,
             nowEpochMs: input.nowEpochMs,
             isPlatformAdmin: input.isPlatformAdmin,
-            outboxWriter: input.outboxWriter
+            outboxWriter: input.outboxWriter,
+            finishedRetentionMs: input.finishedRetentionMs
         }),
         reconfigureMutation: new GroupTopologyReconfigureMutation({
             groupStateRepository: input.groupStateRepository,
             readPlanningAuthority: async (authorityInput) =>
                 await input.planning.readTopologyPlanningAuthority(authorityInput),
             isPlatformAdmin: input.isPlatformAdmin,
-            outboxWriter: input.outboxWriter
+            outboxWriter: input.outboxWriter,
+            finishedRetentionMs: input.finishedRetentionMs
         })
     };
 }

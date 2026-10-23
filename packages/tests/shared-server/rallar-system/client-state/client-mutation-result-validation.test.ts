@@ -37,6 +37,7 @@ import { computeClientStateSyncEntries } from '@shared-server/rallar-system/stat
 import { assertClientMutationMatchesRecompute } from '@shared-test/shared-server/assert-client-mutation-matches-recompute.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import {
     authorisedConnectOperationInput,
     connectCommand,
@@ -235,7 +236,7 @@ describe('client mutation operation validation', () => {
         const input = {
             command,
             read,
-            completionFacts: { entry: createExecutionMetadata().entry, completedAtEpochMs: 8_000 },
+            completionFacts: { entry: createExecutionMetadata().entry, completedAtEpochMs: 8_000, finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS },
             lifecycle: undefined
         };
         const computed = computeClientMutationOperation(input);
@@ -268,7 +269,7 @@ describe('client mutation operation validation', () => {
         const input = {
             command,
             read: emptyRead(command),
-            completionFacts: { entry: createExecutionMetadata().entry, completedAtEpochMs: 8_000 },
+            completionFacts: { entry: createExecutionMetadata().entry, completedAtEpochMs: 8_000, finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS },
             lifecycle: undefined
         };
         const computed = computeClientMutationOperation(input);
@@ -315,7 +316,7 @@ describe('client mutation operation validation', () => {
         const input = {
             command,
             read: { ...readAfterWrite(command, connected), idempotency: entryValue(connected.idempotency, 0) },
-            completionFacts: { entry: createExecutionMetadata().entry, completedAtEpochMs: 8_000 },
+            completionFacts: { entry: createExecutionMetadata().entry, completedAtEpochMs: 8_000, finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS },
             lifecycle: undefined
         };
         const computed = computeClientMutationOperation(input);
@@ -328,7 +329,7 @@ describe('client mutation operation validation', () => {
         const input = {
             command,
             read: emptyRead(command),
-            completionFacts: { entry: createExecutionMetadata().entry, completedAtEpochMs: 8_000 },
+            completionFacts: { entry: createExecutionMetadata().entry, completedAtEpochMs: 8_000, finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS },
             lifecycle: undefined
         };
         const computed = computeClientMutationOperation(input);
@@ -352,7 +353,7 @@ describe('client mutation operation validation', () => {
         const input = {
             command,
             read: emptyRead(command),
-            completionFacts: { entry: createExecutionMetadata().entry, completedAtEpochMs: 8_000 },
+            completionFacts: { entry: createExecutionMetadata().entry, completedAtEpochMs: 8_000, finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS },
             lifecycle: undefined
         };
         const computed = computeClientMutationOperation(input);
@@ -375,7 +376,7 @@ describe('client mutation operation validation', () => {
         const input = {
             command,
             read: emptyRead(command),
-            completionFacts: { entry: createExecutionMetadata().entry, completedAtEpochMs: 8_000 },
+            completionFacts: { entry: createExecutionMetadata().entry, completedAtEpochMs: 8_000, finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS },
             lifecycle: undefined
         };
         const computed = computeClientMutationOperation(input);
@@ -413,7 +414,7 @@ describe('client mutation operation validation', () => {
                 nextAfterKey: null
             },
             reads: [{ command, read: readAfterWrite(command, connected) }],
-            completionFacts: { entry: context.entry, completedAtEpochMs: 8_000 }
+            completionFacts: { entry: context.entry, completedAtEpochMs: 8_000, finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS }
         };
         const computed = computeExpiredSessionsOperation(input);
         if (computed.outcome !== 'completed') {

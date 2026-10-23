@@ -146,6 +146,25 @@ describe('VersionProbedReadThroughCache', () => {
         expect(unversioned.counts.fullReads).toBe(2);
     });
 
+    it('sizes the kept values, never past maxEntries, the oldest kept leaving first', async () => {
+        const store = createDocumentStore(
+            new Map(['a', 'b', 'c', 'd'].map((key) => [key, { version: `${key}@1`, body: key, validUntilEpochMs: null }]))
+        );
+        const cache = createCache(store, () => 1_000, 3);
+        expect(cache.size()).toBe(0);
+
+        await cache.readMany(['a', 'b', 'c']);
+        expect(cache.size()).toBe(3);
+        await cache.read('d');
+        expect(cache.size()).toBe(3);
+
+        store.counts.fullReads = 0;
+        await cache.readMany(['b', 'c', 'd']);
+        expect(store.counts.fullReads).toBe(0);
+        await cache.read('a');
+        expect(store.counts.fullReads).toBe(1);
+    });
+
     describe('readMany', () => {
         const KEYS = Array.from({ length: 21 }, (_, index) => `group-${index}`);
 

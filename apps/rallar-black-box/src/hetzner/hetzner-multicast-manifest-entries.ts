@@ -4,6 +4,7 @@ import {
     type RallarBlackBoxRtcMessagesMulticastRecipeOptions
 } from '@shared-test/rallar-bb-test/fixtures/rtc-multicast-recipes.ts';
 import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxEventHistoryPolicy } from '@shared-test/rallar-bb-test/runtime/event-history.ts';
 import type { HetznerDistributedManifestEntry, ManifestCatalogInput } from './hetzner-manifest-entry.ts';
 import {
     createManifestEntry,
@@ -59,6 +60,70 @@ export function createDiagnosticRtcMessagesPrincipal50Agent60m20hzTreeEntry(): H
             minReceiveRatio: 0.95,
             receiverExpectedFrames: 72_000,
             recommendedTerminalTimeoutSeconds: 3_900,
+            catalogProfiles: []
+        })
+    });
+}
+
+/**
+ * About five minutes of a relay's events at the growth proof's rate. Each page keeps this many, so its heap holds the
+ * test runtime's history at a fixed size instead of growing with every frame it receives.
+ */
+const GROWTH_PROOF_EVENT_HISTORY: RallarBlackBoxEventHistoryPolicy = { mode: 'recent', maxEvents: 10_000 };
+
+/**
+ * The local growth proof's workload: 78 minutes of principal multicast over a tree sized to the cohort, every agent
+ * reading its stats, the ALM ledger among them, every 30 s while the stream runs.
+ */
+export function createRtcMessagesPrincipal15Agent78m2hzTreeEntry(): HetznerDistributedManifestEntry {
+    return createManifestEntry({
+        filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[22],
+        title: 'RTC messages principal 15-agent 78m 2 Hz tree',
+        description: 'One principal headless sender multicasts RTC messages at 2 Hz to 14 receivers for 78 minutes ' +
+            'through a forced tree, every agent reading its ALM ledger every 30 s. 78 minutes outlast the growth ' +
+            'proof\'s 75-minute window; 2 Hz keeps them at 9,360 frames, inside the 10,000-frame bound the agents ' +
+            'enforce on one rtc.stream.',
+        distributedRunId: 'hetzner-rtc-messages-principal-15-agent-78m-2hz-tree',
+        recipes: createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes({
+            participantCount: 15,
+            durationSeconds: 4_680,
+            rateHz: 2,
+            minReceiveRatio: 0.95,
+            group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
+            readyTimeoutMs: 45_000,
+            midStreamStatsIntervalMs: 30_000,
+            stream: {
+                progressEveryMs: 30_000,
+                sampleEvery: 100,
+                drainTimeoutMs: 30_000,
+                maxDroppedFrames: 468,
+                maxP95SendDurationMs: 2_500,
+                maxP99SendDurationMs: 4_000
+            }
+        }),
+        agentCount: 15,
+        profiles: ['rtc', 'messages.rtc', 'principal', 'multicast', 'tree', 'long', 'growth-proof', 'extended'],
+        live: true,
+        targetAgentIds: toControllerAgentIds(15),
+        targetPolicyMode: 'role-map',
+        rolePattern: 'one-sender-many-receivers',
+        mainline: false,
+        diagnostic: false,
+        expectedFailure: false,
+        stress: true,
+        barrier: true,
+        groupAssertions: [],
+        eventHistory: GROWTH_PROOF_EVENT_HISTORY,
+        metadata: toMulticastManifestMetadata({
+            topologyProfile: 'tree',
+            treeMeshMinSize: 16,
+            participantCount: 15,
+            senderCount: 1,
+            durationSeconds: 4_680,
+            rateHz: 2,
+            minReceiveRatio: 0.95,
+            receiverExpectedFrames: 9_360,
+            recommendedTerminalTimeoutSeconds: 5_100,
             catalogProfiles: []
         })
     });

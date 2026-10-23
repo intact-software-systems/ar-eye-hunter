@@ -243,6 +243,7 @@ class PresenceConvergenceFixture {
     }).planning;
     readonly handler = createRtcTopologyWorkHandler({
         nowEpochMs: () => this.now,
+        finishedRetentionMs: 3_600_000,
         outboxQueueReader: this.outboxQueueReader,
         database: this.database,
         topologyPlanning: this.planning,

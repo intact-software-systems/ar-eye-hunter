@@ -32,7 +32,7 @@ const EXPIRES_AT_MS = CREATED_AT_MS + 3_600_000;
 
 describe('durable topology work for large rooms', () => {
     it.each([EntityStatus.RETRY, EntityStatus.COMPLETED])(
-        'coalesces a 1500-member %s change across servers while preserving its durable identity',
+        'coalesces a 1500-member %s change across servers while preserving its durable identity and taking its expiry',
         (status) => {
             const first = computeCoalescedRtcTopologyGroupRevisionWork(createWorkInput(null));
             const previous = { ...first.entryWrite.entry, status };
@@ -43,12 +43,15 @@ describe('durable topology work for large rooms', () => {
                 expireAtEpochMs: EXPIRES_AT_MS + 200
             }).entryWrite.entry;
 
-            expect(next.audit).toEqual(previous.audit);
+            expect(next.audit).toEqual({
+                ...previous.audit,
+                expiryTs: Temporal.Instant.fromEpochMilliseconds(EXPIRES_AT_MS + 200)
+            });
             expect(isCanonicalRtcTopologyWorkEntry(next)).toBe(true);
             const message: ALMessage = JSON.parse(next.resource);
             expect(message.id.ts).toBe(CREATED_AT_MS);
             expect(message.id.senderId).toBe('server-1');
-            expect(message.constraints?.expiresAtMs).toBe(EXPIRES_AT_MS);
+            expect(message.constraints?.expiresAtMs).toBe(EXPIRES_AT_MS + 200);
         }
     );
 

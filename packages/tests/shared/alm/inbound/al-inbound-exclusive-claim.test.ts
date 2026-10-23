@@ -256,7 +256,8 @@ async function createClaimFixture(storage: ClaimStorage): Promise<ClaimFixture> 
         orderingTrackTtlMs: 60_000,
         supersedenceTrackTtlMs: 60_000,
         retention: normalizeALRuntimeStoreRetention(),
-        maxOrderingTracks: undefined
+        maxOrderingTracks: undefined,
+        maxDeliveredMarkers: undefined
     });
     return { store, clock };
 }

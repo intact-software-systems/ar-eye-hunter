@@ -11,10 +11,7 @@ import {
     groupRoomRef,
     RALLAR_BLACK_BOX_RTC_CONNECT_COMPLETION_MARGIN_MS
 } from './live-rtc-setup.ts';
-import {
-    normalizeRallarBlackBoxRtcRealtimeDurationSeconds,
-    normalizeRallarBlackBoxRtcRealtimeRateHz
-} from './rtc-realtime-recipes.ts';
+import { normalizeRallarBlackBoxRtcRealtimeRateHz } from './rtc-realtime-recipes.ts';
 
 export const RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_SENDER_RECIPE_FIXTURE_ID =
     'rtc-messages-principal-multicast-sender';
@@ -40,6 +37,11 @@ export interface RallarBlackBoxRtcMessagesMulticastRecipeOptions {
     readonly group?: RallarBlackBoxDistributedGroupRef;
     readonly connection?: string;
     readonly readyTimeoutMs?: number;
+    /**
+     * Absent, the sender reads no stats while it streams and each receiver reads them every 5 s; present, the sender
+     * and every receiver read their stats, the page's ALM ledger among them, at this interval for the whole stream.
+     */
+    readonly midStreamStatsIntervalMs?: number;
     readonly stream?: Readonly<{
         maxInFlight?: number;
         drainTimeoutMs?: number;
@@ -93,9 +95,8 @@ function multicastDeliveryPlan(
     );
     const rateHz = normalizeRallarBlackBoxRtcRealtimeRateHz(options.rateHz);
     const intervalMs = Math.max(1, Math.round(1_000 / rateHz));
-    const durationSeconds = normalizeRallarBlackBoxRtcRealtimeDurationSeconds(
-        options.durationSeconds
-    );
+    // Unlike a realtime stream, a multicast stream may outlast an hour; the agents bound its frames instead.
+    const durationSeconds = normalizePositiveInteger(options.durationSeconds, 30, 1);
     const frameCount = Math.max(1, Math.round(durationSeconds * rateHz));
     const receiverCount = senderCount === participantCount
         ? participantCount
@@ -437,18 +438,7 @@ function toPrincipalSenderRecipe(context: MulticastRecipeContext): RallarBlackBo
                 metadata: metadata
             }),
             toPrincipalSenderWarmupLoop(metadata),
-            messagesRtcStreamCommand({
-                commandId: 'rtc-messages-principal-multicast-stream',
-                connection,
-                group,
-                plan: plan,
-                profile: 'rtc-messages-principal-multicast-sender',
-                stream: {
-                    maxP95SendDurationMs: 2_500,
-                    maxP99SendDurationMs: 4_000,
-                    ...options.stream
-                }
-            }),
+            toPrincipalSenderStream(context),
             {
                 kind: 'stats',
                 commandId: 'rtc-messages-principal-sender-final-stats',
@@ -458,11 +448,50 @@ function toPrincipalSenderRecipe(context: MulticastRecipeContext): RallarBlackBo
     };
 }
 
+function toPrincipalSenderStream(context: MulticastRecipeContext): RallarBlackBoxTestCommand {
+    const { options, group, connection, plan, metadata } = context;
+    const stream = messagesRtcStreamCommand({
+        commandId: 'rtc-messages-principal-multicast-stream',
+        connection,
+        group,
+        plan: plan,
+        profile: 'rtc-messages-principal-multicast-sender',
+        stream: {
+            maxP95SendDurationMs: 2_500,
+            maxP99SendDurationMs: 4_000,
+            ...options.stream
+        }
+    });
+    const statsIntervalMs = options.midStreamStatsIntervalMs;
+    if (statsIntervalMs === undefined) {
+        return stream;
+    }
+    return {
+        kind: 'parallel',
+        commandId: 'rtc-messages-principal-sender-stream-window',
+        maxConcurrency: 2,
+        groups: [
+            { groupId: 'stream', commands: [stream] },
+            {
+                groupId: 'mid-stream-stats',
+                commands: [toMulticastStatsLoop({
+                    commandId: 'rtc-messages-principal-sender-stream-stats-loop',
+                    count: Math.floor((plan.durationSeconds * 1_000) / statsIntervalMs) + 1,
+                    intervalMs: statsIntervalMs,
+                    metadata: { ...metadata, purpose: 'mid-stream-ledger' },
+                    childCommandId: 'rtc-messages-principal-sender-stream-stats',
+                    childMetadata: metadata
+                })]
+            }
+        ]
+    };
+}
+
 function toPrincipalReceiverRecipe(context: MulticastRecipeContext): RallarBlackBoxTestRecipe {
     const { options, group, connection, plan, metadata, baseSetupCommands } = context;
     const roomRef = groupRoomRef(group);
     const receiverHoldMs = Math.max(1, plan.durationSeconds + 5) * 1000;
-    const receiverStatsIntervalMs = receiverHoldMs > 2000 ? 5000 : 1000;
+    const receiverStatsIntervalMs = options.midStreamStatsIntervalMs ?? (receiverHoldMs > 2000 ? 5000 : 1000);
     const receiverStatsLoopCount = Math.ceil(receiverHoldMs / receiverStatsIntervalMs) + 1;
     return {
         schemaVersion: 1,

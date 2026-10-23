@@ -38,6 +38,7 @@ export interface CreateApiCrdtInboxServiceInput {
     readonly serviceId: string;
     readonly timing: RallarTimingSink | undefined;
     readonly options: AppInboxOptions;
+    readonly finishedRetentionMs: number;
     readonly currentAuthority: CurrentMutationAuthority;
     readonly policies: readonly RallarCrdtDocumentTypePolicy[];
     readonly wakeQueueEngine: () => void;
@@ -92,6 +93,7 @@ export function createApiCrdtInboxService(
         },
         {
             serviceId: input.serviceId,
+            finishedRetentionMs: input.finishedRetentionMs,
             timing: input.timing,
             appInbox: input.options
         }

@@ -29,11 +29,11 @@ beforeEach(() => {
     resetFacade();
 });
 
-it('answers the facade ledger report once the facade is connected, with no ordering snapshot stated yet', async () => {
+it('answers the facade ledger report once the facade is connected, with no ordering snapshot or marker stated yet', async () => {
     const runtime = await loadRuntime();
     facade.behavior.readUsage.mockReturnValue(REPORT);
 
-    await expect(runtime.readAlmUsage()).resolves.toEqual({ ...REPORT, orderingTracks: 0 });
+    await expect(runtime.readAlmUsage()).resolves.toEqual({ ...REPORT, orderingTracks: 0, deliveredMarkers: 0 });
 });
 
 it('answers undefined before the facade is connected, where the facade read would throw', async () => {
@@ -61,4 +61,20 @@ it('sums the latest ordering snapshots each inbound store stated, and counts fro
     await runtime.close();
     await runtime.connect(CONNECTION);
     await expect(runtime.readAlmUsage()).resolves.toMatchObject({ orderingTracks: 0 });
+});
+
+it('sums the latest delivered markers each inbound store stated, and counts from zero after a close', async () => {
+    const runtime = await loadRuntime();
+    facade.behavior.readUsage.mockReturnValue(REPORT);
+    await runtime.connect(CONNECTION);
+
+    emitStorage({ kind: 'delivered-markers', storeId: 'browser-session-inbound:s-1/volatile', markers: 255 });
+    emitStorage({ kind: 'delivered-markers', storeId: 'browser-session-inbound:s-1', markers: 3 });
+    emitStorage({ kind: 'delivered-markers', storeId: 'browser-session-inbound:s-1/volatile', markers: 256 });
+    emitStorage({ kind: 'ordering-tracks', storeId: 'browser-session-inbound:s-1', tracks: 2 });
+
+    await expect(runtime.readAlmUsage()).resolves.toMatchObject({ orderingTracks: 2, deliveredMarkers: 259 });
+    await runtime.close();
+    await runtime.connect(CONNECTION);
+    await expect(runtime.readAlmUsage()).resolves.toMatchObject({ orderingTracks: 0, deliveredMarkers: 0 });
 });

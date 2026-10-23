@@ -166,6 +166,24 @@ describe('browser control-agent bootstrap config', () => {
         });
     });
 
+    it('keeps the browser census off unless the launch names an interval of 0 or 5000 to 600000', () => {
+        expect(resolveRallarBlackBoxBootstrapConfig('', {}, '').browserCensusIntervalMs).toBe(0);
+        expect(resolveRallarBlackBoxBootstrapConfig('?browserCensusIntervalMs=5000', {}, '')).toMatchObject({
+            browserCensusIntervalMs: 5_000,
+            issues: []
+        });
+        expect(resolveRallarBlackBoxBootstrapConfig('', { VITE_RALLAR_BROWSER_CENSUS_INTERVAL_MS: '600000' }, ''))
+            .toMatchObject({ browserCensusIntervalMs: 600_000, issues: [] });
+        for (const text of ['4999', '600001', '1', '5s']) {
+            const bootstrap = resolveRallarBlackBoxBootstrapConfig(`?browserCensusIntervalMs=${text}`, {}, '');
+            expect(bootstrap.browserCensusIntervalMs, text).toBe(0);
+            expect(bootstrap.issues, text).toEqual([{
+                launchKey: 'browserCensusIntervalMs',
+                message: `browserCensusIntervalMs must be 0 or an integer from 5000 to 600000, not '${text}'.`
+            }]);
+        }
+    });
+
     it('builds the exact remote-control runtime config used by browser agents', () => {
         const bootstrap = resolveRallarBlackBoxBootstrapConfig(
             '?mode=control&autoConnect=1&provider=browser-rallar&controlUrl=wss%3A%2F%2Fcontrol.example.test%2Fcontrol&runId=run-2&agentId=agent-2&apiBaseUrl=https%3A%2F%2Fapi.example.test&applicationId=rallar-server&workspaceId=default&roomId=room-2&actor=agent-2&sessionId=session-2&rallarUsername=bob&rallarPassword=secret&rallarLeaveRoomOnClose=0',

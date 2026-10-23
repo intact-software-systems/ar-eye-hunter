@@ -9,12 +9,12 @@ import {
     GroupMutationAuthorizationError,
     readAndVerifyLiveGroupMutationSession,
     requireGroupMutationAuthorityProof,
+    toGroupMutationEventId,
     verifyLiveGroupMutationSession,
     type GroupMutationAuthorityDependencies
 } from './group-mutation-authority.ts';
 import { toExpiryCommand, toSessionCleanupCommand } from './group-presence-mutation-command.ts';
 import {
-    GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS,
     type GroupMutationIngress,
     type GroupStateMutationCommand,
     type GroupStateRuntime,
@@ -79,7 +79,12 @@ export function createGroupStateRuntime(
         sessionGenerationLifecycle: createWsSessionGenerationLifecycleService(runtime),
         quickJoin: new GroupQuickJoinService(
             { repository: repositoryFor(runtime), authSessions },
-            { capacity: dependencies.capacity ?? { defaultMaxMembers: null }, serviceId: dependencies.serviceId, now }
+            {
+                capacity: dependencies.capacity ?? { defaultMaxMembers: null },
+                serviceId: dependencies.serviceId,
+                finishedRetentionMs: dependencies.finishedRetentionMs,
+                now
+            }
         ),
         ...createIngressCaptureOperations(owners),
         ...createQueryOperations(owners),
@@ -128,6 +133,7 @@ function createAuthorityDependencies(
         now,
         randomId,
         serviceId: dependencies.serviceId,
+        finishedRetentionMs: dependencies.finishedRetentionMs,
         capacity: dependencies.capacity
     };
 }
@@ -142,9 +148,9 @@ function createInternalMutationIngressCapture(
         );
         const facts: GroupMutationIngressFacts = {
             nowEpochMs: atEpochMs,
-            expireAtEpochMs: GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS,
+            expireAtEpochMs: atEpochMs + dependencies.finishedRetentionMs,
             serviceId: dependencies.serviceId,
-            eventId: `group-event:${commandHash.slice('sha256:'.length)}`,
+            eventId: toGroupMutationEventId(commandHash, atEpochMs),
             commandHash,
             resolvedJoinCode: null,
             joinCodeVerifier: null,

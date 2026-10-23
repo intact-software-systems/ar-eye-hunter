@@ -282,7 +282,8 @@ function createControlInstance(
                 orderingTrackTtlMs: 300000,
                 supersedenceTrackTtlMs: 300000,
                 retention: normalizeALRuntimeStoreRetention(),
-                maxOrderingTracks: undefined
+                maxOrderingTracks: undefined,
+                maxDeliveredMarkers: undefined
             }),
             workQueue: holdWorkQueueClaims(stores.inbound.workQueue, isClaimHeld)
         },

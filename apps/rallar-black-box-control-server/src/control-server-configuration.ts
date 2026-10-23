@@ -58,6 +58,8 @@ const DEFAULT_RUNTIME_RETENTION_BOUNDS: Required<ControlRunSnapshotBounds> = {
 const DEFAULT_SNAPSHOT_FLUSH_INTERVAL_MS = 2_000;
 /** Well inside the agents' 10 s barrier-resolution grace, so a timed-out barrier is judged before an agent gives up. */
 const DEFAULT_DEADLINE_SWEEP_INTERVAL_MS = 1_000;
+/** The runs a hosted controller deploys with (`RALLAR_BLACK_BOX_RETENTION_MAX_RUNS`); `0` keeps every run. */
+const DEFAULT_RETENTION_MAX_RUNS = 5;
 const UNBOUNDED_SNAPSHOT_LIMITS = new Set(['all', 'unbounded', 'none']);
 const TRUE_FLAGS = new Set(['1', 'true', 'yes', 'on']);
 
@@ -84,7 +86,11 @@ export function readBlackBoxControlServerConfiguration(
         wsAllowedHosts: readEnvironmentList(environment, 'RALLAR_BLACK_BOX_WS_ALLOWED_HOSTS'),
         wsAllowedOrigins: readEnvironmentList(environment, 'RALLAR_BLACK_BOX_WS_ALLOWED_ORIGINS'),
         storageDir: readEnvironmentString(environment, 'RALLAR_BLACK_BOX_STORAGE_DIR'),
-        retentionMaxRuns: readEnvironmentNumber(environment, 'RALLAR_BLACK_BOX_RETENTION_MAX_RUNS', 0),
+        retentionMaxRuns: readEnvironmentNumber(
+            environment,
+            'RALLAR_BLACK_BOX_RETENTION_MAX_RUNS',
+            DEFAULT_RETENTION_MAX_RUNS
+        ),
         snapshotFlushIntervalMs: readEnvironmentNumber(
             environment,
             'RALLAR_BLACK_BOX_SNAPSHOT_FLUSH_INTERVAL_MS',

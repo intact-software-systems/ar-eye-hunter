@@ -13,6 +13,9 @@ import type {
 import type {
     GroupRestSnapshotReadSelector
 } from '@shared-server/rallar-system/group-state/snapshot/group-rest-snapshot-read-selector.ts';
+import type {
+    GroupStateCurrentSnapshotCache
+} from '@shared-server/rallar-system/group-state/snapshot/group-state-current-snapshot-cache.ts';
 import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/rallar-middleware-runtime.ts';
 import type { RallarAlmReceiptDiagnosticsRecorder } from '@shared-server/rallar-system/observability/alm-receipt-diagnostics.ts';
 import type { RallarGroupFormationMetricsRecorder } from '@shared-server/rallar-system/observability/formation-metrics.ts';
@@ -48,6 +51,9 @@ export interface ApiV1Runtime extends
     readonly groupRestSnapshotReadSelector: GroupRestSnapshotReadSelector;
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
     readonly almReceiptDiagnostics: RallarAlmReceiptDiagnosticsRecorder;
+    /** The unexpired delivered markers the WS server's shared inbound store holds, read from the store. */
+    readonly readAlmDeliveredMarkers: () => Promise<number>;
+    readonly groupCurrentSnapshotCache: GroupStateCurrentSnapshotCache;
     readonly backgroundTasks: ApiV1BackgroundTaskLifecycle;
     readonly topologyServices: ApiV1TopologyServices;
 }
@@ -60,6 +66,8 @@ export interface RequireApiV1RuntimeInput {
     readonly groupRestSnapshotReadSelector: GroupRestSnapshotReadSelector;
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
     readonly almReceiptDiagnostics: RallarAlmReceiptDiagnosticsRecorder;
+    readonly readAlmDeliveredMarkers: () => Promise<number>;
+    readonly groupCurrentSnapshotCache: GroupStateCurrentSnapshotCache;
     readonly backgroundTasks: ApiV1BackgroundTaskLifecycle;
     readonly topologyServices: ApiV1TopologyServices;
 }
@@ -103,6 +111,8 @@ export function requireApiV1Runtime(input: RequireApiV1RuntimeInput): ApiV1Runti
         groupRestSnapshotReadSelector: input.groupRestSnapshotReadSelector,
         groupFormationMetrics: input.groupFormationMetrics,
         almReceiptDiagnostics: input.almReceiptDiagnostics,
+        readAlmDeliveredMarkers: input.readAlmDeliveredMarkers,
+        groupCurrentSnapshotCache: input.groupCurrentSnapshotCache,
         backgroundTasks: input.backgroundTasks,
         topologyServices: input.topologyServices
     };

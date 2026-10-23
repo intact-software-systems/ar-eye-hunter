@@ -393,6 +393,11 @@ const ENVIRONMENT_SETTINGS: readonly EnvironmentSetting[] = [
         apply: (source, value) => source.appInbox.completionWait.jitterRatio = value
     },
     {
+        name: 'RALLAR_APP_INBOX_FINISHED_RETENTION_MS',
+        decode: decodeNumber,
+        apply: (source, value) => source.appInbox.finishedRetentionMs = value
+    },
+    {
         name: 'RALLAR_ICE_MODE',
         decode: decodeString,
         apply: (source, value) => source.ice.mode = value

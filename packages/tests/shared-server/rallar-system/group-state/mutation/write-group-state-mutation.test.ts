@@ -9,6 +9,7 @@ import type { RuntimeStateGuardedBatchWrite } from '@shared-server/runtime-state
 import type { GroupMember, GroupRef } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { createTestGroupStateService } from '../group-state-test-runtime.ts';
 import { ApplyingGuardedBatchRepository, OrderedGroupEventStore } from './group-mutation-test-runtime.ts';
 
@@ -120,7 +121,7 @@ describe('GroupStateService guarded runtime-state batch', () => {
                         namespace: 'group-state:idempotent',
                         key: groupStateIdempotencyStorageKey(ref, 'group-insert-request'),
                         value: JSON.stringify(idempotency),
-                        expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                        expireAtTimestamp: 1_000 + TEST_APP_INBOX_FINISHED_RETENTION_MS
                     }
                 ]
             }

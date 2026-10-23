@@ -109,6 +109,7 @@ export interface AppAdminInboxServiceDependencies {
 
 export interface AppAdminInboxServiceConfig {
     readonly serviceId: string;
+    readonly finishedRetentionMs: number;
     readonly pageSize: number;
     readonly timing?: RallarTimingSink;
     readonly appInbox: AppInboxOptions;
@@ -150,6 +151,7 @@ export class AppAdminInboxService {
             resultRepository: dependencies.resourceInboxResultsRepository,
             database: dependencies.database,
             serviceId: config.serviceId,
+            finishedRetentionMs: config.finishedRetentionMs,
             timing: config.timing,
             options: config.appInbox
         });

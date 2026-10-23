@@ -102,6 +102,7 @@ describe('activation status series settlement', () => {
         const publications: string[] = [];
         const handler = createRtcTopologyWorkHandler({
             nowEpochMs: () => 2_000,
+            finishedRetentionMs: 3_600_000,
             outboxQueueReader,
             database,
             topologyPlanning: planning,

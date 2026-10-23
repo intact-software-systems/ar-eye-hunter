@@ -2,11 +2,9 @@ import type {
     RtcTopologyReplayEntryHandler,
     RtcTopologyReplayPort
 } from '@shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-contracts.ts';
-import type {
-    RtcTopologyReplayDiagnosticsSink,
-    RtcTopologyReplayWakeSource
-} from '@shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-diagnostics.ts';
+import type { RtcTopologyReplayDiagnosticsSink } from '@shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-diagnostics.ts';
 import { RtcTopologyReplayService } from '@shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-service.ts';
+import type { RtcTopologyReplayWakeSource } from '@shared/rtc/rtc-topology-replay-metrics.ts';
 
 import type {
     ApiV1TopologyDeliveryConfiguration,

@@ -82,6 +82,8 @@ function createReloadAgent(
         fetch: () => Promise.reject(new Error('The reload agent uploads no final report.')),
         heartbeatIntervalMs: 60_000,
         statsIntervalMs: 0,
+        browserCensusIntervalMs: 0,
+        readBrowserCensus: async () => ({}),
         reconnectBaseMs: 600,
         reconnectMaxMs: 5_000,
         maxFrameBytes: RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES
@@ -544,6 +546,8 @@ describe('browser control-agent reload', () => {
             fetch: () => Promise.reject(new Error('No upload configured.')),
             heartbeatIntervalMs: 60_000,
             statsIntervalMs: 0,
+            browserCensusIntervalMs: 0,
+            readBrowserCensus: async () => ({}),
             reconnectBaseMs: 600,
             reconnectMaxMs: 5_000,
             maxFrameBytes: RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES

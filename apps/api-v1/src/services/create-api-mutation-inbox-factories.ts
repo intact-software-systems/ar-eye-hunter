@@ -33,6 +33,7 @@ export interface CreateApiMutationInboxFactoriesInput {
     readonly serviceId: string;
     readonly timing: RallarTimingSink | undefined;
     readonly options: AppInboxOptions;
+    readonly finishedRetentionMs: number;
     readonly currentAuthority: CurrentAdminMutationAuthority;
 }
 
@@ -61,6 +62,7 @@ export function createApiMutationInboxFactories(
                 serviceId: input.serviceId,
                 timing: input.timing,
                 options: input.options,
+                finishedRetentionMs: input.finishedRetentionMs,
                 currentAuthority: input.currentAuthority
             })
     };

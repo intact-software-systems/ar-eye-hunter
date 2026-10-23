@@ -2744,7 +2744,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AdminOperationResultResponse'
+                $ref: '#/components/schemas/AdminMetricsResetResultResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2771,7 +2771,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AdminOperationResultResponse'
+                $ref: '#/components/schemas/QueuedGroupTopologyReconfigureResponse'
         '401':
           $ref: '#/components/responses/ApiMutationFailure'
         '403':
@@ -2798,7 +2798,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AdminOperationResultResponse'
+                $ref: '#/components/schemas/AdminPruneExpiredResultResponse'
         '401':
           $ref: '#/components/responses/ApiMutationFailure'
         '403':
@@ -3856,7 +3856,12 @@ components:
               additionalProperties: true
             realtime:
               type: object
-              additionalProperties: true
+              required: [topologyMetrics]
+              properties:
+                topologyMetrics:
+                  $ref: '#/components/schemas/RtcTopologyAdminMetrics'
+                groupFormationMetrics:
+                  $ref: '#/components/schemas/RallarGroupFormationMetrics'
             state:
               type: object
               additionalProperties: true
@@ -3883,17 +3888,27 @@ components:
       allOf:
         - $ref: '#/components/schemas/AdminOperationBaseResponse'
         - type: object
-          required: [almReceipts]
+          required: [websocket, rtcTopology, groupFormation, almReceipts, caches, alm]
           properties:
             websocket:
               type: object
               additionalProperties: true
             rtcTopology:
               type: object
-              additionalProperties: true
+              required: [metrics, processLocal]
+              properties:
+                metrics:
+                  $ref: '#/components/schemas/RtcTopologyAdminMetrics'
+                processLocal:
+                  type: boolean
             groupFormation:
               type: object
-              additionalProperties: true
+              required: [processLocal]
+              properties:
+                metrics:
+                  $ref: '#/components/schemas/RallarGroupFormationMetrics'
+                processLocal:
+                  type: boolean
             almReceipts:
               type: object
               required: [diagnostics, processLocal]
@@ -3902,6 +3917,300 @@ components:
                   type: boolean
                 diagnostics:
                   $ref: '#/components/schemas/AdminOperationsAlmReceiptDiagnostics'
+            caches:
+              type: object
+              description: Entries this process's in-memory caches hold, counted when read.
+              required: [groupAudienceSnapshots, processLocal]
+              properties:
+                groupAudienceSnapshots:
+                  type: integer
+                  minimum: 0
+                  description: >-
+                    Groups whose current snapshot the group audience cache keeps, each absent group's null among them;
+                    that cache holds the process's only version-probed read-through cache today.
+                processLocal:
+                  type: boolean
+            alm:
+              type: object
+              required: [deliveredMarkers, processLocal]
+              properties:
+                deliveredMarkers:
+                  type: integer
+                  minimum: 0
+                  description: >-
+                    The unexpired delivered markers the WS server's shared inbound store holds, read from the store
+                    when asked. The server keeps no count cap; each marker leaves at its expiry, an hour after the
+                    last admission on its track.
+                processLocal:
+                  type: boolean
+
+    RtcTopologyAdminMetrics:
+      type: object
+      description: >-
+        The planning counters, with the replay consumer's counters under `replay`.
+      required:
+        - topologyUpdateCount
+        - topologyWorkComputeDurationMs
+        - topologyChangedCount
+        - topologyUnchangedCount
+        - updatesWithRttMeasurementCount
+        - updatesWithoutRttMeasurementCount
+        - starPlanCount
+        - starPlanDurationMs
+        - noRttTreePlanCount
+        - noRttTreePlanDurationMs
+        - noRttMeshPlanCount
+        - noRttMeshPlanDurationMs
+        - weightedPlanCount
+        - weightedPlanDurationMs
+        - weightedRoomGraphBuildCount
+        - weightedRoomGraphBuildDurationMs
+        - weightedRoomGraphSparseFallbackCount
+        - incrementalPlanCount
+        - incrementalPlanFallbackFullCount
+        - incrementalPlanInvariantFallbackCount
+        - hysteresisHeldKindCount
+        - topologyPublishAttemptCount
+        - topologyPublishedCount
+        - topologyPublishSkippedUnchangedCount
+        - topologyRebuildSkippedFingerprintCount
+        - topologyPlanFrozenCount
+        - topologyRemovalRequestCount
+        - topologyRemovedCount
+        - topologyRemoveMissCount
+        - topologySnapshotCount
+        - replay
+      properties:
+        topologyUpdateCount:
+          type: integer
+          minimum: 0
+        topologyWorkComputeDurationMs:
+          type: number
+        topologyChangedCount:
+          type: integer
+          minimum: 0
+        topologyUnchangedCount:
+          type: integer
+          minimum: 0
+        updatesWithRttMeasurementCount:
+          type: integer
+          minimum: 0
+        updatesWithoutRttMeasurementCount:
+          type: integer
+          minimum: 0
+        starPlanCount:
+          type: integer
+          minimum: 0
+        starPlanDurationMs:
+          type: number
+        noRttTreePlanCount:
+          type: integer
+          minimum: 0
+        noRttTreePlanDurationMs:
+          type: number
+        noRttMeshPlanCount:
+          type: integer
+          minimum: 0
+        noRttMeshPlanDurationMs:
+          type: number
+        weightedPlanCount:
+          type: integer
+          minimum: 0
+        weightedPlanDurationMs:
+          type: number
+        weightedRoomGraphBuildCount:
+          type: integer
+          minimum: 0
+        weightedRoomGraphBuildDurationMs:
+          type: number
+        weightedRoomGraphSparseFallbackCount:
+          type: integer
+          minimum: 0
+        incrementalPlanCount:
+          type: integer
+          minimum: 0
+        incrementalPlanFallbackFullCount:
+          type: integer
+          minimum: 0
+        incrementalPlanInvariantFallbackCount:
+          type: integer
+          minimum: 0
+        hysteresisHeldKindCount:
+          type: integer
+          minimum: 0
+        topologyPublishAttemptCount:
+          type: integer
+          minimum: 0
+        topologyPublishedCount:
+          type: integer
+          minimum: 0
+        topologyPublishSkippedUnchangedCount:
+          type: integer
+          minimum: 0
+        topologyRebuildSkippedFingerprintCount:
+          type: integer
+          minimum: 0
+        topologyPlanFrozenCount:
+          type: integer
+          minimum: 0
+        topologyRemovalRequestCount:
+          type: integer
+          minimum: 0
+        topologyRemovedCount:
+          type: integer
+          minimum: 0
+        topologyRemoveMissCount:
+          type: integer
+          minimum: 0
+        topologySnapshotCount:
+          type: integer
+          minimum: 0
+        replay:
+          $ref: '#/components/schemas/RtcTopologyAdminReplayMetrics'
+
+    RtcTopologyAdminReplayMetrics:
+      type: object
+      required:
+        - wakeCountBySource
+        - drainCountByOutcome
+        - entryCountByOutcome
+        - cursorCountByOutcome
+        - hydrationCountByOutcome
+        - drainAttemptCount
+        - drainCompletionCount
+        - drainFailureCount
+        - pageCount
+        - replayedEntryCount
+        - directCurrentRepairCount
+        - noLocalRecipientCount
+        - sendFailureCount
+        - cursorConflictCount
+        - gapCount
+        - corruptReferenceCount
+        - totalDrainDurationMs
+        - maxObservedLagEntries
+      properties:
+        wakeCountBySource:
+          type: object
+          required: [startup, notification, local-commit, poll]
+          properties:
+            startup:
+              type: integer
+              minimum: 0
+            notification:
+              type: integer
+              minimum: 0
+            local-commit:
+              type: integer
+              minimum: 0
+            poll:
+              type: integer
+              minimum: 0
+        drainCountByOutcome:
+          type: object
+          required: [caught-up, yielded, failed, lease-lost]
+          properties:
+            caught-up:
+              type: integer
+              minimum: 0
+            yielded:
+              type: integer
+              minimum: 0
+            failed:
+              type: integer
+              minimum: 0
+            lease-lost:
+              type: integer
+              minimum: 0
+        entryCountByOutcome:
+          type: object
+          required: [delivered, current-repair, no-local-recipient, send-failed, corrupt]
+          properties:
+            delivered:
+              type: integer
+              minimum: 0
+            current-repair:
+              type: integer
+              minimum: 0
+            no-local-recipient:
+              type: integer
+              minimum: 0
+            send-failed:
+              type: integer
+              minimum: 0
+            corrupt:
+              type: integer
+              minimum: 0
+        cursorCountByOutcome:
+          type: object
+          required: [advanced, conflict, gap]
+          properties:
+            advanced:
+              type: integer
+              minimum: 0
+            conflict:
+              type: integer
+              minimum: 0
+            gap:
+              type: integer
+              minimum: 0
+        hydrationCountByOutcome:
+          type: object
+          required: [sent, unauthorized, no-topology, retry, stale-generation]
+          properties:
+            sent:
+              type: integer
+              minimum: 0
+            unauthorized:
+              type: integer
+              minimum: 0
+            no-topology:
+              type: integer
+              minimum: 0
+            retry:
+              type: integer
+              minimum: 0
+            stale-generation:
+              type: integer
+              minimum: 0
+        drainAttemptCount:
+          type: integer
+          minimum: 0
+        drainCompletionCount:
+          type: integer
+          minimum: 0
+        drainFailureCount:
+          type: integer
+          minimum: 0
+        pageCount:
+          type: integer
+          minimum: 0
+        replayedEntryCount:
+          type: integer
+          minimum: 0
+        directCurrentRepairCount:
+          type: integer
+          minimum: 0
+        noLocalRecipientCount:
+          type: integer
+          minimum: 0
+        sendFailureCount:
+          type: integer
+          minimum: 0
+        cursorConflictCount:
+          type: integer
+          minimum: 0
+        gapCount:
+          type: integer
+          minimum: 0
+        corruptReferenceCount:
+          type: integer
+          minimum: 0
+        totalDrainDurationMs:
+          type: number
+        maxObservedLagEntries:
+          type: integer
+          minimum: 0
 
     AdminOperationsAlmReceiptDiagnostics:
       type: object
@@ -4052,29 +4361,253 @@ components:
           type: string
 
     AdminOperationResultResponse:
+      oneOf:
+        - $ref: '#/components/schemas/AdminMetricsResetResultResponse'
+        - $ref: '#/components/schemas/AdminPruneExpiredResultResponse'
+      discriminator:
+        propertyName: operation
+        mapping:
+          metrics.reset: '#/components/schemas/AdminMetricsResetResultResponse'
+          maintenance.prune-expired: '#/components/schemas/AdminPruneExpiredResultResponse'
+
+    RallarGroupFormationMetrics:
+      type: object
+      required:
+        - groupMutationCount
+        - presenceSummaryExpansionCount
+        - presenceSummaryWsRowCount
+        - presenceSummaryTopologyEntryCount
+        - topologyRecomputeTriggeredCount
+        - wsOutboxSendCountByTopicId
+        - wsOutboxRecipientCountByTopicId
+        - wsEgressBytesByTopicId
+        - wsOutboxNoLocalRecipientCount
+        - wsOutboundRejectedWorkCount
+        - rttAcceptedWriteCount
+        - rttTopologyEffectCount
+      properties:
+        groupMutationCount:
+          type: object
+          required: [join, presenceConnect, heartbeat, disconnect, membership, stageTransition, activationStatus, other]
+          properties:
+            join:
+              type: object
+              required: [write, noOp, rejected]
+              properties:
+                write:
+                  type: integer
+                  minimum: 0
+                noOp:
+                  type: integer
+                  minimum: 0
+                rejected:
+                  type: integer
+                  minimum: 0
+            presenceConnect:
+              type: object
+              required: [write, noOp, rejected]
+              properties:
+                write:
+                  type: integer
+                  minimum: 0
+                noOp:
+                  type: integer
+                  minimum: 0
+                rejected:
+                  type: integer
+                  minimum: 0
+            heartbeat:
+              type: object
+              required: [write, noOp, rejected]
+              properties:
+                write:
+                  type: integer
+                  minimum: 0
+                noOp:
+                  type: integer
+                  minimum: 0
+                rejected:
+                  type: integer
+                  minimum: 0
+            disconnect:
+              type: object
+              required: [write, noOp, rejected]
+              properties:
+                write:
+                  type: integer
+                  minimum: 0
+                noOp:
+                  type: integer
+                  minimum: 0
+                rejected:
+                  type: integer
+                  minimum: 0
+            membership:
+              type: object
+              required: [write, noOp, rejected]
+              properties:
+                write:
+                  type: integer
+                  minimum: 0
+                noOp:
+                  type: integer
+                  minimum: 0
+                rejected:
+                  type: integer
+                  minimum: 0
+            stageTransition:
+              type: object
+              required: [write, noOp, rejected]
+              properties:
+                write:
+                  type: integer
+                  minimum: 0
+                noOp:
+                  type: integer
+                  minimum: 0
+                rejected:
+                  type: integer
+                  minimum: 0
+            activationStatus:
+              type: object
+              required: [write, noOp, rejected]
+              properties:
+                write:
+                  type: integer
+                  minimum: 0
+                noOp:
+                  type: integer
+                  minimum: 0
+                rejected:
+                  type: integer
+                  minimum: 0
+            other:
+              type: object
+              required: [write, noOp, rejected]
+              properties:
+                write:
+                  type: integer
+                  minimum: 0
+                noOp:
+                  type: integer
+                  minimum: 0
+                rejected:
+                  type: integer
+                  minimum: 0
+        presenceSummaryExpansionCount:
+          type: integer
+          minimum: 0
+        presenceSummaryWsRowCount:
+          type: object
+          required: [event, snapshot, directory]
+          properties:
+            event:
+              type: integer
+              minimum: 0
+            snapshot:
+              type: integer
+              minimum: 0
+            directory:
+              type: integer
+              minimum: 0
+        presenceSummaryTopologyEntryCount:
+          type: integer
+          minimum: 0
+        topologyRecomputeTriggeredCount:
+          type: integer
+          minimum: 0
+        wsOutboxSendCountByTopicId:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+        wsOutboxRecipientCountByTopicId:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+        wsEgressBytesByTopicId:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+        wsOutboxNoLocalRecipientCount:
+          type: integer
+          minimum: 0
+        wsOutboundRejectedWorkCount:
+          type: integer
+          minimum: 0
+        rttAcceptedWriteCount:
+          type: integer
+          minimum: 0
+        rttTopologyEffectCount:
+          type: integer
+          minimum: 0
+
+    AdminMetricsResetSnapshot:
+      type: object
+      description: Carries exactly the categories the request reset.
+      properties:
+        rtcTopology:
+          $ref: '#/components/schemas/RtcTopologyAdminMetrics'
+        groupFormation:
+          $ref: '#/components/schemas/RallarGroupFormationMetrics'
+
+    AdminMetricsResetResultResponse:
       allOf:
         - $ref: '#/components/schemas/AdminOperationBaseResponse'
         - type: object
-          required: [operation, status, changed]
+          required: [operation, status, changed, before, after]
           properties:
             operation:
               type: string
+              enum: [metrics.reset]
             status:
               type: string
-              enum: [completed, dry-run, skipped, failed]
+              enum: [completed]
             changed:
               type: boolean
             before:
-              type: object
-              additionalProperties: true
+              $ref: '#/components/schemas/AdminMetricsResetSnapshot'
             after:
-              type: object
-              additionalProperties: true
+              $ref: '#/components/schemas/AdminMetricsResetSnapshot'
+
+    AdminPruneExpiredCategoryResult:
+      type: object
+      required: [category, expiredRows, deletedRows, dryRun]
+      properties:
+        category:
+          type: string
+          enum: [runtime-state, resource-inbox, resource-inbox-results, app-data]
+        expiredRows:
+          type: integer
+          minimum: 0
+        deletedRows:
+          type: integer
+          minimum: 0
+        dryRun:
+          type: boolean
+
+    AdminPruneExpiredResultResponse:
+      allOf:
+        - $ref: '#/components/schemas/AdminOperationBaseResponse'
+        - type: object
+          required: [serverId, operation, status, changed, jobId, results]
+          properties:
+            operation:
+              type: string
+              enum: [maintenance.prune-expired]
+            status:
+              type: string
+              enum: [dry-run, queued, completed]
+            changed:
+              type: boolean
+            jobId:
+              type: string
             results:
               type: array
               items:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/AdminPruneExpiredCategoryResult'
 
     QueueBoxKey:
       type: object

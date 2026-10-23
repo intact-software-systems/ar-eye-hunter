@@ -19,6 +19,7 @@ export interface GroupTopologyReconfigureRead {
     readonly authority: GroupTopologyPlanningAuthority;
     readonly authorityGuard: persistence.GroupStateAuthorityGuard;
     readonly actorIsPlatformAdmin: boolean;
+    readonly finishedRetentionMs: number;
 }
 
 export interface GroupTopologyReconfigureValidationIssue {

@@ -96,7 +96,7 @@ export function createTopologyConfigWriteResult(
     } satisfies Omit<GroupTopologyConfigMutationWriteComputed, 'runtimeWrites'>;
     return {
         ...computed,
-        runtimeWrites: computeTopologyConfigRuntimeWrites(computed)
+        runtimeWrites: computeTopologyConfigRuntimeWrites(computed, topologyWrite.facts)
     };
 }
 
@@ -194,7 +194,7 @@ function createTopologyConfigOutbox(
         // replan now, so `commanded` still holds its follow-up. Making this
         // commanded is a product decision, not a mechanical one.
         origin: 'automatic',
-        expireAtEpochMs: 253_402_300_799_999,
+        expireAtEpochMs: topologyWrite.facts.expireAtEpochMs,
         senderId: topologyWrite.command.input.updatedByPrincipalId,
         resourceId: outboxResourceId,
         requestOptions: toCanonicalGroupTopologyConfigPatch({}),

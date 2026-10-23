@@ -20,6 +20,7 @@ import {
     TestResourceInboxResults
 } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 
 it('fails closed without consuming corrupt digest-key ticket rows', async () => {
     const cases = [
@@ -156,6 +157,7 @@ async function runCurrentOperation<Result>(
             passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 2 })
         },
         {
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             serviceId: 'current-auth-service'
         }
     );

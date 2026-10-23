@@ -2,15 +2,15 @@ import { Either } from '@shared/resilience/Either.ts';
 
 import { validateEventHistoryPolicy, type RallarBlackBoxEventHistoryPolicy } from '../runtime/event-history.ts';
 
-export interface ParsedEventHistoryLaunch {
+export interface EventHistoryLaunch {
     readonly policy: RallarBlackBoxEventHistoryPolicy | undefined;
 }
 
 /** URL and environment text share one translation before canonical policy validation. */
-export function parseEventHistoryLaunch(
+export function decodeEventHistoryLaunch(
     mode: string | undefined,
     maxEvents: string | undefined
-): Either<readonly string[], ParsedEventHistoryLaunch> {
+): Either<readonly string[], EventHistoryLaunch> {
     if (mode === undefined && maxEvents === undefined) {
         return Either.ofRight({ policy: undefined });
     }

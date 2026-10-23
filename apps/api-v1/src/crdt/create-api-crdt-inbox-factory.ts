@@ -19,6 +19,7 @@ export interface CreateApiCrdtInboxFactoryInput {
     readonly serviceId: string;
     readonly timing: RallarTimingSink | undefined;
     readonly options: AppInboxOptions;
+    readonly finishedRetentionMs: number;
     readonly currentAuthority: CurrentMutationAuthority;
     readonly policies: readonly RallarCrdtDocumentTypePolicy[];
 }
@@ -35,6 +36,7 @@ export function createApiCrdtInboxFactory(
             serviceId: input.serviceId,
             timing: input.timing,
             options: input.options,
+            finishedRetentionMs: input.finishedRetentionMs,
             currentAuthority: input.currentAuthority,
             policies: input.policies,
             wakeQueueEngine

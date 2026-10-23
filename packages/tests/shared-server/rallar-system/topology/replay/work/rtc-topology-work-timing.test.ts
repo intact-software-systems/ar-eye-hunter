@@ -88,6 +88,7 @@ async function runFirstRttRefresh(input: RunFirstRttRefreshInput): Promise<First
     }).planning;
     const handler = createRtcTopologyWorkHandler({
         nowEpochMs: () => NOW_EPOCH_MS,
+        finishedRetentionMs: 3_600_000,
         outboxQueueReader,
         database: createAppInboxTestDatabase(queue, { replace: async (entry) => entry }, { runtimeRepository }),
         topologyPlanning: planning,

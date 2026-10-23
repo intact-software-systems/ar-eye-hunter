@@ -4,13 +4,13 @@ import {
     it
 } from 'vitest';
 
+import { ALInboundStoreCounts } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/al-inbound-store-counts.ts';
 import { createBlackBoxRallarCongestionCounters } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-congestion-counters.ts';
 import {
     BlackBoxRallarRuntimeDiagnostics,
     createBlackBoxRallarDiagnosticsPorts
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts';
 import { blackBoxRallarScopeDiagnosticsOf } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-policy.ts';
-import { createBlackBoxRallarOrderingTracks } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-ordering-tracks.ts';
 import {
     resolveBlackBoxRallarLaneId,
     resolveBlackBoxRallarTransport
@@ -103,7 +103,7 @@ function createRecipeDiagnosticsPorts(recipeRuntime: ReturnType<typeof createDef
         storage: createCountingIndexedDbOperationObserver(),
         storageFaults: createScriptedStorageFaultPort(),
         congestion: createBlackBoxRallarCongestionCounters(),
-        orderingTracks: createBlackBoxRallarOrderingTracks()
+        inboundStoreCounts: new ALInboundStoreCounts()
     });
 }
 

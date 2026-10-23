@@ -28,6 +28,7 @@ import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fak
 import { createAppInboxTestResilience, TestResourceInbox, TestResourceInboxResults } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import { readCompletedAppInboxResult } from '../app-inbox/test-support/read-completed-app-inbox-result.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { putAuthorisedWsTestTicket } from './authorised-ws-test-ticket.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
@@ -450,6 +451,7 @@ function createAuthorisedWsService(input: CreateAuthorisedWsServiceInput): AppCl
             })
         },
         {
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             serviceId: SERVICE_ID,
             disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
         }

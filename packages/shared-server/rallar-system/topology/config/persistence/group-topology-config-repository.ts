@@ -9,7 +9,6 @@ import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-s
 import {
     assertGroupTopologyConfigGeneration,
     assertGroupTopologyConfigInvariantGeneration,
-    assertGroupTopologyConfigMutationRecord,
     assertStoredGroupTopologyConfig,
     assertStoredGroupTopologyOverride
 } from '../mutation/assert-topology-config-records.ts';
@@ -230,7 +229,6 @@ export class GroupTopologyConfigRepository extends GroupTopologyConfigSourceRepo
             return undefined;
         }
         decodeGroupTopologyMutationEntry(raw, ref, requestId);
-        assertRetainedGroupTopologyEntry(raw, 'mutation record');
         const stored = await this.toLiveJsonEntryValue(
             GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
             raw
@@ -253,24 +251,6 @@ export class GroupTopologyConfigRepository extends GroupTopologyConfigSourceRepo
         requestId: string
     ): Promise<GroupTopologyConfigMutationRecord | undefined> {
         return (await this.findMutationRecordEntry(ref, requestId))?.value;
-    }
-
-    async insertMutationRecord(
-        record: GroupTopologyConfigMutationRecord
-    ): Promise<GroupTopologyConfigCommitResult> {
-        assertGroupTopologyConfigMutationRecord(record, {
-            groupRef: record.groupRef,
-            requestId: record.requestId
-        });
-        const result = await this.putValueIfAbsent(
-            GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
-            this.mutationKey(record.groupRef, record.requestId),
-            record,
-            NEVER_EXPIRE_AT_TIMESTAMP
-        );
-        return result.status === 'applied'
-            ? { status: 'accepted', storageRevision: result.revision }
-            : { status: 'conflict' };
     }
 
     async findGenerationEntry(

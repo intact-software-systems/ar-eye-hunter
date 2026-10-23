@@ -36,6 +36,7 @@ import {
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { createCrdtAdminMutations } from '../../../src/crdt/create-crdt-admin-mutations.ts';
 import * as routes from '../../../src/crdt/register-crdt-admin-routes.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
@@ -281,6 +282,7 @@ function createAdminAppCrdt(input: CreateAdminAppCrdtInput): AppCrdtInboxService
             auditDelivery: { auditSink, outboxQueueReader: input.outbox }
         },
         {
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             serviceId: 'server-1',
             timing: undefined,
             appInbox: {

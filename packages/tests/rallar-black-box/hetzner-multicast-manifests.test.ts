@@ -4,6 +4,8 @@ import {
     it
 } from 'vitest';
 
+import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
+
 import {
     createHetznerDistributedManifestCatalog,
     HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER
@@ -204,6 +206,58 @@ describe('Hetzner multicast workloads', () => {
                 }
             });
         }
+    });
+
+    it('adds the 15-agent 78-minute principal tree that reads every agent ledger every 30 s mid-stream', () => {
+        const entry = createHetznerDistributedManifestCatalog()
+            .find((candidate) => candidate.manifest.distributedRunId === 'hetzner-rtc-messages-principal-15-agent-78m-2hz-tree');
+        const [sender, receiver] = entry?.manifest.recipes ?? [];
+        const senderWindow = sender?.recipe?.commands.find((command) => command.kind === 'parallel');
+
+        expect(entry?.filePath).toBe(
+            'apps/rallar-black-box/manifests/hetzner/23-rtc-messages-principal-15-agent-78m-2hz-tree.json'
+        );
+        expect(entry?.diagnostic).toBe(false);
+        expect(entry?.agentCount).toBe(15);
+        expect(entry?.manifest.eventHistory).toEqual({ mode: 'recent', maxEvents: 10_000 });
+        expect(entry?.manifest.metadata).toMatchObject({
+            topologyProfile: 'tree',
+            participantCount: 15,
+            senderCount: 1,
+            rateHz: 2,
+            expectedDurationSeconds: 4_680,
+            recommendedTerminalTimeoutSeconds: 5_100,
+            receiverDelivery: { expectedInboundMessages: 9_360, minExpectedInboundMessages: 8_892 },
+            rtcTopologyEnv: { RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: '16' }
+        });
+        expect(senderWindow).toMatchObject({
+            kind: 'parallel',
+            groups: [
+                { groupId: 'stream', commands: [{ kind: 'rtc.stream', count: 9_360, intervalMs: 500 }] },
+                {
+                    groupId: 'mid-stream-stats',
+                    commands: [{ kind: 'loop', count: 157, intervalMs: 30_000, commands: [{ kind: 'stats' }] }]
+                }
+            ]
+        });
+        expect(receiver?.recipe?.commands.find((command) => command.kind === 'loop')).toMatchObject({
+            commandId: 'rtc-messages-principal-receiver-stats-loop',
+            count: 158,
+            intervalMs: 30_000
+        });
+        for (const selection of entry?.manifest.recipes ?? []) {
+            expect(validateRallarBlackBoxTestCommand({ kind: 'recipe.load', recipe: selection.recipe })).toEqual({
+                ok: true
+            });
+        }
+    });
+
+    it('bounds the event history of the 78-minute run alone; every other manifest keeps the agents\' configured history', () => {
+        const withHistory = createHetznerDistributedManifestCatalog()
+            .filter((entry) => 'eventHistory' in entry.manifest)
+            .map((entry) => entry.manifest.distributedRunId);
+
+        expect(withHistory).toEqual(['hetzner-rtc-messages-principal-15-agent-78m-2hz-tree']);
     });
 
     it('adds medium-scale messages.rtc multicast matrix manifests for 10 to 30 agents', () => {

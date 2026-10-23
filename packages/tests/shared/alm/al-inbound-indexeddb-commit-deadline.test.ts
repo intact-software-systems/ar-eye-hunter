@@ -50,7 +50,8 @@ it.each(['get', 'put'] as const)('rolls back admission when native %s completion
                 orderingTrackTtlMs: 60_000,
                 supersedenceTrackTtlMs: 60_000,
                 retention: normalizeALRuntimeStoreRetention(),
-                maxOrderingTracks: undefined
+                maxOrderingTracks: undefined,
+                maxDeliveredMarkers: undefined
             });
             const planner: ALInboundMessageRuntime.Dependencies['planIncomingMessage'] = (msg, source, observations) =>
                 planALMessageHandling(msg, {

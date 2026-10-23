@@ -7,13 +7,13 @@ import {
     vi
 } from 'vitest';
 
+import { ALInboundStoreCounts } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/al-inbound-store-counts.ts';
 import { createBlackBoxRallarCongestionCounters } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-congestion-counters.ts';
 import {
     BlackBoxRallarRuntimeDiagnostics,
     createBlackBoxRallarDiagnosticsPorts
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts';
 import type { BlackBoxRallarEvent } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
-import { createBlackBoxRallarOrderingTracks } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-ordering-tracks.ts';
 import { toRallarBlackBoxRuntimeDiagnostic } from '@shared-test/rallar-bb-test/diagnostics.ts';
 import { decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -63,7 +63,8 @@ class AcknowledgementFixture {
         retention: normalizeALRuntimeStoreRetention(),
         orderingTrackTtlMs: 60_000,
         supersedenceTrackTtlMs: 60_000,
-        maxOrderingTracks: undefined
+        maxOrderingTracks: undefined,
+        maxDeliveredMarkers: undefined
     });
     readonly engine = new InboxOutboxEngine();
     readonly message: ALMessage = {
@@ -90,7 +91,7 @@ class AcknowledgementFixture {
             storage: createCountingIndexedDbOperationObserver(),
             storageFaults: createScriptedStorageFaultPort(),
             congestion: createBlackBoxRallarCongestionCounters(),
-            orderingTracks: createBlackBoxRallarOrderingTracks()
+            inboundStoreCounts: new ALInboundStoreCounts()
         }
     ).inboundDiagnostics;
     readonly sendGate = Promise.withResolvers<void>();

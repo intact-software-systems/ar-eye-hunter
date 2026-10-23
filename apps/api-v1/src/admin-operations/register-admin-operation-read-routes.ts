@@ -4,7 +4,6 @@ import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-s
 import type {
     AdminMetricsResetCategory,
     AdminMetricsResetRequest,
-    AdminOperationResultResponse,
     AdminOperationsCrdtResponse,
     AdminOperationsOverviewResponse,
     AdminOperationsQueuesResponse,

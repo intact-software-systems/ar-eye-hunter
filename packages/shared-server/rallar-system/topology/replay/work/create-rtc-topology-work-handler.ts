@@ -68,6 +68,8 @@ import {
 
 interface RtcTopologyWorkHandlerOptions {
     readonly nowEpochMs: () => number;
+    /** How long past the attempt a row the work derives lives at least (`appInbox.finishedRetentionMs`). */
+    readonly finishedRetentionMs: number;
     readonly outboxQueueReader: OutboxQueueReader;
     readonly database: PSqlSql;
     readonly topologyPlanning: Pick<
@@ -126,12 +128,13 @@ interface ProcessRtcTopologyWorkInput {
 
 async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promise<void> {
     const { options, message, entry, deferredCriterionPetitioner } = input;
-    const reservationFinish = computeRtcTopologyReservationFinish(entry, new Date(options.nowEpochMs()));
+    const nowEpochMs = options.nowEpochMs();
+    const reservationFinish = computeRtcTopologyReservationFinish(entry, new Date(nowEpochMs));
     const workEnvelope = readRtcTopologyWorkEnvelope(
         message,
         AppOutboxType.RTC_TOPOLOGY_RECOMPUTE
     );
-    const workId = toRtcTopologyExecutionId(workEnvelope);
+    const workId = toRtcTopologyExecutionId(workEnvelope, message.id.ts);
     const mutationRead = await options.executionRepository.readTopologyMutation(
         toRtcTopologyWorkGroupRef(workEnvelope.data),
         workId
@@ -145,12 +148,15 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
         workEnvelope,
         workId,
         attemptCount: entry.dequeueAudit.attempts,
-        expireAtEpochMs: entry.audit.expiryTs.epochMilliseconds
+        derivedExpireAtEpochMs: Math.max(
+            entry.audit.expiryTs.epochMilliseconds,
+            nowEpochMs + options.finishedRetentionMs
+        )
     };
     const attempt = { options, facts, mutationRead };
     const accepted = claimRttRefinementSkip(attempt);
     if (accepted !== null) {
-        await writeSkippedRttRefinement({ options, entry, sourceWorkId: workId, reservationFinish, accepted });
+        await writeSkippedRttRefinement({ options, entry, facts, reservationFinish, accepted });
         await deferredCriterionPetitioner?.request(accepted.work, mutationRead);
         return;
     }
@@ -228,18 +234,19 @@ async function readRtcTopologyWorkComputationInput(
 
 interface WriteSkippedRttRefinementInput {
     readonly options: RtcTopologyWorkHandlerOptions;
-    readonly sourceWorkId: string;
+    readonly facts: RtcTopologyWorkFacts;
     readonly entry: ResourceEntry;
     readonly reservationFinish: ResourceInboxReservationFinish;
     readonly accepted: AcceptedRtcTopologyWork;
 }
 
 async function writeSkippedRttRefinement(input: WriteSkippedRttRefinementInput): Promise<void> {
-    const { options, entry, sourceWorkId, reservationFinish, accepted } = input;
+    const { options, entry, facts, reservationFinish, accepted } = input;
     const writeInput: ComputeRtcTopologyWorkWriteInput = {
         accepted,
         entry,
-        sourceWorkId,
+        sourceWorkId: facts.workId,
+        derivedExpireAtEpochMs: facts.derivedExpireAtEpochMs,
         reservationFinish,
         formationAutomationEnabled: options.formationAutomation !== undefined,
         serviceId: options.serviceId,
@@ -327,7 +334,7 @@ function claimRttRefinementSkip(
             workId: input.facts.workId,
             groupKey: toWebRtcGroupKey(work.groupSnapshot.group),
             rtt: work.rtt,
-            expireAtEpochMs: input.facts.expireAtEpochMs
+            expireAtEpochMs: input.facts.derivedExpireAtEpochMs
         })
     ) {
         return null;

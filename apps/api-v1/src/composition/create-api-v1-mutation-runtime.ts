@@ -106,6 +106,8 @@ export interface CreateApiV1MutationRuntimeInput {
     readonly appInboxOptions: AppInboxOptions;
     readonly appInboxNewLaneConcurrency: number;
     readonly appInboxNewLaneHeldRows: number;
+    /** How long a finished command's fact, result, derived outbox rows and idempotency record stay. */
+    readonly appInboxFinishedRetentionMs: number;
     readonly disconnectedSessionRetentionMs: number;
     readonly groupCapacity: GroupPolicyCapacityConfig;
     readonly groupFormationRecomputeDebounceMs: number;
@@ -121,6 +123,7 @@ export interface ApiV1MutationRuntime {
     readonly database: PSqlSql;
     readonly serviceId: string;
     readonly appInboxOptions: AppInboxOptions;
+    readonly appInboxFinishedRetentionMs: number;
     readonly queueBox: PSqlQueueBox;
     readonly resourceInboxRepository: PSqlResourceInboxRepository;
     readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
@@ -151,6 +154,7 @@ interface ApiV1StateMutationDependencies {
     readonly timing: RallarTimingSink;
     readonly outboxStageTiming?: RallarTimingSink;
     readonly appInboxOptions: AppInboxOptions;
+    readonly appInboxFinishedRetentionMs: number;
     readonly resourceInboxRepository: PSqlResourceInboxRepository;
     readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
     readonly runtimeStateRepository: PSqlRuntimeStateRepository;
@@ -215,6 +219,7 @@ export function createApiV1MutationRuntime(
         database: input.database,
         serviceId: input.serviceId,
         appInboxOptions: input.appInboxOptions,
+        appInboxFinishedRetentionMs: input.appInboxFinishedRetentionMs,
         queueBox: resources.queueBox,
         resourceInboxRepository: resources.resourceInboxRepository,
         resourceInboxResultsRepository: resources.resourceInboxResultsRepository,
@@ -268,6 +273,7 @@ function createMutationGroupStateService(
             capacity: input.groupCapacity,
             groupStateEventStore: resources.groupStateEventStore,
             serviceId: input.serviceId,
+            finishedRetentionMs: input.appInboxFinishedRetentionMs,
             timing: input.timing,
             readPlannedLayoutRow: async (ref) => {
                 const planned = await plannedSnapshotRepository.findSnapshotEntry(ref);
@@ -338,6 +344,7 @@ function createApiV1StateMutationDependencies(
         timing: input.timing,
         outboxStageTiming: input.outboxStageTiming,
         appInboxOptions: input.appInboxOptions,
+        appInboxFinishedRetentionMs: input.appInboxFinishedRetentionMs,
         resourceInboxRepository: resources.resourceInboxRepository,
         resourceInboxResultsRepository: resources.resourceInboxResultsRepository,
         runtimeStateRepository: resources.runtimeStateRepository,
@@ -370,6 +377,7 @@ function createApiV1MutationInboxFactories(
         serviceId: input.serviceId,
         timing: input.timing,
         options: input.appInboxOptions,
+        finishedRetentionMs: input.appInboxFinishedRetentionMs,
         currentAuthority,
         policies: input.crdtPolicies
     });
@@ -381,6 +389,7 @@ function createApiV1MutationInboxFactories(
         serviceId: input.serviceId,
         timing: input.timing,
         options: input.appInboxOptions,
+        finishedRetentionMs: input.appInboxFinishedRetentionMs,
         currentAuthority
     });
 }
@@ -416,6 +425,7 @@ function createGroupStateInboxServiceFactory(
             },
             {
                 serviceId: input.serviceId,
+                finishedRetentionMs: input.appInboxFinishedRetentionMs,
                 timing: input.timing,
                 options: input.appInboxOptions,
                 wakeOwningQueue: wakeQueueEngine,
@@ -451,6 +461,7 @@ function createAppClientInboxServiceFactory(
             {
                 serviceId: input.serviceId,
                 disconnectedSessionRetentionMs: input.disconnectedSessionRetentionMs,
+                finishedRetentionMs: input.appInboxFinishedRetentionMs,
                 timing: input.timing,
                 options: input.appInboxOptions,
                 wakeOwningQueue: wakeQueueEngine
@@ -481,6 +492,7 @@ function createAppAuthInboxServiceFactory(
             },
             {
                 serviceId: input.serviceId,
+                finishedRetentionMs: input.appInboxFinishedRetentionMs,
                 timing: input.timing,
                 options: input.appInboxOptions,
                 wakeOwningQueue: wakeQueueEngine,
@@ -495,6 +507,7 @@ function createAppInboxDequeueOptions(
 ): InboxQueueReader.Options {
     const finalizeAppInboxRetry = createAppInboxRetryFinalizer({
         database: input.database,
+        finishedRetentionMs: input.appInboxFinishedRetentionMs,
         timing: input.timing
     });
     return {

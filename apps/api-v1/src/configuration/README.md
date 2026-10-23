@@ -64,7 +64,7 @@ The configuration reader recognizes only these operational overrides:
 - AppInbox and observability: `RALLAR_APP_INBOX_PHASE_TIMING`, `RALLAR_APP_INBOX_NEW_LANE_CONCURRENCY`,
   `RALLAR_APP_INBOX_NEW_LANE_HELD_ROWS`, `RALLAR_APP_INBOX_WAIT_MAX_ELAPSED_MS`,
   `RALLAR_APP_INBOX_WAIT_RETRY_INTERVAL_MS`, `RALLAR_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MS`,
-  `RALLAR_APP_INBOX_WAIT_JITTER_RATIO`, `RALLAR_TIMING_LOGS`.
+  `RALLAR_APP_INBOX_WAIT_JITTER_RATIO`, `RALLAR_APP_INBOX_FINISHED_RETENTION_MS`, `RALLAR_TIMING_LOGS`.
 - ICE: `RALLAR_ICE_MODE`, `RALLAR_ICE_RATE_LIMIT_REQUESTS`, `METERED_APP_NAME`, `METERED_REGION`.
   The request allowance must be a positive integer and overrides `ice.rateLimit.requests`.
   All committed profiles retain 20 requests per 60000ms; cache lifetime remains 300000ms.

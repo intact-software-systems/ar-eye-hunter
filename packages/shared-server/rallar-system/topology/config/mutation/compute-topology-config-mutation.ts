@@ -188,7 +188,7 @@ function computeAbsentDelete(
     } as const;
     return {
         ...computed,
-        runtimeWrites: computeTopologyConfigRuntimeWrites(computed)
+        runtimeWrites: computeTopologyConfigRuntimeWrites(computed, topologyMutation.facts)
     };
 }
 

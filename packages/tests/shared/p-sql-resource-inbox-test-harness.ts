@@ -314,10 +314,11 @@ function toObservedReplacementRow(row: ResourceInboxRow, values: readonly PSqlPa
 function executeCompletionUpdate(input: ResourceInboxQueryExecution): PSqlRows {
     const status = requireStringParameter(input.values[0], 'resource inbox completion status');
     const completedAt = input.values[1];
-    const topicId = requireStringParameter(input.values[2], 'resource inbox topic id');
-    const resourceId = requireStringParameter(input.values[3], 'resource inbox resource id');
-    const contextId = requireStringParameter(input.values[4], 'resource inbox context id');
-    const expectedAttempts = requireIntegerParameter(input.values[5], 'resource inbox attempts');
+    const expiresAt = toOptionalString(input.values[2]);
+    const topicId = requireStringParameter(input.values[3], 'resource inbox topic id');
+    const resourceId = requireStringParameter(input.values[4], 'resource inbox resource id');
+    const contextId = requireStringParameter(input.values[5], 'resource inbox context id');
+    const expectedAttempts = requireIntegerParameter(input.values[6], 'resource inbox attempts');
     const row = input.state.rows.get(toCompositeKey({ fk_ext_bank_id: contextId, ri_topic_id: topicId, ri_resource_id: resourceId }));
     if (
         !row ||
@@ -329,6 +330,7 @@ function executeCompletionUpdate(input: ResourceInboxQueryExecution): PSqlRows {
     }
     row.ri_status = status;
     row.end_ts = toOptionalString(completedAt);
+    row.expire_ts = expiresAt ?? row.expire_ts;
     row.next_ts = null;
     return [{ ri_row_id: row.ri_row_id }];
 }

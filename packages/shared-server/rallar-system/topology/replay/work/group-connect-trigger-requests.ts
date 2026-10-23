@@ -3,7 +3,6 @@ import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import { computeGroupConnectTriggerEntry } from '../../../group-state/group-connect-trigger-outbox-entry.ts';
-import { GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS } from '../../../group-state/group-state-service-contracts.ts';
 import { serializeCanonicalJson } from '../../../protocol/canonical-json.ts';
 
 export interface PublicationConnectTriggerRequestsInput {
@@ -11,6 +10,8 @@ export interface PublicationConnectTriggerRequestsInput {
     readonly target: RallarOverlayTopologySnapshot | null;
     readonly sourceWorkId: string;
     readonly entry: ResourceEntry;
+    /** The expiry the attempt decided for the rows it derives. */
+    readonly expireAtEpochMs: number;
 }
 
 export function computePublicationConnectTriggerRequests(
@@ -31,6 +32,6 @@ export function computePublicationConnectTriggerRequests(
         },
         senderId: entry.audit.createdBy,
         createdAtEpochMs: entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds,
-        expireAtEpochMs: GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS
+        expireAtEpochMs: input.expireAtEpochMs
     })];
 }

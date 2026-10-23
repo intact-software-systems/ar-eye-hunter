@@ -8,7 +8,7 @@ import {
     it
 } from 'vitest';
 
-import { readHeadlessWorkerConfig } from '../../../apps/rallar-black-box/src/headless-worker-config.ts';
+import { readHeadlessWorkerConfig } from '../../../apps/rallar-black-box/src/headless-worker/headless-worker-config.ts';
 
 const writer = path.resolve(__dirname, '../../../scripts/hosted-rallar/controller/rallar-headless-worker-env.sh');
 const workerEnvironment = {

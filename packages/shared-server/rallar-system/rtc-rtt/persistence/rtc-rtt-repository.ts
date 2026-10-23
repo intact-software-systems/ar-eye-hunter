@@ -249,22 +249,6 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
             : { status: 'conflict' };
     }
 
-    async insertMutationReceipt(
-        receipt: RtcRttMutationReceipt,
-        expireAtTimestamp: number
-    ): Promise<RtcRttConditionalWriteResult> {
-        validateRtcRttMutationReceipt(receipt, expireAtTimestamp);
-        const result = await this.putValueIfAbsent(
-            RTC_RTT_RECEIPTS_NAMESPACE,
-            receipt.receiptId,
-            receipt,
-            expireAtTimestamp
-        );
-        return result.status === 'applied'
-            ? { status: 'accepted', storageRevision: result.revision }
-            : { status: 'conflict' };
-    }
-
     async findMutationReceipt(receiptId: string): Promise<RtcRttMutationReceipt | undefined> {
         return (await this.findMutationReceiptEntry(receiptId))?.value;
     }
