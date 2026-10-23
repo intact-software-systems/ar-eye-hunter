@@ -24,9 +24,10 @@ foundation, PR #697 delivered Quick Join, and
 [PR #699](https://github.com/intact-software-systems/ar-eye-hunter/pull/699) delivered slice 2 using
 the maintainer's selected existing-measurement scope.
 [PR #700](https://github.com/intact-software-systems/ar-eye-hunter/pull/700) delivered shareable
-private-room entry in both games and is merged. Slice 5 now develops unlisted rooms through
-the existing create/update and room-entry owners; its current design and next two increments are in
-[lobby-unlisted-rooms](lobby-unlisted-rooms.md).
+private-room entry in both games and is merged.
+[PR #701](https://github.com/intact-software-systems/ar-eye-hunter/pull/701) implements slice 5
+through the existing create/update and room-entry owners. That PR owns validation and delivery;
+recovery and recent rooms begin after its maintainer merge.
 
 ## Current foundation
 
@@ -76,10 +77,10 @@ Discovery and permission to enter are independent. Use these initial product cho
 | Code protected | Hidden    | Valid code, subject to admission policy            |
 | Invite only    | Hidden    | Authorized invitation, subject to admission policy |
 
-Unlisted means absent from discovery, not access restricted. Settle this behavior before implementing
-shareable private and unlisted flows. Select a listing design that preserves existing public-room
-visibility without migration code. Resolve the design before implementation if the existing canonical
-state cannot represent that outcome.
+Unlisted means absent from discovery, not access restricted. The existing group metadata owns
+`rallarDirectoryListing`; absence means listed, and an invalid present value is hidden. The sparse
+create/update intent changes that policy through the existing AppInbox path. Generic metadata
+replacement preserves it. This represents the current feature without migration code.
 
 Invitation destinations survive authentication. Links identify the intended application/workspace
 and room, or use a deliberately scoped code resolver; a code alone must not be assumed globally
@@ -106,7 +107,7 @@ all-or-none admission decisions before it becomes a platform promise.
 
 | Priority    | Outcomes                                                                                    |
 | ----------- | ------------------------------------------------------------------------------------------- |
-| Current     | Unlisted rooms (5): authoritative listing, then browser host controls in both games.        |
+| Current     | Unlisted rooms (5), implemented in PR #701 and awaiting maintainer merge.                   |
 | Next        | Reconnect/recent-room behavior (6), after the unlisted-room PR is merged.                   |
 | Then        | Automatic directory freshness (7), introducing push when the experience needs it.           |
 | Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them. |
@@ -222,10 +223,24 @@ begins only after its maintainer merge.
 
 ## Slice 5: unlisted rooms
 
-Allow reference-based entry without directory listing. Separate listing from credentials while
-preserving established room visibility without migration code. Directory reads and eventual pushed
-updates must remove rooms that become hidden; hiding is not membership revocation. Resolve any
-representation gap in the existing canonical state before implementing this slice.
+[PR #701](https://github.com/intact-software-systems/ar-eye-hunter/pull/701) adds optional
+`directoryListing: 'listed' | 'unlisted'` to existing create/update requests and the browser room
+facade. Pure computation preserves unrelated fresh metadata; the group revision guard rejects stale
+writes and stale Quick Join candidates. Matching AppInbox replay returns the stored result, changed
+request-ID reuse conflicts, and an unchanged setting creates no second state change. No new mutation
+operation, storage schema, migration, or alternate entry path is introduced.
+
+Directory and Quick Join use one listing interpretation. An old directory ETag observes removal on
+the next read; code-protected and invite-only rooms remain hidden regardless of listing. Direct entry
+to an open unlisted room still enforces scope, authorization, capacity, and lifecycle policy. Hiding
+preserves existing memberships, presence, and application participation.
+
+Both games provide unlisted creation, scoped links, and owner/admin List/Unlist controls with failure
+and retry states. Outsider room lists hide unlisted and credential-protected rooms; active members
+retain their rooms. Hosting responses belong to their operation, session, and room, so an older code
+response cannot replace a newer one after switching rooms. Visible browser journeys cover shared
+play through listing changes. Automatic freshness remains slice 7. The PR owns detailed validation
+and review evidence; its completed implementation plan and design are removed with this delivery.
 
 ## Slice 6: recovery and room lifetime
 
