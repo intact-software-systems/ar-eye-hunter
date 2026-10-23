@@ -14,6 +14,7 @@ import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { AuthSessionStorageKind } from '@shared/api/auth.ts';
 import type { GroupDirectoryEntry, GroupDirectoryOrder } from '@shared/api/group-directory/group-directory-types.ts';
+import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import type { ArenaLinkState, ArenaPresenceNotice } from '../squadLink.ts';
 import type {
@@ -168,7 +169,7 @@ export interface ArenaConnection {
     logout(): Promise<void>;
     refreshRooms(): Promise<void>;
     changeDirectoryOrder(order: GroupDirectoryOrder): Promise<void>;
-    createArenaRoom(): Promise<void>;
+    createArenaRoom(joinMode?: GroupJoinMode): Promise<GroupSnapshot | undefined>;
     quickJoinArenaRoom(): Promise<'joined' | 'unavailable' | undefined>;
     joinRoom(roomId: string): Promise<void>;
     appointSelfAsDirector(): Promise<void>;

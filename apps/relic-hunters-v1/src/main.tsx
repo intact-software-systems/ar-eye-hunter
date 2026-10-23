@@ -1,21 +1,25 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { rallar } from '@shared-web/browser/rallar.ts';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import App from './App.tsx';
+
+import { rallar } from '@shared-web/browser/rallar.ts';
+
+import App from './app.tsx';
 import './styles.css';
 
-(globalThis as any).Temporal = (globalThis as any).Temporal ?? Temporal;
-
-const env = (import.meta as {
-    env?: Record<string, string | boolean | undefined>;
-}).env ?? {};
+if (!('Temporal' in globalThis)) {
+    Object.defineProperty(globalThis, 'Temporal', { value: Temporal, configurable: true });
+}
 
 rallar.configure({
-    apiBaseUrl: resolveApiBaseUrl(env['API_BASE_URL'], env.DEV === true)
+    apiBaseUrl: resolveApiBaseUrl(import.meta.env.API_BASE_URL, import.meta.env.DEV, window.location)
 });
 
-createRoot(document.getElementById('root') as HTMLElement).render(
+const root = document.getElementById('root');
+if (!root) {
+    throw new Error('The Relic Hunters page is missing its root element.');
+}
+createRoot(root).render(
     <StrictMode>
         <App />
     </StrictMode>
@@ -23,7 +27,8 @@ createRoot(document.getElementById('root') as HTMLElement).render(
 
 function resolveApiBaseUrl(
     configured: string | boolean | undefined,
-    isDev: boolean
+    isDev: boolean,
+    location: Location
 ): string {
     const value = typeof configured === 'string' ? configured.trim() : '';
     if (!value) {
@@ -39,8 +44,8 @@ function resolveApiBaseUrl(
         const localHosts = new Set(['localhost', '127.0.0.1', '[::1]']);
         if (
             localHosts.has(configuredUrl.hostname) &&
-            localHosts.has(window.location.hostname) &&
-            configuredUrl.port !== window.location.port
+            localHosts.has(location.hostname) &&
+            configuredUrl.port !== location.port
         ) {
             return '';
         }

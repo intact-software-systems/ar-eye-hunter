@@ -1,49 +1,45 @@
-import { expect, test, type Page } from '@playwright/test';
+import {
+    expect,
+    type Page
+} from '@playwright/test';
+
 import type { GroupSnapshot } from '../../../packages/shared/api/group-types.ts';
 
-test(
+import { roomBrowserTest } from '../room-browser-fixture.ts';
+
+roomBrowserTest(
     'Quick Join reports unavailable, then joins an arena created by another browser',
-    async ({ browser }, testInfo) => {
-        test.skip(
+    async ({ page: alice, guest: bob }, testInfo) => {
+        roomBrowserTest.skip(
             process.env.RALLAR_ARENA_FULL_STACK !== '1',
             'Requires the local API-v1 memory fixture on port 8080.'
         );
-        const aliceContext = await browser.newContext();
-        const bobContext = await browser.newContext();
-        try {
-            const alice = await aliceContext.newPage();
-            const bob = await bobContext.newPage();
-            const bobOperations = await signIn(bob, 'bob');
-            await bobOperations.getByRole('button', { name: 'Quick Join', exact: true }).click();
-            await expect(bobOperations.getByRole('status')).toHaveText('No available arena. Try again or create one.');
-            await expect(bobOperations.getByRole('button', { name: 'New Arena', exact: true })).toBeEnabled();
-            await bob.screenshot({ path: testInfo.outputPath('quick-join-unavailable.png'), fullPage: true });
+        const bobOperations = await signIn(bob, 'bob');
+        await bobOperations.getByRole('button', { name: 'Quick Join', exact: true }).click();
+        await expect(bobOperations.getByRole('status')).toHaveText('No available arena. Try again or create one.');
+        await expect(bobOperations.getByRole('button', { name: 'New Arena', exact: true })).toBeEnabled();
+        await bob.screenshot({ path: testInfo.outputPath('quick-join-unavailable.png'), fullPage: true });
 
-            const aliceOperations = await signIn(alice, 'alice');
-            const created = alice.waitForResponse((response) =>
-                response.request().method() === 'POST' &&
-                /\/groups\/requests\//.test(response.url())
-            );
-            await aliceOperations.getByRole('button', { name: 'New Arena', exact: true }).click();
-            const snapshot: GroupSnapshot = await (await created).json();
-            await expect(aliceOperations.locator('.room-row.active')).toContainText(snapshot.group.displayName);
+        const aliceOperations = await signIn(alice, 'alice');
+        const created = alice.waitForResponse((response) =>
+            response.request().method() === 'POST' &&
+            /\/groups\/requests\//.test(response.url())
+        );
+        await aliceOperations.getByRole('button', { name: 'New Arena', exact: true }).click();
+        const snapshot: GroupSnapshot = await (await created).json();
+        await expect(aliceOperations.locator('.room-row.active')).toContainText(snapshot.group.displayName);
 
-            const admitted = bob.waitForResponse((response) => response.url().includes('/groups/quick-join/requests/'));
-            await bobOperations.getByRole('button', { name: 'Quick Join', exact: true }).click();
-            const response = await admitted;
-            expect(response.status()).toBe(200);
-            expect(await response.json()).toMatchObject({
-                status: 'joined',
-                snapshot: { group: { groupId: snapshot.group.groupId } }
-            });
-            await expect(bobOperations.getByRole('status')).toHaveText('Joined arena.');
-            await expect(bobOperations.locator('.room-row.active')).toContainText(snapshot.group.displayName);
-            await bob.screenshot({ path: testInfo.outputPath('quick-join-joined.png'), fullPage: true });
-        }
-        finally {
-            await aliceContext.close();
-            await bobContext.close();
-        }
+        const admitted = bob.waitForResponse((response) => response.url().includes('/groups/quick-join/requests/'));
+        await bobOperations.getByRole('button', { name: 'Quick Join', exact: true }).click();
+        const response = await admitted;
+        expect(response.status()).toBe(200);
+        expect(await response.json()).toMatchObject({
+            status: 'joined',
+            snapshot: { group: { groupId: snapshot.group.groupId } }
+        });
+        await expect(bobOperations.getByRole('status')).toHaveText('Joined arena.');
+        await expect(bobOperations.locator('.room-row.active')).toContainText(snapshot.group.displayName);
+        await bob.screenshot({ path: testInfo.outputPath('quick-join-joined.png'), fullPage: true });
     }
 );
 

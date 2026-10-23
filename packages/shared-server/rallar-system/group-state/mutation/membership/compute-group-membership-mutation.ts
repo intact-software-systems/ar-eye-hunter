@@ -1,6 +1,5 @@
 import { canJoinGroup } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import type { GroupEventType, GroupMember } from '@shared/api/group-types.ts';
-import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 import { readJoinCode } from '../aggregate/compute-group-aggregate-mutation.ts';
 import {
@@ -19,7 +18,7 @@ import type {
 import { GroupMutationRejectedError } from '../group-mutation-contracts.ts';
 import { auditStamp, noOp, requireGroup } from '../group-mutation-result.ts';
 import { computeGroupMembershipWrite } from '../write/compute-group-membership-write.ts';
-import { assertGroupAdmissionWindowsOpen, resolveAdmittedMemberStatus } from './compute-group-admission-mutation.ts';
+import { resolveAdmittedMemberStatus } from './compute-group-admission-mutation.ts';
 import {
     assertUpsertActivationAllowed,
     assertUpsertAuthority,
@@ -27,7 +26,8 @@ import {
     governanceActionFor,
     governedMemberEventType,
     governedMemberRole,
-    governedMemberStatus
+    governedMemberStatus,
+    resolveUpsertMemberStatus
 } from './group-membership-mutation-policy.ts';
 import {
     createUpsertGroupMember,
@@ -55,7 +55,6 @@ export function computeJoin(
             },
             nowEpochMs: facts.attemptAtEpochMs,
             capacity: facts.capacity,
-            inviteToken: command.input.inviteToken ?? undefined,
             joinCode: command.input.joinCode ?? undefined,
             joinCodeVerifier: facts.joinCodeVerifier ?? undefined,
             expectedJoinCodeVerifier: stored.value.joinMode === 'code' ? (joinCodeMetadata?.verifier ?? '') : undefined,
@@ -263,20 +262,7 @@ export function computeUpsertMember(
         capacity: facts.capacity
     });
     const existing = findTargetMember(read);
-    // Self-activation is the second join surface: it takes the same admission
-    // decision as the join command, so it parks where a join would park
-    // (plan decision 5.1). Admin activation stays governance — it is a grant
-    // expressed through the existing surface. An already-active member is not
-    // joining: their re-upsert bypasses admission exactly as computeJoin's
-    // active no-op does, never demoting or re-gating an existing membership.
-    const status = isSelf && command.input.status === 'active' && existing?.status !== 'active'
-        ? resolveAdmittedMemberStatus({ read, facts, existing })
-        : command.input.status;
-    // Governance activation is the group's consent, but the admission windows
-    // and the closed mode still bind — the same re-check grant runs.
-    if (!isSelf && status === 'active' && existing?.status !== 'active') {
-        assertGroupAdmissionWindowsOpen(read, facts);
-    }
+    const status = resolveUpsertMemberStatus(command, read, facts);
     const role = command.input.role ?? existing?.role ?? 'member';
     const invitedByPrincipalId = command.input.invitedByPrincipalId ?? existing?.invitedByPrincipalId ?? null;
     const invitationExpiresAtEpochMs = command.input.invitationExpiresAtEpochMs ??
@@ -299,9 +285,6 @@ export function computeUpsertMember(
         invitedByPrincipalId,
         invitationExpiresAtEpochMs
     });
-    if (existing && jsonEquals(existing, member)) {
-        return noOp(command, read, facts);
-    }
     assertNotLastOwner({
         group: requireGroup(read, command.aggregateRef).value,
         existing,

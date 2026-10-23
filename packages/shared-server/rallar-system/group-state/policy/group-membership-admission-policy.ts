@@ -21,10 +21,7 @@ export interface CanJoinGroupInput {
     readonly actor: GroupPolicyActor;
     readonly nowEpochMs?: number;
     readonly capacity?: GroupPolicyCapacityConfig;
-    readonly inviteToken?: string;
-    readonly expectedInviteToken?: string;
     readonly joinCode?: string;
-    readonly expectedJoinCode?: string;
     readonly joinCodeVerifier?: string;
     readonly expectedJoinCodeVerifier?: string;
     readonly joinCodeExpiresAtEpochMs?: number;
@@ -65,6 +62,10 @@ export function canJoinGroup(input: CanJoinGroupInput): GroupPolicyResult {
     const memberDenial = denyForBlockedGroupMember(member);
     if (memberDenial) {
         return memberDenial;
+    }
+    // Credentials authorize admission; they do not revoke existing membership.
+    if (member?.status === 'active') {
+        return GROUP_POLICY_ALLOWED;
     }
     if (wouldExceedMemberCap(input.snapshot, member, input.capacity)) {
         return denyGroupPolicy('group-full', 'Group member capacity has been reached.');
@@ -161,16 +162,6 @@ function canUseInvite(
     input: CanJoinGroupInput,
     member: GroupMember | undefined
 ): GroupPolicyResult {
-    if (member?.status === 'active') {
-        return GROUP_POLICY_ALLOWED;
-    }
-    if (
-        input.inviteToken &&
-        input.expectedInviteToken !== undefined &&
-        input.inviteToken === input.expectedInviteToken
-    ) {
-        return GROUP_POLICY_ALLOWED;
-    }
     if (member?.status !== 'invited') {
         return denyGroupPolicy('group-invite-required', 'A valid invite is required to join.');
     }
@@ -193,9 +184,6 @@ function canUseJoinCode(input: CanJoinGroupInput): GroupPolicyResult {
         input.nowEpochMs !== undefined &&
         input.joinCodeExpiresAtEpochMs <= input.nowEpochMs
     ) {
-        return denyGroupPolicy('group-code-invalid', 'Join code is invalid.');
-    }
-    if (input.expectedJoinCode !== undefined && input.joinCode !== input.expectedJoinCode) {
         return denyGroupPolicy('group-code-invalid', 'Join code is invalid.');
     }
     if (

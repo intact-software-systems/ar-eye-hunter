@@ -1,213 +1,259 @@
-import {
-    beforeEach,
-    describe,
-    expect,
-    it
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
+import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
+import type { RallarAuthState } from '@shared-web/browser/session/rallar-auth-facade.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import {
     createRoomSnapshot,
     getRoomWorkflowMocks,
-    mockRoomJoinSuccess,
-    mockRoomLeaveSuccess,
-    rejectJoinWith,
-    rejectLeaveWith,
     resetRoomWorkflowTestRuntime,
     seedRoomSnapshots
 } from './room-workflow-test-runtime.ts';
 
-const roomWorkflowMocks = getRoomWorkflowMocks();
+interface HttpRequest {
+    readonly url: string;
+    readonly method: string;
+    readonly body: object;
+    readonly clientId: string | null;
+}
+
+const runtime = getRoomWorkflowMocks();
+const scope = { applicationId: 'app-1', workspaceId: 'workspace-1' };
+const requests: HttpRequest[] = [];
 
 installFakeBroadcastChannelPerTest();
 
-describe('room join operations', () => {
-    beforeEach(resetRoomWorkflowTestRuntime);
+describe('room entry through the browser facade and HTTP workflow', () => {
+    beforeEach(async () => {
+        resetRoomWorkflowTestRuntime();
+        configureApiClient({ apiBaseUrl: '' });
+        requests.length = 0;
+        const actual = await vi.importActual<typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts')>(
+            '@shared-web/browser/rooms/room-group-state-workflows.ts'
+        );
+        runtime.joinStateGroup.mockImplementation(actual.joinStateGroup);
+        runtime.leaveStateGroup.mockImplementation(actual.leaveStateGroup);
+    });
 
-    it('resolves roomId and roomRef object targets', async () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+    });
+
+    it('resolves object targets and passes credentials to the exact scoped admission endpoint', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const roomRef = {
-            applicationId: 'app-1',
-            workspaceId: 'workspace-1',
-            groupId: 'room-ref'
-        };
-        const roomIdSnapshot = createRoomSnapshot('room-id', ['session-1']);
-        const roomRefSnapshot = createRoomSnapshot('room-ref', ['session-1']);
-        roomWorkflowMocks.joinStateGroup.mockImplementation(async (input) => {
-            roomWorkflowMocks.operationLog.push(`join:${input.groupId}`);
-            return input.groupId === 'room-id' ? roomIdSnapshot : roomRefSnapshot;
-        });
+        respond((request) => json(createRoomSnapshot(request.url.includes('/room-ref/') ? 'room-ref' : 'room-id', ['session-1'])));
         const facade = createRallarFacade();
+        facade.setDefaults(scope);
 
         await facade.rooms.join({ roomId: 'room-id', leaveCurrent: false });
-        await facade.rooms.join({ roomRef, leaveCurrent: false });
-
-        expect(roomWorkflowMocks.joinStateGroup.mock.calls[0]?.[0]).toMatchObject({
-            groupId: 'room-id',
-            scope: undefined
-        });
-        expect(roomWorkflowMocks.joinStateGroup.mock.calls[1]?.[0]).toMatchObject({
-            groupId: 'room-ref',
-            scope: {
-                applicationId: 'app-1',
-                workspaceId: 'workspace-1'
-            }
-        });
-    });
-
-    it('forwards invite credentials and safe command options', async () => {
-        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const signal = new AbortController().signal;
-        mockRoomJoinSuccess(createRoomSnapshot('room-1', ['session-1']));
-
-        await createRallarFacade().rooms.join({
-            roomId: 'room-1',
+        await facade.rooms.join({
+            roomRef: { ...scope, groupId: 'room-ref' },
             inviteToken: 'invite-1',
             joinCode: 'code-1',
-            leaveCurrent: false,
-            signal,
-            timeoutMs: 44
+            leaveCurrent: false
         });
 
-        expect(roomWorkflowMocks.joinStateGroup).toHaveBeenCalledWith(
-            {
-                groupId: 'room-1',
-                principalId: 'principal-1',
-                sessionId: 'session-1',
-                generationId: 'generation-session-1',
-                connectionGenerationId: 'ws-generation-session-1',
-                scope: undefined,
-                policies: { command: { signal, timeoutMs: 44 } },
-                intent: { inviteToken: 'invite-1', joinCode: 'code-1' }
-            }
-        );
+        expect(requests).toHaveLength(4);
+        expect(requests[0].url).toMatch(/\/apps\/app-1\/workspaces\/workspace-1\/groups\/room-id\/join\/requests\//);
+        expect(requests[2]).toMatchObject({
+            method: 'POST',
+            body: { inviteToken: 'invite-1', joinCode: 'code-1', actorPrincipalId: 'principal-1', actorSessionId: 'session-1' }
+        });
+        expect(requests[2].url).toMatch(/\/apps\/app-1\/workspaces\/workspace-1\/groups\/room-ref\/join\/requests\//);
+        expect(facade.rooms.current()?.group.groupId).toBe('room-ref');
     });
 
-    it('applies the documented retry classification', async () => {
+    it.each([503, 429, 400, 409])('applies the HTTP retry policy to status %s', async (status) => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        mockRoomJoinSuccess(createRoomSnapshot('room-1', ['session-1']));
+        const connected = createRoomSnapshot('selected', ['session-1']);
+        respond(() => requests.length === 1 ? new Response('failed', { status }) : json(connected));
+        const pending = createRallarFacade().rooms.join('selected', { scope, maxAttempts: 2 });
 
-        await createRallarFacade().rooms.join('room-1', { maxAttempts: 3 });
-
-        const command = roomWorkflowMocks.joinStateGroup.mock.calls[0]?.[0].policies?.command;
-        const shouldRetry = command?.shouldRetry;
-        if (typeof shouldRetry !== 'function') {
-            throw new TypeError('Expected join workflow retry policy');
+        if (status === 503 || status === 429) {
+            await expect(pending).resolves.toEqual(connected);
+            expect(requests).toHaveLength(3);
+            expect(requests[0].url).toBe(requests[1].url);
         }
-        expect(command?.maxAttempts).toBe(3);
-        expect(shouldRetry(apiHttpError(503), 1)).toBe(true);
-        expect(shouldRetry(apiHttpError(429), 1)).toBe(true);
-        expect(shouldRetry(apiHttpError(400), 1)).toBe(false);
-        expect(shouldRetry(apiHttpError(409), 1)).toBe(false);
+        else {
+            await expect(pending).rejects.toMatchObject({ status });
+            expect(requests).toHaveLength(1);
+        }
     });
 
-    it('accepts the new room before leaving the previous room', async () => {
+    it('retains admitted membership when presence fails and preserves the previous current room', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const oldRoom = createRoomSnapshot('old-room', ['session-1']);
-        const newRoom = createRoomSnapshot('new-room', ['session-1']);
-        seedRoomSnapshots([oldRoom]);
-        mockRoomJoinSuccess(newRoom);
-        mockRoomLeaveSuccess(createRoomSnapshot('old-room', []));
+        const previous = createRoomSnapshot('previous', ['session-1']);
+        const admitted = createRoomSnapshot('selected', []);
+        seedRoomSnapshots([previous]);
+        respond((request) => isAdmission(request) ? json(admitted) : new Response('failed', { status: 503 }));
         const facade = createRallarFacade();
 
-        await expect(facade.rooms.join('new-room')).resolves.toBe(newRoom);
+        await expect(facade.rooms.join('selected', { scope })).rejects.toMatchObject({
+            name: 'RallarRoomJoinPartialFailureError',
+            joinedRoom: admitted,
+            cause: { status: 503 }
+        });
 
-        expect(roomWorkflowMocks.operationLog).toEqual([
-            'join:new-room',
-            'hydrate:new-room',
-            'leave:old-room',
-            'hydrate:old-room'
-        ]);
-        expect(facade.rooms.current()).toBe(newRoom);
+        expect(requests).toHaveLength(2);
+        expect(facade.rooms.current()).toBe(previous);
     });
 
-    it('reports leave failure while retaining the joined room', async () => {
+    it.each(
+        [
+            { stage: 'admission', sessionId: 'other-session' },
+            { stage: 'presence', sessionId: 'other-session' },
+            { stage: 'admission', sessionId: 'session-1' }
+        ] as const
+    )('cannot adopt or leave after auth changes during $stage to $sessionId', async ({ stage, sessionId }) => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const oldRoom = createRoomSnapshot('old-room', ['session-1']);
-        const newRoom = createRoomSnapshot('new-room', ['session-1']);
-        const leaveError = new Error('leave failed');
-        seedRoomSnapshots([oldRoom]);
-        mockRoomJoinSuccess(newRoom);
-        rejectLeaveWith(leaveError);
+        const previous = createRoomSnapshot('previous', ['session-1']);
+        const admitted = createRoomSnapshot('selected', []);
+        seedRoomSnapshots([previous]);
+        respond((request) => {
+            if (isAdmission(request) === (stage === 'admission')) {
+                runtime.readSession.mockReturnValue({ ...runtime.session, clientId: 'other-principal', sessionId });
+            }
+            return json(isAdmission(request) ? admitted : createRoomSnapshot('selected', ['session-1']));
+        });
         const facade = createRallarFacade();
 
-        await expect(facade.rooms.join('new-room')).rejects.toMatchObject({
+        await expect(facade.rooms.join('selected', { scope })).rejects.toMatchObject({
+            name: 'RallarRoomJoinPartialFailureError',
+            joinedRoom: admitted
+        });
+
+        expect(requests).toHaveLength(stage === 'admission' ? 1 : 2);
+        expect(requests.every((request) => request.clientId === runtime.session.clientId)).toBe(true);
+        expect(facade.rooms.current()?.group.groupId).not.toBe('selected');
+    });
+
+    it.each([401, 403])('handles auth status %s beneath a partial-admission failure', async (status) => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const admitted = createRoomSnapshot('selected', []);
+        const authStates: RallarAuthState[] = [];
+        respond((request) => isAdmission(request) ? json(admitted) : new Response('denied', { status }));
+        const facade = createRallarFacade();
+        facade.auth.onChange((state) => {
+            authStates.push(state);
+        });
+
+        await expect(facade.rooms.join('selected', { scope })).rejects.toMatchObject({
+            name: 'RallarRoomJoinPartialFailureError',
+            joinedRoom: admitted,
+            cause: { status }
+        });
+
+        expect(authStates.at(-1)?.authenticated).toBe(status !== 401);
+        expect(authStates.filter((state) => state.reason === 'unauthorized')).toHaveLength(status === 401 ? 1 : 0);
+    });
+
+    it.each(['admission', 'presence'] as const)('cannot adopt or leave after cancellation during %s', async (stage) => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const previous = createRoomSnapshot('previous', ['session-1']);
+        seedRoomSnapshots([previous]);
+        const controller = new AbortController();
+        respond((request) => {
+            if (isAdmission(request) === (stage === 'admission')) {
+                controller.abort();
+            }
+            return json(createRoomSnapshot('selected', ['session-1']));
+        });
+        const facade = createRallarFacade();
+
+        await expect(facade.rooms.join('selected', { scope, signal: controller.signal })).rejects.toBeInstanceOf(Error);
+
+        expect(requests).toHaveLength(stage === 'admission' ? 1 : 2);
+        expect(facade.rooms.current()).toBe(previous);
+    });
+
+    it('leaves the previous room only after the destination becomes current', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const previous = createRoomSnapshot('previous', ['session-1']);
+        const connected = createRoomSnapshot('selected', ['session-1']);
+        seedRoomSnapshots([previous]);
+        const facade = createRallarFacade();
+        const currentWhenLeaving: (GroupSnapshot | undefined)[] = [];
+        respond((request) => {
+            if (request.url.includes('/previous/')) {
+                currentWhenLeaving.push(facade.rooms.current());
+                return json(createRoomSnapshot('previous', []));
+            }
+            return json(connected);
+        });
+
+        await expect(facade.rooms.join('selected', { scope })).resolves.toEqual(connected);
+
+        expect(currentWhenLeaving).toEqual([connected, connected]);
+        expect(facade.rooms.current()).toEqual(connected);
+        expect(requests.map((request) => request.method)).toEqual(['POST', 'PUT', 'POST', 'PUT']);
+    });
+
+    it('reports failed previous-room cleanup while keeping the joined room current', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const previous = createRoomSnapshot('previous', ['session-1']);
+        const connected = createRoomSnapshot('selected', ['session-1']);
+        seedRoomSnapshots([previous]);
+        respond((request) => request.url.includes('/previous/') ? new Response('failed', { status: 503 }) : json(connected));
+        const facade = createRallarFacade();
+
+        await expect(facade.rooms.join('selected', { scope })).rejects.toMatchObject({
             name: 'RallarRoomSwitchPartialFailureError',
             operation: 'join',
-            joinedRoom: newRoom,
-            previousRoomRef: oldRoom.group,
-            leaveError
+            joinedRoom: connected,
+            previousRoomRef: previous.group,
+            leaveError: { status: 503 }
         });
-        expect(facade.rooms.current()).toBe(newRoom);
-        expect(facade.rooms.state().currentRoomRef).toEqual(newRoom.group);
+
+        expect(facade.rooms.current()).toEqual(connected);
+        expect(facade.rooms.state().currentRoomRef).toEqual(connected.group);
     });
 
-    it('does not leave when joining the next room fails', async () => {
+    it('preserves the current room when admission is denied', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const oldRoom = createRoomSnapshot('old-room', ['session-1']);
-        seedRoomSnapshots([oldRoom]);
-        rejectJoinWith(new Error('join failed'));
+        const previous = createRoomSnapshot('previous', ['session-1']);
+        seedRoomSnapshots([previous]);
+        respond(() => new Response('denied', { status: 403 }));
         const facade = createRallarFacade();
 
-        await expect(facade.rooms.join('new-room')).rejects.toThrow('join failed');
+        await expect(facade.rooms.join('selected', { scope })).rejects.toMatchObject({ status: 403 });
 
-        expect(roomWorkflowMocks.operationLog).toEqual(['join:new-room']);
-        expect(roomWorkflowMocks.leaveStateGroup).not.toHaveBeenCalled();
-        expect(facade.rooms.current()).toBe(oldRoom);
+        expect(requests).toHaveLength(1);
+        expect(facade.rooms.current()).toBe(previous);
     });
 
-    it('rejects mismatched roomId and roomRef before the workflow', async () => {
+    it('rejects a mismatched room target before any request', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        respond(() => {
+            throw new Error('Unexpected request');
+        });
 
-        await expect(
-            createRallarFacade().rooms.join({
-                roomId: 'room-a',
-                roomRef: {
-                    applicationId: 'app-1',
-                    workspaceId: 'workspace-1',
-                    groupId: 'room-b'
-                }
-            })
-        ).rejects.toThrow('roomId must match roomRef.groupId');
+        await expect(createRallarFacade().rooms.join({ roomId: 'room-a', roomRef: { ...scope, groupId: 'room-b' } }))
+            .rejects.toThrow('roomId must match roomRef.groupId');
 
-        expect(roomWorkflowMocks.joinStateGroup).not.toHaveBeenCalled();
+        expect(requests).toEqual([]);
     });
 });
 
-function apiHttpError(status: number): ApiHttpError {
-    return new ApiHttpError(
-        'POST',
-        '/api/test/requests/test-request-id',
-        status,
-        JSON.stringify({
-            type: 'api-mutation-failure',
-            version: 'canonical.v2',
-            code: `test-${status}`,
-            status,
-            message: `Test ${status}`,
-            issues: null,
-            denial: null,
-            retry: status === 429
-                ? {
-                    kind: 'rate-limited',
-                    retryAfterMs: 1000,
-                    attempts: null,
-                    lane: null,
-                    queueAgeMs: null,
-                    dueAgeMs: null
-                }
-                : status === 503
-                ? {
-                    kind: 'unavailable',
-                    retryAfterMs: null,
-                    attempts: 1,
-                    lane: null,
-                    queueAgeMs: null,
-                    dueAgeMs: null
-                }
-                : null
-        })
-    );
+function respond(handler: (request: HttpRequest) => Response): void {
+    vi.stubGlobal('fetch', async (url: RequestInfo | URL, init?: RequestInit) => {
+        const request = {
+            url: String(url),
+            method: init?.method ?? 'GET',
+            body: JSON.parse(String(init?.body ?? '{}')),
+            clientId: new Headers(init?.headers).get('x-client-id')
+        };
+        requests.push(request);
+        return handler(request);
+    });
+}
+
+function isAdmission(request: HttpRequest): boolean {
+    return request.url.includes('/join/requests/');
+}
+
+function json(value: object): Response {
+    return new Response(JSON.stringify(value), { status: 200, headers: { 'content-type': 'application/json' } });
 }

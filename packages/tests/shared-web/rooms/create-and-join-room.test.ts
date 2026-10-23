@@ -1,142 +1,176 @@
-import {
-    beforeEach,
-    describe,
-    expect,
-    it
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
-import {
-    createRoomSnapshot,
-    getRoomWorkflowMocks,
-    mockRoomCreateSuccess,
-    mockRoomLeaveSuccess,
-    rejectCreateWith,
-    rejectLeaveWith,
-    resetRoomWorkflowTestRuntime,
-    seedRoomSnapshots
-} from './room-workflow-test-runtime.ts';
+import { createRoomSnapshot, getRoomWorkflowMocks, resetRoomWorkflowTestRuntime, seedRoomSnapshots } from './room-workflow-test-runtime.ts';
 
-const roomWorkflowMocks = getRoomWorkflowMocks();
+interface HttpRequest {
+    readonly url: string;
+    readonly method: string;
+    readonly body: object;
+}
 
+const runtime = getRoomWorkflowMocks();
+const scope = { applicationId: 'app-1', workspaceId: 'workspace-1' };
+const requests: HttpRequest[] = [];
 installFakeBroadcastChannelPerTest();
 
-describe('room create operations', () => {
-    beforeEach(resetRoomWorkflowTestRuntime);
-
-    it('returns the authoritative snapshot and hydrates current room state', async () => {
-        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const snapshot = createRoomSnapshot('created-room', ['session-1']);
-        mockRoomCreateSuccess(snapshot);
-        const facade = createRallarFacade();
-
-        await expect(facade.rooms.create('Created Room')).resolves.toBe(snapshot);
-
-        expect(roomWorkflowMocks.operationLog).toEqual(['create:Created Room', 'hydrate:created-room']);
-        expect(facade.rooms.current()).toBe(snapshot);
-        expect(facade.rooms.state().currentRoomRef).toEqual(snapshot.group);
+describe('room creation through the browser facade and HTTP workflow', () => {
+    beforeEach(async () => {
+        resetRoomWorkflowTestRuntime();
+        configureApiClient({ apiBaseUrl: '' });
+        requests.length = 0;
+        const actual = await vi.importActual<typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts')>(
+            '@shared-web/browser/rooms/room-group-state-workflows.ts'
+        );
+        runtime.createAndJoinStateGroup.mockImplementation(actual.createAndJoinStateGroup);
+        runtime.leaveStateGroup.mockImplementation(actual.leaveStateGroup);
+    });
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
     });
 
-    it('forwards only the supported room fields and command options', async () => {
+    it('creates the requested scoped room and adopts it after presence succeeds', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const scope = { applicationId: 'app-1', workspaceId: 'workspace-1' };
-        mockRoomCreateSuccess(createRoomSnapshot('custom-room', ['session-1']));
+        const snapshot = createRoomSnapshot('new-room', ['session-1']);
+        respond(() => json(snapshot));
+        const facade = createRallarFacade();
 
-        await createRallarFacade().rooms.create({
-            groupId: 'custom-room',
-            displayName: 'Custom Room',
-            description: 'Mission lobby',
-            joinMode: 'open',
+        await expect(facade.rooms.create({ groupId: 'new-room', displayName: 'Friends', description: 'Private arena', joinMode: 'code', maxMembers: 8, scope }))
+            .resolves.toEqual(snapshot);
+
+        expect(requests).toHaveLength(2);
+        expect(requests[0].url).toMatch(/\/apps\/app-1\/workspaces\/workspace-1\/groups\/requests\//);
+        expect(requests[0].body).toMatchObject({
+            groupId: 'new-room',
+            displayName: 'Friends',
+            description: 'Private arena',
+            joinMode: 'code',
             maxMembers: 8,
-            maxSessionsPerMember: 2,
-            metadata: { map: 'fjord' },
-            lifecyclePolicy: { preset: 'managed' },
-            scope,
-            timeoutMs: 55
+            actorPrincipalId: 'principal-1',
+            actorSessionId: 'session-1'
+        });
+        expect(facade.rooms.current()).toEqual(snapshot);
+    });
+
+    it('retains the generated room identity and request key across a transient creation retry', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        respond(() => requests.length === 1 ? new Response('unavailable', { status: 503 }) : json(createRoomSnapshot('new-room', ['session-1'])));
+
+        await createRallarFacade().rooms.create({ displayName: 'Friends', scope, maxAttempts: 2 });
+
+        expect(requests).toHaveLength(3);
+        expect(requests[0]).toEqual(requests[1]);
+    });
+
+    it('adopts the new room before leaving the previous one', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const previous = createRoomSnapshot('old-room', ['session-1']);
+        const created = createRoomSnapshot('new-room', ['session-1']);
+        seedRoomSnapshots([previous]);
+        const facade = createRallarFacade();
+        respond((request) => {
+            if (request.url.includes('/old-room/')) {
+                expect(facade.rooms.current()).toEqual(created);
+                return json(createRoomSnapshot('old-room', []));
+            }
+            return json(created);
         });
 
-        expect(roomWorkflowMocks.createAndJoinStateGroup).toHaveBeenCalledWith(
-            {
-                displayName: 'Custom Room',
-                principalId: 'principal-1',
-                sessionId: 'session-1',
-                generationId: 'generation-session-1',
-                connectionGenerationId: 'ws-generation-session-1',
-                scope,
-                policies: { command: { timeoutMs: 55 } },
-                requestedGroupId: 'custom-room',
-                options: {
-                    description: 'Mission lobby',
-                    joinMode: 'open',
-                    maxMembers: 8,
-                    maxSessionsPerMember: 2,
-                    metadata: { map: 'fjord' },
-                    lifecyclePolicy: { preset: 'managed' }
-                }
-            }
-        );
+        await expect(facade.rooms.createAndSwitch({ groupId: 'new-room', displayName: 'Friends', scope })).resolves.toEqual(created);
+
+        expect(requests.filter((request) => request.url.includes('/old-room/'))).toHaveLength(2);
+        expect(facade.rooms.current()).toEqual(created);
     });
 
-    it('leaves the previous room only after the new room is accepted', async () => {
+    it('reports committed creation when presence fails without selecting or leaving another room', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const oldRoom = createRoomSnapshot('old-room', ['session-1']);
-        const newRoom = createRoomSnapshot('new-room', ['session-1']);
-        const leftOldRoom = createRoomSnapshot('old-room', []);
-        seedRoomSnapshots([oldRoom]);
-        mockRoomCreateSuccess(newRoom);
-        mockRoomLeaveSuccess(leftOldRoom);
+        const previous = createRoomSnapshot('old-room', ['session-1']);
+        const created = createRoomSnapshot('new-room', []);
+        seedRoomSnapshots([previous]);
+        respond((request) => isCreation(request) ? json(created) : new Response('unavailable', { status: 503 }));
         const facade = createRallarFacade();
 
-        await expect(facade.rooms.createAndSwitch({ displayName: 'New Room' })).resolves.toBe(newRoom);
+        await expect(facade.rooms.createAndSwitch({ displayName: 'Friends', scope })).rejects.toMatchObject({
+            name: 'RallarRoomJoinPartialFailureError',
+            joinedRoom: created,
+            cause: { status: 503 }
+        });
 
-        expect(roomWorkflowMocks.operationLog).toEqual([
-            'create:New Room',
-            'hydrate:new-room',
-            'leave:old-room',
-            'hydrate:old-room'
-        ]);
-        expect(facade.rooms.current()).toBe(newRoom);
+        expect(requests).toHaveLength(2);
+        expect(facade.rooms.current()).toEqual(previous);
     });
 
-    it('reports leave failure while retaining the new current room', async () => {
+    it('retains the created room when previous-room cleanup fails', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const oldRoom = createRoomSnapshot('old-room', ['session-1']);
-        const newRoom = createRoomSnapshot('new-room', ['session-1']);
-        const leaveError = new Error('leave failed');
-        seedRoomSnapshots([oldRoom]);
-        mockRoomCreateSuccess(newRoom);
-        rejectLeaveWith(leaveError);
+        const previous = createRoomSnapshot('old-room', ['session-1']);
+        const created = createRoomSnapshot('new-room', ['session-1']);
+        seedRoomSnapshots([previous]);
+        respond((request) => request.url.includes('/old-room/') ? new Response('unavailable', { status: 503 }) : json(created));
         const facade = createRallarFacade();
 
-        await expect(facade.rooms.createAndSwitch({ displayName: 'New Room' })).rejects.toMatchObject({
+        await expect(facade.rooms.createAndSwitch({ displayName: 'Friends', scope })).rejects.toMatchObject({
             name: 'RallarRoomSwitchPartialFailureError',
             operation: 'create-and-switch',
-            joinedRoom: newRoom,
-            previousRoomRef: oldRoom.group,
-            leaveError
+            joinedRoom: created,
+            previousRoomRef: previous.group
         });
-        expect(facade.rooms.current()).toBe(newRoom);
-        expect(facade.rooms.state().currentRoomRef).toEqual(newRoom.group);
-        expect(roomWorkflowMocks.operationLog).toEqual([
-            'create:New Room',
-            'hydrate:new-room',
-            'leave:old-room'
-        ]);
+        expect(facade.rooms.current()).toEqual(created);
     });
 
-    it('does not leave when create fails', async () => {
+    it('does not leave or change current selection when creation is denied', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const oldRoom = createRoomSnapshot('old-room', ['session-1']);
-        seedRoomSnapshots([oldRoom]);
-        rejectCreateWith(new Error('create failed'));
+        const previous = createRoomSnapshot('old-room', ['session-1']);
+        seedRoomSnapshots([previous]);
+        respond(() => new Response('denied', { status: 403 }));
         const facade = createRallarFacade();
 
-        await expect(facade.rooms.createAndSwitch({ displayName: 'New Room' })).rejects.toThrow(
-            'create failed'
-        );
+        await expect(facade.rooms.createAndSwitch({ displayName: 'Friends', scope })).rejects.toMatchObject({ status: 403 });
+        expect(requests).toHaveLength(1);
+        expect(facade.rooms.current()).toEqual(previous);
+    });
 
-        expect(roomWorkflowMocks.operationLog).toEqual(['create:New Room']);
-        expect(roomWorkflowMocks.leaveStateGroup).not.toHaveBeenCalled();
-        expect(facade.rooms.current()).toBe(oldRoom);
+    it.each([
+        { stage: 'creation', action: 'replace-account' },
+        { stage: 'presence', action: 'replace-account' },
+        { stage: 'creation', action: 'cancel' },
+        { stage: 'presence', action: 'cancel' }
+    ])('does not adopt or leave after $action during $stage', async ({ stage, action }) => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        seedRoomSnapshots([createRoomSnapshot('old-room', ['session-1'])]);
+        const controller = new AbortController();
+        respond((request) => {
+            if (isCreation(request) === (stage === 'creation')) {
+                if (action === 'cancel') {
+                    controller.abort();
+                }
+                else {
+                    runtime.readSession.mockReturnValue({ ...runtime.session, clientId: 'other-principal', sessionId: 'other-session' });
+                }
+            }
+            return json(createRoomSnapshot('new-room', ['session-1']));
+        });
+        const facade = createRallarFacade();
+
+        await expect(facade.rooms.createAndSwitch({ displayName: 'Friends', scope, signal: controller.signal })).rejects.toBeInstanceOf(Error);
+        expect(requests).toHaveLength(stage === 'creation' ? 1 : 2);
+        expect(facade.rooms.current()?.group.groupId).not.toBe('new-room');
     });
 });
+
+function respond(handler: (request: HttpRequest) => Response): void {
+    vi.stubGlobal('fetch', async (url: RequestInfo | URL, init?: RequestInit) => {
+        const request: HttpRequest = { url: String(url), method: init?.method ?? 'GET', body: JSON.parse(String(init?.body ?? '{}')) };
+        requests.push(request);
+        return handler(request);
+    });
+}
+
+function isCreation(request: HttpRequest): boolean {
+    return request.url.includes('/groups/requests/');
+}
+
+function json(value: object): Response {
+    return new Response(JSON.stringify(value), { status: 200, headers: { 'content-type': 'application/json' } });
+}

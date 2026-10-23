@@ -37,6 +37,7 @@ interface RoomActorWorkflowInput<TWorkflowValue = GroupSnapshot> {
     readonly actorPrincipalId: string;
     readonly sessionId: string;
     readonly scope?: StateScope;
+    readonly assertCurrent?: () => void;
     readonly policies?: CommandsOrchestratorPolicies<TWorkflowValue>;
 }
 
@@ -123,36 +124,42 @@ export async function acceptStateGroupInvite(
     const scope = input.scope ?? defaultStateScope();
     const acceptRequestId = toApiMutationWorkflowRequestId();
     const presenceRequestId = toApiMutationWorkflowRequestId();
+    const acceptRequest = toAcceptRoomInviteGroupStateRequest({
+        actorPrincipalId: input.actorPrincipalId,
+        actorSessionId: input.sessionId
+    });
+    const presenceRequest = toConnectRoomPresenceGroupStateRequest({
+        principalId: input.actorPrincipalId,
+        generationId: input.generationId,
+        connectionGenerationId: input.connectionGenerationId,
+        expiresAtEpochMs: toRoomPresenceLeaseExpiresAtEpochMs(Date.now()),
+        actorPrincipalId: input.actorPrincipalId,
+        actorSessionId: input.sessionId
+    });
     const flow = CommandsOrchestrator.withPolicies<'accepted' | 'joined', GroupSnapshot>(
         input.policies ?? {}
     );
     const results = await flow
         .sequential(
-            flow.commandStep('accepted', (signal) =>
-                roomGroupStateHttpApi.acceptInvite({
+            flow.commandStep('accepted', (signal) => {
+                input.assertCurrent?.();
+                return roomGroupStateHttpApi.acceptInvite({
                     groupId: input.groupId,
-                    request: toAcceptRoomInviteGroupStateRequest({
-                        actorPrincipalId: input.actorPrincipalId,
-                        actorSessionId: input.sessionId
-                    }),
+                    request: acceptRequest,
                     options: { requestId: acceptRequestId, signal },
                     scope
-                })),
-            flow.commandStep('joined', (signal) =>
-                roomGroupStateHttpApi.connectPresence({
+                });
+            }),
+            flow.commandStep('joined', (signal) => {
+                input.assertCurrent?.();
+                return roomGroupStateHttpApi.connectPresence({
                     groupId: input.groupId,
                     sessionId: input.sessionId,
-                    request: toConnectRoomPresenceGroupStateRequest({
-                        principalId: input.actorPrincipalId,
-                        generationId: input.generationId,
-                        connectionGenerationId: input.connectionGenerationId,
-                        expiresAtEpochMs: toRoomPresenceLeaseExpiresAtEpochMs(Date.now()),
-                        actorPrincipalId: input.actorPrincipalId,
-                        actorSessionId: input.sessionId
-                    }),
+                    request: presenceRequest,
                     options: { requestId: presenceRequestId, signal },
                     scope
-                }))
+                });
+            })
         )
         .run();
     return requireStateWorkflowResult(results, 'joined');
@@ -169,13 +176,15 @@ export async function rotateStateGroupJoinCode(
         actorSessionId: input.sessionId
     });
     return await new Command<GroupJoinCodeResponse>(
-        (signal) =>
-            roomGroupStateHttpApi.rotateJoinCode({
+        (signal) => {
+            input.assertCurrent?.();
+            return roomGroupStateHttpApi.rotateJoinCode({
                 groupId: input.groupId,
                 request,
                 options: { requestId, signal },
                 scope: input.scope ?? defaultStateScope()
-            }),
+            });
+        },
         commandOptions
     ).run();
 }
@@ -276,7 +285,10 @@ async function runGroupSnapshotCommand(
     const requestId = toApiMutationWorkflowRequestId();
     const commandOptions: CommandOptions<GroupSnapshot> = input.policies?.command ?? {};
     return await new Command<GroupSnapshot>(
-        (signal) => operation(requestId, signal),
+        (signal) => {
+            input.assertCurrent?.();
+            return operation(requestId, signal);
+        },
         commandOptions
     ).run();
 }

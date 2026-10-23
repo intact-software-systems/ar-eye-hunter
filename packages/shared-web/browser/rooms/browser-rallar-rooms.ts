@@ -30,10 +30,9 @@ import { requireStateWorkflowResult } from '@shared-web/browser/state-read/state
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts';
-import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupDirectoryPage, GroupDirectoryRequest } from '@shared/api/group-directory/group-directory-types.ts';
 import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
-import { Command, CommandCancelledError } from '@shared/cache/Command.ts';
+import { Command } from '@shared/cache/Command.ts';
 import { CommandsOrchestrator } from '@shared/cache/CommandsOrchestrator.ts';
 import {
     findGroupStateSnapshotByRef,
@@ -60,6 +59,7 @@ import type {
     RallarRoomEventOptions,
     RallarRoomGovernanceOptions,
     RallarRoomInviteOptions,
+    RallarRoomJoinCodeOptions,
     RallarRoomLifecycleOptions,
     RallarRoomPresenceWaitOptions,
     RallarRoomPresenceWaitResult,
@@ -73,6 +73,7 @@ import type {
 import type { RallarRoomEventsPort } from './room-events.ts';
 import type {
     GroupEvent,
+    GroupJoinCodeResponse,
     GroupRef,
     GroupSnapshot,
     StateEventPage,
@@ -83,11 +84,14 @@ import {
     banRoomMember,
     createRoomInvite,
     removeRoomMember,
+    revokeRoomInvite,
+    rotateRoomJoinCode,
     setRoomMemberRole,
     transferRoomOwnership,
     unbanRoomMember
 } from './room-membership.ts';
 import { waitForRoomPresence } from './room-presence.ts';
+import { captureRoomSession } from './room-session-fence.ts';
 import { createRoomSession } from './room-session.ts';
 import type { RallarRoomStateStorePort } from './room-state-store.ts';
 import { archiveRoom, deleteRoom, updateRoom, updateRoomMetadata } from './update-room.ts';
@@ -145,6 +149,15 @@ export interface BrowserRallarRooms {
         room: string | GroupRef | RallarRoomTargetInput,
         options?: RallarScopedOperationOptions
     ): Promise<GroupSnapshot>;
+    revokeInvite(
+        room: string | GroupRef | RallarRoomTargetInput,
+        principalId: string,
+        options?: RallarRoomGovernanceOptions
+    ): Promise<GroupSnapshot>;
+    rotateJoinCode(
+        room: string | GroupRef | RallarRoomTargetInput,
+        options?: RallarRoomJoinCodeOptions
+    ): Promise<GroupJoinCodeResponse>;
     removeMember(
         room: string | GroupRef | RallarRoomTargetInput,
         principalId: string,
@@ -338,6 +351,8 @@ function createRoomMembershipOperations(
     BrowserRallarRooms,
     | 'invite'
     | 'acceptInvite'
+    | 'revokeInvite'
+    | 'rotateJoinCode'
     | 'removeMember'
     | 'banMember'
     | 'unbanMember'
@@ -348,6 +363,9 @@ function createRoomMembershipOperations(
         invite: async (room, principalId, options = {}) =>
             await createRoomInvite({ ...input, room, principalId, options }),
         acceptInvite: async (room, options = {}) => await acceptRoomInvite({ ...input, room, options }),
+        revokeInvite: async (room, principalId, options = {}) =>
+            await revokeRoomInvite({ ...input, room, principalId, options }),
+        rotateJoinCode: async (room, options = {}) => await rotateRoomJoinCode({ ...input, room, options }),
         removeMember: async (room, principalId, options = {}) =>
             await removeRoomMember({ ...input, room, principalId, options }),
         banMember: async (room, principalId, options = {}) =>
@@ -383,18 +401,23 @@ async function refreshRooms(
     input: CreateBrowserRallarRoomsInput,
     refreshInput?: StateScope | RallarScopedOperationOptions
 ): Promise<RallarRoomState> {
-    return await input.runAuthAwareOperation(async () => {
-        const options = toRallarScopedOperationOptions(refreshInput);
-        const operationOptions = input.resolveOperationOptions(options);
-        const context = await input.connect(operationOptions);
-        const scope = input.resolveOperationScope(options.scope);
-        const { clients, groups } = await refreshStateSnapshots(
-            scope,
-            toRallarWorkflowPolicies(operationOptions)
-        );
-        await input.acceptSnapshots({ context, clients, groups, scope });
-        return input.stateStore.state();
-    });
+    return await input.runAuthAwareOperation(() => refreshAuthenticatedRooms(input, refreshInput));
+}
+
+async function refreshAuthenticatedRooms(
+    input: CreateBrowserRallarRoomsInput,
+    refreshInput: StateScope | RallarScopedOperationOptions | undefined
+): Promise<RallarRoomState> {
+    const options = toRallarScopedOperationOptions(refreshInput);
+    const operationOptions = input.resolveOperationOptions(options);
+    const context = await input.connect(operationOptions);
+    const scope = input.resolveOperationScope(options.scope);
+    const { clients, groups } = await refreshStateSnapshots(
+        scope,
+        toRallarWorkflowPolicies(operationOptions)
+    );
+    await input.acceptSnapshots({ context, clients, groups, scope });
+    return input.stateStore.state();
 }
 
 async function readRoomDirectory(
@@ -402,18 +425,24 @@ async function readRoomDirectory(
     request: GroupDirectoryRequest = {},
     options: RallarScopedOperationOptions = {}
 ): Promise<GroupDirectoryPage> {
-    return await input.runAuthAwareOperation(async () => {
-        const operationOptions = input.resolveOperationOptions(options);
-        await input.connect(operationOptions);
-        const scope = input.resolveOperationScope(options.scope);
-        const flow = CommandsOrchestrator.withPolicies<'directory', GroupDirectoryPage>(
-            toRallarWorkflowPolicies(operationOptions)
-        );
-        const results = await flow
-            .sequential(flow.commandStep('directory', (signal) => listStateGroupDirectory(scope, request, { signal })))
-            .run();
-        return requireStateWorkflowResult(results, 'directory');
-    });
+    return await input.runAuthAwareOperation(() => readAuthenticatedRoomDirectory(input, request, options));
+}
+
+async function readAuthenticatedRoomDirectory(
+    input: CreateBrowserRallarRoomsInput,
+    request: GroupDirectoryRequest,
+    options: RallarScopedOperationOptions
+): Promise<GroupDirectoryPage> {
+    const operationOptions = input.resolveOperationOptions(options);
+    await input.connect(operationOptions);
+    const scope = input.resolveOperationScope(options.scope);
+    const flow = CommandsOrchestrator.withPolicies<'directory', GroupDirectoryPage>(
+        toRallarWorkflowPolicies(operationOptions)
+    );
+    const results = await flow
+        .sequential(flow.commandStep('directory', (signal) => listStateGroupDirectory(scope, request, { signal })))
+        .run();
+    return requireStateWorkflowResult(results, 'directory');
 }
 
 async function refreshRoom(
@@ -421,79 +450,80 @@ async function refreshRoom(
     roomRef: GroupRef,
     refreshInput: RallarScopedOperationOptions = {}
 ): Promise<GroupTopologyReadThroughOutcome | undefined> {
-    return await input.runAuthAwareOperation(async () => {
-        const scope = toStateScope(roomRef);
-        const operationOptions = input.resolveOperationOptions({
-            ...refreshInput,
-            scope
-        });
-        const context = await input.connect(operationOptions);
-        const observed = findGroupStateSnapshotByRef(roomRef);
-        const session = input.requireSession();
-        const assertCurrent = () => {
-            if (operationOptions.signal?.aborted) {
-                throw new CommandCancelledError();
-            }
-            if (
-                input.requireSession().sessionId !== session.sessionId ||
-                context.session.sessionId !== session.sessionId
-            ) {
-                throw new DOMException('Room refresh belongs to an obsolete session', 'AbortError');
-            }
-        };
-        assertCurrent();
-        try {
-            const response = await new Command<StateGroupSnapshotRead>(
-                (signal) =>
-                    readStateGroupSnapshot(roomRef.groupId, scope, {
-                        signal,
-                        authSession: session
-                    }),
-                toRallarCommandOptions(operationOptions)
-            ).run();
-            assertCurrent();
-            if (observed) {
-                refreshGroupStateSnapshotIfUnchanged(observed, response.snapshot);
-            }
-            await input.acceptSnapshots({ context, clients: [], groups: [response.snapshot], scope });
-            assertCurrent();
-            if (observed) {
-                acceptAuthoritativeGroupSessionLeaseAdvance({
-                    expected: observed,
-                    acquired: response.snapshot,
-                    scope,
-                    assertCanMutate: assertCurrent
-                });
-                await waitForGroupStateSnapshotChangesIdle();
-                assertCurrent();
-            }
-            const [readThrough] = await hydrateGroupTopologyOverlays({
-                groupSnapshots: [response.snapshot],
-                sessionId: context.session.sessionId,
-                webRtcGroupManager: context.middleware.webRtcGroupManager,
-                scope,
-                apiRequest: {
-                    ...toRallarCommandOptions(operationOptions),
-                    authSession: context.session
-                }
-            });
-            return readThrough?.outcome;
-        }
-        catch (error) {
-            if (error instanceof ApiHttpError && error.status === 404 && observed) {
-                const removed = removeGroupStateSnapshotIfUnchanged(roomRef, observed);
-                emitBrowserStateReadDiagnostic({
-                    name: 'rallar.browser.state-read',
-                    feature: 'group',
-                    operation: 'point',
-                    result: removed ? 'removed' : 'preserved',
-                    durationMs: 0
-                });
-                await waitForGroupStateSnapshotChangesIdle();
-            }
-            throw error;
-        }
+    return await input.runAuthAwareOperation(() => refreshAuthenticatedRoom(input, roomRef, refreshInput));
+}
+
+async function refreshAuthenticatedRoom(
+    input: CreateBrowserRallarRoomsInput,
+    roomRef: GroupRef,
+    refreshInput: RallarScopedOperationOptions
+): Promise<GroupTopologyReadThroughOutcome | undefined> {
+    const scope = toStateScope(roomRef);
+    const operationOptions = input.resolveOperationOptions({
+        ...refreshInput,
+        scope
     });
+    const context = await input.connect(operationOptions);
+    const observed = findGroupStateSnapshotByRef(roomRef);
+    const fence = captureRoomSession(input.requireSession, operationOptions.signal);
+    const session = fence.session;
+    const assertCurrent = () => fence.assertCurrent(context);
+    assertCurrent();
+    try {
+        const response = await new Command<StateGroupSnapshotRead>(
+            (signal) =>
+                readStateGroupSnapshot(roomRef.groupId, scope, {
+                    signal,
+                    authSession: session
+                }),
+            toRallarCommandOptions(operationOptions)
+        ).run();
+        assertCurrent();
+        if (observed) {
+            refreshGroupStateSnapshotIfUnchanged(observed, response.snapshot);
+        }
+        await input.acceptSnapshots({ context, clients: [], groups: [response.snapshot], scope });
+        assertCurrent();
+        if (observed) {
+            acceptAuthoritativeGroupSessionLeaseAdvance({
+                expected: observed,
+                acquired: response.snapshot,
+                scope,
+                assertCanMutate: assertCurrent
+            });
+            await waitForGroupStateSnapshotChangesIdle();
+            assertCurrent();
+        }
+        const [readThrough] = await hydrateGroupTopologyOverlays({
+            groupSnapshots: [response.snapshot],
+            sessionId: context.session.sessionId,
+            webRtcGroupManager: context.middleware.webRtcGroupManager,
+            scope,
+            apiRequest: {
+                ...toRallarCommandOptions(operationOptions),
+                authSession: context.session
+            }
+        });
+        return readThrough?.outcome;
+    }
+    catch (error) {
+        if (error instanceof ApiHttpError && error.status === 404 && observed) {
+            await removeMissingRoomSnapshot(roomRef, observed);
+        }
+        throw error;
+    }
+}
+
+async function removeMissingRoomSnapshot(roomRef: GroupRef, observed: GroupSnapshot): Promise<void> {
+    const removed = removeGroupStateSnapshotIfUnchanged(roomRef, observed);
+    emitBrowserStateReadDiagnostic({
+        name: 'rallar.browser.state-read',
+        feature: 'group',
+        operation: 'point',
+        result: removed ? 'removed' : 'preserved',
+        durationMs: 0
+    });
+    await waitForGroupStateSnapshotChangesIdle();
 }
 
 function resolveRoomSessionRef(

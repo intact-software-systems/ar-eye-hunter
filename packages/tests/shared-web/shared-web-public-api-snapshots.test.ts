@@ -13,6 +13,15 @@ interface PublicSurfaceSnapshot {
 
 const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
     {
+        filePath: 'packages/shared-web/browser/rallar-room-entry.ts',
+        expected: {
+            values: ['RallarRoomEntry', 'readRoomEntryDestination', 'toRoomEntryUrl'],
+            types: [],
+            starExports: [],
+            namespaceExports: []
+        }
+    },
+    {
         filePath: 'packages/shared-web/browser/rallar.ts',
         expected: {
             values: [
@@ -61,6 +70,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'CommandsOrchestrator',
                 'CommandsOrchestratorPolicies',
                 'CreateRallarDataFacadeInput',
+                'GroupJoinCodeResponse',
                 'QuickJoinGroupResult',
                 'RallarAdvancedFacade',
                 'RallarAuthChangeListener',
@@ -188,6 +198,8 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarRoomFormationWaitStatus',
                 'RallarRoomGovernanceOptions',
                 'RallarRoomInviteOptions',
+                'RallarRoomJoinCodeOptions',
+                'RallarRoomJoinPartialFailureError',
                 'RallarRoomLayout',
                 'RallarRoomLayoutEvent',
                 'RallarRoomLayoutListener',
@@ -335,6 +347,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'ApiMiddleware',
                 'CommandsOrchestrator',
                 'CommandsOrchestratorPolicies',
+                'GroupJoinCodeResponse',
                 'QuickJoinGroupResult',
                 'RallarApiClientConfig',
                 'RallarAuthChangeListener',
@@ -387,6 +400,8 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarRoomFormationStatus',
                 'RallarRoomFormationWaitResult',
                 'RallarRoomFormationWaitStatus',
+                'RallarRoomJoinCodeOptions',
+                'RallarRoomJoinPartialFailureError',
                 'RallarRoomLayout',
                 'RallarRoomLayoutEvent',
                 'RallarRoomLayoutListener',

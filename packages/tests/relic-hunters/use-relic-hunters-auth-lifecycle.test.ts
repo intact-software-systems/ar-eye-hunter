@@ -11,6 +11,8 @@ import {
     type RelicRoundTransitionEvent,
     type RelicServerEvent
 } from '@relic-hunters/mod.ts';
+import { BrowserRallarSubscriptionScope } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
+import { toRoomEntryUrl } from '@shared-web/browser/rallar-room-entry.ts';
 import type {
     RallarAuthState,
     RallarMessage,
@@ -26,7 +28,9 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fetchRelicSnapshot } from '../../../apps/relic-hunters-v1/src/game/api.ts';
-import { useRelicHunters, type RelicHuntersConnection } from '../../../apps/relic-hunters-v1/src/game/useRelicHunters.ts';
+import type { RelicHuntersRuntime } from '../../../apps/relic-hunters-v1/src/game/relic-hunters-runtime.ts';
+import { useRelicHunters } from '../../../apps/relic-hunters-v1/src/game/use-relic-hunters.ts';
+import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -51,6 +55,7 @@ const mockRallar = vi.hoisted(() => ({
     start: vi.fn(),
     subscriptions: vi.fn(),
     rooms: {
+        join: vi.fn(),
         state: vi.fn(),
         refresh: vi.fn(),
         onChange: vi.fn()
@@ -91,19 +96,21 @@ vi.mock('../../../apps/relic-hunters-v1/src/game/api.ts', () => ({
 describe('useRelicHunters auth lifecycle', () => {
     let root: Root | undefined;
     let container: HTMLDivElement;
-    let current: RelicHuntersConnection | undefined;
+    let current: RelicHuntersRuntime.Connection | undefined;
 
     beforeEach(() => {
+        vi.resetAllMocks();
         authListeners.clear();
         current = undefined;
         container = document.createElement('div');
         document.body.append(container);
-        vi.stubGlobal('localStorage', memoryStorage());
+        window.sessionStorage.clear();
+        window.history.replaceState(null, '', '/');
         mockRallar.auth.restore.mockReturnValue(session);
         mockRallar.session.mockReturnValue(session);
         mockRallar.auth.onChange.mockImplementation((listener) => {
             authListeners.add(listener);
-            return vi.fn();
+            return () => authListeners.delete(listener);
         });
         mockRallar.start.mockResolvedValue({
             session,
@@ -119,10 +126,7 @@ describe('useRelicHunters auth lifecycle', () => {
                 currentRoomId: 'relic-room-1'
             }
         });
-        mockRallar.subscriptions.mockReturnValue({
-            add: vi.fn().mockReturnThis(),
-            unsubscribe: vi.fn()
-        });
+        mockRallar.subscriptions.mockImplementation(() => new BrowserRallarSubscriptionScope());
         mockRallar.rooms.onChange.mockReturnValue(vi.fn());
         mockRallar.rooms.state.mockReturnValue({
             rooms: [],
@@ -130,7 +134,7 @@ describe('useRelicHunters auth lifecycle', () => {
         });
         mockRallar.messages.ws.onMessage.mockReturnValue(vi.fn());
         mockRallar.messages.rtc.onMessage.mockReturnValue(vi.fn());
-        mockRallar.messages.room.mockReturnValue({ onWs: vi.fn(() => vi.fn()) });
+        mockRallar.messages.room.mockImplementation(() => idleRoomChannel());
         mockRallar.rtc.onStatus.mockReturnValue(vi.fn());
         mockRallar.channels.room.mockReturnValue({
             onMessage: vi.fn(() => vi.fn()),
@@ -158,7 +162,6 @@ describe('useRelicHunters auth lifecycle', () => {
     });
 
     it('clears relic runtime state when auth is unauthorized outside manual logout', async () => {
-        localStorage.setItem('relic.currentRoomId', 'relic-room-1');
         await renderHook();
         await waitForState(() => current?.connectionState === 'connected');
 
@@ -182,8 +185,56 @@ describe('useRelicHunters auth lifecycle', () => {
         expect(current?.diagnostics.roomReady).toBe(false);
         expect(current?.diagnostics.rtcReady).toBe(false);
         expect(current?.diagnostics.authorityReady).toBe(false);
-        expect(localStorage.getItem('relic.currentRoomId')).toBeNull();
         expect(mockRallar.auth.logout).not.toHaveBeenCalled();
+    });
+
+    it('carries a private destination through sign-in and adopts it before a previous startup room', async () => {
+        const destination = { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'private-expedition' };
+        const admitted = createGroupSnapshotFixture({ ...destination, sessionIds: [session.sessionId] });
+        mockRallar.auth.restore.mockReturnValue(undefined);
+        mockRallar.session.mockReturnValue(undefined);
+        const invitation = toRoomEntryUrl(window.location.href, { roomRef: destination, joinCode: 'private-code' });
+        if (!invitation.right) {
+            throw new Error('The private invitation must encode successfully');
+        }
+        window.history.replaceState(null, '', invitation.right);
+        await renderHook();
+
+        expect(window.location.hash).toBe('');
+        expect(current?.roomEntry.getState()).toMatchObject({ status: 'pending', destination: { roomRef: destination } });
+        expect(current?.roomId).toBeUndefined();
+
+        mockRallar.auth.login.mockImplementation(async () => {
+            mockRallar.auth.restore.mockReturnValue(session);
+            mockRallar.session.mockReturnValue(session);
+            return session;
+        });
+        mockRallar.rooms.join.mockImplementation(async () => {
+            mockRallar.rooms.state.mockReturnValue({ rooms: [], currentRoom: admitted, currentRoomRef: destination, currentRoomId: destination.groupId });
+            return admitted;
+        });
+        vi.mocked(fetchRelicSnapshot).mockImplementation(async (roomId) => relicSnapshot(20, roomId));
+        await act(async () => current?.login('relic', 'password'));
+
+        expect(current?.roomId).toBe(destination.groupId);
+        expect(current?.snapshot?.roomId).toBe(destination.groupId);
+        expect(current?.roomEntry.getState()).toMatchObject({ status: 'entered', destination: { roomRef: destination, joinCode: null } });
+        expect(window.sessionStorage.getItem('rallar.room-entry:["rallar-server","default"]')).not.toContain('private-code');
+    });
+
+    it('discards bootstrap hydration that finishes after sign-out', async () => {
+        const late = Promise.withResolvers<RelicPublicSnapshot | undefined>();
+        vi.mocked(fetchRelicSnapshot).mockReturnValueOnce(late.promise);
+        await renderHook();
+        await waitForState(() => current?.diagnostics.middlewareConnected === true && current.snapshot === undefined);
+
+        await emitAuthState({ authenticated: false, reason: 'unauthorized' });
+        await act(async () => late.resolve(relicSnapshot(20)));
+
+        expect(current?.connectionState).toBe('signed-out');
+        expect(current?.session).toBeUndefined();
+        expect(current?.roomId).toBeUndefined();
+        expect(current?.snapshot).toBeUndefined();
     });
 
     it('clears stale snapshot rejection diagnostics after a newer snapshot is accepted', async () => {
@@ -250,7 +301,7 @@ describe('useRelicHunters auth lifecycle', () => {
         vi.mocked(fetchRelicSnapshot).mockResolvedValue(relicSnapshot(20));
         mockRallar.messages.room.mockImplementation((roomDefinition: RallarRoomMessageChannelDefinition) => {
             if (roomDefinition.topicId !== RELIC_TOPICS.event) {
-                return { onWs: vi.fn(() => vi.fn()) };
+                return idleRoomChannel();
             }
             definition = roomDefinition;
             return {
@@ -293,18 +344,17 @@ describe('useRelicHunters auth lifecycle', () => {
         vi.mocked(fetchRelicSnapshot).mockResolvedValue(relicSnapshot(1));
         await renderHook();
         await waitForState(() => current?.diagnostics.snapshotReady === true && channels.get('relic-room-1')?.onTransition !== undefined);
-        const onTransition = channels.get('relic-room-1')!.onTransition!;
         const otherIncarnation = { ...ROUND_STARTED, createdAtEpochMs: 7 };
         const heldIncarnation = { ...ROUND_STARTED, createdAtEpochMs: 1 };
 
         await act(async () => {
-            await onTransition(otherIncarnation, toRoomMessage(otherIncarnation));
+            await deliverTransition(channels, 'relic-room-1', otherIncarnation);
         });
         expect(current?.roundTransition).toBeUndefined();
         expect(current?.diagnostics.roundTransitionCues).toEqual([]);
 
         await act(async () => {
-            await onTransition(heldIncarnation, toRoomMessage(heldIncarnation));
+            await deliverTransition(channels, 'relic-room-1', heldIncarnation);
         });
         expect(current?.roundTransition).toEqual(heldIncarnation);
         expect(current?.diagnostics.roundTransitionCues).toEqual(['1:round-started']);
@@ -318,7 +368,7 @@ describe('useRelicHunters auth lifecycle', () => {
         const anyIncarnation = { ...ROUND_STARTED, createdAtEpochMs: 7 };
 
         await act(async () => {
-            await channels.get('relic-room-1')!.onTransition!(anyIncarnation, toRoomMessage(anyIncarnation));
+            await deliverTransition(channels, 'relic-room-1', anyIncarnation);
         });
 
         expect(current?.snapshot).toBeUndefined();
@@ -330,9 +380,9 @@ describe('useRelicHunters auth lifecycle', () => {
         vi.mocked(fetchRelicSnapshot).mockResolvedValue(relicSnapshot(20));
         await renderHook();
         await waitForState(() => current?.diagnostics.snapshotReady === true && channels.has('relic-room-1'));
-        const late = createDeferred<RelicPublicSnapshot | undefined>();
+        const late = Promise.withResolvers<RelicPublicSnapshot | undefined>();
         vi.mocked(fetchRelicSnapshot).mockReturnValueOnce(late.promise);
-        await act(async () => requireResync(channels.get('relic-room-1')!));
+        await act(async () => requireResync(requireChannel(channels, 'relic-room-1')));
 
         await emitAuthState({ authenticated: false, reason: 'unauthorized' });
         await act(async () => late.resolve(relicSnapshot(21)));
@@ -347,9 +397,9 @@ describe('useRelicHunters auth lifecycle', () => {
         vi.mocked(fetchRelicSnapshot).mockImplementation(async (roomId) => relicSnapshot(20, roomId));
         await renderHook();
         await waitForState(() => current?.diagnostics.snapshotReady === true && channels.has('relic-room-1'));
-        const late = createDeferred<RelicPublicSnapshot | undefined>();
+        const late = Promise.withResolvers<RelicPublicSnapshot | undefined>();
         vi.mocked(fetchRelicSnapshot).mockReturnValueOnce(late.promise);
-        await act(async () => requireResync(channels.get('relic-room-1')!));
+        await act(async () => requireResync(requireChannel(channels, 'relic-room-1')));
 
         await rooms.enter('relic-room-2');
         await waitForState(() => current?.snapshot?.roomId === 'relic-room-2');
@@ -365,7 +415,7 @@ describe('useRelicHunters auth lifecycle', () => {
         await renderHook();
         await waitForState(() => channels.get('relic-room-1')?.onTransition !== undefined);
         await act(async () => {
-            await channels.get('relic-room-1')!.onTransition!(ROUND_STARTED, toRoomMessage(ROUND_STARTED));
+            await deliverTransition(channels, 'relic-room-1', ROUND_STARTED);
         });
         expect(current?.roundTransition).toEqual(ROUND_STARTED);
 
@@ -381,7 +431,7 @@ describe('useRelicHunters auth lifecycle', () => {
         await renderHook();
         await waitForState(() => channels.get('relic-room-1')?.onTransition !== undefined);
         await act(async () => {
-            await channels.get('relic-room-1')!.onTransition!(ROUND_STARTED, toRoomMessage(ROUND_STARTED));
+            await deliverTransition(channels, 'relic-room-1', ROUND_STARTED);
         });
 
         await rooms.enter('relic-room-2');
@@ -390,7 +440,7 @@ describe('useRelicHunters auth lifecycle', () => {
         expect(current?.roundTransition).toBeUndefined();
         const nextRoomStarted = { ...ROUND_STARTED, gameId: 'relic-room-2' };
         await act(async () => {
-            await channels.get('relic-room-2')!.onTransition!(nextRoomStarted, toRoomMessage(nextRoomStarted));
+            await deliverTransition(channels, 'relic-room-2', nextRoomStarted);
         });
         expect(current?.roundTransition).toEqual(nextRoomStarted);
     });
@@ -442,6 +492,8 @@ describe('useRelicHunters auth lifecycle', () => {
 
     async function emitAuthState(state: RallarAuthState): Promise<void> {
         await act(async () => {
+            mockRallar.auth.restore.mockReturnValue(state.authenticated ? state.session : undefined);
+            mockRallar.session.mockReturnValue(state.authenticated ? state.session : undefined);
             for (const listener of authListeners) {
                 await listener(state);
             }
@@ -482,18 +534,12 @@ interface CapturedRoomsChange {
     enter(roomId: string): Promise<void>;
 }
 
-interface Deferred<T> {
-    readonly promise: Promise<T>;
-    resolve(value: T): void;
-    reject(error: Error): void;
-}
-
 /** Every room the hook subscribes to round transitions for, by the room's group id; other room channels stay silent. */
 function captureRoomChannels(): ReadonlyMap<string, CapturedRoomChannel> {
     const channels = new Map<string, CapturedRoomChannel>();
     mockRallar.messages.room.mockImplementation((definition: RallarRoomMessageChannelDefinition) => {
         if (definition.topicId !== RELIC_TOPICS.event) {
-            return { onWs: vi.fn(() => vi.fn()) };
+            return idleRoomChannel();
         }
         const roomId = definition.roomRef?.groupId;
         if (roomId === undefined) {
@@ -513,18 +559,40 @@ function captureRoomChannels(): ReadonlyMap<string, CapturedRoomChannel> {
 
 /** Moves the page to another room the way the room state reports it. */
 function captureRoomsChange(): CapturedRoomsChange {
-    let listener: ((state: RallarRoomState) => void) | undefined;
+    const listeners = new Set<(state: RallarRoomState) => void>();
     mockRallar.rooms.onChange.mockImplementation((handler: (state: RallarRoomState) => void) => {
-        listener = handler;
-        return vi.fn();
+        listeners.add(handler);
+        return () => {
+            listeners.delete(handler);
+        };
     });
     return {
         enter: async (roomId) => {
             await act(async () => {
-                listener?.({ rooms: [], currentRoomId: roomId, members: [] });
+                const state = { rooms: [], currentRoomId: roomId, members: [] };
+                mockRallar.rooms.state.mockReturnValue(state);
+                for (const listener of listeners) {
+                    listener(state);
+                }
             });
         }
     };
+}
+
+function requireChannel(channels: ReadonlyMap<string, CapturedRoomChannel>, roomId: string): CapturedRoomChannel {
+    const channel = channels.get(roomId);
+    if (!channel) {
+        throw new Error(`The runtime must subscribe to ${roomId}`);
+    }
+    return channel;
+}
+
+async function deliverTransition(channels: ReadonlyMap<string, CapturedRoomChannel>, roomId: string, event: RelicRoundTransitionEvent): Promise<void> {
+    const channel = requireChannel(channels, roomId);
+    if (!channel.onTransition) {
+        throw new Error('The room must subscribe to round transitions');
+    }
+    await channel.onTransition(event, toRoomMessage(event));
 }
 
 function requireResync(channel: CapturedRoomChannel): void {
@@ -537,16 +605,6 @@ function requireResync(channel: CapturedRoomChannel): void {
         observedSeq: 300,
         carrier: 'ws'
     });
-}
-
-function createDeferred<T>(): Deferred<T> {
-    let resolve: (value: T) => void = () => undefined;
-    let reject: (error: Error) => void = () => undefined;
-    const promise = new Promise<T>((onResolve, onReject) => {
-        resolve = onResolve;
-        reject = onReject;
-    });
-    return { promise, resolve, reject };
 }
 
 const ROUND_STARTED: RelicRoundTransitionEvent = {
@@ -568,7 +626,7 @@ function captureHunterEventChannel(): Readonly<{
     let onEvent: RallarTypedPayloadHandler<RelicHunterEvent> | undefined;
     mockRallar.messages.room.mockImplementation((roomDefinition: RallarRoomMessageChannelDefinition) => {
         if (roomDefinition.topicId !== RELIC_TOPICS.hunter) {
-            return { onWs: vi.fn(() => vi.fn()) };
+            return idleRoomChannel();
         }
         definition = roomDefinition;
         return {
@@ -654,20 +712,9 @@ function relicSnapshot(updatedAtEpochMs: number, roomId = 'relic-room-1'): Relic
     return toPublicRelicSnapshot(createRelicGame(roomId, roomId, updatedAtEpochMs));
 }
 
-function memoryStorage(): Storage {
-    const values = new Map<string, string>();
+function idleRoomChannel() {
     return {
-        get length() {
-            return values.size;
-        },
-        clear: vi.fn(() => values.clear()),
-        getItem: vi.fn((key: string) => values.get(key) ?? null),
-        key: vi.fn((index: number) => [...values.keys()][index] ?? null),
-        removeItem: vi.fn((key: string) => {
-            values.delete(key);
-        }),
-        setItem: vi.fn((key: string, value: string) => {
-            values.set(key, value);
-        })
+        onWs: () => () => undefined,
+        sendRtc: async () => ({ wait: async () => ({ lifecycle: { state: 'transport-accepted' as const } }) })
     };
 }

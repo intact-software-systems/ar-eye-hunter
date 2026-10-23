@@ -374,6 +374,26 @@ describe('Rallar startup lifecycle behavior', () => {
         expect(facade.isConnected()).toBe(false);
     });
 
+    it.each(['start', 'connect'] as const)('does not let a cancelled %s poison a fresh connection attempt', async (operation) => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        mocks.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => {
+            options.signal?.throwIfAborted();
+            return { middleware: mocks.apiMiddleware.middleware, rtcCaptureReceipt, checkpoints: [] };
+        });
+        const facade = createRallarFacade();
+        onTestFinished(() => facade.disconnect());
+        const controller = new AbortController();
+        const obsolete = facade[operation]({ signal: controller.signal });
+        controller.abort();
+        const current = facade[operation]({ refreshRooms: false });
+
+        const [cancelled, connected] = await Promise.allSettled([obsolete, current]);
+
+        expect(cancelled.status).toBe('rejected');
+        expect(connected.status).toBe('fulfilled');
+        expect(facade.isConnected()).toBe(true);
+    });
+
     it('ends the restored auth session when connection initialization reports 401', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'

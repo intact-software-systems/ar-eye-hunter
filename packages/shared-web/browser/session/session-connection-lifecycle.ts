@@ -23,7 +23,7 @@ import type { ALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts
 import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import { Command } from '@shared/cache/Command.ts';
+import { Command, CommandCancelledError } from '@shared/cache/Command.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 export interface RallarSessionConnectionInput {
@@ -99,6 +99,9 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
     }
 
     public async connect(input: RallarSessionConnectionInput): Promise<BrowserTransportRuntime.Connection> {
+        if (input.operationOptions.signal?.aborted) {
+            throw new CommandCancelledError();
+        }
         const compatibility = checkRtcCaptureCompatibility({
             requested: input.rtcCaptureConfiguration,
             current: this.readRtcCaptureConfiguration(),

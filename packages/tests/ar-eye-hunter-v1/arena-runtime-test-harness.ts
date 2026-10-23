@@ -8,6 +8,7 @@ import type { RallarGameMatchStatus, RallarGamePeerReadiness } from '@shared-web
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
+import { arenaRoomEntry } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/arena-room-entry.ts';
 import { useRallarArena, type ArenaConnection } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/use-rallar-arena.ts';
 import type { ArenaRallarGameMatchHandle } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
 import { createInitialArenaState, toArenaSnapshot } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
@@ -74,6 +75,7 @@ const mockMatch = vi.hoisted(() => ({
     requestSync: vi.fn<ArenaRallarGameMatchHandle['requestSync']>(() => Promise.resolve({ status: 'sent' }))
 }));
 const mockRallar = vi.hoisted(() => ({
+    session: vi.fn(),
     auth: {
         restore: vi.fn(),
         onChange: vi.fn(),
@@ -167,6 +169,8 @@ export class ArenaRuntimeTestHarness {
     private mounted: ArenaRuntimeTestHarness.Mounted | undefined;
 
     reset(): void {
+        arenaRoomEntry.stop();
+        arenaRoomEntry.cancel();
         this.current = undefined;
         resetArenaSessionFixture();
         resetArenaRoomsFixture();
@@ -211,6 +215,7 @@ export class ArenaRuntimeTestHarness {
 }
 
 export async function emitAuthState(state: RallarAuthState): Promise<void> {
+    mockRallar.session.mockReturnValue(state.session);
     await act(async () => {
         for (const listener of authListeners) {
             await listener(state);
@@ -231,6 +236,7 @@ function resetArenaSessionFixture(): void {
     authListeners.clear();
     unsubscribe.mockClear();
     mockRallar.auth.restore.mockReturnValue(session);
+    mockRallar.session.mockReturnValue(session);
     mockRallar.auth.onChange.mockImplementation((listener) => {
         authListeners.add(listener);
         return unsubscribe;

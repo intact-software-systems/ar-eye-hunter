@@ -20,9 +20,12 @@ Across these slices, add no legacy path, duplicated implementation, or migration
 existing repository patterns and keep code, tests, documentation, and plans consistent. Each slice
 uses test-driven development and one current PR; wait for the maintainer to merge it before starting
 the next slice unless the maintainer explicitly requests a stack. PR #696 delivered the slice 0
-foundation and PR #697 delivered Quick Join. [PR #699](https://github.com/intact-software-systems/ar-eye-hunter/pull/699)
-implements slice 2 from main using the maintainer's selected existing-measurement scope. Wait for
-the maintainer's merge before planning the next slice.
+foundation, PR #697 delivered Quick Join, and
+[PR #699](https://github.com/intact-software-systems/ar-eye-hunter/pull/699) delivered slice 2 using
+the maintainer's selected existing-measurement scope.
+[PR #700](https://github.com/intact-software-systems/ar-eye-hunter/pull/700) completes shareable
+private-room entry in both games. Its implementation plan is retired with this delivery; the PR
+owns final validation and review. Wait for its maintainer merge before planning the next slice.
 
 ## Current foundation
 
@@ -100,13 +103,13 @@ all-or-none admission decisions before it becomes a platform promise.
 
 ## Delivery priorities
 
-| Priority    | Outcomes                                                                                                     |
-| ----------- | ------------------------------------------------------------------------------------------------------------ |
-| Current     | Slice 2 opt-in peer RTT ranking using existing measurements, with unknown results where coverage is missing. |
-| Next        | Share links/codes (4); visibility choices (5); reconnect/recent-room behavior (6).                           |
-| Then        | Automatic directory freshness (7), introducing push when the experience needs it.                            |
-| Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them.                  |
-| Later       | Scheduled rooms (8) and a separate tournament capability.                                                    |
+| Priority    | Outcomes                                                                                  |
+| ----------- | ----------------------------------------------------------------------------------------- |
+| Current     | Maintainer review and merge of share links/codes (4), implemented in PR #700.               |
+| Next        | Visibility choices (5); reconnect/recent-room behavior (6).                                 |
+| Then        | Automatic directory freshness (7), introducing push when the experience needs it.           |
+| Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them. |
+| Later       | Scheduled rooms (8) and a separate tournament capability.                                   |
 
 Relic validation is a constraint throughout, not a dependency postponed to slice 9. Operator
 reliability work may ship independently where a concrete operational need warrants it.
@@ -197,10 +200,24 @@ application actually supports it.
 
 ## Slice 4: shareable private rooms
 
-Make code-protected and invitation-based entry usable from a fresh browser, including authentication,
-expired/rotated-code feedback, and an enter-code action. Carry the intended destination through the
-whole flow. Keep these rooms hidden from discovery and make access and rotation semantics match the
-product choices above. Validate invitation-to-participation and reload recovery together.
+[PR #700](https://github.com/intact-software-systems/ar-eye-hunter/pull/700) provides code-protected
+and invite-only creation, share links, manual scoped reference/code entry, code rotation, and account
+invitation/revocation in AR Eye and Relic. The shared `RallarRoomEntry` owner captures the destination
+before startup, retains it through sign-in and tab reload, and offers correction, retry, and cancel.
+A fresh link replaces a saved room. Successful entry discards the code and binds the saved reference
+to the principal; late account, destination, or cancelled operations cannot adopt it.
+
+Active members can return after code rotation or expiry. A new account still needs a valid code or
+invitation, and banned members and inactive rooms remain denied. These rooms stay absent from public
+discovery. Codes are never treated as globally resolvable room references, and no persisted schema
+or migration is added. Invitation presence retries preserve both request ID and payload.
+
+Room admission remains separate from joining an expedition or participating in a match. Relic now
+uses one connection/runtime owner and removes the affected bare-ID restoration and duplicate hook.
+Both games have browser evidence for sharing through authentication, actual participation, rotation,
+reload, rejected credentials, and a replacement invitation. The PR owns current validation and
+review evidence. The completed implementation plan is removed with this delivery; the next slice
+begins only after its maintainer merge.
 
 ## Slice 5: unlisted rooms
 

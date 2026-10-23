@@ -82,6 +82,8 @@ export type {
     RallarRoomFormationStatus,
     RallarRoomFormationWaitResult,
     RallarRoomFormationWaitStatus,
+    RallarRoomJoinCodeOptions,
+    RallarRoomJoinPartialFailureError,
     RallarRoomLayout,
     RallarRoomLayoutEvent,
     RallarRoomLayoutListener,
@@ -153,3 +155,5 @@ export { RallarRtcCaptureConnectionRequiredError } from '@shared-web/browser/con
 export { RallarRtcCaptureUnverifiedError } from '@shared-web/browser/connection/rallar-rtc-capture-unverified-error.ts';
 
 export type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
+
+export type { GroupJoinCodeResponse } from '@shared/api/state-types.ts';

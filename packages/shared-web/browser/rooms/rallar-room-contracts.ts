@@ -19,6 +19,7 @@ import type {
     GroupRole,
     GroupSnapshot,
     GroupStatus,
+    RotateStateGroupJoinCodeBody,
     StateEventCursor,
     StateScope,
     UpdateStateGroupBody
@@ -122,6 +123,9 @@ export interface RallarRoomInviteOptions extends RallarScopedOperationOptions {
     readonly reason?: string;
 }
 
+export interface RallarRoomJoinCodeOptions
+    extends RallarRoomGovernanceOptions, Pick<RotateStateGroupJoinCodeBody, 'joinCode' | 'expiresAtEpochMs'> {}
+
 export interface RallarRoomGovernanceOptions extends RallarScopedOperationOptions {
     readonly reason?: string;
 }
@@ -152,6 +156,12 @@ export interface RallarQuickJoinRoomInput
 /** Admission committed, but connecting or adopting the room failed. */
 export interface RallarQuickJoinPartialFailureError extends Error {
     readonly name: 'RallarQuickJoinPartialFailureError';
+    readonly joinedRoom: GroupSnapshot;
+}
+
+/** Admission committed, but presence or local adoption failed. */
+export interface RallarRoomJoinPartialFailureError extends Error {
+    readonly name: 'RallarRoomJoinPartialFailureError';
     readonly joinedRoom: GroupSnapshot;
 }
 

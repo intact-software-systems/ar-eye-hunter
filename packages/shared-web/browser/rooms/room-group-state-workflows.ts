@@ -10,6 +10,8 @@ import type { QuickJoinGroupRequest, QuickJoinGroupResult } from '@shared/api/mu
 import { Command } from '@shared/cache/Command.ts';
 import { CommandsOrchestrator } from '@shared/cache/CommandsOrchestrator.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
+import { toError } from '@shared/resilience/to-error.ts';
+import type { RallarRoomJoinPartialFailureError } from './rallar-room-contracts.ts';
 
 import {
     toConnectRoomPresenceGroupStateRequest,
@@ -28,14 +30,8 @@ export type StateGroupWorkflowValue = GroupSnapshot | undefined;
 
 type GroupWorkflowKey = 'created' | 'member' | 'joined' | 'disconnected' | 'left';
 
-export interface CreateAndJoinStateGroupInput {
+export interface CreateAndJoinStateGroupInput extends Omit<ConnectStateGroupPresenceInput, 'groupId'> {
     readonly displayName: string;
-    readonly principalId: string;
-    readonly sessionId: string;
-    readonly generationId: string;
-    readonly connectionGenerationId: string;
-    readonly scope?: StateScope;
-    readonly policies?: CommandsOrchestratorPolicies<StateGroupWorkflowValue>;
     readonly requestedGroupId?: string;
     readonly options?: Omit<RoomCreateGroupStateFields, 'displayName'>;
 }
@@ -49,6 +45,8 @@ export interface ConnectStateGroupPresenceInput {
     readonly scope?: StateScope;
     readonly policies?: CommandsOrchestratorPolicies<StateGroupWorkflowValue>;
     readonly authSession?: AuthSession;
+    /** Fences each transport attempt against a replaced session or cancelled destination. */
+    readonly assertCurrent?: () => void;
 }
 
 export interface JoinStateGroupInput extends ConnectStateGroupPresenceInput {
@@ -86,11 +84,18 @@ export async function createAndJoinStateGroup(
         actorPrincipalId: input.principalId,
         actorSessionId: input.sessionId
     });
-    await new Command<StateGroupWorkflowValue>(
-        (signal) => roomGroupStateHttpApi.createGroup({ request, options: { requestId, signal }, scope }),
+    const createdRoom = await new Command<StateGroupWorkflowValue>(
+        (signal) => {
+            input.assertCurrent?.();
+            return roomGroupStateHttpApi.createGroup({
+                request,
+                options: { requestId, signal, authSession: input.authSession },
+                scope
+            });
+        },
         input.policies?.command
     ).run();
-    return requireConnectedPresence(await presence.run());
+    return await connectAdmittedRoomPresence(createdRoom, presence, input.assertCurrent);
 }
 
 export async function joinStateGroup(input: JoinStateGroupInput): Promise<GroupSnapshot> {
@@ -102,17 +107,48 @@ export async function joinStateGroup(input: JoinStateGroupInput): Promise<GroupS
         actorPrincipalId: input.principalId,
         actorSessionId: input.sessionId
     });
-    await new Command<StateGroupWorkflowValue>(
-        (signal) =>
-            roomGroupStateHttpApi.joinGroup({
+    const joinedRoom = await new Command<StateGroupWorkflowValue>(
+        (signal) => {
+            input.assertCurrent?.();
+            return roomGroupStateHttpApi.joinGroup({
                 groupId: input.groupId,
                 request,
                 options: { requestId, signal, authSession: input.authSession },
                 scope
-            }),
+            });
+        },
         input.policies?.command
     ).run();
-    return requireConnectedPresence(await presence.run());
+    return await connectAdmittedRoomPresence(joinedRoom, presence, input.assertCurrent);
+}
+
+async function connectAdmittedRoomPresence(
+    joinedRoom: StateGroupWorkflowValue,
+    presence: Command<StateGroupWorkflowValue>,
+    assertCurrent: (() => void) | undefined
+): Promise<GroupSnapshot> {
+    if (!joinedRoom) {
+        throw new Error('Room admission did not produce a snapshot.');
+    }
+    try {
+        assertCurrent?.();
+        const snapshot = requireConnectedPresence(await presence.run());
+        assertCurrent?.();
+        return snapshot;
+    }
+    catch (cause) {
+        throw createRoomJoinPartialFailureError(joinedRoom, toError(cause));
+    }
+}
+
+export function createRoomJoinPartialFailureError(
+    joinedRoom: GroupSnapshot,
+    cause: Error
+): RallarRoomJoinPartialFailureError {
+    return Object.assign(
+        new Error(`Joined room ${joinedRoom.group.groupId}, but entering it failed.`, { cause }),
+        { name: 'RallarRoomJoinPartialFailureError' as const, joinedRoom }
+    );
 }
 
 /** A command owns one presence request identity and captured lease across HTTP retries. */
@@ -129,14 +165,16 @@ export function createStateGroupPresenceCommand(
         actorSessionId: input.sessionId
     });
     return new Command<StateGroupWorkflowValue>(
-        (signal) =>
-            roomGroupStateHttpApi.connectPresence({
+        (signal) => {
+            input.assertCurrent?.();
+            return roomGroupStateHttpApi.connectPresence({
                 groupId: input.groupId,
                 sessionId: input.sessionId,
                 request,
                 options: { requestId, signal, authSession: input.authSession },
                 scope: input.scope
-            }),
+            });
+        },
         input.policies?.command
     );
 }
