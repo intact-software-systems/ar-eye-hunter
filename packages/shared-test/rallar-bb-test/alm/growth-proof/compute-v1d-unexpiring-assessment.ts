@@ -69,16 +69,21 @@ export function computeRegisteredAssessment(
     const ceilingAt = new Map(input.ceilingSeries.map((point) => [point.elapsedMs, point.value]));
     const limit = bound.rowsPerEntity * accounts;
     const beyond = input.series.find((point) => point.value - first.value > limit);
-    const aboveCeiling = input.series.find((point) => point.value > (ceilingAt.get(point.elapsedMs) ?? point.value));
+    const unceilinged = input.series.find((point) => !ceilingAt.has(point.elapsedMs));
+    const aboveCeiling = input.series.find((point) => point.value > (ceilingAt.get(point.elapsedMs) ?? Number.NaN));
     return {
         bound: boundText,
         firstPlateau: computeV1dGrowthPlateau(input.series, 0),
         slopePerHour: ratePerHour,
         max: computeV1dGrowthMax(input.series),
-        outcome: beyond === undefined && aboveCeiling === undefined ? 'pass' : 'fail',
+        outcome: beyond === undefined && aboveCeiling === undefined && unceilinged === undefined ? 'pass' : 'fail',
         reason: beyond !== undefined
             ? `grew ${beyond.value - first.value} by ${toV1dGrowthMinutes(beyond.elapsedMs)} min, beyond ` +
                 `${limit} for ${accounts} ${bound.entity}`
+            : unceilinged !== undefined
+            ? `no ceiling reading at ${
+                toV1dGrowthMinutes(unceilinged.elapsedMs)
+            } min to bound the ${unceilinged.value} read`
             : aboveCeiling !== undefined
             ? `${aboveCeiling.value} at ${toV1dGrowthMinutes(aboveCeiling.elapsedMs)} min exceeds the ` +
                 `${ceilingAt.get(aboveCeiling.elapsedMs)} its ceiling reading held`

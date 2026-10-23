@@ -4,7 +4,6 @@ import {
     it
 } from 'vitest';
 
-import type { ScenarioRecipe } from '@shared-test/black-box-runner/recipes/read-scenario-recipe-includes.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 import {
@@ -12,7 +11,7 @@ import {
     V1D_GROWTH_SURVEY_SURFACE_IDS
 } from '../../../shared-test/rallar-bb-test/alm/growth-proof/v1d-growth-surfaces.ts';
 import { computeV1dGrowthVerdict } from '../../../shared-test/rallar-bb-test/alm/growth-proof/v1d-growth-verdict.ts';
-import { readApiV1Matrix, readApiV1Recipe } from '../api-v1-recipe-test-fixture.ts';
+import { readMediumScaleChurnClientCount } from '../api-v1-recipe-test-fixture.ts';
 
 describe('V1d growth surface classification', () => {
     it('classifies every surface of the growth survey, each with at least one reader', () => {
@@ -77,6 +76,7 @@ describe('V1d growth surface classification', () => {
                         manifestCompletedAtEpochMs: windowStartedAtEpochMs + 4_500_000,
                         manifestAgents: 15,
                         eventHistoryMaxEvents: 10_000,
+                        apiProcesses: 3,
                         churnStarted: 1,
                         churnPassed: 1,
                         churnFailedRunIds: []
@@ -108,6 +108,7 @@ describe('V1d growth surface classification', () => {
             manifestCompletedAtEpochMs: windowStartedAtEpochMs + 4_500_000,
             manifestAgents: 15,
             eventHistoryMaxEvents: 10_000,
+            apiProcesses: 3,
             churnStarted,
             churnPassed: churnStarted,
             churnFailedRunIds: []
@@ -156,18 +157,9 @@ describe('V1d growth surface classification', () => {
 
     it('counts per churn iteration the clients the medium-scale churn recipe registers', () => {
         const authUsers = V1D_GROWTH_SURFACES.find((surface) => surface.readers.some((reader) => reader.path.includes('auth-users:by-username')));
-        const entry = readApiV1Matrix().entries.find((candidate) => candidate.id === 'api-v1-state-medium-scale-churn');
-        const churn = (readApiV1Recipe(entry!.recipe).steps ?? []).find((step) => step.name === 'runMediumScaleStateChurn');
-        const lanes = churn?.groups as ReadonlyArray<{
-            readonly name: string;
-            readonly steps: NonNullable<ScenarioRecipe['steps']>;
-        }>;
-        const clients = lanes
-            .filter((lane) => lane.name.startsWith('client-lane-'))
-            .reduce((total, lane) => total + Number(lane.steps.find((step) => step.type === 'loop')?.count), 0);
 
         expect(authUsers?.classification).toMatchObject({
-            entityCount: { source: 'registrations', principalsPerChurnIteration: clients }
+            entityCount: { source: 'registrations', principalsPerChurnIteration: readMediumScaleChurnClientCount() }
         });
     });
 
@@ -214,6 +206,7 @@ describe('V1d growth surface classification', () => {
             manifestCompletedAtEpochMs: windowStartedAtEpochMs + 4_500_000,
             manifestAgents: 15,
             eventHistoryMaxEvents,
+            apiProcesses: 3,
             churnStarted: 1,
             churnPassed: 1,
             churnFailedRunIds: []

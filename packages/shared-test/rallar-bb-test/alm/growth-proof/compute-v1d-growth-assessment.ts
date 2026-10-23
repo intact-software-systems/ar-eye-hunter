@@ -6,14 +6,12 @@ import {
 } from './compute-v1d-unexpiring-assessment.ts';
 import { toV1dGrowthNoData, type V1dGrowthAssessment, type V1dGrowthSeriesInput } from './v1d-growth-assessment.ts';
 import {
-    computeV1dGrowthAgentBucketMedians,
     computeV1dGrowthMax,
     computeV1dGrowthPlateau,
     computeV1dGrowthSlopePerHour,
     toV1dGrowthLastElapsedMs,
     toV1dGrowthMinutes,
     toV1dGrowthRounded,
-    type V1dGrowthAgentReading,
     type V1dGrowthSeriesPoint
 } from './v1d-growth-series.ts';
 import type { V1dGrowthCap, V1dGrowthClassification } from './v1d-growth-surface.ts';
@@ -21,7 +19,7 @@ import type { V1dGrowthWorkload } from './v1d-growth-workload.ts';
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 3_600_000;
-const MB = 1_000_000;
+export const MB = 1_000_000;
 const LAST_WINDOW_MS = 15 * MINUTE_MS;
 const MIN_SLOPE_WINDOW_MS = 10 * MINUTE_MS;
 const PLATEAU_RELATIVE_TOLERANCE = 0.05;
@@ -29,11 +27,9 @@ const PLATEAU_ABSOLUTE_TOLERANCE = 1;
 const LINEAR_ACCELERATION_TOLERANCE = 0.5;
 /** One row a minute: rows that arrive when sessions close come late and in bursts, at a run rate near zero. */
 const LINEAR_ABSOLUTE_TOLERANCE_PER_HOUR = 60;
-const HEAP_WARM_UP_MS = 10 * MINUTE_MS;
-const HEAP_SLOPE_LIMIT_BYTES_PER_HOUR = 10 * MB;
-const HEAP_MAX_PLATEAU_FACTOR = 2;
-const PAGE_HEAP_BUCKET_MS = 5 * MINUTE_MS;
-const PAGE_HEAP_MIN_BUCKETS = 3;
+export const HEAP_WARM_UP_MS = 10 * MINUTE_MS;
+export const HEAP_SLOPE_LIMIT_BYTES_PER_HOUR = 10 * MB;
+export const HEAP_MAX_PLATEAU_FACTOR = 2;
 
 export function computeV1dGrowthAssessment(
     classification: V1dGrowthClassification,
@@ -236,51 +232,6 @@ function computeHeapAssessment(series: readonly V1dGrowthSeriesPoint[]): V1dGrow
             `max ${toV1dGrowthRounded(max / MB)} MB against the first plateau ` +
             `${toV1dGrowthRounded(firstPlateau.value / MB)} MB` +
             `${belowDouble ? '' : ', twice it or more'}`
-    };
-}
-
-/**
- * A `heap` surface's browser page heap, which holds the page's product structures and the bounded harness event
- * history together: the slope and the plateau factor read 5-minute bucket medians after the warm-up, and the raw
- * peak is only reported.
- */
-export function computePageHeapAssessment(readings: readonly V1dGrowthAgentReading[]): V1dGrowthAssessment {
-    const bound = `page heap (product structures + bounded harness event history, surface 82): 5-minute bucket ` +
-        `medians after ${toV1dGrowthMinutes(HEAP_WARM_UP_MS)} min: slope within ` +
-        `±${HEAP_SLOPE_LIMIT_BYTES_PER_HOUR / MB} MB/h; last < ${HEAP_MAX_PLATEAU_FACTOR} × first`;
-    if (readings.length === 0) {
-        return toV1dGrowthNoData(bound);
-    }
-    const afterWarmUp = readings.filter((reading) => reading.elapsedMs >= HEAP_WARM_UP_MS);
-    const medians = computeV1dGrowthAgentBucketMedians(afterWarmUp, PAGE_HEAP_BUCKET_MS);
-    const max = computeV1dGrowthMax(afterWarmUp);
-    const first = medians[0];
-    const last = medians[medians.length - 1];
-    const slopePerHour = computeV1dGrowthSlopePerHour(medians, 0);
-    if (medians.length < PAGE_HEAP_MIN_BUCKETS || first === undefined || last === undefined || slopePerHour === null) {
-        return {
-            bound,
-            firstPlateau: first === undefined ? null : { atElapsedMs: first.elapsedMs, value: first.value },
-            slopePerHour,
-            max,
-            outcome: 'insufficient',
-            reason: `${medians.length} complete 5-minute buckets after the warm-up; the page heap check needs ` +
-                `${PAGE_HEAP_MIN_BUCKETS} complete 5-minute buckets`
-        };
-    }
-    const flat = Math.abs(slopePerHour) <= HEAP_SLOPE_LIMIT_BYTES_PER_HOUR;
-    const belowDouble = last.value < HEAP_MAX_PLATEAU_FACTOR * first.value;
-    return {
-        bound,
-        firstPlateau: { atElapsedMs: first.elapsedMs, value: first.value },
-        slopePerHour,
-        max,
-        outcome: flat && belowDouble ? 'pass' : 'fail',
-        reason:
-            `bucket median slope ${toV1dGrowthRounded(slopePerHour / MB)} MB/h${flat ? '' : ' exceeds the limit'}; ` +
-            `last bucket median ${toV1dGrowthRounded(last.value / MB)} MB against the first ` +
-            `${toV1dGrowthRounded(first.value / MB)} MB${belowDouble ? '' : ', twice it or more'}; ` +
-            `raw peak ${toV1dGrowthRounded((max ?? 0) / MB)} MB, not judged`
     };
 }
 

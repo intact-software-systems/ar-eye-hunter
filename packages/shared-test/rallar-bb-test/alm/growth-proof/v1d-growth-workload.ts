@@ -12,6 +12,8 @@ export interface V1dGrowthWorkload {
     readonly manifestAgents: number;
     /** The most events the manifest lets each page's test runtime retain. */
     readonly eventHistoryMaxEvents: number;
+    /** The API processes the script started; each one's heap samples are expected in `api-heap.jsonl`. */
+    readonly apiProcesses: number;
     /** Every churn iteration the loop began, including one the drain bound stopped before it finished. */
     readonly churnStarted: number;
     readonly churnPassed: number;

@@ -3,33 +3,46 @@ import type { ApiJsonObject, ApiJsonValue } from '@shared/api/api-json-value.ts'
 import { decodeV1dGrowthLines, isPositiveNumber, type DecodedV1dGrowthPoints } from './decode-v1d-growth-lines.ts';
 import { isApiJsonObject, type V1dGrowthSamplePoint } from './v1d-growth-series.ts';
 
+/** One agent's stats snapshot as a sample point, and whether its page heap was read without a forced collection. */
+interface BrowserStatsSnapshot {
+    readonly point: V1dGrowthSamplePoint;
+    readonly unforcedPageHeap: boolean;
+}
+
 /**
  * Each line is one poll of the control run: the `stats` and `events` envelopes it held. A stats event carries one
  * agent's stats snapshot: a periodic stats, a census reading with `browser`, or a `stats` command's ledger reading.
- * Polls overlap, so a snapshot seen twice counts once.
+ * Polls overlap, so a snapshot seen twice counts once. Each page heap dropped for lacking a forced collection counts
+ * as one skipped line, as an unforced API heap sample does.
  */
 export function decodeV1dBrowserStats(text: string): DecodedV1dGrowthPoints {
+    const seen = new Set<string>();
+    let unforcedPageHeaps = 0;
     const decoded = decodeV1dGrowthLines(text, (value) => {
         const poll = isApiJsonObject(value) ? value.value : undefined;
         if (!isApiJsonObject(poll)) {
             return undefined;
         }
-        return [poll.stats, poll.events].flatMap((envelopes) =>
-            Array.isArray(envelopes) ? envelopes.flatMap(decodeBrowserStatsPoint) : []
-        );
+        return [poll.stats, poll.events]
+            .flatMap((envelopes) => Array.isArray(envelopes) ? envelopes.flatMap(decodeBrowserStatsSnapshot) : [])
+            .filter(({ point }) => isFirstSnapshot(point, seen))
+            .map(({ point, unforcedPageHeap }) => {
+                unforcedPageHeaps += Number(unforcedPageHeap);
+                return point;
+            });
     });
-    const seen = new Set<string>();
-    const points = decoded.points.filter((point) => {
-        const census = isApiJsonObject(point.value) && point.value.browser !== undefined;
-        const key = `${point.agentId}:${point.atEpochMs}:${census ? 'census' : 'stats'}`;
-        const first = !seen.has(key);
-        seen.add(key);
-        return first;
-    });
-    return { points, skippedLines: decoded.skippedLines };
+    return { points: decoded.points, skippedLines: decoded.skippedLines + unforcedPageHeaps };
 }
 
-function decodeBrowserStatsPoint(envelope: ApiJsonValue): readonly V1dGrowthSamplePoint[] {
+function isFirstSnapshot(point: V1dGrowthSamplePoint, seen: Set<string>): boolean {
+    const census = isApiJsonObject(point.value) && point.value.browser !== undefined;
+    const key = `${point.agentId}:${point.atEpochMs}:${census ? 'census' : 'stats'}`;
+    const first = !seen.has(key);
+    seen.add(key);
+    return first;
+}
+
+function decodeBrowserStatsSnapshot(envelope: ApiJsonValue): readonly BrowserStatsSnapshot[] {
     const event = isApiJsonObject(envelope) ? envelope.payload : undefined;
     const snapshot = isApiJsonObject(event) && event.kind === 'stats' ? event.payload : undefined;
     if (!isApiJsonObject(envelope) || typeof envelope.agentId !== 'string' || !isApiJsonObject(snapshot)) {
@@ -37,8 +50,16 @@ function decodeBrowserStatsPoint(envelope: ApiJsonValue): readonly V1dGrowthSamp
     }
     const atEpochMs = isPositiveNumber(snapshot.atEpochMs) ? snapshot.atEpochMs : envelope.atEpochMs;
     return isPositiveNumber(atEpochMs)
-        ? [{ atEpochMs, agentId: envelope.agentId, serviceId: null, value: toBrowserStatsValue(snapshot) }]
+        ? [{
+            point: { atEpochMs, agentId: envelope.agentId, serviceId: null, value: toBrowserStatsValue(snapshot) },
+            unforcedPageHeap: hasUnforcedPageHeap(snapshot)
+        }]
         : [];
+}
+
+function hasUnforcedPageHeap(snapshot: ApiJsonObject): boolean {
+    const pageHeap = isApiJsonObject(snapshot.browser) ? snapshot.browser.pageHeap : undefined;
+    return isApiJsonObject(pageHeap) && pageHeap.forcedGc !== true;
 }
 
 /**

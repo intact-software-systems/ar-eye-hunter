@@ -4,7 +4,7 @@ import type { V1dGrowthSamplePoint } from './v1d-growth-series.ts';
 
 export interface DecodedV1dGrowthPoints {
     readonly points: readonly V1dGrowthSamplePoint[];
-    /** Lines that did not decode, such as a line torn by the sampler's stop; each is skipped. */
+    /** Lines that did not decode, such as a line torn by the sampler's stop, and readings dropped as unforced; each is skipped. */
     readonly skippedLines: number;
 }
 
