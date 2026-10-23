@@ -22,26 +22,31 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
         }]
         : []),
     {
-        command:
-            'cd ../.. && API_BASE_URL=http://127.0.0.1:8080 npm --workspace ar-eye-hunter-v1 run dev -- --host 127.0.0.1 --port 5186',
+        command: fullStackEnabled
+            ? 'npm run build && npm run preview -- --host 127.0.0.1 --port 5186 --strictPort'
+            : 'npm run dev -- --host 127.0.0.1 --port 5186',
+        env: { API_BASE_URL: 'http://127.0.0.1:8080' },
         url: 'http://127.0.0.1:5186',
-        reuseExistingServer: !process.env.CI,
-        timeout: 60_000
+        reuseExistingServer: !fullStackEnabled && !process.env.CI,
+        timeout: fullStackEnabled ? 120_000 : 60_000
     }
 ];
 
 export default defineConfig({
     testDir: '../../tests/playwright/ar-eye-hunter',
-    timeout: 45_000,
+    // Multi-browser functional journeys include software-rendered arenas on hosted runners.
+    timeout: fullStackEnabled ? 120_000 : 45_000,
     expect: {
-        timeout: 8_000
+        timeout: fullStackEnabled ? 15_000 : 8_000
     },
     fullyParallel: false,
     workers: fullStackEnabled ? 1 : undefined,
     reporter: [['list']],
     use: {
         baseURL: 'http://127.0.0.1:5186',
-        trace: 'on-first-retry',
+        trace: fullStackEnabled
+            ? { mode: 'retain-on-failure', screenshots: false, snapshots: true }
+            : 'on-first-retry',
         screenshot: 'only-on-failure'
     },
     webServer,

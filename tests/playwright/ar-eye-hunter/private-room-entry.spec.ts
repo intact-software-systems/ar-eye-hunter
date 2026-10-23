@@ -139,7 +139,6 @@ test(
 
 test('rejects a rotated code after registration, accepts correction, and prioritizes a new invitation', async ({ browser }) => {
     test.skip(process.env.RALLAR_ARENA_FULL_STACK !== '1', 'Requires the local API-v1 memory fixture on port 8080.');
-    test.setTimeout(90_000);
     const hostContext = await browser.newContext();
     const guestContext = await browser.newContext();
     try {

@@ -212,7 +212,7 @@ jobs:
           npx playwright test --config apps/ar-eye-hunter-v1/playwright.config.ts \
             tests/playwright/ar-eye-hunter/open-arena-directory.spec.ts \
             tests/playwright/ar-eye-hunter/private-room-entry.spec.ts \
-            tests/playwright/ar-eye-hunter/quick-join.spec.ts --project=desktop-delivery --trace=retain-on-failure
+            tests/playwright/ar-eye-hunter/quick-join.spec.ts --project=desktop-delivery
 
       - name: Run Relic private room entry browser tests
         env:

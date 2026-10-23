@@ -262,10 +262,26 @@ checks pass. The hosted AR browser run additionally failed four scenarios; retai
 screenshots and diagnose their creation/startup behavior before treating the slice as complete.
 Game-room tests now have a separate blocking lane so both games have the full existing job budget.
 
-The next two steps are (1) resolve the hosted browser failures and finish the state-write comparison,
-then (2) publish passing CI evidence and the completed slice and wait for the maintainer to merge. Real PostgreSQL contention checks passed 14 tests;
-the unchanged medium-scale gate passed 2,842 steps with zero failures; the updated code-admission
-REST recipe passed all 31 steps. State-write comparison and final repository checks remain pending.
+The next hosted run passed every lane except the new game-room browser lane. Its retained traces show
+AR browser actions consuming the scenario deadline while creation, code rotation, and authentication
+requests complete promptly. The AR full-stack fixture now builds and previews the production app;
+all ten scenarios passed locally against that build. Full-stack functional bounds match Relic's
+existing 120-second scenario and 15-second assertion budgets. DOM/network failure traces and failure
+screenshots remain; trace filmstrip screenshots are disabled to reduce software-renderer overhead.
+All workload and participation assertions remain. Relic keeps its development server because its
+retained propagation diagnostics depend on the development-only runtime hook.
+
+The state-write comparison passed against production-source commit
+`204f3f032a0eae5107d1dc631c97d6836815502f`; subsequent changes are test/CI/plan metadata only.
+Real PostgreSQL contention checks passed 14 tests; the unchanged medium-scale gate passed 2,842 steps
+with zero failures; the updated code-admission REST recipe passed all 31 steps.
+
+The adjusted AR fixture passed all ten scenarios locally in four minutes. Its workflow tests passed
+14 cases, test typechecking found no new errors, and changed-style and reachability checks passed.
+Fresh review found no unresolved fixture issue.
+
+The next two steps are (1) verify the adjusted browser fixture in hosted CI, then (2) publish passing
+CI evidence and the completed slice and wait for the maintainer to merge.
 
 ## Final validation and delivery
 
