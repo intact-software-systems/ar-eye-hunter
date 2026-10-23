@@ -4,6 +4,7 @@ import {
     it
 } from 'vitest';
 
+import type { ScenarioRecipe } from '@shared-test/black-box-runner/recipes/read-scenario-recipe-includes.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 import {
@@ -11,6 +12,7 @@ import {
     V1D_GROWTH_SURVEY_SURFACE_IDS
 } from '../../../shared-test/rallar-bb-test/alm/growth-proof/v1d-growth-surfaces.ts';
 import { computeV1dGrowthVerdict } from '../../../shared-test/rallar-bb-test/alm/growth-proof/v1d-growth-verdict.ts';
+import { readApiV1Matrix, readApiV1Recipe } from '../api-v1-recipe-test-fixture.ts';
 
 describe('V1d growth surface classification', () => {
     it('classifies every surface of the growth survey, each with at least one reader', () => {
@@ -148,6 +150,23 @@ describe('V1d growth surface classification', () => {
         expect(computeOutcomes(14, 0)).toEqual(['pass', 'pass']);
         expect(computeOutcomes(12, 0)).toEqual(['fail', 'fail']);
         expect(computeOutcomes(14, 1)).toEqual(['pass', 'fail']);
+    });
+
+    it('counts per churn iteration the clients the medium-scale churn recipe registers', () => {
+        const authUsers = V1D_GROWTH_SURFACES.find((surface) => surface.readers.some((reader) => reader.path.includes('auth-users:by-username')));
+        const entry = readApiV1Matrix().entries.find((candidate) => candidate.id === 'api-v1-state-medium-scale-churn');
+        const churn = (readApiV1Recipe(entry!.recipe).steps ?? []).find((step) => step.name === 'runMediumScaleStateChurn');
+        const lanes = churn?.groups as ReadonlyArray<{
+            readonly name: string;
+            readonly steps: NonNullable<ScenarioRecipe['steps']>;
+        }>;
+        const clients = lanes
+            .filter((lane) => lane.name.startsWith('client-lane-'))
+            .reduce((total, lane) => total + Number(lane.steps.find((step) => step.type === 'loop')?.count), 0);
+
+        expect(authUsers?.classification).toMatchObject({
+            entityCount: { source: 'registrations', principalsPerChurnIteration: clients }
+        });
     });
 
     // A durable outbound pair keeps a message's rows until its deadline when that is later than the row ttl, and a

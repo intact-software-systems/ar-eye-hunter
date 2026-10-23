@@ -58,9 +58,7 @@ export function computeV1dGrowthAssessment(
         case 'declared-append-only':
             return computeDeclaredAppendOnlyAssessment(classification.history, input.series);
         case 'heap':
-            return input.agentReadings.length === 0
-                ? computeHeapAssessment(input.series)
-                : computePageHeapAssessment(input.agentReadings);
+            return computeHeapAssessment(input.series);
         case 'unbounded':
             return computeUnboundedAssessment(classification.missingBound, input.series);
     }
@@ -158,7 +156,8 @@ function computeTtlBeyondRunAssessment(ttlMs: number, series: readonly V1dGrowth
     const lastElapsedMs = toV1dGrowthLastElapsedMs(series);
     const slopePerHour = computeV1dGrowthSlopePerHour(series, lastElapsedMs - LAST_WINDOW_MS);
     const projectedRatePerHour = Math.max(runRatePerHour, slopePerHour ?? 0, 0);
-    const bound = toBound(Math.max(max, projectedRatePerHour * (ttlMs / HOUR_MS)));
+    const projected = Math.max(max, projectedRatePerHour * (ttlMs / HOUR_MS));
+    const bound = projected === 0 ? `ttl ${toHours(ttlMs)} h; projected ≤ 0 (no rows held)` : toBound(projected);
     const firstPlateau = computeV1dGrowthPlateau(series, 0);
     if (lastElapsedMs < LAST_WINDOW_MS + MIN_SLOPE_WINDOW_MS || slopePerHour === null) {
         return {
@@ -229,12 +228,16 @@ function computeHeapAssessment(series: readonly V1dGrowthSeriesPoint[]): V1dGrow
 }
 
 /**
- * A page heap is read without a forced collection, so its GC sawtooth swings by more than the heap's own growth: the
- * slope and the plateau factor read 5-minute bucket medians after the warm-up, and the raw peak is only reported.
+ * A `heap` surface's browser page heap. It is read without a forced collection, so its GC sawtooth swings by more
+ * than the heap's own growth: the slope and the plateau factor read 5-minute bucket medians after the warm-up, and
+ * the raw peak is only reported.
  */
-function computePageHeapAssessment(readings: readonly V1dGrowthAgentReading[]): V1dGrowthAssessment {
+export function computePageHeapAssessment(readings: readonly V1dGrowthAgentReading[]): V1dGrowthAssessment {
     const bound = `5-minute bucket medians after ${toV1dGrowthMinutes(HEAP_WARM_UP_MS)} min: slope within ` +
         `±${HEAP_SLOPE_LIMIT_BYTES_PER_HOUR / MB} MB/h; last < ${HEAP_MAX_PLATEAU_FACTOR} × first`;
+    if (readings.length === 0) {
+        return toV1dGrowthNoData(bound);
+    }
     const afterWarmUp = readings.filter((reading) => reading.elapsedMs >= HEAP_WARM_UP_MS);
     const medians = computeV1dGrowthAgentBucketMedians(afterWarmUp, PAGE_HEAP_BUCKET_MS);
     const max = computeV1dGrowthMax(afterWarmUp);

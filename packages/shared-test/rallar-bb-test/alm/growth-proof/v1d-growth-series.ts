@@ -28,6 +28,11 @@ export interface V1dGrowthPlateau {
     readonly value: number;
 }
 
+/** One reading of a sample the reader found a number in, with the agent it came from, if any. */
+interface V1dGrowthReading extends V1dGrowthSeriesPoint {
+    readonly agentId: string | null;
+}
+
 const HOUR_MS = 3_600_000;
 
 /** Browser agents report on their own clocks, so their readings meet in buckets of the sampler's interval. */
@@ -85,16 +90,12 @@ function toV1dGrowthReadings(
     points: readonly V1dGrowthSamplePoint[],
     reader: V1dGrowthReader,
     windowStartedAtEpochMs: number
-): readonly { elapsedMs: number; agentId: string | null; value: number; }[] {
-    return points
-        .map((point) => ({
-            elapsedMs: point.atEpochMs - windowStartedAtEpochMs,
-            agentId: point.agentId,
-            value: toV1dGrowthValue(point.value, reader)
-        }))
-        .filter((reading): reading is { elapsedMs: number; agentId: string | null; value: number; } =>
-            reading.elapsedMs >= 0 && reading.value !== undefined
-        );
+): readonly V1dGrowthReading[] {
+    return points.flatMap((point) => {
+        const elapsedMs = point.atEpochMs - windowStartedAtEpochMs;
+        const value = toV1dGrowthValue(point.value, reader);
+        return elapsedMs >= 0 && value !== undefined ? [{ elapsedMs, agentId: point.agentId, value }] : [];
+    });
 }
 
 function toV1dGrowthValue(value: ApiJsonValue, reader: V1dGrowthReader): number | undefined {
