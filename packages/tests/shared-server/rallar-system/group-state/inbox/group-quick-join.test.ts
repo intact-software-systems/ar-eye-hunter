@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { toGroupMutationEventId } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import type { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { GROUP_LIFECYCLE_POLICIES_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
@@ -22,6 +23,22 @@ import {
     waitForQueueEntry,
     type AuthorityHarness
 } from './group-state-inbox-test-runtime.ts';
+
+function createQuickJoinService(
+    harness: AuthorityHarness,
+    capacity: { readonly defaultMaxMembers: number | null; },
+    now: () => number
+): GroupQuickJoinService {
+    return new GroupQuickJoinService({
+        repository: harness.repository,
+        authSessions: harness.authSessions
+    }, {
+        capacity,
+        serviceId: 'quick-join-test',
+        now,
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS
+    });
+}
 
 async function quickJoin(
     harness: AuthorityHarness,
@@ -184,15 +201,7 @@ describe('Quick Join through AppInbox', () => {
     it('rejects a queued capacity fact changed without its authenticated proof', async () => {
         const harness = await createAuthorityHarness(['owner', 'bob']);
         await createRoom(harness, 'capacity', 'AR Eye Hunter');
-        const service = new GroupQuickJoinService({
-            repository: harness.repository,
-            authSessions: harness.authSessions
-        }, {
-            capacity: { defaultMaxMembers: 1 },
-            serviceId: 'quick-join-test',
-            now: () => harness.nowEpochMs,
-            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS
-        });
+        const service = createQuickJoinService(harness, { defaultMaxMembers: 1 }, () => harness.nowEpochMs);
         const authorized = await service.authorize({
             scope: SCOPE,
             request: { requestId: 'capacity-proof', includeEmpty: true }
@@ -214,15 +223,7 @@ describe('Quick Join through AppInbox', () => {
     it('stamps each capture with the finished-command window and an event id of its own ingress instant', async () => {
         const harness = await createAuthorityHarness(['owner', 'bob']);
         let nowEpochMs = harness.nowEpochMs;
-        const service = new GroupQuickJoinService({
-            repository: harness.repository,
-            authSessions: harness.authSessions
-        }, {
-            capacity: { defaultMaxMembers: null },
-            serviceId: 'quick-join-test',
-            now: () => nowEpochMs,
-            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS
-        });
+        const service = createQuickJoinService(harness, { defaultMaxMembers: null }, () => nowEpochMs);
         const authorized = await service.authorize({
             scope: SCOPE,
             request: { requestId: 'window-capture', includeEmpty: true }
@@ -236,6 +237,8 @@ describe('Quick Join through AppInbox', () => {
         expect(first.facts.expireAtEpochMs).toBe(harness.nowEpochMs + TEST_APP_INBOX_FINISHED_RETENTION_MS);
         expect(replayAfterWindow.facts.expireAtEpochMs).toBe(nowEpochMs + TEST_APP_INBOX_FINISHED_RETENTION_MS);
         expect(replayAfterWindow.facts.eventId).not.toBe(first.facts.eventId);
+        expect(first.facts.eventId).toBe(toGroupMutationEventId(first.facts.commandHash, harness.nowEpochMs));
+        expect(replayAfterWindow.facts.eventId).toBe(toGroupMutationEventId(replayAfterWindow.facts.commandHash, nowEpochMs));
     });
 
     it('keeps an existing approval request pending and returns unavailable', async () => {

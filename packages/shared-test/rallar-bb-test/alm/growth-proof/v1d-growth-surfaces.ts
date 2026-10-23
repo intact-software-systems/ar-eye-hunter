@@ -32,7 +32,8 @@ const API_HEAP: V1dGrowthReader = {
 };
 /**
  * A page's heap after a forced collection: every product structure of the page plus the black-box test runtime's own
- * event history, which the workload bounds and surface 82 reads. A page heap row judges that sum.
+ * event history, which the workload bounds and the black-box runtime event history surface reads. A page heap row
+ * judges that sum.
  */
 const PAGE_HEAP: V1dGrowthReader = toBrowserReading('browser', 'pageHeap', 'usedJSHeapSize');
 const CONTROL_RSS: V1dGrowthReader = {

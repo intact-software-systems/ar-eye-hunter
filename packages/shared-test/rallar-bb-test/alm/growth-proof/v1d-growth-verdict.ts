@@ -1,6 +1,7 @@
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
-import { computePageHeapAssessment, computeV1dGrowthAssessment } from './compute-v1d-growth-assessment.ts';
+import { computeV1dGrowthAssessment } from './compute-v1d-growth-assessment.ts';
+import { computeV1dPageHeapAssessment } from './compute-v1d-page-heap-assessment.ts';
 import type { V1dGrowthAssessment, V1dGrowthOutcome } from './v1d-growth-assessment.ts';
 import {
     isApiJsonObject,
@@ -62,7 +63,7 @@ export function computeV1dGrowthVerdict(input: V1dGrowthVerdictInput): V1dGrowth
     const rows = [
         ...input.surfaces.flatMap((surface) =>
             surface.readers.flatMap((reader) =>
-                toServiceIds(input.samples[reader.source]).map((serviceId) =>
+                toServiceIds(input.samples[reader.source], reader.source, input.run.workload).map((serviceId) =>
                     computeV1dGrowthVerdictRow({ surface, reader, serviceId, verdictInput: input })
                 )
             )
@@ -106,7 +107,7 @@ function computeV1dGrowthVerdictRow(input: ComputeV1dGrowthVerdictRowInput): V1d
         reader: `${reader.source} ${reader.path.join('.')}${serviceId === null ? '' : ` ${serviceId}`}`,
         growthClass: surface.classification.growthClass,
         ...(pageHeap
-            ? computePageHeapAssessment(
+            ? computeV1dPageHeapAssessment(
                 toV1dGrowthAgentReadings(readerPoints, reader, input.verdictInput.run.windowStartedAtEpochMs)
             )
             : computeV1dGrowthClassAssessment(input, readerPoints))
@@ -135,10 +136,25 @@ function computeV1dGrowthClassAssessment(
     });
 }
 
-/** One row per API process where the readings name their process; one row otherwise, a no-data row without any. */
-function toServiceIds(points: readonly V1dGrowthSamplePoint[]): readonly (string | null)[] {
-    const serviceIds = [...new Set(points.map((point) => point.serviceId))];
-    return serviceIds.length === 0 ? [null] : serviceIds.sort();
+/**
+ * One row per API process where the readings name their process; one row otherwise, a no-data row without any. Where
+ * some of the processes the run recorded starting sampled no heap, each absent one gets a no-data row of its own.
+ */
+function toServiceIds(
+    points: readonly V1dGrowthSamplePoint[],
+    source: V1dGrowthSampleSource,
+    workload: V1dGrowthWorkload | null
+): readonly (string | null)[] {
+    const serviceIds = [...new Set(points.map((point) => point.serviceId))].sort();
+    if (serviceIds.length === 0) {
+        return [null];
+    }
+    const named = serviceIds.filter((serviceId) => serviceId !== null).length;
+    const absent = source === 'api-heap' && workload !== null && named > 0 ? workload.apiProcesses - named : 0;
+    return [
+        ...serviceIds,
+        ...Array.from({ length: Math.max(absent, 0) }, (_, index) => `unreported process ${index + 1}`)
+    ];
 }
 
 function toUnreadNamespaces(input: V1dGrowthVerdictInput): readonly string[] {

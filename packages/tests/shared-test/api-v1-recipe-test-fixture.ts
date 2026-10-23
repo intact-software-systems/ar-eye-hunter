@@ -39,6 +39,24 @@ export function readApiV1Matrix(): { entries: ApiV1MatrixEntry[]; } {
     return JSON.parse(readFileSync(path.join(runnerRoot, 'recipe-matrix.json'), 'utf8'));
 }
 
+export function readApiV1MatrixEntry(id: string): ApiV1MatrixEntry {
+    const entry = readApiV1Matrix().entries.find((candidate) => candidate.id === id);
+    if (entry === undefined) {
+        throw new TypeError(`API-v1 recipe matrix has no entry ${id}.`);
+    }
+    return entry;
+}
+
+/** The clients one medium-scale churn iteration registers: the loop counts of its client lanes, added up. */
+export function readMediumScaleChurnClientCount(): number {
+    const entry = readApiV1MatrixEntry('api-v1-state-medium-scale-churn');
+    const churn = (readApiV1Recipe(entry.recipe).steps ?? []).find((step) => step.name === 'runMediumScaleStateChurn');
+    const lanes = (churn?.groups ?? []) as ReadonlyArray<ApiV1RecipeStepGroup & { readonly name: string; }>;
+    return lanes
+        .filter((lane) => lane.name.startsWith('client-lane-'))
+        .reduce((total, lane) => total + Number(lane.steps?.find((step) => step.type === 'loop')?.count), 0);
+}
+
 export function readApiV1Recipe(relativePath: string): ScenarioRecipe {
     const recipe = JSON.parse(
         readFileSync(path.join(runnerRoot, relativePath), 'utf8')

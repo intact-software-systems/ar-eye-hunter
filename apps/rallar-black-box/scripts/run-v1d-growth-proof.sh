@@ -103,6 +103,7 @@ CONTROL_PID=""
 SPA_PID=""
 WORKER_PID=""
 RUNNER_PID=""
+RUNNER_OUTCOME=""
 CHURN_PID=""
 SAMPLER_PID=""
 DATABASE_CREATED=false
@@ -358,6 +359,18 @@ run_sampler_loop() {
 	sample_once
 }
 
+# Fixes RUNNER_OUTCOME at the runner's exit; leaves it empty while the runner runs, and keeps the first outcome after.
+settle_runner_outcome() {
+	if [[ -n "$RUNNER_OUTCOME" ]] || kill -0 "$RUNNER_PID" 2>/dev/null; then
+		return 0
+	fi
+	if wait "$RUNNER_PID" 2>/dev/null; then
+		RUNNER_OUTCOME=passed
+	else
+		RUNNER_OUTCOME=failed
+	fi
+}
+
 wait_for_churn_drain() {
 	local deadline=$(($(date +%s) + CHURN_DRAIN_TIMEOUT_SECONDS))
 	while [[ -n "$CHURN_PID" ]] && kill -0 "$CHURN_PID" 2>/dev/null && (($(date +%s) < deadline)); do
@@ -392,7 +405,8 @@ wait_for_manifest() {
 
 # The verdict fails without a passed manifest and a clean churn loop, so the workload's outcome joins run.json; the
 # iterations started and the manifest's agents count the accounts the run registered, and the manifest's event history
-# bound is the cap of the test runtime's retained events.
+# bound is the cap of the test runtime's retained events, and the API processes started say how many heap sample
+# streams the verdict expects.
 record_workload() {
 	local runner="$1" distributed failed_run_ids
 	distributed="$(read_distributed_run)"
@@ -402,6 +416,7 @@ record_workload() {
 		--argjson distributed "$distributed" \
 		--argjson manifestAgents "$AGENT_COUNT" \
 		--argjson eventHistoryMaxEvents "$EVENT_HISTORY_MAX_EVENTS" \
+		--argjson apiProcesses "${#API_PORTS[@]}" \
 		--argjson churnStarted "$(count_churn_iterations started)" \
 		--argjson churnPassed "$(count_churn_iterations passed)" \
 		--argjson churnFailedRunIds "$failed_run_ids" \
@@ -410,6 +425,7 @@ record_workload() {
 			manifestCompletedAtEpochMs: ($distributed.completedAtEpochMs // null),
 			manifestAgents: $manifestAgents,
 			eventHistoryMaxEvents: $eventHistoryMaxEvents,
+			apiProcesses: $apiProcesses,
 			churnStarted: $churnStarted, churnPassed: $churnPassed, churnFailedRunIds: $churnFailedRunIds}' \
 		"$OUT_DIR/run.json" >"$OUT_DIR/run.json.next"
 	mv "$OUT_DIR/run.json.next" "$OUT_DIR/run.json"
@@ -476,19 +492,22 @@ start_runner
 run_churn_loop &
 CHURN_PID=$!
 
-while (($(date +%s) < WINDOW_END_EPOCH_S)); do
+while (($(date +%s) < WINDOW_END_EPOCH_S)) && [[ "$RUNNER_OUTCOME" != failed ]]; do
 	sleep "$SAMPLE_INTERVAL_SECONDS"
+	settle_runner_outcome
 done
-log "window ended; letting the current churn iteration and a due manifest finish"
-wait_for_churn_drain
-wait "$SAMPLER_PID" 2>/dev/null || true
-wait_for_manifest
-if kill -0 "$RUNNER_PID" 2>/dev/null; then
-	RUNNER_OUTCOME=outlasted-window
-elif wait "$RUNNER_PID" 2>/dev/null; then
-	RUNNER_OUTCOME=passed
+if [[ "$RUNNER_OUTCOME" == failed ]]; then
+	log "the manifest runner failed before the window ended; stopping early"
+	stop_group "$SAMPLER_PID"
+	stop_group "$CHURN_PID"
+	sample_once
 else
-	RUNNER_OUTCOME=failed
+	log "window ended; letting the current churn iteration and a due manifest finish"
+	wait_for_churn_drain
+	wait "$SAMPLER_PID" 2>/dev/null || true
+	wait_for_manifest
+	settle_runner_outcome
+	RUNNER_OUTCOME="${RUNNER_OUTCOME:-outlasted-window}"
 fi
 record_workload "$RUNNER_OUTCOME"
 log "runner: $RUNNER_OUTCOME; churn iterations: $(count_churn_iterations passed) passed, $(count_churn_iterations failed) failed"

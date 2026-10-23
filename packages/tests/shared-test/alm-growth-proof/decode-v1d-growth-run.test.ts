@@ -70,6 +70,7 @@ describe('V1d growth run decoding', () => {
             manifestCompletedAtEpochMs: null,
             manifestAgents: 15,
             eventHistoryMaxEvents: 10_000,
+            apiProcesses: 3,
             churnStarted: 3,
             churnPassed: 1,
             churnFailedRunIds: ['churn-002']
@@ -93,6 +94,10 @@ describe('V1d growth run decoding', () => {
             'run.json workload is not a recorded runner outcome and churn count'
         ]);
         expect(toLeft(withoutEventHistoryBound)).toEqual([
+            'run.json workload is not a recorded runner outcome and churn count'
+        ]);
+        const { apiProcesses: _apiProcesses, ...withoutApiProcesses } = workload;
+        expect(toLeft(withoutApiProcesses)).toEqual([
             'run.json workload is not a recorded runner outcome and churn count'
         ]);
         expect(toLeft({ ...workload, eventHistoryMaxEvents: 0 })).toEqual([
@@ -227,5 +232,28 @@ describe('V1d growth run decoding', () => {
                 samples: unforced!.samples
             }).rows[0]?.outcome
         ).toBe('no-data');
+    });
+
+    it('counts each unforced page heap reading it drops once in the skipped lines, as it counts an unforced API sample', () => {
+        const toPoll = (forcedGc: boolean) =>
+            JSON.stringify({
+                atEpochMs: STARTED_AT_EPOCH_MS + 30_000,
+                value: {
+                    stats: [
+                        toStatsEnvelope('controller-02', STARTED_AT_EPOCH_MS + 5_000, {
+                            atEpochMs: STARTED_AT_EPOCH_MS + 5_000,
+                            browser: { pageHeap: { ...PAGE_HEAP, forcedGc } }
+                        }),
+                        toStatsEnvelope('controller-03', STARTED_AT_EPOCH_MS + 5_000, {
+                            atEpochMs: STARTED_AT_EPOCH_MS + 5_000,
+                            browser: { pageHeap: { ...PAGE_HEAP, forcedGc: true } }
+                        })
+                    ]
+                }
+            });
+        const overlapping = [toPoll(false), toPoll(false)].join('\n');
+
+        expect(decodeV1dGrowthRun(toFiles({ controlRun: overlapping })).right?.skippedLines).toBe(1);
+        expect(decodeV1dGrowthRun(toFiles({ controlRun: toPoll(true) })).right?.skippedLines).toBe(0);
     });
 });

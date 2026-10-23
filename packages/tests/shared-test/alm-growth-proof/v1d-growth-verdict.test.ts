@@ -28,6 +28,7 @@ const COMPLETED_RUN: V1dGrowthRun = {
         manifestCompletedAtEpochMs: WINDOW_STARTED_AT_EPOCH_MS + 4_740_000,
         manifestAgents: 15,
         eventHistoryMaxEvents: 10_000,
+        apiProcesses: 2,
         churnStarted: 30,
         churnPassed: 30,
         churnFailedRunIds: []
@@ -76,6 +77,20 @@ function toPageHeapPoints(minutes: number, heapAt: (elapsedMinutes: number) => n
             { agentId, serviceId: null },
             minutes,
             (minute) => ({ browser: { pageHeap: { usedJSHeapSize: heapAt(minute) + agent * MB } } })
+        )
+    );
+}
+
+/** One agent per entry, each reporting every 30 s for `minutes` along its own heap curve. */
+function toAgentsPageHeapPoints(
+    minutes: number,
+    agents: ReadonlyArray<readonly [agentId: string, heapAt: (elapsedMinutes: number) => number, minutes?: number]>
+): readonly V1dGrowthSamplePoint[] {
+    return agents.flatMap(([agentId, heapAt, agentMinutes]) =>
+        toReporterPoints(
+            { agentId, serviceId: null },
+            agentMinutes ?? minutes,
+            (minute) => ({ browser: { pageHeap: { usedJSHeapSize: heapAt(minute) } } })
         )
     );
 }
@@ -191,6 +206,27 @@ describe('V1d growth verdict', () => {
 
         expect(row.outcome).toBe('fail');
         expect(row.reason).toContain('beyond');
+    });
+
+    it('fails a registered-account surface at a sample whose ceiling reading is missing, instead of passing it', () => {
+        const registered: V1dGrowthClassification = {
+            growthClass: 'durable',
+            entity: 'accounts',
+            entityCount: {
+                source: 'registrations',
+                principalsPerChurnIteration: 100,
+                ceiling: { source: 'postgres', path: ['tables', 'ceiling'], absent: 'no-reading', neverExpiringPath: null }
+            },
+            rowsPerEntity: 1
+        };
+        const toValue = (minute: number) => ({
+            tables: { surface_under_test: 100 + Math.round(minute), ...(minute === 10 ? {} : { ceiling: 10_000 }) }
+        });
+        const row = computeSingleRow(toSurface(registered), toSamples({ postgres: toPoints(20, toValue) }));
+
+        expect(row.outcome).toBe('fail');
+        expect(row.reason).toContain('no ceiling reading');
+        expect(row.reason).toContain('10 min');
     });
 
     it('declares an accepted append-only history: reports its growth, counts it apart from passes, fails nothing', () => {
@@ -318,6 +354,28 @@ describe('V1d growth verdict', () => {
         });
     });
 
+    it('reports a missing API process\'s heap as a no-data row of its own, from the process count the run recorded', () => {
+        const flat = (minute: number) => ({ heapUsed: 60 * MIB + (Math.round(minute * 2) % 2 === 0 ? 0 : MIB) });
+        const verdict = computeV1dGrowthVerdict({
+            surveyedSurfaceIds: [1],
+            surfaces: [toSurface({ growthClass: 'heap' }, HEAP_READER)],
+            run: { ...COMPLETED_RUN, workload: { ...COMPLETED_RUN.workload!, apiProcesses: 3 } },
+            samples: toSamples({
+                'api-heap': [
+                    ...toReporterPoints({ agentId: null, serviceId: 'server-a' }, 75, flat),
+                    ...toReporterPoints({ agentId: null, serviceId: 'server-b' }, 75, flat)
+                ]
+            })
+        });
+
+        expect(verdict.rows.map((row) => [row.reader, row.outcome])).toEqual([
+            ['api-heap heapUsed server-a', 'pass'],
+            ['api-heap heapUsed server-b', 'pass'],
+            ['api-heap heapUsed unreported process 1', 'no-data']
+        ]);
+        expect(verdict.passed).toBe(false);
+    });
+
     it('passes a page heap whose GC sawtooth swings wide around flat 5-minute medians, and reports its raw peak', () => {
         const row = computeSingleRow(
             toSurface({ growthClass: 'heap' }, PAGE_HEAP_READER),
@@ -325,11 +383,11 @@ describe('V1d growth verdict', () => {
         );
 
         expect(row.outcome).toBe('pass');
-        expect(row.firstPlateau).toEqual({ atElapsedMs: 10 * MINUTE_MS, value: 61 * MB });
+        expect(row.firstPlateau).toEqual({ atElapsedMs: 10 * MINUTE_MS, value: 60 * MB });
         expect(row.slopePerHour).toBe(0);
         expect(row.max).toBe(192 * MB);
         expect(row.bound).toContain('5-minute bucket medians');
-        expect(row.bound).toContain('product structures + bounded harness event history');
+        expect(row.bound).toContain('product structures + the bounded black-box event history');
     });
 
     it('fails a page heap whose 5-minute medians rise 20 MB an hour under the sawtooth', () => {
@@ -344,12 +402,122 @@ describe('V1d growth verdict', () => {
         expect(row.reason).toContain('bucket median');
     });
 
+    it('fails the page heap row when one of three agents climbs 20 MB an hour, and names that agent', () => {
+        const rising = (minute: number) => toSawtoothMb(minute) + Math.round((minute / 60) * 20 * MB);
+        const row = computeSingleRow(
+            toSurface({ growthClass: 'heap' }, PAGE_HEAP_READER),
+            toSamples({
+                'browser-stats': toAgentsPageHeapPoints(75, [
+                    ['controller-01', toSawtoothMb],
+                    ['controller-02', toSawtoothMb],
+                    ['controller-03', rising]
+                ])
+            })
+        );
+
+        expect(row.outcome).toBe('fail');
+        expect(row.slopePerHour).toBeCloseTo(20 * MB, -5);
+        expect(row.reason).toContain('controller-03');
+        expect(row.reason).not.toContain('controller-01');
+    });
+
+    it('passes the page heap row only when every agent is flat, and judges no cross-agent median', () => {
+        const flatAt = (megabytes: number) => () => megabytes * MB;
+        const row = computeSingleRow(
+            toSurface({ growthClass: 'heap' }, PAGE_HEAP_READER),
+            toSamples({
+                'browser-stats': toAgentsPageHeapPoints(75, [
+                    ['controller-01', flatAt(40)],
+                    ['controller-02', flatAt(80)],
+                    ['controller-03', flatAt(120)]
+                ])
+            })
+        );
+
+        expect(row.outcome).toBe('pass');
+        expect(row.max).toBe(120 * MB);
+    });
+
+    it('reports the page heap row as insufficient, not passed, when one agent has fewer than three complete buckets', () => {
+        const flat = () => 60 * MB;
+        const row = computeSingleRow(
+            toSurface({ growthClass: 'heap' }, PAGE_HEAP_READER),
+            toSamples({
+                'browser-stats': toAgentsPageHeapPoints(75, [
+                    ['controller-01', flat],
+                    ['controller-02', flat],
+                    ['controller-03', flat, 19]
+                ])
+            })
+        );
+
+        expect(row.outcome).toBe('insufficient');
+        expect(row.reason).toContain('controller-03');
+        expect(row.reason).toContain('3 complete 5-minute buckets');
+    });
+
+    it('judges an agent that fell silent after minute 9 as insufficient, never leaving it out of the row', () => {
+        const flat = () => 60 * MB;
+        const row = computeSingleRow(
+            toSurface({ growthClass: 'heap' }, PAGE_HEAP_READER),
+            toSamples({
+                'browser-stats': toAgentsPageHeapPoints(75, [
+                    ['controller-01', flat],
+                    ['controller-02', flat],
+                    ['controller-03', flat, 9]
+                ])
+            })
+        );
+
+        expect(row.outcome).toBe('insufficient');
+        expect(row.reason).toContain('controller-03');
+        expect(row.reason).not.toContain('controller-01');
+    });
+
+    it('bounds each agent\'s complete buckets by its own last reading, so one reading in a third bucket is not a bucket', () => {
+        const flat = () => 60 * MB;
+        const row = computeSingleRow(
+            toSurface({ growthClass: 'heap' }, PAGE_HEAP_READER),
+            toSamples({
+                'browser-stats': toAgentsPageHeapPoints(75, [
+                    ['controller-01', flat],
+                    ['controller-02', flat],
+                    ['controller-03', flat, 20]
+                ])
+            })
+        );
+
+        expect(row.outcome).toBe('insufficient');
+        expect(row.reason).toContain('controller-03');
+    });
+
+    it('reports every agent insufficient, without throwing, when all readings predate the warm-up', () => {
+        const flat = () => 60 * MB;
+        const row = computeSingleRow(
+            toSurface({ growthClass: 'heap' }, PAGE_HEAP_READER),
+            toSamples({
+                'browser-stats': toAgentsPageHeapPoints(9, [['controller-01', flat], ['controller-02', flat]])
+            })
+        );
+
+        expect(row.outcome).toBe('insufficient');
+        expect(row.reason).toContain('controller-01');
+        expect(row.reason).toContain('controller-02');
+    });
+
+    it('does not name a surface number in the page heap bound', () => {
+        const row = computeSingleRow(toSurface({ growthClass: 'heap' }, PAGE_HEAP_READER), toSamples({}));
+
+        expect(row.bound).not.toMatch(/surface \d+/u);
+        expect(row.bound).toContain('black-box event history');
+    });
+
     it('reports a page heap no agent sampled as no data against its 5-minute bucket medians', () => {
         const row = computeSingleRow(toSurface({ growthClass: 'heap' }, PAGE_HEAP_READER), toSamples({}));
 
         expect(row.outcome).toBe('no-data');
         expect(row.bound).toContain('5-minute bucket medians');
-        expect(row.bound).toContain('product structures + bounded harness event history');
+        expect(row.bound).toContain('product structures + the bounded black-box event history');
     });
 
     it('reports a page heap as insufficient with fewer than three complete 5-minute buckets after its warm-up', () => {

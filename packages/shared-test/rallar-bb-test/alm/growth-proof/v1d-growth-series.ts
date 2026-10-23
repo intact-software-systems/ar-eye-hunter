@@ -61,29 +61,50 @@ export function toV1dGrowthAgentReadings(
     );
 }
 
+/** One agent's own series, kept apart from every other agent's. */
+export interface V1dGrowthAgentSeries {
+    readonly agentId: string;
+    readonly series: readonly V1dGrowthSeriesPoint[];
+}
+
 /**
- * The median of each agent's readings in each bucket, then the median of those across the agents: one point per
- * bucket, at its start. Only complete buckets count: a bucket the readings end inside is left out.
+ * The median of each agent's readings from `fromElapsedMs` on in each bucket: one series per agent that reported
+ * anything, one point per bucket, at its start, the agents in name order. An agent with no reading from
+ * `fromElapsedMs` on has an empty series. Only complete buckets count: a bucket the agent's own last reading falls
+ * inside is left out.
  */
 export function computeV1dGrowthAgentBucketMedians(
+    readings: readonly V1dGrowthAgentReading[],
+    bucketMs: number,
+    fromElapsedMs: number
+): readonly V1dGrowthAgentSeries[] {
+    const byAgent = new Map<string, V1dGrowthAgentReading[]>();
+    for (const reading of readings) {
+        byAgent.set(reading.agentId, [...(byAgent.get(reading.agentId) ?? []), reading]);
+    }
+    return [...byAgent.entries()]
+        .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+        .map(([agentId, own]) => ({
+            agentId,
+            series: toCompleteBucketMedians(own.filter((reading) => reading.elapsedMs >= fromElapsedMs), bucketMs)
+        }));
+}
+
+/** One agent's readings as bucket medians, leaving out the bucket its last reading falls inside. */
+function toCompleteBucketMedians(
     readings: readonly V1dGrowthAgentReading[],
     bucketMs: number
 ): readonly V1dGrowthSeriesPoint[] {
     const lastElapsedMs = readings.reduce((last, reading) => Math.max(last, reading.elapsedMs), 0);
-    const byBucketAndAgent = new Map<number, Map<string, number[]>>();
+    const byBucket = new Map<number, number[]>();
     for (const reading of readings) {
         const bucket = Math.floor(reading.elapsedMs / bucketMs) * bucketMs;
-        const byAgent = byBucketAndAgent.get(bucket) ?? new Map<string, number[]>();
-        byAgent.set(reading.agentId, [...(byAgent.get(reading.agentId) ?? []), reading.value]);
-        byBucketAndAgent.set(bucket, byAgent);
+        byBucket.set(bucket, [...(byBucket.get(bucket) ?? []), reading.value]);
     }
-    return [...byBucketAndAgent.entries()]
+    return [...byBucket.entries()]
         .filter(([bucket]) => bucket + bucketMs <= lastElapsedMs)
         .sort(([left], [right]) => left - right)
-        .map(([bucket, byAgent]) => ({
-            elapsedMs: bucket,
-            value: computeV1dGrowthMedian([...byAgent.values()].map(computeV1dGrowthMedian))
-        }));
+        .map(([bucket, values]) => ({ elapsedMs: bucket, value: computeV1dGrowthMedian(values) }));
 }
 
 function toV1dGrowthReadings(
