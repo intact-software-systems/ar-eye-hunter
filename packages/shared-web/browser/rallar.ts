@@ -177,6 +177,8 @@ export type {
     RallarRoomFormationWaitStatus,
     RallarRoomGovernanceOptions,
     RallarRoomInviteOptions,
+    RallarRoomJoinCodeOptions,
+    RallarRoomJoinPartialFailureError,
     RallarRoomLayout,
     RallarRoomLayoutEvent,
     RallarRoomLayoutListener,
@@ -308,3 +310,5 @@ export type { ALStorageUnavailable, ALStorageUnavailableCause } from '@shared/al
 export type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 export type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
+
+export type { GroupJoinCodeResponse } from '@shared/api/state-types.ts';

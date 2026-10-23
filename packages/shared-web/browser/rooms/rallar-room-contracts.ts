@@ -19,6 +19,7 @@ import type {
     GroupRole,
     GroupSnapshot,
     GroupStatus,
+    RotateStateGroupJoinCodeBody,
     StateEventCursor,
     StateScope,
     UpdateStateGroupBody
@@ -121,6 +122,9 @@ export interface RallarRoomInviteOptions extends RallarScopedOperationOptions {
     readonly invitationExpiresAtEpochMs?: number;
     readonly reason?: string;
 }
+
+export interface RallarRoomJoinCodeOptions
+    extends RallarRoomGovernanceOptions, Pick<RotateStateGroupJoinCodeBody, 'joinCode' | 'expiresAtEpochMs'> {}
 
 export interface RallarRoomGovernanceOptions extends RallarScopedOperationOptions {
     readonly reason?: string;

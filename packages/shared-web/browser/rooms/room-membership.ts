@@ -1,15 +1,18 @@
 import type {
     RallarRoomGovernanceOptions,
     RallarRoomInviteOptions,
+    RallarRoomJoinCodeOptions,
     RallarRoomTargetInput
 } from './rallar-room-contracts.ts';
 import { requireOwnWsConnectionGenerationId } from './require-own-ws-connection-generation-id.ts';
-import type { GroupRef, GroupRole, GroupSnapshot } from './room-group-state-translation.ts';
+import type { GroupJoinCodeResponse, GroupRef, GroupRole, GroupSnapshot } from './room-group-state-translation.ts';
 import {
     acceptStateGroupInvite,
     banStateGroupMember,
     createStateGroupInvite,
     removeStateGroupMember,
+    revokeStateGroupInvite,
+    rotateStateGroupJoinCode,
     setStateGroupMemberRole,
     transferStateGroupOwnership,
     unbanStateGroupMember
@@ -19,6 +22,51 @@ import { runRoomTargetMutation, type RunRoomTargetMutationInput } from './update
 type RoomMembershipInput = Omit<RunRoomTargetMutationInput, 'room' | 'options' | 'execute'> & {
     readonly room: string | GroupRef | RallarRoomTargetInput;
 };
+
+export async function revokeRoomInvite(
+    input: RoomMembershipInput & { readonly principalId: string; readonly options?: RallarRoomGovernanceOptions; }
+): Promise<GroupSnapshot> {
+    const options = input.options ?? {};
+    return await runRoomTargetMutation({
+        ...input,
+        options,
+        execute: async ({ roomId, session, scope, policies, assertCurrent }) =>
+            await revokeStateGroupInvite({
+                groupId: roomId,
+                targetPrincipalId: input.principalId,
+                request: options.reason === undefined ? {} : { reason: options.reason },
+                actorPrincipalId: session.clientId,
+                sessionId: session.sessionId,
+                scope,
+                policies,
+                assertCurrent
+            })
+    });
+}
+
+export async function rotateRoomJoinCode(
+    input: RoomMembershipInput & { readonly options?: RallarRoomJoinCodeOptions; }
+): Promise<GroupJoinCodeResponse> {
+    const options = input.options ?? {};
+    return await runRoomTargetMutation<GroupJoinCodeResponse>({
+        ...input,
+        options,
+        execute: async ({ roomId, session, scope, policies, assertCurrent }) =>
+            await rotateStateGroupJoinCode({
+                groupId: roomId,
+                request: {
+                    ...(options.joinCode === undefined ? {} : { joinCode: options.joinCode }),
+                    ...(options.expiresAtEpochMs === undefined ? {} : { expiresAtEpochMs: options.expiresAtEpochMs }),
+                    ...(options.reason === undefined ? {} : { reason: options.reason })
+                },
+                actorPrincipalId: session.clientId,
+                sessionId: session.sessionId,
+                scope,
+                policies,
+                assertCurrent
+            })
+    });
+}
 
 export async function createRoomInvite(
     input: RoomMembershipInput & {
@@ -36,7 +84,7 @@ export async function createRoomInvite(
     return await runRoomTargetMutation({
         ...input,
         options,
-        execute: async ({ roomId, session, scope, policies }) =>
+        execute: async ({ roomId, session, scope, policies, assertCurrent }) =>
             await createStateGroupInvite({
                 groupId: roomId,
                 targetPrincipalId: input.principalId,
@@ -44,7 +92,8 @@ export async function createRoomInvite(
                 actorPrincipalId: session.clientId,
                 sessionId: session.sessionId,
                 scope,
-                policies
+                policies,
+                assertCurrent
             })
     });
 }
@@ -57,7 +106,7 @@ export async function acceptRoomInvite(
     return await runRoomTargetMutation({
         ...input,
         options: input.options ?? {},
-        execute: async ({ roomId, session, scope, policies, generationId, context, signal }) =>
+        execute: async ({ roomId, session, scope, policies, generationId, context, signal, assertCurrent }) =>
             await acceptStateGroupInvite({
                 groupId: roomId,
                 actorPrincipalId: session.clientId,
@@ -65,7 +114,8 @@ export async function acceptRoomInvite(
                 generationId,
                 connectionGenerationId: await requireOwnWsConnectionGenerationId(context, signal),
                 scope,
-                policies
+                policies,
+                assertCurrent
             })
     });
 }
@@ -108,7 +158,7 @@ export async function setRoomMemberRole(
     return await runRoomTargetMutation({
         ...input,
         options,
-        execute: async ({ roomId, session, scope, policies }) =>
+        execute: async ({ roomId, session, scope, policies, assertCurrent }) =>
             await setStateGroupMemberRole({
                 groupId: roomId,
                 targetPrincipalId: input.principalId,
@@ -119,7 +169,8 @@ export async function setRoomMemberRole(
                 actorPrincipalId: session.clientId,
                 sessionId: session.sessionId,
                 scope,
-                policies
+                policies,
+                assertCurrent
             })
     });
 }
@@ -134,7 +185,7 @@ export async function transferRoomOwnership(
     return await runRoomTargetMutation({
         ...input,
         options,
-        execute: async ({ roomId, session, scope, policies }) =>
+        execute: async ({ roomId, session, scope, policies, assertCurrent }) =>
             await transferStateGroupOwnership({
                 groupId: roomId,
                 request: {
@@ -144,7 +195,8 @@ export async function transferRoomOwnership(
                 actorPrincipalId: session.clientId,
                 sessionId: session.sessionId,
                 scope,
-                policies
+                policies,
+                assertCurrent
             })
     });
 }
@@ -158,42 +210,24 @@ async function governRoomMember(
 ): Promise<GroupSnapshot> {
     const options = input.options ?? {};
     const request = options.reason === undefined ? {} : { reason: options.reason };
+    const changeMembership = input.action === 'remove'
+        ? removeStateGroupMember
+        : input.action === 'ban'
+        ? banStateGroupMember
+        : unbanStateGroupMember;
     return await runRoomTargetMutation({
         ...input,
         options,
-        execute: async ({ roomId, session, scope, policies }) => {
-            switch (input.action) {
-                case 'remove':
-                    return await removeStateGroupMember({
-                        groupId: roomId,
-                        targetPrincipalId: input.principalId,
-                        request,
-                        actorPrincipalId: session.clientId,
-                        sessionId: session.sessionId,
-                        scope,
-                        policies
-                    });
-                case 'ban':
-                    return await banStateGroupMember({
-                        groupId: roomId,
-                        targetPrincipalId: input.principalId,
-                        request,
-                        actorPrincipalId: session.clientId,
-                        sessionId: session.sessionId,
-                        scope,
-                        policies
-                    });
-                case 'unban':
-                    return await unbanStateGroupMember({
-                        groupId: roomId,
-                        targetPrincipalId: input.principalId,
-                        request,
-                        actorPrincipalId: session.clientId,
-                        sessionId: session.sessionId,
-                        scope,
-                        policies
-                    });
-            }
-        }
+        execute: async ({ roomId, session, scope, policies, assertCurrent }) =>
+            await changeMembership({
+                groupId: roomId,
+                targetPrincipalId: input.principalId,
+                request,
+                actorPrincipalId: session.clientId,
+                sessionId: session.sessionId,
+                scope,
+                policies,
+                assertCurrent
+            })
     });
 }
