@@ -93,7 +93,7 @@ const PER_PRINCIPAL = toDurable('principals', 'client-state:principals', 1);
 const PER_MEMBERSHIP = toDurable('memberships', 'group-state:members', 1);
 /** A churn principal joins the medium-scale profile's five groups, and each group's owner adds one membership. */
 const MEMBERSHIPS_PER_PRINCIPAL = toDurable('principals', 'client-state:principals', 6);
-/** The medium-scale churn recipe's 100 clients, pinned by `api-v1-medium-scale-recipe.test.ts`. */
+/** The clients the medium-scale churn recipe registers; `v1d-growth-surfaces.test.ts` reads them from the recipe. */
 const MEDIUM_SCALE_PRINCIPALS_PER_CHURN_ITERATION = 100;
 /**
  * An account is registered before its principal connects, so the auth users run ahead of the principals while an

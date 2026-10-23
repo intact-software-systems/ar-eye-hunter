@@ -251,6 +251,13 @@ describe('V1d growth verdict', () => {
         expect(row.bound).toContain('projected ≤ 300');
     });
 
+    it('says a TTL-beyond-run surface sampled throughout without a row holds none, not a projection of 0', () => {
+        const beyondRun: V1dGrowthClassification = { growthClass: 'ttl-beyond-run', ttlMs: 24 * 60 * MINUTE_MS };
+        const row = computeSingleRow(toSurface(beyondRun), toSamples({ postgres: toPoints(75, () => toPostgresTable(0)) }));
+
+        expect(row).toMatchObject({ outcome: 'pass', max: 0, bound: 'ttl 24 h; projected ≤ 0 (no rows held)' });
+    });
+
     it('passes a flat heap after its warm-up', () => {
         const flat = (minute: number) => ({ heapUsed: 60 * MIB + (Math.round(minute * 2) % 2 === 0 ? 0 : MIB) });
         const row = computeSingleRow(
@@ -333,6 +340,13 @@ describe('V1d growth verdict', () => {
         expect(row.outcome).toBe('fail');
         expect(row.slopePerHour).toBeCloseTo(20 * MB, -5);
         expect(row.reason).toContain('bucket median');
+    });
+
+    it('reports a page heap no agent sampled as no data against its 5-minute bucket medians', () => {
+        const row = computeSingleRow(toSurface({ growthClass: 'heap' }, PAGE_HEAP_READER), toSamples({}));
+
+        expect(row.outcome).toBe('no-data');
+        expect(row.bound).toContain('5-minute bucket medians');
     });
 
     it('reports a page heap as insufficient with fewer than three complete 5-minute buckets after its warm-up', () => {

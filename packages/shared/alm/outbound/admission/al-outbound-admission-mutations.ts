@@ -354,9 +354,11 @@ export class ALOutboundAdmissionMutations {
     }
 
     /**
-     * A durable pair answers a late control for the row's TTL past the send; a memory pair, volatile or
-     * checkpointed, only until the message deadline plus the receipt grace (D74). An admission always names
-     * the deadline, so only a bare store write reaches the memory branch without one, and keeps just the grace.
+     * A durable pair keeps the row, and so answers a late control, until the latest of the message deadline,
+     * the row's TTL past the send and the control-history TTL past the send: a message whose deadline lies a day
+     * out keeps its rows a day. A memory pair, volatile or checkpointed, keeps it only until the message deadline
+     * plus the receipt grace (D74). An admission always names the deadline, so only a bare store write reaches
+     * either branch without one: the memory branch then keeps just the grace, the durable branch the longer TTL.
      */
     private computeMessageRowExpiryMs(deadlineAtMs: number | undefined, nowMs: number, rowTtlMs: number): number {
         switch (this.durability) {

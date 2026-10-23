@@ -1,6 +1,6 @@
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
-import { computeV1dGrowthAssessment } from './compute-v1d-growth-assessment.ts';
+import { computePageHeapAssessment, computeV1dGrowthAssessment } from './compute-v1d-growth-assessment.ts';
 import type { V1dGrowthAssessment, V1dGrowthOutcome } from './v1d-growth-assessment.ts';
 import {
     isApiJsonObject,
@@ -98,30 +98,42 @@ interface ComputeV1dGrowthVerdictRowInput {
 
 function computeV1dGrowthVerdictRow(input: ComputeV1dGrowthVerdictRowInput): V1dGrowthVerdictRow {
     const { surface, reader, serviceId } = input;
-    const { samples, run } = input.verdictInput;
-    const readerPoints = samples[reader.source].filter((point) => point.serviceId === serviceId);
-    const toSeries = (seriesReader: V1dGrowthReader) =>
-        toV1dGrowthSeries(samples[seriesReader.source], seriesReader, run.windowStartedAtEpochMs);
-    const classification = surface.classification;
-    const entityCount = classification.growthClass === 'durable' ? classification.entityCount : undefined;
+    const readerPoints = input.verdictInput.samples[reader.source].filter((point) => point.serviceId === serviceId);
+    // A browser agent samples its page heap without a forced collection, so the heap is judged on its bucket medians.
+    const pageHeap = surface.classification.growthClass === 'heap' && reader.source === 'browser-stats';
     return {
         surfaceId: surface.id,
         surface: surface.name,
         reader: `${reader.source} ${reader.path.join('.')}${serviceId === null ? '' : ` ${serviceId}`}`,
-        growthClass: classification.growthClass,
-        ...computeV1dGrowthAssessment(classification, {
-            series: toV1dGrowthSeries(readerPoints, reader, run.windowStartedAtEpochMs),
-            agentReadings: classification.growthClass === 'heap'
-                ? toV1dGrowthAgentReadings(readerPoints, reader, run.windowStartedAtEpochMs)
-                : [],
-            entitySeries: entityCount?.source === 'samples' ? toSeries(entityCount.reader) : [],
-            ceilingSeries: entityCount?.source === 'registrations' ? toSeries(entityCount.ceiling) : [],
-            neverExpiringSeries: reader.neverExpiringPath === null
-                ? []
-                : toSeries({ ...reader, path: reader.neverExpiringPath, neverExpiringPath: null }),
-            workload: run.workload
-        })
+        growthClass: surface.classification.growthClass,
+        ...(pageHeap
+            ? computePageHeapAssessment(
+                toV1dGrowthAgentReadings(readerPoints, reader, input.verdictInput.run.windowStartedAtEpochMs)
+            )
+            : computeV1dGrowthClassAssessment(input, readerPoints))
     };
+}
+
+/** The reading judged by its surface's class, with the companion series that class reads from the same samples. */
+function computeV1dGrowthClassAssessment(
+    input: ComputeV1dGrowthVerdictRowInput,
+    readerPoints: readonly V1dGrowthSamplePoint[]
+): V1dGrowthAssessment {
+    const { surface, reader } = input;
+    const { samples, run } = input.verdictInput;
+    const toSeries = (seriesReader: V1dGrowthReader) =>
+        toV1dGrowthSeries(samples[seriesReader.source], seriesReader, run.windowStartedAtEpochMs);
+    const classification = surface.classification;
+    const entityCount = classification.growthClass === 'durable' ? classification.entityCount : undefined;
+    return computeV1dGrowthAssessment(classification, {
+        series: toV1dGrowthSeries(readerPoints, reader, run.windowStartedAtEpochMs),
+        entitySeries: entityCount?.source === 'samples' ? toSeries(entityCount.reader) : [],
+        ceilingSeries: entityCount?.source === 'registrations' ? toSeries(entityCount.ceiling) : [],
+        neverExpiringSeries: reader.neverExpiringPath === null
+            ? []
+            : toSeries({ ...reader, path: reader.neverExpiringPath, neverExpiringPath: null }),
+        workload: run.workload
+    });
 }
 
 /** One row per API process where the readings name their process; one row otherwise, a no-data row without any. */

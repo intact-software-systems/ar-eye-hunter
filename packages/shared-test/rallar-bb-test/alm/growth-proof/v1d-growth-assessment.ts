@@ -1,4 +1,4 @@
-import type { V1dGrowthAgentReading, V1dGrowthPlateau, V1dGrowthSeriesPoint } from './v1d-growth-series.ts';
+import type { V1dGrowthPlateau, V1dGrowthSeriesPoint } from './v1d-growth-series.ts';
 import type { V1dGrowthWorkload } from './v1d-growth-workload.ts';
 
 /**
@@ -31,8 +31,6 @@ export interface V1dGrowthAssessment {
 
 export interface V1dGrowthSeriesInput {
     readonly series: readonly V1dGrowthSeriesPoint[];
-    /** Each browser agent's own readings of a heap surface; empty for every other class and source. */
-    readonly agentReadings: readonly V1dGrowthAgentReading[];
     /** The entity counts a durable surface grows with, read from the same samples; empty for every other class. */
     readonly entitySeries: readonly V1dGrowthSeriesPoint[];
     /** The reading a durable surface counting registrations may not exceed; empty for every other class. */

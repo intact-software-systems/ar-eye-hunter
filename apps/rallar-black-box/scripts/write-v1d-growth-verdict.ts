@@ -1,5 +1,6 @@
 import { readFile, stat, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { decodeV1dGrowthRun } from '@shared-test/rallar-bb-test/alm/growth-proof/decode-v1d-growth-run.ts';
 import { toV1dGrowthVerdictMarkdown } from '@shared-test/rallar-bb-test/alm/growth-proof/to-v1d-growth-verdict-markdown.ts';
@@ -13,17 +14,33 @@ import { toError } from '@shared/resilience/to-error.ts';
 /** Well inside the largest string V8 holds; a 75-minute run's largest sample file, its control polls, is 138 MB. */
 const MAX_RUN_FILE_BYTES = 256 * 1024 * 1024;
 
+/**
+ * A sampler that never wrote a file leaves its readings absent, which the verdict reports as no data. Any other read
+ * failure, and a file past `maxBytes`, stops the verdict instead of reading as no data.
+ */
+export async function readV1dGrowthRunFile(runDir: string, fileName: string, maxBytes: number): Promise<string> {
+    const filePath = path.join(runDir, fileName);
+    const size = await readFileSize(filePath);
+    if (size === undefined) {
+        return '';
+    }
+    if (size > maxBytes) {
+        throw new Error(`${filePath} holds ${size} bytes, past the ${maxBytes} the verdict reads whole`);
+    }
+    return await readFile(filePath, 'utf8');
+}
+
 /** Reads a growth-proof run directory, writes `verdict.md` and `verdict.json` beside it, and exits 1 unless it passed. */
 async function writeV1dGrowthVerdict(runDir: string): Promise<boolean> {
     const decoded = decodeV1dGrowthRun({
-        runJson: await readRunFile(runDir, 'run.json'),
-        postgres: await readRunFile(runDir, 'samples/postgres.jsonl'),
-        adminSystem: await readRunFile(runDir, 'samples/admin-system.jsonl'),
-        adminQueues: await readRunFile(runDir, 'samples/admin-queues.jsonl'),
-        adminRealtime: await readRunFile(runDir, 'samples/admin-realtime.jsonl'),
-        processRss: await readRunFile(runDir, 'samples/process-rss.jsonl'),
-        controlRun: await readRunFile(runDir, 'samples/control-run.jsonl'),
-        apiHeap: await readRunFile(runDir, 'samples/api-heap.jsonl')
+        runJson: await readV1dGrowthRunFile(runDir, 'run.json', MAX_RUN_FILE_BYTES),
+        postgres: await readV1dGrowthRunFile(runDir, 'samples/postgres.jsonl', MAX_RUN_FILE_BYTES),
+        adminSystem: await readV1dGrowthRunFile(runDir, 'samples/admin-system.jsonl', MAX_RUN_FILE_BYTES),
+        adminQueues: await readV1dGrowthRunFile(runDir, 'samples/admin-queues.jsonl', MAX_RUN_FILE_BYTES),
+        adminRealtime: await readV1dGrowthRunFile(runDir, 'samples/admin-realtime.jsonl', MAX_RUN_FILE_BYTES),
+        processRss: await readV1dGrowthRunFile(runDir, 'samples/process-rss.jsonl', MAX_RUN_FILE_BYTES),
+        controlRun: await readV1dGrowthRunFile(runDir, 'samples/control-run.jsonl', MAX_RUN_FILE_BYTES),
+        apiHeap: await readV1dGrowthRunFile(runDir, 'samples/api-heap.jsonl', MAX_RUN_FILE_BYTES)
     });
     if (decoded.right === undefined) {
         throw new Error(`The run directory does not decode: ${(decoded.left ?? []).join('; ')}`);
@@ -35,33 +52,17 @@ async function writeV1dGrowthVerdict(runDir: string): Promise<boolean> {
         samples: decoded.right.samples
     });
     const markdown = toV1dGrowthVerdictMarkdown({ verdict, skippedLines: decoded.right.skippedLines });
-    await writeFile(join(runDir, 'verdict.md'), markdown);
-    await writeFile(join(runDir, 'verdict.json'), `${JSON.stringify(verdict, null, 2)}\n`);
+    await writeFile(path.join(runDir, 'verdict.md'), markdown);
+    await writeFile(path.join(runDir, 'verdict.json'), `${JSON.stringify(verdict, null, 2)}\n`);
     console.log(markdown.split('\n').slice(0, 3).join('\n'));
-    console.log(`wrote ${join(runDir, 'verdict.md')}`);
+    console.log(`wrote ${path.join(runDir, 'verdict.md')}`);
     return verdict.passed;
 }
 
-/**
- * A sampler that never wrote a file leaves its readings absent, which the verdict reports as no data. Any other read
- * failure, and a file past the bound a whole read can hold, stops the verdict instead of reading as no data.
- */
-async function readRunFile(runDir: string, fileName: string): Promise<string> {
-    const path = join(runDir, fileName);
-    const size = await readFileSize(path);
-    if (size === undefined) {
-        return '';
-    }
-    if (size > MAX_RUN_FILE_BYTES) {
-        throw new Error(`${path} holds ${size} bytes, past the ${MAX_RUN_FILE_BYTES} the verdict reads whole`);
-    }
-    return await readFile(path, 'utf8');
-}
-
 /** Undefined for a file that does not exist. */
-async function readFileSize(path: string): Promise<number | undefined> {
+async function readFileSize(filePath: string): Promise<number | undefined> {
     try {
-        return (await stat(path)).size;
+        return (await stat(filePath)).size;
     }
     catch (error) {
         if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
@@ -80,11 +81,13 @@ function readRunDirArgument(args: readonly string[]): string {
     return runDir;
 }
 
-try {
-    const passed = await writeV1dGrowthVerdict(readRunDirArgument(process.argv.slice(2)));
-    process.exitCode = passed ? 0 : 1;
-}
-catch (error) {
-    console.error(toError(error).message);
-    process.exitCode = 2;
+if (path.resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url)) {
+    try {
+        const passed = await writeV1dGrowthVerdict(readRunDirArgument(process.argv.slice(2)));
+        process.exitCode = passed ? 0 : 1;
+    }
+    catch (error) {
+        console.error(toError(error).message);
+        process.exitCode = 2;
+    }
 }
