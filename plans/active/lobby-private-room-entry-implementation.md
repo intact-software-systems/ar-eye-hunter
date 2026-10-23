@@ -287,11 +287,15 @@ shader/context initialization cost but did not reproduce the hosted delay after 
 ANGLE/SwiftShader selection, already used by Relic, is the next controlled fixture experiment.
 Scenario workloads, assertions, and deadlines remain unchanged during this comparison.
 The explicit backend passed all ten local AR scenarios in 4.3 minutes; fresh review found no
-configuration or coverage issue. Hosted verification remains pending. The preceding hosted run
-finished with all other validation lanes passing.
+configuration or coverage issue. Hosted verification still failed three private-entry scenarios;
+Quick Join and every other blocking lane passed. The new traces show short API responses but
+browser startup checks taking almost 30 seconds. A four-CPU Linux container also remained responsive
+after warmup, so it does not establish the hosted root cause. The failing code-sharing journey now
+temporarily captures host and guest CPU profiles; remove that instrumentation after diagnosis.
 
-The next two steps are (1) measure that backend choice locally and in hosted CI, then (2) resolve any
-remaining failure, publish passing evidence, and wait for the maintainer to merge.
+The next two steps are (1) identify the hosted startup stall from its CPU profile, then (2) resolve
+the measured cause, publish passing evidence, and wait for the maintainer to merge. Private-room
+entry remains the intended outcome; scenario workloads and deadlines stay unchanged during diagnosis.
 
 ## Final validation and delivery
 

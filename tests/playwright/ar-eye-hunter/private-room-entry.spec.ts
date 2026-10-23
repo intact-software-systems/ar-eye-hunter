@@ -1,4 +1,10 @@
-import { expect, test, type Page } from '@playwright/test';
+import {
+    expect,
+    test,
+    type CDPSession,
+    type Page
+} from '@playwright/test';
+import { writeFile } from 'node:fs/promises';
 
 test('keeps manual private-room entry through signed-out reload and allows cancellation', async ({ page }) => {
     const operations = await openOperations(page, '/');
@@ -47,9 +53,16 @@ test(
         );
         const hostContext = await browser.newContext();
         const guestContext = await browser.newContext();
+        const profiles = new Map<string, CDPSession>();
         try {
             const host = await hostContext.newPage();
             const guest = await guestContext.newPage();
+            for (const participant of [{ name: 'host', page: host }, { name: 'guest', page: guest }]) {
+                const profiler = await participant.page.context().newCDPSession(participant.page);
+                await profiler.send('Profiler.enable');
+                await profiler.send('Profiler.start');
+                profiles.set(participant.name, profiler);
+            }
             const hostOperations = await openOperations(host, '/');
             await signIn(host, 'alice');
             const create = hostOperations.getByRole('button', { name: 'New code arena', exact: true });
@@ -87,8 +100,16 @@ test(
             await expect(guestOperations.getByText(`Entered ${reference}.`, { exact: true })).toBeVisible();
         }
         finally {
-            await hostContext.close();
-            await guestContext.close();
+            try {
+                for (const [name, profiler] of profiles) {
+                    const { profile } = await profiler.send('Profiler.stop');
+                    await writeFile(testInfo.outputPath(`${name}.cpuprofile`), JSON.stringify(profile));
+                }
+            }
+            finally {
+                await hostContext.close();
+                await guestContext.close();
+            }
         }
     }
 );

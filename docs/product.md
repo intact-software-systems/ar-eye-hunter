@@ -29,6 +29,24 @@ rules, rendering, and product policy.
 `docs/architecture.md` records why these boundaries exist. `examples/README.md`
 shows the smallest copyable use of each surface.
 
+## Private room entry
+
+AR Eye Hunter and Relic Hunters let hosts create code-protected or invite-only
+rooms, share a link, rotate a code, and invite an account or revoke its invitation.
+Private rooms stay outside the open directory. A link identifies its application,
+workspace, and room; an invite-only link still requires an account invitation.
+
+Guests keep the intended destination through sign-in and tab reload. They can
+correct a rejected code, retry, cancel, or open a newer invitation. Successful
+entry discards the saved code and associates the return destination with that
+account. Active members can return after code rotation or expiry; new entrants
+still need valid admission, and banned members and inactive rooms remain denied.
+
+Room admission is separate from gameplay participation. Relic still requires
+Join Expedition; AR Eye keeps its director and match lifecycle. The shared
+browser entry owner and a host-sharing example are documented in
+`examples/browser-startup-room/README.md`.
+
 ## Fit
 
 | Kind of product                              | Fit                         | What to use                                                                                      |
