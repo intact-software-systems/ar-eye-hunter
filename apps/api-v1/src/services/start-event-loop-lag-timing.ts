@@ -1,6 +1,6 @@
 import { recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
-import { startTimerLagSampling } from '@shared/resilience/start-timer-lag-sampling.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
+import { startTimerLagSampling } from '@shared/runtime-health/start-timer-lag-sampling.ts';
 
 export interface StartEventLoopLagTimingInput {
     readonly timers: Timers;

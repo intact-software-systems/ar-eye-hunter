@@ -7,11 +7,11 @@ import {
 import { resolveRallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 
 import {
-    controlRunSnapshotUrlFromControlUrl,
     createHeadlessWorkerAgentUrl,
     readHeadlessWorkerConfig,
+    toControlRunSnapshotUrl,
     toHeadlessWorkerLaunchOptions
-} from '../../../apps/rallar-black-box/src/headless-worker-config.ts';
+} from '../../../apps/rallar-black-box/src/headless-worker/headless-worker-config.ts';
 
 const recordingWorkerEnvironment = {
     RALLAR_BLACK_BOX_SPA_URL: 'https://blackbox.example.test',
@@ -52,8 +52,9 @@ describe('rallar-black-box headless worker config', () => {
         ).toThrow(/routine browser diagnostics/i);
     });
 
-    // Without the flag Chromium answers performance.memory in coarse buckets no heap slope can be read from.
-    it('launches Chromium with precise memory readings while the browser census is on', () => {
+    // Without the first flag Chromium answers performance.memory in coarse buckets no heap slope can be read from;
+    // without the second the page exposes no collector, so its census reads the heap with garbage still on it.
+    it('launches Chromium with precise memory readings and an exposed collector while the browser census is on', () => {
         const withCensus = (engine: string, interval: string) =>
             toHeadlessWorkerLaunchOptions(readHeadlessWorkerConfig({
                 env: {
@@ -67,7 +68,7 @@ describe('rallar-black-box headless worker config', () => {
             headless: true,
             handleSIGINT: false,
             handleSIGTERM: false,
-            args: ['--enable-precise-memory-info']
+            args: ['--enable-precise-memory-info', '--js-flags=--expose-gc']
         });
         expect(withCensus('chromium', '0').args).toEqual([]);
         expect(withCensus('firefox', '5000').args).toEqual([]);
@@ -717,19 +718,19 @@ describe('rallar-black-box headless worker config', () => {
 
     it('derives control run snapshot URLs from worker control URLs', () => {
         expect(
-            controlRunSnapshotUrlFromControlUrl(
+            toControlRunSnapshotUrl(
                 'ws://127.0.0.1:5180/control',
                 'run-1'
             )
         ).toBe('http://127.0.0.1:5180/runs/run-1');
 
         expect(
-            controlRunSnapshotUrlFromControlUrl(
+            toControlRunSnapshotUrl(
                 'wss://control.example.test/control?token=ignored',
                 'run 2'
             )
         ).toBe('https://control.example.test/runs/run%202');
 
-        expect(() => controlRunSnapshotUrlFromControlUrl('ftp://example.test/control', 'run')).toThrow(/Control URL must use ws, wss, http, or https/);
+        expect(() => toControlRunSnapshotUrl('ftp://example.test/control', 'run')).toThrow(/Control URL must use ws, wss, http, or https/);
     });
 });

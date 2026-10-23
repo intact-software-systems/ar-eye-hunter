@@ -76,6 +76,7 @@ describe('V1d growth surface classification', () => {
                         manifestStartedAtEpochMs: windowStartedAtEpochMs,
                         manifestCompletedAtEpochMs: windowStartedAtEpochMs + 4_500_000,
                         manifestAgents: 15,
+                        eventHistoryMaxEvents: 10_000,
                         churnStarted: 1,
                         churnPassed: 1,
                         churnFailedRunIds: []
@@ -106,6 +107,7 @@ describe('V1d growth surface classification', () => {
             manifestStartedAtEpochMs: windowStartedAtEpochMs,
             manifestCompletedAtEpochMs: windowStartedAtEpochMs + 4_500_000,
             manifestAgents: 15,
+            eventHistoryMaxEvents: 10_000,
             churnStarted,
             churnPassed: churnStarted,
             churnFailedRunIds: []
@@ -201,5 +203,64 @@ describe('V1d growth surface classification', () => {
             'neverExpireByNamespace',
             'group-topology:config-mutation'
         ]);
+    });
+
+    describe('black-box runtime event history', () => {
+        const surface = V1D_GROWTH_SURFACES.find((candidate) => candidate.readers.some((reader) => reader.path.join('.') === 'eventHistory.retainedEvents'))!;
+        const windowStartedAtEpochMs = 1_800_000_000_000;
+        const toWorkload = (eventHistoryMaxEvents: number) => ({
+            runner: 'passed' as const,
+            manifestStartedAtEpochMs: windowStartedAtEpochMs,
+            manifestCompletedAtEpochMs: windowStartedAtEpochMs + 4_500_000,
+            manifestAgents: 15,
+            eventHistoryMaxEvents,
+            churnStarted: 1,
+            churnPassed: 1,
+            churnFailedRunIds: []
+        });
+        // Two agents reporting every 30 s for 20 minutes; the second agent's last reading is `lastRetained`.
+        const toSamples = (lastRetained: number) =>
+            ['controller-01', 'controller-02'].flatMap((agentId, agent) =>
+                Array.from({ length: 41 }, (_value, sample) => ({
+                    atEpochMs: windowStartedAtEpochMs + sample * 30_000,
+                    agentId,
+                    serviceId: null,
+                    value: {
+                        eventHistory: { retainedEvents: agent === 1 && sample === 40 ? lastRetained : sample * 200 }
+                    } satisfies ApiJsonValue
+                }))
+            );
+        const computeRow = (workload: ReturnType<typeof toWorkload> | null, browserStats: ReturnType<typeof toSamples>) =>
+            computeV1dGrowthVerdict({
+                surveyedSurfaceIds: [surface.id],
+                surfaces: [surface],
+                run: { windowStartedAtEpochMs, workload },
+                samples: {
+                    postgres: [],
+                    'admin-system': [],
+                    'admin-queues': [],
+                    'admin-realtime': [],
+                    'api-heap': [],
+                    'process-rss': [],
+                    'browser-stats': browserStats
+                }
+            }).rows[0]!;
+
+        it('passes while every agent retains at most the events the workload bounds, and fails one above', () => {
+            expect(computeRow(toWorkload(10_000), toSamples(10_000)).outcome).toBe('pass');
+            expect(computeRow(toWorkload(10_000), toSamples(10_001)).outcome).toBe('fail');
+        });
+
+        it('takes the bound from the workload the run recorded', () => {
+            const row = computeRow(toWorkload(5_000), toSamples(5_001));
+
+            expect(row.outcome).toBe('fail');
+            expect(row.bound).toBe('≤ 5000');
+        });
+
+        it('has no data without a reading, and none while the run recorded no workload to take the bound from', () => {
+            expect(computeRow(toWorkload(10_000), []).outcome).toBe('no-data');
+            expect(computeRow(null, toSamples(100)).outcome).toBe('no-data');
+        });
     });
 });

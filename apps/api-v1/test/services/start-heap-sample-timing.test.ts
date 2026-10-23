@@ -3,11 +3,7 @@ import assert from 'node:assert/strict';
 
 import { createManualTimers, type ManualTimers } from '../../../../packages/tests/shared/resilience/manual-timers.ts';
 import { decodeApiV1Configuration } from '../../src/configuration/decode-api-v1-configuration.ts';
-import {
-    resolveExposedGarbageCollector,
-    startHeapSampleTiming,
-    type StartHeapSampleTimingInput
-} from '../../src/services/start-heap-sample-timing.ts';
+import { startHeapSampleTiming, type StartHeapSampleTimingInput } from '../../src/services/start-heap-sample-timing.ts';
 import { toTimingOnSink } from '../../src/services/timing-service.ts';
 import { validDecodeApiV1ConfigurationInput } from '../configuration/api-v1-configuration-test-fixture.ts';
 
@@ -85,16 +81,6 @@ Deno.test('timing off schedules nothing, so no sample is built, collected, read 
     assert.equal(timers.pendingCount(), 0);
     assert.deepEqual(reads.calls, []);
     stop();
-});
-
-Deno.test('the collector is the global gc only where the runtime exposes it as a function', () => {
-    const collected: string[] = [];
-    const collector = resolveExposedGarbageCollector({ gc: () => collected.push('gc') });
-    collector?.();
-
-    assert.deepEqual(collected, ['gc']);
-    assert.equal(resolveExposedGarbageCollector({}), undefined);
-    assert.equal(resolveExposedGarbageCollector({ gc: 'not a function' }), undefined);
 });
 
 /** Records every collection, memory read, uptime read and clock read the sampler makes, in order. */

@@ -31,12 +31,6 @@ export function startHeapSampleTiming(input: StartHeapSampleTimingInput): () => 
     });
 }
 
-/** `globalThis.gc` exists only under `--v8-flags=--expose-gc`. */
-export function resolveExposedGarbageCollector(scope: object): (() => void) | undefined {
-    const gc = 'gc' in scope ? scope.gc : undefined;
-    return typeof gc === 'function' ? () => gc() : undefined;
-}
-
 function recordHeapSample(input: StartHeapSampleTimingInput, timing: RallarTimingSink): void {
     input.collectGarbage?.();
     const memory = input.readMemoryUsage();

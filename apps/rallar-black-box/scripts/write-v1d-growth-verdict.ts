@@ -1,6 +1,6 @@
-import { readFile, stat, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { pathToFileURL } from 'node:url';
 
 import { decodeV1dGrowthRun } from '@shared-test/rallar-bb-test/alm/growth-proof/decode-v1d-growth-run.ts';
 import { toV1dGrowthVerdictMarkdown } from '@shared-test/rallar-bb-test/alm/growth-proof/to-v1d-growth-verdict-markdown.ts';
@@ -11,24 +11,10 @@ import {
 import { computeV1dGrowthVerdict } from '@shared-test/rallar-bb-test/alm/growth-proof/v1d-growth-verdict.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
+import { readV1dGrowthRunFile } from './read-v1d-growth-run-file.ts';
+
 /** Well inside the largest string V8 holds; a 75-minute run's largest sample file, its control polls, is 138 MB. */
 const MAX_RUN_FILE_BYTES = 256 * 1024 * 1024;
-
-/**
- * A sampler that never wrote a file leaves its readings absent, which the verdict reports as no data. Any other read
- * failure, and a file past `maxBytes`, stops the verdict instead of reading as no data.
- */
-export async function readV1dGrowthRunFile(runDir: string, fileName: string, maxBytes: number): Promise<string> {
-    const filePath = path.join(runDir, fileName);
-    const size = await readFileSize(filePath);
-    if (size === undefined) {
-        return '';
-    }
-    if (size > maxBytes) {
-        throw new Error(`${filePath} holds ${size} bytes, past the ${maxBytes} the verdict reads whole`);
-    }
-    return await readFile(filePath, 'utf8');
-}
 
 /** Reads a growth-proof run directory, writes `verdict.md` and `verdict.json` beside it, and exits 1 unless it passed. */
 async function writeV1dGrowthVerdict(runDir: string): Promise<boolean> {
@@ -59,19 +45,6 @@ async function writeV1dGrowthVerdict(runDir: string): Promise<boolean> {
     return verdict.passed;
 }
 
-/** Undefined for a file that does not exist. */
-async function readFileSize(filePath: string): Promise<number | undefined> {
-    try {
-        return (await stat(filePath)).size;
-    }
-    catch (error) {
-        if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
-            return undefined;
-        }
-        throw error;
-    }
-}
-
 function readRunDirArgument(args: readonly string[]): string {
     const index = args.indexOf('--run-dir');
     const runDir = index === -1 ? undefined : args[index + 1];
@@ -81,7 +54,7 @@ function readRunDirArgument(args: readonly string[]): string {
     return runDir;
 }
 
-if (path.resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url)) {
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
     try {
         const passed = await writeV1dGrowthVerdict(readRunDirArgument(process.argv.slice(2)));
         process.exitCode = passed ? 0 : 1;

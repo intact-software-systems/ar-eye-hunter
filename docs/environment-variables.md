@@ -408,7 +408,7 @@ location label, or one coordinate without the other, places no map location and 
 
 ### Rallar Black Box Headless Worker
 
-`apps/rallar-black-box/src/headless-worker-config.ts` reads server-side
+`apps/rallar-black-box/src/headless-worker/headless-worker-config.ts` reads server-side
 environment variables used by the headless browser worker script, then forwards
 safe values to browser agents as URL parameters.
 

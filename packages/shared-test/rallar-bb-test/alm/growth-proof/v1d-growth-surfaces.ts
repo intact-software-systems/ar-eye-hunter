@@ -30,6 +30,10 @@ const API_HEAP: V1dGrowthReader = {
     absent: 'no-reading',
     neverExpiringPath: null
 };
+/**
+ * A page's heap after a forced collection: every product structure of the page plus the black-box test runtime's own
+ * event history, which the workload bounds and surface 82 reads. A page heap row judges that sum.
+ */
 const PAGE_HEAP: V1dGrowthReader = toBrowserReading('browser', 'pageHeap', 'usedJSHeapSize');
 const CONTROL_RSS: V1dGrowthReader = {
     source: 'process-rss',
@@ -662,5 +666,12 @@ export const V1D_GROWTH_SURFACES: readonly V1dGrowthSurface[] = [
         owner: 'packages/shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts',
         classification: { growthClass: 'ttl-within-run', ttlMs: MINUTE_MS, sweepMs: RUNTIME_STATE_SWEEP_MS },
         readers: [toNamespaceCount('rtc-rtt:latest'), toNamespaceCount('rtc-rtt:endpoint-admission')]
+    },
+    {
+        id: 82,
+        name: 'black-box runtime event history (not in the survey)',
+        owner: 'packages/shared-test/rallar-bb-test/runtime/event-history.ts',
+        classification: { growthClass: 'count-capped', cap: { source: 'workload-event-history' } },
+        readers: [toBrowserReading('eventHistory', 'retainedEvents')]
     }
 ];

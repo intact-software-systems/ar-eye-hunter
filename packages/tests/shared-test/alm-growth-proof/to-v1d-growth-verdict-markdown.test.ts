@@ -18,6 +18,7 @@ describe('V1d growth verdict document', () => {
                     manifestStartedAtEpochMs: 1_800_000_018_000,
                     manifestCompletedAtEpochMs: 1_800_004_740_000,
                     manifestAgents: 15,
+                    eventHistoryMaxEvents: 10_000,
                     churnStarted: 30,
                     churnPassed: 29,
                     churnFailedRunIds: ['churn-004']

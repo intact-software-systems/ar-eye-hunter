@@ -10,6 +10,8 @@ export interface V1dGrowthWorkload {
     readonly manifestCompletedAtEpochMs: number | null;
     /** The agents the manifest drives; the script registers one account for each. */
     readonly manifestAgents: number;
+    /** The most events the manifest lets each page's test runtime retain. */
+    readonly eventHistoryMaxEvents: number;
     /** Every churn iteration the loop began, including one the drain bound stopped before it finished. */
     readonly churnStarted: number;
     readonly churnPassed: number;

@@ -13,6 +13,7 @@ import type {
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestRecord
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxEventHistoryPolicy } from '@shared-test/rallar-bb-test/runtime/event-history.ts';
 
 export const HETZNER_DISTRIBUTED_MANIFEST_GROUP: RallarBlackBoxDistributedGroupRef = {
     applicationId: 'rallar-server',
@@ -87,6 +88,8 @@ export interface ManifestCatalogInput {
     readonly stress: boolean;
     readonly barrier: boolean;
     readonly groupAssertions: readonly RallarBlackBoxDistributedGroupAssertion[];
+    /** Absent when each agent keeps its configured history, `full` unless its launch chose otherwise. */
+    readonly eventHistory?: RallarBlackBoxEventHistoryPolicy;
     readonly metadata: RallarBlackBoxTestRecord;
 }
 
@@ -113,6 +116,7 @@ export function createManifestEntry(input: ManifestCatalogInput): HetznerDistrib
         startMode: 'manual',
         expectedParticipantCount: input.agentCount,
         groupAssertions: input.groupAssertions,
+        eventHistory: input.eventHistory,
         createdBy: 'rallar-black-box-hetzner-manifest-catalog'
     });
 

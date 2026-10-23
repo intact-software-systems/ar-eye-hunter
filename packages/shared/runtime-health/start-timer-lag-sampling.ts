@@ -1,5 +1,5 @@
-import { startRepeating } from './start-repeating.ts';
-import type { Timers } from './timers.ts';
+import { startRepeating } from '@shared/resilience/start-repeating.ts';
+import type { Timers } from '@shared/resilience/timers.ts';
 
 export namespace StartTimerLagSampling {
     export interface Input {
