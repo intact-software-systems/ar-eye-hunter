@@ -268,7 +268,7 @@ describe('Relic Hunters browser app', () => {
         expect(container.textContent).toContain('Keep Going');
     });
 
-    it('starts ambient atmosphere from a browser button gesture', async () => {
+    it('shows whether ambient playback started after a browser button gesture', async () => {
         const snapshot = snapshotWithPlayers(1);
         writeSession(session());
         rallarMock.roomState = roomState(1);
@@ -276,11 +276,16 @@ describe('Relic Hunters browser app', () => {
 
         await renderApp();
         await waitFor(() => atmosphereButtons().length > 0);
+        soundMock.startAmbientSound.mockReturnValueOnce(false);
         await act(async () => {
             atmosphereButtons()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
         });
+        expect(atmosphereButtons()[0].classList.contains('active')).toBe(false);
 
-        expect(soundMock.startAmbientSound).toHaveBeenCalledTimes(1);
+        await act(async () => {
+            atmosphereButtons()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+        expect(atmosphereButtons()[0].classList.contains('active')).toBe(true);
     });
 
     it('updates the visible expedition when a Rallar WebSocket snapshot event arrives', async () => {

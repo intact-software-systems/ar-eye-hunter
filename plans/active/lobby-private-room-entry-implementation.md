@@ -177,8 +177,8 @@ explicitly. Same-tab invitation changes replace an in-flight destination. The ro
 rotation and revocation through existing HTTP workflows, checks session ownership before retries and
 snapshot adoption, and returns the canonical code/expiry response. The optional entry point stays
 outside the base facade bundle. Changed callbacks now delegate complete workflows to named operations;
-the shared session fence owns account/session identity checks. App controls and full-stack validation
-remain pending. The live PR records validation evidence.
+the shared session fence owns account/session identity checks. Both app integrations and local
+full-stack validation are complete. The live PR records final remote-gate evidence.
 
 ## Increment 2: create, share, enter, and participate in both games
 
@@ -206,7 +206,7 @@ and Relic expedition commands in its runtime.
       on session/room changes and rotation failure; never display an old code as the new one.
 - [x] Wire authenticated startup to resume the shared destination before restoring an old room.
       Retain one scoped restoration implementation and explicit application participation controls.
-- [ ] Drive two fresh browsers through host creation, sharing, login, entry, participation, rotation,
+- [x] Drive two fresh browsers through host creation, sharing, login, entry, participation, rotation,
       invalid/expired feedback, and reload. Include an uninvited account, a wrong-scope destination,
       cancellation, and a new invitation overriding an old current room.
 - [x] Run focused app tests, `npm run build:ar-eye-hunter-v1`, and `npm run build:relic-hunters-v1`.
@@ -226,8 +226,8 @@ room. The existing browser CI lane runs that same scenario set sequentially beca
 and empty-directory assertion share server state. Real-browser reload exposed cancelled startup
 poisoning a replacement connection; a failing startup regression now protects the canonical
 cancellation result. Creation also fences the initiating session and preserves the newly adopted room
-when previous-room membership cannot be left. Relic integration and the remaining final gates are
-still pending; the increment remains open.
+when previous-room membership cannot be left. The fresh combined AR run passed all ten scenarios
+in 3.1 minutes; screenshots confirm invitation entry and actual participation.
 
 The Relic checkpoint consolidates authenticated connection, snapshot acceptance, commands, and
 cleanup in `RelicHuntersRuntime`, with one React subscription hook. Capability owners now compose
@@ -237,9 +237,10 @@ unused intro and predecessor renderer were removed with their exclusive support 
 
 The private-room browser scenarios cover manual signed-out entry/cancellation, wrong-scope rejection,
 code sharing and a two-player round, rotation/member reload, corrected outsider credentials, and
-invitation revocation/reissue overriding an old saved room. The latest individual scenarios passed;
-the final combined run follows review fixes. Software rendering caused long browser action delays,
-so completed host pages release their renderers before remaining guest-only assertions.
+invitation revocation/reissue overriding an old saved room. The final combined run passed all four
+scenarios in two minutes. A failed reload check returned the correct Round 2 snapshot in 22 ms;
+software rendering delayed the browser. Completed host pages now release their renderers before
+guest-only assertions, preserving the original assertions and timeout.
 
 Review reproduced and corrected two consolidation regressions with red/green tests: selecting a new
 map room must replace an older Move draft when Move is chosen again; a private destination opened
@@ -251,8 +252,18 @@ Both app builds passed, as did the 83-file/659-test affected suite, the test typ
 recomputed its lease under the same request ID. A lost-response regression failed before
 capturing both requests once, then all 48 focused workflow/membership/entry tests passed.
 
-The next two steps are (1) finish combined browser and changed-style validation, then
-(2) run the hosted state-write comparison and publish the completed slice. Real PostgreSQL contention checks passed 14 tests;
+Independent code review has no unresolved findings. The changed-style comparison passes with
+no new findings, and review/disposition plus lineage tests pass 153 cases.
+
+The first CI run exposed stale test-review registrations and a reachability report that ignored
+filtered npm arguments. Obsolete registrations are removed, the ambient-audio assertion now checks
+visible playback state, and explicit browser paths keep CI/manual ownership accurate. Those local
+checks pass. The hosted AR browser run additionally failed four scenarios; retain traces and
+screenshots and diagnose their creation/startup behavior before treating the slice as complete.
+Game-room tests now have a separate blocking lane so both games have the full existing job budget.
+
+The next two steps are (1) resolve the hosted browser failures and finish the state-write comparison,
+then (2) publish passing CI evidence and the completed slice and wait for the maintainer to merge. Real PostgreSQL contention checks passed 14 tests;
 the unchanged medium-scale gate passed 2,842 steps with zero failures; the updated code-admission
 REST recipe passed all 31 steps. State-write comparison and final repository checks remain pending.
 

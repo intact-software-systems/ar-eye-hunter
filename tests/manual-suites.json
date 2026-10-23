@@ -6,7 +6,7 @@
     ],
     "owner": "Knut-Helge Vik",
     "command": "npm run test:playwright:relic",
-    "reason": "No lane installs the Relic Hunters browser stack. 2026-09-29 run: 24 passed, 1 failed (web.spec.ts camera-mode flyover), 1 skipped; fix or delete before wiring a lane."
+    "reason": "The Relic browser CI lane selects the full-stack private-entry suite; these standalone browser/server tests remain manual. 2026-09-29 run: 24 passed, 1 failed (web.spec.ts camera-mode flyover), 1 skipped; fix or delete before adding these tests to the lane."
   },
   {
     "paths": [
@@ -14,7 +14,7 @@
     ],
     "owner": "Knut-Helge Vik",
     "command": "npm run test:playwright:relic:full-stack",
-    "reason": "Needs the Relic Hunters game server and a browser pair; no lane starts that stack."
+    "reason": "Runs the separate two-browser propagation workload. The Relic full-stack CI command selects only the private-entry suite, so this scenario remains manual."
   },
   {
     "paths": [
@@ -24,15 +24,6 @@
     "owner": "Knut-Helge Vik",
     "command": "npm run test:playwright:ar-eye",
     "reason": "Passes locally (4 passed, 4 skipped) but on the Linux runner three specs hit the 45 s timeout waiting for canvas effects (mobile-controls.spec.ts:33, director-capability-delivery.spec.ts:55), so wiring it into e2e-app turned the gate red. Fix the headless rendering dependency before wiring a lane."
-  },
-  {
-    "paths": [
-      "tests/playwright/ar-eye-hunter/open-arena-directory.spec.ts",
-      "tests/playwright/ar-eye-hunter/quick-join.spec.ts"
-    ],
-    "owner": "Knut-Helge Vik",
-    "command": "RALLAR_ARENA_FULL_STACK=1 npx playwright test --config apps/ar-eye-hunter-v1/playwright.config.ts open-arena-directory.spec.ts quick-join.spec.ts",
-    "reason": "The AR Eye browser stack remains manual because its headless rendering dependency is not stable in the Linux lane. Deterministic directory cases intercept HTTP; conditional reads and two-browser Quick Join require an API-v1 memory fixture on port 8080 allowing http://127.0.0.1:5186. Quick Join passed locally with unavailable and joined outcomes."
   },
   {
     "paths": [

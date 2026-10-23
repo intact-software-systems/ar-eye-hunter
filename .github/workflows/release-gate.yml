@@ -184,15 +184,53 @@ jobs:
       - name: Run in-memory full-stack browser tests
         run: npm run test:full-stack:memory
 
+  e2e-game-rooms:
+    name: Browser tests (game rooms)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://app:app@localhost:5432/appdb
+      RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || inputs.candidate_ref }}
+          fetch-depth: 0
+
+      - name: Set up the lane
+        uses: ./.github/actions/release-gate-setup
+        with:
+          deno: 'true'
+          playwright: 'true'
+
       - name: Run AR Eye room entry browser tests
         env:
           RALLAR_ARENA_FULL_STACK: '1'
-        run: >-
-          npm run test:playwright:ar-eye --
-          open-arena-directory.spec.ts private-room-entry.spec.ts quick-join.spec.ts --project=desktop-delivery
+        run: |
+          npx playwright test --config apps/ar-eye-hunter-v1/playwright.config.ts \
+            tests/playwright/ar-eye-hunter/open-arena-directory.spec.ts \
+            tests/playwright/ar-eye-hunter/private-room-entry.spec.ts \
+            tests/playwright/ar-eye-hunter/quick-join.spec.ts --project=desktop-delivery --trace=retain-on-failure
 
       - name: Run Relic private room entry browser tests
-        run: npm run test:playwright:relic:full-stack -- full-stack-private-room-entry.spec.ts
+        env:
+          RELIC_HUNTERS_FULL_STACK: '1'
+        run: |
+          npx playwright test --config apps/relic-hunters-v1/playwright.full-stack.config.ts \
+            tests/playwright/relic-hunters/full-stack-private-room-entry.spec.ts --trace=retain-on-failure
+
+      - name: Upload game room failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: game-room-browser-failures
+          path: |
+            apps/ar-eye-hunter-v1/test-results
+            apps/relic-hunters-v1/test-results
+          if-no-files-found: warn
+          retention-days: 7
 
   e2e-recipe-console:
     name: Browser tests (Recipe Console ${{ matrix.shard }})
