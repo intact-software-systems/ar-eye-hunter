@@ -1,8 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import type { RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
-import { toRallarRoomState, toRallarRoomSummary } from '@shared-web/browser/rooms/room-group-state-translation.ts';
-import { resolveBrowserRoomTransportTarget } from '@shared-web/browser/rooms/room-transport-target.ts';
+import { resolveBrowserRoomTransportTarget, toRallarRoomState, toRallarRoomSummary } from '@shared-web/browser/rooms/room-group-state-translation.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';

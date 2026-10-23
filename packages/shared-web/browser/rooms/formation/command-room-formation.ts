@@ -6,13 +6,15 @@ import { compareGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { throwRallarValidation, type RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 import { Command } from '@shared/cache/Command.ts';
+import type { TransitionStateGroupLifecycleBody } from '../../api/state-mutation-http-contracts.ts';
 
 import { roomGroupStateHttpApi } from '../room-group-state-http-api.ts';
 import {
-    toRoomFormationGroupStateRequest,
     type GroupRef,
     type GroupSnapshot,
-    type RoomFormationCommand
+    type RoomFormationCommand,
+    type RoomFormationGroupStateRequest,
+    type ToRoomFormationGroupStateRequestInput
 } from '../room-group-state-translation.ts';
 import { runRoomTargetMutation, type RunRoomTargetMutationInput } from '../update-room.ts';
 import type { RallarRoomConnectOptions, RallarRoomFormationCommandOptions } from './rallar-room-formation-contracts.ts';
@@ -175,4 +177,28 @@ function resolveConnectFence(
         return undefined;
     }
     return { expectedFormationEpoch: snapshot.group.formationEpoch, expectedLayout };
+}
+
+export function toRoomFormationGroupStateRequest(
+    input: ToRoomFormationGroupStateRequestInput
+): RoomFormationGroupStateRequest {
+    const audit: TransitionStateGroupLifecycleBody = input.reason === undefined ? {} : { reason: input.reason };
+    switch (input.command.command) {
+        case 'connect':
+            return {
+                command: 'connect',
+                body: {
+                    ...audit,
+                    expectedFormationEpoch: input.command.expectedFormationEpoch,
+                    expectedLayout: input.command.expectedLayout
+                }
+            };
+        case 'reconfigure':
+            return {
+                command: 'reconfigure',
+                body: input.command.landing === undefined ? audit : { ...audit, landing: input.command.landing }
+            };
+        default:
+            return { command: input.command.command, body: audit };
+    }
 }

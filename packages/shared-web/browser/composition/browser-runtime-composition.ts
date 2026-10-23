@@ -24,14 +24,14 @@ import {
     type RallarRoomEventsPort
 } from '@shared-web/browser/rooms/room-events.ts';
 import {
+    resolveBrowserRoomTransportTarget,
+    type BrowserRoomTransportTarget
+} from '@shared-web/browser/rooms/room-group-state-translation.ts';
+import {
     createRoomStateStore,
     type RallarRoomStateStorePort
 } from '@shared-web/browser/rooms/room-state-store.ts';
 import { subscribeRoomTransportTarget } from '@shared-web/browser/rooms/room-transport-target-observation.ts';
-import {
-    resolveBrowserRoomTransportTarget,
-    type BrowserRoomTransportTarget
-} from '@shared-web/browser/rooms/room-transport-target.ts';
 import {
     createRallarLifecycleCoordinator,
     type RallarLifecycleCoordinator

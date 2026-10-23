@@ -81,6 +81,51 @@ it.each(['room', 'session'] as const)('ignores a failed rotation after the host 
     }
 });
 
+it('keeps rotation disabled while creation publishes its initial code', async () => {
+    const { session, snapshot, arena } = createHostFixture();
+    const created = { ...snapshot, group: { ...snapshot.group, groupId: 'created-arena' } };
+    facade.session.mockReturnValue(session);
+    facade.rooms.state.mockReturnValue({ currentRoomRef: snapshot.group });
+    const rotation = Promise.withResolvers<GroupJoinCodeResponse>();
+    facade.rooms.rotateJoinCode.mockReturnValue(rotation.promise);
+    const creating = {
+        ...arena,
+        createArenaRoom: async () => {
+            facade.rooms.state.mockReturnValue({ currentRoomRef: created.group });
+            return created;
+        }
+    };
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    try {
+        await act(async () => root.render(createElement(ArenaRoomHosting, { arena: creating })));
+        const create = [...container.querySelectorAll('button')].find((button) => button.textContent === 'New code arena');
+        if (!create) {
+            throw new Error('The host must be able to create a code arena');
+        }
+        await act(async () => create.click());
+        await act(async () =>
+            root.render(createElement(ArenaRoomHosting, {
+                arena: {
+                    ...creating,
+                    roomId: created.group.groupId,
+                    rooms: [{ ...arena.rooms[0], roomId: created.group.groupId, roomRef: created.group, snapshot: created }]
+                }
+            }))
+        );
+        const rotate = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Rotate room code');
+        expect(rotate?.disabled).toBe(true);
+        await act(async () => rotation.resolve({ joinCode: 'initial-code', expiresAtEpochMs: 4_000_000_000_000, snapshot: created }));
+        expect(rotate?.disabled).toBe(false);
+        expect(container.querySelector('input')?.value).toContain('initial-code');
+    }
+    finally {
+        await act(async () => root.unmount());
+        container.remove();
+    }
+});
+
 function createHostFixture() {
     const session: AuthSession = {
         clientId: 'host',

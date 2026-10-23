@@ -3,7 +3,6 @@ import { useState, type FormEvent } from 'react';
 import { toGroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
 
 import type { ArenaConnection } from '../game/arena-runtime/arena-connection-contracts.ts';
-import { GAME_ROOM_NAME } from '../game/types.ts';
 import { ArenaRoomEntry } from './arena-room-entry.tsx';
 import { ArenaRoomHosting } from './arena-room-hosting.tsx';
 import {
@@ -257,7 +256,7 @@ function ArenaLatencyPreference({ arena }: Pick<ArenaOperationsProps, 'arena'>) 
 
 function ArenaRoomList({ arena }: Pick<ArenaOperationsProps, 'arena'>) {
     const rooms = arena.rooms.filter((room) =>
-        (room.name.toLowerCase().includes('eye hunter') || room.name === GAME_ROOM_NAME) &&
+        room.name.toLowerCase().includes('eye hunter') &&
         ((room.joinMode === 'open' && toGroupDirectoryListing(room.snapshot.group.metadata) === 'listed') ||
             room.snapshot.members.some((member) =>
                 member.principalId === arena.session?.clientId && member.status === 'active'

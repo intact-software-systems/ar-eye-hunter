@@ -2,7 +2,7 @@ import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade
 import type { RallarWsStatus } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRtcFacade, RallarRtcIceConfigRefreshOptions } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
-import type { BrowserRoomTransportTarget } from '@shared-web/browser/rooms/room-transport-target.ts';
+import type { BrowserRoomTransportTarget } from '@shared-web/browser/rooms/room-group-state-translation.ts';
 import { BrowserRtcDiagnosticsRuntime } from '@shared-web/browser/rtc-diagnostics/browser-rtc-diagnostics-runtime.ts';
 import { BrowserRtcLifecycleRuntime } from '@shared-web/browser/rtc/browser-rtc-lifecycle-runtime.ts';
 import { BrowserRtcRecoveryRuntime } from '@shared-web/browser/rtc/browser-rtc-recovery-runtime.ts';

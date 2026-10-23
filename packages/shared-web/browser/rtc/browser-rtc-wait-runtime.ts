@@ -14,7 +14,7 @@ import {
     normalizeRallarReadinessExpectation,
     type RallarNormalizedReadinessExpectation
 } from '@shared-web/browser/readiness.ts';
-import type { BrowserRoomTransportTarget } from '@shared-web/browser/rooms/room-transport-target.ts';
+import type { BrowserRoomTransportTarget } from '@shared-web/browser/rooms/room-group-state-translation.ts';
 import {
     isRtcRoomPeerFailed,
     resolveRtcRoomLaneWaitStatus

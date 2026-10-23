@@ -1,3 +1,4 @@
+import { toRoomFormationGroupStateRequest } from '@shared-web/browser/rooms/formation/command-room-formation.ts';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import type { CreateStateGroupBody, JoinStateGroupBody, UpdateStateGroupBody } from '@shared-web/browser/api/state-mutation-http-contracts.ts';
@@ -12,7 +13,6 @@ import {
     toJoinGroupStateRequest,
     toLeaveRoomMemberGroupStateRequest,
     toRemoveRoomMemberGroupStateRequest,
-    toRoomFormationGroupStateRequest,
     toRoomLifecycleGroupStateRequest,
     toRoomMetadataGroupStateRequest,
     toSetRoomMemberRoleGroupStateRequest,
