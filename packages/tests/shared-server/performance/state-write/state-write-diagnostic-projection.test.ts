@@ -144,6 +144,64 @@ function createRelease(): ResourceInboxAttemptReleaseTelemetry {
 }
 
 describe('state-write diagnostic projection', () => {
+    it('retains native transaction-owned counters without exposing unapproved timing details', () => {
+        const events = [
+            createEvent(profile.logicalResourceId, {
+                ...profile.physicalKey,
+                attempt: 2,
+                statements: 4,
+                executorWaitMs: 20.75,
+                beginWaitMs: 3.5,
+                privatePayload: 'PRIVATE-payload'
+            }),
+            {
+                ...createEvent(profile.logicalResourceId, { ...profile.physicalKey, statements: 0, executorWaitMs: 0, beginWaitMs: 0 }),
+                status: 'error' as const
+            },
+            createEvent(profile.logicalResourceId, profile.physicalKey)
+        ];
+
+        const result = computeStateWriteDiagnosticPhase({ ...createPhase(), timingEvents: events }, budget, budget.bytesPerRun);
+        const timings = readRecords(result.serialized).filter((record) => record.record === 'timing');
+
+        expect(result.complete).toBe(true);
+        expect(timings[0]).toMatchObject({
+            executorCounters: { availability: 'available', statements: 4, executorWaitMs: 20.75, beginWaitMs: 3.5 },
+            association: { kind: 'command-operation', commandOrdinal: 0, operation: 'profile', attempt: 2 }
+        });
+        expect(timings[1]).toMatchObject({
+            status: 'error',
+            executorCounters: { availability: 'available', statements: 0, executorWaitMs: 0, beginWaitMs: 0 }
+        });
+        expect(timings[2]).toMatchObject({ executorCounters: { availability: 'unavailable' } });
+        expect(result.serialized).not.toContain('PRIVATE');
+    });
+
+    it.each([
+        { statements: 2 },
+        { statements: -1, executorWaitMs: 0, beginWaitMs: 0 },
+        { statements: 0.5, executorWaitMs: 0, beginWaitMs: 0 },
+        { statements: Number.MAX_SAFE_INTEGER + 1, executorWaitMs: 0, beginWaitMs: 0 },
+        { statements: 2, executorWaitMs: NaN, beginWaitMs: 0 },
+        { statements: 2, executorWaitMs: 0, beginWaitMs: Infinity },
+        { statements: 2, executorWaitMs: -1, beginWaitMs: 0 },
+        { statements: 2, executorWaitMs: 0, beginWaitMs: -1 }
+    ])('marks incomplete or malformed transaction counters as incomplete evidence: %j', (counters) => {
+        const result = computeStateWriteDiagnosticPhase(
+            {
+                ...createPhase(),
+                timingEvents: [createEvent(profile.logicalResourceId, { ...profile.physicalKey, ...counters })]
+            },
+            budget,
+            budget.bytesPerRun
+        );
+
+        expect(result.complete).toBe(false);
+        const records = readRecords(result.serialized);
+        expect(records.filter((record) => record.record === 'timing')).toEqual([]);
+        expect(records.at(-1)).toMatchObject({ timing: { total: 1, retained: 0, rejected: 1, truncated: 0 } });
+    });
+
     it('retains the real client read phases with their command association and rejects contradictory identities', async () => {
         const phase = createPhase();
         const principalId = 'client-0';
@@ -410,7 +468,8 @@ describe('state-write diagnostic projection', () => {
             roundedDurationMs: 12.34,
             association: { kind: 'command-operation', commandOrdinal: 0, operation: 'profile', originatingStack: 0, observingStack: 1, attempt: 2 },
             queueAgeMs: 42.5,
-            dueAgeMs: 3.25
+            dueAgeMs: 3.25,
+            executorCounters: { availability: 'unavailable' }
         });
         expect(Number(timings[0]!.completedAtEpochMs) - Number(timings[0]!.roundedDurationMs)).toBe(1_699_999_999_987.66);
         expect(Number(timings.at(-1)!.completedAtEpochMs) - Number(timings.at(-1)!.roundedDurationMs)).toBe(99_986.66);
@@ -419,7 +478,7 @@ describe('state-write diagnostic projection', () => {
                 ? {
                     ...record,
                     approximateStartedAtEpochMs: Number(record.completedAtEpochMs) - Number(record.roundedDurationMs),
-                    statusMeaning: record.component === 'state-write-benchmark-phase' ? 'wrapper-finally-not-commit' : 'timed-operation-status'
+                    statusMeaning: 'timed-operation-status'
                 }
                 : record
         ).map((record) => JSON.stringify(record) + '\n').join('');
@@ -898,7 +957,7 @@ describe('state-write diagnostic projection', () => {
             ]);
     });
 
-    it('keeps SQL process-level and discloses that begin status is not commit evidence', () => {
+    it('keeps process transaction status separate from command association', () => {
         const phase = createPhase();
         const event: RallarTimingEvent = {
             type: 'rallar.timing',

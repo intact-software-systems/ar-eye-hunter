@@ -267,11 +267,30 @@ Current captures use `rallar.state-write.diagnostic.v3`: readable named JSON rec
 retain every independent timing field, event order and multiplicity. Only the two
 exactly derived timing-row properties are omitted: `approximateStartedAtEpochMs`
 is `completedAtEpochMs - roundedDurationMs`; `statusMeaning` is
-`wrapper-finally-not-commit` for component `state-write-benchmark-phase` and
-`timed-operation-status` otherwise. Wrapper-finally status never proves commit.
+`timed-operation-status`. The current SQL transaction wrapper reports the outcome
+of the underlying `begin` promise: rejection before entry, in the body or during
+completion produces `error`. Process-level transaction success is not proof of
+any particular command's durable receipt or commit.
 Existing timing fields retain millisecond units; reservation intervals use microseconds.
-Human reports use seconds. The schema
-version identifies this derivation contract without repeating it in every timing row.
+Human reports use seconds. The schema identifies the record layout; retain the
+producer/source binding when interpreting historical captures. Earlier v3 producers
+reported `ok` unconditionally from the transaction wrapper's `finally`; those old
+events remain wrapper-finally observations, not evidence of successful settlement.
+
+AppInbox transaction records also retain `executorCounters`, either explicitly
+unavailable or an admitted `statements`, `executorWaitMs`, `beginWaitMs` triplet.
+The benchmark adapter preserves the native optional counter capability through
+root, transaction and savepoint handles, so AppInbox can open its existing
+transaction-owned counter scope. The statement count excludes driver-managed
+transaction control. Executor wait sums statement call-to-completion durations,
+including queueing, execution and observation overhead; concurrent waits can add
+up. Begin wait ends on callback entry and combines acquisition, BEGIN and scheduling.
+A begin rejected before callback entry leaves zero under the native producer;
+that zero does not establish immediate acquisition. Subtracting these counters
+from the total cannot identify COMMIT latency. Root counters can include other
+callers and are not exported as command-owned measurements. Restoring the capability
+also restores existing scoped observation work when diagnostics are disabled;
+comparisons must supply this same harness to both roles.
 
 The sidecar exports fixed labels and phase-local command ordinals. Private exact
 logical/physical AppInbox expectations associate profile and instance separately.
@@ -281,8 +300,8 @@ are excluded. Command/run monotonic bounds reuse existing clock reads, with the
 performance clock origin read outside timing. Timing completion stamps and rounded
 durations retain their original meaning; completion minus duration is approximate,
 and kind intervals are derived command envelopes. Exact kind endpoints, selected
-due timestamps and native-profiler alignment are unavailable. The SQL transaction
-wrapper's status is not commit evidence. A failed command retains its observed
+due timestamps and native-profiler alignment are unavailable. A process SQL transaction
+event has no command association. A failed command retains its observed
 start and explicitly unavailable end.
 
 A final `receipt.json` is complete only when all requested projections and writes

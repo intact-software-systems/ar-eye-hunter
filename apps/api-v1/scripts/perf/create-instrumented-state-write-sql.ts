@@ -1,4 +1,4 @@
-import type { PSqlRows, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type { PSqlParameter, PSqlSql, PSqlTransactionWrite } from '@shared-server/postgres/p-sql-sql.ts';
 import {
     recordRallarTiming,
     type RallarTimingEvent,
@@ -15,39 +15,54 @@ export interface StateWriteSqlMetrics {
     transactionDurationMs: number;
 }
 
-type PSqlValues = Parameters<PSqlSql>[0];
-type PSqlSavepointMethod = <T>(fn: (sql: PSqlSql) => Promise<T>) => Promise<T>;
+export interface CreateInstrumentedStateWriteSqlInput {
+    readonly sql: PSqlSql;
+    readonly metrics: StateWriteSqlMetrics;
+    readonly timing: RallarTimingSink;
+}
 
-export type CreateInstrumentedStateWriteSqlInput = Readonly<{
-    sql: PSqlSql;
-    metrics: StateWriteSqlMetrics;
-    timing: RallarTimingSink;
-}>;
+interface PSqlSavepointSql extends PSqlSql {
+    savepoint<Result>(write: PSqlTransactionWrite<Result>): Promise<Result>;
+}
 
 export function createInstrumentedStateWriteSql({
     sql,
     metrics,
     timing
 }: CreateInstrumentedStateWriteSqlInput): PSqlSql {
-    function instrumentedQuery<Rows extends PSqlRows>(
+    function instrumentedQuery<Result>(
         strings: TemplateStringsArray,
-        ...values: PSqlValues
-    ): Promise<Rows>;
-    function instrumentedQuery(values: PSqlValues): object;
-    function instrumentedQuery(
-        stringsOrValues: TemplateStringsArray | PSqlValues,
-        ...values: PSqlValues
-    ): Promise<PSqlRows> | object {
+        ...values: readonly PSqlParameter[]
+    ): Promise<Result>;
+    function instrumentedQuery(values: readonly PSqlParameter[]): object;
+    function instrumentedQuery<Result>(
+        stringsOrValues: TemplateStringsArray | readonly PSqlParameter[],
+        ...values: readonly PSqlParameter[]
+    ): Promise<Result> | object {
         if (!isTemplateStringsArray(stringsOrValues)) {
             return sql(stringsOrValues);
         }
         const queryText = stringsOrValues.join('?');
         const category = classifyBenchmarkSql(queryText, values);
         const startedAt = performance.now();
-        return Promise.resolve(sql<PSqlRows>(stringsOrValues, ...values)).then(
+        return Promise.resolve(sql<Result>(stringsOrValues, ...values)).then(
             (result) => {
                 const durationMs = performance.now() - startedAt;
-                observeSql({ metrics, category, result, durationMs });
+                let serializedResultBytes = 0;
+                try {
+                    serializedResultBytes = new TextEncoder().encode(JSON.stringify(result)).byteLength;
+                }
+                catch {
+                    // Driver values that cannot serialize must still reach their caller unchanged.
+                    serializedResultBytes = 0;
+                }
+                observeSql({
+                    metrics,
+                    category,
+                    rowsRead: Array.isArray(result) ? result.length : 0,
+                    serializedResultBytes,
+                    durationMs
+                });
                 recordRallarTiming({
                     sink: timing,
                     event: {
@@ -62,7 +77,7 @@ export function createInstrumentedStateWriteSql({
             },
             (error) => {
                 const durationMs = performance.now() - startedAt;
-                observeSql({ metrics, category, result: undefined, durationMs });
+                observeSql({ metrics, category, rowsRead: 0, serializedResultBytes: 0, durationMs });
                 recordRallarTiming({
                     sink: timing,
                     event: {
@@ -78,39 +93,46 @@ export function createInstrumentedStateWriteSql({
             }
         );
     }
-    const instrumented = instrumentedQuery as PSqlSql;
-    instrumented.begin = async <T>(fn: (transaction: PSqlSql) => Promise<T>) => {
-        const startedAt = performance.now();
-        try {
-            return await sql.begin(
-                async (transaction) => await fn(createInstrumentedStateWriteSql({ sql: transaction, metrics, timing }))
-            );
+    const instrumented: PSqlSql = Object.assign(instrumentedQuery, {
+        begin: async <Result>(write: PSqlTransactionWrite<Result>): Promise<Result> => {
+            const startedAt = performance.now();
+            let completed = false;
+            try {
+                const result = await sql.begin(
+                    async (transaction) =>
+                        await write(createInstrumentedStateWriteSql({ sql: transaction, metrics, timing }))
+                );
+                completed = true;
+                return result;
+            }
+            finally {
+                const durationMs = performance.now() - startedAt;
+                metrics.transactionDurationMs += durationMs;
+                recordRallarTiming({
+                    sink: timing,
+                    event: {
+                        component: 'state-write-benchmark-phase',
+                        operation: 'transaction'
+                    },
+                    status: completed ? 'ok' : 'error',
+                    durationMs
+                });
+            }
         }
-        finally {
-            const durationMs = performance.now() - startedAt;
-            metrics.transactionDurationMs += durationMs;
-            recordRallarTiming({
-                sink: timing,
-                event: {
-                    component: 'state-write-benchmark-phase',
-                    operation: 'transaction'
-                },
-                status: 'ok',
-                durationMs
-            });
-        }
-    };
-    const savepoint = (sql as PSqlSql & { savepoint?: PSqlSavepointMethod; }).savepoint;
-    if (typeof savepoint === 'function') {
-        const invokeSavepoint = savepoint.bind(sql) as PSqlSavepointMethod;
-        (instrumented as PSqlSql & { savepoint: PSqlSavepointMethod; }).savepoint = async <T>(
-            fn: (transaction: PSqlSql) => Promise<T>
-        ): Promise<T> =>
-            await invokeSavepoint<T>(
-                async (transaction) => await fn(createInstrumentedStateWriteSql({ sql: transaction, metrics, timing }))
-            );
+    });
+    if (sql.getExecutorCounters) {
+        instrumented.getExecutorCounters = sql.getExecutorCounters.bind(sql);
     }
-    return instrumented;
+    if (!hasSavepoint(sql)) {
+        return instrumented;
+    }
+    return Object.assign(instrumented, {
+        savepoint: async <Result>(write: PSqlTransactionWrite<Result>): Promise<Result> =>
+            await sql.savepoint(
+                async (transaction) =>
+                    await write(createInstrumentedStateWriteSql({ sql: transaction, metrics, timing }))
+            )
+    });
 }
 
 export function stateWriteProductionPhaseDuration(
@@ -128,18 +150,19 @@ export function stateWriteProductionPhaseDuration(
         .reduce((total, event) => total + event.durationMs, 0);
 }
 
-type ObserveSqlInput = Readonly<{
-    metrics: StateWriteSqlMetrics;
-    category: 'read' | 'write' | 'outbox';
-    result: PSqlRows | undefined;
-    durationMs: number;
-}>;
+interface ObserveSqlInput {
+    readonly metrics: StateWriteSqlMetrics;
+    readonly category: 'read' | 'write' | 'outbox';
+    readonly rowsRead: number;
+    readonly serializedResultBytes: number;
+    readonly durationMs: number;
+}
 
-function observeSql({ metrics, category, result, durationMs }: ObserveSqlInput): void {
+function observeSql({ metrics, category, rowsRead, serializedResultBytes, durationMs }: ObserveSqlInput): void {
     metrics.statements += 1;
-    metrics.serializedResultBytes += byteLength(result);
+    metrics.serializedResultBytes += serializedResultBytes;
     if (category === 'read') {
-        metrics.rowsRead += Array.isArray(result) ? result.length : 0;
+        metrics.rowsRead += rowsRead;
         metrics.readMs += durationMs;
     }
     else if (category === 'outbox') {
@@ -152,7 +175,7 @@ function observeSql({ metrics, category, result, durationMs }: ObserveSqlInput):
 
 export function classifyBenchmarkSql(
     query: string,
-    values: PSqlValues
+    values: readonly PSqlParameter[]
 ): 'read' | 'write' | 'outbox' {
     const normalized = query.trim().toLowerCase();
     if (
@@ -169,19 +192,11 @@ function firstSqlKeyword(query: string): string {
 }
 
 function isTemplateStringsArray(
-    value: TemplateStringsArray | PSqlValues
+    value: TemplateStringsArray | readonly PSqlParameter[]
 ): value is TemplateStringsArray {
     return Object.hasOwn(value, 'raw');
 }
 
-function byteLength(value: PSqlRows | undefined): number {
-    if (value === undefined) {
-        return 0;
-    }
-    try {
-        return new TextEncoder().encode(JSON.stringify(value)).byteLength;
-    }
-    catch {
-        return 0;
-    }
+function hasSavepoint(sql: PSqlSql): sql is PSqlSavepointSql {
+    return 'savepoint' in sql && typeof sql.savepoint === 'function';
 }
