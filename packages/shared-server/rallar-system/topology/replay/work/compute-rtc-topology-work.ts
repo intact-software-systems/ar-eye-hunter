@@ -38,11 +38,7 @@ import {
 } from './compute-rtc-topology-work-write.ts';
 import { isChangeGatedGroupRevisionWork, toTopologyWorkOrigin } from './rtc-topology-coalesced-group-revision-work.ts';
 import { computeAuthorityTopologyInputFingerprint } from './rtc-topology-input-fingerprint.ts';
-import {
-    toRtcTopologyExecutionId,
-    type PersistedRtcTopologyWork,
-    type RtcTopologyWorkEnvelope
-} from './rtc-topology-work-codec.ts';
+import type { PersistedRtcTopologyWork, RtcTopologyWorkEnvelope } from './rtc-topology-work-codec.ts';
 import type { TopologyPromotionRead } from './topology-promotion-request.ts';
 
 export interface RtcTopologyWorkFacts {
@@ -110,7 +106,6 @@ type UnchangedRtcTopologyWork = Extract<AcceptedRtcTopologyWork, { decision: 'sk
 type HeldRtcTopologyWork = Extract<AcceptedRtcTopologyWork, { decision: 'held-young-layout'; }>;
 
 interface ToTopologyPublicationInput {
-    readonly envelope: RtcTopologyWorkEnvelope<PersistedRtcTopologyWork>;
     readonly group: GroupSnapshot;
     readonly snapshot: RallarOverlayTopologySnapshot;
     readonly facts: RtcOverlayTopologyMessageFacts;
@@ -364,7 +359,6 @@ function computeAcceptedTopologyMutation(
     const publication = publicationExpireAtTimestamp === null
         ? null
         : toTopologyPublication({
-            envelope: workEnvelope,
             group: authority.group,
             snapshot: planned.snapshot,
             facts: {
@@ -409,8 +403,8 @@ function computeAcceptedTopologyMutation(
 }
 
 function toTopologyPublication(input: ToTopologyPublicationInput): RtcTopologyPublication {
-    const { envelope, group, snapshot, facts } = input;
-    const workId = toRtcTopologyExecutionId(envelope);
+    const { group, snapshot, facts } = input;
+    const { workId } = facts;
     return {
         publicationId: toRtcTopologyPublicationId({
             workId,
