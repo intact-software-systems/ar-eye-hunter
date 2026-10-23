@@ -184,6 +184,13 @@ jobs:
       - name: Run in-memory full-stack browser tests
         run: npm run test:full-stack:memory
 
+      - name: Run AR Eye room entry browser tests
+        env:
+          RALLAR_ARENA_FULL_STACK: '1'
+        run: >-
+          npm run test:playwright:ar-eye -- --project desktop-delivery
+          open-arena-directory.spec.ts private-room-entry.spec.ts quick-join.spec.ts
+
   e2e-recipe-console:
     name: Browser tests (Recipe Console ${{ matrix.shard }})
     runs-on: ubuntu-latest

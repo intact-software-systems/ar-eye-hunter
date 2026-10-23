@@ -12,6 +12,7 @@ import type {
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { RallarDirectorStatus, RallarRoomSummary } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
 import { createRallarAiFunnyRoomName, createRallarAiRoomNameSeed } from '@shared/rallar-ai/mod.ts';
 
@@ -22,6 +23,7 @@ import type {
     DirectorAttemptSource,
     DirectorAttemptState
 } from '../arena-connection-contracts.ts';
+import { arenaRoomEntry } from '../arena-room-entry.ts';
 import {
     OPEN_ARENA_DIRECTORY_QUERY,
     useArenaDirectoryActions,
@@ -149,13 +151,16 @@ function useArenaRoomActions(
     input: ArenaSessionActionsInput,
     refreshRooms: ArenaConnection['refreshRooms']
 ): Pick<ArenaConnection, 'createArenaRoom' | 'quickJoinArenaRoom' | 'joinRoom'> {
-    const createArenaRoom = useCallback(() => createAndSelectArenaRoom(input, refreshRooms), [
-        input.sessionRef,
-        input.setRoomId,
-        input.clearRoomScopedArenaState,
-        input.rooms,
-        refreshRooms
-    ]);
+    const createArenaRoom = useCallback(
+        (joinMode: GroupJoinMode = 'open') => createAndSelectArenaRoom(input, refreshRooms, joinMode),
+        [
+            input.sessionRef,
+            input.setRoomId,
+            input.clearRoomScopedArenaState,
+            input.rooms,
+            refreshRooms
+        ]
+    );
     const joinRoom = useCallback((roomId: string) => enterArenaRoom(input, refreshRooms, roomId), [
         input.sessionRef,
         input.setRoomId,
@@ -179,6 +184,7 @@ async function quickJoinArena(
     if (!session) {
         return undefined;
     }
+    arenaRoomEntry.cancel();
     const isCurrent = () =>
         input.sessionRef.current?.sessionId === session.sessionId &&
         input.sessionRef.current?.clientId === session.clientId;
@@ -194,7 +200,7 @@ async function quickJoinArena(
             error instanceof Error && error.name === 'RallarRoomSwitchPartialFailureError' &&
             'operation' in error && error.operation === 'quick-join'
         ) {
-            adoptQuickJoinedArena(input, rallar.rooms.state().currentRoomId);
+            adoptArenaRoom(input, rallar.rooms.state().currentRoomId);
             try {
                 await refreshRooms();
             }
@@ -209,13 +215,13 @@ async function quickJoinArena(
         return undefined;
     }
     if (result.status === 'joined') {
-        adoptQuickJoinedArena(input, result.snapshot.group.groupId);
+        adoptArenaRoom(input, result.snapshot.group.groupId);
         await refreshRooms();
     }
     return result.status;
 }
 
-function adoptQuickJoinedArena(input: ArenaSessionActionsInput, roomId: string | undefined): void {
+function adoptArenaRoom(input: ArenaSessionActionsInput, roomId: string | undefined): void {
     // The room subscription normally adopts first, while previous-room cleanup is still pending.
     if (input.roomIdRef.current !== roomId) {
         input.clearRoomScopedArenaState();
@@ -226,28 +232,46 @@ function adoptQuickJoinedArena(input: ArenaSessionActionsInput, roomId: string |
 
 async function createAndSelectArenaRoom(
     input: ArenaSessionActionsInput,
-    refreshRooms: ArenaConnection['refreshRooms']
-): Promise<void> {
-    const { sessionRef, setRoomId, clearRoomScopedArenaState, rooms } = input;
-    if (!sessionRef.current) {
-        return;
+    refreshRooms: ArenaConnection['refreshRooms'],
+    joinMode: GroupJoinMode
+): Promise<GroupSnapshot | undefined> {
+    const { sessionRef, rooms } = input;
+    const session = sessionRef.current;
+    if (!session) {
+        return undefined;
     }
+    arenaRoomEntry.cancel();
     const displayName = createRallarAiFunnyRoomName({
         baseName: GAME_ROOM_NAME,
         theme: 'ar-eye-hunter',
         seed: createRallarAiRoomNameSeed('ar-eye-hunter'),
         existingNames: rooms.map((room) => room.name)
     });
-    const snapshot = await rallar.rooms.createAndSwitch({
-        displayName,
-        joinMode: 'open'
-    });
-    if (!sessionRef.current) {
-        return;
+    input.setError(undefined);
+    let snapshot: GroupSnapshot;
+    try {
+        snapshot = await rallar.rooms.createAndSwitch({ displayName, joinMode });
     }
-    clearRoomScopedArenaState();
-    setRoomId(snapshot.group.groupId);
+    catch (error) {
+        if (sessionRef.current?.sessionId !== session.sessionId || sessionRef.current?.clientId !== session.clientId) {
+            return undefined;
+        }
+        const admitted = rallar.rooms.state().currentRoom;
+        if (
+            !admitted || !(error instanceof Error) || error.name !== 'RallarRoomSwitchPartialFailureError' ||
+            !('operation' in error) || error.operation !== 'create-and-switch'
+        ) {
+            throw error;
+        }
+        snapshot = admitted;
+        input.setError('The new arena is ready, but leaving the previous arena failed. Your membership there remains.');
+    }
+    if (sessionRef.current?.sessionId !== session.sessionId || sessionRef.current?.clientId !== session.clientId) {
+        return undefined;
+    }
+    adoptArenaRoom(input, snapshot.group.groupId);
     await refreshRooms();
+    return snapshot;
 }
 
 async function enterArenaRoom(
@@ -255,16 +279,17 @@ async function enterArenaRoom(
     refreshRooms: ArenaConnection['refreshRooms'],
     nextRoomId: string
 ): Promise<void> {
-    const { sessionRef, setRoomId, clearRoomScopedArenaState } = input;
-    if (!sessionRef.current) {
+    const { sessionRef } = input;
+    const session = sessionRef.current;
+    if (!session) {
         return;
     }
+    arenaRoomEntry.cancel();
     const room = await rallar.rooms.enter(nextRoomId);
-    if (!sessionRef.current) {
+    if (sessionRef.current?.sessionId !== session.sessionId || sessionRef.current?.clientId !== session.clientId) {
         return;
     }
-    clearRoomScopedArenaState();
-    setRoomId(room.roomId);
+    adoptArenaRoom(input, room.roomId);
     await refreshRooms();
 }
 

@@ -2,6 +2,8 @@ import { useState, type FormEvent } from 'react';
 
 import type { ArenaConnection } from '../game/arena-runtime/arena-connection-contracts.ts';
 import { GAME_ROOM_NAME } from '../game/types.ts';
+import { ArenaPrivateRooms } from './arena-private-rooms.tsx';
+import { ArenaRoomEntry } from './arena-room-entry.tsx';
 import {
     toDirectorAttemptLabel,
     toDirectorLabel,
@@ -45,6 +47,7 @@ export function ArenaOperations(props: ArenaOperationsProps) {
     };
     return (
         <section className="hud hud--side" aria-label="Arena operations">
+            <ArenaRoomEntry arena={arena} />
             {arena.connectionState === 'signed-out' || !arena.session
                 ? <ArenaAuthForm fields={fields} setFields={setFields} submit={submit} />
                 : <ArenaSessionPanel key={arena.session.sessionId} {...props} />}
@@ -134,12 +137,16 @@ function ArenaSessionPanel({ arena, localColor, matchRemainingMs }: ArenaOperati
                     <span>{toShortId(arena.session?.sessionId ?? '')}</span>
                 </div>
             </div>
+            <label>
+                Account reference<input value={arena.session?.clientId ?? ''} readOnly />
+            </label>
             <ArenaQuickJoin arena={arena} />
             <div className="room-actions">
-                <button type="button" onClick={arena.createArenaRoom}>New Arena</button>
+                <button type="button" onClick={() => void arena.createArenaRoom()}>New Arena</button>
                 <button type="button" onClick={arena.refreshRooms}>Refresh</button>
                 <button type="button" onClick={arena.logout}>Logout</button>
             </div>
+            <ArenaPrivateRooms arena={arena} />
             <div className="director-panel">
                 <div>
                     <span>Director</span>

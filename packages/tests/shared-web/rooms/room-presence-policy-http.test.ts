@@ -41,7 +41,11 @@ describe('room presence policy failures', () => {
             generationId: 'generation-1',
             connectionGenerationId: 'ws-generation-1',
             requestedGroupId: 'group-1'
-        })).rejects.toThrow('403');
+        })).rejects.toMatchObject({
+            name: 'RallarRoomJoinPartialFailureError',
+            joinedRoom: groupSnapshot('group-1'),
+            cause: { status: 403 }
+        });
 
         expect(calls.filter((call) => call.url.includes('/members/principal-1'))).toHaveLength(0);
         expect(calls.filter((call) => call.url.includes('/sessions/session-1'))).toHaveLength(1);

@@ -32,7 +32,10 @@ The starting main includes directory hardening, Quick Join, and existing-measure
   stated working choice, based on existing contracts, not a claim that codes are globally unique.
 - Account invitations authorize a principal through existing group membership. A share link alone
   cannot authorize an uninvited account. Known people may be selected by username/display name;
-  presence is not presented as friendship.
+  presence is not presented as friendship. The authenticated people collection exposes only the
+  caller's own profile; it is not a username directory. Show each signed-in person's account
+  reference so guests can share it with a host for a targeted invitation. Keep known-person labels
+  where available, without widening the existing read-authorization boundary.
 - Preserve default seven-day code and invitation lifetimes already owned by the server. Display the
   expiry returned by rotation. Expired and mismatched codes share the existing denial; say invalid
   or expired rather than claiming to distinguish rotation from expiry.
@@ -217,6 +220,17 @@ and Relic expedition commands in its runtime.
 **Legacy exit:** The affected bare-ID Relic restore is removed, not retained as fallback. Any other
 affected legacy without a verified independent consumer is removed. UI extraction preserves current
 activity behavior and does not carry a duplicate predecessor implementation.
+
+The AR Eye checkpoint now includes private creation, share links, manual entry, code rotation,
+principal invitations and revocation, and account-reference display. Ten combined visible-control
+browser scenarios passed against a fresh in-memory API, including actual match participation, member
+reload after rotation, rejected and corrected credentials, and a new destination replacing a saved
+room. The existing browser CI lane runs that same scenario set sequentially because the demo accounts
+and empty-directory assertion share server state. Real-browser reload exposed cancelled startup
+poisoning a replacement connection; a failing startup regression now protects the canonical
+cancellation result. Creation also fences the initiating session and preserves the newly adopted room
+when previous-room membership cannot be left. Relic integration and the remaining final gates are
+still pending; the increment remains open.
 
 ## Final validation and delivery
 

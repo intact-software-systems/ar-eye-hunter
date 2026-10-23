@@ -10,6 +10,7 @@ import { toError } from '@shared/resilience/to-error.ts';
 import { ApiHttpError } from '../api/http-error.ts';
 import { toAuthSessionKey } from '../auth/to-auth-session-key.ts';
 import { BrowserRallarSubscriptionScope, notifyListener } from '../messages/rallar-listener-delivery.ts';
+import type { RallarFacade } from '../rallar-facade-contract.ts';
 import type { RallarStateListener, RallarUnsubscribe } from '../rallar-shared-contracts.ts';
 import type { RallarAuthFacade, RallarAuthState } from '../session/rallar-auth-facade.ts';
 import type { BrowserRallarRooms } from './browser-rallar-rooms.ts';
@@ -86,6 +87,36 @@ export class RallarRoomEntry {
     private attempt: RallarRoomEntry.Attempt | null = null;
     private generation = 0;
     private sessionKey: string | null = null;
+
+    public static createBrowser(
+        rallar: Pick<RallarFacade, 'auth' | 'rooms' | 'session'>,
+        config: RallarRoomEntry.Config
+    ): RallarRoomEntry {
+        return new RallarRoomEntry({
+            auth: {
+                session: () => rallar.session(),
+                onChange: (listener, options) => rallar.auth.onChange(listener, options)
+            },
+            rooms: rallar.rooms,
+            storage: {
+                getItem: (key) => window.sessionStorage.getItem(key),
+                setItem: (key, value) => window.sessionStorage.setItem(key, value),
+                removeItem: (key) => window.sessionStorage.removeItem(key)
+            },
+            location: {
+                read: () => window.location.href,
+                replace: (url) => window.history.replaceState(window.history.state, '', url),
+                onChange: (listener) => {
+                    window.addEventListener('hashchange', listener);
+                    window.addEventListener('popstate', listener);
+                    return () => {
+                        window.removeEventListener('hashchange', listener);
+                        window.removeEventListener('popstate', listener);
+                    };
+                }
+            }
+        }, config);
+    }
 
     public constructor(dependencies: RallarRoomEntry.Dependencies, config: RallarRoomEntry.Config) {
         this.dependencies = dependencies;

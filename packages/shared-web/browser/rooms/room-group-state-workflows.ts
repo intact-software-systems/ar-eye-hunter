@@ -30,14 +30,8 @@ export type StateGroupWorkflowValue = GroupSnapshot | undefined;
 
 type GroupWorkflowKey = 'created' | 'member' | 'joined' | 'disconnected' | 'left';
 
-export interface CreateAndJoinStateGroupInput {
+export interface CreateAndJoinStateGroupInput extends Omit<ConnectStateGroupPresenceInput, 'groupId'> {
     readonly displayName: string;
-    readonly principalId: string;
-    readonly sessionId: string;
-    readonly generationId: string;
-    readonly connectionGenerationId: string;
-    readonly scope?: StateScope;
-    readonly policies?: CommandsOrchestratorPolicies<StateGroupWorkflowValue>;
     readonly requestedGroupId?: string;
     readonly options?: Omit<RoomCreateGroupStateFields, 'displayName'>;
 }
@@ -90,11 +84,18 @@ export async function createAndJoinStateGroup(
         actorPrincipalId: input.principalId,
         actorSessionId: input.sessionId
     });
-    await new Command<StateGroupWorkflowValue>(
-        (signal) => roomGroupStateHttpApi.createGroup({ request, options: { requestId, signal }, scope }),
+    const createdRoom = await new Command<StateGroupWorkflowValue>(
+        (signal) => {
+            input.assertCurrent?.();
+            return roomGroupStateHttpApi.createGroup({
+                request,
+                options: { requestId, signal, authSession: input.authSession },
+                scope
+            });
+        },
         input.policies?.command
     ).run();
-    return requireConnectedPresence(await presence.run());
+    return await connectAdmittedRoomPresence(createdRoom, presence, input.assertCurrent);
 }
 
 export async function joinStateGroup(input: JoinStateGroupInput): Promise<GroupSnapshot> {
@@ -118,13 +119,21 @@ export async function joinStateGroup(input: JoinStateGroupInput): Promise<GroupS
         },
         input.policies?.command
     ).run();
+    return await connectAdmittedRoomPresence(joinedRoom, presence, input.assertCurrent);
+}
+
+async function connectAdmittedRoomPresence(
+    joinedRoom: StateGroupWorkflowValue,
+    presence: Command<StateGroupWorkflowValue>,
+    assertCurrent: (() => void) | undefined
+): Promise<GroupSnapshot> {
     if (!joinedRoom) {
         throw new Error('Room admission did not produce a snapshot.');
     }
     try {
-        input.assertCurrent?.();
+        assertCurrent?.();
         const snapshot = requireConnectedPresence(await presence.run());
-        input.assertCurrent?.();
+        assertCurrent?.();
         return snapshot;
     }
     catch (cause) {
