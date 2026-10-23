@@ -20,17 +20,18 @@ import type {
     RallarRoomState,
     RallarTypedPayloadHandler
 } from '@shared-web/browser/rallar.ts';
+import { toRallarRoomState } from '@shared-web/browser/rooms/room-group-state-translation.ts';
 import { newALBroadcastMessage, newALPrincipalBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
-import { createElement } from 'react';
-import { act } from 'react';
+import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fetchRelicSnapshot } from '../../../apps/relic-hunters-v1/src/game/api.ts';
 import type { RelicHuntersRuntime } from '../../../apps/relic-hunters-v1/src/game/relic-hunters-runtime.ts';
 import { useRelicHunters } from '../../../apps/relic-hunters-v1/src/game/use-relic-hunters.ts';
-import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
+import { createActiveGroupPresenceSessionFixture, createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -58,6 +59,7 @@ const mockRallar = vi.hoisted(() => ({
         join: vi.fn(),
         state: vi.fn(),
         refresh: vi.fn(),
+        directory: vi.fn(),
         onChange: vi.fn()
     },
     messages: {
@@ -112,26 +114,18 @@ describe('useRelicHunters auth lifecycle', () => {
             authListeners.add(listener);
             return () => authListeners.delete(listener);
         });
-        mockRallar.start.mockResolvedValue({
-            session,
-            connected: true,
-            roomState: {
-                rooms: [
-                    {
-                        roomId: 'relic-room-1',
-                        groupId: 'relic-room-1',
-                        name: 'Relic Hunters Expedition'
-                    }
-                ],
-                currentRoomId: 'relic-room-1'
-            }
+        mockRallar.start.mockImplementation(async () => {
+            const room = relicRoomFixture('relic-room-1');
+            mockRallar.rooms.state.mockReturnValue(room.state);
+            return { session, connected: true, roomState: room.state };
         });
         mockRallar.subscriptions.mockImplementation(() => new BrowserRallarSubscriptionScope());
         mockRallar.rooms.onChange.mockReturnValue(vi.fn());
         mockRallar.rooms.state.mockReturnValue({
             rooms: [],
-            currentRoomId: undefined
+            members: []
         });
+        mockRallar.rooms.directory.mockResolvedValue({ entries: [], nextCursor: null });
         mockRallar.messages.ws.onMessage.mockReturnValue(vi.fn());
         mockRallar.messages.rtc.onMessage.mockReturnValue(vi.fn());
         mockRallar.messages.room.mockImplementation(() => idleRoomChannel());
@@ -169,6 +163,11 @@ describe('useRelicHunters auth lifecycle', () => {
         expect(current?.roomId).toBe('relic-room-1');
         expect(current?.diagnostics.authenticated).toBe(true);
         expect(current?.diagnostics.middlewareConnected).toBe(true);
+        expect(current?.directory).toEqual({ status: 'ready', entries: [], error: undefined });
+        expect(mockRallar.rooms.directory).toHaveBeenCalledWith(
+            { kind: 'room', q: 'relic hunters', limit: 50 },
+            { scope: { applicationId: DEFAULT_STATE_APPLICATION_ID, workspaceId: DEFAULT_STATE_WORKSPACE_ID } }
+        );
 
         await emitAuthState({
             authenticated: false,
@@ -179,6 +178,7 @@ describe('useRelicHunters auth lifecycle', () => {
         expect(current?.connectionState).toBe('signed-out');
         expect(current?.roomId).toBeUndefined();
         expect(current?.rooms).toEqual([]);
+        expect(current?.directory).toEqual({ status: 'idle', entries: [], error: undefined });
         expect(current?.snapshot).toBeUndefined();
         expect(current?.diagnostics.authenticated).toBe(false);
         expect(current?.diagnostics.middlewareConnected).toBe(false);
@@ -190,7 +190,7 @@ describe('useRelicHunters auth lifecycle', () => {
 
     it('carries a private destination through sign-in and adopts it before a previous startup room', async () => {
         const destination = { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'private-expedition' };
-        const admitted = createGroupSnapshotFixture({ ...destination, sessionIds: [session.sessionId] });
+        const admitted = relicRoomFixture(destination.groupId);
         mockRallar.auth.restore.mockReturnValue(undefined);
         mockRallar.session.mockReturnValue(undefined);
         const invitation = toRoomEntryUrl(window.location.href, { roomRef: destination, joinCode: 'private-code' });
@@ -210,8 +210,8 @@ describe('useRelicHunters auth lifecycle', () => {
             return session;
         });
         mockRallar.rooms.join.mockImplementation(async () => {
-            mockRallar.rooms.state.mockReturnValue({ rooms: [], currentRoom: admitted, currentRoomRef: destination, currentRoomId: destination.groupId });
-            return admitted;
+            mockRallar.rooms.state.mockReturnValue(admitted.state);
+            return admitted.snapshot;
         });
         vi.mocked(fetchRelicSnapshot).mockImplementation(async (roomId) => relicSnapshot(20, roomId));
         await act(async () => current?.login('relic', 'password'));
@@ -534,6 +534,42 @@ interface CapturedRoomsChange {
     enter(roomId: string): Promise<void>;
 }
 
+interface RelicRoomFixture {
+    readonly snapshot: GroupSnapshot;
+    readonly state: RallarRoomState;
+}
+
+function relicRoomFixture(roomId: string): RelicRoomFixture {
+    const roomRef = {
+        applicationId: DEFAULT_STATE_APPLICATION_ID,
+        workspaceId: DEFAULT_STATE_WORKSPACE_ID,
+        groupId: roomId
+    };
+    const snapshot: GroupSnapshot = {
+        ...createGroupSnapshotFixture({ ...roomRef, sessionIds: [session.clientId] }),
+        activeSessions: [{
+            ...createActiveGroupPresenceSessionFixture({
+                ...roomRef,
+                principalId: session.clientId,
+                sessionId: session.sessionId
+            }),
+            connectedAtEpochMs: session.expiresAtEpochMs - 60_000,
+            lastHeartbeatAtEpochMs: session.expiresAtEpochMs - 60_000,
+            expiresAtEpochMs: session.expiresAtEpochMs
+        }]
+    };
+    return {
+        snapshot,
+        state: toRallarRoomState({
+            groupSnapshots: [snapshot],
+            currentRoom: snapshot,
+            currentRoomRef: roomRef,
+            clientSnapshots: [],
+            sessionId: session.sessionId
+        })
+    };
+}
+
 /** Every room the hook subscribes to round transitions for, by the room's group id; other room channels stay silent. */
 function captureRoomChannels(): ReadonlyMap<string, CapturedRoomChannel> {
     const channels = new Map<string, CapturedRoomChannel>();
@@ -569,7 +605,7 @@ function captureRoomsChange(): CapturedRoomsChange {
     return {
         enter: async (roomId) => {
             await act(async () => {
-                const state = { rooms: [], currentRoomId: roomId, members: [] };
+                const state = relicRoomFixture(roomId).state;
                 mockRallar.rooms.state.mockReturnValue(state);
                 for (const listener of listeners) {
                     listener(state);
