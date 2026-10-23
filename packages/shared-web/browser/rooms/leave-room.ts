@@ -9,12 +9,14 @@ import type { GroupRef, GroupSnapshot, StateScope } from './room-group-state-tra
 import { leaveStateGroup, type StateGroupWorkflowValue } from './room-group-state-workflows.ts';
 import type { RallarRoomStateStorePort } from './room-state-store.ts';
 
+export interface RoomSessionFence {
+    readonly session: AuthSession;
+    assertCurrent(context?: ApiMiddleware): void;
+}
+
 export interface LeaveRoomInput {
     readonly input?: string | RallarLeaveRoomOptions;
-    readonly sessionFence?: {
-        readonly session: AuthSession;
-        readonly assertCurrent: () => void;
-    };
+    readonly sessionFence?: RoomSessionFence;
     readonly stateStore: RallarRoomStateStorePort;
     readonly connect: (options?: RallarOperationOptions) => Promise<ApiMiddleware>;
     readonly requireSession: () => AuthSession;

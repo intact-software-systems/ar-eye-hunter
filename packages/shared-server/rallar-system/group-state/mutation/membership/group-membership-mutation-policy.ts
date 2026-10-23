@@ -14,6 +14,24 @@ import {
 } from '../aggregate/group-aggregate-mutation-policy.ts';
 import type { GroupMutationCommand, GroupMutationFacts, GroupMutationRead } from '../group-mutation-contracts.ts';
 import { GroupMutationRejectedError } from '../group-mutation-contracts.ts';
+import { assertGroupAdmissionWindowsOpen, resolveAdmittedMemberStatus } from './compute-group-admission-mutation.ts';
+
+export function resolveUpsertMemberStatus(
+    command: Extract<GroupMutationCommand, { operation: 'upsertMember'; }>,
+    read: GroupMutationRead,
+    facts: GroupMutationFacts
+): GroupMember['status'] {
+    const existing = read.targetMember ?? undefined;
+    if (command.input.status !== 'active' || existing?.status === 'active') {
+        return command.input.status;
+    }
+    // Self-activation requests admission; a manager grants it within the same admission windows.
+    if (command.input.actorPrincipalId === command.targetPrincipalId) {
+        return resolveAdmittedMemberStatus({ read, facts, existing });
+    }
+    assertGroupAdmissionWindowsOpen(read, facts);
+    return command.input.status;
+}
 
 export function governanceActionFor(
     command: Extract<GroupMutationCommand, { targetPrincipalId: string; }>

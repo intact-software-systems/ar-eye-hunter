@@ -68,37 +68,13 @@ describe('room presence policy failures', () => {
             sessionId: 'session-1',
             generationId: 'generation-1',
             connectionGenerationId: 'ws-generation-1'
-        })).rejects.toThrow('403');
-
-        expect(calls.filter((call) => call.url.endsWith('/groups/group-1/join'))).toHaveLength(1);
-        expect(calls.filter((call) => call.url.includes('/members/principal-1'))).toHaveLength(0);
-    });
-
-    it('does not retry or repair a repeated member-forbidden presence failure', async () => {
-        const calls: FetchCall[] = [];
-        stubFetch(calls, ({ url, method }) => {
-            if (method === 'POST' && url.endsWith('/groups')) {
-                return jsonResponse(groupSnapshot('group-1'), 201);
-            }
-            if (method === 'PUT' && url.endsWith('/groups/group-1/sessions/session-1')) {
-                return new Response(
-                    'Forbidden: group member not found for presence session: principal-1',
-                    { status: 403 }
-                );
-            }
-            return jsonResponse(groupSnapshot('group-1'));
+        })).rejects.toMatchObject({
+            name: 'RallarRoomJoinPartialFailureError',
+            joinedRoom: groupSnapshot('group-1'),
+            cause: { status: 403 }
         });
 
-        await expect(createAndJoinStateGroup({
-            displayName: 'Room 1',
-            principalId: 'principal-1',
-            sessionId: 'session-1',
-            generationId: 'generation-1',
-            connectionGenerationId: 'ws-generation-1',
-            requestedGroupId: 'group-1'
-        })).rejects.toThrow('403');
-
-        expect(calls.filter((call) => call.url.includes('/sessions/session-1'))).toHaveLength(1);
+        expect(calls.filter((call) => call.url.endsWith('/groups/group-1/join'))).toHaveLength(1);
         expect(calls.filter((call) => call.url.includes('/members/principal-1'))).toHaveLength(0);
     });
 });

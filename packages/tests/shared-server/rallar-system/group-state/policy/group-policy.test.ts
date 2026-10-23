@@ -70,7 +70,8 @@ describe('group policy helpers', () => {
                 snapshot: snapshot({ joinMode: 'code' }),
                 actor: actor('carol'),
                 joinCode: 'wrong',
-                expectedJoinCode: 'right'
+                joinCodeVerifier: 'wrong-verifier',
+                expectedJoinCodeVerifier: 'right-verifier'
             })
         ).toMatchObject(denied('group-code-invalid'));
         expect(
@@ -491,7 +492,8 @@ describe('group policy helpers', () => {
                     snapshot: snapshot({ joinMode: 'code' }),
                     actor: actor('carol'),
                     joinCode: 'wrong',
-                    expectedJoinCode: 'right'
+                    joinCodeVerifier: 'wrong-verifier',
+                    expectedJoinCodeVerifier: 'right-verifier'
                 })
             ),
             expectCode(
@@ -734,21 +736,12 @@ function actor(principalId: string): GroupPolicyActor {
     };
 }
 
-function snapshot(
-    options:
-        & Partial<Group>
-        & Readonly<{
-            members?: readonly GroupMember[];
-            activeSessions?: readonly GroupPresenceSession[];
-        }> = {}
-): GroupSnapshot {
+type SnapshotOptions = Partial<Group> & Partial<Pick<GroupSnapshot, 'members' | 'activeSessions'>>;
+
+function snapshot(options: SnapshotOptions = {}): GroupSnapshot {
     const { members: memberOverrides, activeSessions: sessionOverrides, ...groupOverrides } = options;
     const members = memberOverrides ?? [member('alice', { role: 'owner' })];
     const activeSessions = sessionOverrides ?? [];
-    // Only what this suite defaults differently from `createTestGroup` is
-    // named; everything else rides the spread. A whitelist here silently drops
-    // any field it forgets, which is how an epoch- or attempt-pinned scenario
-    // ends up exercising zero and passing for the wrong reason.
     const common = createTestGroup({
         presenceVersion: 1,
         created: audit(1),
@@ -802,31 +795,13 @@ function member(principalId: string, options: Partial<GroupMember> = {}): GroupM
         invitationExpiresAtEpochMs: options.invitationExpiresAtEpochMs ?? null
     };
     if (options.status === 'left') {
-        return {
-            ...common,
-            status: 'left',
-            left: options.left ?? audit(1),
-            removed: null,
-            banned: null
-        };
+        return { ...common, status: 'left', left: options.left ?? audit(1), removed: null, banned: null };
     }
     if (options.status === 'removed') {
-        return {
-            ...common,
-            status: 'removed',
-            left: null,
-            removed: options.removed ?? audit(1),
-            banned: null
-        };
+        return { ...common, status: 'removed', left: null, removed: options.removed ?? audit(1), banned: null };
     }
     if (options.status === 'banned') {
-        return {
-            ...common,
-            status: 'banned',
-            left: null,
-            removed: null,
-            banned: options.banned ?? audit(1)
-        };
+        return { ...common, status: 'banned', left: null, removed: null, banned: options.banned ?? audit(1) };
     }
     if (options.status === 'invited' || options.status === 'pending') {
         return {
@@ -855,7 +830,7 @@ function session(sessionId: string, principalId: string, options: Partial<GroupP
         sessionId,
         principalId,
         generationId: options.generationId ?? `${sessionId}-generation`,
-        connectionGenerationId: options.generationId ?? `${sessionId}-generation`,
+        connectionGenerationId: options.connectionGenerationId ?? `${sessionId}-generation`,
         generationVersion: options.generationVersion ?? 1,
         connectedAtEpochMs: options.connectedAtEpochMs ?? 1,
         lastHeartbeatAtEpochMs: options.lastHeartbeatAtEpochMs ?? NOW,

@@ -6,18 +6,19 @@ import {
     updateStateGroupMetadata
 } from '@shared-web/browser/rooms/room-group-state-mutation-workflows.ts';
 import { createAndJoinStateGroup, joinStateGroup, leaveStateGroup } from '@shared-web/browser/rooms/room-group-state-workflows.ts';
+import type { GroupPolicyReasonCode } from '@shared/api/group-policy-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
-type FetchCall = Readonly<{
-    url: string;
-    physicalUrl: string;
-    method: string;
-    headers: Record<string, string>;
-    body?: object;
-    signal?: AbortSignal | null;
-}>;
+interface FetchCall {
+    readonly url: string;
+    readonly physicalUrl: string;
+    readonly method: string;
+    readonly headers: Record<string, string>;
+    readonly body: object | undefined;
+    readonly signal: AbortSignal | null | undefined;
+}
 
 describe('room group-state HTTP workflows', () => {
     const fetchCalls: FetchCall[] = [];
@@ -44,10 +45,9 @@ describe('room group-state HTTP workflows', () => {
             .mockReturnValueOnce('group-created' as ReturnType<typeof crypto.randomUUID>)
             .mockReturnValueOnce('create-request-00000001' as ReturnType<typeof crypto.randomUUID>)
             .mockReturnValueOnce('presence-request-000001' as ReturnType<typeof crypto.randomUUID>);
-        stubFetch(({ url, method, body }) => {
+        stubFetch(({ url, method }) => {
             if (method === 'POST' && url.endsWith('/groups')) {
-                const request = body as { groupId: string; };
-                return jsonResponse(groupSnapshot(request.groupId));
+                return jsonResponse(groupSnapshot('group-created'));
             }
 
             if (method === 'PUT' && url.endsWith('/groups/group-created/sessions/session-1')) {
@@ -79,10 +79,9 @@ describe('room group-state HTTP workflows', () => {
     });
 
     it('creates and joins a state group with an explicit group id', async () => {
-        stubFetch(({ url, method, body }) => {
+        stubFetch(({ url, method }) => {
             if (method === 'POST' && url.endsWith('/groups')) {
-                const request = body as { groupId: string; };
-                return jsonResponse(groupSnapshot(request.groupId));
+                return jsonResponse(groupSnapshot('rallar'));
             }
 
             if (method === 'PUT' && url.endsWith('/groups/rallar/sessions/session-1')) {
@@ -112,10 +111,9 @@ describe('room group-state HTTP workflows', () => {
     });
 
     it('passes optional safe create fields through create-and-join', async () => {
-        stubFetch(({ url, method, body }) => {
+        stubFetch(({ url, method }) => {
             if (method === 'POST' && url.endsWith('/groups')) {
-                const request = body as { groupId: string; };
-                return jsonResponse(groupSnapshot(request.groupId));
+                return jsonResponse(groupSnapshot('rallar'));
             }
 
             if (method === 'PUT' && url.endsWith('/groups/rallar/sessions/session-1')) {
@@ -273,14 +271,14 @@ describe('room group-state HTTP workflows', () => {
             .mockReturnValue('unused-request-0000001' as ReturnType<typeof crypto.randomUUID>);
         let createAttempts = 0;
         let presenceAttempts = 0;
-        stubFetch(({ url, method, body }) => {
+        stubFetch(({ url, method }) => {
             if (method === 'POST' && url.endsWith('/groups')) {
                 createAttempts += 1;
                 if (createAttempts === 1) {
                     return textResponse('transient create failure', 503);
                 }
 
-                return jsonResponse(groupSnapshot((body as { groupId: string; }).groupId));
+                return jsonResponse(groupSnapshot('group-retry'));
             }
 
             if (method === 'PUT' && url.endsWith('/groups/group-retry/sessions/session-1')) {
@@ -330,9 +328,9 @@ describe('room group-state HTTP workflows', () => {
         vi.spyOn(crypto, 'randomUUID')
             .mockReturnValueOnce(generatedIds[0])
             .mockReturnValueOnce(generatedIds[1]);
-        stubFetch(({ url, method, body }) => {
+        stubFetch(({ url, method }) => {
             if (method === 'POST' && url.endsWith('/groups')) {
-                return jsonResponse(groupSnapshot((body as { groupId: string; }).groupId));
+                return jsonResponse(groupSnapshot('private-target-group'));
             }
             if (
                 method === 'PUT' &&
@@ -414,14 +412,7 @@ describe('room group-state HTTP workflows', () => {
         async () => {
             stubFetch(({ url, method }) => {
                 if (method === 'POST' && url.endsWith('/groups/group-1/join')) {
-                    return jsonResponse(
-                        {
-                            error: 'Forbidden: Group member capacity has been reached.',
-                            code: 'group-full',
-                            message: 'Group member capacity has been reached.'
-                        },
-                        403
-                    );
+                    return policyDenial('group-full', 'Group member capacity has been reached.');
                 }
 
                 return notFoundResponse();
@@ -437,9 +428,8 @@ describe('room group-state HTTP workflows', () => {
                 })
             ).rejects.toMatchObject({
                 status: 403,
-                policyError: {
-                    code: 'group-full',
-                    message: 'Group member capacity has been reached.'
+                mutationFailure: {
+                    denial: { code: 'group-full', message: 'Group member capacity has been reached.' }
                 }
             });
 
@@ -456,14 +446,7 @@ describe('room group-state HTTP workflows', () => {
             }
 
             if (method === 'PUT' && url.endsWith('/groups/group-1/sessions/session-1')) {
-                return jsonResponse(
-                    {
-                        error: 'Forbidden: Group member session capacity has been reached.',
-                        code: 'member-session-limit-reached',
-                        message: 'Group member session capacity has been reached.'
-                    },
-                    403
-                );
+                return policyDenial('member-session-limit-reached', 'Group member session capacity has been reached.');
             }
 
             return notFoundResponse();
@@ -478,10 +461,13 @@ describe('room group-state HTTP workflows', () => {
                 connectionGenerationId: 'ws-generation-1'
             })
         ).rejects.toMatchObject({
-            status: 403,
-            policyError: {
-                code: 'member-session-limit-reached',
-                message: 'Group member session capacity has been reached.'
+            name: 'RallarRoomJoinPartialFailureError',
+            joinedRoom: groupSnapshot('group-1'),
+            cause: {
+                status: 403,
+                mutationFailure: {
+                    denial: { code: 'member-session-limit-reached', message: 'Group member session capacity has been reached.' }
+                }
             }
         });
 
@@ -718,4 +704,17 @@ function readMutationRequestId(url: string): string | undefined {
 
 function hasRequestId<Value>(value: Value): boolean {
     return typeof value === 'object' && value !== null && 'requestId' in value;
+}
+
+function policyDenial(code: GroupPolicyReasonCode, message: string): Response {
+    return jsonResponse({
+        type: 'api-mutation-failure',
+        version: 'canonical.v2',
+        code,
+        status: 403,
+        message,
+        issues: null,
+        denial: { code, message, details: null },
+        retry: null
+    }, 403);
 }

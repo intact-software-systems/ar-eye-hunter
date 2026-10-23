@@ -155,6 +155,12 @@ export interface RallarQuickJoinPartialFailureError extends Error {
     readonly joinedRoom: GroupSnapshot;
 }
 
+/** Admission committed, but presence or local adoption failed. */
+export interface RallarRoomJoinPartialFailureError extends Error {
+    readonly name: 'RallarRoomJoinPartialFailureError';
+    readonly joinedRoom: GroupSnapshot;
+}
+
 export type RallarRoomSwitchOperation = 'join' | 'quick-join' | 'create-and-switch';
 
 export interface RallarRoomSwitchPartialFailureError extends Error {

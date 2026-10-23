@@ -148,10 +148,10 @@ names and snapshot acceptance; do not rename server response types or duplicate 
 **Interfaces:** The class contract above and the two narrow facade methods are the only new browser
 capabilities. Existing group HTTP and AppInbox command contracts remain the mutation authority.
 
-- [ ] Add failing semantic tests for active-member return with an expired/rotated code and new-entry
+- [x] Add failing semantic tests for active-member return with an expired/rotated code and new-entry
       denial, including removed/banned and inactive/expired variants. Assert authoritative membership,
       denial, and event/receipt outcomes rather than helper invocation topology.
-- [ ] Run the focused policy/membership tests and confirm the intended regression, then implement the
+- [x] Run the focused policy/membership tests and confirm the intended regression, then implement the
       policy correction and rerun them.
 - [ ] Add failing shared browser tests for exact URL round-trip/scope rejection, pending sign-in and
       reload, new-link precedence, storage failure, account replacement, cancellation, and partial join.
@@ -163,6 +163,14 @@ capabilities. Existing group HTTP and AppInbox command contracts remain the muta
 
 **Legacy exit:** No parallel join algorithm, old/new URL format, dual-read storage bridge, or new
 transaction/retry owner. Existing public APIs remain canonical, with additive rotate/revoke access.
+
+The first checkpoint fixes active-member return and ordinary join completion fencing. Seven direct
+AppInbox scenarios cover rotation, expiry, replay, blocked membership, and inactive rooms. The
+browser regression suite covers session/account replacement, cancellation, partial admission, and
+401 cleanup beneath the partial-failure cause. The latter required the auth lifecycle to inspect
+the cause chain. Policy-only plaintext credential fallbacks without production consumers were
+removed; code verifiers and principal invitations remain canonical. Shared entry and app controls
+are still pending. The live PR records validation evidence.
 
 ## Increment 2: create, share, enter, and participate in both games
 
