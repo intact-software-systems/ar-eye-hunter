@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { decodeV1dGrowthRun } from '@shared-test/rallar-bb-test/alm/growth-proof/decode-v1d-growth-run.ts';
@@ -10,6 +10,9 @@ import {
 import { computeV1dGrowthVerdict } from '@shared-test/rallar-bb-test/alm/growth-proof/v1d-growth-verdict.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
+/** Well inside the largest string V8 holds; a 75-minute run's largest sample file, its control polls, is 138 MB. */
+const MAX_RUN_FILE_BYTES = 256 * 1024 * 1024;
+
 /** Reads a growth-proof run directory, writes `verdict.md` and `verdict.json` beside it, and exits 1 unless it passed. */
 async function writeV1dGrowthVerdict(runDir: string): Promise<boolean> {
     const decoded = decodeV1dGrowthRun({
@@ -20,7 +23,7 @@ async function writeV1dGrowthVerdict(runDir: string): Promise<boolean> {
         adminRealtime: await readRunFile(runDir, 'samples/admin-realtime.jsonl'),
         processRss: await readRunFile(runDir, 'samples/process-rss.jsonl'),
         controlRun: await readRunFile(runDir, 'samples/control-run.jsonl'),
-        apiTimingLog: await readRunFile(runDir, 'api-timing.log')
+        apiHeap: await readRunFile(runDir, 'samples/api-heap.jsonl')
     });
     if (decoded.right === undefined) {
         throw new Error(`The run directory does not decode: ${(decoded.left ?? []).join('; ')}`);
@@ -39,9 +42,33 @@ async function writeV1dGrowthVerdict(runDir: string): Promise<boolean> {
     return verdict.passed;
 }
 
-/** A sampler that never wrote a file leaves its readings absent, which the verdict reports as no data. */
+/**
+ * A sampler that never wrote a file leaves its readings absent, which the verdict reports as no data. Any other read
+ * failure, and a file past the bound a whole read can hold, stops the verdict instead of reading as no data.
+ */
 async function readRunFile(runDir: string, fileName: string): Promise<string> {
-    return await readFile(join(runDir, fileName), 'utf8').catch(() => '');
+    const path = join(runDir, fileName);
+    const size = await readFileSize(path);
+    if (size === undefined) {
+        return '';
+    }
+    if (size > MAX_RUN_FILE_BYTES) {
+        throw new Error(`${path} holds ${size} bytes, past the ${MAX_RUN_FILE_BYTES} the verdict reads whole`);
+    }
+    return await readFile(path, 'utf8');
+}
+
+/** Undefined for a file that does not exist. */
+async function readFileSize(path: string): Promise<number | undefined> {
+    try {
+        return (await stat(path)).size;
+    }
+    catch (error) {
+        if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+            return undefined;
+        }
+        throw error;
+    }
 }
 
 function readRunDirArgument(args: readonly string[]): string {

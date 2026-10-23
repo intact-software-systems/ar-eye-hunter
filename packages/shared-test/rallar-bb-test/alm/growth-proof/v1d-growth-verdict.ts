@@ -2,7 +2,12 @@ import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 import { computeV1dGrowthAssessment } from './compute-v1d-growth-assessment.ts';
 import type { V1dGrowthAssessment, V1dGrowthOutcome } from './v1d-growth-assessment.ts';
-import { isApiJsonObject, toV1dGrowthSeries, type V1dGrowthSamplePoint } from './v1d-growth-series.ts';
+import {
+    isApiJsonObject,
+    toV1dGrowthAgentReadings,
+    toV1dGrowthSeries,
+    type V1dGrowthSamplePoint
+} from './v1d-growth-series.ts';
 import type {
     V1dGrowthClass,
     V1dGrowthReader,
@@ -56,7 +61,11 @@ export function computeV1dGrowthVerdict(input: V1dGrowthVerdictInput): V1dGrowth
     const classifiedIds = new Set(input.surfaces.map((surface) => surface.id));
     const rows = [
         ...input.surfaces.flatMap((surface) =>
-            surface.readers.map((reader) => computeV1dGrowthVerdictRow(surface, reader, input))
+            surface.readers.flatMap((reader) =>
+                toServiceIds(input.samples[reader.source]).map((serviceId) =>
+                    computeV1dGrowthVerdictRow({ surface, reader, serviceId, verdictInput: input })
+                )
+            )
         ),
         ...input.surveyedSurfaceIds
             .filter((surfaceId) => !classifiedIds.has(surfaceId))
@@ -79,27 +88,46 @@ export function computeV1dGrowthVerdict(input: V1dGrowthVerdictInput): V1dGrowth
     };
 }
 
-function computeV1dGrowthVerdictRow(
-    surface: V1dGrowthSurface,
-    reader: V1dGrowthReader,
-    input: V1dGrowthVerdictInput
-): V1dGrowthVerdictRow {
+interface ComputeV1dGrowthVerdictRowInput {
+    readonly surface: V1dGrowthSurface;
+    readonly reader: V1dGrowthReader;
+    /** The API process whose readings this row judges; null where the source's readings name no process. */
+    readonly serviceId: string | null;
+    readonly verdictInput: V1dGrowthVerdictInput;
+}
+
+function computeV1dGrowthVerdictRow(input: ComputeV1dGrowthVerdictRowInput): V1dGrowthVerdictRow {
+    const { surface, reader, serviceId } = input;
+    const { samples, run } = input.verdictInput;
+    const readerPoints = samples[reader.source].filter((point) => point.serviceId === serviceId);
     const toSeries = (seriesReader: V1dGrowthReader) =>
-        toV1dGrowthSeries(input.samples[seriesReader.source], seriesReader, input.run.windowStartedAtEpochMs);
+        toV1dGrowthSeries(samples[seriesReader.source], seriesReader, run.windowStartedAtEpochMs);
     const classification = surface.classification;
+    const entityCount = classification.growthClass === 'durable' ? classification.entityCount : undefined;
     return {
         surfaceId: surface.id,
         surface: surface.name,
-        reader: `${reader.source} ${reader.path.join('.')}`,
+        reader: `${reader.source} ${reader.path.join('.')}${serviceId === null ? '' : ` ${serviceId}`}`,
         growthClass: classification.growthClass,
         ...computeV1dGrowthAssessment(classification, {
-            series: toSeries(reader),
-            entitySeries: classification.growthClass === 'durable' ? toSeries(classification.entityReader) : [],
+            series: toV1dGrowthSeries(readerPoints, reader, run.windowStartedAtEpochMs),
+            agentReadings: classification.growthClass === 'heap'
+                ? toV1dGrowthAgentReadings(readerPoints, reader, run.windowStartedAtEpochMs)
+                : [],
+            entitySeries: entityCount?.source === 'samples' ? toSeries(entityCount.reader) : [],
+            ceilingSeries: entityCount?.source === 'registrations' ? toSeries(entityCount.ceiling) : [],
             neverExpiringSeries: reader.neverExpiringPath === null
                 ? []
-                : toSeries({ ...reader, path: reader.neverExpiringPath, neverExpiringPath: null })
+                : toSeries({ ...reader, path: reader.neverExpiringPath, neverExpiringPath: null }),
+            workload: run.workload
         })
     };
+}
+
+/** One row per API process where the readings name their process; one row otherwise, a no-data row without any. */
+function toServiceIds(points: readonly V1dGrowthSamplePoint[]): readonly (string | null)[] {
+    const serviceIds = [...new Set(points.map((point) => point.serviceId))];
+    return serviceIds.length === 0 ? [null] : serviceIds.sort();
 }
 
 function toUnreadNamespaces(input: V1dGrowthVerdictInput): readonly string[] {

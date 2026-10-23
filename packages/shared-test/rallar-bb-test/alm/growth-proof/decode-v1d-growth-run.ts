@@ -14,7 +14,8 @@ export interface V1dGrowthRunFiles {
     readonly adminRealtime: string;
     readonly processRss: string;
     readonly controlRun: string;
-    readonly apiTimingLog: string;
+    /** Every API process's `heap-sample` timing lines, as the run script split them from its output. */
+    readonly apiHeap: string;
 }
 
 export interface DecodedV1dGrowthRun {
@@ -35,7 +36,7 @@ export function decodeV1dGrowthRun(files: V1dGrowthRunFiles): Either<readonly st
         const adminSystem = decodeSampleLines(files.adminSystem);
         const adminQueues = decodeSampleLines(files.adminQueues);
         const adminRealtime = decodeSampleLines(files.adminRealtime);
-        const apiHeap = decodeHeapSampleLines(files.apiTimingLog);
+        const apiHeap = decodeHeapSampleLines(files.apiHeap);
         const processRss = decodeSampleLines(files.processRss);
         const browserStats = decodeBrowserStatsLines(files.controlRun);
         const decoded = [postgres, adminSystem, adminQueues, adminRealtime, apiHeap, processRss, browserStats];
@@ -75,20 +76,26 @@ function decodeV1dGrowthWorkload(value: ApiJsonValue): V1dGrowthWorkload | undef
     if (!isApiJsonObject(value) || !isRunnerOutcome(value.runner) || !Array.isArray(value.churnFailedRunIds)) {
         return undefined;
     }
-    const { manifestStartedAtEpochMs, manifestCompletedAtEpochMs, churnPassed } = value;
+    const { manifestStartedAtEpochMs, manifestCompletedAtEpochMs, manifestAgents, churnStarted, churnPassed } = value;
     const churnFailedRunIds = value.churnFailedRunIds.filter((runId) => typeof runId === 'string');
     const decodes = isTimeOrNull(manifestStartedAtEpochMs) && isTimeOrNull(manifestCompletedAtEpochMs) &&
-        typeof churnPassed === 'number' && churnPassed >= 0 &&
+        isCount(manifestAgents) && isCount(churnStarted) && isCount(churnPassed) &&
         churnFailedRunIds.length === value.churnFailedRunIds.length;
     return decodes
         ? {
             runner: value.runner,
             manifestStartedAtEpochMs,
             manifestCompletedAtEpochMs,
+            manifestAgents,
+            churnStarted,
             churnPassed,
             churnFailedRunIds
         }
         : undefined;
+}
+
+function isCount(value: ApiJsonValue | undefined): value is number {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
 function isRunnerOutcome(value: ApiJsonValue | undefined): value is V1dGrowthRunnerOutcome {
@@ -105,25 +112,24 @@ function decodeSampleLines(text: string): DecodedPoints {
         text,
         (value) =>
             isApiJsonObject(value) && isPositiveNumber(value.atEpochMs) && value.value !== undefined
-                ? [{ atEpochMs: value.atEpochMs, agentId: null, value: value.value }]
+                ? [{ atEpochMs: value.atEpochMs, agentId: null, serviceId: null, value: value.value }]
                 : undefined
     );
 }
 
 /**
- * The API's timing log: the `api-process` `heap-sample` lines among every other line it writes. A sample taken without
+ * One `api-process` `heap-sample` timing line per line, each naming the process that took it. A sample taken without
  * a forced full collection measures garbage awaiting collection, so it is skipped.
  */
 function decodeHeapSampleLines(text: string): DecodedPoints {
-    const heapLines = text.split('\n').filter((line) => line.includes('"heap-sample"')).join('\n');
     return decodeLines(
-        heapLines,
+        text,
         (value) =>
             isApiJsonObject(value) && value.type === 'rallar.timing' && value.component === 'api-process' &&
                 value.operation === 'heap-sample' && isPositiveNumber(value.atEpochMs) &&
-                isApiJsonObject(value.details) &&
+                typeof value.serviceId === 'string' && isApiJsonObject(value.details) &&
                 value.details.forcedGc === true
-                ? [{ atEpochMs: value.atEpochMs, agentId: null, value: value.details }]
+                ? [{ atEpochMs: value.atEpochMs, agentId: null, serviceId: value.serviceId, value: value.details }]
                 : undefined
     );
 }
@@ -162,7 +168,7 @@ function decodeBrowserStatsPoint(envelope: ApiJsonValue): readonly V1dGrowthSamp
     }
     const atEpochMs = isPositiveNumber(snapshot.atEpochMs) ? snapshot.atEpochMs : envelope.atEpochMs;
     return isPositiveNumber(atEpochMs)
-        ? [{ atEpochMs, agentId: envelope.agentId, value: toBrowserStatsValue(snapshot) }]
+        ? [{ atEpochMs, agentId: envelope.agentId, serviceId: null, value: toBrowserStatsValue(snapshot) }]
         : [];
 }
 

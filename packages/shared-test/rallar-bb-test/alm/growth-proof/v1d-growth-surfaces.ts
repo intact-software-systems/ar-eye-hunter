@@ -79,7 +79,12 @@ function toPageHeapSurface(id: number, name: string, owner: string): V1dGrowthSu
 }
 
 function toDurable(entity: string, entityNamespace: string, rowsPerEntity: number): V1dGrowthClassification {
-    return { growthClass: 'durable', entity, entityReader: toNamespaceCount(entityNamespace), rowsPerEntity };
+    return {
+        growthClass: 'durable',
+        entity,
+        entityCount: { source: 'samples', reader: toNamespaceCount(entityNamespace) },
+        rowsPerEntity
+    };
 }
 
 /** One row per group, per principal or per membership, each counted from the samples. */
@@ -88,6 +93,22 @@ const PER_PRINCIPAL = toDurable('principals', 'client-state:principals', 1);
 const PER_MEMBERSHIP = toDurable('memberships', 'group-state:members', 1);
 /** A churn principal joins the medium-scale profile's five groups, and each group's owner adds one membership. */
 const MEMBERSHIPS_PER_PRINCIPAL = toDurable('principals', 'client-state:principals', 6);
+/** The medium-scale churn recipe's 100 clients, pinned by `api-v1-medium-scale-recipe.test.ts`. */
+const MEDIUM_SCALE_PRINCIPALS_PER_CHURN_ITERATION = 100;
+/**
+ * An account is registered before its principal connects, so the auth users run ahead of the principals while an
+ * iteration registers; they grow with the accounts the run registered, a client id never without its username.
+ */
+const PER_REGISTERED_ACCOUNT: V1dGrowthClassification = {
+    growthClass: 'durable',
+    entity: 'registered accounts',
+    entityCount: {
+        source: 'registrations',
+        principalsPerChurnIteration: MEDIUM_SCALE_PRINCIPALS_PER_CHURN_ITERATION,
+        ceiling: toNamespaceCount('auth-users:by-username')
+    },
+    rowsPerEntity: 1
+};
 
 /**
  * Every growth surface with its class, bound and readers: the survey's 75 rows, then the runtime-state namespaces
@@ -157,14 +178,16 @@ export const V1D_GROWTH_SURFACES: readonly V1dGrowthSurface[] = [
     {
         id: 7,
         name: 'runtime_state_store rows keyed per principal that never expire',
-        owner: 'packages/shared-server/rallar-system/client-state, auth',
+        owner: 'packages/shared-server/rallar-system/client-state',
         classification: PER_PRINCIPAL,
-        readers: [
-            'client-state:principals',
-            'client-state:instances',
-            'auth-users:by-username',
-            'auth-users:by-client-id'
-        ].map(toNamespaceCount)
+        readers: ['client-state:principals', 'client-state:instances'].map(toNamespaceCount)
+    },
+    {
+        id: 7,
+        name: 'runtime_state_store auth users, keyed per registered account, that never expire',
+        owner: 'packages/shared-server/rallar-system/auth',
+        classification: PER_REGISTERED_ACCOUNT,
+        readers: ['auth-users:by-username', 'auth-users:by-client-id'].map(toNamespaceCount)
     },
     {
         id: 7,
@@ -202,13 +225,17 @@ export const V1D_GROWTH_SURFACES: readonly V1dGrowthSurface[] = [
     },
     {
         id: 10,
-        name: 'server AL admission rows (inbound and outbound)',
+        name: 'server AL inbound admission rows',
         owner: 'packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts',
         classification: AL_REPOSITORY_ROWS,
-        readers: [
-            toNamespaceCount('server-ws-qbox:*:inbound:admission'),
-            toNamespaceCount('server-ws-qbox:*:outbound:admission')
-        ]
+        readers: [toNamespaceCount('server-ws-qbox:*:inbound:admission')]
+    },
+    {
+        id: 10,
+        name: 'server AL outbound admission rows (each message\'s rows last until its WS_OUTBOX deadline, a day)',
+        owner: 'packages/shared/alm/outbound/admission/al-outbound-admission-mutations.ts',
+        classification: { growthClass: 'ttl-beyond-run', ttlMs: DAY_MS },
+        readers: [toNamespaceCount('server-ws-qbox:*:outbound:admission')]
     },
     {
         id: 11,

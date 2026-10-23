@@ -2,13 +2,19 @@
 # The ALM V1d growth proof: a hand-launched local stack on a fresh Postgres database, held for the whole window,
 # driving the 15-agent 78-minute principal multicast manifest and the medium-scale churn recipes side by side
 # while a sampler records the database, the admin reads, process memory and the agents' stats every 30 s.
+# Three API processes share the database, as the medium-scale gate runs them: the churn reads through all three
+# and everything else talks to the first. Each process's forced-GC heap samples go to samples/api-heap.jsonl and
+# its console lines to api-<n>.log; the rest of its timing lines are dropped.
 # After the window it waits for the manifest when it is due to finish within the drain bound, records the
 # workload's outcome in run.json, stops everything, drops the database and writes the growth verdict.
 #
 # Usage: apps/rallar-black-box/scripts/run-v1d-growth-proof.sh [--minutes 75] [--out <run-dir>]
 # Needs: the dev Postgres container running, Docker, Deno, Node, jq, lsof; nothing else listening on the ports below.
-# Do not edit the worktree while it runs: the headless SPA serves from it.
-# Disk: a 75-minute run directory takes about 3 GB (timing log, control-server storage, churn artefacts).
+# Do not edit the worktree while it runs: the headless SPA serves from it. Launch it from a terminal whose Chromium
+# can connect WebRTC on the local network: where its mDNS host candidates do not resolve, every agent's RTC connect
+# times out and the manifest fails.
+# Disk: a 75-minute run directory takes about 4.2 GB (proof run 2 without its timing log: control-server storage
+# 1.9 GB, world-fleet artefacts 2.0 GB, churn artefacts 0.2 GB, samples 0.13 GB).
 set -euo pipefail
 set -m
 
@@ -34,11 +40,11 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
-readonly API_PORT=18780
+readonly API_PORTS=(18780 18781 18782)
 readonly SPA_PORT=5476
 readonly CONTROL_PORT=5480
-readonly API_BASE_URL="http://127.0.0.1:${API_PORT}"
-readonly API_WS_BASE_URL="ws://127.0.0.1:${API_PORT}"
+readonly API_BASE_URL="http://127.0.0.1:${API_PORTS[0]}"
+readonly API_WS_BASE_URL="ws://127.0.0.1:${API_PORTS[0]}"
 readonly SPA_BASE_URL="http://127.0.0.1:${SPA_PORT}"
 readonly CONTROL_BASE_URL="http://127.0.0.1:${CONTROL_PORT}"
 readonly CONTROL_WS_URL="ws://127.0.0.1:${CONTROL_PORT}/control"
@@ -91,7 +97,7 @@ mkdir -p "$OUT_DIR/samples" "$OUT_DIR/churn" "$OUT_DIR/control-storage"
 OUT_DIR="$(cd "$OUT_DIR" && pwd)"
 readonly OUT_DIR
 
-API_PID=""
+API_PIDS=()
 CONTROL_PID=""
 SPA_PID=""
 WORKER_PID=""
@@ -155,17 +161,45 @@ create_database() {
 	(cd apps/api-v1 && env DATABASE_URL="$RUN_DATABASE_URL" deno task db:migrate:deploy) >"$OUT_DIR/migrate.log" 2>&1
 }
 
-start_api() {
-	log "starting the API on $API_BASE_URL"
-	env \
+# The heap-sample timing lines to samples/api-heap.jsonl, every other timing line dropped, the console to its log.
+split_api_output() {
+	LC_ALL=C awk -v heap="$OUT_DIR/samples/api-heap.jsonl" -v console="$OUT_DIR/api-$1.log" '
+		/^\{"/ && index($0, "\"type\":\"rallar.timing\"") > 0 {
+			if (index($0, "\"operation\":\"heap-sample\"") > 0) {
+				print >>heap
+				fflush(heap)
+			}
+			next
+		}
+		{
+			print >>console
+			fflush(console)
+		}'
+}
+
+start_api_processes() {
+	local ordinal port
+	for ((ordinal = 1; ordinal <= ${#API_PORTS[@]}; ordinal++)); do
+		port="${API_PORTS[ordinal - 1]}"
+		log "starting API process $ordinal on http://127.0.0.1:${port}"
+		start_api_process "$port" > >(split_api_output "$ordinal") 2>&1 &
+		API_PIDS+=($!)
+	done
+	for port in "${API_PORTS[@]}"; do
+		wait_for_url "http://127.0.0.1:${port}/api/config"
+	done
+}
+
+start_api_process() {
+	exec env \
 		RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory \
 		RALLAR_SQL_BACKEND=postgres \
 		RALLAR_PGLITE_SCHEMA_INIT=disabled \
 		RALLAR_DB_PUBSUB=postgres \
 		DATABASE_URL="$RUN_DATABASE_URL" \
-		PORT="$API_PORT" \
-		RALLAR_API_BASE_URL="$API_BASE_URL" \
-		RALLAR_WS_BASE_URL="$API_WS_BASE_URL" \
+		PORT="$1" \
+		RALLAR_API_BASE_URL="http://127.0.0.1:$1" \
+		RALLAR_WS_BASE_URL="ws://127.0.0.1:$1" \
 		CORS_ORIGINS="${SPA_BASE_URL},http://localhost:${SPA_PORT}" \
 		RALLAR_TIMING_LOGS=true \
 		RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE="$MESH_MIN_SIZE" \
@@ -177,9 +211,7 @@ start_api() {
 		RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET="$OPERATOR_TOKEN_SECRET" \
 		RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON="$CRDT_DOCUMENT_TYPE_POLICIES_JSON" \
 		deno run --config apps/api-v1/deno.json --allow-net --allow-env --allow-read --v8-flags=--expose-gc \
-		apps/api-v1/src/main.ts >"$OUT_DIR/api-timing.log" 2>&1 &
-	API_PID=$!
-	wait_for_url "$API_BASE_URL/api/config"
+		apps/api-v1/src/main.ts
 }
 
 start_control_server() {
@@ -257,13 +289,14 @@ run_churn_loop() {
 	while (($(date +%s) < WINDOW_END_EPOCH_S)); do
 		iteration=$((iteration + 1))
 		run_id="v1d-growth-churn-${STAMP}-$(printf '%03d' "$iteration")"
+		echo "$iteration $run_id started" >>"$OUT_DIR/churn-iterations.txt"
 		if env \
 			RALLAR_API_BASE_URL="$API_BASE_URL" \
-			RALLAR_API_BASE_URL_SECONDARY="$API_BASE_URL" \
-			RALLAR_API_BASE_URL_TERTIARY="$API_BASE_URL" \
+			RALLAR_API_BASE_URL_SECONDARY="http://127.0.0.1:${API_PORTS[1]}" \
+			RALLAR_API_BASE_URL_TERTIARY="http://127.0.0.1:${API_PORTS[2]}" \
 			RALLAR_WS_BASE_URL="$API_WS_BASE_URL" \
-			RALLAR_WS_BASE_URL_SECONDARY="$API_WS_BASE_URL" \
-			RALLAR_WS_BASE_URL_TERTIARY="$API_WS_BASE_URL" \
+			RALLAR_WS_BASE_URL_SECONDARY="ws://127.0.0.1:${API_PORTS[1]}" \
+			RALLAR_WS_BASE_URL_TERTIARY="ws://127.0.0.1:${API_PORTS[2]}" \
 			DATABASE_URL="$RUN_DATABASE_URL" \
 			RALLAR_AUTH_CREDENTIAL_SECRET="$AUTH_CREDENTIAL_SECRET" \
 			RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET="$OPERATOR_TOKEN_SECRET" \
@@ -290,8 +323,15 @@ append_sample() {
 	jq -c --argjson at "$1" '{atEpochMs: $at, value: .}' >>"$OUT_DIR/samples/$2.jsonl"
 }
 
+# The resident set in KiB of whatever listens on the port, or null.
+read_listener_rss() {
+	local rss
+	rss="$(ps -o rss= -p "$(listening_pid "$1")" 2>/dev/null | tr -d ' ' || true)"
+	echo "${rss:-null}"
+}
+
 sample_once() {
-	local at endpoint api_rss control_rss
+	local at endpoint api_rss
 	at="$(now_epoch_ms)"
 	docker exec -i "$POSTGRES_CONTAINER" psql -U "$POSTGRES_USER" -d "$DATABASE_NAME" -v ON_ERROR_STOP=1 -At \
 		<"$ROW_COUNTS_SQL" 2>>"$OUT_DIR/sampler.log" | append_sample "$at" postgres || log "postgres sample failed"
@@ -300,10 +340,9 @@ sample_once() {
 			-H "Authorization: Bearer $ADMIN_ACCESS_TOKEN" -H "x-client-id: $ADMIN_CLIENT_ID" |
 			append_sample "$at" "admin-$endpoint" || log "admin $endpoint sample failed"
 	done
-	api_rss="$(ps -o rss= -p "$(listening_pid "$API_PORT")" 2>/dev/null | tr -d ' ' || true)"
-	control_rss="$(ps -o rss= -p "$(listening_pid "$CONTROL_PORT")" 2>/dev/null | tr -d ' ' || true)"
-	jq -n --argjson api "${api_rss:-null}" --argjson control "${control_rss:-null}" \
-		'{api: (if $api == null then null else $api * 1024 end),
+	api_rss="$(for port in "${API_PORTS[@]}"; do read_listener_rss "$port"; done | jq -s -c .)"
+	jq -n --argjson api "$api_rss" --argjson control "$(read_listener_rss "$CONTROL_PORT")" \
+		'{api: [$api[] | if . == null then null else . * 1024 end],
           control: (if $control == null then null else $control * 1024 end)}' | append_sample "$at" process-rss || true
 	curl -sf "$CONTROL_BASE_URL/runs/$CONTROL_RUN_ID?limitCommands=0&limitResults=0&limitReports=0&limitHeartbeats=0&limitEvents=${CONTROL_SAMPLE_ENVELOPES}&limitStats=${CONTROL_SAMPLE_ENVELOPES}" |
 		jq -c '{stats: (.stats // []), events: [(.events // [])[] | select(.payload.kind == "stats")]}' |
@@ -350,7 +389,8 @@ wait_for_manifest() {
 	done
 }
 
-# The verdict fails without a passed manifest and a clean churn loop, so the workload's outcome joins run.json.
+# The verdict fails without a passed manifest and a clean churn loop, so the workload's outcome joins run.json; the
+# iterations started and the manifest's agents count the accounts the run registered.
 record_workload() {
 	local runner="$1" distributed failed_run_ids
 	distributed="$(read_distributed_run)"
@@ -358,12 +398,15 @@ record_workload() {
 	jq \
 		--arg runner "$runner" \
 		--argjson distributed "$distributed" \
+		--argjson manifestAgents "$AGENT_COUNT" \
+		--argjson churnStarted "$(count_churn_iterations started)" \
 		--argjson churnPassed "$(count_churn_iterations passed)" \
 		--argjson churnFailedRunIds "$failed_run_ids" \
 		'.workload = {runner: $runner,
 			manifestStartedAtEpochMs: ($distributed.startedAtEpochMs // null),
 			manifestCompletedAtEpochMs: ($distributed.completedAtEpochMs // null),
-			churnPassed: $churnPassed, churnFailedRunIds: $churnFailedRunIds}' \
+			manifestAgents: $manifestAgents,
+			churnStarted: $churnStarted, churnPassed: $churnPassed, churnFailedRunIds: $churnFailedRunIds}' \
 		"$OUT_DIR/run.json" >"$OUT_DIR/run.json.next"
 	mv "$OUT_DIR/run.json.next" "$OUT_DIR/run.json"
 }
@@ -380,7 +423,10 @@ tear_down() {
 	stop_group "$WORKER_PID"
 	stop_group "$SPA_PID"
 	stop_group "$CONTROL_PID"
-	stop_group "$API_PID"
+	local pid
+	for pid in ${API_PIDS[@]+"${API_PIDS[@]}"}; do
+		stop_group "$pid"
+	done
 	if [[ "$DATABASE_CREATED" == true ]]; then
 		log "dropping database $DATABASE_NAME"
 		psql_admin -c "drop database if exists ${DATABASE_NAME} with (force)" >/dev/null || log "drop failed"
@@ -389,13 +435,13 @@ tear_down() {
 trap tear_down EXIT
 trap 'tear_down; exit 130' INT TERM
 
-for port in "$API_PORT" "$SPA_PORT" "$CONTROL_PORT"; do
+for port in "${API_PORTS[@]}" "$SPA_PORT" "$CONTROL_PORT"; do
 	require_free_port "$port"
 done
 docker exec "$POSTGRES_CONTAINER" pg_isready -U "$POSTGRES_USER" >/dev/null
 
 create_database
-start_api
+start_api_processes
 start_control_server
 start_spa
 start_worker

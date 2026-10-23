@@ -1,16 +1,19 @@
 import {
     computeDeclaredAppendOnlyAssessment,
     computeDurableAssessment,
+    computeRegisteredAssessment,
     computeUnboundedAssessment
 } from './compute-v1d-unexpiring-assessment.ts';
 import { toV1dGrowthNoData, type V1dGrowthAssessment, type V1dGrowthSeriesInput } from './v1d-growth-assessment.ts';
 import {
+    computeV1dGrowthAgentBucketMedians,
     computeV1dGrowthMax,
     computeV1dGrowthPlateau,
     computeV1dGrowthSlopePerHour,
     toV1dGrowthLastElapsedMs,
     toV1dGrowthMinutes,
     toV1dGrowthRounded,
+    type V1dGrowthAgentReading,
     type V1dGrowthSeriesPoint
 } from './v1d-growth-series.ts';
 import type { V1dGrowthClassification } from './v1d-growth-surface.ts';
@@ -23,10 +26,13 @@ const MIN_SLOPE_WINDOW_MS = 10 * MINUTE_MS;
 const PLATEAU_RELATIVE_TOLERANCE = 0.05;
 const PLATEAU_ABSOLUTE_TOLERANCE = 1;
 const LINEAR_ACCELERATION_TOLERANCE = 0.5;
-const LINEAR_ABSOLUTE_TOLERANCE_PER_HOUR = 4;
+/** One row a minute: rows that arrive when sessions close come late and in bursts, at a run rate near zero. */
+const LINEAR_ABSOLUTE_TOLERANCE_PER_HOUR = 60;
 const HEAP_WARM_UP_MS = 10 * MINUTE_MS;
 const HEAP_SLOPE_LIMIT_BYTES_PER_HOUR = 10 * MB;
 const HEAP_MAX_PLATEAU_FACTOR = 2;
+const PAGE_HEAP_BUCKET_MS = 5 * MINUTE_MS;
+const PAGE_HEAP_MIN_BUCKETS = 3;
 
 export function computeV1dGrowthAssessment(
     classification: V1dGrowthClassification,
@@ -42,20 +48,19 @@ export function computeV1dGrowthAssessment(
             );
         case 'ttl-beyond-run':
             return toExpiryHeldAssessment(
-                computeLinearAssessment(
-                    input.series,
-                    (ratePerHour) =>
-                        `ttl ${toHours(classification.ttlMs)} h; projected ≤ ` +
-                        `${Math.round(ratePerHour * (classification.ttlMs / HOUR_MS))} (rate × ttl)`
-                ),
+                computeTtlBeyondRunAssessment(classification.ttlMs, input.series),
                 input.neverExpiringSeries
             );
         case 'durable':
-            return computeDurableAssessment(classification, input);
+            return classification.entityCount.source === 'samples'
+                ? computeDurableAssessment(classification, input)
+                : computeRegisteredAssessment(classification, classification.entityCount, input);
         case 'declared-append-only':
             return computeDeclaredAppendOnlyAssessment(classification.history, input.series);
         case 'heap':
-            return computeHeapAssessment(input.series);
+            return input.agentReadings.length === 0
+                ? computeHeapAssessment(input.series)
+                : computePageHeapAssessment(input.agentReadings);
         case 'unbounded':
             return computeUnboundedAssessment(classification.missingBound, input.series);
     }
@@ -137,18 +142,23 @@ function computeTtlWithinRunAssessment(
     };
 }
 
-function computeLinearAssessment(
-    series: readonly V1dGrowthSeriesPoint[],
-    toBound: (ratePerHour: number) => string
-): V1dGrowthAssessment {
+/**
+ * Rows live out a time-to-live longer than the run, so they may grow at most linearly: the last 15 minutes within
+ * 1.5 × the run's rate plus 60 rows an hour. The projection holds the faster of the two rates for one ttl, and never
+ * less than the rows already held.
+ */
+function computeTtlBeyondRunAssessment(ttlMs: number, series: readonly V1dGrowthSeriesPoint[]): V1dGrowthAssessment {
+    const toBound = (projected: number) =>
+        `ttl ${toHours(ttlMs)} h; projected ≤ ${Math.round(projected)} (max(run, last 15 min) rate × ttl)`;
     const max = computeV1dGrowthMax(series);
     const runRatePerHour = computeV1dGrowthSlopePerHour(series, 0);
     if (max === null || runRatePerHour === null) {
         return toV1dGrowthNoData(toBound(0));
     }
-    const bound = toBound(Math.max(runRatePerHour, 0));
     const lastElapsedMs = toV1dGrowthLastElapsedMs(series);
     const slopePerHour = computeV1dGrowthSlopePerHour(series, lastElapsedMs - LAST_WINDOW_MS);
+    const projectedRatePerHour = Math.max(runRatePerHour, slopePerHour ?? 0, 0);
+    const bound = toBound(Math.max(max, projectedRatePerHour * (ttlMs / HOUR_MS)));
     const firstPlateau = computeV1dGrowthPlateau(series, 0);
     if (lastElapsedMs < LAST_WINDOW_MS + MIN_SLOPE_WINDOW_MS || slopePerHour === null) {
         return {
@@ -215,6 +225,46 @@ function computeHeapAssessment(series: readonly V1dGrowthSeriesPoint[]): V1dGrow
             `max ${toV1dGrowthRounded(max / MB)} MB against the first plateau ` +
             `${toV1dGrowthRounded(firstPlateau.value / MB)} MB` +
             `${belowDouble ? '' : ', twice it or more'}`
+    };
+}
+
+/**
+ * A page heap is read without a forced collection, so its GC sawtooth swings by more than the heap's own growth: the
+ * slope and the plateau factor read 5-minute bucket medians after the warm-up, and the raw peak is only reported.
+ */
+function computePageHeapAssessment(readings: readonly V1dGrowthAgentReading[]): V1dGrowthAssessment {
+    const bound = `5-minute bucket medians after ${toV1dGrowthMinutes(HEAP_WARM_UP_MS)} min: slope within ` +
+        `±${HEAP_SLOPE_LIMIT_BYTES_PER_HOUR / MB} MB/h; last < ${HEAP_MAX_PLATEAU_FACTOR} × first`;
+    const afterWarmUp = readings.filter((reading) => reading.elapsedMs >= HEAP_WARM_UP_MS);
+    const medians = computeV1dGrowthAgentBucketMedians(afterWarmUp, PAGE_HEAP_BUCKET_MS);
+    const max = computeV1dGrowthMax(afterWarmUp);
+    const first = medians[0];
+    const last = medians[medians.length - 1];
+    const slopePerHour = computeV1dGrowthSlopePerHour(medians, 0);
+    if (medians.length < PAGE_HEAP_MIN_BUCKETS || first === undefined || last === undefined || slopePerHour === null) {
+        return {
+            bound,
+            firstPlateau: first === undefined ? null : { atElapsedMs: first.elapsedMs, value: first.value },
+            slopePerHour,
+            max,
+            outcome: 'insufficient',
+            reason: `${medians.length} complete 5-minute buckets after the warm-up; the page heap check needs ` +
+                `${PAGE_HEAP_MIN_BUCKETS} complete 5-minute buckets`
+        };
+    }
+    const flat = Math.abs(slopePerHour) <= HEAP_SLOPE_LIMIT_BYTES_PER_HOUR;
+    const belowDouble = last.value < HEAP_MAX_PLATEAU_FACTOR * first.value;
+    return {
+        bound,
+        firstPlateau: { atElapsedMs: first.elapsedMs, value: first.value },
+        slopePerHour,
+        max,
+        outcome: flat && belowDouble ? 'pass' : 'fail',
+        reason:
+            `bucket median slope ${toV1dGrowthRounded(slopePerHour / MB)} MB/h${flat ? '' : ' exceeds the limit'}; ` +
+            `last bucket median ${toV1dGrowthRounded(last.value / MB)} MB against the first ` +
+            `${toV1dGrowthRounded(first.value / MB)} MB${belowDouble ? '' : ', twice it or more'}; ` +
+            `raw peak ${toV1dGrowthRounded((max ?? 0) / MB)} MB, not judged`
     };
 }
 

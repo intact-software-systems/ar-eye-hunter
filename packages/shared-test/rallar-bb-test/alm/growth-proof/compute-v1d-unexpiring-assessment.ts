@@ -7,6 +7,7 @@ import {
     toV1dGrowthRounded,
     type V1dGrowthSeriesPoint
 } from './v1d-growth-series.ts';
+import type { V1dGrowthEntityCount } from './v1d-growth-surface.ts';
 
 export interface V1dDurableBound {
     readonly entity: string;
@@ -43,6 +44,45 @@ export function computeDurableAssessment(bound: V1dDurableBound, input: V1dGrowt
             ? `grew only with new ${bound.entity}`
             : `grew ${beyond.value - first.value} by ${toV1dGrowthMinutes(beyond.elapsedMs)} min, beyond ` +
                 `${limitAt(beyond.entities)} for ${beyond.entities - first.entities} new ${bound.entity}`
+    };
+}
+
+/**
+ * A surface of one row per registered account: at every sample its growth since the first stays within
+ * `rowsPerEntity` per account the run registered, and no reading exceeds the ceiling reading of the same sample.
+ */
+export function computeRegisteredAssessment(
+    bound: V1dDurableBound,
+    registrations: Extract<V1dGrowthEntityCount, { source: 'registrations'; }>,
+    input: V1dGrowthSeriesInput
+): V1dGrowthAssessment {
+    const accounts = input.workload === null
+        ? null
+        : input.workload.churnStarted * registrations.principalsPerChurnIteration + input.workload.manifestAgents;
+    const ratePerHour = computeV1dGrowthSlopePerHour(input.series, 0);
+    const boundText = `≤ ${bound.rowsPerEntity} per ${bound.entity} (${accounts ?? 'unrecorded'}); ` +
+        `+${Math.round(ratePerHour ?? 0)}/h`;
+    const first = input.series[0];
+    if (first === undefined || accounts === null) {
+        return toV1dGrowthNoData(boundText);
+    }
+    const ceilingAt = new Map(input.ceilingSeries.map((point) => [point.elapsedMs, point.value]));
+    const limit = bound.rowsPerEntity * accounts;
+    const beyond = input.series.find((point) => point.value - first.value > limit);
+    const aboveCeiling = input.series.find((point) => point.value > (ceilingAt.get(point.elapsedMs) ?? point.value));
+    return {
+        bound: boundText,
+        firstPlateau: computeV1dGrowthPlateau(input.series, 0),
+        slopePerHour: ratePerHour,
+        max: computeV1dGrowthMax(input.series),
+        outcome: beyond === undefined && aboveCeiling === undefined ? 'pass' : 'fail',
+        reason: beyond !== undefined
+            ? `grew ${beyond.value - first.value} by ${toV1dGrowthMinutes(beyond.elapsedMs)} min, beyond ` +
+                `${limit} for ${accounts} ${bound.entity}`
+            : aboveCeiling !== undefined
+            ? `${aboveCeiling.value} at ${toV1dGrowthMinutes(aboveCeiling.elapsedMs)} min exceeds the ` +
+                `${ceilingAt.get(aboveCeiling.elapsedMs)} its ceiling reading held`
+            : `grew only with the ${accounts} ${bound.entity}`
     };
 }
 

@@ -7,6 +7,8 @@ export interface V1dGrowthSamplePoint {
     readonly atEpochMs: number;
     /** The agent a browser reading came from; null for a process or database reading. */
     readonly agentId: string | null;
+    /** The API process a heap reading came from, judged on its own; null for every other reading. */
+    readonly serviceId: string | null;
     readonly value: ApiJsonValue;
 }
 
@@ -14,6 +16,11 @@ export interface V1dGrowthSamplePoint {
 export interface V1dGrowthSeriesPoint {
     readonly elapsedMs: number;
     readonly value: number;
+}
+
+/** One browser agent's own reading, before the agents' readings meet in one series. */
+export interface V1dGrowthAgentReading extends V1dGrowthSeriesPoint {
+    readonly agentId: string;
 }
 
 export interface V1dGrowthPlateau {
@@ -34,7 +41,52 @@ export function toV1dGrowthSeries(
     reader: V1dGrowthReader,
     windowStartedAtEpochMs: number
 ): readonly V1dGrowthSeriesPoint[] {
-    const readings = points
+    const readings = toV1dGrowthReadings(points, reader, windowStartedAtEpochMs);
+    const byAgent = readings.some((reading) => reading.agentId !== null);
+    return byAgent ? toAgentBucketMaxima(readings) : readings.map(({ elapsedMs, value }) => ({ elapsedMs, value }));
+}
+
+export function toV1dGrowthAgentReadings(
+    points: readonly V1dGrowthSamplePoint[],
+    reader: V1dGrowthReader,
+    windowStartedAtEpochMs: number
+): readonly V1dGrowthAgentReading[] {
+    return toV1dGrowthReadings(points, reader, windowStartedAtEpochMs).flatMap(({ elapsedMs, agentId, value }) =>
+        agentId === null ? [] : [{ elapsedMs, agentId, value }]
+    );
+}
+
+/**
+ * The median of each agent's readings in each bucket, then the median of those across the agents: one point per
+ * bucket, at its start. Only complete buckets count: a bucket the readings end inside is left out.
+ */
+export function computeV1dGrowthAgentBucketMedians(
+    readings: readonly V1dGrowthAgentReading[],
+    bucketMs: number
+): readonly V1dGrowthSeriesPoint[] {
+    const lastElapsedMs = readings.reduce((last, reading) => Math.max(last, reading.elapsedMs), 0);
+    const byBucketAndAgent = new Map<number, Map<string, number[]>>();
+    for (const reading of readings) {
+        const bucket = Math.floor(reading.elapsedMs / bucketMs) * bucketMs;
+        const byAgent = byBucketAndAgent.get(bucket) ?? new Map<string, number[]>();
+        byAgent.set(reading.agentId, [...(byAgent.get(reading.agentId) ?? []), reading.value]);
+        byBucketAndAgent.set(bucket, byAgent);
+    }
+    return [...byBucketAndAgent.entries()]
+        .filter(([bucket]) => bucket + bucketMs <= lastElapsedMs)
+        .sort(([left], [right]) => left - right)
+        .map(([bucket, byAgent]) => ({
+            elapsedMs: bucket,
+            value: computeV1dGrowthMedian([...byAgent.values()].map(computeV1dGrowthMedian))
+        }));
+}
+
+function toV1dGrowthReadings(
+    points: readonly V1dGrowthSamplePoint[],
+    reader: V1dGrowthReader,
+    windowStartedAtEpochMs: number
+): readonly { elapsedMs: number; agentId: string | null; value: number; }[] {
+    return points
         .map((point) => ({
             elapsedMs: point.atEpochMs - windowStartedAtEpochMs,
             agentId: point.agentId,
@@ -43,8 +95,6 @@ export function toV1dGrowthSeries(
         .filter((reading): reading is { elapsedMs: number; agentId: string | null; value: number; } =>
             reading.elapsedMs >= 0 && reading.value !== undefined
         );
-    const byAgent = readings.some((reading) => reading.agentId !== null);
-    return byAgent ? toAgentBucketMaxima(readings) : readings.map(({ elapsedMs, value }) => ({ elapsedMs, value }));
 }
 
 function toV1dGrowthValue(value: ApiJsonValue, reader: V1dGrowthReader): number | undefined {
@@ -100,18 +150,21 @@ export function computeV1dGrowthPlateau(
 ): V1dGrowthPlateau | null {
     const window = series
         .filter((point) => point.elapsedMs >= warmUpMs && point.elapsedMs <= warmUpMs + PLATEAU_WINDOW_MS)
-        .map((point) => point.value)
-        .sort((left, right) => left - right);
-    if (window.length === 0) {
-        return null;
-    }
-    const middle = Math.floor(window.length / 2);
-    const median = window.length % 2 === 1 ? window[middle]! : (window[middle - 1]! + window[middle]!) / 2;
-    return { atElapsedMs: warmUpMs, value: median };
+        .map((point) => point.value);
+    return window.length === 0 ? null : { atElapsedMs: warmUpMs, value: computeV1dGrowthMedian(window) };
+}
+
+/** The median of a non-empty list. */
+function computeV1dGrowthMedian(values: readonly number[]): number {
+    const sorted = [...values].sort((left, right) => left - right);
+    const middle = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 1 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2;
 }
 
 export function computeV1dGrowthMax(series: readonly V1dGrowthSeriesPoint[]): number | null {
-    return series.length === 0 ? null : Math.max(...series.map((point) => point.value));
+    return series.length === 0
+        ? null
+        : series.reduce((max, point) => Math.max(max, point.value), Number.NEGATIVE_INFINITY);
 }
 
 export function toV1dGrowthLastElapsedMs(series: readonly V1dGrowthSeriesPoint[]): number {
