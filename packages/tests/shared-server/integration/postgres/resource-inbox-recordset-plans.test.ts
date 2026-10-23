@@ -99,7 +99,7 @@ async function insertRows(sql: PSqlSql, range: { readonly from: number; readonly
         select 'row-' || series, 'plan-trap', '{"body":"' || repeat(md5(series::text), 8) || '"}',
             case when series <= ${trapRows} then ${TRAP_TYPE} else 'FILLER' end,
             case when series <= ${trapRows} then 'NEW' else 'COMPLETED' end,
-            'context-' || series, '2026-10-22', 'server-1',
+            'context-' || series, (now() at time zone 'UTC')::date, 'server-1',
             (now() at time zone 'UTC') + series * interval '1 microsecond',
             (now() at time zone 'UTC') + interval '1 day', case when series <= ${trapRows} then 0 else 1 end,
             case when series > ${trapRows} then (now() at time zone 'UTC') end,
