@@ -5,12 +5,12 @@ import {
 
 import type { GroupSnapshot } from '../../../packages/shared/api/group-types.ts';
 
-import { arenaRoomTest } from './arena-room-fixture.ts';
+import { roomBrowserTest } from '../room-browser-fixture.ts';
 
-arenaRoomTest(
+roomBrowserTest(
     'Quick Join reports unavailable, then joins an arena created by another browser',
     async ({ page: alice, guest: bob }, testInfo) => {
-        arenaRoomTest.skip(
+        roomBrowserTest.skip(
             process.env.RALLAR_ARENA_FULL_STACK !== '1',
             'Requires the local API-v1 memory fixture on port 8080.'
         );

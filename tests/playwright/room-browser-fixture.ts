@@ -3,13 +3,13 @@ import {
     type Page
 } from '@playwright/test';
 
-interface ArenaRoomFixtures {
+interface RoomBrowserFixtures {
     readonly guest: Page;
 }
 
-export const arenaRoomTest = test.extend<ArenaRoomFixtures>({
+export const roomBrowserTest = test.extend<RoomBrowserFixtures>({
     guest: async ({ browser }, use) => {
-        // Separate browsers keep the two active arenas from sharing one software graphics process.
+        // Separate browsers keep active game scenes from sharing one software graphics process.
         const guestBrowser = await browser.browserType().launch();
         try {
             const guestContext = await guestBrowser.newContext();

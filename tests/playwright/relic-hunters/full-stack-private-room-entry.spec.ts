@@ -1,4 +1,10 @@
-import { expect, test, type Page } from '@playwright/test';
+import {
+    expect,
+    test,
+    type Page
+} from '@playwright/test';
+
+import { roomBrowserTest } from '../room-browser-fixture.ts';
 
 test('retains a manual private destination through signed-out reload and cancellation', async ({ page }) => {
     await page.goto('/');
@@ -28,60 +34,68 @@ test('rejects a private link for another application without admitting a room', 
     expect(admissions).toEqual([]);
 });
 
-test('shares a code expedition, plays together, and returns after code rotation', async ({ browser }) => {
-    test.skip(!['1', 'true'].includes(process.env.RELIC_HUNTERS_FULL_STACK ?? ''), 'Requires the paired Relic server.');
-    test.setTimeout(180_000);
-    const host = await browser.newContext();
-    const guest = await browser.newContext();
-    const outsider = await browser.newContext();
-    try {
-        const hostPage = await host.newPage();
-        const guestPage = await guest.newPage();
-        const outsiderPage = await outsider.newPage();
-        await hostPage.goto('/');
-        await registerPrivateHunter(hostPage, 'host');
-        await expect(hostPage.getByRole('button', { name: 'New code room', exact: true })).toBeVisible();
-        await hostPage.getByRole('button', { name: 'New code room', exact: true }).click();
-        await expect(hostPage.getByLabel('Room link', { exact: true })).not.toHaveValue('');
-        const link = await hostPage.getByLabel('Room link', { exact: true }).inputValue();
-        await outsiderPage.goto('/');
-        await registerPrivateHunter(outsiderPage, 'outsider');
-        await expect(outsiderPage.locator('button.room-row')).toHaveCount(0);
-        await outsiderPage.goto('about:blank');
-        await guestPage.goto(link);
-        await expect(guestPage.getByText('Sign in to enter this room.', { exact: true })).toBeVisible();
-        await registerPrivateHunter(guestPage, 'guest');
-        await playPrivateExpedition(hostPage, guestPage);
-        await hostPage.getByRole('button', { name: 'Rotate room code', exact: true }).click();
-        await expect(hostPage.getByLabel('Room link', { exact: true })).not.toHaveValue(link);
-        await expect(hostPage.getByLabel('Room link', { exact: true })).not.toHaveValue('');
-        const currentLink = await hostPage.getByLabel('Room link', { exact: true }).inputValue();
-        await hostPage.screenshot({ path: 'tmp/private-room-entry/relic-host.png', fullPage: true });
-        // The host's assertions are complete; release its software WebGL renderer before reload.
-        await hostPage.goto('about:blank');
-        await guestPage.reload();
-        await expect(guestPage.locator('.turn-plan-status .panel-label')).toHaveText('Round 2');
-        await guestPage.screenshot({ path: 'tmp/private-room-entry/relic-guest.png', fullPage: true });
-        await guestPage.goto('about:blank');
-        await outsiderPage.goto(link);
-        await expect(outsiderPage.getByRole('alert')).toContainText('Room entry was denied');
-        const fields = new URLSearchParams(new URL(currentLink).hash.slice('#rallar-room?'.length));
-        await outsiderPage.getByLabel('Room code', { exact: true }).fill(fields.get('joinCode') ?? '');
-        await outsiderPage.getByRole('button', { name: 'Enter private room', exact: true }).click();
-        await expect(outsiderPage.getByText(`Entered ${fields.get('groupId')}.`, { exact: true })).toBeVisible();
+roomBrowserTest(
+    'shares a code expedition, plays together, and returns after code rotation',
+    async ({ browser, page: hostPage, guest: guestPage }, testInfo) => {
+        roomBrowserTest.skip(
+            !['1', 'true'].includes(process.env.RELIC_HUNTERS_FULL_STACK ?? ''),
+            'Requires the paired Relic server.'
+        );
+        roomBrowserTest.setTimeout(180_000);
+        const outsider = await browser.newContext();
+        try {
+            const outsiderPage = await outsider.newPage();
+            await hostPage.goto('/');
+            await registerPrivateHunter(hostPage, 'host');
+            await expect(hostPage.getByRole('button', { name: 'New code room', exact: true })).toBeVisible();
+            await hostPage.getByRole('button', { name: 'New code room', exact: true }).click();
+            await expect(hostPage.getByLabel('Room link', { exact: true })).not.toHaveValue('');
+            const link = await hostPage.getByLabel('Room link', { exact: true }).inputValue();
+            await outsiderPage.goto('/');
+            await registerPrivateHunter(outsiderPage, 'outsider');
+            await expect(outsiderPage.getByRole('button', { name: 'New Room', exact: true })).toBeEnabled();
+            await expect(outsiderPage.locator('button.room-row')).toHaveCount(0);
+            await outsiderPage.goto('about:blank');
+            await guestPage.goto(link);
+            await expect(guestPage.getByText('Sign in to enter this room.', { exact: true })).toBeVisible();
+            await registerPrivateHunter(guestPage, 'guest');
+            await playPrivateExpedition(hostPage, guestPage);
+            await hostPage.getByRole('button', { name: 'Rotate room code', exact: true }).click();
+            await expect(hostPage.getByLabel('Room link', { exact: true })).not.toHaveValue(link);
+            await expect(hostPage.getByLabel('Room link', { exact: true })).not.toHaveValue('');
+            const currentLink = await hostPage.getByLabel('Room link', { exact: true }).inputValue();
+            const fields = new URLSearchParams(new URL(currentLink).hash.slice('#rallar-room?'.length));
+            const groupId = fields.get('groupId');
+            const joinCode = fields.get('joinCode');
+            if (!groupId || !joinCode) {
+                throw new Error('The generated private-room link must contain its reference and code.');
+            }
+            await hostPage.screenshot({ path: testInfo.outputPath('relic-host.png'), fullPage: true });
+            // The host's assertions are complete; release its software WebGL renderer before reload.
+            await hostPage.goto('about:blank');
+            await guestPage.reload();
+            await expect(guestPage.locator('.turn-plan-status .panel-label')).toHaveText('Round 2');
+            await guestPage.screenshot({ path: testInfo.outputPath('relic-guest.png'), fullPage: true });
+            await guestPage.goto('about:blank');
+            await outsiderPage.goto(link);
+            await expect(outsiderPage.getByRole('alert')).toContainText('Room entry was denied');
+            await outsiderPage.getByLabel('Room code', { exact: true }).fill(joinCode);
+            await outsiderPage.getByRole('button', { name: 'Enter private room', exact: true }).click();
+            await expect(outsiderPage.getByText(`Entered ${groupId}.`, { exact: true })).toBeVisible();
+        }
+        finally {
+            await outsider.close();
+        }
     }
-    finally {
-        await Promise.all([host.close(), guest.close(), outsider.close()]);
-    }
-});
+);
 
-test('replaces a saved room with an invitation and enforces revocation before admission', async ({ browser }) => {
-    test.skip(!['1', 'true'].includes(process.env.RELIC_HUNTERS_FULL_STACK ?? ''), 'Requires the paired Relic server.');
-    const host = await browser.newContext();
-    const guest = await browser.newContext();
-    try {
-        const hostPage = await host.newPage();
-        const guestPage = await guest.newPage();
+roomBrowserTest(
+    'replaces a saved room with an invitation and enforces revocation before admission',
+    async ({ page: hostPage, guest: guestPage }) => {
+        roomBrowserTest.skip(
+            !['1', 'true'].includes(process.env.RELIC_HUNTERS_FULL_STACK ?? ''),
+            'Requires the paired Relic server.'
+        );
         await hostPage.goto('/');
         await registerPrivateHunter(hostPage, 'invite-host');
         await hostPage.getByRole('button', { name: 'New code room', exact: true }).click();
@@ -114,10 +128,7 @@ test('replaces a saved room with an invitation and enforces revocation before ad
         await expect(guestPage.getByText(`Entered ${groupId}.`, { exact: true })).toBeVisible();
         await expect(guestPage.getByRole('button', { name: /Join as/ })).toBeVisible();
     }
-    finally {
-        await Promise.all([host.close(), guest.close()]);
-    }
-});
+);
 
 async function registerPrivateHunter(page: Page, role: string): Promise<void> {
     const suffix = crypto.randomUUID();

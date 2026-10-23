@@ -4,7 +4,7 @@ import {
     type Page
 } from '@playwright/test';
 
-import { arenaRoomTest } from './arena-room-fixture.ts';
+import { roomBrowserTest } from '../room-browser-fixture.ts';
 
 test('keeps manual private-room entry through signed-out reload and allows cancellation', async ({ page }) => {
     const operations = await openOperations(page, '/');
@@ -44,10 +44,10 @@ test('shows a wrong-scope invitation without sending an admission request', asyn
         .toHaveCount(0);
 });
 
-arenaRoomTest(
+roomBrowserTest(
     'shares a code arena through sign-in, participation, rotation, and member reload',
     async ({ page: host, guest }, testInfo) => {
-        test.skip(
+        roomBrowserTest.skip(
             process.env.RALLAR_ARENA_FULL_STACK !== '1',
             'Requires the local API-v1 memory fixture on port 8080.'
         );
@@ -89,10 +89,10 @@ arenaRoomTest(
     }
 );
 
-arenaRoomTest(
+roomBrowserTest(
     'requires an account invitation, honors revocation, and accepts a reissued invitation',
     async ({ page: host, guest }, testInfo) => {
-        test.skip(
+        roomBrowserTest.skip(
             process.env.RALLAR_ARENA_FULL_STACK !== '1',
             'Requires the local API-v1 memory fixture on port 8080.'
         );
@@ -123,10 +123,10 @@ arenaRoomTest(
     }
 );
 
-arenaRoomTest(
+roomBrowserTest(
     'rejects a rotated code after registration, accepts correction, and prioritizes a new invitation',
     async ({ page: host, guest }) => {
-        test.skip(
+        roomBrowserTest.skip(
             process.env.RALLAR_ARENA_FULL_STACK !== '1',
             'Requires the local API-v1 memory fixture on port 8080.'
         );
