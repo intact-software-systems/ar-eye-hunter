@@ -653,7 +653,15 @@ paths:
         returned by the group snapshot list instead. Rooms with nobody online
         are omitted unless `includeEmpty` is true. Entries are ordered by
         online member count (descending), then group id, and paged with an
-        opaque keyset cursor. Online counts change between requests, so paging
+        opaque keyset cursor. With `order=peer-rtt`, equal occupancy is ordered by
+        known peer RTT ascending, unknown RTT last, then group id. `peerRttMs` is
+        the slowest existing direct RTT from the authenticated session to every
+        live room session, requiring complete coverage and samples less than 60
+        seconds old and not future-dated. It is null otherwise and for default
+        ordering. Unknown rooms remain discoverable. Measurements require earlier
+        authorized peer contact and are bounded; no pre-join probes are started.
+        Peer RTT does not measure command completion. Cursors belong to their
+        requested order. Online counts and measurements change between requests, so paging
         is best-effort: a room whose count changes can repeat or be skipped
         across pages. `maxMembers` is the effective cap admission enforces,
         including the server default when the group sets none. `isFull` reports only
@@ -707,6 +715,14 @@ paths:
           schema:
             type: boolean
             default: false
+        - name: order
+          in: query
+          required: false
+          description: Optional peer RTT tie-breaker after online member count.
+          schema:
+            type: string
+            enum: [online-members, peer-rtt]
+            default: online-members
         - name: If-None-Match
           in: header
           required: false
@@ -753,6 +769,12 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '500':
+          description: Latency evidence is unavailable or failed integrity validation; no directory page is returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/{requestId}:
     post:
       tags: [Group State]
@@ -6214,6 +6236,7 @@ components:
         - maxMembers
         - isFull
         - lifecycleState
+        - peerRttMs
       properties:
         groupRef:
           $ref: '#/components/schemas/GroupRef'
@@ -6240,6 +6263,12 @@ components:
         lifecycleState:
           type: string
           enum: [dormant, forming, planned, connecting, active, reconfiguring, reconnecting]
+        peerRttMs:
+          type: number
+          nullable: true
+          minimum: 0
+          exclusiveMinimum: true
+          description: Slowest recent direct peer RTT in milliseconds with complete live-session coverage; null when unknown or not requested.
 
     GroupDirectoryPage:
       type: object

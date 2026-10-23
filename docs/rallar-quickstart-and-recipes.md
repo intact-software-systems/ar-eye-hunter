@@ -68,6 +68,40 @@ const current = rallar.rooms.current();
 Use `rooms.create(...)` instead when the browser should remain a member of the
 previous current room too.
 
+## Discover Rooms With A Peer Latency Preference
+
+```ts
+const page = await rallar.rooms.directory({
+    kind: 'room',
+    order: 'peer-rtt',
+    limit: 20
+});
+
+for (const room of page.entries) {
+    const latency = room.peerRttMs === null
+        ? 'Unknown peer latency'
+        : `${room.peerRttMs} ms peer RTT`;
+    renderDiscoverableRoom(room, latency);
+}
+```
+
+Occupancy remains the first ordering criterion. Among equally occupied rooms,
+known RTT sorts ascending, followed by unknown RTT, then group ID. Omitting `order`
+keeps occupancy and group-ID ordering, returns null RTT, and performs no RTT lookup.
+
+`peerRttMs` is the slowest existing direct RTT from the authenticated session to
+every live session in a room. All samples must be less than 60 seconds old and not
+future-dated. Missing or partial coverage, expired observations, a new session,
+or no live peers yields null. Existing authorized peer contact is required; this
+read starts no probes. The reporting degree bound can leave larger rooms unknown.
+Peer RTT describes peer traffic, not game command completion time.
+
+Keep unknown rooms available for joining. Discovery does not grant admission:
+`rooms.join(room.groupRef)` checks current policy and capacity. To fetch another
+page, pass `page.nextCursor` as `cursor` with the same order and filters; start
+again without a cursor when changing order. Deduplicate by scoped group identity
+because occupancy and measurements can change between pages.
+
 ## Invite-Only Room
 
 ```ts
@@ -277,17 +311,26 @@ console.log(result.replayedCount, result.duplicateCount);
 
 ## WS Chat
 
+Room handles scope outgoing messages. Their receive callbacks remain topic/type
+listeners, so check the full incoming room target before using a message.
+
 ```ts
-type ChatMessage = {
-    text: string;
-    sentAt: number;
-};
+import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+
+interface ChatMessage {
+    readonly text: string;
+    readonly sentAt: number;
+}
 
 const room = await rallar.rooms.enter('lobby');
 const chat = room.message<ChatMessage>('chat');
 
 const unsubscribe = chat.onWs((payload, message) => {
-    appendChatMessage(message.senderId, payload.text);
+    const target = readALTargetGroupRef(message.raw);
+    if (target && isSameGroupRef(target, room.roomRef)) {
+        appendChatMessage(message.senderId, payload.text);
+    }
 });
 
 await chat.sendWs({ text: 'hello', sentAt: Date.now() });
@@ -296,11 +339,16 @@ await chat.sendWs({ text: 'hello', sentAt: Date.now() });
 ## Realtime Player Updates
 
 ```ts
-type PlayerUpdate = {
-    x: number;
-    y: number;
-    heading: number;
-};
+import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
+
+interface PlayerUpdate {
+    readonly roomRef: GroupRef;
+    readonly x: number;
+    readonly y: number;
+    readonly heading: number;
+}
 
 const room = await rallar.rooms.enter('lobby');
 const playerUpdates = room.realtime<PlayerUpdate>({
@@ -310,16 +358,25 @@ const playerUpdates = room.realtime<PlayerUpdate>({
 const playerFallback = room.message<PlayerUpdate>('player');
 
 playerUpdates.on((message) => {
-    updateRemotePlayer(message.peerId, message.data);
+    if (isSameGroupRef(message.data.roomRef, room.roomRef)) {
+        updateRemotePlayer(message.peerId, message.data);
+    }
 });
 playerFallback.onWs((payload, message) => {
-    updateRemotePlayer(message.senderId, payload);
+    const target = readALTargetGroupRef(message.raw);
+    if (
+        target && isSameGroupRef(target, room.roomRef) &&
+        isSameGroupRef(payload.roomRef, room.roomRef)
+    ) {
+        updateRemotePlayer(message.senderId, payload);
+    }
 });
 
-const result = await playerUpdates.send({ x: 10, y: 20, heading: 90 });
+const update: PlayerUpdate = { roomRef: room.roomRef, x: 10, y: 20, heading: 90 };
+const result = await playerUpdates.send(update);
 
 if (result.status === 'not-ready' || result.status === 'no-targets') {
-    await playerFallback.sendWs({ x: 10, y: 20, heading: 90 });
+    await playerFallback.sendWs(update);
 }
 ```
 
@@ -340,7 +397,7 @@ if (readiness.readyPeerIds.length > 0) {
     await rallar.realtime.sendJson({
         laneId: 'realtime',
         peerIds: readiness.readyPeerIds,
-        data: { x: 10, y: 20, heading: 90 }
+        data: { roomRef: room.roomRef, x: 10, y: 20, heading: 90 }
     });
 }
 ```
@@ -362,12 +419,12 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import { createRallarMotionBuffer } from '@shared/rallar-motion/mod.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/web-rtc-connection-service.ts';
 
-type PoseUpdate = {
-    roomRef: GroupRef;
-    position: readonly [number, number, number];
-    velocity?: readonly [number, number, number];
-    seq: number;
-};
+interface PoseUpdate {
+    readonly roomRef: GroupRef;
+    readonly position: readonly [number, number, number];
+    readonly velocity?: readonly [number, number, number];
+    readonly seq: number;
+}
 
 const motionLaneConfig = {
     id: 'motion',
@@ -566,10 +623,10 @@ if (ws.status !== 'open') {
 ## Browser Local Settings
 
 ```ts
-type Settings = {
-    volume: number;
-    showHints: boolean;
-};
+interface Settings {
+    readonly volume: number;
+    readonly showHints: boolean;
+}
 
 const settings = await rallar.data.open<Settings>('settings', {
     scope: 'principal',
@@ -587,10 +644,10 @@ const current = await settings.get('ui');
 ## Browser Drafts With Write-Behind
 
 ```ts
-type Draft = {
-    body: string;
-    updatedAt: number;
-};
+interface Draft {
+    readonly body: string;
+    readonly updatedAt: number;
+}
 
 const drafts = await rallar.data.open<Draft>('drafts', {
     scope: 'principal',

@@ -25,6 +25,9 @@ import * as clientStateRoutes from '../client-state-routes.ts';
 
 export interface ApiV1StateSnapshotRouteRuntime {
     readonly authSessionRepository: object;
+    readonly topologyServices: Readonly<{
+        rttRepository: Pick<ApiV1Runtime['topologyServices']['rttRepository'], 'listMeasurementEntriesForEndpoints'>;
+    }>;
     readonly appClientInboxService: Pick<
         ApiV1Runtime['appClientInboxService'],
         'processAuthenticatedEntryUntilCompletion'
@@ -100,6 +103,7 @@ export function createStateSnapshotReadRouteRegistrars<Runtime extends ApiV1Stat
         group: (app: Hono) =>
             groupStateRoutes.registerGroupStateRoutes(app, {
                 groupStateService: runtime.groupStateService,
+                rtcRttRepository: runtime.topologyServices.rttRepository,
                 strictReadAuthorization: policy.strictReadAuthorization,
                 groupDefaultMaxMembers: policy.groupDefaultMaxMembers,
                 nowEpochMs: policy.nowEpochMs,

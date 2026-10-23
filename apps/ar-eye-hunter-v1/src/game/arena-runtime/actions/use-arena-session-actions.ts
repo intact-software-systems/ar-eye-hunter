@@ -1,10 +1,17 @@
-import { useCallback, useEffect, useRef } from 'react';
-import type { Dispatch, RefObject, SetStateAction } from 'react';
+import {
+    useCallback,
+    useEffect,
+    useRef
+} from 'react';
+import type {
+    Dispatch,
+    RefObject,
+    SetStateAction
+} from 'react';
 
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { RallarDirectorStatus, RallarRoomSummary } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { GroupDirectoryEntry } from '@shared/api/group-directory/group-directory-types.ts';
 import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
 import { createRallarAiFunnyRoomName, createRallarAiRoomNameSeed } from '@shared/rallar-ai/mod.ts';
 
@@ -15,11 +22,13 @@ import type {
     DirectorAttemptSource,
     DirectorAttemptState
 } from '../arena-connection-contracts.ts';
+import {
+    OPEN_ARENA_DIRECTORY_QUERY,
+    useArenaDirectoryActions,
+    type ArenaDirectoryActionsInput
+} from './use-arena-directory-actions.ts';
 
-const OPEN_ARENA_DIRECTORY_QUERY = 'eye hunter';
-const OPEN_ARENA_DIRECTORY_PAGE_SIZE = 50;
-
-interface ArenaSessionActionsInput {
+interface ArenaSessionActionsInput extends ArenaDirectoryActionsInput {
     readonly attemptDirectorAppointment: (source: DirectorAttemptSource) => Promise<void>;
     readonly clearRoomScopedArenaState: () => void;
     readonly connect: () => Promise<void>;
@@ -31,15 +40,8 @@ interface ArenaSessionActionsInput {
     readonly roomId: string | undefined;
     readonly roomIdRef: RefObject<string | undefined>;
     readonly rooms: readonly RallarRoomSummary[];
-    readonly sessionRef: RefObject<AuthSession | undefined>;
-    readonly directoryGenerationRef: RefObject<number>;
     readonly setConnectionState: Dispatch<SetStateAction<ArenaConnectionState>>;
     readonly setError: Dispatch<SetStateAction<string | undefined>>;
-    readonly setRoomId: Dispatch<SetStateAction<string | undefined>>;
-    readonly setOpenRooms: Dispatch<SetStateAction<readonly GroupDirectoryEntry[]>>;
-    readonly setOpenRoomsError: Dispatch<SetStateAction<string | undefined>>;
-    readonly setOpenRoomsStatus: Dispatch<SetStateAction<ArenaConnection['openRoomsStatus']>>;
-    readonly setRooms: Dispatch<SetStateAction<readonly RallarRoomSummary[]>>;
     readonly setSession: Dispatch<SetStateAction<AuthSession | undefined>>;
 }
 
@@ -58,20 +60,22 @@ export function useArenaSessionActions(
     | 'register'
     | 'logout'
     | 'refreshRooms'
+    | 'changeDirectoryOrder'
     | 'createArenaRoom'
     | 'quickJoinArenaRoom'
     | 'joinRoom'
     | 'appointSelfAsDirector'
 > {
     const authentication = useArenaAuthentication(input);
-    const rooms = useArenaRoomActions(input);
+    const directory = useArenaDirectoryActions(input);
+    const rooms = useArenaRoomActions(input, directory.refreshRooms);
     const appointSelfAsDirector = useCallback(async () => {
         if (input.isNetworkEnabled()) {
             await input.attemptDirectorAppointment('manual');
         }
     }, [input.attemptDirectorAppointment, input.isNetworkEnabled]);
     useArenaAutomaticAppointment(input);
-    return { ...authentication, ...rooms, appointSelfAsDirector };
+    return { ...authentication, ...directory, ...rooms, appointSelfAsDirector };
 }
 
 function useArenaAuthentication(
@@ -141,81 +145,10 @@ async function authenticateArena(
     }
 }
 
-async function readOpenArenaDirectory(isCurrent: () => boolean): Promise<readonly GroupDirectoryEntry[] | undefined> {
-    const entries = new Map<string, GroupDirectoryEntry>();
-    let cursor: string | null = null;
-    do {
-        const page = await rallar.rooms.directory({
-            kind: 'room',
-            q: OPEN_ARENA_DIRECTORY_QUERY,
-            limit: OPEN_ARENA_DIRECTORY_PAGE_SIZE,
-            ...(cursor === null ? {} : { cursor })
-        });
-        if (!isCurrent()) {
-            return undefined;
-        }
-        page.entries.forEach((entry) => entries.set(entry.groupRef.groupId, entry));
-        cursor = page.nextCursor;
-    }
-    while (cursor !== null);
-    return [...entries.values()];
-}
-
-async function refreshArenaRooms(input: ArenaSessionActionsInput): Promise<void> {
-    const {
-        sessionRef,
-        directoryGenerationRef,
-        setRooms,
-        setRoomId,
-        setOpenRooms,
-        setOpenRoomsError,
-        setOpenRoomsStatus
-    } = input;
-    const session = sessionRef.current;
-    if (!session) {
-        return;
-    }
-    const generation = ++directoryGenerationRef.current;
-    const isCurrent = () =>
-        directoryGenerationRef.current === generation &&
-        sessionRef.current?.sessionId === session.sessionId && sessionRef.current?.clientId === session.clientId;
-    setOpenRoomsStatus('loading');
-    setOpenRoomsError(undefined);
-    try {
-        const state = await rallar.rooms.refresh();
-        if (!isCurrent()) {
-            return;
-        }
-        setRooms(state.rooms);
-        setRoomId(state.currentRoomId);
-        const openRooms = await readOpenArenaDirectory(isCurrent);
-        if (!isCurrent() || !openRooms) {
-            return;
-        }
-        setOpenRooms(openRooms);
-        setOpenRoomsStatus('ready');
-    }
-    catch (error) {
-        if (!isCurrent()) {
-            return;
-        }
-        setOpenRoomsError(error instanceof Error ? error.message : String(error));
-        setOpenRoomsStatus('error');
-    }
-}
-
 function useArenaRoomActions(
-    input: ArenaSessionActionsInput
-): Pick<ArenaConnection, 'refreshRooms' | 'createArenaRoom' | 'quickJoinArenaRoom' | 'joinRoom'> {
-    const refreshRooms = useCallback(() => refreshArenaRooms(input), [
-        input.sessionRef,
-        input.directoryGenerationRef,
-        input.setRooms,
-        input.setRoomId,
-        input.setOpenRooms,
-        input.setOpenRoomsError,
-        input.setOpenRoomsStatus
-    ]);
+    input: ArenaSessionActionsInput,
+    refreshRooms: ArenaConnection['refreshRooms']
+): Pick<ArenaConnection, 'createArenaRoom' | 'quickJoinArenaRoom' | 'joinRoom'> {
     const createArenaRoom = useCallback(() => createAndSelectArenaRoom(input, refreshRooms), [
         input.sessionRef,
         input.setRoomId,
@@ -235,7 +168,7 @@ function useArenaRoomActions(
         input.clearRoomScopedArenaState,
         refreshRooms
     ]);
-    return { refreshRooms, createArenaRoom, quickJoinArenaRoom, joinRoom };
+    return { createArenaRoom, quickJoinArenaRoom, joinRoom };
 }
 
 async function quickJoinArena(

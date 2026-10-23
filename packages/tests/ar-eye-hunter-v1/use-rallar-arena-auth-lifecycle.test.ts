@@ -13,10 +13,21 @@ import {
 import { act } from 'react';
 
 import { readApiConfig, readIceCandidates } from '@shared-web/browser/connection/connection-http-api.ts';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { createRallarGameEnvelope } from '@shared-web/game/mod.ts';
-import type { GroupDirectoryEntry, GroupDirectoryPage } from '@shared/api/group-directory/group-directory-types.ts';
+import type {
+    GroupDirectoryEntry,
+    GroupDirectoryPage,
+    GroupDirectoryRequest
+} from '@shared/api/group-directory/group-directory-types.ts';
 
 import { createArenaRallarGameMatch } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
 import { createInitialVitalsState } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
@@ -488,7 +499,7 @@ describe('useRallarArena auth lifecycle', () => {
 
     it('lists open arenas from the room directory when rooms refresh', async () => {
         const openArena = directoryArena('arena-9');
-        mockRallar.rooms.directory.mockImplementation(async (request?: { kind?: string; q?: string; }) =>
+        mockRallar.rooms.directory.mockImplementation(async (request?: GroupDirectoryRequest) =>
             request?.kind === 'room' && request.q === 'eye hunter'
                 ? { entries: [openArena], nextCursor: null }
                 : { entries: [], nextCursor: null }
@@ -506,7 +517,7 @@ describe('useRallarArena auth lifecycle', () => {
     });
 
     it('follows the directory cursor so the lobby is not truncated at one page', async () => {
-        mockRallar.rooms.directory.mockImplementation(async (request?: { cursor?: string; }) =>
+        mockRallar.rooms.directory.mockImplementation(async (request?: GroupDirectoryRequest) =>
             request?.cursor === 'page-2'
                 ? { entries: [directoryArena('arena-1'), directoryArena('arena-2')], nextCursor: null }
                 : { entries: [directoryArena('arena-1')], nextCursor: 'page-2' }
@@ -533,6 +544,65 @@ describe('useRallarArena auth lifecycle', () => {
         expect(arena.current?.openRooms).toEqual([]);
         expect(arena.current?.openRoomsStatus).toBe('error');
         expect(arena.current?.openRoomsError).toBe('directory unavailable');
+    });
+
+    it.each(['success', 'failure'] as const)('restarts pagination and ignores the previous order result: %s', async (outcome) => {
+        await arena.render();
+        await waitForState(() => arena.current?.connectionState === 'connected');
+        const older = Promise.withResolvers<GroupDirectoryPage>();
+        const fast = { ...directoryArena('fast'), peerRttMs: 20 };
+        const unmeasured = directoryArena('unknown');
+        mockRallar.rooms.directory.mockReturnValueOnce(older.promise)
+            .mockResolvedValueOnce({ entries: [fast], nextCursor: 'peer-page-2' })
+            .mockResolvedValueOnce({ entries: [unmeasured], nextCursor: null });
+        let previousRefresh: Promise<void> | undefined;
+        await act(async () => {
+            previousRefresh = arena.current?.refreshRooms();
+        });
+        await act(async () => {
+            await arena.current?.changeDirectoryOrder('peer-rtt');
+        });
+        expect(mockRallar.rooms.directory.mock.calls.slice(1).map(([request]) => request)).toEqual([
+            { kind: 'room', q: 'eye hunter', limit: 50, order: 'peer-rtt' },
+            { kind: 'room', q: 'eye hunter', limit: 50, order: 'peer-rtt', cursor: 'peer-page-2' }
+        ]);
+        await act(async () => {
+            if (outcome === 'success') {
+                older.resolve({ entries: [directoryArena('obsolete')], nextCursor: 'old-page-2' });
+            }
+            else {
+                older.reject(new Error('obsolete order failed'));
+            }
+            await previousRefresh;
+        });
+        expect(arena.current?.directoryOrder).toBe('peer-rtt');
+        expect(arena.current?.openRooms).toEqual([fast, unmeasured]);
+        expect(arena.current?.openRoomsStatus).toBe('ready');
+        expect(arena.current?.openRoomsError).toBeUndefined();
+        expect(mockRallar.rooms.directory).toHaveBeenCalledTimes(3);
+    });
+
+    it('keeps the chosen order after a failure and retries it on Refresh', async () => {
+        await arena.render();
+        await waitForState(() => arena.current?.connectionState === 'connected');
+        const measured = { ...directoryArena('z-measured'), peerRttMs: 25 };
+        const unmeasured = directoryArena('a-unmeasured');
+        mockRallar.rooms.directory.mockRejectedValueOnce(new Error('latency read unavailable'))
+            .mockImplementation(async (request: GroupDirectoryRequest) => ({
+                entries: request.order === 'peer-rtt' ? [measured, unmeasured] : [unmeasured, measured],
+                nextCursor: null
+            }));
+        await act(async () => {
+            await arena.current?.changeDirectoryOrder('peer-rtt');
+        });
+        expect(arena.current?.openRoomsStatus).toBe('error');
+        expect(arena.current?.directoryOrder).toBe('peer-rtt');
+        await act(async () => {
+            await arena.current?.refreshRooms();
+        });
+        expect(arena.current?.openRooms).toEqual([measured, unmeasured]);
+        expect(arena.current?.openRoomsStatus).toBe('ready');
+        expect(arena.current?.openRoomsError).toBeUndefined();
     });
 
     it('distinguishes idle, loading, an empty success, and recovery from an initial failure', async () => {
@@ -806,6 +876,7 @@ function directoryArena(groupId: string): GroupDirectoryEntry {
         onlineMemberCount: 1,
         maxMembers: 256,
         isFull: false,
-        lifecycleState: 'forming'
+        lifecycleState: 'forming',
+        peerRttMs: null
     };
 }

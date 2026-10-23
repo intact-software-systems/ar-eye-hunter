@@ -564,6 +564,17 @@ label {
     font-weight: 800;
 }
 
+.directory-latency-preference {
+    grid-template-columns: auto 1fr;
+    align-items: center;
+}
+
+.directory-latency-preference input {
+    width: auto;
+    margin: 0;
+    accent-color: var(--matrix-acid);
+}
+
 .room-list {
     display: grid;
     gap: 6px;

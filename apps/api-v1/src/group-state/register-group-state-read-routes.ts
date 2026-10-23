@@ -1,4 +1,8 @@
-import { Hono, type Context, type Next } from 'jsr:@hono/hono@4.11.9';
+import {
+    Hono,
+    type Context,
+    type Next
+} from 'jsr:@hono/hono@4.11.9';
 import { etag, RETAINED_304_HEADERS } from 'jsr:@hono/hono@4.11.9/etag';
 
 import { computeGroupDirectoryPage } from '@shared-server/rallar-system/group-state/directory/compute-group-directory-page.ts';
@@ -7,6 +11,8 @@ import {
     type GroupDirectoryQuery
 } from '@shared-server/rallar-system/group-state/directory/decode-group-directory-query.ts';
 import { readStateEventListQuery } from '@shared-server/rallar-system/state-events/state-event-listing.ts';
+import { RtcTopologyRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/topology/persistence/rtc-topology-errors.ts';
+import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupDirectoryPage } from '@shared/api/group-directory/group-directory-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -28,7 +34,21 @@ import { toGroupStateErrorResponse } from './group-state-route-errors.ts';
 interface ReadGroupDirectoryPageInput {
     readonly scope: StateScope;
     readonly principalId: string | undefined;
+    readonly requesterSessionId: string | null;
     readonly query: GroupDirectoryQuery;
+}
+
+class GroupDirectoryLatencyReadError extends Error {
+    readonly status = 500;
+    readonly code: string;
+
+    constructor(cause: Error) {
+        super('Directory latency evidence is unavailable', { cause });
+        this.name = 'GroupDirectoryLatencyReadError';
+        this.code = cause instanceof RtcTopologyRepositoryInvariantCorruptionError
+            ? cause.code
+            : 'directory-latency-unavailable';
+    }
 }
 
 const GROUPS_PATH = '/api/state/apps/:applicationId/workspaces/:workspaceId/groups';
@@ -112,6 +132,7 @@ async function readGroupDirectory(
                     await readGroupDirectoryPage(dependencies, {
                         scope: toGroupStateRouteScope(context),
                         principalId: authSession?.clientId,
+                        requesterSessionId: authSession?.sessionId ?? null,
                         query
                     })
                 )
@@ -131,10 +152,29 @@ async function readGroupDirectoryPage(
     const listed = snapshots.filter((snapshot) =>
         isGroupStateRouteSnapshotDirectoryListed(snapshot, request.principalId, nowEpochMs)
     );
+    const measurements = request.query.order === 'peer-rtt' && request.requesterSessionId !== null && listed.length > 0
+        ? await readGroupDirectoryRttMeasurements(dependencies.rtcRttRepository, request.requesterSessionId)
+        : [];
     return computeGroupDirectoryPage(listed, {
         query: request.query,
-        defaultMaxMembers: dependencies.groupDefaultMaxMembers
+        defaultMaxMembers: dependencies.groupDefaultMaxMembers,
+        requesterSessionId: request.requesterSessionId,
+        rttMeasurements: measurements,
+        nowEpochMs
     });
+}
+
+async function readGroupDirectoryRttMeasurements(
+    repository: GroupStateRouteDependencies['rtcRttRepository'],
+    requesterSessionId: string
+): Promise<readonly RttMeasurementInfo[]> {
+    try {
+        const entries = await repository.listMeasurementEntriesForEndpoints([requesterSessionId]);
+        return entries.map((entry) => entry.value);
+    }
+    catch (cause) {
+        throw new GroupDirectoryLatencyReadError(cause instanceof Error ? cause : new Error(String(cause)));
+    }
 }
 
 async function readGroupSnapshot(
