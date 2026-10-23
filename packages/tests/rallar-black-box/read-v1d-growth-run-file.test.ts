@@ -10,7 +10,7 @@ import {
     it
 } from 'vitest';
 
-import { readV1dGrowthRunFile } from '../../../apps/rallar-black-box/scripts/write-v1d-growth-verdict.ts';
+import { readV1dGrowthRunFile } from '../../../apps/rallar-black-box/scripts/read-v1d-growth-run-file.ts';
 
 describe('V1d growth verdict run-file read', () => {
     let runDir = '';

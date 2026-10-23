@@ -10,6 +10,7 @@ import type { RallarServerWsRouterOptions } from '@shared-server/rallar-system/w
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
+import { resolveExposedGarbageCollector } from '@shared/runtime-health/resolve-exposed-garbage-collector.ts';
 import type { ApiV1Configuration } from '../configuration/api-v1-configuration.ts';
 import { toApiV1PublicConfiguration } from '../configuration/to-api-v1-public-configuration.ts';
 import { createCrdtAdminMutations, type CrdtAdminMutations } from '../crdt/create-crdt-admin-mutations.ts';
@@ -24,7 +25,7 @@ import {
 } from '../runtime/runtime-identity.ts';
 import { createRuntimeStateExpiryLifecycle } from '../services/runtime-state-expiry-startup.ts';
 import { startEventLoopLagTiming } from '../services/start-event-loop-lag-timing.ts';
-import { resolveExposedGarbageCollector, startHeapSampleTiming } from '../services/start-heap-sample-timing.ts';
+import { startHeapSampleTiming } from '../services/start-heap-sample-timing.ts';
 import {
     createApiTimingSink,
     toApiAppInboxServiceOptions,

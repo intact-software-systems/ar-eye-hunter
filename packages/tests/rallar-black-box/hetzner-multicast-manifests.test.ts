@@ -219,6 +219,7 @@ describe('Hetzner multicast workloads', () => {
         );
         expect(entry?.diagnostic).toBe(false);
         expect(entry?.agentCount).toBe(15);
+        expect(entry?.manifest.eventHistory).toEqual({ mode: 'recent', maxEvents: 10_000 });
         expect(entry?.manifest.metadata).toMatchObject({
             topologyProfile: 'tree',
             participantCount: 15,
@@ -249,6 +250,14 @@ describe('Hetzner multicast workloads', () => {
                 ok: true
             });
         }
+    });
+
+    it('bounds the event history of the 78-minute run alone; every other manifest keeps the agents\' configured history', () => {
+        const withHistory = createHetznerDistributedManifestCatalog()
+            .filter((entry) => 'eventHistory' in entry.manifest)
+            .map((entry) => entry.manifest.distributedRunId);
+
+        expect(withHistory).toEqual(['hetzner-rtc-messages-principal-15-agent-78m-2hz-tree']);
     });
 
     it('adds medium-scale messages.rtc multicast matrix manifests for 10 to 30 agents', () => {

@@ -85,7 +85,8 @@ AGENT_COUNT="$(jq -r '.metadata.participantCount' "$MANIFEST")"
 MESH_MIN_SIZE="$(jq -r '.metadata.rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE' "$MANIFEST")"
 MANIFEST_SECONDS="$(jq -r '.metadata.expectedDurationSeconds' "$MANIFEST")"
 DISTRIBUTED_RUN_ID="$(jq -r '.distributedRunId' "$MANIFEST")"
-readonly AGENT_COUNT MESH_MIN_SIZE MANIFEST_SECONDS DISTRIBUTED_RUN_ID
+EVENT_HISTORY_MAX_EVENTS="$(jq -er 'select(.eventHistory.mode == "recent") | .eventHistory.maxEvents' "$MANIFEST")"
+readonly AGENT_COUNT MESH_MIN_SIZE MANIFEST_SECONDS DISTRIBUTED_RUN_ID EVENT_HISTORY_MAX_EVENTS
 
 STAMP="$(date -u +%Y%m%dt%H%M%Sz)"
 readonly STAMP
@@ -390,7 +391,8 @@ wait_for_manifest() {
 }
 
 # The verdict fails without a passed manifest and a clean churn loop, so the workload's outcome joins run.json; the
-# iterations started and the manifest's agents count the accounts the run registered.
+# iterations started and the manifest's agents count the accounts the run registered, and the manifest's event history
+# bound is the cap of the test runtime's retained events.
 record_workload() {
 	local runner="$1" distributed failed_run_ids
 	distributed="$(read_distributed_run)"
@@ -399,6 +401,7 @@ record_workload() {
 		--arg runner "$runner" \
 		--argjson distributed "$distributed" \
 		--argjson manifestAgents "$AGENT_COUNT" \
+		--argjson eventHistoryMaxEvents "$EVENT_HISTORY_MAX_EVENTS" \
 		--argjson churnStarted "$(count_churn_iterations started)" \
 		--argjson churnPassed "$(count_churn_iterations passed)" \
 		--argjson churnFailedRunIds "$failed_run_ids" \
@@ -406,6 +409,7 @@ record_workload() {
 			manifestStartedAtEpochMs: ($distributed.startedAtEpochMs // null),
 			manifestCompletedAtEpochMs: ($distributed.completedAtEpochMs // null),
 			manifestAgents: $manifestAgents,
+			eventHistoryMaxEvents: $eventHistoryMaxEvents,
 			churnStarted: $churnStarted, churnPassed: $churnPassed, churnFailedRunIds: $churnFailedRunIds}' \
 		"$OUT_DIR/run.json" >"$OUT_DIR/run.json.next"
 	mv "$OUT_DIR/run.json.next" "$OUT_DIR/run.json"

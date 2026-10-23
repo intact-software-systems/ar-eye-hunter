@@ -38,11 +38,16 @@ export interface RallarBlackBoxIndexedDbCensus {
     readonly uncounted: readonly string[];
 }
 
-/** Chromium's `performance.memory`, quantized unless the browser runs with `--enable-precise-memory-info`. */
+/**
+ * Chromium's `performance.memory`, quantized unless the browser runs with `--enable-precise-memory-info`, read after
+ * the page's collector ran where it exposes one (`--js-flags=--expose-gc`).
+ */
 export interface RallarBlackBoxPageHeap {
     readonly usedJSHeapSize: number;
     readonly totalJSHeapSize: number;
     readonly jsHeapSizeLimit: number;
+    /** Whether a full collection ran immediately before the reading: the same field the API's heap sample carries. */
+    readonly forcedGc: boolean;
 }
 
 /**

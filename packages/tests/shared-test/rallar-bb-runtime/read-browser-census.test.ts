@@ -5,7 +5,7 @@ import { readIndexedDbRequest, waitForIndexedDbTransaction } from '@shared/persi
 
 import { readBrowserCensus } from '../../../shared-test/rallar-bb-test/control-client/read-browser-census.ts';
 
-const PAGE_HEAP = { usedJSHeapSize: 21_000_000, totalJSHeapSize: 34_000_000, jsHeapSizeLimit: 4_294_705_152 };
+const PAGE_MEMORY = { usedJSHeapSize: 21_000_000, totalJSHeapSize: 34_000_000, jsHeapSizeLimit: 4_294_705_152 };
 
 /** Creates `name` at version 1 with each store holding its given rows, keyed by position. */
 async function writeDatabase(factory: IDBFactory, name: string, rowsByStore: Readonly<Record<string, number>>): Promise<void> {
@@ -35,7 +35,11 @@ describe('readBrowserCensus', () => {
         await writeDatabase(factory, 'rallar-al-runtime:app-1:workspace-1', { 'al-runtime': 4, 'al-work': 2 });
         await writeDatabase(factory, 'rallar-crdt', {});
 
-        const census = await readBrowserCensus({ indexedDb: factory, performance: { memory: PAGE_HEAP } });
+        const census = await readBrowserCensus({
+            indexedDb: factory,
+            performance: { memory: PAGE_MEMORY },
+            collectGarbage: undefined
+        });
 
         expect(census).toEqual({
             indexedDb: {
@@ -49,8 +53,37 @@ describe('readBrowserCensus', () => {
                 ],
                 uncounted: []
             },
-            pageHeap: PAGE_HEAP
+            pageHeap: { ...PAGE_MEMORY, forcedGc: false }
         });
+    });
+
+    it('reads the page heap after the collector the page exposes has run, and says so', async () => {
+        const reads: string[] = [];
+        const performance = {
+            get memory() {
+                reads.push('heap');
+                return PAGE_MEMORY;
+            }
+        };
+
+        const census = await readBrowserCensus({
+            indexedDb: undefined,
+            performance,
+            collectGarbage: () => reads.push('gc')
+        });
+
+        expect(reads).toEqual(['gc', 'heap']);
+        expect(census).toEqual({ pageHeap: { ...PAGE_MEMORY, forcedGc: true } });
+    });
+
+    it('still reads the page heap where the page exposes no collector, and says it was not forced', async () => {
+        const census = await readBrowserCensus({
+            indexedDb: undefined,
+            performance: { memory: PAGE_MEMORY },
+            collectGarbage: undefined
+        });
+
+        expect(census).toEqual({ pageHeap: { ...PAGE_MEMORY, forcedGc: false } });
     });
 
     it('names a listed database it could not count, and never creates one deleted since the listing', async () => {
@@ -60,7 +93,7 @@ describe('readBrowserCensus', () => {
             databases: async () => [{ name: 'deleted-since', version: 3 }, ...await factory.databases()]
         });
 
-        const census = await readBrowserCensus({ indexedDb: staleListing, performance: undefined });
+        const census = await readBrowserCensus({ indexedDb: staleListing, performance: undefined, collectGarbage: undefined });
 
         expect(census.indexedDb).toEqual({
             databases: [{ name: 'kept', version: 1, stores: [{ name: 'rows', rows: 1 }] }],
@@ -77,9 +110,9 @@ describe('readBrowserCensus', () => {
             }
         });
 
-        expect(await readBrowserCensus({ indexedDb: undefined, performance: {} })).toEqual({});
-        expect(await readBrowserCensus({ indexedDb: unlisting, performance: { memory: { usedJSHeapSize: 'large' } } }))
+        expect(await readBrowserCensus({ indexedDb: undefined, performance: {}, collectGarbage: undefined })).toEqual({});
+        expect(await readBrowserCensus({ indexedDb: unlisting, performance: { memory: { usedJSHeapSize: 'large' } }, collectGarbage: undefined }))
             .toEqual({});
-        expect(await readBrowserCensus({ indexedDb: failingListing, performance: undefined })).toEqual({});
+        expect(await readBrowserCensus({ indexedDb: failingListing, performance: undefined, collectGarbage: undefined })).toEqual({});
     });
 });

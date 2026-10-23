@@ -15,7 +15,7 @@ import {
 } from '../client-defaults.ts';
 import type { RallarBlackBoxGeoLocation } from '../distributed-run.ts';
 import type { RallarBlackBoxEventHistoryPolicy } from '../runtime/event-history.ts';
-import { parseEventHistoryLaunch } from './parse-event-history-launch.ts';
+import { decodeEventHistoryLaunch } from './decode-event-history-launch.ts';
 import {
     resolveLaunchValue,
     type BootstrapLaunchSources,
@@ -270,7 +270,7 @@ function toEventHistoryLaunchReading(
         mode?.launchKey === 'eventHistory' ? { params: sources.params, env: {} } : sources,
         'eventHistoryMaxEvents'
     );
-    return parseEventHistoryLaunch(mode?.text, bound?.text).fold<
+    return decodeEventHistoryLaunch(mode?.text, bound?.text).fold<
         LaunchSettingReading<RallarBlackBoxEventHistoryPolicy>
     >(
         (issues) => ({

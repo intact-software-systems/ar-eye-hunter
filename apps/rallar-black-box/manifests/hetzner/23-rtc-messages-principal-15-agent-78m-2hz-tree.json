@@ -1,4 +1,8 @@
 {
+  "eventHistory": {
+    "mode": "recent",
+    "maxEvents": 10000
+  },
   "schemaVersion": 1,
   "distributedRunId": "hetzner-rtc-messages-principal-15-agent-78m-2hz-tree",
   "controlRunId": "hetzner-manifest-template-control-run",

@@ -24,7 +24,7 @@ import type {
 } from '../../../packages/shared-test/rallar-bb-test/control-client.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '../../../packages/shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 
-import { readHeadlessWorkerConfig } from '../../../apps/rallar-black-box/src/headless-worker-config.ts';
+import { readHeadlessWorkerConfig } from '../../../apps/rallar-black-box/src/headless-worker/headless-worker-config.ts';
 import {
     CAPTURE_APPLICATION_API_CONFIG,
     createCaptureApplicationRuntime,

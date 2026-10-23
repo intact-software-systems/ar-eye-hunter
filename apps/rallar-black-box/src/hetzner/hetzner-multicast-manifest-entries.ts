@@ -4,6 +4,7 @@ import {
     type RallarBlackBoxRtcMessagesMulticastRecipeOptions
 } from '@shared-test/rallar-bb-test/fixtures/rtc-multicast-recipes.ts';
 import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxEventHistoryPolicy } from '@shared-test/rallar-bb-test/runtime/event-history.ts';
 import type { HetznerDistributedManifestEntry, ManifestCatalogInput } from './hetzner-manifest-entry.ts';
 import {
     createManifestEntry,
@@ -65,6 +66,12 @@ export function createDiagnosticRtcMessagesPrincipal50Agent60m20hzTreeEntry(): H
 }
 
 /**
+ * About five minutes of a relay's events at the growth proof's rate. Each page keeps this many, so its heap holds the
+ * test runtime's history at a fixed size instead of growing with every frame it receives.
+ */
+const GROWTH_PROOF_EVENT_HISTORY: RallarBlackBoxEventHistoryPolicy = { mode: 'recent', maxEvents: 10_000 };
+
+/**
  * The local growth proof's workload: 78 minutes of principal multicast over a tree sized to the cohort, every agent
  * reading its stats, the ALM ledger among them, every 30 s while the stream runs.
  */
@@ -106,6 +113,7 @@ export function createRtcMessagesPrincipal15Agent78m2hzTreeEntry(): HetznerDistr
         stress: true,
         barrier: true,
         groupAssertions: [],
+        eventHistory: GROWTH_PROOF_EVENT_HISTORY,
         metadata: toMulticastManifestMetadata({
             topologyProfile: 'tree',
             treeMeshMinSize: 16,

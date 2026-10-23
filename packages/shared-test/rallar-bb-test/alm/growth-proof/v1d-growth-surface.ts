@@ -35,16 +35,22 @@ export type V1dGrowthEntityCount =
     | Readonly<{ source: 'registrations'; principalsPerChurnIteration: number; ceiling: V1dGrowthReader; }>;
 
 /**
+ * The most a count-capped surface may read: a number the store enforces, or the event history bound the run's
+ * workload recorded, which the manifest sets and no surface declaration repeats.
+ */
+export type V1dGrowthCap = number | Readonly<{ source: 'workload-event-history'; }>;
+
+/**
  * How a surface may grow during the run, and the bound its predicate holds it to.
  * - `durable`: one row per entity; its growth may not exceed `rowsPerEntity` per entity.
  * - `declared-append-only`: a durable-by-design history R3 declares and reports; its growth is reported, never
  *   passed or failed.
- * - `heap`: flat after a warm-up. A browser page heap is judged on 5-minute bucket medians, since no forced
- *   collection settles its GC sawtooth; a forced-GC process heap and a resident set on their raw readings.
+ * - `heap`: flat after a warm-up. A browser page heap is judged on its 5-minute bucket medians; a process heap and a
+ *   resident set on their raw readings.
  * - `unbounded`: nothing bounds it; it fails a run in which it grows, and is a follow-up when it never grew.
  */
 export type V1dGrowthClassification =
-    | Readonly<{ growthClass: 'count-capped'; cap: number; }>
+    | Readonly<{ growthClass: 'count-capped'; cap: V1dGrowthCap; }>
     | Readonly<{ growthClass: 'ttl-within-run'; ttlMs: number; sweepMs: number; }>
     | Readonly<{ growthClass: 'ttl-beyond-run'; ttlMs: number; }>
     | Readonly<{ growthClass: 'durable'; entity: string; entityCount: V1dGrowthEntityCount; rowsPerEntity: number; }>

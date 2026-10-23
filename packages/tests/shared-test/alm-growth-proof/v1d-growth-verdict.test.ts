@@ -27,6 +27,7 @@ const COMPLETED_RUN: V1dGrowthRun = {
         manifestStartedAtEpochMs: WINDOW_STARTED_AT_EPOCH_MS + 20_000,
         manifestCompletedAtEpochMs: WINDOW_STARTED_AT_EPOCH_MS + 4_740_000,
         manifestAgents: 15,
+        eventHistoryMaxEvents: 10_000,
         churnStarted: 30,
         churnPassed: 30,
         churnFailedRunIds: []
@@ -328,6 +329,7 @@ describe('V1d growth verdict', () => {
         expect(row.slopePerHour).toBe(0);
         expect(row.max).toBe(192 * MB);
         expect(row.bound).toContain('5-minute bucket medians');
+        expect(row.bound).toContain('product structures + bounded harness event history');
     });
 
     it('fails a page heap whose 5-minute medians rise 20 MB an hour under the sawtooth', () => {
@@ -347,6 +349,7 @@ describe('V1d growth verdict', () => {
 
         expect(row.outcome).toBe('no-data');
         expect(row.bound).toContain('5-minute bucket medians');
+        expect(row.bound).toContain('product structures + bounded harness event history');
     });
 
     it('reports a page heap as insufficient with fewer than three complete 5-minute buckets after its warm-up', () => {

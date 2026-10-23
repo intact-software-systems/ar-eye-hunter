@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { startTimerLagSampling, type TimerLagWindow } from '@shared/resilience/start-timer-lag-sampling.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
-import { createManualTimers, type ManualTimers } from './manual-timers.ts';
+import { startTimerLagSampling, type TimerLagWindow } from '@shared/runtime-health/start-timer-lag-sampling.ts';
+import { createManualTimers, type ManualTimers } from '../resilience/manual-timers.ts';
 
 /** Fires each scheduled timer late by the next listed lateness, as a blocked event loop would. */
 function createLateTimers(timers: ManualTimers, latenessMs: readonly number[]): Timers {

@@ -1,4 +1,5 @@
 import { readIndexedDbRequest } from '@shared/persistence/indexed-db-request.ts';
+import { resolveExposedGarbageCollector } from '@shared/runtime-health/resolve-exposed-garbage-collector.ts';
 
 import { decodeNonNegativeInteger, decodeRecord } from '../runtime/decode-runtime-result-values.ts';
 import type {
@@ -14,12 +15,14 @@ export interface ReadBrowserCensusInput {
     readonly indexedDb: IDBFactory | undefined;
     /** Undefined where the runtime has no `performance`. */
     readonly performance: object | undefined;
+    /** Undefined where the page exposes no collector; the heap is then read as it stands. */
+    readonly collectGarbage: (() => void) | undefined;
 }
 
 /** Never rejects: a reading the runtime does not offer, or that fails, is left out. */
 export async function readBrowserCensus(input: ReadBrowserCensusInput): Promise<RallarBlackBoxBrowserCensus> {
     const indexedDb = input.indexedDb === undefined ? undefined : await readIndexedDbCensus(input.indexedDb);
-    const pageHeap = readPageHeap(input.performance);
+    const pageHeap = readPageHeap(input);
     return {
         ...(indexedDb === undefined ? {} : { indexedDb }),
         ...(pageHeap === undefined ? {} : { pageHeap })
@@ -30,7 +33,8 @@ export function createDefaultBrowserCensusReader(): () => Promise<RallarBlackBox
     return async () =>
         await readBrowserCensus({
             indexedDb: typeof indexedDB === 'undefined' ? undefined : indexedDB,
-            performance: typeof performance === 'undefined' ? undefined : performance
+            performance: typeof performance === 'undefined' ? undefined : performance,
+            collectGarbage: resolveExposedGarbageCollector(globalThis)
         });
 }
 
@@ -102,12 +106,15 @@ async function readStoreRows(db: IDBDatabase): Promise<readonly RallarBlackBoxIn
     })));
 }
 
-function readPageHeap(performance: object | undefined): RallarBlackBoxPageHeap | undefined {
+/** Collects before it reads, so the reading is the live heap rather than garbage awaiting collection. */
+function readPageHeap(input: ReadBrowserCensusInput): RallarBlackBoxPageHeap | undefined {
+    const { performance, collectGarbage } = input;
+    collectGarbage?.();
     const memory = performance !== undefined && 'memory' in performance ? decodeRecord(performance.memory) : {};
     const usedJSHeapSize = decodeNonNegativeInteger(memory.usedJSHeapSize);
     const totalJSHeapSize = decodeNonNegativeInteger(memory.totalJSHeapSize);
     const jsHeapSizeLimit = decodeNonNegativeInteger(memory.jsHeapSizeLimit);
     return usedJSHeapSize === undefined || totalJSHeapSize === undefined || jsHeapSizeLimit === undefined
         ? undefined
-        : { usedJSHeapSize, totalJSHeapSize, jsHeapSizeLimit };
+        : { usedJSHeapSize, totalJSHeapSize, jsHeapSizeLimit, forcedGc: collectGarbage !== undefined };
 }

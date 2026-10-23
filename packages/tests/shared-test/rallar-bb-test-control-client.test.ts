@@ -1264,7 +1264,7 @@ describe('shared rallar black-box control client', () => {
         const client = new RallarBlackBoxControlClient({
             ...toClientOptions(createDefaultRallarBlackBoxTestRuntime(), () => socket),
             statsIntervalMs: 1_000,
-            readBrowserCensus: async () => await readBrowserCensus({ indexedDb: counting.indexedDb, performance: undefined })
+            readBrowserCensus: async () => await readBrowserCensus({ indexedDb: counting.indexedDb, performance: undefined, collectGarbage: undefined })
         });
 
         try {
@@ -1293,7 +1293,7 @@ describe('shared rallar black-box control client', () => {
             ...toClientOptions(createDefaultRallarBlackBoxTestRuntime(), () => socket),
             statsIntervalMs: 1_000,
             browserCensusIntervalMs: 5_000,
-            readBrowserCensus: async () => await readBrowserCensus({ indexedDb: counting.indexedDb, performance: undefined })
+            readBrowserCensus: async () => await readBrowserCensus({ indexedDb: counting.indexedDb, performance: undefined, collectGarbage: undefined })
         });
 
         try {

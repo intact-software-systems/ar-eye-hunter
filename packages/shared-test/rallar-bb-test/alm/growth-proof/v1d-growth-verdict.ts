@@ -99,7 +99,6 @@ interface ComputeV1dGrowthVerdictRowInput {
 function computeV1dGrowthVerdictRow(input: ComputeV1dGrowthVerdictRowInput): V1dGrowthVerdictRow {
     const { surface, reader, serviceId } = input;
     const readerPoints = input.verdictInput.samples[reader.source].filter((point) => point.serviceId === serviceId);
-    // A browser agent samples its page heap without a forced collection, so the heap is judged on its bucket medians.
     const pageHeap = surface.classification.growthClass === 'heap' && reader.source === 'browser-stats';
     return {
         surfaceId: surface.id,

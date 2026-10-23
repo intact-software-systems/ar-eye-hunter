@@ -16,7 +16,8 @@ import {
     type V1dGrowthAgentReading,
     type V1dGrowthSeriesPoint
 } from './v1d-growth-series.ts';
-import type { V1dGrowthClassification } from './v1d-growth-surface.ts';
+import type { V1dGrowthCap, V1dGrowthClassification } from './v1d-growth-surface.ts';
+import type { V1dGrowthWorkload } from './v1d-growth-workload.ts';
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 3_600_000;
@@ -40,7 +41,7 @@ export function computeV1dGrowthAssessment(
 ): V1dGrowthAssessment {
     switch (classification.growthClass) {
         case 'count-capped':
-            return computeCountCappedAssessment(classification.cap, input.series);
+            return computeCountCappedAssessment(resolveV1dGrowthCap(classification.cap, input.workload), input.series);
         case 'ttl-within-run':
             return toExpiryHeldAssessment(
                 computeTtlWithinRunAssessment(classification.ttlMs, classification.sweepMs, input.series),
@@ -80,10 +81,21 @@ function toExpiryHeldAssessment(
         };
 }
 
-function computeCountCappedAssessment(cap: number, series: readonly V1dGrowthSeriesPoint[]): V1dGrowthAssessment {
-    const bound = `≤ ${cap}`;
+/** Null where the cap is the workload's and the run recorded none. */
+function resolveV1dGrowthCap(cap: V1dGrowthCap, workload: V1dGrowthWorkload | null): number | null {
+    if (typeof cap === 'number') {
+        return cap;
+    }
+    return workload === null ? null : workload.eventHistoryMaxEvents;
+}
+
+function computeCountCappedAssessment(
+    cap: number | null,
+    series: readonly V1dGrowthSeriesPoint[]
+): V1dGrowthAssessment {
+    const bound = `≤ ${cap ?? 'unrecorded'}`;
     const max = computeV1dGrowthMax(series);
-    if (max === null) {
+    if (max === null || cap === null) {
         return toV1dGrowthNoData(bound);
     }
     return {
@@ -228,12 +240,13 @@ function computeHeapAssessment(series: readonly V1dGrowthSeriesPoint[]): V1dGrow
 }
 
 /**
- * A `heap` surface's browser page heap. It is read without a forced collection, so its GC sawtooth swings by more
- * than the heap's own growth: the slope and the plateau factor read 5-minute bucket medians after the warm-up, and
- * the raw peak is only reported.
+ * A `heap` surface's browser page heap, which holds the page's product structures and the bounded harness event
+ * history together: the slope and the plateau factor read 5-minute bucket medians after the warm-up, and the raw
+ * peak is only reported.
  */
 export function computePageHeapAssessment(readings: readonly V1dGrowthAgentReading[]): V1dGrowthAssessment {
-    const bound = `5-minute bucket medians after ${toV1dGrowthMinutes(HEAP_WARM_UP_MS)} min: slope within ` +
+    const bound = `page heap (product structures + bounded harness event history, surface 82): 5-minute bucket ` +
+        `medians after ${toV1dGrowthMinutes(HEAP_WARM_UP_MS)} min: slope within ` +
         `±${HEAP_SLOPE_LIMIT_BYTES_PER_HOUR / MB} MB/h; last < ${HEAP_MAX_PLATEAU_FACTOR} × first`;
     if (readings.length === 0) {
         return toV1dGrowthNoData(bound);
