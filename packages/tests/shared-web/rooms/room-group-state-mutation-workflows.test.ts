@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import * as mutationWorkflows from '@shared-web/browser/rooms/room-group-state-mutation-workflows.ts';
-import { rotateStateGroupJoinCode } from '@shared-web/browser/rooms/room-membership-group-state-workflows.ts';
+import { acceptStateGroupInvite, rotateStateGroupJoinCode } from '@shared-web/browser/rooms/room-membership-group-state-workflows.ts';
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { readGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -180,6 +180,34 @@ describe('room group-state mutation workflows', () => {
                 }
             }
         ]);
+    });
+
+    it('replays the same presence command after an invitation response is lost', async () => {
+        stubUuids('accept-request-000001', 'presence-request-0001');
+        const clock = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+        let presenceAttempts = 0;
+        const snapshot = roomSnapshot('group-1');
+        stubFetch(fetchCalls, ({ method }) => {
+            if (method === 'PUT' && ++presenceAttempts === 1) {
+                clock.mockReturnValue(2_000);
+                throw new TypeError('Presence committed but its response was lost');
+            }
+            return jsonResponse(snapshot);
+        });
+
+        await expect(acceptStateGroupInvite({
+            groupId: 'group-1',
+            actorPrincipalId: 'principal-1',
+            sessionId: 'session-1',
+            generationId: 'generation-1',
+            connectionGenerationId: 'ws-generation-1',
+            policies: { command: { maxAttempts: 2 } }
+        })).resolves.toEqual(snapshot);
+
+        const presenceCalls = fetchCalls.filter((call) => call.method === 'PUT');
+        expect(presenceCalls).toHaveLength(2);
+        expect(presenceCalls[1]).toEqual(presenceCalls[0]);
+        expect(presenceCalls[0].url).toContain('/requests/presence-request-0001');
     });
 
     it('rotates a room join code with an exact scoped request', async () => {

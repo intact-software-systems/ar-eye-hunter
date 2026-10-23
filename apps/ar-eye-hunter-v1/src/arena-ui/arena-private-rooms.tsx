@@ -14,7 +14,7 @@ import type { GroupJoinCodeResponse } from '@shared/api/state-types.ts';
 import type { ArenaConnection } from '../game/arena-runtime/arena-connection-contracts.ts';
 
 interface ArenaPrivateRoomsProps {
-    readonly arena: ArenaConnection;
+    readonly arena: Pick<ArenaConnection, 'session' | 'rooms' | 'roomId' | 'createArenaRoom'>;
 }
 
 interface ArenaRoomSharingProps {
@@ -24,12 +24,17 @@ interface ArenaRoomSharingProps {
     readonly rotate: () => Promise<void>;
 }
 
+interface ArenaRoomCode {
+    readonly sessionId: string;
+    readonly response: GroupJoinCodeResponse;
+}
+
 interface ArenaPrivateRoomActionsInput {
-    readonly arena: ArenaConnection;
+    readonly arena: ArenaPrivateRoomsProps['arena'];
     readonly snapshot: GroupSnapshot | undefined;
     readonly setBusy: (busy: boolean) => void;
     readonly setError: (error: string | undefined) => void;
-    readonly setCode: (code: GroupJoinCodeResponse | undefined) => void;
+    readonly setCode: (code: ArenaRoomCode | undefined) => void;
 }
 
 interface ArenaInvitationChange {
@@ -43,7 +48,7 @@ interface ArenaInvitationChange {
 export function ArenaPrivateRooms({ arena }: ArenaPrivateRoomsProps) {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | undefined>();
-    const [code, setCode] = useState<GroupJoinCodeResponse | undefined>();
+    const [code, setCode] = useState<ArenaRoomCode | undefined>();
     const snapshot = arena.rooms.find((room) => room.roomId === arena.roomId)?.snapshot;
     const roomKey = snapshot
         ? JSON.stringify(
@@ -52,8 +57,12 @@ export function ArenaPrivateRooms({ arena }: ArenaPrivateRoomsProps) {
         : null;
     useEffect(() => {
         setCode((current) =>
-            current && snapshot && isSameGroupRef(current.snapshot.group, snapshot.group) ? current : undefined
+            current && current.sessionId === arena.session?.sessionId && snapshot &&
+                isSameGroupRef(current.response.snapshot.group, snapshot.group)
+                ? current
+                : undefined
         );
+        setError(undefined);
     }, [roomKey, arena.session?.sessionId]);
     const actions = { arena, snapshot, setBusy, setError, setCode };
     const create = (joinMode: GroupJoinMode) => createPrivateArena(actions, joinMode);
@@ -72,7 +81,15 @@ export function ArenaPrivateRooms({ arena }: ArenaPrivateRoomsProps) {
                 </button>
             </div>
             {error && <p role="alert">{error}</p>}
-            {canShare && <ArenaRoomSharing key={roomKey} snapshot={snapshot} code={code} busy={busy} rotate={rotate} />}
+            {canShare && (
+                <ArenaRoomSharing
+                    key={`${arena.session?.sessionId}:${roomKey}`}
+                    snapshot={snapshot}
+                    code={code?.sessionId === arena.session?.sessionId ? code?.response : undefined}
+                    busy={busy}
+                    rotate={rotate}
+                />
+            )}
         </section>
     );
 }
@@ -88,10 +105,10 @@ async function createPrivateArena(
     setCode(undefined);
     try {
         const snapshot = await arena.createArenaRoom(joinMode);
-        if (snapshot && isCurrentArenaHost(session, snapshot.group) && joinMode === 'code') {
+        if (snapshot && session && isCurrentArenaHost(session, snapshot.group) && joinMode === 'code') {
             const code = await rallar.rooms.rotateJoinCode(snapshot.group);
             if (isCurrentArenaHost(session, snapshot.group)) {
-                setCode(code);
+                setCode({ sessionId: session.sessionId, response: code });
             }
         }
     }
@@ -115,13 +132,16 @@ async function rotateArenaCode(
         return;
     }
     const session = rallar.session();
+    if (!session) {
+        return;
+    }
     setBusy(true);
     setError(undefined);
     setCode(undefined);
     try {
         const code = await rallar.rooms.rotateJoinCode(snapshot.group);
         if (isCurrentArenaHost(session, snapshot.group)) {
-            setCode(code);
+            setCode({ sessionId: session.sessionId, response: code });
         }
     }
     catch {

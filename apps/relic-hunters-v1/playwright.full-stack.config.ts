@@ -1,4 +1,5 @@
 import { defineConfig, devices, type PlaywrightTestConfig } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 
 const fullStackEnabled = process.env.RELIC_HUNTERS_FULL_STACK === '1' ||
     process.env.RELIC_HUNTERS_FULL_STACK === 'true';
@@ -13,7 +14,11 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
                     'cd ../relic-hunter-server-v1 && CORS_ORIGINS=http://localhost:5175,http://127.0.0.1:5175 PORT=8090 ' +
                     'RALLAR_API_BASE_URL=http://127.0.0.1:8090 RALLAR_WS_BASE_URL=ws://127.0.0.1:8090 deno task start',
                 url: 'http://127.0.0.1:8090/api/config',
-                reuseExistingServer: true,
+                env: {
+                    RALLAR_AUTH_CREDENTIAL_SECRET: randomUUID(),
+                    RALLAR_LOGIN_USER_RATE_LIMIT: '100'
+                },
+                reuseExistingServer: false,
                 timeout: 90_000
             }
         ]
@@ -22,7 +27,7 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
         command:
             'cd ../.. && API_BASE_URL=http://127.0.0.1:8090 npm --workspace relic-hunters-v1 run dev -- --host 127.0.0.1',
         url: 'http://127.0.0.1:5175',
-        reuseExistingServer: true,
+        reuseExistingServer: false,
         timeout: 60_000
     }
 ];
@@ -35,6 +40,7 @@ export default defineConfig({
         timeout: 15_000
     },
     fullyParallel: false,
+    workers: 1,
     reporter: [['list']],
     use: {
         baseURL: 'http://127.0.0.1:5175',

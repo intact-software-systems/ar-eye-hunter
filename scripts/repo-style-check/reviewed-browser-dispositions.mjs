@@ -1028,5 +1028,111 @@ export const reviewedBrowserDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'toReleasedResultMarkers',
         maximumMagnitude: 2
+    }),
+    // Private entry owns one destination lifecycle: capture, authenticated admission, replacement,
+    // cancellation, and persistence. The pure codecs remain next to that stateful owner, while
+    // membership transport and server admission policy stay in their existing owners.
+    Object.freeze({
+        path: 'packages/shared-web/browser/rooms/rallar-room-entry.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 107
+    }),
+    // Tab storage is untrusted JSON. The decoder narrows the record, principal, scoped reference,
+    // and credential state before constructing a SavedEntry; unchecked values never reach join.
+    Object.freeze({
+        path: 'packages/shared-web/browser/rooms/rallar-room-entry.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeSavedEntry',
+        maximumMagnitude: 1
+    }),
+    // Error.cause is arbitrary data. The cycle-safe walk admits only Error instances and an exact
+    // ApiHttpError 401 before ending the captured session; it constructs no unchecked domain DTO.
+    Object.freeze({
+        path: 'packages/shared-web/browser/session/session-auth-lifecycle.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
+    }),
+    // The adjacent rooms README maps facade, admission/membership workflows, translation, events,
+    // and session handles. Those are direct room owners; another folder would add navigation
+    // without separating an independent lifecycle. Only these reviewed clusters are covered.
+    Object.freeze({
+        path: 'packages/shared-web/browser/rooms',
+        rule: 'layout.directory-density',
+        symbol: 'rooms',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-web/browser/rooms',
+        rule: 'layout.feature-prefix-cluster',
+        symbol: 'prefix:room',
+        maximumMagnitude: 1
+    }),
+    // The runtime owns one authenticated connection and its room/command/snapshot fences. Pure
+    // acceptance and delivery decisions, browser ports, React subscription, and presentation have
+    // separate concrete owners. Splitting private state across callbacks would hide the fences.
+    Object.freeze({
+        path: 'apps/relic-hunters-v1/src/game/relic-hunters-runtime.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 140
+    }),
+    // These three class-method occurrences accept promise rejection values, fence stale attempts,
+    // and immediately normalize with toError. Only typed error messages reach connection state.
+    Object.freeze({
+        path: 'apps/relic-hunters-v1/src/game/relic-hunters-runtime.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 3
+    }),
+    // The cleanup-failure classifier checks Error, the named partial-failure contract, and
+    // operation before the caller's fenced recovery. Its only result is a boolean.
+    Object.freeze({
+        path: 'apps/relic-hunters-v1/src/game/relic-hunters-runtime.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isCreatedRoomCleanupFailure',
+        maximumMagnitude: 1
+    }),
+    // App extraction keeps each HUD capability together: intel and clue display, map projection,
+    // party admission/readiness/coordination, and action planning. These files do not own transport
+    // or authoritative state. Named subcomponents expose the decisions without pass-through files.
+    Object.freeze({
+        path: 'apps/relic-hunters-v1/src/game/hud/relic-intel.tsx',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 52
+    }),
+    Object.freeze({
+        path: 'apps/relic-hunters-v1/src/game/hud/relic-map.tsx',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 67
+    }),
+    Object.freeze({
+        path: 'apps/relic-hunters-v1/src/game/hud/relic-party.tsx',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 137
+    }),
+    Object.freeze({
+        path: 'apps/relic-hunters-v1/src/game/hud/relic-plan.tsx',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 78
+    }),
+    // The adjacent game README gives the entry-to-effect map. HUD, AI, and scene already have
+    // their own directories; direct files retain game lifecycle and pure rule ownership.
+    Object.freeze({
+        path: 'apps/relic-hunters-v1/src/game',
+        rule: 'layout.directory-density',
+        symbol: 'game',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'apps/relic-hunters-v1/src/game',
+        rule: 'layout.feature-prefix-cluster',
+        symbol: 'prefix:relic',
+        maximumMagnitude: 1
     })
 ]);

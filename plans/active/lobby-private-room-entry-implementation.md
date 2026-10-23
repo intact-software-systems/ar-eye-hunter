@@ -64,23 +64,20 @@ them. That larger capability is not required by the accepted product plan and is
 ## Current owners and dataflow
 
 - `packages/shared-web/browser/rooms/browser-rallar-rooms.ts` composes the public room facade.
-  `room-membership.ts` exposes invitation creation and acceptance. Existing
-  `room-membership-group-state-workflows.ts` already owns revoke and rotate HTTP workflows; add
-  narrow facade access to those operations rather than another HTTP implementation.
-- `join-room.ts` owns scoped room adoption and leaving the previous current room. Quick Join has a
-  session/signal fence; ordinary join currently does not have the same explicit completion fence.
-  Keep adoption and previous-room cleanup under the initiating session and destination attempt.
+  `room-membership.ts` exposes invitation creation, acceptance, revocation, and code rotation
+  through the existing `room-membership-group-state-workflows.ts` HTTP workflows.
+- `join-room.ts` owns scoped room adoption and leaving the previous current room. Quick Join and ordinary join now fence transport, adoption, and previous-room cleanup
+  under the initiating session and destination attempt.
 - `packages/shared-server/rallar-system/group-state/mutation/membership/compute-group-membership-mutation.ts`
-  calls `canJoinGroup` before its active-member no-op. The code policy currently requires a code even
-  for an active member. Pin the product's return-after-rotation rule before correcting that policy.
+  calls `canJoinGroup` before its active-member no-op. Active members now return without a fresh
+  code while lifecycle and blocked-membership checks remain mandatory.
 - Group routes enqueue the existing AppInbox operations. Their fresh reads, pure computation,
   validation, aggregate revision guard, durable completion, and outer QueueBox retry remain canonical.
 - AR Eye startup is `use-arena-connection-session-lifecycle.ts`; room actions live in
   `use-arena-session-actions.ts`, with UI in `arena-ui/arena-operations.tsx` and composition in `app.tsx`.
-- Relic startup/hydration is `game/relic-hunters-runtime.ts`, consumed by `useRelicHunters.ts` and
-  `App.tsx`. It currently restores a bare room ID from local storage. Replace affected duplicate
-  restoration with the shared scoped entry owner; no dual-read migration path.
-- Both apps subscribe to room state. Relic's `applyRoomState` hydrates a changed room, while expedition
+- Relic startup/hydration is `game/relic-hunters-runtime.ts`, observed by `use-relic-hunters.ts`
+  and composed by `app.tsx`. The shared scoped entry owner is the only room restoration path.
+- Both apps subscribe to room state. Relic's `adoptRoom` hydrates a changed room, while expedition
   membership remains a separate command. Keep that authority boundary visible.
 - Relevant existing example: `examples/browser-startup-room`. Update its canonical entry example
   after the shared contract is usable.
@@ -201,18 +198,18 @@ remain pending. The live PR records validation evidence.
 game creation through `rooms.createAndSwitch`, room membership through canonical room operations,
 and Relic expedition commands in its runtime.
 
-- [ ] Write failing UI tests for manual room-reference/code entry while signed out, visible pending
+- [x] Write failing UI tests for manual room-reference/code entry while signed out, visible pending
       destination through login/registration, retry/cancel, and host sharing/rotation.
-- [ ] Add private creation choices to both apps while preserving existing public creation. Code rooms
+- [x] Add private creation choices to both apps while preserving existing public creation. Code rooms
       expose a copyable link, room reference, code, and returned expiry. Invite-only rooms expose known
       account selection, invitation/revocation, and a reference link. Clear stale generated credentials
       on session/room changes and rotation failure; never display an old code as the new one.
-- [ ] Wire authenticated startup to resume the shared destination before restoring an old room.
+- [x] Wire authenticated startup to resume the shared destination before restoring an old room.
       Retain one scoped restoration implementation and explicit application participation controls.
 - [ ] Drive two fresh browsers through host creation, sharing, login, entry, participation, rotation,
       invalid/expired feedback, and reload. Include an uninvited account, a wrong-scope destination,
       cancellation, and a new invitation overriding an old current room.
-- [ ] Run focused app tests, `npm run build:ar-eye-hunter-v1`, and `npm run build:relic-hunters-v1`.
+- [x] Run focused app tests, `npm run build:ar-eye-hunter-v1`, and `npm run build:relic-hunters-v1`.
       Run both configured Playwright flows and inspect resulting screenshots/state.
 - [ ] Complete affected code, structure, and legacy review; publish the completed slice and wait for
       the maintainer's merge.
@@ -231,6 +228,33 @@ poisoning a replacement connection; a failing startup regression now protects th
 cancellation result. Creation also fences the initiating session and preserves the newly adopted room
 when previous-room membership cannot be left. Relic integration and the remaining final gates are
 still pending; the increment remains open.
+
+The Relic checkpoint consolidates authenticated connection, snapshot acceptance, commands, and
+cleanup in `RelicHuntersRuntime`, with one React subscription hook. Capability owners now compose
+lobby/auth, private hosting, turn planning, map/intel, timeline, score, and AI presentation. The
+unused intro and predecessor renderer were removed with their exclusive support files and tests;
+`RelicSceneNext` remains the active renderer. No gameplay authority or stored server contract changed.
+
+The private-room browser scenarios cover manual signed-out entry/cancellation, wrong-scope rejection,
+code sharing and a two-player round, rotation/member reload, corrected outsider credentials, and
+invitation revocation/reissue overriding an old saved room. The latest individual scenarios passed;
+the final combined run follows review fixes. Software rendering caused long browser action delays,
+so completed host pages release their renderers before remaining guest-only assertions.
+
+Review reproduced and corrected two consolidation regressions with red/green tests: selecting a new
+map room must replace an older Move draft when Move is chosen again; a private destination opened
+while an old snapshot read is pending must enter and hydrate without waiting for or accepting that
+old result. Connection readiness now precedes snapshot hydration, with one fenced read path.
+
+Both app builds passed, as did the 83-file/659-test affected suite, the test typecheck, and
+27-file/567-test governance suite. Fresh review found an invitation presence retry that
+recomputed its lease under the same request ID. A lost-response regression failed before
+capturing both requests once, then all 48 focused workflow/membership/entry tests passed.
+
+The next two steps are (1) finish combined browser and changed-style validation, then
+(2) run the hosted state-write comparison and publish the completed slice. Real PostgreSQL contention checks passed 14 tests;
+the unchanged medium-scale gate passed 2,842 steps with zero failures; the updated code-admission
+REST recipe passed all 31 steps. State-write comparison and final repository checks remain pending.
 
 ## Final validation and delivery
 

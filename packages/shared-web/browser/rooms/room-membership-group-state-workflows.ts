@@ -124,6 +124,18 @@ export async function acceptStateGroupInvite(
     const scope = input.scope ?? defaultStateScope();
     const acceptRequestId = toApiMutationWorkflowRequestId();
     const presenceRequestId = toApiMutationWorkflowRequestId();
+    const acceptRequest = toAcceptRoomInviteGroupStateRequest({
+        actorPrincipalId: input.actorPrincipalId,
+        actorSessionId: input.sessionId
+    });
+    const presenceRequest = toConnectRoomPresenceGroupStateRequest({
+        principalId: input.actorPrincipalId,
+        generationId: input.generationId,
+        connectionGenerationId: input.connectionGenerationId,
+        expiresAtEpochMs: toRoomPresenceLeaseExpiresAtEpochMs(Date.now()),
+        actorPrincipalId: input.actorPrincipalId,
+        actorSessionId: input.sessionId
+    });
     const flow = CommandsOrchestrator.withPolicies<'accepted' | 'joined', GroupSnapshot>(
         input.policies ?? {}
     );
@@ -133,10 +145,7 @@ export async function acceptStateGroupInvite(
                 input.assertCurrent?.();
                 return roomGroupStateHttpApi.acceptInvite({
                     groupId: input.groupId,
-                    request: toAcceptRoomInviteGroupStateRequest({
-                        actorPrincipalId: input.actorPrincipalId,
-                        actorSessionId: input.sessionId
-                    }),
+                    request: acceptRequest,
                     options: { requestId: acceptRequestId, signal },
                     scope
                 });
@@ -146,14 +155,7 @@ export async function acceptStateGroupInvite(
                 return roomGroupStateHttpApi.connectPresence({
                     groupId: input.groupId,
                     sessionId: input.sessionId,
-                    request: toConnectRoomPresenceGroupStateRequest({
-                        principalId: input.actorPrincipalId,
-                        generationId: input.generationId,
-                        connectionGenerationId: input.connectionGenerationId,
-                        expiresAtEpochMs: toRoomPresenceLeaseExpiresAtEpochMs(Date.now()),
-                        actorPrincipalId: input.actorPrincipalId,
-                        actorSessionId: input.sessionId
-                    }),
+                    request: presenceRequest,
                     options: { requestId: presenceRequestId, signal },
                     scope
                 });

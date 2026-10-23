@@ -1,224 +1,78 @@
 # Scene Contracts
 
-Last reviewed: 2026-05-19.
+Last reviewed: 2026-10-23.
 
-This document defines the contracts that scene-upgrade work must preserve while
-the Babylon castle moves toward a stylized Japanese castle diorama.
+The active gameplay renderer is `src/game/RelicSceneNext.tsx`. It consumes public
+Relic snapshots and uses the procedural facility/camera model in
+`src/game/scene/relicSceneNextModel.ts`. `OpeningRelicScene.tsx` renders while the
+app has no game snapshot. Historical castle scene baselines are not evidence for
+the current renderer.
 
-## Snapshot Inputs
+## Authority and input
 
-The scene receives a public relic snapshot. It must treat these fields as the
-authoritative gameplay source:
+The public snapshot owns the game room, phase, room graph, player identity and
+room, health, escaped/defeated state, submitted players, relic visibility,
+investigations, events, and scores. Presentation may derive targets and effects
+from these fields; it cannot create game authority or expose hidden relics.
 
-- `snapshot.roomId`: the Rallar/Relic game room, used for RTC routing.
-- `snapshot.phase`: lobby, planning, review, or finished scene mode.
-- `snapshot.map`: room graph, room kinds, room coordinates, collapsed state,
-  unstable state, and neighbor links.
-- `snapshot.players`: player identity, character, room id, health, escaped,
-  defeated, score, and carried relic ids.
-- `snapshot.relics`: relic visibility and ownership. Hidden relics must not be
-  exposed as scene spoilers.
-- `snapshot.roomInvestigations`: discovered clue trails and room search results.
-- `snapshot.submittedPlayerIds`: locked-plan avatar state.
-- `snapshot.events`: recent event effects, review reveal cues, finale cues, and
-  timeline focus.
+`src/app.tsx` supplies the current snapshot, local session/player identity,
+selected/primed room action, focus room, RTC readiness, and input permissions.
+The scene sends selection, draft priming, pickup, and review-complete callbacks
+to the existing turn/runtime owners. Only those command paths can change game
+state. Review disables planning; presentation timing does not delay snapshot
+acceptance or reorder authoritative events.
 
-Scene modules may derive presentation state from these fields, but must not
-invent authoritative room movement, relic ownership, or action legality.
+## Coordinates and interaction
 
-## Room Coordinates
+Facility positions and camera poses are derived from the public map in
+`relicSceneNextModel.ts`. Mesh metadata identifies its room, player, or interaction
+target. Room selection uses the existing `scene/movement.ts` legality bridge to
+prime a legal adjacent move. Interactive meshes must remain separate from any
+future static batching that would lose their target identity.
 
-- Room world positions are derived through `roomWorldPosition(room)`.
-- Procedural kit pieces must align to the existing room center and room grid.
-- `src/game/scene/castleKit.ts` builders receive the existing room prop adapter,
-  so kit pieces inherit the room root transform and remain room-relative.
-- Doorway, corridor, bridge, and path meshes should be visual only unless the
-  existing interaction code marks them with supported metadata.
-- Any alternate camera or overview mode must still frame the current public
-  snapshot, not a separate scene-only map.
+Camera controls select Avatar, Visor/first-person, Overview, or Flyover. Saved
+camera preference is local presentation state. Camera placement and cosmetic
+roaming cannot change the snapshot room, legal targets, or submitted action.
+The normal draft panel remains available for inspecting and submitting the plan.
 
-## Interactive Metadata
+## Cosmetic motion
 
-Clickable or pickable Babylon meshes must keep metadata compatible with current
-scene interaction:
+`scene/networking.ts` owns room-scoped RTC avatar motion. Payloads carry the full
+application/workspace/game-room reference and a separate dungeon-room identity.
+Receivers reject wrong scope, wrong player room, and stale samples. Live positions
+remain room-relative and presentation-only; the authoritative snapshot wins when
+a hunter changes rooms. Rallar Motion interpolation cannot authorize movement.
 
-- `{ roomId: string }` selects a room.
-- During planning, `{ roomId: string }` on a legal adjacent room primes a move
-  draft for that room before selection-only behavior.
-- `{ primeAction: 'search', clueHotspotId?: string }` starts clue inspection or
-  primes search.
-- `{ playerId: string }` identifies avatar meshes for labels, effects, and
-  future interaction.
+## Review and HUD playback
 
-New metadata shapes should be introduced through typed helpers and covered by
-tests before they are used broadly.
+The scene owns its animation queue and review-complete notification. The HUD's
+separate ordered reveal state lives in `use-relic-playback.ts`. Both consume the
+accepted event history. They must not remove events, invent results, or submit a
+second action. `use-relic-turn.ts` controls continuation through the normal runtime
+command path and suppresses duplicate continuations for the same review.
 
-The S2 structural kit deliberately does not introduce new interactive metadata.
-Room selection still comes from the root room mesh, while clue/search props and
-scene prompts keep their existing metadata.
+## Rendering and diagnostics
 
-The S3 room identity module is also presentation-only. Identity props may carry
-the inherited `{ roomId }` metadata from the room prop adapter, but they must not
-submit actions, reveal hidden relics, or replace clue hotspot metadata.
+The gameplay render loop is capped at 45 fps. Current geometry and materials are
+procedural. The canvas publishes readiness, camera mode/control, visual theme,
+lighting, mesh/material/effect counts, review state, nearby relic, and Rallar
+Motion diagnostics. These are rendering observations, never gameplay authority.
+The current renderer reports `next`, `neon-dystopian`, and `procedural` identities.
+Tests should observe the rendered state and reachable controls without binding
+unrelated gameplay behavior to private helper names or mesh construction order.
 
-## Player And Avatar Targets
+## Browser acceptance
 
-- Local player position comes from the authoritative room plus local
-  `roamOffset`; the local avatar should remain visually aligned with camera
-  movement.
-- Remote player room membership comes from public snapshots.
-- Remote live coordinates from RTC are cosmetic only. They may improve visual
-  interpolation, but they must not change authoritative room ids or action
-  options.
-- Remote RTC payloads should stay room-relative so clients with equivalent room
-  graphs can resolve positions consistently.
-- Remote RTC payloads must not keep driving an avatar after the public snapshot
-  says that player is in a different room; the snapshot-derived target wins on
-  room mismatch.
-- `src/game/scene/avatarPresentation.ts` owns presentation-only avatar states.
-  It may derive lobby, idle, moving, arriving, locked, escaped, and defeated
-  presentation from public snapshot status and cosmetic movement deltas, but it
-  must not change room membership, action submission, escaped state, or defeated
-  state.
-- Escaped and defeated visibility is a scene presentation choice. The snapshot
-  remains the source of truth for whether those hunters can act, score, or send
-  live RTC movement.
+A renderer change needs nonblank opening/gameplay canvases, readable rooms and
+avatars, reachable planning/camera controls, and usable desktop/mobile layouts.
+Room-entry tests additionally prove actual expedition participation and return,
+not merely a successful HTTP admission. Capture fresh screenshots when changing
+the presentation; a historical screenshot or metric is not a current measurement.
 
-## Camera Modes
-
-- `src/game/scene/cameraModes.ts` owns presentation-only camera mode derivation.
-  It may read the public snapshot, local player id, active roam/inspection
-  state, and event focus room, but it must not create authoritative gameplay
-  state.
-- Idle planning should use the tactical overview. Active roam and clue
-  inspection may keep closer camera behavior, and event focus may frame the
-  latest event room outside planning. Review mode should keep the scene visible
-  and focus each queued event cue without allowing planning input.
-- Recent avatar movement may temporarily hold a closer follow camera and then
-  blend back to tactical framing. This is presentation-only and must not affect
-  room movement, legal actions, or submitted plans.
-- Scene camera controls are presentation-only. `Fly over rooms` may temporarily
-  set `data-camera-mode="flyover"` and `data-camera-control="flyover"`, then
-  must return to the previous manual camera choice. `Tactical overview` and
-  `Avatar` may persist as local client preferences, but must not enter public
-  snapshots or alter action legality.
-- Tactical framing must be derived from public room coordinates: current room,
-  neighbors, selected room, objective target, and active party room locations.
-- The gameplay canvas publishes `data-camera-mode` for browser baselines and
-  debugging. Tests should use it as a render contract, not as gameplay state.
-
-## Lighting Presets
-
-- `src/game/scene/lightingPresets.ts` owns presentation-only lighting preset
-  selection and numeric preset values.
-- Preset selection may read the public snapshot phase and current room kind,
-  but it must not affect movement, action legality, relic visibility, room
-  membership, scoring, or server state.
-- `day`, `lantern`, `night`, and `sunset` presets should keep exposure, fog,
-  vignette, and shadow darkness within readable bounds. Darker mood should come
-  from color contrast and local lanterns, not black crush.
-- The gameplay and opening canvases publish `data-lighting-preset` for browser
-  baselines and debugging. Tests should use it as a render contract only.
-
-## Asset Pipeline
-
-- The active gameplay scene is procedural-first. `src/game/scene/assetPipeline.ts`
-  records the current decision and future hybrid gate.
-- Imported assets must be optional until a dedicated loader boundary exists.
-  A failed asset load must fall back to procedural room, avatar, relic, or
-  effect geometry.
-- Imported assets must never own authoritative gameplay state. Room ids,
-  movement legality, relic visibility, submissions, and scores remain public
-  snapshot/shared-rule data.
-- Scene baseline tests may read `data-asset-pipeline`, mesh counts, material
-  counts, particle counts, draw-call counters, and ready timing as render
-  metrics. These metrics are diagnostics, not gameplay state.
-- Static room batching is presentation-only. Batched meshes must keep
-  `{ roomId: string }` metadata and must not absorb clue hotspots,
-  resolved-only markers, action-prime meshes, avatars, relics, or player labels.
-- Cross-room thin instances or global static batches need an explicit
-  per-instance room-picking contract before replacing room-local batches.
-
-## Scene Cost
-
-- `src/game/scene/sceneCost.ts` owns presentation-only active-effect-room
-  selection.
-- Full tactical room geometry may remain visible, but room point lights and
-  particle systems should run only in the capped active effect-room set unless a
-  future rule explicitly broadens that budget.
-- Active-effect selection may read public snapshot phase, local room, selected
-  room, objective/focus room, active party room positions, and graph neighbors,
-  but it must not affect action legality or authoritative room visibility.
-- Baseline metrics should distinguish total particle systems from active
-  particle systems and active room lights.
-- Baseline metrics should also expose static batch count and batched source mesh
-  count so future asset or instancing work can be compared against the S9 room
-  batching baseline.
-
-## Event Effects
-
-- `src/game/scene/sceneEventBudget.ts` owns presentation-only animation cue
-  budgeting for scene effects.
-- Event cue budgeting must not hide, drop, or reorder authoritative
-  `snapshot.events`; it only limits how many Babylon effects are spawned from a
-  burst of new events.
-- Review playback may queue new animation cues so player moves, searches,
-  steals, ruin reactions, and finale cues are shown sequentially. This queue is
-  presentation-only; it must not rewrite `snapshot.events`, delay snapshot
-  acceptance, or apply gameplay commands.
-- Finale cues may emphasize winners escaping and losing hunters being left in
-  collapsing rooms, but winner ids, scores, escaped state, defeated state, and
-  room membership remain public snapshot data.
-- Browser baselines expose active effect and effect mesh counts. Draw-call
-  counters are reset per rendered frame before being written to canvas metrics.
-
-## Prompt Contract
-
-- Scene prompts can prime `move`, `search`, or `escape` actions.
-- The side action panel remains the source of truth for committed turn plans.
-- Scene prompts must not submit actions directly.
-- During review, scene clicks and prompt actions must not prime or submit new
-  plans. Review continuation goes through the explicit `continue-review`
-  command exposed by the SPA controls.
-- Prompt text and buttons must stay reachable with the HUD at desktop and mobile
-  viewports.
-
-## Visual Baseline Tolerances
-
-Scene-upgrade tests should guard these minimums:
-
-- The opening and gameplay canvases render nonblank.
-- High-DPI contexts render at native/high-DPI drawing buffer size, not a
-  deliberately downscaled canvas.
-- Gameplay rooms are not crushed into black; sampled pixels should show visible
-  luma in multiple screen regions.
-- Core HUD controls remain visible and reachable over the scene.
-- Large player labels, prompts, minimap, and bottom HUD must not overlap in a
-  way that blocks planning.
-
-## Current Baseline Screenshots
-
-Iteration S1 captures scene-upgrade baselines under
-`baseline/screenshots/scene-upgrades/` when Playwright is run with
-`RELIC_SCENE_BASELINE_WRITE=1`.
-
-Current scene-upgrade screenshots:
-
-- `opening-desktop.png`
-- `lobby-desktop.png`
-- `planning-desktop.png`
-- `planning-mobile.png`
-- `waiting-locked-desktop.png`
-- `split-party-identities-desktop.png`
-- `resolved-timeline-desktop.png`
-- `finished-desktop.png`
-
-Current scene-upgrade metric artifact:
-
-- `scene-upgrade-metrics.json`
-
-Validation command:
-
-```text
-RELIC_SCENE_BASELINE_WRITE=1 npx playwright test --config apps/relic-hunters-v1/playwright.config.ts tests/playwright/relic-hunters/web.spec.ts --grep "scene upgrade baselines"
+```sh
+npm run test:playwright:relic
+npm run test:playwright:relic:full-stack
 ```
+
+See [visual-direction.md](visual-direction.md) for presentation goals and
+[runtime-data-flow.md](runtime-data-flow.md) for transport/authority ownership.

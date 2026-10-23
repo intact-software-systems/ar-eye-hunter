@@ -1,13 +1,13 @@
 # Runtime Data Flow
 
-Last reviewed: 2026-05-19.
+Last reviewed: 2026-10-23.
 
 ## Modules
 
 - `src/game/relic-hunters-runtime.ts` is the browser runtime facade around
   Rallar auth, rooms, room listeners, WS snapshot listeners, RTC snapshot
   repair, and REST relic API calls.
-- `src/game/useRelicHunters.ts` adapts the runtime into React state and exposes
+- `src/game/use-relic-hunters.ts` adapts the runtime into React state and exposes
   phases, diagnostics, room summaries, the current room id, and the accepted
   relic snapshot.
 - `src/game/api.ts` performs authenticated REST calls to the relic server.
@@ -26,20 +26,32 @@ Last reviewed: 2026-05-19.
 
 ## Connection Path
 
-1. The hook restores an auth session for initial UI state.
-2. The runtime calls `rallar.start({ refreshRooms: true })`.
-3. If startup returns a connected session, it creates a Rallar subscription scope.
-4. It installs Rallar WS snapshot, RTC snapshot, and rooms change listeners in that scope.
-5. It uses the startup room state returned by Rallar.
-6. If a room is current, it fetches the room snapshot over REST.
-7. Cleanup calls the subscription scope once, which removes all three listeners.
-8. The hook accepts or ignores snapshots through `shouldAcceptRelicSnapshot`.
-9. Diagnostics track auth, middleware, room, snapshot, WS listener, room
-   listener, RTC readiness, snapshot source, ignored snapshots, and last error.
+1. `use-relic-hunters.ts` constructs one runtime and observes it with
+   `useSyncExternalStore`. The runtime restores the initial auth session.
+2. The shared room-entry owner captures an incoming link or saved scoped
+   destination before startup. Signed-out pages retain it without issuing game reads.
+3. `rallar.start` refreshes ordinary rooms only when no destination is pending.
+   The connection generation and abort signal fence replaced sessions and stopped pages.
+   Auth notifications and login completion share one startup flight.
+4. The runtime installs WS, RTC, authority, and room subscriptions, then resumes
+   the captured destination. Failed entry cannot silently restore another room.
+5. Current-room changes install room-scoped transition/hunter listeners and hydrate
+   the authoritative game snapshot. Room admission does not join the expedition.
+6. Creation uses `rooms.createAndSwitch`, then waits for the initiating session's
+   presence before completing hydration. An admitted room survives previous-room
+   cleanup failure, with a visible explanation.
+7. Cleanup aborts outstanding startup/readiness work and removes transport,
+   room, auth, entry, and timer subscriptions. Late results cannot replace a new
+   account or room.
 
-Legacy or mocked snapshots may omit `adminPlayerId`; the SPA treats the first
-snapshot player as the keeper/admin in that case. The shared server rules still
-normalize `adminPlayerId` when applying commands.
+Successful private entry stores only its scoped reference and principal identity
+in tab-local storage. It clears the code. Reload rejoins using current membership,
+so rotation does not eject an admitted member. A new invitation outranks this saved
+return destination; denial offers retry, correction, or cancellation.
+
+Snapshot acceptance belongs to `relic-hunters-runtime.ts` and
+`relic-snapshot-ordering.ts`. Diagnostics record connection, room, snapshot,
+transport receipt, accepted source, and ignored-result reasons.
 
 ## Command Path
 
@@ -56,16 +68,15 @@ interval before the page ends is lost with the page, and its handle reads `unobs
 its bound (10 s by default) makes the next command fail with `storage-unavailable` instead of being sent. There is no
 command id in the model, so only the ALM message-id dedup within the deadline plus grace stops a repeat: the server
 re-acknowledges a resumed command it already admitted without applying it again, and drops one past its deadline as
-expired. The full-stack spec's reload-mid-command case holds a start command's WS frame, reloads the page past one
-interval and expects the expedition to start exactly once; it stays red until the lane retransmits a receipted WS
-unicast whose frame the transport accepted but the server never received, which it does under neither tier today.
+expired. The reload-mid-command browser scenario exercises this boundary separately from ordinary
+room restoration; its current result belongs in the PR validation evidence.
 
 ```text
 command -> WS unicast to the server -> server ACK (receipt) -> applyCommand -> persisted state -> outbox snapshot (receiver) -> WS snapshot subscription
 reset -> REST reset endpoint -> persisted new game -> outbox snapshot -> REST response snapshot
 ```
 
-REST (`POST /api/relic/games/:gameId/commands`) stays for one release: the browser uses it only before it knows the WS
+REST (`POST /api/relic/games/:gameId/commands`) is used only before the browser knows the WS
 server's peer id, never after a WS attempt. The UI shows the command's receipt state and the applied snapshot's
 arrival.
 
@@ -96,8 +107,8 @@ mock/ollama failure -> procedural blueprint -> Relic domain validation -> game s
 ```
 
 Generated setup changes only the initial `map`, `relics`, and safe setup
-metadata. The browser still receives normal public snapshots and still submits
-gameplay commands through REST. The existing browser AI Companion remains an
+metadata. The browser receives normal public snapshots and submits commands through the
+same WS/REST decision described above. The existing browser AI Companion remains an
 advisory planning aid and does not drive authoritative setup.
 
 ## Timed-Out Round Recovery
@@ -139,9 +150,9 @@ same-round review snapshot. While a snapshot is in review, new gameplay actions
 are rejected so clients cannot silently start planning against different event
 histories.
 
-The browser exposes `continueReview()` through `useRelicHunters`. It sends the
-REST `continue-review` command and accepts the returned snapshot through the
-same ordering policy as every other authoritative response. If another browser
+The runtime exposes `continueReview()` through `use-relic-hunters.ts`. It sends
+`continue-review` through the same command transport decision and applies
+resulting snapshots through the common acceptance policy. If another browser
 continues first, WS or RTC snapshot repair can still converge peers onto the
 next planning or finished snapshot.
 
@@ -170,30 +181,22 @@ last ignored snapshot reason. Development builds also expose
 `window.__relicHuntersRuntime` with compact room, diagnostics, and snapshot
 metadata for browser tests.
 
-Current browser coverage verifies REST command submission, REST snapshot
-hydration, Rallar WS bootstrap, server HTTP APIs, and scene/UI response in a
-single browser context. `tests/playwright/relic-hunters/full-stack-propagation.spec.ts`
-adds a gated two-browser propagation path against the paired Relic server/Rallar
-runtime. It compares both clients' room id, phase, round, active player count,
-submitted player ids, event ids, and accepted snapshot metadata after join,
-start, submit/wait/resolve, reload recovery, reset, and rejoin. The spec is
-skipped by default, runs with `RELIC_HUNTERS_FULL_STACK=1`, and has passed
-against the paired local Relic server.
+Browser coverage includes REST snapshot hydration, Rallar WS bootstrap, server HTTP APIs,
+and visible controls. `full-stack-propagation.spec.ts` exercises two-browser gameplay,
+reset, and reload. `full-stack-private-room-entry.spec.ts` exercises signed-out entry,
+code sharing and rotation, participation, invitation revocation, destination replacement,
+and reload. Both use the paired Relic server when `RELIC_HUNTERS_FULL_STACK=1`.
 
-The propagation fix crossed into Rallar server code: the WS state-sync publisher
-now writes client and group snapshots into the in-process recipient cache before
-queuing broadcast work. That prevents a room-scoped relic snapshot from racing
-ahead of a recent room join and missing the newly joined browser. The SPA also
-persists the current room id and rejoins it during reload hydration before
-fetching the authoritative relic snapshot.
+The WS state-sync publisher writes client and group snapshots into the in-process recipient
+cache before queuing broadcasts. The shared scoped entry owner rejoins saved membership
+before the SPA hydrates the authoritative Relic snapshot.
 
 ## RTC Position Flow
 
 `src/game/scene/networking.ts` publishes cosmetic avatar motion through
 `rallar.realtime.room(...).send(...)` on the `realtime` lane. The room facade
 owns accepted peer selection and readiness. Relic does not retry through a raw
-peer-targeted send. Authoritative gameplay remains in REST commands and game
-snapshots.
+peer-targeted send. Authoritative gameplay remains in server commands and accepted game snapshots.
 
 The scene checks the current group snapshot for `transportState: halted`
 before advancing its motion sequence, sampling kinematics, or checking the send
@@ -261,14 +264,12 @@ a principal broadcast in the room: only the asking hunter's own sessions in the
 room receive it, and other hunters never do. The panel's one suggestion card
 shows the hunter's newest proposal, whichever of the hunter's sessions asked for
 it. Only the local browser can prime its own suggestion into the existing draft
-controls, and the normal Submit Plan REST command remains the only authoritative
-gameplay submission.
+controls, and the normal Submit Plan command remains the authoritative submission path.
 
 ## Known Data-Flow Gaps
 
-- The two-browser propagation spec is gated, but the real local full-stack run
-  now passes. Lower-level middleware or WS disruption recovery is still not
-  separately simulated.
+- Lower-level middleware and WS disruption recovery need their own acceptance
+  evidence; private-entry success alone does not establish transport recovery.
 - Stale active expedition players can block round resolution because active
   player count is based on game state, not live room membership. Iteration 13's
   first pass makes this recoverable after the timer expires, but does not remove

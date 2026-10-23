@@ -1,9 +1,6 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
 import { validateRallarGroupRef } from '@shared/api/rallar-validation.ts';
-import type { StateScope } from '@shared/api/state-types.ts';
 import { Either, Try } from '@shared/resilience/Either.ts';
 import { SingleFlight } from '@shared/resilience/single-flight.ts';
 import { toError } from '@shared/resilience/to-error.ts';
@@ -15,6 +12,7 @@ import type { RallarStateListener, RallarUnsubscribe } from '../rallar-shared-co
 import type { RallarAuthFacade, RallarAuthState } from '../session/rallar-auth-facade.ts';
 import type { BrowserRallarRooms } from './browser-rallar-rooms.ts';
 import type { RallarJoinRoomOptions, RallarRoomState } from './rallar-room-contracts.ts';
+import type { GroupRef, GroupSnapshot, StateScope } from './room-group-state-translation.ts';
 
 const ENTRY_FRAGMENT = '#rallar-room?';
 const ENTRY_FIELDS = new Set(['applicationId', 'workspaceId', 'groupId', 'joinCode']);

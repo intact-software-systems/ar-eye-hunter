@@ -136,7 +136,9 @@ describe('room entry through the browser facade and HTTP workflow', () => {
         const authStates: RallarAuthState[] = [];
         respond((request) => isAdmission(request) ? json(admitted) : new Response('denied', { status }));
         const facade = createRallarFacade();
-        facade.auth.onChange((state) => authStates.push(state));
+        facade.auth.onChange((state) => {
+            authStates.push(state);
+        });
 
         await expect(facade.rooms.join('selected', { scope })).rejects.toMatchObject({
             name: 'RallarRoomJoinPartialFailureError',

@@ -9,16 +9,19 @@ import {
     RELIC_TOPICS,
     RELIC_TYPES,
     toPublicRelicSnapshot,
+    type RelicActionInput,
     type RelicGameState,
     type RelicHunterEvent,
     type RelicPublicSnapshot,
     type RelicRoundTransitionEvent
 } from '@relic-hunters/mod.ts';
+import { BrowserRallarSubscriptionScope } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type {
     RallarMessage,
     RallarTypedPayloadHandler,
     RallarWsSendInput
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarRoomState } from '@shared-web/browser/rallar.ts';
 import {
     newALBroadcastMessage,
     newALPrincipalBroadcastMessage,
@@ -31,6 +34,8 @@ import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@share
 import { act, createElement, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createBrowserTestStorage } from '../shared-test/browser-test-storage.ts';
+import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import { createTimedOutRoundSnapshots } from './relic-timeout-snapshot-fixture.ts';
 
 interface MockWsMessage {
@@ -46,7 +51,7 @@ interface MockWsAiMessage extends MockWsMessage {
 
 const rallarMock = vi.hoisted(() => ({
     session: undefined as AuthSession | undefined,
-    roomState: undefined as object | undefined,
+    roomState: undefined as RallarRoomState | undefined,
     connectCalls: 0,
     refreshCalls: 0,
     wsMessageHandler: undefined as ((message: MockWsMessage) => void) | undefined,
@@ -61,11 +66,7 @@ const rallarMock = vi.hoisted(() => ({
 }));
 
 const soundMock = vi.hoisted(() => ({
-    ambientStartCount: 0,
-    startAmbientSound: vi.fn(() => {
-        soundMock.ambientStartCount += 1;
-        return true;
-    }),
+    startAmbientSound: vi.fn(() => true),
     stopAmbientSound: vi.fn(),
     isAmbientSoundPlaying: vi.fn(() => false),
     playActionSound: vi.fn(),
@@ -112,14 +113,7 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
                 roomState: rallarMock.roomState
             };
         },
-        subscriptions: () => {
-            const scope = {
-                add: () => scope,
-                unsubscribe: () => undefined,
-                size: () => 0
-            };
-            return scope;
-        },
+        subscriptions: () => new BrowserRallarSubscriptionScope(),
         rooms: {
             state: () => rallarMock.roomState,
             refresh: async () => {
@@ -169,11 +163,15 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
                             rallarMock.hunterEventHandler = undefined;
                         };
                     }
+                    if (definition.topicId !== RELIC_TOPICS.event) {
+                        return () => undefined;
+                    }
                     rallarMock.roundTransitionHandler = handler as RallarTypedPayloadHandler<RelicRoundTransitionEvent>;
                     return () => {
                         rallarMock.roundTransitionHandler = undefined;
                     };
-                }
+                },
+                sendRtc: async () => ({ wait: async () => ({ lifecycle: { state: 'transport-accepted' as const } }) })
             })
         },
         data: {
@@ -187,64 +185,25 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
     }
 }));
 
-async function importReactForSceneMock() {
-    return await vi.importActual<typeof import('react')>('react');
+interface MockRelicSceneProps {
+    readonly children?: ReactNode;
+    readonly onPrimeAction?: (action: RelicActionInput) => void;
+}
+function MockRelicScene({ children, onPrimeAction }: MockRelicSceneProps) {
+    return createElement(
+        'div',
+        { 'data-testid': 'relic-scene' },
+        createElement('button', {
+            type: 'button',
+            'data-testid': 'scene-move-hallway',
+            onClick: () => onPrimeAction?.({ kind: 'move', targetRoomId: 'hallway' })
+        }, 'Move to Hallway'),
+        createElement('button', { type: 'button', 'data-testid': 'scene-search-clue', onClick: () => onPrimeAction?.({ kind: 'search' }) }, 'Search clue'),
+        children
+    );
 }
 
-function createMockRelicScene(React: typeof import('react')) {
-    return ({
-        children,
-        onPrimeAction
-    }: {
-        children?: ReactNode;
-        onPrimeAction?: (
-            action:
-                | { kind: 'move'; targetRoomId: string; }
-                | { kind: 'search'; }
-        ) => void;
-    }) =>
-        React.createElement(
-            'div',
-            { 'data-testid': 'relic-scene' },
-            React.createElement(
-                'button',
-                {
-                    type: 'button',
-                    'data-testid': 'scene-move-hallway',
-                    onClick: () =>
-                        onPrimeAction?.({
-                            kind: 'move',
-                            targetRoomId: 'hallway'
-                        })
-                },
-                'Move to Hallway'
-            ),
-            React.createElement(
-                'button',
-                {
-                    type: 'button',
-                    'data-testid': 'scene-search-clue',
-                    onClick: () => onPrimeAction?.({ kind: 'search' })
-                },
-                'Search clue'
-            ),
-            children
-        );
-}
-
-vi.mock('../../../apps/relic-hunters-v1/src/game/RelicScene.tsx', async () => {
-    const React = await importReactForSceneMock();
-    return {
-        RelicScene: createMockRelicScene(React)
-    };
-});
-
-vi.mock('../../../apps/relic-hunters-v1/src/game/RelicSceneNext.tsx', async () => {
-    const React = await importReactForSceneMock();
-    return {
-        RelicSceneNext: createMockRelicScene(React)
-    };
-});
+vi.mock('../../../apps/relic-hunters-v1/src/game/RelicSceneNext.tsx', () => ({ RelicSceneNext: MockRelicScene }));
 
 vi.mock('../../../apps/relic-hunters-v1/src/game/OpeningRelicScene.tsx', async () => {
     const React = await vi.importActual<typeof import('react')>('react');
@@ -255,7 +214,8 @@ vi.mock('../../../apps/relic-hunters-v1/src/game/OpeningRelicScene.tsx', async (
 
 vi.mock('../../../apps/relic-hunters-v1/src/game/sound.ts', () => soundMock);
 
-import App, { derivePartyCoordination } from '../../../apps/relic-hunters-v1/src/App.tsx';
+import App from '../../../apps/relic-hunters-v1/src/app.tsx';
+import { derivePartyCoordination } from '../../../apps/relic-hunters-v1/src/game/hud/relic-party.tsx';
 
 describe('Relic Hunters browser app', () => {
     let root: Root | undefined;
@@ -263,12 +223,13 @@ describe('Relic Hunters browser app', () => {
 
     beforeEach(() => {
         (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
-        installMemoryLocalStorage();
-        clearSession();
         vi.unstubAllGlobals();
-        installMemoryLocalStorage();
+        vi.stubGlobal('localStorage', createBrowserTestStorage());
+        vi.stubGlobal('sessionStorage', createBrowserTestStorage());
+        localStorage.clear();
+        sessionStorage.clear();
+        window.history.replaceState(null, '', '/');
         vi.clearAllMocks();
-        soundMock.ambientStartCount = 0;
         rallarMock.session = session();
         rallarMock.roomState = roomState(1);
         rallarMock.connectCalls = 0;
@@ -319,7 +280,7 @@ describe('Relic Hunters browser app', () => {
             atmosphereButtons()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
         });
 
-        expect(soundMock.ambientStartCount).toBe(1);
+        expect(soundMock.startAmbientSound).toHaveBeenCalledTimes(1);
     });
 
     it('updates the visible expedition when a Rallar WebSocket snapshot event arrives', async () => {
@@ -426,8 +387,8 @@ describe('Relic Hunters browser app', () => {
         expect(container.querySelector('.action-command-panel')?.textContent).not.toContain('Search this room');
     });
 
-    it('lets scene doorway prompts prime the normal turn-based move action', async () => {
-        const snapshot = snapshotWithPlayers(1, 'planning');
+    it('primes a scene move, then uses the newly selected map room when choosing Move again', async () => {
+        const snapshot = { ...snapshotWithPlayers(1, 'planning'), roundStartedAtEpochMs: Date.now() };
         writeSession(session());
         rallarMock.roomState = roomState(1);
         stubSnapshotFetch(snapshot);
@@ -441,6 +402,13 @@ describe('Relic Hunters browser app', () => {
         const moveTarget = targetRoomButton('hallway');
         expect(moveTarget?.getAttribute('aria-pressed')).toBe('true');
         expect(container.textContent).toContain('Step into an adjacent room');
+        const storage = Array.from(container.querySelectorAll<HTMLButtonElement>('.castle-map-room'))
+            .find((button) => button.querySelector('.castle-map-room-name')?.textContent === 'Storage');
+        expect(storage).toBeDefined();
+        await act(async () => storage?.click());
+        await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: '1', bubbles: true })));
+        expect(targetRoomButton('storage')?.getAttribute('aria-pressed')).toBe('true');
+        expect(targetRoomButton('hallway')?.getAttribute('aria-pressed')).toBe('false');
     });
 
     it('renders generated expedition snapshots through existing map and move controls', async () => {
@@ -727,12 +695,17 @@ function session(): AuthSession {
     };
 }
 
-function roomState(onlineMemberCount: number): object {
+function roomState(onlineMemberCount: number): RallarRoomState {
+    const roomRef = { applicationId: DEFAULT_STATE_APPLICATION_ID, workspaceId: DEFAULT_STATE_WORKSPACE_ID, groupId: 'room-1' };
+    const snapshot = createGroupSnapshotFixture({ ...roomRef, sessionIds: Array.from({ length: onlineMemberCount }, (_, index) => `member-${index}`) });
     return {
         currentRoomId: 'room-1',
+        currentRoomRef: roomRef,
+        currentRoom: snapshot,
         rooms: [
             {
                 roomId: 'room-1',
+                roomRef,
                 name: 'Relic Hunters Expedition',
                 status: 'active',
                 kind: 'party',
@@ -741,7 +714,7 @@ function roomState(onlineMemberCount: number): object {
                 onlineMemberCount,
                 isJoined: true,
                 isCurrent: true,
-                snapshot: {}
+                snapshot
             }
         ],
         members: []
@@ -756,7 +729,7 @@ function stubSnapshotFetchSequence(
     ...snapshots: readonly RelicPublicSnapshot[]
 ): ReturnType<typeof vi.fn> {
     let index = 0;
-    const fetchMock = vi.fn(async () => {
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => {
         const snapshot = snapshots[Math.min(index, snapshots.length - 1)];
         index += 1;
         return new Response(JSON.stringify(snapshot), {
@@ -951,29 +924,6 @@ async function waitFor(assertion: () => boolean, attempts = 20): Promise<void> {
     }
 
     throw new Error(`Timed out waiting for browser app state: ${document.body.textContent?.slice(0, 1_000) ?? ''}`);
-}
-
-function installMemoryLocalStorage(): void {
-    const values = new Map<string, string>();
-    vi.stubGlobal(
-        'localStorage',
-        {
-            getItem: (key: string) => values.get(key) ?? null,
-            setItem: (key: string, value: string) => {
-                values.set(key, value);
-            },
-            removeItem: (key: string) => {
-                values.delete(key);
-            },
-            clear: () => {
-                values.clear();
-            },
-            key: (index: number) => Array.from(values.keys())[index] ?? null,
-            get length() {
-                return values.size;
-            }
-        } satisfies Storage
-    );
 }
 
 /** The principal broadcast that carries a suggestion to the local hunter's own sessions in the room. */
