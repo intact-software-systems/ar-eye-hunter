@@ -585,7 +585,13 @@ describe('useRallarArena auth lifecycle', () => {
     it('keeps the chosen order after a failure and retries it on Refresh', async () => {
         await arena.render();
         await waitForState(() => arena.current?.connectionState === 'connected');
-        mockRallar.rooms.directory.mockRejectedValueOnce(new Error('latency read unavailable'));
+        const measured = { ...directoryArena('z-measured'), peerRttMs: 25 };
+        const unmeasured = directoryArena('a-unmeasured');
+        mockRallar.rooms.directory.mockRejectedValueOnce(new Error('latency read unavailable'))
+            .mockImplementation(async (request: GroupDirectoryRequest) => ({
+                entries: request.order === 'peer-rtt' ? [measured, unmeasured] : [unmeasured, measured],
+                nextCursor: null
+            }));
         await act(async () => {
             await arena.current?.changeDirectoryOrder('peer-rtt');
         });
@@ -594,7 +600,7 @@ describe('useRallarArena auth lifecycle', () => {
         await act(async () => {
             await arena.current?.refreshRooms();
         });
-        expect(mockRallar.rooms.directory).toHaveBeenLastCalledWith({ kind: 'room', q: 'eye hunter', limit: 50, order: 'peer-rtt' });
+        expect(arena.current?.openRooms).toEqual([measured, unmeasured]);
         expect(arena.current?.openRoomsStatus).toBe('ready');
         expect(arena.current?.openRoomsError).toBeUndefined();
     });
