@@ -1,3 +1,4 @@
+import { toGroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
@@ -19,6 +20,7 @@ export function matchesGroupQuickJoin(snapshot: GroupSnapshot, command: GroupQui
     return snapshot.group.applicationId === command.scope.applicationId &&
         snapshot.group.workspaceId === command.scope.workspaceId &&
         snapshot.group.joinMode === 'open' &&
+        toGroupDirectoryListing(snapshot.group.metadata) === 'listed' &&
         !snapshot.members.some((member) =>
             member.principalId === command.actorPrincipalId && member.status === 'active'
         ) &&

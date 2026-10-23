@@ -24,6 +24,7 @@ import type {
     RallarUnsubscribe
 } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { GroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
 import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
 import { createRallarAiFunnyRoomName, createRallarAiRoomNameSeed } from '@shared/rallar-ai/mod.ts';
 import type { RallarGameAuthorityClientStatus } from '@shared/rallar-game/mod.ts';
@@ -128,7 +129,11 @@ export namespace RelicHuntersRuntime {
         onHunterEventMessage(roomId: string, subscription: RelicHunterEventSubscription): RallarUnsubscribe;
         authorityStatus(): RallarGameAuthorityClientStatus | undefined;
         publishRtcSnapshot(snapshot: RelicPublicSnapshot): Promise<boolean>;
-        createRoom(displayName: string, joinMode: GroupJoinMode): Promise<GroupSnapshot>;
+        createRoom(
+            displayName: string,
+            joinMode: GroupJoinMode,
+            directoryListing?: GroupDirectoryListing
+        ): Promise<GroupSnapshot>;
         joinRoom(roomId: string): Promise<void>;
         fetchSnapshot(roomId: string): Promise<RelicPublicSnapshot | undefined>;
         sendWsCommand(roomId: string, command: RelicCommand): Promise<RelicWsCommandDelivery | undefined>;
@@ -151,7 +156,10 @@ export namespace RelicHuntersRuntime {
         register(username: string, password: string, displayName?: string): Promise<void>;
         logout(): Promise<void>;
         refreshRooms(): Promise<void>;
-        createRoom(joinMode?: GroupJoinMode): Promise<GroupSnapshot | undefined>;
+        createRoom(
+            joinMode?: GroupJoinMode,
+            directoryListing?: GroupDirectoryListing
+        ): Promise<GroupSnapshot | undefined>;
         joinRoom(roomId: string): Promise<void>;
         joinExpedition(characterId?: RelicCharacterId): Promise<void>;
         startExpedition(): Promise<void>;
@@ -259,7 +267,7 @@ export class RelicHuntersRuntime {
                 this.authenticate({ mode: 'register', username, password, displayName }),
             logout: () => this.logout(),
             refreshRooms: () => this.refreshRooms(),
-            createRoom: (joinMode = 'open') => this.createRoom(joinMode),
+            createRoom: (joinMode = 'open', directoryListing) => this.createRoom(joinMode, directoryListing),
             joinRoom: (roomId) => this.joinRoom(roomId),
             joinExpedition: (characterId) => this.sendCommand({ kind: 'join-expedition', characterId }),
             startExpedition: () => this.sendCommand({ kind: 'start-expedition' }),
@@ -715,7 +723,10 @@ export class RelicHuntersRuntime {
         }
     }
 
-    private async createRoom(joinMode: GroupJoinMode): Promise<GroupSnapshot | undefined> {
+    private async createRoom(
+        joinMode: GroupJoinMode,
+        directoryListing: GroupDirectoryListing | undefined
+    ): Promise<GroupSnapshot | undefined> {
         const attempt = this.attempt();
         if (!attempt || !this.connection.diagnostics.middlewareConnected) {
             return undefined;
@@ -731,7 +742,7 @@ export class RelicHuntersRuntime {
         });
         let snapshot: GroupSnapshot;
         try {
-            snapshot = await this.deps.createRoom(displayName, joinMode);
+            snapshot = await this.deps.createRoom(displayName, joinMode, directoryListing);
         }
         catch (error) {
             if (!this.current(attempt)) {

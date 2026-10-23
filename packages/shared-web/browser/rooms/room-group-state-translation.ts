@@ -1,5 +1,4 @@
 import { DEFAULT_STATE_HEARTBEAT_TTL_MSECS } from '@shared-web/browser/session/refresh-state-heartbeat.ts';
-import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
@@ -7,12 +6,9 @@ import { isGroupActive, isSessionInGroup, readGroupDisplayName, readGroupId } fr
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupLifecycleCommand } from '@shared/api/group-lifecycle/group-lifecycle-commands.ts';
 import type {
-    GroupTopologyReconfigureLanding,
-    GroupTransportState
+    GroupTopologyReconfigureLanding
 } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { isAcceptedRoomLayoutOverlay } from '@shared/repository/is-accepted-room-layout-overlay.ts';
-import { toOverlayLayoutIdentity } from '@shared/repository/overlays-repository.ts';
 import type {
     AcceptStateGroupInviteBody,
     BanStateGroupMemberBody,
@@ -62,60 +58,13 @@ export type {
     UpdateStateGroupBody
 } from '../api/state-mutation-http-contracts.ts';
 
-export interface BrowserRoomTransportTarget {
-    readonly transportState?: GroupTransportState;
-    readonly acceptedLayoutIdentity?: GroupLayoutIdentity;
-    readonly acceptedLayoutCoversCurrentPresence: boolean;
-    readonly peerIds: readonly string[];
-}
-
-export interface ResolveBrowserRoomTransportTargetInput {
-    readonly sessionId: string | undefined;
-    readonly snapshot: GroupSnapshot | undefined;
-    readonly acceptedOverlay: OverlayInfo | undefined;
-}
-
-export function resolveBrowserRoomTransportTarget(
-    input: ResolveBrowserRoomTransportTargetInput
-): BrowserRoomTransportTarget {
-    if (
-        !input.sessionId ||
-        !input.snapshot ||
-        !isGroupActive(input.snapshot) ||
-        !isSessionInGroup(input.snapshot, input.sessionId)
-    ) {
-        return { acceptedLayoutCoversCurrentPresence: false, peerIds: [] };
-    }
-
-    const acceptedOverlay = input.acceptedOverlay;
-    const hasAcceptedLayout = isAcceptedRoomLayoutOverlay(acceptedOverlay, input.snapshot.group);
-    const acceptedLayoutIdentity = hasAcceptedLayout
-        ? toOverlayLayoutIdentity(acceptedOverlay)
-        : undefined;
-    const activeSessionIds = new Set(input.snapshot.activeSessions.map((session) => session.sessionId));
-    return {
-        transportState: input.snapshot.group.transportState,
-        ...(acceptedLayoutIdentity === undefined ? {} : { acceptedLayoutIdentity }),
-        acceptedLayoutCoversCurrentPresence: acceptedLayoutIdentity?.presenceRevision ===
-            input.snapshot.causalRevision.presenceRevision,
-        peerIds: hasAcceptedLayout
-            ? [
-                ...new Set(
-                    acceptedOverlay.nextHopSessionIds.filter(
-                        (peerId) => peerId !== input.sessionId && activeSessionIds.has(peerId)
-                    )
-                )
-            ]
-            : []
-    };
-}
-
 export interface RoomCreateGroupStateFields extends
     Pick<
         RallarCreateRoomInput,
         | 'displayName'
         | 'description'
         | 'joinMode'
+        | 'directoryListing'
         | 'maxMembers'
         | 'maxSessionsPerMember'
         | 'metadata'
@@ -218,6 +167,7 @@ export function toCreateGroupStateRequest(
         kind: 'room',
         ...(room.description === undefined ? {} : { description: room.description }),
         joinMode: room.joinMode ?? 'invite-only',
+        ...(room.directoryListing === undefined ? {} : { directoryListing: room.directoryListing }),
         ...(room.maxMembers === undefined ? {} : { maxMembers: room.maxMembers }),
         ...(room.maxSessionsPerMember === undefined
             ? {}
@@ -516,6 +466,7 @@ function toRoomUpdateFields(request: UpdateStateGroupBody): UpdateStateGroupBody
         ...(request.kind === undefined ? {} : { kind: request.kind }),
         ...(request.status === undefined ? {} : { status: request.status }),
         ...(request.joinMode === undefined ? {} : { joinMode: request.joinMode }),
+        ...(request.directoryListing === undefined ? {} : { directoryListing: request.directoryListing }),
         ...(request.maxMembers === undefined ? {} : { maxMembers: request.maxMembers }),
         ...(request.maxSessionsPerMember === undefined
             ? {}

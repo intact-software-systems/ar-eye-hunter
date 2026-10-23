@@ -29,8 +29,8 @@ export function RelicRoomEntry({ game }: RelicRoomEntryProps) {
     };
     const pending = entry.status !== 'idle' && entry.status !== 'entered';
     return (
-        <section className="panel stack" aria-label="Private room entry">
-            <h3>Enter a private expedition</h3>
+        <section className="panel stack" aria-label="Shared room entry">
+            <h3>Enter a shared expedition</h3>
             <RelicRoomEntryForm
                 draft={draft}
                 setDraft={setDraft}
@@ -84,10 +84,10 @@ function RelicRoomEntryForm({ draft, setDraft, submit, joining }: RelicRoomEntry
                 />
             </label>
             <small>
-                Use the reference and code from your host, or open their link. Invited accounts and current members can
-                leave the code blank.
+                Open the host’s link or enter its room reference. Unlisted rooms need no code; code rooms require one
+                unless you are already a member.
             </small>
-            <button type="submit" disabled={!draft.reference.trim() || joining}>Enter private room</button>
+            <button type="submit" disabled={!draft.reference.trim() || joining}>Enter room</button>
         </form>
     );
 }

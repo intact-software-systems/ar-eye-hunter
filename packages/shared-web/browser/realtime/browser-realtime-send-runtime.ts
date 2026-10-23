@@ -9,7 +9,7 @@ import type {
     RallarRealtimeSendResult
 } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
-import type { BrowserRoomTransportTarget } from '@shared-web/browser/rooms/room-group-state-translation.ts';
+import type { BrowserRoomTransportTarget } from '@shared-web/browser/rooms/room-transport-target.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';

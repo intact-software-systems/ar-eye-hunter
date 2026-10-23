@@ -64,6 +64,26 @@ describe('room creation through the browser facade and HTTP workflow', () => {
         expect(requests[0]).toEqual(requests[1]);
     });
 
+    it('sends unlisted creation through the facade without replacing room metadata', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const base = createRoomSnapshot('hidden-room', ['session-1']);
+        const snapshot = { ...base, group: { ...base.group, metadata: { rallarDirectoryListing: 'unlisted', theme: 'forest' } } };
+        respond(() => json(snapshot));
+        const facade = createRallarFacade();
+
+        await facade.rooms.create({
+            groupId: 'hidden-room',
+            displayName: 'Hidden',
+            joinMode: 'open',
+            directoryListing: 'unlisted',
+            metadata: { theme: 'forest' },
+            scope
+        });
+
+        expect(requests[0].body).toMatchObject({ directoryListing: 'unlisted', metadata: { theme: 'forest' } });
+        expect(facade.rooms.current()).toEqual(snapshot);
+    });
+
     it('adopts the new room before leaving the previous one', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const previous = createRoomSnapshot('old-room', ['session-1']);

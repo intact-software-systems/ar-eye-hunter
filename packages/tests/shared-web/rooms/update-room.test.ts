@@ -55,7 +55,7 @@ it('removes a key the facade patches to null from the metadata the room update s
     roomWorkflowMocks.updateStateGroupMetadata.mockImplementation(workflows.updateStateGroupMetadata);
     const base = createRoomSnapshot('room-1', ['session-1'], { applicationId: 'rallar-server', workspaceId: 'default' });
     const stored = { ...base, group: { ...base.group, metadata: { k: 1, keep: true } } };
-    const sentBodies: unknown[] = [];
+    const sentBodies: object[] = [];
     vi.stubGlobal(
         'fetch',
         vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -71,6 +71,26 @@ it('removes a key the facade patches to null from the metadata the room update s
     await createRallarFacade().rooms.updateMetadata('room-1', { k: null });
 
     expect(sentBodies).toEqual([expect.objectContaining({ metadata: { keep: true } })]);
+});
+
+it('sends listing-only intent through HTTP and adopts the authoritative metadata', async () => {
+    const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+    const workflows = await vi.importActual<typeof RoomGroupStateMutationWorkflows>(
+        '@shared-web/browser/rooms/room-group-state-mutation-workflows.ts'
+    );
+    roomWorkflowMocks.updateStateGroupDetails.mockImplementation(workflows.updateStateGroupDetails);
+    const base = createRoomSnapshot('room-1', ['session-1']);
+    const hidden = { ...base, group: { ...base.group, metadata: { rallarDirectoryListing: 'unlisted', theme: 'forest' } } };
+    const sentBodies: object[] = [];
+    vi.stubGlobal('fetch', async (_input: RequestInfo | URL, init?: RequestInit) => {
+        sentBodies.push(JSON.parse(String(init?.body)));
+        return toJsonResponse(hidden);
+    });
+
+    const result = await createRallarFacade().rooms.update({ roomId: 'room-1', directoryListing: 'unlisted' });
+
+    expect(sentBodies).toEqual([{ directoryListing: 'unlisted', actorPrincipalId: 'principal-1', actorSessionId: 'session-1' }]);
+    expect(result.group.metadata).toEqual({ rallarDirectoryListing: 'unlisted', theme: 'forest' });
 });
 
 function toJsonResponse(body: object): Response {

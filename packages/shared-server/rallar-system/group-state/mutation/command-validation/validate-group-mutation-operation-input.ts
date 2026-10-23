@@ -1,7 +1,9 @@
+import { GROUP_DIRECTORY_LISTING_METADATA_KEY } from '@shared/api/group-directory/group-directory-listing.ts';
 import {
     GROUP_LAYOUT_IDENTITY_KEYS,
     GROUP_LAYOUT_IDENTITY_STATES
 } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import type { JsonWireObject, JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import type { GroupMutationCommand } from '../group-mutation-contracts.ts';
 import {
     isGroupInputRecord,
@@ -13,7 +15,7 @@ import { validateGroupLifecyclePolicyInputShape } from './validate-group-lifecyc
 
 interface GroupMutationOperationInput {
     readonly operation: GroupMutationCommand['operation'];
-    readonly input: Readonly<Record<string, unknown>>;
+    readonly input: JsonWireObject;
 }
 
 const GROUP_KIND: GroupInputFieldRule = {
@@ -43,6 +45,7 @@ const INPUT_FIELDS: Partial<Record<GroupMutationCommand['operation'], readonly G
         { key: 'description', kind: 'string' },
         { ...GROUP_KIND, required: true },
         GROUP_JOIN_MODE,
+        { key: 'directoryListing', kind: 'enum', allowed: ['listed', 'unlisted'] },
         { key: 'maxMembers', kind: 'positive-integer' },
         { key: 'maxSessionsPerMember', kind: 'positive-integer' },
         GROUP_METADATA
@@ -54,6 +57,7 @@ const INPUT_FIELDS: Partial<Record<GroupMutationCommand['operation'], readonly G
         GROUP_KIND,
         { key: 'status', kind: 'enum', allowed: ['active', 'archived', 'deleted'], label: 'Group status' },
         GROUP_JOIN_MODE,
+        { key: 'directoryListing', kind: 'enum', allowed: ['listed', 'unlisted'] },
         { key: 'maxMembers', kind: 'positive-integer' },
         { key: 'maxSessionsPerMember', kind: 'positive-integer' },
         GROUP_METADATA,
@@ -87,7 +91,12 @@ const INPUT_FIELDS: Partial<Record<GroupMutationCommand['operation'], readonly G
 export function validateGroupMutationOperationInput(
     { operation, input }: GroupMutationOperationInput
 ): readonly TypeError[] {
-    const issues = validateGroupInputFields(input, INPUT_FIELDS[operation] ?? [], `Group ${operation}`);
+    const issues = [
+        ...validateGroupInputFields(input, INPUT_FIELDS[operation] ?? [], `Group ${operation}`),
+        ...(operation === 'createGroup' || operation === 'updateGroup'
+            ? validateGroupDirectoryListingMetadata(input.metadata)
+            : [])
+    ];
     if (operation === 'connectGroup') {
         return [...issues, ...validateExpectedLayout(input.expectedLayout)];
     }
@@ -107,7 +116,7 @@ export function validateGroupMutationOperationInput(
     return issues;
 }
 
-function validateExpectedLayout(value: unknown): readonly TypeError[] {
+function validateExpectedLayout(value: JsonWireValue | undefined): readonly TypeError[] {
     const label = 'Group connectGroup expectedLayout';
     if (!isGroupInputRecord(value)) {
         return [new TypeError(`${label} must be an object`)];
@@ -125,4 +134,15 @@ function validateExpectedLayout(value: unknown): readonly TypeError[] {
             { key: 'state', kind: 'enum', required: true, allowed: GROUP_LAYOUT_IDENTITY_STATES }
         ], label)
     ];
+}
+
+/** Metadata is an external extension map; a present platform listing setting has a closed vocabulary. */
+export function validateGroupDirectoryListingMetadata(metadata: JsonWireValue | undefined): readonly TypeError[] {
+    return isGroupInputRecord(metadata)
+        ? validateGroupInputFields(metadata, [{
+            key: GROUP_DIRECTORY_LISTING_METADATA_KEY,
+            kind: 'enum',
+            allowed: ['listed', 'unlisted']
+        }], 'Group metadata')
+        : [];
 }

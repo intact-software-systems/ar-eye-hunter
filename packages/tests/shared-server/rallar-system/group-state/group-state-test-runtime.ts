@@ -2,7 +2,6 @@ import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persist
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import {
-    groupStateMaintenanceRequestId,
     toExpiryCommand,
     toSessionCleanupCommand
 } from '@shared-server/rallar-system/group-state/group-presence-mutation-command.ts';
@@ -22,7 +21,6 @@ import type {
     RuntimeStateOptimisticTransactionalRepositoryLike
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-import type { GroupPresenceSession } from '@shared/api/group-types.ts';
 import { GroupStateTestMutationExecutor, type GroupStateTestMutationResult } from './group-state-test-mutation-executor.ts';
 
 type GroupStateTestMutationMethod = (
@@ -62,7 +60,7 @@ export type GroupStateTestService =
         disconnectPresenceSessionReceipt: GroupStateTestReceiptMethod;
     }>;
 
-export type TestGroupStateMaintenanceService = Readonly<{
+export interface TestGroupStateMaintenanceService {
     disconnectPresenceSessionsBySessionId(
         sessionId: string,
         disconnectedAtEpochMs: number
@@ -72,13 +70,13 @@ export type TestGroupStateMaintenanceService = Readonly<{
         disconnectedAtEpochMs: number
     ): Promise<readonly GroupStateWritten[]>;
     expireExpiredPresenceSessions(atEpochMs: number): Promise<readonly GroupStateWritten[]>;
-}>;
+}
 
-export type TestGroupStateRuntime = Readonly<{
-    service: GroupStateTestService;
-    durable: GroupStateService;
-    maintenance: TestGroupStateMaintenanceService;
-}>;
+export interface TestGroupStateRuntime {
+    readonly service: GroupStateTestService;
+    readonly durable: GroupStateService;
+    readonly maintenance: TestGroupStateMaintenanceService;
+}
 
 export interface AuthSessionInput {
     readonly clientId: string;
@@ -119,7 +117,6 @@ export function createTestGroupStateRuntime(
     dependencies: TestGroupStateServiceDependencies
 ): TestGroupStateRuntime {
     const authSessions = new AuthSessionRepository(dependencies.runtimeRepository);
-    const now = dependencies.now ?? (() => Date.now());
     const randomId = dependencies.randomId ?? (() => crypto.randomUUID());
     const eventStoreFor = resolveGroupStateEventStoreFactory(dependencies);
     const durable = createGroupStateService({
@@ -197,13 +194,13 @@ function createAuthenticatedTestGroupStateService({
                 const originalDescriptor = descriptorForMethod(method, args);
                 const descriptor = originalDescriptor.request.requestId
                     ? originalDescriptor
-                    : {
+                    : mutationDescriptor({
                         ...originalDescriptor,
                         request: {
                             ...originalDescriptor.request,
                             requestId: `test-group-mutation-${++testRequestSequence}`
                         }
-                    };
+                    });
                 const request = args.at(-1) as GroupMutationDescriptor['request'];
                 const principalId = readPrincipalId(request);
                 const sessionId = PRESENCE_MUTATIONS.has(method)
@@ -238,51 +235,52 @@ function createTestGroupStateMaintenanceService({
     mutationExecutor,
     attemptCount
 }: CreateTestGroupStateMaintenanceServiceInput): TestGroupStateMaintenanceService {
-    const maintenance: TestGroupStateMaintenanceService = {
-        disconnectPresenceSessionsBySessionId: async (sessionId, disconnectedAtEpochMs) =>
-            (
-                await maintenance.disconnectPresenceSessionsBySessionIdWritten(
-                    sessionId,
-                    disconnectedAtEpochMs
-                )
-            ).flatMap((written) => (written.result ? [written.result.snapshot] : [])),
-        disconnectPresenceSessionsBySessionIdWritten: async (sessionId, disconnectedAtEpochMs) => {
-            const sessions = (await repositoryFor(runtimeRepository).listAllPresenceSessions()).filter(
-                (session) => session.sessionId === sessionId && session.disconnectedAtEpochMs === null
+    async function disconnectPresenceSessionsBySessionIdWritten(
+        sessionId: string,
+        disconnectedAtEpochMs: number
+    ): Promise<readonly GroupStateWritten[]> {
+        const sessions = (await repositoryFor(runtimeRepository).listAllPresenceSessions()).filter(
+            (session) => session.sessionId === sessionId && session.disconnectedAtEpochMs === null
+        );
+        const results: GroupStateWritten[] = [];
+        for (const session of sessions) {
+            const computed = await mutationExecutor.executeInternal(
+                toSessionCleanupCommand(session, disconnectedAtEpochMs),
+                'session-cleanup',
+                disconnectedAtEpochMs,
+                attemptCount
             );
-            const results = [];
-            for (const session of sessions) {
-                const computed = await mutationExecutor.executeInternal(
-                    toSessionCleanupCommand(session, disconnectedAtEpochMs),
-                    'session-cleanup',
-                    disconnectedAtEpochMs,
-                    attemptCount
-                );
-                results.push(await mutationExecutor.toMutationResult('disconnectPresence', computed));
-            }
-            return results;
-        },
-        expireExpiredPresenceSessions: async (atEpochMs) => {
-            const sessions = (await repositoryFor(runtimeRepository).listAllPresenceSessions()).filter(
-                (session) => session.disconnectedAtEpochMs === null && session.expiresAtEpochMs <= atEpochMs
-            );
-            const results = [];
-            for (const session of sessions) {
-                const computed = await mutationExecutor.executeInternal(
-                    toExpiryCommand(session, atEpochMs),
-                    'expiry',
-                    atEpochMs,
-                    attemptCount
-                );
-                if (computed.outcome !== 'write') {
-                    continue;
-                }
-                results.push(await mutationExecutor.toMutationResult('disconnectPresence', computed));
-            }
-            return results;
+            results.push(await mutationExecutor.toMutationResult('disconnectPresence', computed));
         }
+        return results;
+    }
+
+    async function expireExpiredPresenceSessions(atEpochMs: number): Promise<readonly GroupStateWritten[]> {
+        const sessions = (await repositoryFor(runtimeRepository).listAllPresenceSessions()).filter(
+            (session) => session.disconnectedAtEpochMs === null && session.expiresAtEpochMs <= atEpochMs
+        );
+        const results: GroupStateWritten[] = [];
+        for (const session of sessions) {
+            const computed = await mutationExecutor.executeInternal(
+                toExpiryCommand(session, atEpochMs),
+                'expiry',
+                atEpochMs,
+                attemptCount
+            );
+            if (computed.outcome === 'write') {
+                results.push(await mutationExecutor.toMutationResult('disconnectPresence', computed));
+            }
+        }
+        return results;
+    }
+
+    return {
+        disconnectPresenceSessionsBySessionId: async (sessionId, disconnectedAtEpochMs) =>
+            (await disconnectPresenceSessionsBySessionIdWritten(sessionId, disconnectedAtEpochMs))
+                .flatMap((written) => written.result ? [written.result.snapshot] : []),
+        disconnectPresenceSessionsBySessionIdWritten,
+        expireExpiredPresenceSessions
     };
-    return maintenance;
 }
 
 export function createTestGroupStateService(
@@ -395,6 +393,3 @@ const PRESENCE_MUTATIONS = new Set([
     'disconnectPresenceSessionReceipt'
 ]);
 const TEST_OUTBOX_EXPIRE_AT_EPOCH_MS = 253_402_300_799_999;
-
-void groupStateMaintenanceRequestId;
-void (null as GroupPresenceSession | null);

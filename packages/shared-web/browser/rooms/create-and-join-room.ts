@@ -149,6 +149,7 @@ function toCreateOptions(
     const options = {
         ...(input.description === undefined ? {} : { description: input.description }),
         ...(input.joinMode === undefined ? {} : { joinMode: input.joinMode }),
+        ...(input.directoryListing === undefined ? {} : { directoryListing: input.directoryListing }),
         ...(input.maxMembers === undefined ? {} : { maxMembers: input.maxMembers }),
         ...(input.maxSessionsPerMember === undefined
             ? {}

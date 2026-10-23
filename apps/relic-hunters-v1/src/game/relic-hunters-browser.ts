@@ -38,7 +38,8 @@ export function browserRelicRuntimeDeps(): RelicHuntersRuntime.Dependencies {
         onHunterEventMessage: (roomId, subscription) => subscribeRelicHunterEvents(rallar, roomId, subscription),
         authorityStatus: () => authority.status(),
         publishRtcSnapshot: (snapshot) => authority.publishSnapshotRepair(snapshot),
-        createRoom: (displayName, joinMode) => rallar.rooms.createAndSwitch({ displayName, joinMode }),
+        createRoom: (displayName, joinMode, directoryListing) =>
+            rallar.rooms.createAndSwitch({ displayName, joinMode, directoryListing }),
         joinRoom: async (roomId) => {
             await rallar.rooms.enter(roomId);
         },

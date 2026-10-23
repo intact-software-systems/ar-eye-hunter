@@ -23,9 +23,10 @@ the next slice unless the maintainer explicitly requests a stack. PR #696 delive
 foundation, PR #697 delivered Quick Join, and
 [PR #699](https://github.com/intact-software-systems/ar-eye-hunter/pull/699) delivered slice 2 using
 the maintainer's selected existing-measurement scope.
-[PR #700](https://github.com/intact-software-systems/ar-eye-hunter/pull/700) completes shareable
-private-room entry in both games. Its implementation plan is retired with this delivery; the PR
-owns final validation and review. Wait for its maintainer merge before planning the next slice.
+[PR #700](https://github.com/intact-software-systems/ar-eye-hunter/pull/700) delivered shareable
+private-room entry in both games and is merged. Slice 5 now develops unlisted rooms through
+the existing create/update and room-entry owners; its current design and next two increments are in
+[lobby-unlisted-rooms](lobby-unlisted-rooms.md).
 
 ## Current foundation
 
@@ -103,10 +104,10 @@ all-or-none admission decisions before it becomes a platform promise.
 
 ## Delivery priorities
 
-| Priority    | Outcomes                                                                                  |
-| ----------- | ----------------------------------------------------------------------------------------- |
-| Current     | Maintainer review and merge of share links/codes (4), implemented in PR #700.               |
-| Next        | Visibility choices (5); reconnect/recent-room behavior (6).                                 |
+| Priority    | Outcomes                                                                                    |
+| ----------- | ------------------------------------------------------------------------------------------- |
+| Current     | Unlisted rooms (5): authoritative listing, then browser host controls in both games.        |
+| Next        | Reconnect/recent-room behavior (6), after the unlisted-room PR is merged.                   |
 | Then        | Automatic directory freshness (7), introducing push when the experience needs it.           |
 | Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them. |
 | Later       | Scheduled rooms (8) and a separate tournament capability.                                   |

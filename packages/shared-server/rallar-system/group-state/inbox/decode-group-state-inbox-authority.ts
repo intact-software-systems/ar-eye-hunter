@@ -153,8 +153,8 @@ export function decodeGroupMutationDescriptor(
         groupId: descriptor.groupId,
         targetPrincipalId,
         sessionId,
-        request: descriptor.request as GroupMutationDescriptor['request']
-    };
+        request: descriptor.request
+    } as GroupMutationDescriptor;
 }
 
 function decodeGroupMutationIngressFacts(

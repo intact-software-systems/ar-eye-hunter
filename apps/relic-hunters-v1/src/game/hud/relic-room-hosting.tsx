@@ -1,15 +1,20 @@
 import { useEffect, useState } from 'react';
+import { RelicRoomInvitations } from './relic-room-invitations.tsx';
 
 import { toRoomEntryUrl } from '@shared-web/browser/rallar-room-entry.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import {
+    toGroupDirectoryListing,
+    type GroupDirectoryListing
+} from '@shared/api/group-directory/group-directory-listing.ts';
 import type { GroupJoinMode, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { GroupJoinCodeResponse } from '@shared/api/state-types.ts';
 
 import type { RelicHuntersRuntime } from '../relic-hunters-runtime.ts';
 
-interface RelicPrivateRoomsProps {
+interface RelicRoomHostingProps {
     readonly game: RelicHuntersRuntime.Connection;
 }
 
@@ -26,7 +31,7 @@ interface RelicHostingOperation {
     readonly setCode: (code: RelicRoomCode | undefined) => void;
 }
 
-export function RelicPrivateRooms({ game }: RelicPrivateRoomsProps) {
+export function RelicRoomHosting({ game }: RelicRoomHostingProps) {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | undefined>();
     const [code, setCode] = useState<RelicRoomCode | undefined>();
@@ -42,26 +47,33 @@ export function RelicPrivateRooms({ game }: RelicPrivateRoomsProps) {
     }, [game.session?.sessionId, game.roomId]);
     const operation = { game, snapshot, setBusy, setError, setCode };
     const unavailable = busy || !game.diagnostics.middlewareConnected;
-    const hosting = snapshot && snapshot.group.joinMode !== 'open' &&
+    const hosting = snapshot &&
         snapshot.members.some((member) =>
             member.principalId === game.session?.clientId && member.status === 'active' &&
             (member.role === 'owner' || member.role === 'admin')
         );
     const currentCode = code?.sessionId === game.session?.sessionId ? code?.response : undefined;
     return (
-        <section className="stack" aria-label="Private expedition hosting">
+        <section className="stack" aria-label="Expedition hosting">
             <div className="button-grid">
                 <button
                     type="button"
                     disabled={unavailable}
-                    onClick={() => void createPrivateRelicRoom(operation, 'code')}
+                    onClick={() => void createRelicRoom(operation, 'open', 'unlisted')}
+                >
+                    New unlisted room
+                </button>
+                <button
+                    type="button"
+                    disabled={unavailable}
+                    onClick={() => void createRelicRoom(operation, 'code')}
                 >
                     New code room
                 </button>
                 <button
                     type="button"
                     disabled={unavailable}
-                    onClick={() => void createPrivateRelicRoom(operation, 'invite-only')}
+                    onClick={() => void createRelicRoom(operation, 'invite-only')}
                 >
                     New invite-only room
                 </button>
@@ -80,13 +92,17 @@ export function RelicPrivateRooms({ game }: RelicPrivateRoomsProps) {
     );
 }
 
-async function createPrivateRelicRoom(operation: RelicHostingOperation, joinMode: GroupJoinMode): Promise<void> {
+async function createRelicRoom(
+    operation: RelicHostingOperation,
+    joinMode: GroupJoinMode,
+    directoryListing?: GroupDirectoryListing
+): Promise<void> {
     const session = rallar.session();
     operation.setBusy(true);
     operation.setError(undefined);
     operation.setCode(undefined);
     try {
-        const snapshot = await operation.game.createRoom(joinMode);
+        const snapshot = await operation.game.createRoom(joinMode, directoryListing);
         if (snapshot && session && isCurrentRelicRoom(session, snapshot.group) && joinMode === 'code') {
             const response = await rallar.rooms.rotateJoinCode(snapshot.group);
             if (isCurrentRelicRoom(session, snapshot.group)) {
@@ -96,7 +112,7 @@ async function createPrivateRelicRoom(operation: RelicHostingOperation, joinMode
     }
     catch {
         operation.setError(
-            'Could not finish creating the private room. Check your connection and current room, then retry.'
+            'Could not finish creating the room. Check your connection and current room, then retry.'
         );
     }
     finally {
@@ -160,6 +176,7 @@ function RelicRoomSharing({ snapshot, code, busy, rotate }: RelicRoomSharingProp
                 Copy room link
             </button>
             {copyStatus && <p>{copyStatus}</p>}
+            {snapshot.group.joinMode === 'open' && <RelicDirectoryListing snapshot={snapshot} />}
             {snapshot.group.joinMode === 'code' && (
                 <>
                     {codeMatches && (
@@ -177,6 +194,48 @@ function RelicRoomSharing({ snapshot, code, busy, rotate }: RelicRoomSharingProp
     );
 }
 
+function RelicDirectoryListing({ snapshot }: Pick<RelicRoomSharingProps, 'snapshot'>) {
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | undefined>();
+    const listing = toGroupDirectoryListing(snapshot.group.metadata);
+    const change = async () => {
+        const session = rallar.session();
+        if (!session) {
+            return;
+        }
+        setBusy(true);
+        setError(undefined);
+        try {
+            await rallar.rooms.update({
+                roomRef: snapshot.group,
+                directoryListing: listing === 'listed' ? 'unlisted' : 'listed'
+            });
+        }
+        catch {
+            if (isCurrentRelicRoom(session, snapshot.group)) {
+                setError('Could not change room listing. Check your connection and try again.');
+            }
+        }
+        finally {
+            if (isCurrentRelicRoom(session, snapshot.group)) {
+                setBusy(false);
+            }
+        }
+    };
+    return (
+        <div className="stack">
+            <small>
+                {listing === 'listed' ? 'Listed in discovery.' : 'Unlisted: hidden from discovery and Quick Join.'}{' '}
+                Anyone with the link can enter.
+            </small>
+            <button type="button" disabled={busy} onClick={() => void change()}>
+                {listing === 'listed' ? 'Unlist room' : 'List room'}
+            </button>
+            {error && <p role="alert">{error}</p>}
+        </div>
+    );
+}
+
 async function copyRelicRoomLink(link: string, setStatus: (status: string) => void): Promise<void> {
     try {
         await navigator.clipboard.writeText(link);
@@ -184,86 +243,5 @@ async function copyRelicRoomLink(link: string, setStatus: (status: string) => vo
     }
     catch {
         setStatus('Copy is unavailable. Select and copy the room link above.');
-    }
-}
-
-interface RelicRoomInvitationsProps {
-    readonly snapshot: GroupSnapshot;
-}
-
-function RelicRoomInvitations({ snapshot }: RelicRoomInvitationsProps) {
-    const [principalId, setPrincipalId] = useState('');
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState<string | undefined>();
-    const change = (principalId: string, revoke: boolean) =>
-        changeRelicInvitation({
-            room: snapshot.group,
-            principalId,
-            revoke,
-            setBusy,
-            setError
-        });
-    return (
-        <div className="stack">
-            <label>
-                Account reference<input
-                    value={principalId}
-                    onChange={(event) => setPrincipalId(event.target.value)}
-                    autoComplete="off"
-                />
-            </label>
-            <small>Ask the guest to share the account reference shown in their profile.</small>
-            <button
-                type="button"
-                disabled={busy || !principalId.trim()}
-                onClick={() => void change(principalId.trim(), false)}
-            >
-                Invite account
-            </button>
-            {snapshot.members.filter((member) => member.status === 'invited').map((member) => (
-                <div key={member.principalId}>
-                    <p>
-                        {member.principalId} — invited{member.invitationExpiresAtEpochMs !== null &&
-                            ` until ${new Date(member.invitationExpiresAtEpochMs).toLocaleString()}`}
-                    </p>
-                    <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() =>
-                            void change(member.principalId, true)}
-                    >
-                        Revoke invitation
-                    </button>
-                </div>
-            ))}
-            {error && <p role="alert">{error}</p>}
-        </div>
-    );
-}
-
-interface RelicInvitationChange {
-    readonly room: GroupRef;
-    readonly principalId: string;
-    readonly revoke: boolean;
-    readonly setBusy: (busy: boolean) => void;
-    readonly setError: (error: string | undefined) => void;
-}
-
-async function changeRelicInvitation(invitation: RelicInvitationChange): Promise<void> {
-    invitation.setBusy(true);
-    invitation.setError(undefined);
-    try {
-        if (invitation.revoke) {
-            await rallar.rooms.revokeInvite(invitation.room, invitation.principalId);
-        }
-        else {
-            await rallar.rooms.invite(invitation.room, invitation.principalId);
-        }
-    }
-    catch {
-        invitation.setError('Could not update the invitation. Check the account reference and try again.');
-    }
-    finally {
-        invitation.setBusy(false);
     }
 }

@@ -10,7 +10,7 @@ test('keeps manual private-room entry through signed-out reload and allows cance
     const operations = await openOperations(page, '/');
     await operations.getByLabel('Room reference', { exact: true }).fill('friends-arena');
     await operations.getByLabel('Room code', { exact: true }).fill('friends-code');
-    await operations.getByRole('button', { name: 'Enter private room', exact: true }).click();
+    await operations.getByRole('button', { name: 'Enter room', exact: true }).click();
 
     await expect(operations.getByText('Sign in to enter friends-arena.', { exact: true })).toBeVisible();
     await page.reload();
@@ -154,7 +154,7 @@ roomBrowserTest(
         await expect(guestOperations.getByRole('alert')).toContainText('Room entry was denied.');
         await guestOperations.getByLabel('Room reference', { exact: true }).fill(reference);
         await guestOperations.getByLabel('Room code', { exact: true }).fill(code);
-        await guestOperations.getByRole('button', { name: 'Enter private room', exact: true }).click();
+        await guestOperations.getByRole('button', { name: 'Enter room', exact: true }).click();
         await expect(guestOperations.getByText(`Entered ${reference}.`, { exact: true })).toBeVisible();
         await hostOperations.getByRole('button', { name: 'New code arena', exact: true }).click();
         await expect(linkField).toHaveValue(/#rallar-room\?.*joinCode=/);
@@ -165,6 +165,60 @@ roomBrowserTest(
         await expect(guestOperations.getByText(`Entered ${nextReference}.`, { exact: true })).toBeVisible();
         await expect(guestOperations.getByText(`Entered ${reference}.`, { exact: true })).toHaveCount(0);
         await expect(guest).not.toHaveURL(/joinCode=/);
+    }
+);
+
+roomBrowserTest(
+    'shares an unlisted arena, retries listing, and keeps its guest through hiding',
+    async ({ page: host, guest }, testInfo) => {
+        roomBrowserTest.skip(process.env.RALLAR_ARENA_FULL_STACK !== '1', 'Requires the local API-v1 memory fixture.');
+        const hostOperations = await openOperations(host, '/');
+        await signIn(host, 'alice');
+        await expect(hostOperations.getByRole('button', { name: 'New unlisted arena', exact: true })).toBeVisible();
+        await hostOperations.getByRole('button', { name: 'New unlisted arena', exact: true }).click();
+        await expect(hostOperations.getByRole('button', { name: 'List room', exact: true })).toBeEnabled();
+        const link = await hostOperations.getByLabel('Room link', { exact: true }).inputValue();
+        expect(link).toContain('#rallar-room?');
+        expect(link).not.toContain('joinCode=');
+        const reference = new URLSearchParams(new URL(link).hash.slice('#rallar-room?'.length)).get('groupId');
+        const roomName = await hostOperations.locator('.room-row.active span').innerText();
+        const guestOperations = await openOperations(guest, '/');
+        await signIn(guest, 'bob');
+        await guestOperations.getByRole('button', { name: 'Refresh', exact: true }).click();
+        await expect(guestOperations.locator('.room-row').filter({ hasText: roomName })).toHaveCount(0);
+        await host.route('**/groups/*/requests/*', async (route) => {
+            if (route.request().method() === 'PUT' && route.request().postDataJSON().directoryListing) {
+                await route.fulfill({ status: 403, json: { error: 'Listing unavailable' } });
+            }
+            else {
+                await route.continue();
+            }
+        });
+        await hostOperations.getByRole('button', { name: 'List room', exact: true }).click();
+        await expect(hostOperations.getByRole('alert')).toContainText('Could not change room listing');
+        await expect(hostOperations.getByRole('button', { name: 'List room', exact: true })).toBeEnabled();
+        await host.unroute('**/groups/*/requests/*');
+        await hostOperations.getByRole('button', { name: 'List room', exact: true }).click();
+        await expect(hostOperations.getByRole('button', { name: 'Unlist room', exact: true })).toBeEnabled();
+        await guestOperations.getByRole('button', { name: 'Refresh', exact: true }).click();
+        await expect(guestOperations.locator('.room-row').filter({ hasText: roomName })).toHaveCount(1);
+        await hostOperations.getByRole('button', { name: 'Unlist room', exact: true }).click();
+        await expect(hostOperations.getByRole('button', { name: 'List room', exact: true })).toBeEnabled();
+        await guestOperations.getByRole('button', { name: 'Refresh', exact: true }).click();
+        await expect(guestOperations.locator('.room-row').filter({ hasText: roomName })).toHaveCount(0);
+        await openOperations(guest, link);
+        await expect(guestOperations.getByText(`Entered ${reference}.`, { exact: true })).toBeVisible();
+        await hostOperations.getByRole('button', { name: 'List room', exact: true }).click();
+        await hostOperations.getByRole('button', { name: 'Unlist room', exact: true }).click();
+        await expect(guestOperations.locator('.room-row.active span')).toHaveText(roomName);
+        const appoint = hostOperations.getByRole('button', { name: 'Appoint this SPA', exact: true });
+        if (await appoint.isEnabled()) {
+            await appoint.click();
+        }
+        await expect(hostOperations.getByRole('button', { name: '1m', exact: true })).toBeEnabled({ timeout: 20_000 });
+        await hostOperations.getByRole('button', { name: '1m', exact: true }).click();
+        await expect(guestOperations.locator('.match-panel strong')).toHaveText(/^[01]:\d{2}$/, { timeout: 20_000 });
+        await guest.screenshot({ path: testInfo.outputPath('unlisted-arena-participating.png'), fullPage: true });
     }
 );
 

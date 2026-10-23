@@ -10,7 +10,7 @@ import type {
     RallarRtcStatusOptions
 } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
-import type { BrowserRoomTransportTarget } from '@shared-web/browser/rooms/room-group-state-translation.ts';
+import type { BrowserRoomTransportTarget } from '@shared-web/browser/rooms/room-transport-target.ts';
 import {
     describeRtcRoomTransport,
     resolveRtcRoomTransportState,

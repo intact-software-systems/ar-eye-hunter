@@ -5876,6 +5876,10 @@ components:
         joinMode:
           type: string
           enum: [invite-only, code, open]
+        directoryListing:
+          type: string
+          enum: [listed, unlisted]
+          description: Listing intent, independent of admission credentials. Unlisted rooms are excluded from discovery and Quick Join; scoped entry still uses normal admission. The setting is returned in metadata.rallarDirectoryListing.
         maxMembers:
           type: integer
           format: int64
@@ -5883,6 +5887,7 @@ components:
           type: integer
           format: int64
         metadata:
+          description: Extensible group metadata. On create, rallarDirectoryListing defaults to listed when absent and an explicit directoryListing takes precedence. On update, the stored listing key is preserved; use directoryListing to change it.
           type: object
           additionalProperties: true
         expiresAtEpochMs:
@@ -5915,6 +5920,10 @@ components:
         joinMode:
           type: string
           enum: [invite-only, code, open]
+        directoryListing:
+          type: string
+          enum: [listed, unlisted]
+          description: Listing intent, independent of admission credentials. Unlisted rooms are excluded from discovery and Quick Join; scoped entry still uses normal admission. The setting is returned in metadata.rallarDirectoryListing.
         maxMembers:
           type: integer
           format: int64
@@ -5922,6 +5931,7 @@ components:
           type: integer
           format: int64
         metadata:
+          description: Extensible group metadata. On create, rallarDirectoryListing defaults to listed when absent and an explicit directoryListing takes precedence. On update, the stored listing key is preserved; use directoryListing to change it.
           type: object
           additionalProperties: true
         expiresAtEpochMs:

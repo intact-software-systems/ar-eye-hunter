@@ -1,9 +1,14 @@
 import { useEffect, useState } from 'react';
+import { ArenaRoomInvitations } from './arena-room-invitations.tsx';
 
 import { toRoomEntryUrl } from '@shared-web/browser/rallar-room-entry.ts';
-import { rallar, type RallarPerson } from '@shared-web/browser/rallar.ts';
+import { rallar } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import {
+    toGroupDirectoryListing,
+    type GroupDirectoryListing
+} from '@shared/api/group-directory/group-directory-listing.ts';
 import type {
     GroupJoinMode,
     GroupRef,
@@ -13,7 +18,7 @@ import type { GroupJoinCodeResponse } from '@shared/api/state-types.ts';
 
 import type { ArenaConnection } from '../game/arena-runtime/arena-connection-contracts.ts';
 
-interface ArenaPrivateRoomsProps {
+interface ArenaRoomHostingProps {
     readonly arena: Pick<ArenaConnection, 'session' | 'rooms' | 'roomId' | 'createArenaRoom'>;
 }
 
@@ -29,23 +34,15 @@ interface ArenaRoomCode {
     readonly response: GroupJoinCodeResponse;
 }
 
-interface ArenaPrivateRoomActionsInput {
-    readonly arena: ArenaPrivateRoomsProps['arena'];
+interface ArenaHostingOperation {
+    readonly arena: ArenaRoomHostingProps['arena'];
     readonly snapshot: GroupSnapshot | undefined;
     readonly setBusy: (busy: boolean) => void;
     readonly setError: (error: string | undefined) => void;
     readonly setCode: (code: ArenaRoomCode | undefined) => void;
 }
 
-interface ArenaInvitationChange {
-    readonly room: GroupRef;
-    readonly principalId: string;
-    readonly revoke: boolean;
-    readonly setBusy: (busy: boolean) => void;
-    readonly setError: (error: string | undefined) => void;
-}
-
-export function ArenaPrivateRooms({ arena }: ArenaPrivateRoomsProps) {
+export function ArenaRoomHosting({ arena }: ArenaRoomHostingProps) {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | undefined>();
     const [code, setCode] = useState<ArenaRoomCode | undefined>();
@@ -65,16 +62,20 @@ export function ArenaPrivateRooms({ arena }: ArenaPrivateRoomsProps) {
         setError(undefined);
     }, [roomKey, arena.session?.sessionId]);
     const actions = { arena, snapshot, setBusy, setError, setCode };
-    const create = (joinMode: GroupJoinMode) => createPrivateArena(actions, joinMode);
+    const create = (joinMode: GroupJoinMode, directoryListing?: GroupDirectoryListing) =>
+        createArena(actions, joinMode, directoryListing);
     const rotate = () => rotateArenaCode(actions);
-    const canShare = snapshot && snapshot.group.joinMode !== 'open' &&
+    const canShare = snapshot &&
         snapshot.members.some((member) =>
             member.principalId === arena.session?.clientId && member.status === 'active' &&
             (member.role === 'owner' || member.role === 'admin')
         );
     return (
-        <section className="stack" aria-label="Private arena hosting">
+        <section className="stack" aria-label="Arena hosting">
             <div className="room-actions">
+                <button type="button" disabled={busy} onClick={() => void create('open', 'unlisted')}>
+                    New unlisted arena
+                </button>
                 <button type="button" disabled={busy} onClick={() => void create('code')}>New code arena</button>
                 <button type="button" disabled={busy} onClick={() => void create('invite-only')}>
                     New invite-only arena
@@ -94,9 +95,10 @@ export function ArenaPrivateRooms({ arena }: ArenaPrivateRoomsProps) {
     );
 }
 
-async function createPrivateArena(
-    input: ArenaPrivateRoomActionsInput,
-    joinMode: GroupJoinMode
+async function createArena(
+    input: ArenaHostingOperation,
+    joinMode: GroupJoinMode,
+    directoryListing?: GroupDirectoryListing
 ): Promise<void> {
     const { arena, setBusy, setError, setCode } = input;
     const session = rallar.session();
@@ -104,7 +106,7 @@ async function createPrivateArena(
     setError(undefined);
     setCode(undefined);
     try {
-        const snapshot = await arena.createArenaRoom(joinMode);
+        const snapshot = await arena.createArenaRoom(joinMode, directoryListing);
         if (snapshot && session && isCurrentArenaHost(session, snapshot.group) && joinMode === 'code') {
             const code = await rallar.rooms.rotateJoinCode(snapshot.group);
             if (isCurrentArenaHost(session, snapshot.group)) {
@@ -125,7 +127,7 @@ async function createPrivateArena(
 }
 
 async function rotateArenaCode(
-    input: ArenaPrivateRoomActionsInput
+    input: ArenaHostingOperation
 ): Promise<void> {
     const { snapshot, setBusy, setError, setCode } = input;
     if (!snapshot) {
@@ -178,6 +180,7 @@ function ArenaRoomSharing({ snapshot, code, busy, rotate }: ArenaRoomSharingProp
                 Copy room link
             </button>
             {copyStatus && <p>{copyStatus}</p>}
+            {snapshot.group.joinMode === 'open' && <ArenaDirectoryListing snapshot={snapshot} />}
             {snapshot.group.joinMode === 'code' && (
                 <>
                     {codeMatches && (
@@ -197,6 +200,48 @@ function ArenaRoomSharing({ snapshot, code, busy, rotate }: ArenaRoomSharingProp
     );
 }
 
+function ArenaDirectoryListing({ snapshot }: Pick<ArenaRoomSharingProps, 'snapshot'>) {
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | undefined>();
+    const listing = toGroupDirectoryListing(snapshot.group.metadata);
+    const change = async () => {
+        const session = rallar.session();
+        if (!session) {
+            return;
+        }
+        setBusy(true);
+        setError(undefined);
+        try {
+            await rallar.rooms.update({
+                roomRef: snapshot.group,
+                directoryListing: listing === 'listed' ? 'unlisted' : 'listed'
+            });
+        }
+        catch {
+            if (isCurrentArenaHost(session, snapshot.group)) {
+                setError('Could not change room listing. Check your connection and try again.');
+            }
+        }
+        finally {
+            if (isCurrentArenaHost(session, snapshot.group)) {
+                setBusy(false);
+            }
+        }
+    };
+    return (
+        <div className="stack">
+            <p className="muted">
+                {listing === 'listed' ? 'Listed in discovery.' : 'Unlisted: hidden from discovery and Quick Join.'}{' '}
+                Anyone with the link can enter.
+            </p>
+            <button type="button" disabled={busy} onClick={() => void change()}>
+                {listing === 'listed' ? 'Unlist room' : 'List room'}
+            </button>
+            {error && <p role="alert">{error}</p>}
+        </div>
+    );
+}
+
 async function copyRoomLink(link: string, setStatus: (status: string) => void): Promise<void> {
     try {
         await navigator.clipboard.writeText(link);
@@ -204,127 +249,5 @@ async function copyRoomLink(link: string, setStatus: (status: string) => void): 
     }
     catch {
         setStatus('Copy is unavailable. Select and copy the room link above.');
-    }
-}
-
-function ArenaRoomInvitations({ snapshot }: Pick<ArenaRoomSharingProps, 'snapshot'>) {
-    const [people, setPeople] = useState<readonly RallarPerson[]>([]);
-    const [principalId, setPrincipalId] = useState('');
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState<string | undefined>();
-    const refresh = () => refreshKnownArenaPeople(snapshot.group, setPeople, setError);
-    const changeInvitation = (principalId: string, revoke: boolean) =>
-        changeArenaInvitation({ room: snapshot.group, principalId, revoke, setBusy, setError });
-    const invitations = snapshot.members.filter((member) => member.status === 'invited');
-    return (
-        <div className="stack">
-            <p className="muted">Only invited accounts can enter using this link.</p>
-            <button type="button" onClick={() => void refresh()}>Refresh known people</button>
-            <label>
-                Invite account reference<input
-                    value={principalId}
-                    onChange={(event) => setPrincipalId(event.target.value.trim())}
-                    autoComplete="off"
-                />
-            </label>
-            <p className="muted">
-                Ask the guest for the account reference shown in their profile, or choose someone already known below.
-            </p>
-            <label>
-                Invite account<select value={principalId} onChange={(event) => setPrincipalId(event.target.value)}>
-                    <option value="">Choose an account</option>
-                    {people.filter((person) => person.principalId !== rallar.session()?.clientId).map((person) => (
-                        <option key={person.principalId} value={person.principalId}>
-                            {person.displayName || person.username} (@{person.username})
-                        </option>
-                    ))}
-                </select>
-            </label>
-            <button
-                type="button"
-                disabled={!principalId || busy}
-                onClick={() => void changeInvitation(principalId, false)}
-            >
-                Invite account
-            </button>
-            <ArenaInvitationList
-                invitations={invitations}
-                people={people}
-                busy={busy}
-                revoke={(principalId) => changeInvitation(principalId, true)}
-            />
-            {error && <p role="alert">{error}</p>}
-        </div>
-    );
-}
-
-interface ArenaInvitationListProps {
-    readonly invitations: GroupSnapshot['members'];
-    readonly people: readonly RallarPerson[];
-    readonly busy: boolean;
-    readonly revoke: (principalId: string) => Promise<void>;
-}
-
-function ArenaInvitationList({ invitations, people, busy, revoke }: ArenaInvitationListProps) {
-    return (
-        <>
-            {invitations.map((invitation) => (
-                <div key={invitation.principalId}>
-                    <p>
-                        {people.find((person) => person.principalId === invitation.principalId)?.username ??
-                            invitation.principalId} — invited
-                        {invitation.invitationExpiresAtEpochMs !== null &&
-                            ` until ${new Date(invitation.invitationExpiresAtEpochMs).toLocaleString()}`}
-                    </p>
-                    <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => void revoke(invitation.principalId)}
-                    >
-                        Revoke invitation
-                    </button>
-                </div>
-            ))}
-        </>
-    );
-}
-
-async function refreshKnownArenaPeople(
-    room: GroupRef,
-    setPeople: (people: readonly RallarPerson[]) => void,
-    setError: (error: string | undefined) => void
-): Promise<void> {
-    const session = rallar.session();
-    setError(undefined);
-    try {
-        const state = await rallar.people.refresh({ scope: room });
-        if (isCurrentArenaHost(session, room)) {
-            setPeople(state.people);
-        }
-    }
-    catch {
-        setError('Could not refresh known people. Try again.');
-    }
-}
-
-async function changeArenaInvitation(
-    invitation: ArenaInvitationChange
-): Promise<void> {
-    const { room, principalId, revoke, setBusy, setError } = invitation;
-    setBusy(true);
-    setError(undefined);
-    try {
-        if (revoke) {
-            await rallar.rooms.revokeInvite(room, principalId);
-        }
-        else {
-            await rallar.rooms.invite(room, principalId);
-        }
-    }
-    catch {
-        setError('Could not update the invitation. Check the account reference and try again.');
-    }
-    finally {
-        setBusy(false);
     }
 }

@@ -33,6 +33,20 @@ function withLegacyRequestId<Body extends object>(body: Body) {
 }
 
 describe('room request translation', () => {
+    it('carries explicit listing intent separately from metadata and omits absent intent', () => {
+        expect(toCreateGroupStateRequest({
+            groupId: 'hidden-room',
+            room: { displayName: 'Hidden', joinMode: 'open', directoryListing: 'unlisted' },
+            ...actor
+        })).toMatchObject({ directoryListing: 'unlisted', metadata: {} });
+        expect(toUpdateGroupStateRequest({ request: { directoryListing: 'listed' }, ...actor }))
+            .toEqual({ directoryListing: 'listed', ...actor });
+        expect(toCreateGroupStateRequest({ groupId: 'default-room', room: { displayName: 'Default' }, ...actor }))
+            .not.toHaveProperty('directoryListing');
+        expect(toUpdateGroupStateRequest({ request: { displayName: 'Renamed' }, ...actor }))
+            .not.toHaveProperty('directoryListing');
+    });
+
     it('translates minimal and fully populated create fields with literal defaults', () => {
         expect(
             toCreateGroupStateRequest({

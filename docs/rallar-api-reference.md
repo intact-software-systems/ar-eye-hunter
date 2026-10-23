@@ -193,7 +193,7 @@ error is rethrown.
 `input` can be a display name string or an object. It does not leave the
 previous current room, so use it when multi-room membership is intentional.
 Object input can include `groupId`, `displayName`, `description`, `joinMode`,
-`maxMembers`, `maxSessionsPerMember`, `metadata`, `expiresAtEpochMs`,
+`directoryListing`, `maxMembers`, `maxSessionsPerMember`, `metadata`, `expiresAtEpochMs`,
 `purgeAfterEpochMs`, and `lifecyclePolicy`. `joinMode` is one of `open`,
 `invite-only`, or `code`. `lifecyclePolicy` is the sparse `GroupLifecyclePolicyInput`
 described in `docs/rallar-group-formation-architecture.md`; omitting it creates the
@@ -283,11 +283,25 @@ the accepted layout only.
 `rooms.leave(input?)` leaves a room. It can use explicit `roomId`, `roomRef`, the default room, or the current room.
 
 `rooms.update(input)` updates owner/admin-controlled room fields, including
-display metadata, `joinMode`, and capacity limits.
+display metadata, `joinMode`, `directoryListing`, and capacity limits.
+
+`directoryListing` is `listed` or `unlisted`. Create and update store it in
+`Group.metadata.rallarDirectoryListing`; omission at creation uses that metadata value or the
+listed default, while omission at update preserves the stored setting. An explicit create intent
+overrides the metadata value. Generic metadata replacement and `updateMetadata` preserve the current
+listing key: use `rooms.update({ roomRef, directoryListing })` to change discovery policy.
+Malformed present settings are rejected on writes and hidden by discovery if encountered in storage.
+
+Open unlisted rooms are absent from `rooms.directory()` and Quick Join. Anyone with a scoped reference
+can still request entry; capacity, lifecycle, bans, and normal admission apply. Hiding retains
+membership and presence. Code/invite-only rooms stay hidden even when their listing is `listed`.
+The next directory revalidation removes a hidden entry; this setting adds no push or polling.
+Matching mutation request-ID replay returns its original durable result without another event;
+changed reuse conflicts, and concurrent metadata changes are retained after optimistic retry.
 
 `rooms.updateMetadata(room, patch, options?)` merges `patch` into the room's
 current metadata, owner/admin-only: a key whose patch value is `null` is
-removed, and any other value replaces the key's value.
+removed, and any other value replaces the key's value, except the reserved listing key described above.
 
 `rooms.archive(room, options?)` marks a room archived through the group update
 policy. Archived groups reject joins, presence, room messaging, invites, and

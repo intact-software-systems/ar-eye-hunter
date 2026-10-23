@@ -1,9 +1,11 @@
 import { useState, type FormEvent } from 'react';
 
+import { toGroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
+
 import type { ArenaConnection } from '../game/arena-runtime/arena-connection-contracts.ts';
 import { GAME_ROOM_NAME } from '../game/types.ts';
-import { ArenaPrivateRooms } from './arena-private-rooms.tsx';
 import { ArenaRoomEntry } from './arena-room-entry.tsx';
+import { ArenaRoomHosting } from './arena-room-hosting.tsx';
 import {
     toDirectorAttemptLabel,
     toDirectorLabel,
@@ -146,7 +148,7 @@ function ArenaSessionPanel({ arena, localColor, matchRemainingMs }: ArenaOperati
                 <button type="button" onClick={arena.refreshRooms}>Refresh</button>
                 <button type="button" onClick={arena.logout}>Logout</button>
             </div>
-            <ArenaPrivateRooms arena={arena} />
+            <ArenaRoomHosting arena={arena} />
             <div className="director-panel">
                 <div>
                     <span>Director</span>
@@ -255,7 +257,11 @@ function ArenaLatencyPreference({ arena }: Pick<ArenaOperationsProps, 'arena'>) 
 
 function ArenaRoomList({ arena }: Pick<ArenaOperationsProps, 'arena'>) {
     const rooms = arena.rooms.filter((room) =>
-        room.name.toLowerCase().includes('eye hunter') || room.name === GAME_ROOM_NAME
+        (room.name.toLowerCase().includes('eye hunter') || room.name === GAME_ROOM_NAME) &&
+        (toGroupDirectoryListing(room.snapshot.group.metadata) === 'listed' ||
+            room.snapshot.members.some((member) =>
+                member.principalId === arena.session?.clientId && member.status === 'active'
+            ))
     );
     return (
         <>

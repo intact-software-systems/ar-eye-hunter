@@ -1,3 +1,4 @@
+import { toGroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
 import type { GroupPolicyResult } from '@shared/api/group-policy-types.ts';
 import type { GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 import { denyForBlockedGroupMember, findGroupMember } from './group-policy-primitives.ts';
@@ -74,7 +75,8 @@ export function readGroupVisibility(
 }
 
 function readDirectoryVisibility(snapshot: GroupSnapshot): GroupReadVisibility {
-    return snapshot.group.status === 'active' && snapshot.group.joinMode === 'open'
+    return snapshot.group.status === 'active' && snapshot.group.joinMode === 'open' &&
+            toGroupDirectoryListing(snapshot.group.metadata) === 'listed'
         ? 'directory'
         : 'none';
 }

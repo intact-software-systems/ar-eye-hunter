@@ -21,7 +21,7 @@ import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/t
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-import { resolveBrowserRoomTransportTarget } from '@shared-web/browser/rooms/room-group-state-translation.ts';
+import { resolveBrowserRoomTransportTarget } from '@shared-web/browser/rooms/room-transport-target.ts';
 import { resolveRtcRoomTransportState } from '@shared-web/browser/rtc/rtc-room-transport-status.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toNormalizedGroupLifecyclePolicy } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';

@@ -6,6 +6,7 @@ import type {
     ClientPrincipalStatus,
     ClientTransport
 } from './client-types.ts';
+import type { GroupDirectoryListing } from './group-directory/group-directory-listing.ts';
 import type { GroupLayoutIdentity } from './group-lifecycle/group-layout-identity.ts';
 import type { GroupLifecyclePolicyInput } from './group-lifecycle/group-lifecycle-policy.ts';
 import type { Group, GroupJoinMode, GroupMemberStatus, GroupRole, GroupSnapshot, GroupStatus } from './group-types.ts';
@@ -13,214 +14,180 @@ import type { Group, GroupJoinMode, GroupMemberStatus, GroupRole, GroupSnapshot,
 export const DEFAULT_STATE_APPLICATION_ID = 'rallar-server';
 export const DEFAULT_STATE_WORKSPACE_ID = 'default';
 
-export type StateScope = Readonly<{
-    applicationId: string;
-    workspaceId: string;
-}>;
+export interface StateScope {
+    readonly applicationId: string;
+    readonly workspaceId: string;
+}
 
-export type MutationActorInput = Readonly<{
-    actorPrincipalId?: string;
-    actorSessionId?: string;
-    reason?: string;
-    traceId?: string;
-    requestId?: string;
-}>;
+export interface MutationActorInput {
+    readonly actorPrincipalId?: string;
+    readonly actorSessionId?: string;
+    readonly reason?: string;
+    readonly traceId?: string;
+    readonly requestId?: string;
+}
 
-export type UpsertClientPrincipalRequest =
-    & MutationActorInput
-    & Readonly<{
-        username: string;
-        displayName?: string;
-        avatarUrl?: string;
-        status?: ClientPrincipalStatus;
-        authProvider?: string;
-        externalSubjectId?: string;
-        roles?: readonly string[];
-        metadata?: ApiJsonObject;
-        lastSeenAtEpochMs?: number;
-    }>;
+export interface UpsertClientPrincipalRequest extends MutationActorInput {
+    readonly username: string;
+    readonly displayName?: string;
+    readonly avatarUrl?: string;
+    readonly status?: ClientPrincipalStatus;
+    readonly authProvider?: string;
+    readonly externalSubjectId?: string;
+    readonly roles?: readonly string[];
+    readonly metadata?: ApiJsonObject;
+    readonly lastSeenAtEpochMs?: number;
+}
 
-export type UpsertClientInstanceRequest =
-    & MutationActorInput
-    & Readonly<{
-        status?: ClientInstanceStatus;
-        platform?: ClientPlatform;
-        deviceLabel?: string;
-        appVersion?: string;
-        userAgent?: string;
-        capabilities?: readonly string[];
-    }>;
+export interface UpsertClientInstanceRequest extends MutationActorInput {
+    readonly status?: ClientInstanceStatus;
+    readonly platform?: ClientPlatform;
+    readonly deviceLabel?: string;
+    readonly appVersion?: string;
+    readonly userAgent?: string;
+    readonly capabilities?: readonly string[];
+}
 
-export type ConnectClientSessionRequest =
-    & MutationActorInput
-    & Readonly<{
-        generationId: string;
-        presenceState?: ClientPresenceState;
-        transport?: ClientTransport;
-        connectionId?: string;
-        authenticatedAtEpochMs?: number;
-        connectedAtEpochMs?: number;
-        lastHeartbeatAtEpochMs?: number;
-        expiresAtEpochMs?: number;
-    }>;
+export interface ConnectClientSessionRequest extends MutationActorInput {
+    readonly generationId: string;
+    readonly presenceState?: ClientPresenceState;
+    readonly transport?: ClientTransport;
+    readonly connectionId?: string;
+    readonly authenticatedAtEpochMs?: number;
+    readonly connectedAtEpochMs?: number;
+    readonly lastHeartbeatAtEpochMs?: number;
+    readonly expiresAtEpochMs?: number;
+}
 
-export type HeartbeatClientSessionRequest =
-    & MutationActorInput
-    & Readonly<{
-        generationId: string;
-        presenceState?: ClientPresenceState;
-        lastHeartbeatAtEpochMs?: number;
-        expiresAtEpochMs?: number;
-    }>;
+export interface HeartbeatClientSessionRequest extends MutationActorInput {
+    readonly generationId: string;
+    readonly presenceState?: ClientPresenceState;
+    readonly lastHeartbeatAtEpochMs?: number;
+    readonly expiresAtEpochMs?: number;
+}
 
-export type DisconnectClientSessionRequest =
-    & MutationActorInput
-    & Readonly<{
-        generationId: string;
-        disconnectedAtEpochMs?: number;
-        lastHeartbeatAtEpochMs?: number;
-        expiresAtEpochMs?: number;
-    }>;
+export interface DisconnectClientSessionRequest extends MutationActorInput {
+    readonly generationId: string;
+    readonly disconnectedAtEpochMs?: number;
+    readonly lastHeartbeatAtEpochMs?: number;
+    readonly expiresAtEpochMs?: number;
+}
 
-export type CreateGroupRequest =
-    & MutationActorInput
-    & Readonly<{
-        groupId: string;
-        slug?: string;
-        displayName: string;
-        description?: string;
-        kind: Group['kind'];
-        joinMode?: GroupJoinMode;
-        maxMembers?: number;
-        maxSessionsPerMember?: number;
-        metadata?: ApiJsonObject;
-        createdByPrincipalId: string;
-        expiresAtEpochMs?: number;
-        purgeAfterEpochMs?: number;
-        lifecyclePolicy?: GroupLifecyclePolicyInput;
-    }>;
+export interface CreateGroupRequest extends MutationActorInput {
+    readonly groupId: string;
+    readonly slug?: string;
+    readonly displayName: string;
+    readonly description?: string;
+    readonly kind: Group['kind'];
+    readonly joinMode?: GroupJoinMode;
+    readonly directoryListing?: GroupDirectoryListing;
+    readonly maxMembers?: number;
+    readonly maxSessionsPerMember?: number;
+    readonly metadata?: ApiJsonObject;
+    readonly createdByPrincipalId: string;
+    readonly expiresAtEpochMs?: number;
+    readonly purgeAfterEpochMs?: number;
+    readonly lifecyclePolicy?: GroupLifecyclePolicyInput;
+}
 
-export type UpdateGroupRequest =
-    & MutationActorInput
-    & Readonly<{
-        slug?: string;
-        displayName?: string;
-        description?: string;
-        kind?: Group['kind'];
-        status?: GroupStatus;
-        joinMode?: GroupJoinMode;
-        maxMembers?: number;
-        maxSessionsPerMember?: number;
-        metadata?: ApiJsonObject;
-        expiresAtEpochMs?: number;
-        emptySinceEpochMs?: number;
-        purgeAfterEpochMs?: number;
-    }>;
+export interface UpdateGroupRequest extends MutationActorInput {
+    readonly slug?: string;
+    readonly displayName?: string;
+    readonly description?: string;
+    readonly kind?: Group['kind'];
+    readonly status?: GroupStatus;
+    readonly joinMode?: GroupJoinMode;
+    readonly directoryListing?: GroupDirectoryListing;
+    readonly maxMembers?: number;
+    readonly maxSessionsPerMember?: number;
+    readonly metadata?: ApiJsonObject;
+    readonly expiresAtEpochMs?: number;
+    readonly emptySinceEpochMs?: number;
+    readonly purgeAfterEpochMs?: number;
+}
 
 /** `connect` names the exact planned layout it dials (product decision 32). */
-export type GroupConnectRequest =
-    & MutationActorInput
-    & Readonly<{
-        expectedFormationEpoch: number;
-        expectedLayout: GroupLayoutIdentity;
-    }>;
+export interface GroupConnectRequest extends MutationActorInput {
+    readonly expectedFormationEpoch: number;
+    readonly expectedLayout: GroupLayoutIdentity;
+}
 
-export type AppointGroupDirectorRequest =
-    & MutationActorInput
-    & Readonly<{
-        heartbeatTtlMs?: number;
-    }>;
+export interface AppointGroupDirectorRequest extends MutationActorInput {
+    readonly heartbeatTtlMs?: number;
+}
 
-export type JoinGroupRequest =
-    & MutationActorInput
-    & Readonly<{
-        inviteToken?: string;
-        joinCode?: string;
-    }>;
+export interface JoinGroupRequest extends MutationActorInput {
+    readonly inviteToken?: string;
+    readonly joinCode?: string;
+}
 
-export type CreateGroupInviteRequest =
-    & MutationActorInput
-    & Readonly<{
-        invitationExpiresAtEpochMs?: number;
-    }>;
+export interface CreateGroupInviteRequest extends MutationActorInput {
+    readonly invitationExpiresAtEpochMs?: number;
+}
 
-export type RevokeGroupInviteRequest = MutationActorInput;
+export interface RevokeGroupInviteRequest extends MutationActorInput {}
 
-export type AcceptGroupInviteRequest = MutationActorInput;
+export interface AcceptGroupInviteRequest extends MutationActorInput {}
 
-export type RotateGroupJoinCodeRequest =
-    & MutationActorInput
-    & Readonly<{
-        joinCode?: string;
-        expiresAtEpochMs?: number;
-    }>;
+export interface RotateGroupJoinCodeRequest extends MutationActorInput {
+    readonly joinCode?: string;
+    readonly expiresAtEpochMs?: number;
+}
 
-export type GroupJoinCodeResponse = Readonly<{
-    joinCode: string;
-    expiresAtEpochMs: number;
-    snapshot: GroupSnapshot;
-}>;
+export interface GroupJoinCodeResponse {
+    readonly joinCode: string;
+    readonly expiresAtEpochMs: number;
+    readonly snapshot: GroupSnapshot;
+}
 
-export type RemoveGroupMemberRequest = MutationActorInput;
+export interface RemoveGroupMemberRequest extends MutationActorInput {}
 
-export type BanGroupMemberRequest = MutationActorInput;
+export interface BanGroupMemberRequest extends MutationActorInput {}
 
-export type UnbanGroupMemberRequest = MutationActorInput;
+export interface UnbanGroupMemberRequest extends MutationActorInput {}
 
-export type SetGroupMemberRoleRequest =
-    & MutationActorInput
-    & Readonly<{
-        role: GroupRole;
-    }>;
+export interface SetGroupMemberRoleRequest extends MutationActorInput {
+    readonly role: GroupRole;
+}
 
-export type TransferGroupOwnershipRequest =
-    & MutationActorInput
-    & Readonly<{
-        newOwnerPrincipalId: string;
-    }>;
+export interface TransferGroupOwnershipRequest extends MutationActorInput {
+    readonly newOwnerPrincipalId: string;
+}
 
-export type UpsertGroupMemberRequest =
-    & MutationActorInput
-    & Readonly<{
-        role?: GroupRole;
-        status: GroupMemberStatus;
-        invitedByPrincipalId?: string;
-        invitationExpiresAtEpochMs?: number;
-    }>;
+export interface UpsertGroupMemberRequest extends MutationActorInput {
+    readonly role?: GroupRole;
+    readonly status: GroupMemberStatus;
+    readonly invitedByPrincipalId?: string;
+    readonly invitationExpiresAtEpochMs?: number;
+}
 
-export type ConnectGroupPresenceSessionRequest =
-    & MutationActorInput
-    & Readonly<{
-        principalId: string;
-        generationId: string;
-        connectionGenerationId: string;
-        connectedAtEpochMs?: number;
-        lastHeartbeatAtEpochMs?: number;
-        expiresAtEpochMs?: number;
-    }>;
+export interface ConnectGroupPresenceSessionRequest extends MutationActorInput {
+    readonly principalId: string;
+    readonly generationId: string;
+    readonly connectionGenerationId: string;
+    readonly connectedAtEpochMs?: number;
+    readonly lastHeartbeatAtEpochMs?: number;
+    readonly expiresAtEpochMs?: number;
+}
 
-export type HeartbeatGroupPresenceSessionRequest =
-    & MutationActorInput
-    & Readonly<{
-        generationId: string;
-        principalId?: string;
-        lastHeartbeatAtEpochMs?: number;
-        expiresAtEpochMs?: number;
-    }>;
+export interface HeartbeatGroupPresenceSessionRequest extends MutationActorInput {
+    readonly generationId: string;
+    readonly principalId?: string;
+    readonly lastHeartbeatAtEpochMs?: number;
+    readonly expiresAtEpochMs?: number;
+}
 
-export type DisconnectGroupPresenceSessionRequest =
-    & MutationActorInput
-    & Readonly<{
-        generationId: string;
-        principalId?: string;
-        disconnectedAtEpochMs?: number;
-        lastHeartbeatAtEpochMs?: number;
-        expiresAtEpochMs?: number;
-    }>;
+export interface DisconnectGroupPresenceSessionRequest extends MutationActorInput {
+    readonly generationId: string;
+    readonly principalId?: string;
+    readonly disconnectedAtEpochMs?: number;
+    readonly lastHeartbeatAtEpochMs?: number;
+    readonly expiresAtEpochMs?: number;
+}
 
-export type StateErrorResponse = Readonly<{
-    error: string;
-    code?: string;
-    message?: string;
-    details?: ApiJsonObject;
-}>;
+export interface StateErrorResponse {
+    readonly error: string;
+    readonly code?: string;
+    readonly message?: string;
+    readonly details?: ApiJsonObject;
+}

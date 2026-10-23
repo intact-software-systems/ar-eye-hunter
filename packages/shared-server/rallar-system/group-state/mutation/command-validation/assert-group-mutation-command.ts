@@ -15,6 +15,7 @@ import {
 } from '../group-mutation-contracts.ts';
 import { assertLifecycleGroupMutationCommandInput } from './assert-lifecycle-group-mutation-command-input.ts';
 import { ACTOR_INPUT_KEYS } from './group-mutation-request-validation.ts';
+import { validateGroupDirectoryListingMetadata } from './validate-group-mutation-operation-input.ts';
 
 export function assertGroupMutationCommand(
     command: unknown
@@ -102,6 +103,15 @@ function assertAggregateOperationInput(
     operation: GroupMutationCommand['operation'],
     input: JsonWireObject
 ): void {
+    if (operation === 'createGroup' || operation === 'updateGroup') {
+        const metadataIssues = validateGroupDirectoryListingMetadata(input.metadata);
+        if (metadataIssues.length > 0) {
+            throw metadataIssues[0];
+        }
+        if (input.directoryListing !== undefined) {
+            requireOneOf(input.directoryListing, ['listed', 'unlisted'], 'Group directoryListing');
+        }
+    }
     switch (operation) {
         case 'createGroup':
             assertNullableString(input, 'slug');
@@ -313,6 +323,7 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
         'description',
         'kind',
         'joinMode',
+        'directoryListing',
         'maxMembers',
         'maxSessionsPerMember',
         'metadata',
@@ -329,6 +340,7 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
         'kind',
         'status',
         'joinMode',
+        'directoryListing',
         'maxMembers',
         'maxSessionsPerMember',
         'metadata',

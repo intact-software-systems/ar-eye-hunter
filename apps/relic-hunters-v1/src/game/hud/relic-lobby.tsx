@@ -1,10 +1,12 @@
 import { useState, type FormEvent } from 'react';
 
+import { toGroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
+
 import { colorForId } from '../color.ts';
 import { shortId } from '../lang.ts';
 import type { RelicHuntersRuntime } from '../relic-hunters-runtime.ts';
 import type { RelicPreferences } from '../use-relic-preferences.ts';
-import { RelicPrivateRooms } from './relic-private-rooms.tsx';
+import { RelicRoomHosting } from './relic-room-hosting.tsx';
 
 interface RelicLobbyProps {
     readonly game: RelicHuntersRuntime.Connection;
@@ -39,7 +41,7 @@ export function RelicLobby({ game, preferences }: RelicLobbyProps) {
             <label>
                 Your account reference<input value={game.session.clientId} readOnly />
             </label>
-            <RelicPrivateRooms game={game} />
+            <RelicRoomHosting game={game} />
             <RelicRoomsList game={game} />
         </div>
     );
@@ -134,7 +136,13 @@ function RelicCredentialFields({ credentials, setCredentials }: RelicCredentialF
 }
 
 function RelicRoomsList({ game }: RelicSessionProps) {
-    const rooms = game.rooms.filter((room) => room.name.toLowerCase().includes('relic hunters'));
+    const rooms = game.rooms.filter((room) =>
+        room.name.toLowerCase().includes('relic hunters') &&
+        (toGroupDirectoryListing(room.snapshot.group.metadata) === 'listed' ||
+            room.snapshot.members.some((member) =>
+                member.principalId === game.session?.clientId && member.status === 'active'
+            ))
+    );
     return (
         <div className="room-list">
             {rooms.map((room) => (

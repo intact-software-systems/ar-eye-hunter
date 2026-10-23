@@ -118,3 +118,23 @@ the code from tab storage and binds the saved room to the principal. Authenticat
 cancellation, and destination changes fence late completions. An invite-only link
 uses `joinCode: null`; the host must first invite the guest's account reference.
 Room entry does not enroll that account in application-owned gameplay.
+
+An unlisted open room uses the same entry owner and a link without a code:
+
+```ts
+const hidden = await rallar.rooms.createAndSwitch({
+    displayName: 'Friends Arena',
+    joinMode: 'open',
+    directoryListing: 'unlisted'
+});
+toRoomEntryUrl(window.location.href, { roomRef: hidden.group, joinCode: null })
+    .fold(showEntryError, renderShareLink);
+
+// Only the listing intent changes; concurrent metadata remains server-owned.
+await rallar.rooms.update({ roomRef: hidden.group, directoryListing: 'listed' });
+await rallar.rooms.update({ roomRef: hidden.group, directoryListing: 'unlisted' });
+```
+
+Anyone with the link can request entry to an unlisted open room. Hiding removes it from the next
+directory read and Quick Join selection, while existing members and application participants remain.
+Use code-protected or invite-only admission when a link alone should not be sufficient.

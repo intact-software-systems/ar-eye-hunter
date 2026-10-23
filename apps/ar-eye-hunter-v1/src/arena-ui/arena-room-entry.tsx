@@ -29,8 +29,8 @@ export function ArenaRoomEntry({ arena }: ArenaRoomEntryProps) {
     };
     const destination = entry.destination?.roomRef.groupId;
     return (
-        <section className="panel stack" aria-label="Private room entry">
-            <h3>Enter a private arena</h3>
+        <section className="panel stack" aria-label="Shared room entry">
+            <h3>Enter a shared arena</h3>
             <ArenaRoomEntryForm
                 reference={reference}
                 setReference={setReference}
@@ -85,10 +85,10 @@ function ArenaRoomEntryForm({ reference, setReference, code, setCode, submit, jo
                 Room code<input value={code} onChange={(event) => setCode(event.target.value)} autoComplete="off" />
             </label>
             <p className="muted">
-                Use the room reference and code from your host, or open their link. Members and invited accounts can
-                leave the code blank.
+                Open the host’s link or enter its room reference. Unlisted rooms need no code; code rooms require one
+                unless you are already a member.
             </p>
-            <button type="submit" disabled={!reference.trim() || joining}>Enter private room</button>
+            <button type="submit" disabled={!reference.trim() || joining}>Enter room</button>
         </form>
     );
 }

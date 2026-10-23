@@ -245,6 +245,7 @@ export interface MutationDescriptorInput {
 }
 
 export function mutationDescriptor(input: MutationDescriptorInput): GroupMutationDescriptor {
+    // Typed inbox builders establish operation/payload identity; ingress validates fields before compute.
     return {
         operation: input.operation,
         scope: input.scope,
@@ -252,7 +253,7 @@ export function mutationDescriptor(input: MutationDescriptorInput): GroupMutatio
         targetPrincipalId: input.targetPrincipalId ?? null,
         sessionId: input.sessionId ?? null,
         request: input.request
-    };
+    } as GroupMutationDescriptor;
 }
 
 export function toDescriptorCommand(
@@ -339,7 +340,7 @@ function toTrustedMutationDescriptor(
             actorPrincipalId: authority.principalId,
             actorSessionId: authority.sessionId
         }
-    };
+    } as GroupMutationDescriptor;
 }
 
 export async function createGroupMutationAuthorityProof(

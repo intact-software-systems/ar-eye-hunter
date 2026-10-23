@@ -1,6 +1,5 @@
 import { computeApplyPlannedLayout } from '../aggregate/compute-apply-planned-layout.ts';
 import {
-    computeCreate,
     computeDirector,
     computeRotateJoinCode,
     computeUpdate
@@ -8,6 +7,7 @@ import {
 import { computeGroupTransportMutation } from '../aggregate/compute-group-transport-mutation.ts';
 import { computeLifecycleTransition } from '../aggregate/compute-lifecycle-transition.ts';
 import { computeUpdateGroupActivationStatus } from '../aggregate/compute-update-group-activation-status.ts';
+import { computeCreate } from '../aggregate/create-initial-group-mutation.ts';
 import { assertGroupMutationAuthority } from '../command-validation/assert-group-mutation-authority.ts';
 import { assertGroupMutationCommand } from '../command-validation/assert-group-mutation-command.ts';
 import type {
