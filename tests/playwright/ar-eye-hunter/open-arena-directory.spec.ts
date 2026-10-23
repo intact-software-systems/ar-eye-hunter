@@ -94,6 +94,45 @@ test('live sign-in exposes ETag, accepts a conditional read, and keeps normal Re
     }
 });
 
+test(
+    'opts into peer latency, keeps unknown rooms usable, and restores ordinary ordering',
+    async ({ page }, testInfo) => {
+        const orders: (string | null)[] = [];
+        await installDirectoryFixture(page, async (route) => {
+            const order = new URL(route.request().url()).searchParams.get('order');
+            orders.push(order);
+            const slow = { ...directoryArena('A slow', false), peerRttMs: order === 'peer-rtt' ? 90 : null };
+            const fast = { ...directoryArena('Z fast', false), peerRttMs: order === 'peer-rtt' ? 20 : null };
+            const unknown = directoryArena('B unknown', false);
+            await route.fulfill({
+                json: {
+                    entries: order === 'peer-rtt' ? [fast, slow, unknown] : [slow, unknown, fast],
+                    nextCursor: null
+                }
+            });
+        });
+        const operations = await signIn(page);
+        await operations.getByRole('button', { name: 'Refresh', exact: true }).click();
+        const preference = operations.getByRole('checkbox', { name: 'Prefer lower peer latency' });
+        await expect(preference).not.toBeChecked();
+        await preference.check();
+        await expect(operations.getByRole('button', { name: /Z fast.*20 ms peer RTT/ })).toBeEnabled();
+        await expect(operations.getByRole('button', { name: /B unknown.*Peer latency unknown/ })).toBeEnabled();
+        await expect(operations.locator('.room-row')).toHaveText([
+            /Z fast/,
+            /A slow/,
+            /B unknown/
+        ]);
+        expect(orders.at(-1)).toBe('peer-rtt');
+        await operations.getByRole('button', { name: /B unknown.*Peer latency unknown/ }).scrollIntoViewIfNeeded();
+        await page.screenshot({ path: testInfo.outputPath('peer-latency-directory.png'), fullPage: true });
+        await preference.uncheck();
+        await expect(operations.locator('.room-row')).toHaveText([/A slow/, /B unknown/, /Z fast/]);
+        await expect(operations.getByText('Peer latency unknown', { exact: false })).toHaveCount(0);
+        expect(orders.at(-1)).toBeNull();
+    }
+);
+
 async function signIn(page: Page) {
     await page.goto('/');
     await expect(page.getByRole('main')).toBeVisible();
@@ -173,6 +212,7 @@ function directoryArena(name: string, isFull: boolean): GroupDirectoryEntry {
         onlineMemberCount: 1,
         maxMembers: 2,
         isFull,
-        lifecycleState: 'forming'
+        lifecycleState: 'forming',
+        peerRttMs: null
     };
 }

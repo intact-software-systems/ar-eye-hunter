@@ -220,46 +220,80 @@ function ArenaMatchControls({ arena, matchRemainingMs }: Pick<ArenaOperationsPro
     );
 }
 
+function ArenaLatencyPreference({ arena }: Pick<ArenaOperationsProps, 'arena'>) {
+    return (
+        <>
+            <label className="directory-latency-preference">
+                <input
+                    type="checkbox"
+                    checked={arena.directoryOrder === 'peer-rtt'}
+                    onChange={(event) =>
+                        void arena.changeDirectoryOrder(event.target.checked ? 'peer-rtt' : 'online-members')}
+                />
+                Prefer lower peer latency
+            </label>
+            {arena.directoryOrder === 'peer-rtt' && (
+                <p className="muted">
+                    Occupancy comes first. Recent peer RTT breaks ties; unmeasured rooms stay available.
+                </p>
+            )}
+        </>
+    );
+}
+
 function ArenaRoomList({ arena }: Pick<ArenaOperationsProps, 'arena'>) {
     const rooms = arena.rooms.filter((room) =>
         room.name.toLowerCase().includes('eye hunter') || room.name === GAME_ROOM_NAME
     );
     return (
-        <div className="room-list">
-            {arena.openRoomsStatus === 'loading' && <p className="muted">Loading open arenas…</p>}
-            {arena.openRoomsStatus === 'ready' && rooms.length === 0 && arena.openRooms.length === 0 && (
-                <p className="muted">Create an arena or join from another browser session.</p>
-            )}
-            {arena.openRoomsStatus === 'error' && (
-                <p className="muted">Could not load open arenas: {arena.openRoomsError}</p>
-            )}
-            {arena.openRoomsStatus !== 'ready' && arena.openRooms.length > 0 && (
-                <p className="muted">Last loaded arenas — refresh to check availability.</p>
-            )}
-            {rooms.map((room) => (
-                <button
-                    type="button"
-                    key={room.roomId}
-                    className={room.roomId === arena.roomId ? 'room-row active' : 'room-row'}
-                    onClick={() => arena.joinRoom(room.roomId)}
-                >
-                    <span>{room.name}</span>
-                    <small>{room.onlineMemberCount} online</small>
-                </button>
-            ))}
-            {arena.openRooms.length > 0 && <p className="muted">Open arenas</p>}
-            {arena.openRooms.map((room) => (
-                <button
-                    type="button"
-                    key={room.groupRef.groupId}
-                    className="room-row"
-                    disabled={room.isFull}
-                    onClick={() => arena.joinRoom(room.groupRef.groupId)}
-                >
-                    <span>{room.displayName}</span>
-                    <small>{room.isFull ? 'Full' : `${room.onlineMemberCount} online · Request to join`}</small>
-                </button>
-            ))}
-        </div>
+        <>
+            <ArenaLatencyPreference arena={arena} />
+            <div className="room-list">
+                {arena.openRoomsStatus === 'loading' && <p className="muted">Loading open arenas…</p>}
+                {arena.openRoomsStatus === 'ready' && rooms.length === 0 && arena.openRooms.length === 0 && (
+                    <p className="muted">Create an arena or join from another browser session.</p>
+                )}
+                {arena.openRoomsStatus === 'error' && (
+                    <p className="muted">Could not load open arenas: {arena.openRoomsError}</p>
+                )}
+                {arena.openRoomsStatus !== 'ready' && arena.openRooms.length > 0 && (
+                    <p className="muted">Last loaded arenas — refresh to check availability.</p>
+                )}
+                {rooms.map((room) => (
+                    <button
+                        type="button"
+                        key={room.roomId}
+                        className={room.roomId === arena.roomId ? 'room-row active' : 'room-row'}
+                        onClick={() => arena.joinRoom(room.roomId)}
+                    >
+                        <span>{room.name}</span>
+                        <small>{room.onlineMemberCount} online</small>
+                    </button>
+                ))}
+                {arena.openRooms.length > 0 && <p className="muted">Open arenas</p>}
+                {arena.openRooms.map((room) => (
+                    <button
+                        type="button"
+                        key={room.groupRef.groupId}
+                        className="room-row"
+                        disabled={room.isFull}
+                        onClick={() => arena.joinRoom(room.groupRef.groupId)}
+                    >
+                        <span>{room.displayName}</span>
+                        <small>
+                            {room.isFull ? 'Full' : `${room.onlineMemberCount} online · Request to join`}
+                            {arena.directoryOrder === 'peer-rtt' && (
+                                <>
+                                    <br />
+                                    {room.peerRttMs === null
+                                        ? 'Peer latency unknown'
+                                        : `${Math.round(room.peerRttMs)} ms peer RTT`}
+                                </>
+                            )}
+                        </small>
+                    </button>
+                ))}
+            </div>
+        </>
     );
 }

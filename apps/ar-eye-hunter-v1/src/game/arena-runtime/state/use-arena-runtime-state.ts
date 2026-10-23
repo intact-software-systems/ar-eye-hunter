@@ -12,7 +12,7 @@ import { readWebSocketTicketBackoffState } from '@shared-web/browser/auth/websoc
 import { rallar, type RallarDirectorStatus, type RallarRoomSummary } from '@shared-web/browser/rallar.ts';
 import type { RallarGameDiagnostics } from '@shared-web/game/mod.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { GroupDirectoryEntry } from '@shared/api/group-directory/group-directory-types.ts';
+import type { GroupDirectoryEntry, GroupDirectoryOrder } from '@shared/api/group-directory/group-directory-types.ts';
 
 import type { AvatarProfile } from '../../avatarProfile.ts';
 import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
@@ -131,6 +131,8 @@ function useArenaDirectoryState() {
     const [openRoomsStatus, setOpenRoomsStatus] = useState<ArenaConnection['openRoomsStatus']>('idle');
     const [openRoomsError, setOpenRoomsError] = useState<string | undefined>();
     const directoryGenerationRef = useRef(0);
+    const [directoryOrder, setDirectoryOrder] = useState<GroupDirectoryOrder>('online-members');
+    const directoryOrderRef = useRef<GroupDirectoryOrder>('online-members');
     const resetOpenRooms = useCallback(() => {
         directoryGenerationRef.current += 1;
         setOpenRooms([]);
@@ -145,6 +147,9 @@ function useArenaDirectoryState() {
         openRoomsStatus,
         openRoomsError,
         directoryGenerationRef,
+        directoryOrder,
+        directoryOrderRef,
+        setDirectoryOrder,
         setOpenRooms,
         setOpenRoomsStatus,
         setOpenRoomsError,

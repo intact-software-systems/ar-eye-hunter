@@ -410,6 +410,49 @@
       }
     },
     {
+      "name": "unknownPeerLatencyKeepsBothGamesDiscoverable",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true&kind=room&order=peer-rtt",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "entries": [
+            {
+              "groupRef": {
+                "groupId": "{alphaId}"
+              },
+              "joinMode": "open",
+              "maxMembers": "integer",
+              "isFull": false,
+              "displayName": "AR Eye Hunter Arena {runId}",
+              "peerRttMs": null
+            },
+            {
+              "groupRef": {
+                "groupId": "{betaId}"
+              },
+              "joinMode": "open",
+              "maxMembers": "integer",
+              "isFull": false,
+              "displayName": "Relic Hunters Expedition {runId}",
+              "lifecycleState": "forming",
+              "peerRttMs": null
+            }
+          ],
+          "nextCursor": null
+        }
+      }
+    },
+    {
       "name": "nameFilterIsCaseInsensitive",
       "type": "http",
       "connection": "primary",
@@ -523,6 +566,52 @@
             }
           ],
           "nextCursor": "string"
+        }
+      }
+    },
+    {
+      "name": "rejectUnknownLatencyOrder",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?order=nearest",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "comparison": "compatible-complete",
+        "body": {
+          "code": "invalid-group-directory-query"
+        },
+        "headers": {
+          "cache-control": "no-store"
+        }
+      }
+    },
+    {
+      "name": "rejectOccupancyCursorForLatencyOrder",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?order=peer-rtt&cursor={firstCursor}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "comparison": "compatible-complete",
+        "body": {
+          "code": "invalid-group-directory-query"
+        },
+        "headers": {
+          "cache-control": "no-store"
         }
       }
     },

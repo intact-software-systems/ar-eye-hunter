@@ -2,12 +2,16 @@ import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
 import { authenticationRequired } from '@shared-server/http/request-auth-service.ts';
+import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
 
 import type { GroupDirectoryPage } from '@shared/api/group-directory/group-directory-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
+import { FakeRuntimeStateRepository } from '../../../../packages/tests/shared-server/runtime-state/test-support/fake-runtime-state-repository.ts';
+
 import { decodeApiV1Configuration } from '../../src/configuration/decode-api-v1-configuration.ts';
 import { createGroupStateRouteAuthorization } from '../../src/group-state/group-state-route-authorization.ts';
+import type { GroupStateRouteDependencies } from '../../src/group-state/group-state-route-contracts.ts';
 import { registerGroupStateReadRoutes } from '../../src/group-state/register-group-state-read-routes.ts';
 import { installApiHttpMiddleware } from '../../src/services/install-api-http-middleware.ts';
 import { validDecodeApiV1ConfigurationInput } from '../configuration/api-v1-configuration-test-fixture.ts';
@@ -30,6 +34,8 @@ interface ReadDirectoryOptions {
     readonly authenticated?: boolean;
     readonly principalId?: string;
     readonly groupDefaultMaxMembers?: number | null;
+    readonly rtcRttRepository?: GroupStateRouteDependencies['rtcRttRepository'];
+    readonly nowEpochMs?: number;
 }
 
 function openSnapshot(
@@ -67,6 +73,8 @@ function readDirectory(
             listEventPage: () => Promise.resolve({ events: [], hasMore: false })
         },
         groupDefaultMaxMembers: options.groupDefaultMaxMembers ?? null,
+        rtcRttRepository: options.rtcRttRepository,
+        nowEpochMs: options.nowEpochMs === undefined ? undefined : () => options.nowEpochMs!,
         requireApiAuthSession: () =>
             options.authenticated === false
                 ? Promise.reject(authenticationRequired('Unauthorized: Missing bearer token'))
@@ -105,7 +113,8 @@ Deno.test('group directory lists open groups the caller is not a member of as en
         'lifecycleState',
         'maxMembers',
         'memberCount',
-        'onlineMemberCount'
+        'onlineMemberCount',
+        'peerRttMs'
     ]);
 });
 
@@ -180,7 +189,7 @@ Deno.test('group directory pages with a keyset cursor and a limit', async () => 
 });
 
 Deno.test('group directory rejects malformed query parameters', async () => {
-    for (const query of ['limit=0', 'limit=201', 'limit=x', 'kind=lobby', 'includeEmpty=1', 'cursor=!!!']) {
+    for (const query of ['limit=0', 'limit=201', 'limit=x', 'kind=lobby', 'includeEmpty=1', 'cursor=!!!', 'order=nearest']) {
         const response = await readDirectory([], { path: `${DIRECTORY_PATH}?${query}` });
         const body = await response.json() as { code: string; };
 
@@ -188,6 +197,135 @@ Deno.test('group directory rejects malformed query parameters', async () => {
         assert.equal(body.code, 'invalid-group-directory-query', query);
     }
 });
+
+Deno.test('group directory reads RTT only for the authenticated session when opted in', async () => {
+    const reads: (readonly string[])[] = [];
+    const rtcRttRepository: GroupStateRouteDependencies['rtcRttRepository'] = {
+        listMeasurementEntriesForEndpoints: (sessionIds) => {
+            reads.push(sessionIds);
+            return Promise.resolve([]);
+        }
+    };
+    const snapshots = [openSnapshot('bobs-arena', ['bob'])];
+    await readDirectory(snapshots, { rtcRttRepository });
+    await readDirectory(snapshots, { rtcRttRepository, strict: false, path: `${DIRECTORY_PATH}?order=peer-rtt` });
+    assert.deepEqual(reads, []);
+
+    const page = await readPage(
+        await readDirectory(snapshots, {
+            rtcRttRepository,
+            path: `${DIRECTORY_PATH}?order=peer-rtt&sessionId=bob-session`
+        })
+    );
+    assert.deepEqual(reads, [['alice-session']]);
+    assert.equal(page.entries[0].peerRttMs, null);
+});
+
+Deno.test('group directory returns measured peer RTT and revalidates on changed or expired evidence', async () => {
+    const nowEpochMs = 100_000;
+    let repositoryNow = nowEpochMs;
+    const runtime = new FakeRuntimeStateRepository();
+    const rtcRttRepository = new RtcRttRepository(runtime, { now: () => repositoryNow });
+    const snapshot = onlinePeerRoom('measured', 'bob');
+    const measurement = {
+        sessionIdFrom: 'alice-session',
+        sessionIdTo: 'bob-session',
+        rttMs: 20,
+        createdAtEpochMs: nowEpochMs - 1_000,
+        version: 1
+    };
+    assert.equal(await rtcRttRepository.putMeasurementIfNewer(measurement, nowEpochMs + 10_000), true);
+    const options = { rtcRttRepository, nowEpochMs, path: `${DIRECTORY_PATH}?order=peer-rtt` };
+    const first = await readDirectory([snapshot], options);
+    const validator = first.headers.get('etag');
+    assert.equal(first.status, 200);
+    assert.equal((await readPage(first)).entries[0].peerRttMs, 20);
+    assert.ok(validator);
+
+    const unchanged = await readDirectory([snapshot], { ...options, headers: { 'if-none-match': validator } });
+    assert.equal(unchanged.status, 304);
+    assert.equal(await rtcRttRepository.putMeasurementIfNewer({ ...measurement, rttMs: 40, version: 2 }, nowEpochMs + 10_000), true);
+    const changed = await readDirectory([snapshot], { ...options, headers: { 'if-none-match': validator } });
+    assert.equal(changed.status, 200);
+    assert.notEqual(changed.headers.get('etag'), validator);
+    assert.equal((await readPage(changed)).entries[0].peerRttMs, 40);
+
+    const otherSession = await readDirectory([snapshot], { ...options, principalId: 'carol' });
+    assert.equal((await readPage(otherSession)).entries[0].peerRttMs, null);
+    const hidden = await readDirectory([{ ...snapshot, group: { ...snapshot.group, joinMode: 'invite-only' } }], options);
+    assert.deepEqual((await readPage(hidden)).entries, []);
+
+    repositoryNow += 10_000;
+    const expired = await readDirectory([snapshot], { ...options, nowEpochMs: repositoryNow });
+    assert.equal((await readPage(expired)).entries[0].peerRttMs, null);
+});
+
+Deno.test('group directory reports an RTT storage outage as an uncached server error', async () => {
+    const response = await readDirectory([openSnapshot('bobs-arena', ['bob'])], {
+        path: `${DIRECTORY_PATH}?order=peer-rtt`,
+        headers: { 'if-none-match': '*' },
+        rtcRttRepository: {
+            listMeasurementEntriesForEndpoints: () => Promise.reject(new Error('database connection details'))
+        }
+    });
+
+    assert.equal(response.status, 500);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.equal(response.headers.get('etag'), null);
+    assert.deepEqual(await response.json(), {
+        error: 'Directory latency evidence is unavailable',
+        code: 'directory-latency-unavailable'
+    });
+});
+Deno.test('group directory fails closed on corrupt persisted RTT instead of reporting unknown', async () => {
+    const runtime = new FakeRuntimeStateRepository();
+    const rtcRttRepository = new RtcRttRepository(runtime, { now: () => 100_000 });
+    await rtcRttRepository.putMeasurementIfNewer({
+        sessionIdFrom: 'alice-session',
+        sessionIdTo: 'bob-session',
+        rttMs: 20,
+        createdAtEpochMs: 99_000,
+        version: 1
+    }, 110_000);
+    for (const [key, entry] of runtime.data) {
+        runtime.data.set(key, { ...entry, value: '{"invalid":"measurement"}' });
+    }
+    const response = await readDirectory([onlinePeerRoom('measured', 'bob')], {
+        rtcRttRepository,
+        nowEpochMs: 100_000,
+        path: `${DIRECTORY_PATH}?order=peer-rtt`
+    });
+    assert.equal(response.status, 500);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.equal(response.headers.get('etag'), null);
+    assert.deepEqual(await response.json(), {
+        error: 'Directory latency evidence is unavailable',
+        code: 'rtc-topology-repository-invariant-corruption'
+    });
+});
+
+function onlinePeerRoom(groupId: string, principalId: string): GroupSnapshot {
+    const snapshot = openSnapshot(groupId, [principalId]);
+    return {
+        ...snapshot,
+        activeSessions: [{
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            groupId,
+            principalId,
+            sessionId: `${principalId}-session`,
+            generationId: 'generation-1',
+            generationVersion: 1,
+            connectionGenerationId: 'connection-1',
+            connectedAtEpochMs: 1,
+            lastHeartbeatAtEpochMs: 99_000,
+            expiresAtEpochMs: 200_000,
+            status: 'active',
+            disconnectedAtEpochMs: null,
+            disconnectReason: null
+        }]
+    };
+}
 
 Deno.test('group directory revalidates with an ETag and answers 304 when nothing changed', async () => {
     const snapshots = [openSnapshot('bobs-arena', ['bob'])];

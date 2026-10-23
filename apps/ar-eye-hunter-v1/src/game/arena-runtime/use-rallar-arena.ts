@@ -269,6 +269,8 @@ function useArenaConnectionActions(
         setOpenRoomsError: state.setOpenRoomsError,
         setOpenRoomsStatus: state.setOpenRoomsStatus,
         directoryGenerationRef: state.directoryGenerationRef,
+        directoryOrderRef: state.directoryOrderRef,
+        setDirectoryOrder: state.setDirectoryOrder,
         setRoomId: state.setRoomId,
         setRooms: state.setRooms,
         setSession: state.setSession
@@ -347,6 +349,7 @@ function readArenaConnectionView(input: ArenaConnectionViewInput): ArenaConnecti
         openRooms: state.openRooms,
         openRoomsError: state.openRoomsError,
         openRoomsStatus: state.openRoomsStatus,
+        directoryOrder: state.directoryOrder,
         directorStatus: state.directorStatus,
         rtcLanes: state.rtcLanes,
         directorAttempt: state.directorAttempt,

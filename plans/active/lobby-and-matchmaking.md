@@ -20,8 +20,9 @@ Across these slices, add no legacy path, duplicated implementation, or migration
 existing repository patterns and keep code, tests, documentation, and plans consistent. Each slice
 uses test-driven development and one current PR; wait for the maintainer to merge it before starting
 the next slice unless the maintainer explicitly requests a stack. PR #696 delivered the slice 0
-foundation and PR #697 delivered Quick Join. The maintainer's current request selects slice 2 from
-main; its [implementation plan](lobby-latency-ranked-discovery.md) defines the next two increments.
+foundation and PR #697 delivered Quick Join. [PR #699](https://github.com/intact-software-systems/ar-eye-hunter/pull/699)
+implements slice 2 from main using the maintainer's selected existing-measurement scope. Wait for
+the maintainer's merge before planning the next slice.
 
 ## Current foundation
 
@@ -99,13 +100,13 @@ all-or-none admission decisions before it becomes a platform promise.
 
 ## Delivery priorities
 
-| Priority    | Outcomes                                                                                              |
-| ----------- | ----------------------------------------------------------------------------------------------------- |
-| Current     | Slice 2 opt-in latency-ranked discovery, grounded in actual transport evidence from AR Eye and Relic. |
-| Next        | Share links/codes (4); visibility choices (5); reconnect/recent-room behavior (6).                    |
-| Then        | Automatic directory freshness (7), introducing push when the experience needs it.                     |
-| Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them.           |
-| Later       | Scheduled rooms (8) and a separate tournament capability.                                             |
+| Priority    | Outcomes                                                                                                     |
+| ----------- | ------------------------------------------------------------------------------------------------------------ |
+| Current     | Slice 2 opt-in peer RTT ranking using existing measurements, with unknown results where coverage is missing. |
+| Next        | Share links/codes (4); visibility choices (5); reconnect/recent-room behavior (6).                           |
+| Then        | Automatic directory freshness (7), introducing push when the experience needs it.                            |
+| Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them.                  |
+| Later       | Scheduled rooms (8) and a separate tournament capability.                                                    |
 
 Relic validation is a constraint throughout, not a dependency postponed to slice 9. Operator
 reliability work may ship independently where a concrete operational need warrants it.
@@ -162,10 +163,29 @@ owns concurrency, browser, performance, and review evidence.
 
 ## Slice 2: latency-ranked discovery
 
-First establish whether peer, director, or authoritative-server latency predicts the application's
-experience. Reuse existing RTT evidence only when it measures that path. Cold-start and missing
-coordinates remain usable unknowns, never zero latency or automatic exclusion. Ranking is opt-in and
-must show participation benefit before it displaces simpler eligibility and occupancy decisions.
+[PR #699](https://github.com/intact-software-systems/ar-eye-hunter/pull/699) adds
+`rallar.rooms.directory({ order: 'peer-rtt' })`. Occupancy remains first; known peer RTT then sorts
+ascending, unknown follows known, and group ID breaks remaining ties. Default ordering and Quick
+Join selection remain occupancy then group ID. The default directory read performs no RTT lookup.
+
+The mandatory `peerRttMs: number | null` is the slowest existing direct RTT from the authenticated
+session to every live room session. Complete coverage is required, with samples less than 60 seconds
+old and not future-dated. Missing or partial coverage, expiry, a new caller session, or no live peers
+produces unknown. Existing reporting admission and degree bounds remain in force. No pre-join probes,
+coordinate inference, migration, or new authoritative write is introduced. A storage outage or corrupt
+measurement fails the opted-in read with an uncached server error rather than accepted unknown data.
+
+AR Eye exposes an explicit preference and labels measured and unknown rooms. Changing order starts
+new pagination; old requests and replaced sessions cannot publish results. Unknown rooms remain
+available through the ordinary admission action. The shared API and black-box directory recipe also
+cover Relic-shaped rooms; each game retains its own activity participation rules.
+
+Peer RTT describes RTC peer traffic. AR Eye's director can fall back to WebSocket; Relic's
+authoritative commands use WebSocket. This signal does not measure either game's command completion.
+Seeded measurement and browser tests establish ordering, coverage, freshness, and recovery behavior,
+not network prediction quality or participation improvement. Such evidence is still required before
+latency displaces simpler eligibility and occupancy decisions. The PR owns detailed validation and
+review evidence; the completed implementation plan is removed with this delivery.
 
 ## Slice 3: spectating
 

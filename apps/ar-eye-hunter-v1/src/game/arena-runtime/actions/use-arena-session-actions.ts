@@ -4,7 +4,7 @@ import type { Dispatch, RefObject, SetStateAction } from 'react';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { RallarDirectorStatus, RallarRoomSummary } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { GroupDirectoryEntry } from '@shared/api/group-directory/group-directory-types.ts';
+import type { GroupDirectoryEntry, GroupDirectoryOrder } from '@shared/api/group-directory/group-directory-types.ts';
 import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
 import { createRallarAiFunnyRoomName, createRallarAiRoomNameSeed } from '@shared/rallar-ai/mod.ts';
 
@@ -33,6 +33,8 @@ interface ArenaSessionActionsInput {
     readonly rooms: readonly RallarRoomSummary[];
     readonly sessionRef: RefObject<AuthSession | undefined>;
     readonly directoryGenerationRef: RefObject<number>;
+    readonly directoryOrderRef: RefObject<GroupDirectoryOrder>;
+    readonly setDirectoryOrder: Dispatch<SetStateAction<GroupDirectoryOrder>>;
     readonly setConnectionState: Dispatch<SetStateAction<ArenaConnectionState>>;
     readonly setError: Dispatch<SetStateAction<string | undefined>>;
     readonly setRoomId: Dispatch<SetStateAction<string | undefined>>;
@@ -58,6 +60,7 @@ export function useArenaSessionActions(
     | 'register'
     | 'logout'
     | 'refreshRooms'
+    | 'changeDirectoryOrder'
     | 'createArenaRoom'
     | 'quickJoinArenaRoom'
     | 'joinRoom'
@@ -141,7 +144,10 @@ async function authenticateArena(
     }
 }
 
-async function readOpenArenaDirectory(isCurrent: () => boolean): Promise<readonly GroupDirectoryEntry[] | undefined> {
+async function readOpenArenaDirectory(
+    order: GroupDirectoryOrder,
+    isCurrent: () => boolean
+): Promise<readonly GroupDirectoryEntry[] | undefined> {
     const entries = new Map<string, GroupDirectoryEntry>();
     let cursor: string | null = null;
     do {
@@ -149,6 +155,7 @@ async function readOpenArenaDirectory(isCurrent: () => boolean): Promise<readonl
             kind: 'room',
             q: OPEN_ARENA_DIRECTORY_QUERY,
             limit: OPEN_ARENA_DIRECTORY_PAGE_SIZE,
+            ...(order === 'online-members' ? {} : { order }),
             ...(cursor === null ? {} : { cursor })
         });
         if (!isCurrent()) {
@@ -176,6 +183,7 @@ async function refreshArenaRooms(input: ArenaSessionActionsInput): Promise<void>
         return;
     }
     const generation = ++directoryGenerationRef.current;
+    const order = input.directoryOrderRef.current;
     const isCurrent = () =>
         directoryGenerationRef.current === generation &&
         sessionRef.current?.sessionId === session.sessionId && sessionRef.current?.clientId === session.clientId;
@@ -188,7 +196,7 @@ async function refreshArenaRooms(input: ArenaSessionActionsInput): Promise<void>
         }
         setRooms(state.rooms);
         setRoomId(state.currentRoomId);
-        const openRooms = await readOpenArenaDirectory(isCurrent);
+        const openRooms = await readOpenArenaDirectory(order, isCurrent);
         if (!isCurrent() || !openRooms) {
             return;
         }
@@ -206,16 +214,29 @@ async function refreshArenaRooms(input: ArenaSessionActionsInput): Promise<void>
 
 function useArenaRoomActions(
     input: ArenaSessionActionsInput
-): Pick<ArenaConnection, 'refreshRooms' | 'createArenaRoom' | 'quickJoinArenaRoom' | 'joinRoom'> {
+): Pick<
+    ArenaConnection,
+    'refreshRooms' | 'changeDirectoryOrder' | 'createArenaRoom' | 'quickJoinArenaRoom' | 'joinRoom'
+> {
     const refreshRooms = useCallback(() => refreshArenaRooms(input), [
         input.sessionRef,
         input.directoryGenerationRef,
+        input.directoryOrderRef,
         input.setRooms,
         input.setRoomId,
         input.setOpenRooms,
         input.setOpenRoomsError,
         input.setOpenRoomsStatus
     ]);
+    const changeDirectoryOrder = useCallback(async (order: GroupDirectoryOrder) => {
+        if (input.directoryOrderRef.current === order) {
+            return;
+        }
+        input.directoryOrderRef.current = order;
+        input.setDirectoryOrder(order);
+        input.setOpenRooms([]);
+        await refreshRooms();
+    }, [input.directoryOrderRef, input.setDirectoryOrder, input.setOpenRooms, refreshRooms]);
     const createArenaRoom = useCallback(() => createAndSelectArenaRoom(input, refreshRooms), [
         input.sessionRef,
         input.setRoomId,
@@ -235,7 +256,7 @@ function useArenaRoomActions(
         input.clearRoomScopedArenaState,
         refreshRooms
     ]);
-    return { refreshRooms, createArenaRoom, quickJoinArenaRoom, joinRoom };
+    return { refreshRooms, changeDirectoryOrder, createArenaRoom, quickJoinArenaRoom, joinRoom };
 }
 
 async function quickJoinArena(

@@ -33,6 +33,7 @@ export interface GroupStateRouteTestRuntimeInput {
     readonly groupDefaultMaxMembers?: number | null;
     readonly nowEpochMs?: () => number;
     readonly groupService?: Partial<GroupStateRouteService>;
+    readonly rtcRttRepository?: GroupStateRouteDependencies['rtcRttRepository'];
     readonly requireApiAuthSession?: GroupStateRouteDependencies[
         'requireApiAuthSession'
     ];
@@ -93,6 +94,7 @@ export function createGroupStateRouteTestDependencies(
     const requireApiAuthSession = input.requireApiAuthSession ?? (() => Promise.resolve(session));
     return {
         groupStateService: createGroupStateRouteService(input.groupService),
+        rtcRttRepository: input.rtcRttRepository ?? { listMeasurementEntriesForEndpoints: () => Promise.resolve([]) },
         requireApiAuthSession,
         processGroupAppInbox: input.processGroupAppInbox ?? defaultProcessGroupAppInbox,
         processQuickJoin: input.processQuickJoin ?? (() => Promise.reject(new Error('Unexpected Quick Join mutation'))),
@@ -433,56 +435,25 @@ function createGroupStateRouteMemberWithStatus(
         principalId,
         role: 'member',
         updated: auditStamp,
+        joined: auditStamp,
+        left: null,
+        removed: null,
+        banned: null,
         invitedByPrincipalId: null,
         invitationExpiresAtEpochMs: null
     } as const;
     switch (status) {
         case 'invited':
         case 'pending':
-            return {
-                ...base,
-                status,
-                joined: null,
-                left: null,
-                removed: null,
-                banned: null
-            };
+            return { ...base, status, joined: null };
         case 'active':
-            return {
-                ...base,
-                status,
-                joined: auditStamp,
-                left: null,
-                removed: null,
-                banned: null
-            };
+            return { ...base, status };
         case 'left':
-            return {
-                ...base,
-                status,
-                joined: auditStamp,
-                left: auditStamp,
-                removed: null,
-                banned: null
-            };
+            return { ...base, status, left: auditStamp };
         case 'removed':
-            return {
-                ...base,
-                status,
-                joined: auditStamp,
-                left: null,
-                removed: auditStamp,
-                banned: null
-            };
+            return { ...base, status, removed: auditStamp };
         case 'banned':
-            return {
-                ...base,
-                status,
-                joined: auditStamp,
-                left: null,
-                removed: null,
-                banned: auditStamp
-            };
+            return { ...base, status, banned: auditStamp };
     }
 }
 

@@ -11,6 +11,7 @@ import type { GroupStateInboxService } from '@shared-server/rallar-system/group-
 import type {
     CachedGroupStateService
 } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
+import type { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
 import type {
     StateSyncCacheHydrationInput,
     StateSyncCacheHydrationResult
@@ -316,6 +317,7 @@ export interface GroupStateRouteScopeContext {
 
 export interface GroupStateRouteDependencies {
     readonly groupStateService: GroupStateRouteService;
+    readonly rtcRttRepository: Pick<RtcRttRepository, 'listMeasurementEntriesForEndpoints'>;
     readonly requireApiAuthSession: (
         request: GroupStateRouteRequest
     ) => Promise<GroupStateRouteAuthSession>;

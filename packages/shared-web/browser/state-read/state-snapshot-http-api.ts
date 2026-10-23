@@ -66,6 +66,9 @@ function toGroupDirectoryQueryString(request: GroupDirectoryRequest): string {
     if (request.includeEmpty !== undefined) {
         query.set('includeEmpty', String(request.includeEmpty));
     }
+    if (request.order !== undefined) {
+        query.set('order', request.order);
+    }
     const serialized = query.toString();
     return serialized.length > 0 ? `?${serialized}` : '';
 }
