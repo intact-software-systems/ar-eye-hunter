@@ -54,6 +54,7 @@ describe('V1d growth surface classification', () => {
             Array.from({ length: 151 }, (_value, sample) => ({
                 atEpochMs: windowStartedAtEpochMs + sample * 30_000,
                 agentId: null,
+                serviceId: null,
                 value: {
                     resourceInbox: {
                         total: 1_000 + sample * 10,
@@ -72,6 +73,8 @@ describe('V1d growth surface classification', () => {
                         runner: 'passed',
                         manifestStartedAtEpochMs: windowStartedAtEpochMs,
                         manifestCompletedAtEpochMs: windowStartedAtEpochMs + 4_500_000,
+                        manifestAgents: 15,
+                        churnStarted: 1,
                         churnPassed: 1,
                         churnFailedRunIds: []
                     }
@@ -89,6 +92,79 @@ describe('V1d growth surface classification', () => {
 
         expect(computeOutcome(() => 0)).toBe('pass');
         expect(computeOutcome((sample) => sample)).toBe('fail');
+    });
+
+    // An account is registered before its principal connects, so mid-iteration the auth users run ahead of the
+    // principals; what bounds them is the accounts the run registered.
+    it('bounds the auth users by the accounts the run registered, and the client ids by the usernames', () => {
+        const authUsers = V1D_GROWTH_SURFACES.find((surface) => surface.readers.some((reader) => reader.path.includes('auth-users:by-username')))!;
+        const windowStartedAtEpochMs = 1_800_000_000_000;
+        const toWorkload = (churnStarted: number) => ({
+            runner: 'passed' as const,
+            manifestStartedAtEpochMs: windowStartedAtEpochMs,
+            manifestCompletedAtEpochMs: windowStartedAtEpochMs + 4_500_000,
+            manifestAgents: 15,
+            churnStarted,
+            churnPassed: churnStarted,
+            churnFailedRunIds: []
+        });
+        // One iteration every 5 minutes registers its 100 accounts; the sample at :30 of each catches 5 not yet
+        // connected, and `clientIdsAhead` adds client-id rows no username has.
+        const toSamples = (clientIdsAhead: number) =>
+            Array.from({ length: 151 }, (_value, sample) => {
+                const iterations = Math.min(14, Math.floor(sample / 10) + 1);
+                const usernames = 15 + iterations * 100;
+                return {
+                    atEpochMs: windowStartedAtEpochMs + sample * 30_000,
+                    agentId: null,
+                    serviceId: null,
+                    value: {
+                        runtimeState: {
+                            byNamespace: {
+                                'auth-users:by-username': usernames,
+                                'auth-users:by-client-id': usernames + (sample === 100 ? clientIdsAhead : 0),
+                                'client-state:principals': usernames - (sample % 10 === 1 ? 5 : 0)
+                            }
+                        }
+                    } satisfies ApiJsonValue
+                };
+            });
+        const computeOutcomes = (churnStarted: number, clientIdsAhead: number) =>
+            computeV1dGrowthVerdict({
+                surveyedSurfaceIds: [authUsers.id],
+                surfaces: [authUsers],
+                run: { windowStartedAtEpochMs, workload: toWorkload(churnStarted) },
+                samples: {
+                    postgres: toSamples(clientIdsAhead),
+                    'admin-system': [],
+                    'admin-queues': [],
+                    'admin-realtime': [],
+                    'api-heap': [],
+                    'process-rss': [],
+                    'browser-stats': []
+                }
+            }).rows.filter((row) => row.surfaceId === authUsers.id).map((row) => row.outcome);
+
+        expect(computeOutcomes(14, 0)).toEqual(['pass', 'pass']);
+        expect(computeOutcomes(12, 0)).toEqual(['fail', 'fail']);
+        expect(computeOutcomes(14, 1)).toEqual(['pass', 'fail']);
+    });
+
+    // A durable outbound pair keeps a message's rows until its deadline when that is later than the row ttl, and a
+    // WS_OUTBOX message's deadline is a day: the proof's probe found every sent, owner and ordering row stamped 24 h.
+    it('bounds the server outbound admission rows by the day their WS_OUTBOX messages live, the inbound by the hour', () => {
+        const toClassification = (namespace: string) =>
+            V1D_GROWTH_SURFACES.find((surface) => surface.readers.some((reader) => reader.path.includes(namespace)))?.classification;
+
+        expect(toClassification('server-ws-qbox:*:outbound:admission')).toEqual({
+            growthClass: 'ttl-beyond-run',
+            ttlMs: 86_400_000
+        });
+        expect(toClassification('server-ws-qbox:*:inbound:admission')).toEqual({
+            growthClass: 'ttl-within-run',
+            ttlMs: 3_600_000,
+            sweepMs: 60_000
+        });
     });
 
     it('bounds a page\'s delivered markers at 256 per inbound store across its two stores', () => {

@@ -81,16 +81,23 @@ Manifest 23 is the workload of the local ALM growth proof. It streams for 78
 minutes so traffic covers the proof's whole 75-minute window, at 2 Hz because
 agents refuse an `rtc.stream` above 10,000 frames (78 minutes at 2 Hz is
 9,360). The script creates and migrates a fresh `v1d_growth_*` database on the
-dev Postgres container, launches the API (timing logs and `--expose-gc` on,
-every retention at its committed default), the control server, the headless SPA
-and one worker with fixed agent credentials and the browser census on every
-30 s, drives manifest 23 and loops the medium-scale churn recipes beside it, and
-samples the database, the admin reads, process memory and the agents' stats
-every 30 s. After the window it waits for the manifest to finish, records the
-runner's outcome and the churn pass and fail counts in `run.json` (the verdict
-fails without a passed manifest and a clean churn loop), stops everything, drops
-the database and writes `verdict.md` from `write-v1d-growth-verdict.ts`. A
-75-minute run directory takes about 3 GB. It is a manual run.
+dev Postgres container, launches three API processes on the one database as the
+medium-scale gate runs them (timing logs and `--expose-gc` on, every retention
+at its committed default), the control server, the headless SPA and one worker
+with fixed agent credentials and the browser census on every 30 s, drives
+manifest 23 against the first API and loops the medium-scale churn recipes
+through all three beside it, and samples the database, the admin reads, process
+memory and the agents' stats every 30 s. Each API process's forced-GC heap
+samples go to `samples/api-heap.jsonl`, judged per process, and its console
+lines to `api-<n>.log`; its other timing lines are dropped. After the window it
+waits for the manifest to finish, records the runner's outcome, the churn
+iterations started, passed and failed and the manifest's agents in `run.json`
+(the verdict fails without a passed manifest and a clean churn loop), stops
+everything, drops the database and writes `verdict.md` from
+`write-v1d-growth-verdict.ts`. A 75-minute run directory takes about 4.2 GB
+(proof run 2 without its timing log: control-server storage 1.9 GB, world-fleet
+artefacts 2.0 GB, churn artefacts 0.2 GB). It is a manual run; launch it from a
+terminal whose Chromium can connect WebRTC on the local network.
 `tests/manual-suites.json` claims only test files, so its entry lives here, in
 the same fields:
 

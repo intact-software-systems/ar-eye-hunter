@@ -32,7 +32,8 @@ export function toV1dGrowthVerdictMarkdown(input: V1dGrowthVerdictDocumentInput)
         toWorkloadLine(verdict),
         ...verdict.workloadIssues.map((issue) => `- ${issue}`),
         '',
-        'The slope is the last 15 minutes; everything after the 10-minute warm-up for a heap reading; the whole run for ' +
+        'The slope is the last 15 minutes; everything after the 10-minute warm-up for a heap reading, of its 5-minute ' +
+        'bucket medians for a page heap, whose max is its raw peak and not judged; the whole run for ' +
         'a durable, declared or unbounded reading. A declared reading is an append-only history R3 declares: reported, ' +
         'not judged. The RTC workload orders few ALM tracks, so the delivered-marker readings do not stress their caps.',
         ...(verdict.followUps.length === 0

@@ -1,4 +1,5 @@
-import type { V1dGrowthPlateau, V1dGrowthSeriesPoint } from './v1d-growth-series.ts';
+import type { V1dGrowthAgentReading, V1dGrowthPlateau, V1dGrowthSeriesPoint } from './v1d-growth-series.ts';
+import type { V1dGrowthWorkload } from './v1d-growth-workload.ts';
 
 /**
  * `declared` is a history R3 declares and reports: never passed or failed. `unbounded-unexercised` is an unbounded
@@ -18,10 +19,11 @@ export interface V1dGrowthAssessment {
     readonly bound: string;
     readonly firstPlateau: V1dGrowthPlateau | null;
     /**
-     * The slope the predicate read: the last 15 minutes; everything after the warm-up for the heap; the whole run for
-     * a durable, declared or unbounded surface.
+     * The slope the predicate read: the last 15 minutes; everything after the warm-up for the heap, of its bucket
+     * medians for a page heap; the whole run for a durable, declared or unbounded surface.
      */
     readonly slopePerHour: number | null;
+    /** The largest reading; a page heap's raw peak, reported beside its medians and not judged. */
     readonly max: number | null;
     readonly outcome: V1dGrowthOutcome;
     readonly reason: string;
@@ -29,10 +31,16 @@ export interface V1dGrowthAssessment {
 
 export interface V1dGrowthSeriesInput {
     readonly series: readonly V1dGrowthSeriesPoint[];
+    /** Each browser agent's own readings of a heap surface; empty for every other class and source. */
+    readonly agentReadings: readonly V1dGrowthAgentReading[];
     /** The entity counts a durable surface grows with, read from the same samples; empty for every other class. */
     readonly entitySeries: readonly V1dGrowthSeriesPoint[];
+    /** The reading a durable surface counting registrations may not exceed; empty for every other class. */
+    readonly ceilingSeries: readonly V1dGrowthSeriesPoint[];
     /** The reading's rows stamped never to expire; empty where the store stamps none. */
     readonly neverExpiringSeries: readonly V1dGrowthSeriesPoint[];
+    /** What the run's workload did, which counts the accounts it registered; null when the run recorded none. */
+    readonly workload: V1dGrowthWorkload | null;
 }
 
 export function toV1dGrowthNoData(bound: string): V1dGrowthAssessment {

@@ -26,6 +26,8 @@ const COMPLETED_RUN: V1dGrowthRun = {
         runner: 'passed',
         manifestStartedAtEpochMs: WINDOW_STARTED_AT_EPOCH_MS + 20_000,
         manifestCompletedAtEpochMs: WINDOW_STARTED_AT_EPOCH_MS + 4_740_000,
+        manifestAgents: 15,
+        churnStarted: 30,
         churnPassed: 30,
         churnFailedRunIds: []
     }
@@ -33,10 +35,25 @@ const COMPLETED_RUN: V1dGrowthRun = {
 const MINUTE_MS = 60_000;
 const SAMPLE_INTERVAL_MS = 30_000;
 const MIB = 1_048_576;
+const MB = 1_000_000;
 const POSTGRES_READER: V1dGrowthReader = { source: 'postgres', path: ['tables', 'surface_under_test'], absent: 'zero', neverExpiringPath: null };
 const HEAP_READER: V1dGrowthReader = { source: 'api-heap', path: ['heapUsed'], absent: 'no-reading', neverExpiringPath: null };
+const PAGE_HEAP_READER: V1dGrowthReader = {
+    source: 'browser-stats',
+    path: ['browser', 'pageHeap', 'usedJSHeapSize'],
+    absent: 'no-reading',
+    neverExpiringPath: null
+};
 
 function toPoints(
+    minutes: number,
+    valueAt: (elapsedMinutes: number) => ApiJsonValue
+): readonly V1dGrowthSamplePoint[] {
+    return toReporterPoints({ agentId: null, serviceId: null }, minutes, valueAt);
+}
+
+function toReporterPoints(
+    reporter: Pick<V1dGrowthSamplePoint, 'agentId' | 'serviceId'>,
     minutes: number,
     valueAt: (elapsedMinutes: number) => ApiJsonValue
 ): readonly V1dGrowthSamplePoint[] {
@@ -45,10 +62,26 @@ function toPoints(
         const elapsedMs = index * SAMPLE_INTERVAL_MS;
         return {
             atEpochMs: WINDOW_STARTED_AT_EPOCH_MS + elapsedMs,
-            agentId: null,
+            ...reporter,
             value: valueAt(elapsedMs / MINUTE_MS)
         };
     });
+}
+
+/** Three agents whose page heaps follow `heapAt`, each a little apart from the others. */
+function toPageHeapPoints(minutes: number, heapAt: (elapsedMinutes: number) => number): readonly V1dGrowthSamplePoint[] {
+    return ['controller-01', 'controller-02', 'controller-03'].flatMap((agentId, agent) =>
+        toReporterPoints(
+            { agentId, serviceId: null },
+            minutes,
+            (minute) => ({ browser: { pageHeap: { usedJSHeapSize: heapAt(minute) + agent * MB } } })
+        )
+    );
+}
+
+/** A GC sawtooth repeating every 2.5 minutes: four low readings, then one near the page's peak. */
+function toSawtoothMb(minute: number): number {
+    return [50, 55, 60, 65, 190][Math.round(minute * 2) % 5]! * MB;
 }
 
 function toSamples(overrides: Partial<V1dGrowthSamples>): V1dGrowthSamples {
@@ -95,7 +128,7 @@ const PRINCIPALS: V1dGrowthReader = {
 const DURABLE: V1dGrowthClassification = {
     growthClass: 'durable',
     entity: 'principals',
-    entityReader: PRINCIPALS,
+    entityCount: { source: 'samples', reader: PRINCIPALS },
     rowsPerEntity: 5
 };
 
@@ -187,6 +220,37 @@ describe('V1d growth verdict', () => {
         expect(row.bound).toContain('14400');
     });
 
+    // Rows that arrive when sessions close come in a late burst: the run rate stays near zero, so only an absolute
+    // tolerance can tell that from an acceleration, and the projection takes the faster of the two rates.
+    it('passes a TTL-beyond-run surface whose rows arrive late at under 60 an hour, projecting the late rate', () => {
+        const beyondRun: V1dGrowthClassification = { growthClass: 'ttl-beyond-run', ttlMs: 720 * 60 * MINUTE_MS };
+        const lateBurst = (minute: number) => toPostgresTable(131 + Math.round(Math.max(0, minute - 60) * 0.9));
+        const row = computeSingleRow(toSurface(beyondRun), toSamples({ postgres: toPoints(75, lateBurst) }));
+
+        expect(row.outcome).toBe('pass');
+        expect(row.slopePerHour).toBeCloseTo(54, -1);
+        expect(row.bound).toMatch(/^ttl 720 h; projected ≤ 3\d{4} \(max\(run, last 15 min\) rate × ttl\)$/);
+    });
+
+    it('fails a TTL-beyond-run surface that accelerates past 1.5 × its run rate + 60 an hour', () => {
+        const beyondRun: V1dGrowthClassification = { growthClass: 'ttl-beyond-run', ttlMs: 24 * 60 * MINUTE_MS };
+        const accelerating = (minute: number) => toPostgresTable(Math.round(minute * 2 + Math.max(0, minute - 60) * 10));
+        const row = computeSingleRow(toSurface(beyondRun), toSamples({ postgres: toPoints(75, accelerating) }));
+
+        expect(row.outcome).toBe('fail');
+        expect(row.reason).toContain('accelerating');
+        expect(row.bound).toContain(`projected ≤ ${Math.round(row.slopePerHour! * 24)}`);
+    });
+
+    it('never projects a TTL-beyond-run surface holding rows below the rows it holds', () => {
+        const beyondRun: V1dGrowthClassification = { growthClass: 'ttl-beyond-run', ttlMs: 24 * 60 * MINUTE_MS };
+        const falling = (minute: number) => toPostgresTable(Math.max(40, 300 - Math.round(minute * 10)));
+        const row = computeSingleRow(toSurface(beyondRun), toSamples({ postgres: toPoints(75, falling) }));
+
+        expect(row.outcome).toBe('pass');
+        expect(row.bound).toContain('projected ≤ 300');
+    });
+
     it('passes a flat heap after its warm-up', () => {
         const flat = (minute: number) => ({ heapUsed: 60 * MIB + (Math.round(minute * 2) % 2 === 0 ? 0 : MIB) });
         const row = computeSingleRow(
@@ -218,6 +282,67 @@ describe('V1d growth verdict', () => {
 
         expect(row.outcome).toBe('fail');
         expect(row.firstPlateau?.value).toBe(60 * MIB);
+    });
+
+    it('judges each API process\'s heap on its own, and reports no data where no process sampled one', () => {
+        const flat = (minute: number) => ({ heapUsed: 60 * MIB + (Math.round(minute * 2) % 2 === 0 ? 0 : MIB) });
+        const climbing = (minute: number) => ({ heapUsed: 60 * MIB + Math.round(minute * MIB) });
+        const heapSurface = toSurface({ growthClass: 'heap' }, HEAP_READER);
+        const verdict = computeV1dGrowthVerdict({
+            surveyedSurfaceIds: [1],
+            surfaces: [heapSurface],
+            run: COMPLETED_RUN,
+            samples: toSamples({
+                'api-heap': [
+                    ...toReporterPoints({ agentId: null, serviceId: 'server-a' }, 75, flat),
+                    ...toReporterPoints({ agentId: null, serviceId: 'server-b' }, 75, climbing)
+                ]
+            })
+        });
+
+        expect(verdict.rows.map((row) => [row.reader, row.outcome])).toEqual([
+            ['api-heap heapUsed server-a', 'pass'],
+            ['api-heap heapUsed server-b', 'fail']
+        ]);
+        expect(computeSingleRow(heapSurface, toSamples({}))).toMatchObject({
+            reader: 'api-heap heapUsed',
+            outcome: 'no-data'
+        });
+    });
+
+    it('passes a page heap whose GC sawtooth swings wide around flat 5-minute medians, and reports its raw peak', () => {
+        const row = computeSingleRow(
+            toSurface({ growthClass: 'heap' }, PAGE_HEAP_READER),
+            toSamples({ 'browser-stats': toPageHeapPoints(75, toSawtoothMb) })
+        );
+
+        expect(row.outcome).toBe('pass');
+        expect(row.firstPlateau).toEqual({ atElapsedMs: 10 * MINUTE_MS, value: 61 * MB });
+        expect(row.slopePerHour).toBe(0);
+        expect(row.max).toBe(192 * MB);
+        expect(row.bound).toContain('5-minute bucket medians');
+    });
+
+    it('fails a page heap whose 5-minute medians rise 20 MB an hour under the sawtooth', () => {
+        const rising = (minute: number) => toSawtoothMb(minute) + Math.round((minute / 60) * 20 * MB);
+        const row = computeSingleRow(
+            toSurface({ growthClass: 'heap' }, PAGE_HEAP_READER),
+            toSamples({ 'browser-stats': toPageHeapPoints(75, rising) })
+        );
+
+        expect(row.outcome).toBe('fail');
+        expect(row.slopePerHour).toBeCloseTo(20 * MB, -5);
+        expect(row.reason).toContain('bucket median');
+    });
+
+    it('reports a page heap as insufficient with fewer than three complete 5-minute buckets after its warm-up', () => {
+        const row = computeSingleRow(
+            toSurface({ growthClass: 'heap' }, PAGE_HEAP_READER),
+            toSamples({ 'browser-stats': toPageHeapPoints(24, toSawtoothMb) })
+        );
+
+        expect(row.outcome).toBe('insufficient');
+        expect(row.reason).toContain('3 complete 5-minute buckets');
     });
 
     it('fails a surveyed surface without a class, and the whole verdict with it', () => {
@@ -286,10 +411,10 @@ describe('V1d growth verdict', () => {
             neverExpiringPath: null
         };
         const points: readonly V1dGrowthSamplePoint[] = [
-            { atEpochMs: WINDOW_STARTED_AT_EPOCH_MS + 1_000, agentId: 'controller-01', value: toTracks(10) },
-            { atEpochMs: WINDOW_STARTED_AT_EPOCH_MS + 2_000, agentId: 'controller-02', value: toTracks(40) },
-            { atEpochMs: WINDOW_STARTED_AT_EPOCH_MS + 31_000, agentId: 'controller-01', value: toTracks(12) },
-            { atEpochMs: WINDOW_STARTED_AT_EPOCH_MS + 32_000, agentId: 'controller-02', value: {} }
+            { atEpochMs: WINDOW_STARTED_AT_EPOCH_MS + 1_000, agentId: 'controller-01', serviceId: null, value: toTracks(10) },
+            { atEpochMs: WINDOW_STARTED_AT_EPOCH_MS + 2_000, agentId: 'controller-02', serviceId: null, value: toTracks(40) },
+            { atEpochMs: WINDOW_STARTED_AT_EPOCH_MS + 31_000, agentId: 'controller-01', serviceId: null, value: toTracks(12) },
+            { atEpochMs: WINDOW_STARTED_AT_EPOCH_MS + 32_000, agentId: 'controller-02', serviceId: null, value: {} }
         ];
         const row = computeSingleRow(
             toSurface({ growthClass: 'count-capped', cap: 512 }, reader),

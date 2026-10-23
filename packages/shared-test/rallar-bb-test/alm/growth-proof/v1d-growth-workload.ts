@@ -8,6 +8,10 @@ export interface V1dGrowthWorkload {
     readonly manifestStartedAtEpochMs: number | null;
     /** Null while the distributed run had not completed when the window closed. */
     readonly manifestCompletedAtEpochMs: number | null;
+    /** The agents the manifest drives; the script registers one account for each. */
+    readonly manifestAgents: number;
+    /** Every churn iteration the loop began, including one the drain bound stopped before it finished. */
+    readonly churnStarted: number;
     readonly churnPassed: number;
     readonly churnFailedRunIds: readonly string[];
 }

@@ -25,17 +25,29 @@ export interface V1dGrowthReader {
 }
 
 /**
+ * What a durable surface's entities are.
+ * - `samples`: a count the same samples carry, read by `reader`; the surface grows with the entities counted new.
+ * - `registrations`: the accounts the run registered, from its workload: `principalsPerChurnIteration` for each churn
+ *   iteration started and one for each manifest agent. No reading may exceed the `ceiling` reading of its sample.
+ */
+export type V1dGrowthEntityCount =
+    | Readonly<{ source: 'samples'; reader: V1dGrowthReader; }>
+    | Readonly<{ source: 'registrations'; principalsPerChurnIteration: number; ceiling: V1dGrowthReader; }>;
+
+/**
  * How a surface may grow during the run, and the bound its predicate holds it to.
- * - `durable`: one row per entity; its growth may not exceed `rowsPerEntity` per entity the entity reader counts new.
+ * - `durable`: one row per entity; its growth may not exceed `rowsPerEntity` per entity.
  * - `declared-append-only`: a durable-by-design history R3 declares and reports; its growth is reported, never
  *   passed or failed.
+ * - `heap`: flat after a warm-up. A browser page heap is judged on 5-minute bucket medians, since no forced
+ *   collection settles its GC sawtooth; a forced-GC process heap and a resident set on their raw readings.
  * - `unbounded`: nothing bounds it; it fails a run in which it grows, and is a follow-up when it never grew.
  */
 export type V1dGrowthClassification =
     | Readonly<{ growthClass: 'count-capped'; cap: number; }>
     | Readonly<{ growthClass: 'ttl-within-run'; ttlMs: number; sweepMs: number; }>
     | Readonly<{ growthClass: 'ttl-beyond-run'; ttlMs: number; }>
-    | Readonly<{ growthClass: 'durable'; entity: string; entityReader: V1dGrowthReader; rowsPerEntity: number; }>
+    | Readonly<{ growthClass: 'durable'; entity: string; entityCount: V1dGrowthEntityCount; rowsPerEntity: number; }>
     | Readonly<{ growthClass: 'declared-append-only'; history: string; }>
     | Readonly<{ growthClass: 'heap'; }>
     | Readonly<{ growthClass: 'unbounded'; missingBound: string; }>;
