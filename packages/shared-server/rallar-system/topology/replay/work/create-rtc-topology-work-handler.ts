@@ -134,7 +134,7 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
         message,
         AppOutboxType.RTC_TOPOLOGY_RECOMPUTE
     );
-    const workId = toRtcTopologyExecutionId(workEnvelope);
+    const workId = toRtcTopologyExecutionId(workEnvelope, message.id.ts);
     const mutationRead = await options.executionRepository.readTopologyMutation(
         toRtcTopologyWorkGroupRef(workEnvelope.data),
         workId

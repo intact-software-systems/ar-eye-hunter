@@ -8,6 +8,7 @@ import {
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
+import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import {
@@ -40,6 +41,10 @@ import { computeRtcTopologyPublicationOutbox } from '@shared-server/rallar-syste
 import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-delivery-repository.ts';
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
 import {
+    readRtcTopologyWorkEnvelope,
+    toRtcTopologyExecutionId
+} from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-codec.ts';
+import {
     createGroupTopologyRuntimeOwners,
     type GroupTopologyRuntimeOwners
 } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
@@ -58,10 +63,7 @@ import type {
     GroupSnapshot
 } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import type {
-    Key,
-    ResourceEntry
-} from '@shared/queuebox/ResourceEntry.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
@@ -293,13 +295,10 @@ async function persistAndReserveTopologyWork(
     const reserved = await resourceInbox.entries.findAnyByKey(workEntry.key);
     assert.ok(reserved);
     const message = decodePersistedALMessage(reserved.resource);
-    const envelope = readResourceInboxKeyFields(message.payload.resource);
-    const workId = [
-        envelope.topicId,
-        envelope.contextId,
-        envelope.resourceId,
-        0
-    ].join(':');
+    const workId = toRtcTopologyExecutionId(
+        readRtcTopologyWorkEnvelope(message, AppOutboxType.RTC_TOPOLOGY_RECOMPUTE),
+        message.id.ts
+    );
     return { workEntry, reserved, message, workId };
 }
 
@@ -691,23 +690,6 @@ export function advanceCoalescedGeneration(
             ...message,
             payload: { ...message.payload, resource: JSON.stringify(successor) }
         })
-    };
-}
-
-function readResourceInboxKeyFields(source: string): Key {
-    const value = decodeJsonWireText(source, 'Resource inbox key');
-    if (
-        !isJsonRecord(value) ||
-        typeof value.topicId !== 'string' ||
-        typeof value.resourceId !== 'string' ||
-        typeof value.contextId !== 'string'
-    ) {
-        throw new TypeError('Expected resource inbox key fields');
-    }
-    return {
-        topicId: value.topicId,
-        resourceId: value.resourceId,
-        contextId: value.contextId
     };
 }
 

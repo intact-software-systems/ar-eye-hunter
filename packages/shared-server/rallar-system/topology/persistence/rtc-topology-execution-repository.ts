@@ -176,10 +176,9 @@ async function writeRtcTopologySnapshot(
 }
 
 /**
- * A fresh coalesced head, written after its group idled past its retention window, starts its generations, and so
- * its work ids, again: the work claim of the head it replaced is written over once it expires, and a live one is
- * still a conflict. A publication key also names the overlay version, which the never-expiring snapshot advances on
- * every write, so it does not recur.
+ * A work id names its row's creation instant and generation (`toRtcTopologyExecutionId`), so a claim key does not
+ * recur; an expired claim is still taken for absent like every expiring insert, and a live one is a conflict. A
+ * publication key names the work id and the overlay version, so it does not recur either.
  */
 async function writeRtcTopologyPublication(
     transaction: PSqlSql,

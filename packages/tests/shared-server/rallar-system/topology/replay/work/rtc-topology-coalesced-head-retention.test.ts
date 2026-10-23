@@ -128,22 +128,51 @@ describe.each(['memory', 'postgres'] as const)('the coalesced topology head near
         });
     }, 30_000);
 
-    // A group idle for its retention window comes back to a fresh head, whose generations, and so whose work ids, start
-    // again; the work claim of the earlier head's run may still hold its key until the sweep.
-    sqlIt('publishes from a fresh head over the expired work claim of the head it replaced', async () => {
+    // A group idle for its retention window comes back to a fresh head, whose generations start again at 1; its work
+    // ids name the head's creation instant, so they never meet the claims of the head it replaced.
+    sqlIt('publishes from a fresh head under a fresh work id while the replaced head\'s claim is still live', async () => {
         await withHeadSql(backend, async (h) => {
             expect(await writeHead(h, null, Date.now() + RETENTION_MS)).toBe('written');
             await runHead(h, await requireStoredHead(h));
-            expect(await readPublicationRows(h)).toHaveLength(2);
-            await expireHeadAndPublicationRows(h);
+            const [firstClaim] = await readPublicationRows(h);
+            await expireHead(h);
 
             h.state.group = { ...h.state.group, group: { ...h.state.group.group, displayName: 'renamed after a long idle' } };
+            await waitUntil(Date.now() + 2);
             expect(await writeHead(h, null, Date.now() + RETENTION_MS)).toBe('written');
             await runHead(h, await requireStoredHead(h));
 
             expect((await h.queue.getItem(h.headKey))?.status).toBe(EntityStatus.COMPLETED);
-            expect(await readPublicationRows(h)).toEqual([
-                { namespace: RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE, revision: 1, live: true },
+            const rows = await readPublicationRows(h);
+            expect(rows.map(({ namespace, revision, live }) => ({ namespace, revision, live }))).toEqual([
+                { namespace: RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE, revision: 0, live: true },
+                { namespace: RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE, revision: 0, live: true },
+                { namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE, revision: 0, live: true },
+                { namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE, revision: 0, live: true }
+            ]);
+            expect(rows.filter((row) => row.namespace === RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE))
+                .toContainEqual(firstClaim);
+            expect((await h.snapshots.findSnapshot(h.state.group.group))?.version).toBe(2);
+        });
+    }, 30_000);
+
+    sqlIt('publishes from a fresh head beside the expired claim and publication of the head it replaced', async () => {
+        await withHeadSql(backend, async (h) => {
+            expect(await writeHead(h, null, Date.now() + RETENTION_MS)).toBe('written');
+            await runHead(h, await requireStoredHead(h));
+            await expireHead(h);
+            await expirePublicationRows(h);
+
+            h.state.group = { ...h.state.group, group: { ...h.state.group.group, displayName: 'renamed after a long idle' } };
+            await waitUntil(Date.now() + 2);
+            expect(await writeHead(h, null, Date.now() + RETENTION_MS)).toBe('written');
+            await runHead(h, await requireStoredHead(h));
+
+            expect((await h.queue.getItem(h.headKey))?.status).toBe(EntityStatus.COMPLETED);
+            const rows = await readPublicationRows(h);
+            expect(rows.map(({ namespace, revision, live }) => ({ namespace, revision, live }))).toEqual([
+                { namespace: RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE, revision: 0, live: false },
+                { namespace: RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE, revision: 0, live: true },
                 { namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE, revision: 0, live: false },
                 { namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE, revision: 0, live: true }
             ]);
@@ -290,6 +319,7 @@ async function readWakeExpiries(h: HeadHarness): Promise<readonly number[]> {
 
 interface PublicationRow {
     readonly namespace: string;
+    readonly key: string;
     readonly revision: number;
     readonly live: boolean;
 }
@@ -297,7 +327,7 @@ interface PublicationRow {
 /** In namespace order, the work claim first, and expired rows before live ones. */
 async function readPublicationRows(h: HeadHarness): Promise<readonly PublicationRow[]> {
     const rows = await h.sql<PublicationRow[]>`
-        select store_namespace as namespace, revision::int as revision, expire_at_ts > now() as live
+        select store_namespace as namespace, store_key as key, revision::int as revision, expire_at_ts > now() as live
         from runtime_state_store
         where store_namespace in (${RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE}, ${RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE})
           and store_key like ${`%${h.state.group.group.applicationId}%`}
@@ -306,12 +336,15 @@ async function readPublicationRows(h: HeadHarness): Promise<readonly Publication
     return [...rows].sort((left, right) => namespaces.indexOf(left.namespace) - namespaces.indexOf(right.namespace) || Number(left.live) - Number(right.live));
 }
 
-async function expireHeadAndPublicationRows(h: HeadHarness): Promise<void> {
+async function expireHead(h: HeadHarness): Promise<void> {
     await h.sql`
         update resource_inbox set expire_ts = (now() - interval '1 minute') at time zone 'UTC'
         where ri_topic_id = ${h.headKey.topicId} and ri_resource_id = ${h.headKey.resourceId}
           and fk_ext_bank_id = ${h.headKey.contextId}
     `;
+}
+
+async function expirePublicationRows(h: HeadHarness): Promise<void> {
     await h.sql`
         update runtime_state_store set expire_at_ts = now() - interval '1 minute'
         where store_namespace in (${RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE}, ${RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE})

@@ -137,7 +137,37 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             dueAtEpochMs: BASE_EPOCH_MS + DEBOUNCE_MS,
             reasons: ['group-revision']
         });
-        expect(toRtcTopologyExecutionId(envelope)).toContain(':1');
+        expect(toRtcTopologyExecutionId(envelope, BASE_EPOCH_MS)).toBe(
+            `${envelope.topicId}:${envelope.contextId}:${envelope.resourceId}:${BASE_EPOCH_MS}:1`
+        );
+    });
+
+    // A head written afresh after its group idled past the retention window restarts at generation 1; its creation
+    // instant keeps its work ids apart from the replaced head's, whose claims may still be live.
+    it('names each work id after its head\'s creation instant and generation', () => {
+        const writeHead = (requestedAtEpochMs: number, previousEntry: ResourceEntry | null) =>
+            computeCoalescedRtcTopologyGroupRevisionWork({
+                aggregateRef: GROUP_REF,
+                groupSnapshot: createGroupSnapshot(4, 3),
+                requestedAtEpochMs,
+                expireAtEpochMs: requestedAtEpochMs + 3_600_000,
+                timing: createServerTopologyReplanTiming(DEBOUNCE_MS),
+                senderId: 'server-1',
+                origin: 'automatic',
+                previousEntry
+            }).entryWrite.entry;
+        const toWorkId = (entry: ResourceEntry) =>
+            toRtcTopologyExecutionId(
+                readPersistedEnvelope(entry),
+                decodePersistedALMessage(entry.resource).id.ts
+            );
+        const first = writeHead(BASE_EPOCH_MS, null);
+        const merged = writeHead(BASE_EPOCH_MS + 100, first);
+        const fresh = writeHead(BASE_EPOCH_MS + 7_200_000, null);
+
+        expect(toWorkId(merged)).toBe(toWorkId(first).replace(/:1$/, ':2'));
+        expect(toWorkId(fresh)).not.toBe(toWorkId(first));
+        expect(toWorkId(fresh)).toMatch(new RegExp(`:${BASE_EPOCH_MS + 7_200_000}:1$`));
     });
 
     it('is due immediately with a zero debounce', () => {

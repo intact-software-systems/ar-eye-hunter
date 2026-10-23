@@ -102,7 +102,7 @@ describe('RTC topology complete write computation', () => {
             ...fixture,
             facts: {
                 workEnvelope,
-                workId: toRtcTopologyExecutionId(workEnvelope),
+                workId: toRtcTopologyExecutionId(workEnvelope, decodePersistedALMessage(entry.resource).id.ts),
                 attemptCount: entry.dequeueAudit.attempts,
                 derivedExpireAtEpochMs: entry.audit.expiryTs.epochMilliseconds
             },
