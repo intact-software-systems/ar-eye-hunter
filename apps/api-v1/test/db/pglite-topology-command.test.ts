@@ -382,6 +382,7 @@ Deno.test(
                 AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
                 createRtcTopologyWorkHandler({
                     nowEpochMs: () => nowEpochMs,
+                    finishedRetentionMs: 3_600_000,
                     outboxQueueReader: outboxReader,
                     database: sql,
                     topologyPlanning: topologyManagement.planning,

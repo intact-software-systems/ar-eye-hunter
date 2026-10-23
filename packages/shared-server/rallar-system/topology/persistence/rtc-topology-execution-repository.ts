@@ -175,6 +175,12 @@ async function writeRtcTopologySnapshot(
     }
 }
 
+/**
+ * A fresh coalesced head, written after its group idled past its retention window, starts its generations, and so
+ * its work ids, again: the work claim of the head it replaced is written over once it expires, and a live one is
+ * still a conflict. A publication key also names the overlay version, which the never-expiring snapshot advances on
+ * every write, so it does not recur.
+ */
 async function writeRtcTopologyPublication(
     transaction: PSqlSql,
     publication: NonNullable<RtcTopologyPersistenceComputed['publication']>
@@ -185,7 +191,12 @@ async function writeRtcTopologyPublication(
         values (${RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE},
                 ${publication.receiptKey}, ${publication.receiptValue},
                 ${publication.expireAtIsoTimestamp}, now(), 0)
-        on conflict (store_namespace, store_key) do nothing
+        on conflict (store_namespace, store_key) do update
+            set store_value = excluded.store_value,
+                expire_at_ts = excluded.expire_at_ts,
+                updated_ts = now(),
+                revision = runtime_state_store.revision + 1
+            where runtime_state_store.expire_at_ts <= now()
         returning revision
     `;
     if (!claims[0]) {

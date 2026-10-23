@@ -150,6 +150,7 @@ function registerTopologyAppOutboxHandler(
         AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
         createRtcTopologyWorkHandler({
             nowEpochMs: () => input.atEpochMs,
+            finishedRetentionMs: 3_600_000,
             outboxQueueReader: registration.outboxQueueReader,
             database: transactionGate.sql,
             topologyPlanning: topologyManagement.planning,

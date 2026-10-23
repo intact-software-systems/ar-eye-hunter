@@ -39,6 +39,7 @@ export interface InstallTopologyAppOutboxOptions {
     readonly rttRefinementService?: RtcRttRefinementService;
     readonly topologyDelivery?: RtcTopologyDeliveryRuntime;
     readonly nowEpochMs: () => number;
+    readonly finishedRetentionMs: number;
     /** Present only while timing is on; absent, no recompute decision line is built or recorded. */
     readonly timing?: RallarTimingSink;
     readonly formationAutomation: GroupFormationAutomationPort;
@@ -97,6 +98,7 @@ export function installTopologyAppOutbox(options: InstallTopologyAppOutboxOption
         AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
         createRtcTopologyWorkHandler({
             nowEpochMs: options.nowEpochMs,
+            finishedRetentionMs: options.finishedRetentionMs,
             outboxQueueReader: options.outboxQueueReader,
             database: options.database,
             topologyPlanning: options.topologyPlanning,

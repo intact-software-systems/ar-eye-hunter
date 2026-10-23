@@ -6,7 +6,9 @@ import type { RtcRttMutationCommand, RtcRttMutationComputed } from '@shared-serv
 import { validateRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/validate-rtc-rtt-mutation.ts';
 import { RTC_RTT_MUTATION_RETENTION_MS } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-validation-primitives.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
+import { RTC_RTT_RECEIPTS_NAMESPACE } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-runtime-namespaces.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { encodeRuntimeStateJsonValue } from '@shared-server/runtime-state/runtime-state-json-store.ts';
 import type { AuditStamp, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { createTestGroup } from '../../../../create-test-group.ts';
@@ -83,12 +85,15 @@ export async function executeRtcRttMutation(
                     computed.measurementGuard.purgeAfterEpochMs
                 )
             );
-            requireTestRttWrite(
-                await input.repository.insertMutationReceipt(
-                    computed.receipt,
-                    computed.receipt.acceptedAtEpochMs + RTC_RTT_MUTATION_RETENTION_MS
-                )
+            const receipt = await input.runtime.insertIfAbsent(
+                RTC_RTT_RECEIPTS_NAMESPACE,
+                computed.receipt.receiptId,
+                encodeRuntimeStateJsonValue(computed.receipt),
+                computed.receipt.acceptedAtEpochMs + RTC_RTT_MUTATION_RETENTION_MS
             );
+            if (receipt.status === 'conflict') {
+                throw new RuntimeStateWriteConflictError();
+            }
         });
     }
     return { computed, updated: computed.outcome === 'write' };

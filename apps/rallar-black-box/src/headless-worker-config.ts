@@ -245,6 +245,31 @@ export function createHeadlessWorkerAgentUrl(
     return url.toString();
 }
 
+export interface HeadlessWorkerLaunchOptions {
+    readonly headless: boolean;
+    readonly timeout: number;
+    readonly handleSIGINT: false;
+    readonly handleSIGTERM: false;
+    readonly args: readonly string[];
+}
+
+/**
+ * The worker owns SIGINT and SIGTERM: Playwright's own handlers would close the browser under the pages' disconnect.
+ * Without precise memory info Chromium answers `performance.memory` in buckets, which the census cannot read a heap
+ * slope from.
+ */
+export function toHeadlessWorkerLaunchOptions(config: HeadlessWorkerConfig): HeadlessWorkerLaunchOptions {
+    return {
+        headless: config.headless,
+        timeout: config.launchTimeoutMs,
+        handleSIGINT: false,
+        handleSIGTERM: false,
+        args: config.browserEngine === 'chromium' && config.browserCensusIntervalMs > 0
+            ? ['--enable-precise-memory-info']
+            : []
+    };
+}
+
 export function controlRunSnapshotUrlFromControlUrl(
     controlUrl: string,
     runId: string

@@ -9,7 +9,8 @@ import { resolveRallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-tes
 import {
     controlRunSnapshotUrlFromControlUrl,
     createHeadlessWorkerAgentUrl,
-    readHeadlessWorkerConfig
+    readHeadlessWorkerConfig,
+    toHeadlessWorkerLaunchOptions
 } from '../../../apps/rallar-black-box/src/headless-worker-config.ts';
 
 const recordingWorkerEnvironment = {
@@ -51,6 +52,26 @@ describe('rallar-black-box headless worker config', () => {
         ).toThrow(/routine browser diagnostics/i);
     });
 
+    // Without the flag Chromium answers performance.memory in coarse buckets no heap slope can be read from.
+    it('launches Chromium with precise memory readings while the browser census is on', () => {
+        const withCensus = (engine: string, interval: string) =>
+            toHeadlessWorkerLaunchOptions(readHeadlessWorkerConfig({
+                env: {
+                    ...recordingWorkerEnvironment,
+                    RALLAR_BLACK_BOX_BROWSER_ENGINE: engine,
+                    RALLAR_BLACK_BOX_BROWSER_CENSUS_INTERVAL_MS: interval
+                }
+            }));
+
+        expect(withCensus('chromium', '5000')).toMatchObject({
+            headless: true,
+            handleSIGINT: false,
+            handleSIGTERM: false,
+            args: ['--enable-precise-memory-info']
+        });
+        expect(withCensus('chromium', '0').args).toEqual([]);
+        expect(withCensus('firefox', '5000').args).toEqual([]);
+    });
     it('keeps the browser census off unless the environment selects an interval of 0 or 5000 to 600000', () => {
         const off = readHeadlessWorkerConfig({ env: recordingWorkerEnvironment });
         expect(off.browserCensusIntervalMs).toBe(0);

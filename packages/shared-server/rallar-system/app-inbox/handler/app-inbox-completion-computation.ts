@@ -29,8 +29,8 @@ export interface AppInboxCompletionFacts {
     readonly entry: ResourceEntry;
     readonly completedAtEpochMs: number;
     /**
-     * How long the finished fact and its result stay after completion. Inside the window a replay of the command's
-     * key returns the stored result; once the expiry sweep removes them, the same key executes again.
+     * How long the finished fact and its result stay after completion; the contract is on
+     * `MIN_APP_INBOX_FINISHED_RETENTION_MS`.
      */
     readonly finishedRetentionMs: number;
 }

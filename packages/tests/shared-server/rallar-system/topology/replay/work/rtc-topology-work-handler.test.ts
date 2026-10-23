@@ -124,6 +124,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         }).planning;
         const handler = createRtcTopologyWorkHandler({
             nowEpochMs: () => nowEpochMs,
+            finishedRetentionMs: 3_600_000,
             outboxQueueReader,
             database: createAppInboxTestDatabase(queue, { replace: async (entry) => entry }, {
                 runtimeRepository: runtime
@@ -302,6 +303,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         });
         const handler = createRtcTopologyWorkHandler({
             nowEpochMs: () => 10,
+            finishedRetentionMs: 3_600_000,
             outboxQueueReader,
             database: createAppInboxTestDatabase(queue, {
                 replace: async (entry) => entry
@@ -345,6 +347,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         });
         const handler = createRtcTopologyWorkHandler({
             nowEpochMs: () => 10,
+            finishedRetentionMs: 3_600_000,
             outboxQueueReader,
             database: createAppInboxTestDatabase(queue, {
                 replace: async (entry) => entry
@@ -396,6 +399,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         });
         const handler = createRtcTopologyWorkHandler({
             nowEpochMs: () => 10,
+            finishedRetentionMs: 3_600_000,
             outboxQueueReader,
             database: createAppInboxTestDatabase(queue, {
                 replace: async (entry) => entry
@@ -523,6 +527,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         });
         const handler = createRtcTopologyWorkHandler({
             nowEpochMs: () => 10,
+            finishedRetentionMs: 3_600_000,
             outboxQueueReader,
             database: createAppInboxTestDatabase(queue, {
                 replace: async (entry) => entry
@@ -572,6 +577,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         });
         const handler = createRtcTopologyWorkHandler({
             nowEpochMs: () => 10,
+            finishedRetentionMs: 3_600_000,
             outboxQueueReader,
             database: createAppInboxTestDatabase(queue, {
                 replace: async (entry) => entry
@@ -605,6 +611,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         }).planning;
         const handler = createRtcTopologyWorkHandler({
             nowEpochMs: () => 10,
+            finishedRetentionMs: 3_600_000,
             outboxQueueReader,
             database: createAppInboxTestDatabase(queue, { replace: async (entry) => entry }),
             topologyPlanning: planning,
@@ -651,6 +658,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const handler = createRtcTopologyWorkHandler({
             nowEpochMs: () => 10,
+            finishedRetentionMs: 3_600_000,
             outboxQueueReader,
             database: createAppInboxTestDatabase(queue, {
                 replace: async (entry) => entry
@@ -764,6 +772,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         };
         const handler = createRtcTopologyWorkHandler({
             nowEpochMs: () => 1_000,
+            finishedRetentionMs: 3_600_000,
             outboxQueueReader,
             database: createAppInboxTestDatabase(queue, {
                 replace: async (entry) => entry
@@ -873,6 +882,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         };
         const handler = createRtcTopologyWorkHandler({
             nowEpochMs: () => 10,
+            finishedRetentionMs: 3_600_000,
             outboxQueueReader,
             database: createAppInboxTestDatabase(queue, {
                 replace: async (entry) => entry

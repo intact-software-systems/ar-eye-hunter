@@ -10,6 +10,8 @@ export interface PublicationConnectTriggerRequestsInput {
     readonly target: RallarOverlayTopologySnapshot | null;
     readonly sourceWorkId: string;
     readonly entry: ResourceEntry;
+    /** The expiry the attempt decided for the rows it derives. */
+    readonly expireAtEpochMs: number;
 }
 
 export function computePublicationConnectTriggerRequests(
@@ -30,6 +32,6 @@ export function computePublicationConnectTriggerRequests(
         },
         senderId: entry.audit.createdBy,
         createdAtEpochMs: entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds,
-        expireAtEpochMs: entry.audit.expiryTs.epochMilliseconds
+        expireAtEpochMs: input.expireAtEpochMs
     })];
 }

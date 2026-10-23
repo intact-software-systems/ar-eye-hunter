@@ -9,7 +9,10 @@ export interface ResourceInboxReservationFinish {
     readonly completedAt: Date;
 }
 
-/** A finish that also bounds the finished row: it stays until `expiresAt`, then the expiry sweep removes it. */
+/**
+ * A finish that also sets the finished row's expiry to `expiresAt`, its completion plus the retention window: after
+ * completion that window governs, not the message's own deadline, so the expiry may move later as well as earlier.
+ */
 export interface ResourceInboxRetainedReservationFinish extends ResourceInboxReservationFinish {
     readonly expiresAt: Date;
 }

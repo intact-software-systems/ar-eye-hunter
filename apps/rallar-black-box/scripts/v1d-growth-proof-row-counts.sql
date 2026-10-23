@@ -1,6 +1,7 @@
 -- One growth-proof sample of the run database as one JSON object: row counts per table, status and namespace,
 -- the rows already past their expiry that the sweeps have not yet removed, the rows stamped never to expire, live and
--- dead tuples, and the size.
+-- dead tuples, and the size. An APP_INBOX fact carries no expiry until its finish stamps the retention one, so the
+-- settled never-expiring count leaves the unfinished facts out.
 -- The per-process store name of the server AL namespaces is collapsed so a restart does not open a new series.
 with
 inbox as (
@@ -29,6 +30,10 @@ select json_build_object(
             'total', count(*),
             'expiredPresent', count(*) filter (where expired),
             'neverExpire', count(*) filter (where never_expires),
+            'neverExpireSettled', count(*) filter (
+                where never_expires
+                  and not (ri_type_id = 'APP_INBOX' and ri_status not in ('COMPLETED', 'FAILED', 'NON_RETRYABLE'))
+            ),
             'appInbox', count(*) filter (where ri_type_id = 'APP_INBOX'),
             'appInboxFinished', count(*) filter (
                 where ri_type_id = 'APP_INBOX' and ri_status in ('COMPLETED', 'FAILED', 'NON_RETRYABLE')

@@ -83,7 +83,7 @@ export async function writeAppOutboxInserts(
     if (computed.length === 0) {
         return;
     }
-    const inserted = await insertAppOutboxRows(transaction, computed, REPLACE_EXPIRED_RESOURCE_INBOX_ROW);
+    const inserted = await insertAppOutboxRows(transaction, computed);
     if (inserted.length !== computed.length) {
         const missing = computed.find(({ entry: { key } }) =>
             !inserted.some((row) =>
@@ -98,21 +98,17 @@ export async function writeAppOutboxInserts(
     }
 }
 
-/** Whether the row was created; a row already stored under its key, expired or not, is left as it is. */
+/** Whether the row was written; a live row already stored under its key is left as it is, an expired one written over. */
 export async function writeAppOutboxInsertIfAbsent(transaction: PSqlSql, computed: AppOutboxInsert): Promise<boolean> {
-    return (await insertAppOutboxRows(transaction, [computed], KEEP_STORED_RESOURCE_INBOX_ROW)).length === 1;
+    return (await insertAppOutboxRows(transaction, [computed])).length === 1;
 }
-
-const KEEP_STORED_RESOURCE_INBOX_ROW = PSqlFragment
-    .of`on conflict (fk_ext_bank_id, ri_resource_id, ri_topic_id) do nothing`;
 
 async function insertAppOutboxRows(
     transaction: PSqlSql,
-    computed: readonly AppOutboxInsert[],
-    onConflict: PSqlFragment<never>
+    computed: readonly AppOutboxInsert[]
 ): Promise<readonly AppOutboxInsertedRow[]> {
     const statement = PSqlFragment.of`${toResourceInboxEntryInsert(computed.map(toAppOutboxInsertRow))}
-        ${onConflict}
+        ${REPLACE_EXPIRED_RESOURCE_INBOX_ROW}
         returning ri_row_id, ri_resource_id, ri_topic_id, fk_ext_bank_id
     `;
     return await transaction<readonly AppOutboxInsertedRow[]>(...statement.toStatement());

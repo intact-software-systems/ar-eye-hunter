@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
 
+import { ALInboundStoreCounts } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/al-inbound-store-counts.ts';
 import {
     createBlackBoxRallarCongestionCounters,
     type BlackBoxRallarCongestionCounters
@@ -43,7 +44,6 @@ import type { RallarRealtimeHandler } from '@shared-web/browser/rallar-realtime-
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 import type { ALDeliveryAdmissionVerdict, ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import { ALInboundStoreCounts } from '@shared/alm/storage/al-inbound-store-counts.ts';
 import {
     AL_VOLATILE_SESSION_LIMITS,
     type ALVolatileSessionReport

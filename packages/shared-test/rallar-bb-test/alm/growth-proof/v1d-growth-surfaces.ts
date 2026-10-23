@@ -99,7 +99,7 @@ export const V1D_GROWTH_SURFACES: readonly V1dGrowthSurface[] = [
         name: 'resource_inbox rows that carry an expiry (retry horizon, WS_INBOX, topology publication)',
         owner: 'packages/shared-server/queuebox/postgres/resource-inbox-maintenance.ts',
         classification: { growthClass: 'ttl-beyond-run', ttlMs: DAY_MS },
-        readers: [toPostgresExpiringCount(['resourceInbox', 'total'], ['resourceInbox', 'neverExpire'])]
+        readers: [toPostgresExpiringCount(['resourceInbox', 'total'], ['resourceInbox', 'neverExpireSettled'])]
     },
     {
         id: 2,

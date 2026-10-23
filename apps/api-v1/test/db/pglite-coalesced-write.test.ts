@@ -99,7 +99,7 @@ for (const terminal of [false, true]) {
                     assert.equal(head.status, EntityStatus.RETRY);
                     assert.equal(head.dequeueAudit.attempts, terminal ? 0 : 2);
                     assert.equal(head.dequeueAudit.nextTs?.toString(), '2026-01-02T03:04:05.123456Z');
-                    assert.equal(head.audit.expiryTs.toString(), terminal ? next.audit.expiryTs.toString() : expected.audit.expiryTs.toString());
+                    assert.equal(head.audit.expiryTs.toString(), next.audit.expiryTs.toString());
                     assert.equal(head.dequeueAudit.startTs?.toString(), terminal ? undefined : expected.dequeueAudit.startTs?.toString());
                     assert.equal(head.dequeueAudit.endTs?.toString(), terminal ? undefined : expected.dequeueAudit.endTs?.toString());
                     assert.equal(storedSuccessor, null);

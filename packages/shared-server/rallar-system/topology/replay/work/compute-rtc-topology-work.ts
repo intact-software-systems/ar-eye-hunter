@@ -49,7 +49,11 @@ export interface RtcTopologyWorkFacts {
     readonly workEnvelope: RtcTopologyWorkEnvelope<PersistedRtcTopologyWork>;
     readonly workId: string;
     readonly attemptCount: number;
-    readonly expireAtEpochMs: number;
+    /**
+     * The expiry of every row this attempt derives: the later of its own row's expiry and the finished-retention
+     * window from the attempt, so a row derived from a long-lived row near its expiry still lives its window.
+     */
+    readonly derivedExpireAtEpochMs: number;
 }
 
 export interface RtcTopologyWorkRead {
@@ -189,6 +193,7 @@ function toRtcTopologyWorkWriteInput(
         accepted,
         entry: input.entry,
         sourceWorkId: input.facts.workId,
+        derivedExpireAtEpochMs: input.facts.derivedExpireAtEpochMs,
         reservationFinish: input.reservationFinish,
         formationAutomationEnabled: input.formationAutomationEnabled,
         serviceId: input.serviceId,

@@ -36,6 +36,8 @@ export class FakeRuntimeStateRepository
         key: string
     ) => void | Promise<void>;
     serializeTransactions = false;
+    /** The clock that decides whether a stored row has expired, as the database clock does for Postgres. */
+    nowEpochMs: () => number = Date.now;
     private activeTransactionCount = 0;
     private transactionTail: Promise<void> = Promise.resolve();
 
@@ -190,32 +192,19 @@ export class FakeRuntimeStateRepository
     ): Promise<RuntimeStateConditionalWriteResult> {
         await this.beforeConditionalWrite?.('insertIfAbsent', namespace, key);
         const compositeKey = this.toKey(namespace, key);
-        if (this.data.has(compositeKey)) {
+        const current = this.data.get(compositeKey);
+        if (current !== undefined && current.expireAtTimestamp > this.nowEpochMs()) {
             return { status: 'conflict' };
         }
-
+        const revision = current === undefined ? 0 : current.revision + 1;
         this.data.set(compositeKey, {
             key,
             value,
             expireAtTimestamp,
             updatedTimestamp: new Date().toISOString(),
-            revision: 0
+            revision
         });
-        return { status: 'applied', revision: 0 };
-    }
-
-    /** The guarded-batch and client inserts: a key holding an expired row takes the new row one revision past it. */
-    async insertIfAbsentOrExpired(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number
-    ): Promise<RuntimeStateConditionalWriteResult> {
-        const current = this.data.get(this.toKey(namespace, key));
-        if (current === undefined || current.expireAtTimestamp > Date.now()) {
-            return await this.insertIfAbsent(namespace, key, value, expireAtTimestamp);
-        }
-        return await this.upsertIfRevision(namespace, key, value, expireAtTimestamp, current.revision);
+        return { status: 'applied', revision };
     }
 
     async upsertIfRevision(
@@ -305,7 +294,7 @@ export class FakeRuntimeStateRepository
                 continue;
             }
 
-            if (entry.expireAtTimestamp > Date.now()) {
+            if (entry.expireAtTimestamp > this.nowEpochMs()) {
                 continue;
             }
 
@@ -334,7 +323,7 @@ async function applyGuardedBatchGuard(
     guard: RuntimeStateGuardedBatchGuard
 ): Promise<RuntimeStateGuardedBatchGuardResult> {
     const result = guard.operation === 'insert'
-        ? await repository.insertIfAbsentOrExpired(
+        ? await repository.insertIfAbsent(
             guard.namespace,
             guard.key,
             guard.value,
@@ -399,7 +388,7 @@ async function applyGuardedBatchEffect(
         };
     }
     const result = effect.operation === 'insert'
-        ? await repository.insertIfAbsentOrExpired(
+        ? await repository.insertIfAbsent(
             effect.namespace,
             effect.key,
             effect.value,

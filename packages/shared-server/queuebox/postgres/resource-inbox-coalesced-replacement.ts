@@ -131,7 +131,8 @@ function writePendingCoalescedReplacement(
             update resource_inbox
             set ri_resource = ${computed.resource},
                 ri_status = ${computed.status},
-                next_ts = ${computed.nextAt}
+                next_ts = ${computed.nextAt},
+                expire_ts = ${computed.expiresAt}
             where ri_topic_id = ${computed.key.topicId}
               and ri_resource_id = ${computed.key.resourceId}
               and fk_ext_bank_id = ${computed.key.contextId}

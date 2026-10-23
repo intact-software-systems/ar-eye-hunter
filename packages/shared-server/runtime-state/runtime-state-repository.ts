@@ -42,6 +42,10 @@ export type RuntimeStateConditionalDeleteResult =
     | Readonly<{ status: 'conflict'; }>;
 
 export interface RuntimeStateConditionalRepositoryLike {
+    /**
+     * Writes the row where its key holds none or an expired one, which then takes the new row one revision past it;
+     * a live row under the key is a conflict.
+     */
     insertIfAbsent(
         namespace: string,
         key: string,

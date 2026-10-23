@@ -362,6 +362,21 @@ describe('V1d growth verdict', () => {
         expect(verdict.followUps).toEqual(['1 surface under test (postgres tables.surface_under_test) held at 40']);
     });
 
+    // The unbounded predicate compares each reading to the first one only: a regrowth that stays below the first
+    // reading is not a rise.
+    it('reports an unbounded surface that starts high, drops and regrows below its first reading as unexercised', () => {
+        const unbounded: V1dGrowthClassification = { growthClass: 'unbounded', missingBound: 'rows never expire' };
+        const dropsAndRegrows = (minute: number) => toPostgresTable(minute < 10 ? 40 - minute * 3 : 10 + Math.round(minute));
+        const verdict = computeV1dGrowthVerdict({
+            surveyedSurfaceIds: [1],
+            surfaces: [toSurface(unbounded)],
+            run: COMPLETED_RUN,
+            samples: toSamples({ postgres: toPoints(25, dropsAndRegrows) })
+        });
+
+        expect(verdict.rows[0]).toMatchObject({ outcome: 'unbounded-unexercised', max: 40 });
+    });
+
     it('fails an unbounded surface that rises and then falls back', () => {
         const unbounded: V1dGrowthClassification = { growthClass: 'unbounded', missingBound: 'rows never expire' };
         const risesThenFalls = (minute: number) => toPostgresTable(minute < 15 ? Math.round(minute) : 1);

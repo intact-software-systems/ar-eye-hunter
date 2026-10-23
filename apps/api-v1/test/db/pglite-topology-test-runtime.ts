@@ -360,6 +360,7 @@ async function registerTopologyWorkDelivery(setup: PGliteTopologyWorkSetup): Pro
     const outboxQueueReader = new OutboxQueueReader(queue);
     const handler = createRtcTopologyWorkHandler({
         nowEpochMs: () => nowEpochMs,
+        finishedRetentionMs: 3_600_000,
         outboxQueueReader,
         database: sql,
         topologyPlanning: topologyManagement.planning,

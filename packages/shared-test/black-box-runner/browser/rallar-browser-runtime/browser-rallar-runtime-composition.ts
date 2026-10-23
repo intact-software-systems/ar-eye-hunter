@@ -56,7 +56,6 @@ import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/ra
 import type { RoomSendFence } from '@shared-web/browser/rooms/room-state-store.ts';
 import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import { ALInboundStoreCounts } from '@shared/alm/storage/al-inbound-store-counts.ts';
 import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { resolveRallarGroupLeaderSessionId } from '@shared/api/group-director.ts';
 import type { GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
@@ -74,6 +73,7 @@ import {
 } from '@shared/transport-faults/transport-fault-port.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
+import { ALInboundStoreCounts } from './al-inbound-store-counts.ts';
 import {
     createBlackBoxRallarCongestionCounters,
     type BlackBoxRallarCongestionCounters
