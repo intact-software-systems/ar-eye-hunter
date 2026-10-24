@@ -6,6 +6,7 @@ import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-st
 import { GROUP_LIFECYCLE_POLICIES_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
 import { decodeQuickJoinGroupRequest } from '@shared-server/rallar-system/group-state/quick-join/group-quick-join-codec.ts';
 import { GroupQuickJoinService } from '@shared-server/rallar-system/group-state/quick-join/group-quick-join-service.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { encodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
 import type { CreateGroupRequest } from '@shared/api/state-types.ts';
@@ -115,7 +116,8 @@ async function joinCandidate(harness: AuthorityHarness, groupId: string, princip
 
 describe('Quick Join through AppInbox', () => {
     it('admits to the matching existing room and returns its committed membership', async () => {
-        const harness = await createAuthorityHarness(['owner', 'bob']);
+        const timings: RallarTimingEvent[] = [];
+        const harness = await createAuthorityHarness(['owner', 'bob'], { timing: (event) => timings.push(event) });
         await createRoom(harness, 'unrelated', 'Relic Hunters');
         await createRoom(harness, 'arena', 'AR Eye Hunter');
 
@@ -138,6 +140,19 @@ describe('Quick Join through AppInbox', () => {
         expect(result.snapshot).toEqual(committed);
         const other = await harness.repository.readSnapshot({ ...SCOPE, groupId: 'unrelated' });
         expect(other?.members.map((member) => member.principalId)).toEqual(['owner']);
+        const phases = timings.filter((event) => event.component === 'group-quick-join');
+        expect(phases.map((event) => event.operation)).toEqual(['read', 'compute', 'validate', 'write']);
+        for (const phase of phases) {
+            expect(phase).toMatchObject({
+                ...SCOPE,
+                requestId: 'quick-bob',
+                principalId: 'bob',
+                sessionId: harness.sessions.bob.sessionId,
+                serviceId: 'server-12345678',
+                status: 'ok',
+                details: { attempt: 1 }
+            });
+        }
     });
 
     it('returns unavailable without parking an approval request', async () => {
@@ -344,7 +359,8 @@ describe('Quick Join through AppInbox', () => {
     });
 
     it('rejects a session revoked after enqueue without changing membership', async () => {
-        const harness = await createAuthorityHarness(['owner', 'bob']);
+        const timings: RallarTimingEvent[] = [];
+        const harness = await createAuthorityHarness(['owner', 'bob'], { timing: (event) => timings.push(event) });
         await createRoom(harness, 'revoked', 'AR Eye Hunter');
         const pending = harness.service.processQuickJoinUntilCompletion({
             scope: SCOPE,
@@ -357,6 +373,9 @@ describe('Quick Join through AppInbox', () => {
 
         expect((await pending).left).toMatchObject({ status: 403 });
         expect((await harness.repository.readSnapshot({ ...SCOPE, groupId: 'revoked' }))?.group.activeMemberCount).toBe(1);
+        expect(timings.filter((event) => event.component === 'group-quick-join')).toEqual([
+            expect.objectContaining({ operation: 'read', status: 'error', requestId: 'revoked-join' })
+        ]);
     });
 
     it.each(['scope', 'member'] as const)('rejects a self-consistent durable result for another %s', async (substitution) => {

@@ -20,6 +20,7 @@ export const MUTATION_ROUTE_OWNER_PATHS = {
     C: 'packages/shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts',
     X: 'packages/shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts',
     G: 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts',
+    groupRetention: 'packages/shared-server/rallar-system/group-state/retention/group-retention-inbox.ts',
     O: 'packages/shared-server/rallar-system/topology/inbox/topology-inbox-service.ts',
     S: 'packages/shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-inbox-service.ts',
     I: 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts',
@@ -47,6 +48,7 @@ export const MUTATION_ROUTE_OWNER_DISPATCH_PATHS = {
     'AppCrdtInboxService.processCommand': 'processCommand',
     'GroupStateInboxHandler.processGroupStateMutation': 'groupStateInboxHandler.processGroupStateMutation',
     'GroupStateInboxService.processQuickJoin': 'processQuickJoin',
+    processGroupRetention: 'processGroupRetention',
     'RtcRttAppInboxHandler.processMutation': 'handler.processMutation',
     'TopologyAppInboxHandler.processMutation': 'handler.processMutation',
     writeGroupSessionCleanup: 'writeGroupSessionCleanup'
@@ -728,6 +730,17 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         familyRegistrationMarker: 'registerGroupPresenceRoutes',
         rootSource: 'gr',
         constructionRootMarker: 'registerGroupStateRoutes'
+    },
+    {
+        transport: 'MAINTENANCE',
+        entrypoint: 'group retention reconciliation',
+        type: 'GROUP_RETENTION_RECONCILE',
+        source: 'groupRetentionReconciliation',
+        registrationMarker: 'reconcileGroupRetention',
+        enqueueSource: 'groupRetentionReconciliation',
+        enqueueMarker: 'input.enqueue',
+        ownerSource: 'groupRetention',
+        owner: 'processGroupRetention'
     },
     {
         transport: 'MAINTENANCE',

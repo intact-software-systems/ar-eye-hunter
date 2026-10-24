@@ -651,7 +651,8 @@ paths:
         Entries carry no member roster,
         sessions, or metadata. Groups the caller already reads in full are
         returned by the group snapshot list instead. Rooms with nobody online
-        are omitted unless `includeEmpty` is true. Entries are ordered by
+        are omitted unless `includeEmpty` is true; empty temporary rooms stay hidden
+        regardless of that option. Entries are ordered by
         online member count (descending), then group id, and paged with an
         opaque keyset cursor. With `order=peer-rtt`, equal occupancy is ordered by
         known peer RTT ascending, unknown RTT last, then group id. `peerRttMs` is
@@ -711,7 +712,7 @@ paths:
         - name: includeEmpty
           in: query
           required: false
-          description: Include rooms with no online member.
+          description: Include persistent rooms with no online member. Empty temporary rooms remain hidden.
           schema:
             type: boolean
             default: false
@@ -895,6 +896,7 @@ paths:
         capacity and lifecycle admission policy as manual join. Never creates a
         group or pending admission request. Joined and unavailable outcomes are
         durable for this caller and request ID; conflicting reuse returns 409.
+        Empty temporary rooms are excluded even when includeEmpty is true.
         Room membership does not enroll the caller in an application activity.
       security:
         - bearerAuth: []
@@ -6246,7 +6248,7 @@ components:
         includeEmpty:
           type: boolean
           default: false
-          description: Include groups with no distinct online members.
+          description: Include persistent groups with no distinct online members. Empty temporary groups remain excluded.
 
     QuickJoinGroupResult:
       oneOf:

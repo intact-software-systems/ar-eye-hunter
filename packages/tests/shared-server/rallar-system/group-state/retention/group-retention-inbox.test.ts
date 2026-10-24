@@ -8,6 +8,7 @@ import { createAppInboxRetryFinalizer } from '@shared-server/rallar-system/app-i
 import { writeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import { GroupRetentionService } from '@shared-server/rallar-system/group-state/retention/group-retention-service.ts';
+import type { RallarTimingEvent, RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
@@ -24,7 +25,8 @@ describe('retention through the registered AppInbox capability', () => {
     it('atomically persists its exact result and replays it after later archival without duplicate effects', async () => {
         fixture = await createRetentionDatabaseFixture();
         await seedRetentionRoom(fixture);
-        const { inbox, reader, results } = createInbox(fixture);
+        const timings: RallarTimingEvent[] = [];
+        const { inbox, reader, results } = createInbox(fixture, fixture.retention, (event) => timings.push(event));
         const command = { groupRef: RETENTION_REF, requestId: 'first-scan', observedAtEpochMs: fixture.nowEpochMs };
         const entry = await inbox.enqueueGroupRetention(command);
         expect((await fixture.repository.findGroup(RETENTION_REF))?.emptySinceEpochMs).toBeNull();
@@ -33,6 +35,19 @@ describe('retention through the registered AppInbox capability', () => {
         expect(accepted?.status).toBe(EntityStatus.COMPLETED);
         expect(JSON.parse(accepted?.resource ?? 'null')).toMatchObject({ groupRef: RETENTION_REF, receipt: { outcome: 'applied', attemptCount: 1 } });
         expect((await fixture.repository.findGroup(RETENTION_REF))?.emptySinceEpochMs).toBe(fixture.nowEpochMs);
+        const phases = timings.filter((event) => event.component === 'group-retention');
+        expect(phases.map((event) => event.operation)).toEqual(['read', 'compute', 'validate', 'write']);
+        for (const phase of phases) {
+            expect(phase).toMatchObject({
+                ...RETENTION_REF,
+                serviceId: 'retention-inbox-test',
+                requestId: command.requestId,
+                status: 'ok',
+                details: { attempt: 1 }
+            });
+            expect(phase.durationMs).toBeGreaterThanOrEqual(0);
+        }
+        expect(timings.some((event) => event.component === 'app-inbox-phase' && event.operation === 'transaction')).toBe(true);
 
         fixture.nowEpochMs += 1_000;
         const archiveEntry = await inbox.enqueueGroupRetention({ ...command, requestId: 'archive-scan', observedAtEpochMs: fixture.nowEpochMs });
@@ -84,7 +99,8 @@ describe('retention through the registered AppInbox capability', () => {
                 }
             }
         }, { serviceId: 'retention-test', now: () => current.nowEpochMs });
-        const { inbox, reader, results, queue } = createInbox(current, retention);
+        const timings: RallarTimingEvent[] = [];
+        const { inbox, reader, results, queue } = createInbox(current, retention, (event) => timings.push(event));
         const entry = await inbox.enqueueGroupRetention({ groupRef: RETENTION_REF, requestId: 'conflicted-scan', observedAtEpochMs: current.nowEpochMs });
         const resilience = createAppInboxTestResilience(0);
         for (let delivery = 0; delivery < (conflicts === 1 ? 2 : 20); delivery++) {
@@ -93,6 +109,10 @@ describe('retention through the registered AppInbox capability', () => {
         const result = await results.findByKey(entry.key);
         expect((await queue.getItem(entry.key))?.resource).toBe(entry.resource);
         expect(reads).toBe(conflicts === 1 ? 2 : 20);
+        const writes = timings.filter((event) => event.component === 'group-retention' && event.operation === 'write');
+        expect(writes.map((event) => event.details?.attempt)).toEqual(Array.from({ length: reads }, (_, index) => index + 1));
+        expect(writes.filter((event) => event.status === 'error')).toHaveLength(conflicts);
+        expect(writes[0].error?.message).toContain('conflict');
         const group = await current.repository.findGroup(RETENTION_REF);
         expect(group?.displayName).toBe(`Concurrent edit ${conflicts}`);
         if (conflicts === 1) {
@@ -110,7 +130,8 @@ describe('retention through the registered AppInbox capability', () => {
     it.each(['outbox', 'result'] as const)('rolls back every domain effect when the final %s write fails', async (fault) => {
         fixture = await createRetentionDatabaseFixture();
         await seedRetentionRoom(fixture);
-        const { inbox, reader, results } = createInbox(fixture);
+        const timings: RallarTimingEvent[] = [];
+        const { inbox, reader, results } = createInbox(fixture, fixture.retention, (event) => timings.push(event));
         const command = { groupRef: RETENTION_REF, requestId: `failed-${fault}`, observedAtEpochMs: fixture.nowEpochMs };
         const ingress = fixture.retention.capture(command);
         const computed = fixture.retention.compute(await fixture.retention.read(ingress, 1));
@@ -136,10 +157,14 @@ describe('retention through the registered AppInbox capability', () => {
         expect(await fixture.storage.sql`select ri_resource_id, ri_resource from resource_inbox where ri_type_id <> 'APP_INBOX' order by ri_resource_id`)
             .toEqual(outbox);
         expect((await results.findByKey(entry.key))?.status).not.toBe(EntityStatus.COMPLETED);
+        expect(timings.find((event) => event.component === 'group-retention' && event.operation === 'write')?.status)
+            .toBe(fault === 'outbox' ? 'error' : 'ok');
+        expect(timings.find((event) => event.component === 'app-inbox-phase' && event.operation === 'transaction')?.status)
+            .toBe('error');
     }, 30_000);
 });
 
-function createInbox(fixture: RetentionDatabaseFixture, retention = fixture.retention) {
+function createInbox(fixture: RetentionDatabaseFixture, retention = fixture.retention, timing?: RallarTimingSink) {
     const resources = createPSqlResourceInboxRepository(fixture.storage.sql, () => new Date(fixture.nowEpochMs));
     const queue = new PSqlQueueBox(resources, () => Temporal.Instant.fromEpochMilliseconds(fixture.nowEpochMs));
     const reader = new InboxQueueReader(queue, {
@@ -155,6 +180,6 @@ function createInbox(fixture: RetentionDatabaseFixture, retention = fixture.rete
         database: fixture.storage.sql,
         groupStateService: { ...fixture.mutations, retention },
         resultReader: fixture.repository
-    }, { serviceId: 'retention-inbox-test', options: { nowEpochMs: () => fixture.nowEpochMs } });
+    }, { serviceId: 'retention-inbox-test', timing, options: { nowEpochMs: () => fixture.nowEpochMs } });
     return { inbox, reader, results, queue };
 }

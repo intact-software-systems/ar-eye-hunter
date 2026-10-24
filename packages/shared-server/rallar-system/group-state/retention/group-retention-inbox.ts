@@ -14,6 +14,8 @@ import {
 } from '../../app-inbox/handler/app-inbox-completion-computation.ts';
 import type { AppInboxHandlerRegistry } from '../../app-inbox/handler/app-inbox-handler-registry.ts';
 import type { AppInboxTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
+import type { RallarTimingSink } from '../../observability/timing.ts';
+import { timeGroupStatePhase, type GroupStatePhaseTiming } from '../inbox/time-group-state-phase.ts';
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
 import {
     decodeGroupRetentionCommand,
@@ -25,6 +27,8 @@ interface GroupRetentionInboxDependencies {
     readonly service: GroupRetentionService;
     readonly transactionWriter: AppInboxTransactionWriter;
     readonly wakeQueue: (() => void) | undefined;
+    readonly timing: RallarTimingSink | undefined;
+    readonly serviceId: string;
 }
 
 export function registerGroupRetentionInbox(
@@ -63,12 +67,25 @@ async function processGroupRetention(input: ProcessGroupRetentionInput): Promise
     if (!jsonEquals(command, ingress.command) || !jsonEquals(context.enqueue, toGroupRetentionEnqueue(ingress))) {
         throw new TypeError('Retention queue identity differs from its canonical ingress');
     }
-    const read = await dependencies.service.read(ingress, context.entry.dequeueAudit.attempts);
-    const computed = dependencies.service.compute(read);
-    const issue = dependencies.service.validate(read, computed)[0];
-    if (issue) {
-        throw issue.cause;
-    }
+    const timing: GroupStatePhaseTiming = {
+        timing: dependencies.timing,
+        component: 'group-retention',
+        serviceId: dependencies.serviceId,
+        requestId: command.requestId,
+        scope: command.groupRef,
+        groupId: command.groupRef.groupId,
+        principalId: undefined,
+        sessionId: undefined,
+        attempt: context.entry.dequeueAudit.attempts
+    };
+    const read = await timeGroupStatePhase(timing, 'read', () => dependencies.service.read(ingress, timing.attempt));
+    const computed = await timeGroupStatePhase(timing, 'compute', () => dependencies.service.compute(read));
+    await timeGroupStatePhase(timing, 'validate', () => {
+        const issue = dependencies.service.validate(read, computed)[0];
+        if (issue) {
+            throw issue.cause;
+        }
+    });
     const completionInput = {
         ...dependencies.transactionWriter.readCompletionFacts(context),
         durableResult: { groupRef: command.groupRef, receipt: computed.receipt },
@@ -82,7 +99,7 @@ async function processGroupRetention(input: ProcessGroupRetentionInput): Promise
     const result = await dependencies.transactionWriter.writeComputedMutation(
         context,
         completion,
-        (transaction) => dependencies.service.write(transaction, computed)
+        (transaction) => timeGroupStatePhase(timing, 'write', () => dependencies.service.write(transaction, computed))
     );
     dependencies.wakeQueue?.();
     return result;
