@@ -41,6 +41,7 @@ export function createApiV1RelicServices(input: CreateApiV1RelicServicesInput): 
     }, {
         serviceId: mutation.serviceId,
         serverPeerId: input.wsRuntimeName,
+        finishedRetentionMs: mutation.appInboxFinishedRetentionMs,
         timing: input.timing,
         options: mutation.appInboxOptions
     });

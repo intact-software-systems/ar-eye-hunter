@@ -15,7 +15,6 @@ import type {
 import { validateRuntimeStateGuardedBatch } from '../../../runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
 import { computeAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import { groupStateEventWorkspaceKey } from '../../state-events/postgres/group-state-event-workspace-key.ts';
-import { GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS } from '../group-state-service-contracts.ts';
 import type { GroupMutationReceipt } from '../mutation/group-mutation-contracts.ts';
 import { groupStateUpdateGroupDescriptor } from '../persistence/aggregate/group-aggregate-write-descriptors.ts';
 import type { RetiredGroupIdentity } from '../persistence/aggregate/retired-group-identity.ts';
@@ -49,7 +48,7 @@ export function computeGroupRetentionWrite(
         aggregateRef: read.ingress.command.groupRef,
         commandId: read.ingress.commandId,
         createdAtEpochMs: event.occurredAtEpochMs,
-        expireAtEpochMs: GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS,
+        expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP,
         acceptedCausalRevision: event.causalRevision,
         event
     }, read.ingress.serviceId);

@@ -74,6 +74,7 @@ export namespace RelicGameInboxService {
     export interface Config {
         readonly serviceId: string;
         readonly serverPeerId: string;
+        readonly finishedRetentionMs: number;
         readonly timing?: RallarTimingSink;
         readonly options?: AppInboxOptions;
     }

@@ -203,9 +203,12 @@ function createTopologyRuntimeRepository(
 
 function createPostgresAppInboxWorkerInbox(
     resourceInbox: PSqlResourceInboxRepository,
-    input: Pick<CreatePostgresAppInboxWorkerServicesInput, 'sql' | 'newLaneConcurrency' | 'newLaneHeldRows' | 'flightEntryListener' | 'trace'>
+    input: Pick<
+        CreatePostgresAppInboxWorkerServicesInput,
+        'sql' | 'finishedRetentionMs' | 'newLaneConcurrency' | 'newLaneHeldRows' | 'flightEntryListener' | 'trace'
+    >
 ): InboxQueueReader {
-    const finalizeRetry = createAppInboxRetryFinalizer({ database: input.sql });
+    const finalizeRetry = createAppInboxRetryFinalizer({ database: input.sql, finishedRetentionMs: input.finishedRetentionMs });
     return new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
         newLaneConcurrency: input.newLaneConcurrency,
         newLaneHeldRows: input.newLaneHeldRows,

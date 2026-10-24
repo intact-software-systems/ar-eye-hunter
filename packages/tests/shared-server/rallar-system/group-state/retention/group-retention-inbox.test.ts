@@ -18,6 +18,7 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { createAppInboxTestResilience } from '../../app-inbox/test-support/app-inbox-resource-fixtures.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import {
     createRetentionDatabaseFixture,
     RETENTION_REF,
@@ -186,7 +187,7 @@ function createInbox(fixture: RetentionDatabaseFixture, retention = fixture.rete
     const reader = new InboxQueueReader(queue, {
         newLaneConcurrency: 1,
         nowEpochMs: () => fixture.nowEpochMs,
-        onRetryExhausted: createAppInboxRetryFinalizer({ database: fixture.storage.sql })
+        onRetryExhausted: createAppInboxRetryFinalizer({ database: fixture.storage.sql, finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS })
     });
     const results = new ResourceInboxResultsRepository(fixture.storage.sql);
     const inbox = new GroupStateInboxService({
@@ -196,6 +197,11 @@ function createInbox(fixture: RetentionDatabaseFixture, retention = fixture.rete
         database: fixture.storage.sql,
         groupStateService: { ...fixture.mutations, retention },
         resultReader: fixture.repository
-    }, { serviceId: 'retention-inbox-test', timing, options: { nowEpochMs: () => fixture.nowEpochMs } });
+    }, {
+        serviceId: 'retention-inbox-test',
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+        timing,
+        options: { nowEpochMs: () => fixture.nowEpochMs }
+    });
     return { inbox, reader, results, queue };
 }

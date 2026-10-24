@@ -17,6 +17,7 @@ import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/stat
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 
 import { createResourceInboxTestStorage, type ResourceInboxTestStorage } from '../../../queuebox/resource-inbox-test-storage.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { createTestAuthSession } from '../group-state-test-runtime.ts';
 
 export const RETENTION_REF = { applicationId: 'retention-app', workspaceId: 'retention-workspace', groupId: 'temporary-room' };
@@ -41,6 +42,7 @@ export async function createRetentionDatabaseFixture(): Promise<RetentionDatabas
     const mutations = createGroupStateService({
         runtimeRepository: runtime,
         groupStateEventStore: events,
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         readPlannedLayoutRow: async () => null,
         readAcceptedLayoutRow: async () => null,
         ...config

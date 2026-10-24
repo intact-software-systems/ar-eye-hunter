@@ -80,7 +80,12 @@ export function createGroupStateRuntime(
         sessionGenerationLifecycle: createWsSessionGenerationLifecycleService(runtime),
         quickJoin: new GroupQuickJoinService(
             { repository: repositoryFor(runtime), authSessions },
-            { capacity: dependencies.capacity ?? { defaultMaxMembers: null }, serviceId: dependencies.serviceId, now }
+            {
+                capacity: dependencies.capacity ?? { defaultMaxMembers: null },
+                serviceId: dependencies.serviceId,
+                finishedRetentionMs: dependencies.finishedRetentionMs,
+                now
+            }
         ),
         retention: new GroupRetentionService({
             repository: repositoryFor(runtime),
