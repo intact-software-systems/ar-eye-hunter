@@ -508,11 +508,17 @@ describe('pending room entry lifecycle', () => {
                 entry.cancel();
             }
         });
+        const observed: RallarRoomEntry.State[] = [];
+        entry.onChange((state) => {
+            observed.push(state);
+        });
 
         await entry.resume();
 
         expect(entry.getState().status).toBe('idle');
         expect(browser.requests).toEqual([]);
+        expect(observed.map((state) => state.status)).toEqual(['pending', 'idle']);
+        expect(observed.at(-1)).toBe(entry.getState());
     });
 
     it('reports previous-room cleanup separately from reconnecting the admitted room', async () => {

@@ -1,6 +1,7 @@
 import { RELIC_TOPICS, RELIC_TYPES, type RelicServerEvent } from '@relic-hunters/mod.ts';
 import { RallarRecentRooms, RallarRoomEntry } from '@shared-web/browser/rallar-room-entry.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
+import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import { fetchRelicSnapshot, resetRelicGame, sendRelicCommand } from './api.ts';
 import { createRelicAuthorityClientBridge } from './rallar-game-authority-adapter.ts';
 import type { RelicHuntersRuntime } from './relic-hunters-runtime.ts';
@@ -19,6 +20,7 @@ export function browserRelicRuntimeDeps(): RelicHuntersRuntime.Dependencies {
     return {
         roomEntry,
         recentRooms,
+        timers: createDefaultTimers(),
         restoreSession: () => rallar.auth.restore(),
         login: (username, password) => rallar.auth.login({ username, password }),
         register: (username, password, displayName) =>

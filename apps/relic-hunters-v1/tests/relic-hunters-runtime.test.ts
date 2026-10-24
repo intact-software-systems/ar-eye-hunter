@@ -1,4 +1,7 @@
+import '../../../packages/tests/setup-browser-indexeddb.ts';
+
 import {
+    applyRelicCommand,
     createRelicGame,
     RELIC_PROTOCOL_VERSION,
     toPublicRelicSnapshot,
@@ -23,6 +26,7 @@ import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createGroupSnapshotFixture } from '../../../packages/tests/shared-web/authoritative-group-fixtures.ts';
+import { createManualTimers } from '../../../packages/tests/shared/resilience/manual-timers.ts';
 import { RelicHuntersRuntime } from '../src/game/relic-hunters-runtime.ts';
 import type { RelicWsCommandDelivery } from '../src/game/send-relic-ws-command.ts';
 
@@ -35,6 +39,57 @@ afterEach(async () => {
 });
 
 describe('RelicHuntersRuntime', () => {
+    it('timestamps hydration, commands, and resets using its injected clock', async () => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = startRuntime(backend);
+        await runtime.start();
+        expect(runtime.getState().diagnostics.lastHydratedAtEpochMs).toBe(1_000);
+        await backend.timers.advance(17);
+        backend.deliverSnapshot(relicSnapshot('room-1', 21));
+        expect(runtime.getState().diagnostics.lastHydratedAtEpochMs).toBe(1_017);
+        await backend.timers.advance(13);
+        await runtime.getState().forceResolveRound();
+        expect(runtime.getState().diagnostics.lastHydratedAtEpochMs).toBe(1_030);
+        await backend.timers.advance(11);
+        await runtime.getState().resetExpedition();
+        expect(runtime.getState().diagnostics.lastHydratedAtEpochMs).toBe(1_041);
+    });
+
+    it('repairs at the injected round deadline and cancels all repair timers on stop', async () => {
+        const backend = new RelicRuntimeBackend();
+        let game = createRelicGame('room-1', 'room-1', 1);
+        const command = { protocolVersion: RELIC_PROTOCOL_VERSION, gameId: 'room-1', username: 'Alice' };
+        game = applyRelicCommand(game, { ...command, kind: 'join-expedition' }, {
+            senderId: 'client-1',
+            now: () => 2
+        }).state;
+        game = applyRelicCommand(game, { ...command, kind: 'start-expedition' }, {
+            senderId: 'client-1',
+            now: () => backend.timers.nowMs()
+        }).state;
+        const snapshot = toPublicRelicSnapshot(game);
+        expect(snapshot.phase).toBe('planning');
+        backend.fetchSnapshot = async (roomId) => {
+            backend.reads.push(roomId);
+            return snapshot;
+        };
+        const runtime = startRuntime(backend);
+        await runtime.start();
+        const initialReads = backend.reads.length;
+        await backend.timers.advance(snapshot.roundTimeLimitMs - 1);
+        expect(backend.reads).toHaveLength(initialReads);
+        await backend.timers.advance(1);
+        expect(backend.reads).toHaveLength(initialReads + 1);
+        expect(runtime.getState().diagnostics.lastSnapshotSource).toBe('timeout-repair');
+        await backend.timers.advance(2_000);
+        expect(backend.reads).toHaveLength(initialReads + 2);
+
+        runtime.stop();
+        expect(backend.timers.pendingCount()).toBe(0);
+        await backend.timers.advance(10_000);
+        expect(backend.reads).toHaveLength(initialReads + 2);
+    });
+
     it('records and returns to recent rooms without joining or resetting the expedition, then stops history', async () => {
         const backend = new RelicRuntimeBackend();
         const runtime = startRuntime(backend);
@@ -421,6 +476,7 @@ interface DeliveredCommand {
 
 /** In-process external ports expose membership, delivered commands and snapshots, without replacing runtime decisions. */
 class RelicRuntimeBackend implements RelicHuntersRuntime.Dependencies {
+    public readonly timers = createManualTimers(1_000);
     public session: AuthSession | undefined = {
         clientId: 'client-1',
         accessToken: 'token-1',
@@ -461,7 +517,7 @@ class RelicRuntimeBackend implements RelicHuntersRuntime.Dependencies {
             auth: { session: () => this.session, onChange: (listener) => this.onAuthChange(listener) },
             entry: this.roomEntry,
             data: { open: (input, options) => data.open(input, { ...options, dbName, sync: false }) },
-            now: () => Date.now()
+            now: () => this.timers.nowMs()
         }, { scope: { applicationId: 'rallar-server', workspaceId: 'default' } });
     }
 
@@ -649,4 +705,3 @@ function directoryEntry(groupId: string): GroupDirectoryEntry {
         peerRttMs: null
     };
 }
-import '../../../packages/tests/setup-browser-indexeddb.ts';

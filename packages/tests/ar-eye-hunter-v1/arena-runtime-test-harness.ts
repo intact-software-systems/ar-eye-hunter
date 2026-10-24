@@ -426,4 +426,3 @@ function emptyArenaMatchStatus(): RallarGameMatchStatus {
         updatedAtEpochMs: 1
     };
 }
-import '../setup-browser-indexeddb.ts';

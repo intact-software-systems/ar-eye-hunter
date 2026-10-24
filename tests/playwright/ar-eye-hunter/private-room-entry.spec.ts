@@ -157,8 +157,9 @@ roomBrowserTest(
         await guestOperations.getByRole('button', { name: 'Enter room', exact: true }).click();
         await expect(guestOperations.getByText(`Entered ${reference}.`, { exact: true })).toBeVisible();
         await hostOperations.getByRole('button', { name: 'New code arena', exact: true }).click();
-        await expect(linkField).toHaveValue(/#rallar-room\?.*joinCode=/);
         await expect(linkField).not.toHaveValue(currentLink);
+        // Creating while connected also settles the previous room before rotating the new code.
+        await expect(linkField).toHaveValue(/#rallar-room\?.*joinCode=/, { timeout: 30_000 });
         const nextLink = await linkField.inputValue();
         const nextReference = new URLSearchParams(new URL(nextLink).hash.slice('#rallar-room?'.length)).get('groupId');
         await openOperations(guest, nextLink);

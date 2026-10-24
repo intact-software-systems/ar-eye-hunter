@@ -214,6 +214,28 @@ describe('recent room navigation history', () => {
         }
     });
 
+    it.each([null, 'bob'])('never delivers old history after an observer changes the account to %s', async (principalId) => {
+        const browser = createBrowser();
+        const history = browser.createHistory();
+        await history.start();
+        history.onChange((state) => {
+            if (state.principalId === 'alice' && state.rooms.length > 0) {
+                browser.authenticate(principalId);
+            }
+        });
+        const observed: RallarRecentRooms.State[] = [];
+        history.onChange((state) => {
+            observed.push(state);
+        });
+        await browser.visit('alice-room');
+        await history.whenIdle();
+
+        const changed = observed.findIndex((state) => state.principalId === principalId);
+        expect(changed).toBeGreaterThanOrEqual(0);
+        expect(observed.slice(changed).every((state) => state.principalId === principalId && state.rooms.length === 0)).toBe(true);
+        expect(observed.at(-1)).toBe(history.getState());
+    });
+
     it('never navigates while hydrating history or displaces a newer invitation', async () => {
         const browser = createBrowser();
         const history = browser.createHistory();

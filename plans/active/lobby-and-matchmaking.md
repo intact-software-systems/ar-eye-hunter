@@ -27,8 +27,9 @@ the maintainer's selected existing-measurement scope.
 private-room entry in both games and is merged.
 [PR #701](https://github.com/intact-software-systems/ar-eye-hunter/pull/701) delivered slice 5
 through the existing create/update and room-entry owners and is merged as `ea3240c7`.
-Recovery and recent-room navigation are the current increment in
-[PR #705](https://github.com/intact-software-systems/ar-eye-hunter/pull/705); retention policy follows separately.
+Recovery and recent-room navigation are implemented in
+[PR #705](https://github.com/intact-software-systems/ar-eye-hunter/pull/705), pending review and maintainer merge;
+retention policy follows separately.
 
 ## Current foundation
 
@@ -108,7 +109,7 @@ all-or-none admission decisions before it becomes a platform promise.
 
 | Priority    | Outcomes                                                                                    |
 | ----------- | ------------------------------------------------------------------------------------------- |
-| Current     | Recovery and recent-room navigation (6), through shared entry and local Rallar Data.        |
+| Current     | Review and merge recovery/recent-room navigation (6), PR #705.                              |
 | Next        | Temporary/persistent retention decisions (6), after recovery is merged.                     |
 | Then        | Automatic directory freshness (7), introducing push when the experience needs it.           |
 | Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them. |
@@ -248,10 +249,23 @@ and review evidence; its completed implementation plan and design are removed wi
 
 ## Slice 6: recovery and room lifetime
 
-Deliver recovery and recent-room navigation first, then separately define temporary versus persistent
-room retention. Include interrupted authentication, reload, expired rooms, removed membership, and a
-new invitation overriding an old destination. Reconnect grace and deletion must not race each other.
-Decide “play again” behavior with each application's activity lifecycle.
+[PR #705](https://github.com/intact-software-systems/ar-eye-hunter/pull/705) implements the recovery
+increment. A shared `RallarRecentRooms` owner stores ten distinct scoped references and visit timestamps
+through Rallar Data per principal and application/workspace. It saves no credentials or availability
+claims. Both games expose Return and Forget, with independent storage loading/failure/retry states.
+History hydration does not navigate; a new invitation keeps precedence over a restored destination.
+
+Return captures the displayed account and uses the existing entry/admission path. Current scope,
+membership, capacity, bans, and room lifecycle remain authoritative; leaving a code room can require
+a fresh code to return. Forget removes only the local shortcut. Relic admission never automatically
+joins or resets an expedition. Account replacement, delayed storage operations, reentrant lifecycle
+notifications, and malformed persisted records have focused coverage. Both games' browser journeys
+cover reload, fresh-link precedence, denied return/retry, and durable Forget. Simultaneous tabs remain
+latest-value history and may overwrite a local edit.
+
+After this increment merges, separately define temporary versus persistent room retention, reconnect
+grace, hiding, archival, and deletion. Reconnect grace and deletion must not race each other. Decide
+“play again” behavior with each application's activity lifecycle.
 
 Corrupt-row isolation belongs to operator reliability in slice 9, not this recovery feature.
 

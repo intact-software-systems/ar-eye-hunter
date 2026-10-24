@@ -1,6 +1,7 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import { BoundedConcurrencyAdmission } from '@shared/resilience/bounded-concurrency-admission.ts';
 import { BrowserRallarSubscriptionScope, notifyListener } from '../../messages/rallar-listener-delivery.ts';
 import type { RallarDataFacade, RallarDataStore } from '../../rallar-data.ts';
 import type { RallarStateListener, RallarUnsubscribe } from '../../rallar-shared-contracts.ts';
@@ -61,7 +62,8 @@ export class RallarRecentRooms {
     private lastEntry: RallarRoomEntry.State | null = null;
     private generation = 0;
     // Serializes store ownership changes with local edits; a stale close cannot dispose a restarted store.
-    private operations: Promise<void> = Promise.resolve();
+    private readonly storageAdmission = new BoundedConcurrencyAdmission({ maxConcurrent: 1 });
+    private latestOperation: Promise<void> = Promise.resolve();
 
     public static createBrowser(
         rallar: RallarRecentRooms.Browser,
@@ -130,9 +132,9 @@ export class RallarRecentRooms {
 
     public async whenIdle(): Promise<void> {
         while (true) {
-            const operations = this.operations;
-            await operations;
-            if (operations === this.operations) {
+            const operation = this.latestOperation;
+            await operation;
+            if (operation === this.latestOperation) {
                 return;
             }
         }
@@ -260,10 +262,16 @@ export class RallarRecentRooms {
     }
 
     private enqueue(generation: number, operation: () => Promise<void>): Promise<void> {
-        this.operations = this.operations.then(operation).catch(() => {
-            this.fail(generation, STORAGE_FAILURE);
+        const completion = this.storageAdmission.admit(async () => {
+            try {
+                await operation();
+            }
+            catch {
+                this.fail(generation, STORAGE_FAILURE);
+            }
         });
-        return this.operations;
+        this.latestOperation = completion;
+        return completion;
     }
 
     private isCurrent(generation: number, principalId: string): boolean {
@@ -284,6 +292,9 @@ export class RallarRecentRooms {
     private publish(state: RallarRecentRooms.State): void {
         this.state = state;
         for (const listener of this.listeners) {
+            if (this.state !== state) {
+                break;
+            }
             notifyListener(listener, state);
         }
     }

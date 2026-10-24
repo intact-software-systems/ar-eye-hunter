@@ -1,6 +1,5 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
-import { validateRallarGroupRef } from '@shared/api/rallar-validation.ts';
 import { Either, Try } from '@shared/resilience/Either.ts';
 import { SingleFlight } from '@shared/resilience/single-flight.ts';
 import { toError } from '@shared/resilience/to-error.ts';
@@ -11,6 +10,11 @@ import type { RallarStateListener, RallarUnsubscribe } from '../rallar-shared-co
 import type { RallarAuthFacade, RallarAuthState } from '../session/rallar-auth-facade.ts';
 import type { BrowserRallarRooms } from './browser-rallar-rooms.ts';
 import type { RallarJoinRoomOptions, RallarRoomState } from './rallar-room-contracts.ts';
+import {
+    decodeRoomEntryDestination,
+    decodeScopedDestination,
+    invalidDestination
+} from './room-entry-validation.ts';
 import type { GroupRef, GroupSnapshot, StateScope } from './room-group-state-translation.ts';
 
 const ENTRY_FRAGMENT = '#rallar-room?';
@@ -420,6 +424,9 @@ export class RallarRoomEntry {
     private publish(state: RallarRoomEntry.State): RallarRoomEntry.State {
         this.state = state;
         for (const listener of this.listeners) {
+            if (this.state !== state) {
+                break;
+            }
             notifyListener(listener, state);
         }
         return this.state;
@@ -482,27 +489,6 @@ export function toRoomEntryUrl(
     );
 }
 
-function decodeRoomEntryDestination(value: unknown): Either<RallarRoomEntry.Failure, RallarRoomEntry.Destination> {
-    if (!value || typeof value !== 'object' || !('roomRef' in value) || !('joinCode' in value)) {
-        return Either.ofLeft(invalidDestination());
-    }
-    const roomRef = value.roomRef;
-    if (
-        !roomRef || typeof roomRef !== 'object' ||
-        !('applicationId' in roomRef) || typeof roomRef.applicationId !== 'string' ||
-        !('workspaceId' in roomRef) || typeof roomRef.workspaceId !== 'string' ||
-        !('groupId' in roomRef) || typeof roomRef.groupId !== 'string' ||
-        !validateRallarGroupRef(roomRef).ok ||
-        (value.joinCode !== null && (typeof value.joinCode !== 'string' || value.joinCode.trim().length === 0))
-    ) {
-        return Either.ofLeft(invalidDestination());
-    }
-    return Either.ofRight({
-        roomRef: { applicationId: roomRef.applicationId, workspaceId: roomRef.workspaceId, groupId: roomRef.groupId },
-        joinCode: value.joinCode
-    });
-}
-
 function readEntryUrl(url: string): Either<RallarRoomEntry.Failure, URL> {
     return Try.compute(() => new URL(url)).flatMap(
         () => Either.ofLeft(invalidDestination()),
@@ -510,24 +496,6 @@ function readEntryUrl(url: string): Either<RallarRoomEntry.Failure, URL> {
             (parsed.protocol === 'https:' || parsed.protocol === 'http:') && !parsed.username && !parsed.password
                 ? Either.ofRight(parsed)
                 : Either.ofLeft(invalidDestination())
-    );
-}
-
-function invalidDestination(message = 'The room link or reference is invalid.'): RallarRoomEntry.Failure {
-    return { kind: 'invalid-destination', message, admittedRoom: null };
-}
-
-function decodeScopedDestination(
-    value: unknown,
-    scope: StateScope
-): Either<RallarRoomEntry.Failure, RallarRoomEntry.Destination> {
-    return decodeRoomEntryDestination(value).flatMap<RallarRoomEntry.Failure, RallarRoomEntry.Destination>(
-        Either.ofLeft,
-        (destination) =>
-            destination.roomRef.applicationId === scope.applicationId &&
-                destination.roomRef.workspaceId === scope.workspaceId
-                ? Either.ofRight(destination)
-                : Either.ofLeft(invalidDestination('This room belongs to a different application or workspace.'))
     );
 }
 
