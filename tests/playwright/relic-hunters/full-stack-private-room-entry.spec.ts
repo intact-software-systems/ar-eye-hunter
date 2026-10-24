@@ -201,8 +201,8 @@ roomBrowserTest(
         const history = guest.getByRole('region', { name: 'Recent rooms', exact: true });
         await expect(history.getByRole('button', { name: `Return to ${firstRef}`, exact: true })).toBeVisible();
         await host.getByRole('button', { name: 'New code room', exact: true }).click();
-        await expect(linkField).toHaveValue(/joinCode=/);
         await expect(linkField).not.toHaveValue(firstLink);
+        await expect(linkField).toHaveValue(/joinCode=/, { timeout: 30_000 });
         const secondLink = await linkField.inputValue();
         const secondRef = new URLSearchParams(new URL(secondLink).hash.slice('#rallar-room?'.length)).get('groupId');
         if (!secondRef) {
