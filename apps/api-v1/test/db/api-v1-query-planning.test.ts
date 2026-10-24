@@ -1,17 +1,13 @@
-import {
-    describe,
-    expect,
-    it
-} from 'vitest';
+import assert from 'node:assert/strict';
 
-import { createDefaultApiV1DatabaseLifecycle } from '../../../../../apps/api-v1/src/db/api-v1-database-lifecycle.ts';
-
-const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
+import { createDefaultApiV1DatabaseLifecycle } from '../../src/db/api-v1-database-lifecycle.ts';
 
 /** API requests must not pay compilation cost on any pooled connection, even when a plan estimate is high. */
-describe('API PostgreSQL query planning', () => {
-    postgresIt('executes short requests without JIT on every application connection', async () => {
-        const url = process.env.DATABASE_URL;
+Deno.test({
+    name: 'API PostgreSQL executes short requests without JIT on every application connection',
+    ignore: Deno.env.get('RALLAR_POSTGRES_INTEGRATION') !== '1',
+    fn: async () => {
+        const url = Deno.env.get('DATABASE_URL');
         if (!url) {
             throw new Error('DATABASE_URL is required for PostgreSQL integration tests');
         }
@@ -52,19 +48,19 @@ describe('API PostgreSQL query planning', () => {
                 }));
             const [connections] = await Promise.all([Promise.all(requests), ready.promise]);
 
-            expect(new Set(connections.map((connection) => connection.pid)).size).toBe(3);
+            assert.equal(new Set(connections.map((connection) => connection.pid)).size, 3);
             for (const connection of connections) {
-                expect(connection.jit).toBe('off');
-                expect(connection.plan).toContain('Execution Time:');
-                expect(connection.plan).not.toMatch(/^JIT:/m);
+                assert.equal(connection.jit, 'off');
+                assert.match(connection.plan, /Execution Time:/u);
+                assert.doesNotMatch(connection.plan, /^JIT:/mu);
             }
             const [result] = await lifecycle.database<{ total: number; }[]>`select 2 + 3 as total`;
-            expect(result.total).toBe(5);
+            assert.equal(result.total, 5);
         }
         finally {
             clearTimeout(acquisitionDeadline);
             ready.resolve();
             await lifecycle.close();
         }
-    });
+    }
 });
