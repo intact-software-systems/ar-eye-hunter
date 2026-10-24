@@ -29,8 +29,10 @@ private-room entry in both games and is merged.
 through the existing create/update and room-entry owners and is merged as `ea3240c7`.
 Recovery and recent-room navigation were delivered in
 [PR #705](https://github.com/intact-software-systems/ar-eye-hunter/pull/705), merged as `eceabcc7d`.
-The current increment adds explicit temporary-room retention and guarded archival; permanent cleanup
-follows as a separate increment after its retained-data contract is defined.
+[PR #706](https://github.com/intact-software-systems/ar-eye-hunter/pull/706) delivered temporary-room
+retention and guarded archival. Production Quick Join verification exposed a deployment mismatch
+and database latency, so the current increment restores that clickable workflow and its regression
+coverage. Seven-day deletion follows, including Relic expedition saves as selected by the maintainer.
 
 ## Current foundation
 
@@ -110,8 +112,8 @@ all-or-none admission decisions before it becomes a platform promise.
 
 | Priority    | Outcomes                                                                                    |
 | ----------- | ------------------------------------------------------------------------------------------- |
-| Current     | Explicit temporary-room opt-in, empty-room hiding, and guarded archival (6).                |
-| Next        | Permanent cleanup of archived temporary rooms, with explicit data-retention boundaries.     |
+| Current     | Reliable deployed Quick Join, database latency repair, and human-clickable workflow tests.  |
+| Next        | Seven-day deletion of archived temporary rooms and their Relic expedition saves (6).        |
 | Then        | Automatic directory freshness (7), introducing push when the experience needs it.           |
 | Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them. |
 | Later       | Scheduled rooms (8) and a separate tournament capability.                                   |
@@ -269,9 +271,13 @@ increment: explicit temporary creation with a default ten-minute reconnect grace
 and archival after guarded inactivity observations.
 Existing rooms and omitted creation intent stay persistent. The maintainer selected this temporary
 default for both games and seven days of archived retention before deletion. Archival preserves
-records; permanent cleanup follows separately after its application-data,
-audit, and replay-evidence contract is defined. Reconnect grace and deletion must not race each other. Decide
-“play again” behavior with each application's activity lifecycle.
+records. The next increment deletes temporary rooms exactly seven days after archival, including
+platform memberships, presence, room-owned lifecycle records, and the exact Relic expedition save.
+Audit and idempotency/replay evidence keep their existing retention. Persistent rooms and unrelated
+application data remain outside this policy. Fence every Relic save writer and room recreation
+against deletion through the canonical AppInbox and optimistic revision guard; a stale command or
+completed-result replay must not recreate a deleted room or save. Reconnect grace and deletion must
+not race each other. Decide “play again” behavior with each application's activity lifecycle.
 
 Corrupt-row isolation belongs to operator reliability in slice 9, not this recovery feature.
 

@@ -32,5 +32,13 @@
     "owner": "Knut-Helge Vik",
     "command": "npm run perf:alm:durable-send",
     "reason": "Latency evidence, not a gate: send-to-dispatch p50/p95 of two durable ALM send plans, the ledger's minimal plan and a receipted command acknowledged by the server, in Chromium with an on-disk profile, and the Temporal polyfill and codec CPU shares of the minimal plan only. Run locally before and after each durable-path lever and compare against a baseline from the same machine; hosted-runner timings are not comparable, and a lane that fails on a latency figure would be noise."
+  },
+  {
+    "paths": [
+      "tests/playwright/ar-eye-hunter/deployed-quick-join.spec.ts"
+    ],
+    "owner": "Knut-Helge Vik",
+    "command": "npx playwright test --config apps/ar-eye-hunter-v1/playwright.deployed.config.ts",
+    "reason": "Verifies the externally deployed SPA and its configured API through visible sign-in and Quick Join. Requires an explicit HTTPS deployment URL and provisioned test-account credentials; local CI runs the separate two-browser full-stack journey."
   }
 ]

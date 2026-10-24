@@ -377,6 +377,12 @@ jobs:
       - name: Run Postgres shared-server integration tests
         run: npm run test:postgres:integration
 
+      - name: Run native API PostgreSQL query planning test
+        working-directory: apps/api-v1
+        env:
+          RALLAR_POSTGRES_INTEGRATION: '1'
+        run: deno test --allow-env --allow-read --allow-write --allow-net test/db/api-v1-query-planning.test.ts
+
       - name: Record exact topology replay checkout
         run: |
           mkdir -p .artifacts/api-v1-black-box/topology-replay
