@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: Read-only inspect or controlled rollout
+        description: Read-only inspect/logs or controlled rollout
         type: choice
-        options: [rollout, inspect]
+        options: [rollout, inspect, logs]
         default: rollout
       ref:
         description: Git ref to roll out on the controller VM
@@ -147,6 +147,24 @@ jobs:
             printf '\n'
             cat scripts/hosted-rallar/controller/07-status-controller.sh
           } | ssh -i ~/.ssh/hetzner "${HETZNER_USER}@${HETZNER_HOST}" 'bash -s -- --inspect'
+
+      - name: Read recent API logs
+        if: inputs.action == 'logs'
+        shell: bash
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          RALLAR_REPO_REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          [[ "${RALLAR_REPO_REF}" =~ ^[0-9a-f]{40}$ ]] &&
+            [[ "$(git rev-parse HEAD)" == "${RALLAR_REPO_REF}" ]] || {
+              echo '::error::Logs require a reviewed full source commit.' >&2
+              exit 1
+            }
+          cat scripts/hosted-rallar/controller/15-logs.sh |
+            ssh -i ~/.ssh/hetzner "${HETZNER_USER}@${HETZNER_HOST}" \
+              'bash -s -- --services api --lines 500 --since "30 min ago" --no-color'
 
       - name: Copy controller scripts
         if: inputs.action == 'rollout'
