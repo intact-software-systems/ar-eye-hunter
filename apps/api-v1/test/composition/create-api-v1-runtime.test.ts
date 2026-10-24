@@ -131,6 +131,8 @@ Deno.test('runtime construction preserves the owned startup sequence', () => {
         'middleware',
         'attach-replay',
         'presence-reconciliation',
+        'retention-reconciliation',
+        'register:retention-stop',
         'selectors',
         'require-runtime'
     ]);
@@ -295,6 +297,7 @@ const TEST_TOPOLOGY_DELIVERY: CreateApiV1RuntimeInput['topologyDelivery'] = {
 };
 
 const RTC_STOP = () => Promise.resolve();
+const RETENTION_STOP = () => Promise.resolve();
 
 function createOperations(
     events: string[],
@@ -330,6 +333,12 @@ function createOperations(
             record('presence-reconciliation');
             return Promise.resolve();
         },
+        startRetentionReconciliation: (input) => {
+            assert.equal(input.pageSize, 100);
+            assert.equal(input.intervalMs, 60_000);
+            record('retention-reconciliation');
+            return RETENTION_STOP;
+        },
         createSnapshotSelectors: () => {
             record('selectors');
             return {
@@ -354,8 +363,9 @@ function createBackgroundTasks(events: string[]): CreateApiV1RuntimeInput['backg
                 startRuntimeStateExpiryEviction: () => Promise.resolve(0)
             };
         },
-        register: () => {
-            events.push('register:rtc-stop');
+        register: (stop) => {
+            events.push(stop === RTC_STOP ? 'register:rtc-stop' : 'register:retention-stop');
+            assert.ok(stop === RTC_STOP || stop === RETENTION_STOP);
             return () => {};
         },
         stop: () => Promise.resolve()

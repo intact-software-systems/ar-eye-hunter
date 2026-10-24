@@ -111,7 +111,7 @@ all-or-none admission decisions before it becomes a platform promise.
 | Priority    | Outcomes                                                                                    |
 | ----------- | ------------------------------------------------------------------------------------------- |
 | Current     | Explicit temporary-room opt-in, empty-room hiding, and guarded archival (6).                |
-| Next        | Permanent cleanup of archived temporary rooms, with explicit data-retention boundaries.    |
+| Next        | Permanent cleanup of archived temporary rooms, with explicit data-retention boundaries.     |
 | Then        | Automatic directory freshness (7), introducing push when the experience needs it.           |
 | Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them. |
 | Later       | Scheduled rooms (8) and a separate tournament capability.                                   |
@@ -264,8 +264,9 @@ notifications, and malformed persisted records have focused coverage. Both games
 cover reload, fresh-link precedence, denied return/retry, and durable Forget. Simultaneous tabs remain
 latest-value history and may overwrite a local edit.
 
-The current retention increment adds explicit temporary creation with a default ten-minute reconnect
-grace, hides empty temporary rooms, and archives them only after guarded inactivity observations.
+[PR #706](https://github.com/intact-software-systems/ar-eye-hunter/pull/706) delivers the retention
+increment: explicit temporary creation with a default ten-minute reconnect grace, empty-room hiding,
+and archival after guarded inactivity observations.
 Existing rooms and omitted creation intent stay persistent. The maintainer selected this temporary
 default for both games and seven days of archived retention before deletion. Archival preserves
 records; permanent cleanup follows separately after its application-data,

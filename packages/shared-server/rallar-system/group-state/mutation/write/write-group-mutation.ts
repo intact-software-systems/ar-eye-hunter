@@ -13,7 +13,7 @@ import type {
 
 export async function writeGroupMutation(
     transaction: PSqlSql,
-    computed: GroupMutationComputedWrite
+    computed: Pick<GroupMutationComputedWrite, 'persistence' | 'outboxWrites' | 'receipt'>
 ): Promise<GroupMutationReceipt> {
     await executeGuardedGroupMutationBatch(transaction, computed.persistence.guardedBatch);
     if (computed.persistence.lifecyclePolicyWrite) {

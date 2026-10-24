@@ -31,6 +31,7 @@
 ### Task 1: Creation opt-in and discovery behavior
 
 **Files:**
+
 - Create `packages/shared/api/group-retention.ts` for sparse public intent and the canonical stored metadata interpretation.
 - Modify `packages/shared/api/state-types.ts`, `packages/shared-server/rallar-system/group-state/group-mutation-command.ts`, and mutation command/request validators for creation input.
 - Modify `mutation/aggregate/create-initial-group-mutation.ts`, `mutation/aggregate/compute-group-aggregate-mutation.ts`, and `persistence/validate-persisted-group.ts` beneath the group-state owner for metadata ownership and invariants.
@@ -39,6 +40,7 @@
 - Create `packages/tests/shared-server/rallar-system/group-state/inbox/group-retention-policy.test.ts`; extend the existing room creation tests for SDK forwarding.
 
 **Interfaces:**
+
 - Produces `GroupRetentionIntent`: persistent, or temporary with optional `reconnectGraceMs` at creation.
 - Produces `GroupRetentionState`: mandatory `mode: 'temporary'`, `reconnectGraceMs`, and `emptyPresenceFingerprint: string | null`.
 - Produces `GROUP_RETENTION_METADATA_KEY = 'rallarRetention'` and `readGroupRetentionState(metadata: ApiJsonObject): GroupRetentionState | null`; absence means persistent, malformed presence throws.
@@ -55,6 +57,7 @@
 ### Task 2: Guarded archival maintenance
 
 **Files:**
+
 - Create `packages/shared-server/rallar-system/group-state/retention/group-retention-service.ts` as the owned read/compute/validate/write capability, and `compute-group-retention.ts` for decisions and prepared persistence.
 - Add `group-retention-inbox.ts` and `reconcile-group-retention.ts` under the same owner for AppInbox registration and bounded lifecycle scanning.
 - Modify `group-state-service.ts`, `group-state-service-contracts.ts`, `inbox/group-state-inbox-service.ts`, and the existing API runtime lifecycle composition to construct, register, start and stop the capability explicitly.
@@ -63,16 +66,17 @@
 - Update `docs/product.md`, `docs/architecture.md`, and the ongoing lobby roadmap with delivered behavior. Set temporary defaults in AR Eye and Relic creation paths.
 
 **Interfaces:**
+
 - Consumes Task 1's `readGroupRetentionState` and `GroupRetentionState`.
 - `GroupRetentionService` owns canonical `Command`, immutable ingress facts, complete authoritative `Read`, and persistence-ready `Computed` types in its same-name type-only namespace.
 - Public methods: `read(command)`, pure `compute(command, read, facts)`, pure `validate(command, read, facts, computed)`, and `write(transaction, computed)`; no preparation or domain reads inside write.
 - Maintenance registration is internal-only and captures canonical command identity including full group scope and scan observation identity; no new authenticated endpoint.
 
-- [ ] Write decision tests for live recovery, initial empty anchor, unchanged-before-deadline no-op, exact deadline archival, changed fingerprint reset, inactive/absent no-op, corrupt scope, and stale/replayed maintenance. Assert reconnect-plus-disconnect between scans yields a later idle anchor even with an older ingress timestamp.
-- [ ] Run `npx vitest run packages/tests/shared-server/rallar-system/group-state/retention/group-retention.test.ts`. Expected: RED on missing retention capability; after implementation, GREEN for all decisions.
-- [ ] Implement full authority reads using current members/admissions/presence. Fingerprint their canonical identities and storage revisions. Compute anchor changes with the attempt clock; compute archive only for an unchanged empty observation at or beyond grace.
-- [ ] Write and run both-order PGlite races for archive versus first connect, reconnect, heartbeat, membership/metadata update, and another archiver. Include outbox-collision rollback, exact replay, mismatched identity, fresh retry and exhaustion. Expected: RED for an unfenced stale commit, then GREEN with group-first CAS, per-principal admission CAS/conditional insert and exact-revision presence deletes.
-- [ ] Wire AppInbox and bounded paginated maintenance with the existing repeating-work lifecycle. Add scan/shutdown/restart tests before implementation. Expected: no overlapping scan, bounded page, all canonical candidates eventually visited, no work after stop.
+- [x] Write decision tests for live recovery, initial empty anchor, unchanged-before-deadline no-op, exact deadline archival, changed fingerprint reset, inactive/absent no-op, corrupt scope, and stale/replayed maintenance. Assert reconnect-plus-disconnect between scans yields a later idle anchor even with an older ingress timestamp.
+- [x] Run `npx vitest run packages/tests/shared-server/rallar-system/group-state/retention/group-retention.test.ts`. Expected: RED on missing retention capability; after implementation, GREEN for all decisions.
+- [x] Implement full authority reads using current members/admissions/presence. Fingerprint their canonical identities and storage revisions. Compute anchor changes with the attempt clock; compute archive only for an unchanged empty observation at or beyond grace.
+- [x] Write and run both-order PGlite races for archive versus first connect, reconnect, heartbeat, membership/metadata update, and another archiver. Include outbox-collision rollback, exact replay, mismatched identity, fresh retry and exhaustion. Expected: RED for an unfenced stale commit, then GREEN with group-first CAS, per-principal admission CAS/conditional insert and exact-revision presence deletes.
+- [x] Wire AppInbox and bounded paginated maintenance with the existing repeating-work lifecycle. Add scan/shutdown/restart tests before implementation. Expected: no overlapping scan, bounded page, all canonical candidates eventually visited, no work after stop.
 - [ ] Run affected package tests, relevant public API and bundle checks, PostgreSQL races and medium-scale gate, plus a fresh candidate of the already captured state-write performance workload. Expected: correctness passes and the unmodified performance comparator passes; #701's exception is not reused.
 - [ ] Set `{ mode: 'temporary', reconnectGraceMs: 600_000 }` in both games' room creation paths, with tests/builds and visible-control browser evidence. Complete construction/runtime timelines and a manual 5/5 navigation probe for the mutation family.
 - [ ] Run `npm run pr:delivery -- status` before broad final checks, obtain the required fresh whole-branch review, address material findings, and run `npm run pr:delivery -- ready` once. Expected: PR ready for maintainer review; wait for merge. Remove completed temporary design/implementation documents before final publication, leaving the ongoing roadmap accurate.

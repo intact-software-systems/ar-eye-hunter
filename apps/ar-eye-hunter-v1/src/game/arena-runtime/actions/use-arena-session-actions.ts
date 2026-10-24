@@ -255,7 +255,11 @@ async function createAndSelectArenaRoom(
     input.setError(undefined);
     let snapshot: GroupSnapshot;
     try {
-        snapshot = await rallar.rooms.createAndSwitch({ displayName, ...options });
+        snapshot = await rallar.rooms.createAndSwitch({
+            displayName,
+            ...options,
+            retention: { mode: 'temporary', reconnectGraceMs: 600_000 }
+        });
     }
     catch (error) {
         if (sessionRef.current?.sessionId !== session.sessionId || sessionRef.current?.clientId !== session.clientId) {

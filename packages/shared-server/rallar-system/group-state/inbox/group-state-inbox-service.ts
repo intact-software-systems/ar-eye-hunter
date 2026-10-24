@@ -1,4 +1,5 @@
 import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -45,6 +46,8 @@ import {
 } from '../presence/group-presence-session-cleanup-app-inbox-payload.ts';
 import { decodeGroupQuickJoinCommand, decodeQuickJoinGroupResult } from '../quick-join/group-quick-join-codec.ts';
 import type { GroupQuickJoinCommand, GroupQuickJoinInput } from '../quick-join/group-quick-join-contracts.ts';
+import { registerGroupRetentionInbox, toGroupRetentionEnqueue } from '../retention/group-retention-inbox.ts';
+import type { GroupRetentionService } from '../retention/group-retention-service.ts';
 import { decodeGroupStateAppInboxCommand } from './decode-group-state-app-inbox-command.ts';
 import {
     GROUP_MUTATION_INBOX_TYPES,
@@ -135,7 +138,17 @@ export class GroupStateInboxService {
             nowEpochMs: this.nowEpochMs
         });
         this.registerMessageHandlers();
-        this.handlers.assertRegistrationComplete([...GROUP_MUTATION_INBOX_TYPES, AppInboxType.GROUP_QUICK_JOIN]);
+        this.handlers.assertRegistrationComplete([
+            ...GROUP_MUTATION_INBOX_TYPES,
+            AppInboxType.GROUP_QUICK_JOIN,
+            AppInboxType.GROUP_RETENTION_RECONCILE
+        ]);
+    }
+
+    async enqueueGroupRetention(command: GroupRetentionService.Command): Promise<ResourceEntry> {
+        return await this.queueEntryWriter.enqueue(
+            toGroupRetentionEnqueue(this.groupStateService.retention.capture(command))
+        );
     }
 
     async enqueueExpiredPresenceSessions(atEpochMs: number): Promise<number> {
@@ -316,6 +329,11 @@ export class GroupStateInboxService {
     }
 
     private registerMessageHandlers(): void {
+        registerGroupRetentionInbox(this.handlers, {
+            service: this.groupStateService.retention,
+            transactionWriter: this.transactionWriter,
+            wakeQueue: this.wakeQueue
+        });
         this.handlers.registerHandler({
             type: AppInboxType.GROUP_QUICK_JOIN,
             decodeCommand: decodeGroupQuickJoinCommand,

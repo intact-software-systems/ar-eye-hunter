@@ -241,6 +241,32 @@ roomBrowserTest(
     }
 );
 
+test(
+    'creates a temporary expedition with ten-minute reconnect grace from the visible control',
+    async ({ page }, testInfo) => {
+        test.skip(
+            !['1', 'true'].includes(process.env.RELIC_HUNTERS_FULL_STACK ?? ''),
+            'Requires the paired Relic server.'
+        );
+        await page.goto('/');
+        await registerPrivateHunter(page, 'temporary-host');
+        const created = page.waitForResponse((response) =>
+            response.request().method() === 'POST' && /\/groups\/(?:[^/]+\/)?requests\//.test(response.url())
+        );
+        await page.getByRole('button', { name: 'New Room', exact: true }).click();
+        const response = await created;
+        expect(response.ok()).toBe(true);
+        expect(response.request().postDataJSON().retention).toEqual({ mode: 'temporary', reconnectGraceMs: 600_000 });
+        expect((await response.json()).group.metadata.rallarRetention).toEqual({
+            mode: 'temporary',
+            reconnectGraceMs: 600_000,
+            emptyPresenceFingerprint: null
+        });
+        await expect(page.getByLabel('Room link', { exact: true })).toHaveValue(/#rallar-room\?/);
+        await page.screenshot({ path: testInfo.outputPath('temporary-expedition-created.png'), fullPage: true });
+    }
+);
+
 async function registerPrivateHunter(page: Page, role: string): Promise<void> {
     const suffix = crypto.randomUUID();
     await page.getByRole('button', { name: 'Register', exact: true }).click();
