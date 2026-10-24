@@ -324,11 +324,12 @@ export class GroupStateInboxService {
         if (issue) {
             throw issue.cause;
         }
-        const result = await this.transactionWriter.writeComputedMutation(
-            context,
-            completion,
-            (transaction) => timeGroupStatePhase(timing, 'write', () => service.write(transaction, computed))
-        );
+        const result = await timeGroupStatePhase(timing, 'write', () =>
+            this.transactionWriter.writeComputedMutation(
+                context,
+                completion,
+                (transaction) => service.write(transaction, computed)
+            ));
         this.wakeQueue?.();
         if (result.status === 'joined') {
             await this.groupStateService.observeSnapshot(result.snapshot);

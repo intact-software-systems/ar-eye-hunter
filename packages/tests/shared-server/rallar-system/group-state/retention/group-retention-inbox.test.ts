@@ -47,7 +47,11 @@ describe('retention through the registered AppInbox capability', () => {
             });
             expect(phase.durationMs).toBeGreaterThanOrEqual(0);
         }
-        expect(timings.some((event) => event.component === 'app-inbox-phase' && event.operation === 'transaction')).toBe(true);
+        const transactionTiming = timings.findIndex((event) => event.component === 'app-inbox-phase' && event.operation === 'transaction');
+        const writeTiming = timings.findIndex((event) => event.component === 'group-retention' && event.operation === 'write');
+        expect(transactionTiming).toBeGreaterThanOrEqual(0);
+        expect(writeTiming).toBeGreaterThan(transactionTiming);
+        expect(timings[writeTiming].durationMs).toBeGreaterThanOrEqual(timings[transactionTiming].durationMs);
 
         fixture.nowEpochMs += 1_000;
         const archiveEntry = await inbox.enqueueGroupRetention({ ...command, requestId: 'archive-scan', observedAtEpochMs: fixture.nowEpochMs });
@@ -158,7 +162,7 @@ describe('retention through the registered AppInbox capability', () => {
             .toEqual(outbox);
         expect((await results.findByKey(entry.key))?.status).not.toBe(EntityStatus.COMPLETED);
         expect(timings.find((event) => event.component === 'group-retention' && event.operation === 'write')?.status)
-            .toBe(fault === 'outbox' ? 'error' : 'ok');
+            .toBe('error');
         expect(timings.find((event) => event.component === 'app-inbox-phase' && event.operation === 'transaction')?.status)
             .toBe('error');
     }, 30_000);

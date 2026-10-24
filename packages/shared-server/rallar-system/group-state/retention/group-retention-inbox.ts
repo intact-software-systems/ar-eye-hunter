@@ -96,10 +96,15 @@ async function processGroupRetention(input: ProcessGroupRetentionInput): Promise
     if (completionIssue) {
         throw completionIssue.cause;
     }
-    const result = await dependencies.transactionWriter.writeComputedMutation(
-        context,
-        completion,
-        (transaction) => timeGroupStatePhase(timing, 'write', () => dependencies.service.write(transaction, computed))
+    const result = await timeGroupStatePhase(
+        timing,
+        'write',
+        () =>
+            dependencies.transactionWriter.writeComputedMutation(
+                context,
+                completion,
+                (transaction) => dependencies.service.write(transaction, computed)
+            )
     );
     dependencies.wakeQueue?.();
     return result;

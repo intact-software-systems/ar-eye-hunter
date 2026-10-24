@@ -18,7 +18,7 @@ export interface GroupStatePhaseTiming {
 
 type GroupStatePhaseOperation = 'read' | 'compute' | 'validate' | 'write';
 
-/** Measures one direct phase; AppInbox separately measures the enclosing transaction. */
+/** Measures a shell phase. Write includes atomic completion; clocks and sinks stay outside its transaction. */
 export async function timeGroupStatePhase<Result>(
     input: GroupStatePhaseTiming,
     operation: GroupStatePhaseOperation,

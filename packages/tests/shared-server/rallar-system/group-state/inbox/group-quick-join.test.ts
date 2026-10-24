@@ -153,6 +153,12 @@ describe('Quick Join through AppInbox', () => {
                 details: { attempt: 1 }
             });
         }
+        const transactionTiming = timings.findIndex((event) =>
+            event.component === 'app-inbox-phase' && event.operation === 'transaction' && event.requestId === 'quick-bob'
+        );
+        const writeTiming = timings.findIndex((event) => event.component === 'group-quick-join' && event.operation === 'write');
+        expect(transactionTiming).toBeGreaterThanOrEqual(0);
+        expect(writeTiming).toBeGreaterThan(transactionTiming);
     });
 
     it('returns unavailable without parking an approval request', async () => {
