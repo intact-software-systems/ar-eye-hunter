@@ -37,7 +37,6 @@ import { SingleFlight } from '@shared/resilience/single-flight.ts';
 import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import { browserRelicRuntimeDeps } from './relic-hunters-browser.ts';
 import {
     classifyRelicSnapshotAcceptance,
     type RelicSnapshotRejectionReason,
@@ -113,6 +112,18 @@ export interface RelicRuntimeSnapshotSummary {
     readonly submittedCount: number;
     readonly eventCount: number;
     readonly roomInvestigationCount: number;
+}
+
+interface RelicAuthentication {
+    readonly mode: 'login' | 'register';
+    readonly username: string;
+    readonly password: string;
+    readonly displayName: string | undefined;
+}
+
+interface RelicRoundRepair {
+    readonly key: string;
+    readonly deadlineEpochMs: number;
 }
 
 export namespace RelicHuntersRuntime {
@@ -215,7 +226,7 @@ export class RelicHuntersRuntime {
     private stopRoundRepair: (() => void) | undefined;
     private roundRepairKey = '';
 
-    public constructor(deps: RelicHuntersRuntime.Dependencies = browserRelicRuntimeDeps()) {
+    public constructor(deps: RelicHuntersRuntime.Dependencies) {
         this.deps = deps;
         const session = deps.restoreSession();
         this.connection = {
@@ -576,9 +587,18 @@ export class RelicHuntersRuntime {
         if (!this.current(attempt, true)) {
             return;
         }
+        if (event.kind === 'command-refused' && this.connection.snapshot?.phase === 'finished') {
+            return;
+        }
+        const previous = this.connection.lastHunterEvent;
+        const priorRefusalDisplayed = previous?.kind === 'command-refused' && this.connection.error === previous.text;
         this.publish({
             lastHunterEvent: event,
-            error: event.kind === 'command-refused' ? event.text : this.connection.error
+            error: event.kind === 'command-refused'
+                ? event.text
+                : priorRefusalDisplayed
+                ? undefined
+                : this.connection.error
         });
     }
 
@@ -611,7 +631,17 @@ export class RelicHuntersRuntime {
             });
             return false;
         }
-        this.publish({ snapshot });
+        const previous = this.connection.snapshot;
+        const feedback = this.connection.lastHunterEvent;
+        const refusalExpired = feedback?.kind === 'command-refused' && previous !== undefined && (
+            previous.createdAtEpochMs !== snapshot.createdAtEpochMs ||
+            previous.round !== snapshot.round || previous.phase !== snapshot.phase
+        );
+        this.publish({
+            snapshot,
+            lastHunterEvent: refusalExpired ? undefined : feedback,
+            error: refusalExpired && this.connection.error === feedback?.text ? undefined : this.connection.error
+        });
         this.diagnose({
             ...this.roomDiagnostics(),
             lastSnapshotSource: source,
@@ -995,18 +1025,6 @@ export class RelicHuntersRuntime {
             this.phase('degraded', { lastError: message });
         }
     }
-}
-
-interface RelicAuthentication {
-    readonly mode: 'login' | 'register';
-    readonly username: string;
-    readonly password: string;
-    readonly displayName: string | undefined;
-}
-
-interface RelicRoundRepair {
-    readonly key: string;
-    readonly deadlineEpochMs: number;
 }
 
 function sameSession(left: AuthSession | undefined, right: AuthSession): boolean {

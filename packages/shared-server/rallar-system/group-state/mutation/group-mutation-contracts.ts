@@ -1,3 +1,4 @@
+import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import type { GroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
 import type { GroupEvidenceWatermark } from '@shared/api/group-lifecycle/activation-status/compute-group-formation-reading.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
@@ -22,24 +23,24 @@ import type {
     GroupStateCausalRevision,
     GroupStatus
 } from '@shared/api/group-types.ts';
+
 import type {
     RuntimeStateGuardedBatchEffect,
     RuntimeStateGuardedBatchWrite
 } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
 import type { AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
+import type { RetiredGroupIdentity } from '../persistence/aggregate/retired-group-identity.ts';
 import type { GroupConnectTriggerLatchRow } from '../persistence/group-connect-trigger-latch-repository.ts';
+import type { GroupLifecyclePolicyRead } from '../persistence/group-lifecycle-policy-repository.ts';
+import type { InitialGroupPresenceSummaryCandidate } from '../presence/group-initial-presence-summary.ts';
 import type {
     GroupAcceptedLayoutRow,
     GroupPlannedLayoutRow,
     PlannedLayoutPromotion
 } from './aggregate/compute-planned-layout-promotion.ts';
 import type { GroupMutationRejectionCode } from './group-mutation-rejection-codes.ts';
-
-import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
-import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
-import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
-import type { GroupLifecyclePolicyRead } from '../persistence/group-lifecycle-policy-repository.ts';
-import type { InitialGroupPresenceSummaryCandidate } from '../presence/group-initial-presence-summary.ts';
 
 interface NullableActorInput {
     readonly actorPrincipalId: string | null;
@@ -416,6 +417,7 @@ export interface GroupMutationIdempotencyRecord {
 export interface GroupMutationRead {
     readonly idempotency: RuntimeStateEntryValue<GroupMutationIdempotencyRecord> | null;
     readonly group: RuntimeStateEntryValue<Group> | null;
+    readonly retiredGroup: RetiredGroupIdentity | null;
     readonly expiredGroupEntry: RuntimeStateEntry | null;
     readonly actorMember: GroupMember | null;
     readonly targetMember: GroupMember | null;

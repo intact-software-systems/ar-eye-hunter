@@ -1,7 +1,11 @@
-import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import type { GroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state/persistence/idempotency/group-idempotency-storage-key.ts';
 import {
@@ -9,8 +13,10 @@ import {
     groupStatePresenceSessionStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
 import { toSessionPurgeAfterEpochMs } from '@shared-server/rallar-system/presence/session-expiry.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
+
 import { createTestGroupStateRuntime, createTestGroupStateService } from '../group-state-test-runtime.ts';
 import { ApplyingGuardedBatchRepository, OrderedGroupEventStore } from './group-mutation-test-runtime.ts';
 
@@ -88,16 +94,25 @@ describe('GroupStateService guarded presence batch', () => {
 
         expect(runtime.batches.at(-1)).toEqual({
             guard: {
-                operation: 'insert',
-                namespace: 'group-state:sessions',
-                key: groupStatePresenceSessionStorageKey(connectedSession),
-                value: JSON.stringify(connectedSession),
-                expireAtTimestamp: toSessionPurgeAfterEpochMs(
-                    connectedSession.expiresAtEpochMs,
-                    connectedSession.disconnectedAtEpochMs
-                )
+                operation: 'update',
+                namespace: 'group-state:groups',
+                key: groupStateGroupStorageKey(ref),
+                value: JSON.stringify(connectedGroup),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+                expectedRevision: 0
             },
             effects: [
+                {
+                    effectId: 'presence-session',
+                    operation: 'insert',
+                    namespace: 'group-state:sessions',
+                    key: groupStatePresenceSessionStorageKey(connectedSession),
+                    value: JSON.stringify(connectedSession),
+                    expireAtTimestamp: toSessionPurgeAfterEpochMs(
+                        connectedSession.expiresAtEpochMs,
+                        connectedSession.disconnectedAtEpochMs
+                    )
+                },
                 {
                     effectId: 'presence-admission',
                     operation: 'insert',

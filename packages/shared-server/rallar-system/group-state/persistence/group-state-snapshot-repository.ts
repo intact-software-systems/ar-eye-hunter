@@ -153,8 +153,8 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
             this.listSelectedJsonEntryValues(toLivePresenceSessionsSelector(keyPrefix, observedAtEpochMs))
         ]);
         const groupsAfterRaw = await this.listJsonEntryValues(GROUPS_NAMESPACE, keyPrefix);
-        const groupsBefore = groupsBeforeRaw.map((stored) => canonicalStoredGroup(stored, scope));
-        const groupsAfter = groupsAfterRaw.map((stored) => canonicalStoredGroup(stored, scope));
+        const groupsBefore = groupsBeforeRaw.flatMap((stored) => canonicalStoredGroup(stored, scope) ?? []);
+        const groupsAfter = groupsAfterRaw.flatMap((stored) => canonicalStoredGroup(stored, scope) ?? []);
         const members = memberEntriesRaw.map((stored) => toScopeMember(stored, scope));
         const summaries = summaryEntriesRaw.map((stored) => toScopeSummary(stored, scope));
         const sessions = sessionEntriesRaw.map((stored) => toScopeSession(stored, scope));
@@ -178,7 +178,7 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
             GROUPS_NAMESPACE,
             page.groups.map(({ entry }) => entry.key)
         );
-        const groupsAfter = groupsAfterRaw.map((stored) => canonicalStoredGroup(stored, scope));
+        const groupsAfter = groupsAfterRaw.flatMap((stored) => canonicalStoredGroup(stored, scope) ?? []);
         const afterByKey = new Map(groupsAfter.map((stored) => [stored.entry.key, stored]));
         const resolved = await Promise.all(
             candidates.map(async (candidate) => {
@@ -250,7 +250,10 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
                 if (groupValue === undefined) {
                     continue;
                 }
-                const group = canonicalStoredGroup({ entry, value: groupValue }, scope).value;
+                const group = canonicalStoredGroup({ entry, value: groupValue }, scope)?.value;
+                if (group === undefined) {
+                    continue;
+                }
                 if (pageGroups.length === limit) {
                     hasMore = true;
                     break;
@@ -314,6 +317,9 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
             return undefined;
         }
         const stored = canonicalStoredGroup(batch.group, ref);
+        if (stored === undefined) {
+            return undefined;
+        }
         return {
             snapshot: this.toSnapshot({
                 group: stored.value,
@@ -377,8 +383,8 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
         namespace: string,
         entry: RuntimeStateEntry
     ): Promise<RuntimeStateEntryValue<JsonWireValue> | undefined> {
-        void namespace;
-        return await toLiveGroupStateEntryValue(entry);
+        const observedAtEpochMs = Date.now();
+        return toLiveGroupStateEntryValue(namespace, entry, observedAtEpochMs);
     }
 
     private toSnapshot(input: GroupStateSnapshotAssemblyInput): GroupSnapshot {

@@ -25,8 +25,16 @@ import type {
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { TestGroupStateEventStore } from '@shared-test/shared-server/test-group-state-event-store.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
-import type { AuditStamp, Group, GroupEvent, GroupMember, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
+import type {
+    AuditStamp,
+    Group,
+    GroupEvent,
+    GroupMember,
+    GroupPresenceSession,
+    GroupRef
+} from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+
 import { createTestGroup } from '../../../../create-test-group.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
@@ -109,6 +117,7 @@ export function createGroupAuthorityRead(
     return {
         idempotency: null,
         group: storedEntry(groupStorageKey(), createTestGroup({ ...groupRef('pure-room'), ...groupOverrides })),
+        retiredGroup: null,
         expiredGroupEntry: null,
         actorMember: options.actorIsMember === false ? null : actorMember,
         targetMember: null,

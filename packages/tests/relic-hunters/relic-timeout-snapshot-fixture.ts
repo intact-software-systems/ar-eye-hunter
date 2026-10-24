@@ -7,6 +7,8 @@ import {
     type RelicPublicSnapshot
 } from '@relic-hunters/mod.ts';
 
+import { requireRelicCommandApplied } from './require-relic-command-applied.ts';
+
 export interface TimedOutRoundSnapshots {
     readonly timedOut: RelicPublicSnapshot;
     readonly resolved: RelicPublicSnapshot;
@@ -22,22 +24,22 @@ export function createTimedOutRoundSnapshots(): TimedOutRoundSnapshots {
     return {
         timedOut: toPublicRelicSnapshot(state),
         resolved: toPublicRelicSnapshot(
-            applyRelicCommand(state, {
+            requireRelicCommandApplied(applyRelicCommand(state, {
                 protocolVersion: RELIC_PROTOCOL_VERSION,
                 kind: 'force-resolve-round',
                 gameId: 'room-1',
                 username: 'Alice'
             }, {
                 senderId: 'alice-session',
-                now: () => now
-            }).state
+                now: now
+            })).state
         )
     };
 }
 
 function createStartedTimeoutRound(roundStartedAt: number): RelicGameState {
     let state = createRelicGame('room-1', 'room-1', roundStartedAt - 5);
-    state = applyRelicCommand(state, {
+    state = requireRelicCommandApplied(applyRelicCommand(state, {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'join-expedition',
         gameId: 'room-1',
@@ -45,9 +47,9 @@ function createStartedTimeoutRound(roundStartedAt: number): RelicGameState {
         characterId: 'kael-ironstride'
     }, {
         senderId: 'alice-session',
-        now: () => roundStartedAt - 4
-    }).state;
-    state = applyRelicCommand(state, {
+        now: roundStartedAt - 4
+    })).state;
+    state = requireRelicCommandApplied(applyRelicCommand(state, {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'join-expedition',
         gameId: 'room-1',
@@ -55,24 +57,24 @@ function createStartedTimeoutRound(roundStartedAt: number): RelicGameState {
         characterId: 'nyra-vale'
     }, {
         senderId: 'bob-session',
-        now: () => roundStartedAt - 3
-    }).state;
-    return applyRelicCommand(state, {
+        now: roundStartedAt - 3
+    })).state;
+    return requireRelicCommandApplied(applyRelicCommand(state, {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'start-expedition',
         gameId: 'room-1',
         username: 'Alice'
     }, {
         senderId: 'alice-session',
-        now: () => roundStartedAt
-    }).state;
+        now: roundStartedAt
+    })).state;
 }
 
 function submitAliceTimeoutAction(
     state: RelicGameState,
     now: number
 ): RelicGameState {
-    return applyRelicCommand(state, {
+    return requireRelicCommandApplied(applyRelicCommand(state, {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'submit-action',
         gameId: 'room-1',
@@ -80,6 +82,6 @@ function submitAliceTimeoutAction(
         action: { kind: 'move', targetRoomId: 'hallway' }
     }, {
         senderId: 'alice-session',
-        now: () => now
-    }).state;
+        now: now
+    })).state;
 }

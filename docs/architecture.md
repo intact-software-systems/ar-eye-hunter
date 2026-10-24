@@ -113,7 +113,8 @@ purge deadlines, and externally supplied idle anchors. Existing rows need no mig
 snapshot. It shares the presence-summary liveness computation, but never trusts a stale summary for
 archival. `Group.emptySinceEpochMs` is the only idle clock. A fingerprint of canonical presence,
 admission, and member storage revisions detects activity between scans and restarts grace from the
-fresh attempt time. Ordinary connect and heartbeat writes gain no group-row update.
+fresh attempt time. The first presence admission also guards the observed group revision; ordinary
+heartbeats and reconnects with an existing admission retain their admission-row guard.
 
 The internal `GROUP_RETENTION_RECONCILE` AppInbox registration owns each maintenance attempt. Pure
 compute and validate prepare the group CAS, admission fences, exact-revision presence deletes,
@@ -123,11 +124,24 @@ or metadata update invalidates the stale archive; QueueBox redelivery rereads fr
 Immutable scoped command identity preserves exact replay and rejects changed request-ID reuse.
 
 Runtime maintenance visits at most 100 physical group keys per minute per API process, advances its
-cursor through expired rows, submits active temporary candidates, and drains on shutdown. Instances
+cursor through expired and retired rows, submits active and archived temporary candidates, and drains
+on shutdown. Instances
 may overlap safely through optimistic writes; scanning and queue load may delay archival. Discovery
 and Quick Join hide empty temporary rooms even with `includeEmpty`, while direct entry still uses
-normal admission. Archival keeps durable records. Seven-day physical cleanup requires a separate
-application-data, audit, and replay-evidence contract.
+normal admission. After 604,800,000 ms from archival, retention deletes observed room children and
+room-owned AppData under the same group CAS. The exact group key retains a compact, non-expiring
+retired identity so stale writers and later create requests cannot reuse it. Ordinary physically
+expired IDs keep their existing recreation behavior. Audit and idempotency/replay evidence retain
+their existing lifetime; unrelated application data is untouched.
+
+Relic's server-only mutation owner in `packages/relic-hunters/server` shares that group revision
+fence. Every API worker registers `RELIC_GAME_MUTATE` before maintenance starts. Each attempt reads
+the current issued session, room policy and save, computes and validates outside the transaction,
+then first advances the observed group revision before the save CAS, private publication provenance,
+final WS outbox and durable acknowledgement commit together. Expected rule refusals are values;
+unexpected failures reach the existing QueueBox retry owner. AI setup proposals are captured before
+queue processing. REST commands and resets carry request IDs; replay returns the durable outcome
+followed by a fresh authorized snapshot read, so a prior response cannot resurrect a reset or deletion.
 
 ## Data, CRDT, Motion, and Game stay separate
 

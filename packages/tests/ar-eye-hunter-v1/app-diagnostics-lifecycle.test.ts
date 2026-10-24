@@ -25,7 +25,7 @@ const mockArena = vi.hoisted(() => ({
     refreshDiagnostics: vi.fn(() => Promise.resolve())
 }));
 
-vi.mock('../../../apps/ar-eye-hunter-v1/src/game/BabylonArena.tsx', () => ({
+vi.mock('../../../apps/ar-eye-hunter-v1/src/game/babylon-arena.tsx', () => ({
     BabylonArena: () => createElement('div', { 'data-testid': 'arena-scene' })
 }));
 

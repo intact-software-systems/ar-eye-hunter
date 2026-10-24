@@ -1,4 +1,5 @@
 import type { GroupMember, GroupRef } from '@shared/api/group-types.ts';
+
 import {
     RuntimeStateJsonStore,
     type RuntimeStateEntryValue
@@ -39,11 +40,13 @@ export function canonicalStoredMember(
     const decoded = decodeStoredGroupStateKey(stored.entry.key, decodeGroupStateMemberStorageKey);
     assertTrustedGroupRef(decoded, expected, stored.entry.key);
     const value = decodeStoredGroupStateValue(
-        stored.value,
-        decoded,
-        stored.entry.key,
-        decodePersistedGroupMember,
-        'Stored group member value is invalid'
+        {
+            value: stored.value,
+            ref: decoded,
+            storageKey: stored.entry.key,
+            decode: decodePersistedGroupMember,
+            invalidValueMessage: 'Stored group member value is invalid'
+        }
     );
     assertGroupRefIdentity(value, decoded, stored.entry.key);
     if (

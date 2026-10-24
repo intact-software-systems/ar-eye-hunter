@@ -15,6 +15,7 @@ import {
 } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
 import {
     newALBroadcastMessage,
+    newALPrincipalBroadcastMessage,
     newALUnicastMessage,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
@@ -38,6 +39,18 @@ interface WsOutboxProvenanceFixture {
 }
 
 describe('row-bound WS producer provenance', () => {
+    it.each(['applicationId', 'workspaceId'] as const)('rejects a principal proof whose room differs in %s even with a valid digest', async (field) => {
+        const fixture = await createPrincipalRoomFixture(field);
+        await expect(fixture.reader.readProducerProvenance(fixture.message, fixture.entry))
+            .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+    });
+
+    it('uses the matching room scope and preserves the private proof audience', async () => {
+        const fixture = await createPrincipalRoomFixture(null);
+        expect(await fixture.reader.readProducerProvenance(fixture.message, fixture.entry))
+            .toEqual({ admittedAudience: ['alice-session'], recipientScope: undefined });
+    });
+
     it('encodes every queue key component injectively', () => {
         const keys = [
             { topicId: 'a/b', resourceId: 'c', contextId: 'd' },
@@ -318,5 +331,35 @@ async function createFixture(admittedAudience: readonly string[]): Promise<WsOut
     const key = toWsOutboxProvenanceKey(entry.key);
     await repository.upsert(WS_OUTBOX_PROVENANCE_NAMESPACE, key, JSON.stringify(proof), proof.expiresAtMs);
     const reader = new WsOutboxProvenanceReader({ repository, nowMs: () => Date.now() });
+    return { message, entry, proof, repository, reader, key };
+}
+
+async function createPrincipalRoomFixture(mismatch: 'applicationId' | 'workspaceId' | null): Promise<WsOutboxProvenanceFixture> {
+    const principalRef = { applicationId: 'app', workspaceId: 'workspace', principalId: 'alice' };
+    const groupRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room', ...(mismatch === null ? {} : { [mismatch]: 'other' }) };
+    const message = newALPrincipalBroadcastMessage(
+        'server',
+        { topicId: 'room.relic.hunter', contextId: 'room', resourceId: 'private' },
+        { principalRef, groupRef },
+        'relic.hunter.v1',
+        {},
+        { ttlMs: 30_000 }
+    );
+    const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
+    const facts: Omit<WsOutboxProvenance, 'digest'> = {
+        version: 1,
+        producerKind: 'room-application',
+        queueKey: entry.key,
+        typeId: entry.typeId,
+        messageId: message.id.msgId,
+        senderId: message.id.senderId,
+        expiresAtMs: entry.audit.expiryTs.epochMilliseconds,
+        target: { kind: 'scoped-principal-broadcast', principalRef, admittedAudience: ['alice-session'] }
+    };
+    const proof = { ...facts, digest: computeWsOutboxProvenanceDigest(entry, facts) };
+    const repository = new FakeRuntimeStateRepository();
+    const key = toWsOutboxProvenanceKey(entry.key);
+    await repository.upsert(WS_OUTBOX_PROVENANCE_NAMESPACE, key, JSON.stringify(proof), proof.expiresAtMs);
+    const reader = new WsOutboxProvenanceReader({ repository, nowMs: Date.now });
     return { message, entry, proof, repository, reader, key };
 }

@@ -1,0 +1,1200 @@
+{
+  "description": "Real Relic HTTP commands: issued identity, URL scope, idempotency, full round progression and escape, reset replay, absent hunters and archived-room fencing. Physical seven-day purge is covered by database-clock integration tests.",
+  "variables": {
+    "apiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:8090"
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    },
+    "gameId": "relic-http-{runId}",
+    "password": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{apiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ],
+  "steps": [
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/relic-http-alice-{runId}",
+        "body": {
+          "username": "alice",
+          "password": "{password}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceSessionId": "body.sessionId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveAliceAuth",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/relic-http-bob-{runId}",
+        "body": {
+          "username": "bob",
+          "password": "{password}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobSessionId": "body.sessionId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveBobAuth",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "unavailableBeforeCreation",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/relic/games/{gameId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 404
+      }
+    },
+    {
+      "name": "createTemporaryRoom",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/rallar-server/workspaces/default/groups/requests/relic-create-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{gameId}",
+          "displayName": "Relic HTTP test {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "retention": {
+            "mode": "temporary"
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{gameId}",
+            "status": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "initializeExpedition",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/relic/games/{gameId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "initialCreatedAt": "body.createdAtEpochMs"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "gameId": "{gameId}",
+          "phase": "lobby",
+          "players": []
+        }
+      }
+    },
+    {
+      "name": "rejectInvalidCommand",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/rejectInvalidCommand-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "dance",
+          "gameId": "body-room-must-not-win",
+          "username": "untrusted-body-name"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "error": "Invalid relic command"
+        }
+      }
+    },
+    {
+      "name": "rejectMalformedActionTarget",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/malformed-target-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "submit-action",
+          "action": {
+            "kind": "move",
+            "targetRoomId": 42
+          }
+        }
+      },
+      "expect": {
+        "status": 400
+      }
+    },
+    {
+      "name": "requireRequestIdentity",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "join-expedition"
+        }
+      },
+      "expect": {
+        "status": 404
+      }
+    },
+    {
+      "name": "joinAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/joinAlice-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "join-expedition",
+          "gameId": "body-room-must-not-win",
+          "username": "untrusted-body-name",
+          "characterId": "kael-ironstride"
+        },
+        "outputs": {
+          "joinedPlayerCount": "body.players.length"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "gameId": "{gameId}",
+          "roomId": "{gameId}",
+          "players": [
+            {
+              "playerId": "{aliceSessionId}",
+              "username": "alice"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "replayJoinAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/joinAlice-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "join-expedition",
+          "gameId": "body-room-must-not-win",
+          "username": "untrusted-body-name",
+          "characterId": "kael-ironstride"
+        },
+        "outputs": {
+          "replayedPlayerCount": "body.players.length"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "onePlayerAfterReplay",
+      "type": "assert",
+      "actual": {
+        "initial": "{joinedPlayerCount}",
+        "replay": "{replayedPlayerCount}"
+      },
+      "expect": {
+        "body": {
+          "initial": 1,
+          "replay": 1
+        }
+      }
+    },
+    {
+      "name": "rejectChangedReplay",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/joinAlice-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "join-expedition",
+          "gameId": "body-room-must-not-win",
+          "username": "untrusted-body-name",
+          "characterId": "nyra-vale"
+        }
+      },
+      "expect": {
+        "status": 409
+      }
+    },
+    {
+      "name": "bodyRoomWasNotCreated",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/relic/games/body-room-must-not-win",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "code": "room-unavailable"
+        }
+      }
+    },
+    {
+      "name": "joinBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/joinBob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "join-expedition",
+          "gameId": "body-room-must-not-win",
+          "username": "untrusted-body-name",
+          "characterId": "nyra-vale"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "startExpedition",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/startExpedition-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "start-expedition",
+          "gameId": "body-room-must-not-win",
+          "username": "untrusted-body-name"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "phase": "planning",
+          "round": 1
+        }
+      }
+    },
+    {
+      "name": "moveAlice1",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/moveAlice1-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "submit-action",
+          "gameId": "body-room-must-not-win",
+          "username": "untrusted-body-name",
+          "action": {
+            "kind": "move",
+            "targetRoomId": "hallway"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "phase": "planning",
+          "round": 1
+        }
+      }
+    },
+    {
+      "name": "moveBob1",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/moveBob1-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "submit-action",
+          "gameId": "body-room-must-not-win",
+          "username": "untrusted-body-name",
+          "action": {
+            "kind": "move",
+            "targetRoomId": "hallway"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "phase": "review",
+          "round": 1
+        }
+      }
+    },
+    {
+      "name": "continueRound1",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/continueRound1-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "continue-review",
+          "gameId": "body-room-must-not-win",
+          "username": "untrusted-body-name"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "phase": "planning",
+          "round": 2,
+          "players": [
+            {
+              "playerId": "{aliceSessionId}",
+              "roomId": "hallway"
+            },
+            {
+              "playerId": "{bobSessionId}",
+              "roomId": "hallway"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "moveAlice2",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/moveAlice2-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "submit-action",
+          "gameId": "body-room-must-not-win",
+          "username": "untrusted-body-name",
+          "action": {
+            "kind": "move",
+            "targetRoomId": "trap"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "phase": "planning",
+          "round": 2
+        }
+      }
+    },
+    {
+      "name": "moveBob2",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/moveBob2-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "submit-action",
+          "gameId": "body-room-must-not-win",
+          "username": "untrusted-body-name",
+          "action": {
+            "kind": "move",
+            "targetRoomId": "trap"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "phase": "review",
+          "round": 2
+        }
+      }
+    },
+    {
+      "name": "continueRound2",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/continueRound2-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "continue-review",
+          "gameId": "body-room-must-not-win",
+          "username": "untrusted-body-name"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "phase": "planning",
+          "round": 3,
+          "players": [
+            {
+              "playerId": "{aliceSessionId}",
+              "roomId": "trap"
+            },
+            {
+              "playerId": "{bobSessionId}",
+              "roomId": "trap"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "moveAlice3",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/moveAlice3-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "submit-action",
+          "gameId": "body-room-must-not-win",
+          "username": "untrusted-body-name",
+          "action": {
+            "kind": "move",
+            "targetRoomId": "monster"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "phase": "planning",
+          "round": 3
+        }
+      }
+    },
+    {
+      "name": "moveBob3",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/moveBob3-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "submit-action",
+          "gameId": "body-room-must-not-win",
+          "username": "untrusted-body-name",
+          "action": {
+            "kind": "move",
+            "targetRoomId": "monster"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "phase": "review",
+          "round": 3
+        }
+      }
+    },
+    {
+      "name": "continueRound3",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/continueRound3-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "continue-review",
+          "gameId": "body-room-must-not-win",
+          "username": "untrusted-body-name"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "phase": "planning",
+          "round": 4,
+          "players": [
+            {
+              "playerId": "{aliceSessionId}",
+              "roomId": "monster"
+            },
+            {
+              "playerId": "{bobSessionId}",
+              "roomId": "monster"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "moveAlice4",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/moveAlice4-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "submit-action",
+          "gameId": "body-room-must-not-win",
+          "username": "untrusted-body-name",
+          "action": {
+            "kind": "move",
+            "targetRoomId": "exit"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "phase": "planning",
+          "round": 4
+        }
+      }
+    },
+    {
+      "name": "moveBob4",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/moveBob4-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "submit-action",
+          "gameId": "body-room-must-not-win",
+          "username": "untrusted-body-name",
+          "action": {
+            "kind": "move",
+            "targetRoomId": "exit"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "phase": "review",
+          "round": 4
+        }
+      }
+    },
+    {
+      "name": "continueRound4",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/continueRound4-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "continue-review",
+          "gameId": "body-room-must-not-win",
+          "username": "untrusted-body-name"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "phase": "planning",
+          "round": 5,
+          "players": [
+            {
+              "playerId": "{aliceSessionId}",
+              "roomId": "exit"
+            },
+            {
+              "playerId": "{bobSessionId}",
+              "roomId": "exit"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "escapeAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/escapeAlice-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "submit-action",
+          "gameId": "body-room-must-not-win",
+          "username": "untrusted-body-name",
+          "action": {
+            "kind": "escape"
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "escapeBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/escapeBob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "submit-action",
+          "gameId": "body-room-must-not-win",
+          "username": "untrusted-body-name",
+          "action": {
+            "kind": "escape"
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "finishReview",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/finishReview-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "continue-review",
+          "gameId": "body-room-must-not-win",
+          "username": "untrusted-body-name"
+        },
+        "outputs": {
+          "winnerCount": "body.winnerIds.length"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "phase": "finished",
+          "players": [
+            {
+              "playerId": "{aliceSessionId}",
+              "escaped": true
+            },
+            {
+              "playerId": "{bobSessionId}",
+              "escaped": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "resetFinishedGame",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/reset/requests/reset-finished-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "resetCreatedAt": "body.createdAtEpochMs"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "phase": "lobby",
+          "players": []
+        }
+      }
+    },
+    {
+      "name": "initializationReplayReadsCurrentGame",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/relic/games/{gameId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "createdAtEpochMs": "{resetCreatedAt}",
+          "players": [],
+          "phase": "lobby"
+        }
+      }
+    },
+    {
+      "name": "rejoinAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/rejoinAlice-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "join-expedition",
+          "gameId": "body-room-must-not-win",
+          "username": "untrusted-body-name",
+          "characterId": "kael-ironstride"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "rejoinBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/rejoinBob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "join-expedition",
+          "gameId": "body-room-must-not-win",
+          "username": "untrusted-body-name",
+          "characterId": "nyra-vale"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "restartWithBothHunters",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/restartWithBothHunters-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "start-expedition",
+          "gameId": "body-room-must-not-win",
+          "username": "untrusted-body-name"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "onlyAliceActs",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/onlyAliceActs-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "submit-action",
+          "gameId": "body-room-must-not-win",
+          "username": "untrusted-body-name",
+          "action": {
+            "kind": "search"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "phase": "planning",
+          "submittedPlayerIds": [
+            "{aliceSessionId}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "resetClearsAbsentHunter",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/reset/requests/reset-absent-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "finalPlayerCount": "body.players.length"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "phase": "lobby",
+          "players": [],
+          "submittedPlayerIds": []
+        }
+      }
+    },
+    {
+      "name": "oldJoinReplayCannotRestoreOldGame",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/joinAlice-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "join-expedition",
+          "gameId": "body-room-must-not-win",
+          "username": "untrusted-body-name",
+          "characterId": "kael-ironstride"
+        },
+        "outputs": {
+          "replayedFinalPlayerCount": "body.players.length"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "phase": "lobby",
+          "players": []
+        }
+      }
+    },
+    {
+      "name": "resetRemainsEmptyAfterOldReplay",
+      "type": "assert",
+      "actual": {
+        "reset": "{finalPlayerCount}",
+        "replay": "{replayedFinalPlayerCount}"
+      },
+      "expect": {
+        "body": {
+          "reset": 0,
+          "replay": 0
+        }
+      }
+    },
+    {
+      "name": "archiveRoom",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/rallar-server/workspaces/default/groups/{gameId}/requests/relic-archive-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "status": "archived"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "status": "archived"
+          }
+        }
+      }
+    },
+    {
+      "name": "archivedReadCannotInitialize",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/relic/games/{gameId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "code": "room-unavailable"
+        }
+      }
+    },
+    {
+      "name": "archivedResetCannotResurrect",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/reset/requests/reset-archived-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "code": "room-unavailable"
+        }
+      }
+    },
+    {
+      "name": "archivedReplayCannotReadSave",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/joinAlice-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "join-expedition",
+          "gameId": "body-room-must-not-win",
+          "username": "untrusted-body-name",
+          "characterId": "kael-ironstride"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "code": "room-unavailable"
+        }
+      }
+    }
+  ]
+}

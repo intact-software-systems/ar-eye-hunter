@@ -11,7 +11,13 @@ import {
     type RelicExpeditionBlueprint,
     type RelicGameState
 } from '@relic-hunters/mod.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
+import { requireRelicCommandApplied } from './require-relic-command-applied.ts';
 
 describe('Relic expedition blueprints', () => {
     it('accepts procedural blueprints and rejects invalid domain shapes', () => {
@@ -76,15 +82,22 @@ describe('Relic expedition blueprints', () => {
 
     it('creates playable game state from a validated blueprint', () => {
         let state = createRelicGameFromBlueprint(
-            'room-1',
-            'room-1',
-            testBlueprint(),
-            1,
             {
-                source: 'mock',
-                seed: 'test-seed',
-                blueprintId: 'test-blueprint'
+                gameId: 'room-1',
+                roomId: 'room-1',
+                blueprint: testBlueprint(),
+                now: 1,
+                setup: {
+                    source: 'mock',
+                    seed: 'test-seed',
+                    blueprintId: 'test-blueprint'
+                }
             }
+        ).fold(
+            (refusal) => {
+                throw new Error(`Expected a valid fixture blueprint: ${refusal.message}`);
+            },
+            (state) => state
         );
 
         expect(state.setup).toMatchObject({
@@ -93,19 +106,19 @@ describe('Relic expedition blueprints', () => {
             blueprintId: 'test-blueprint'
         });
 
-        state = applyRelicCommand(state, join('alice', 'Alice'), {
+        state = requireRelicCommandApplied(applyRelicCommand(state, join('Alice'), {
             senderId: 'alice',
-            now: () => 2
-        }).state;
+            now: 2
+        })).state;
         expect(state.players[0]).toMatchObject({
             playerId: 'alice',
             roomId: 'entrance'
         });
 
-        state = applyRelicCommand(state, start('alice', 'Alice'), {
+        state = requireRelicCommandApplied(applyRelicCommand(state, start('Alice'), {
             senderId: 'alice',
-            now: () => 3
-        }).state;
+            now: 3
+        })).state;
         state = submitAndContinue(state, { kind: 'move', targetRoomId: 'hallway' }, 4);
         state = submitAndContinue(state, { kind: 'move', targetRoomId: 'treasure' }, 5);
         state = submitAndContinue(state, { kind: 'search' }, 6);
@@ -125,11 +138,9 @@ describe('Relic expedition blueprints', () => {
         expect(toPublicRelicSnapshot(state).setup).toMatchObject({
             source: 'mock'
         });
-        const publicSetup: Readonly<Record<string, unknown>> = {
-            ...toPublicRelicSnapshot(state).setup
-        };
-        expect(publicSetup.seed).toBeUndefined();
-        expect(publicSetup.blueprintId).toBeUndefined();
+
+        expect(toPublicRelicSnapshot(state).setup).not.toHaveProperty('seed');
+        expect(toPublicRelicSnapshot(state).setup).not.toHaveProperty('blueprintId');
     });
 });
 
@@ -140,13 +151,13 @@ function testBlueprint(): RelicExpeditionBlueprint {
         theme: 'Test Keep',
         source: 'mock',
         rooms: [
-            room('entrance', 'Test Gate', 'entrance', 0, -6, ['hallway']),
-            room('hallway', 'Test Hall', 'hallway', 0, -3, ['entrance', 'storage', 'trap', 'treasure']),
-            room('storage', 'Test Stores', 'storage', -4, -3, ['hallway']),
-            room('trap', 'Test Trap', 'trap', -2, 0, ['hallway']),
-            room('treasure', 'Test Vault', 'treasure', 2, 0, ['hallway', 'exit']),
-            room('monster', 'Test Barracks', 'monster', 0, 3, ['exit']),
-            room('exit', 'Test Exit', 'exit', 0, 6, ['treasure', 'monster'])
+            { id: 'entrance', name: 'Test Gate', kind: 'entrance', x: 0, z: -6, neighbors: ['hallway'] },
+            { id: 'hallway', name: 'Test Hall', kind: 'hallway', x: 0, z: -3, neighbors: ['entrance', 'storage', 'trap', 'treasure'] },
+            { id: 'storage', name: 'Test Stores', kind: 'storage', x: -4, z: -3, neighbors: ['hallway'] },
+            { id: 'trap', name: 'Test Trap', kind: 'trap', x: -2, z: 0, neighbors: ['hallway'] },
+            { id: 'treasure', name: 'Test Vault', kind: 'treasure', x: 2, z: 0, neighbors: ['hallway', 'exit'] },
+            { id: 'monster', name: 'Test Barracks', kind: 'monster', x: 0, z: 3, neighbors: ['exit'] },
+            { id: 'exit', name: 'Test Exit', kind: 'exit', x: 0, z: 6, neighbors: ['treasure', 'monster'] }
         ],
         relics: [
             { id: 'ruby-seal', name: 'Ruby Seal', value: 9, roomId: 'treasure' },
@@ -157,19 +168,7 @@ function testBlueprint(): RelicExpeditionBlueprint {
     };
 }
 
-function room(
-    id: RelicExpeditionBlueprint['rooms'][number]['id'],
-    name: string,
-    kind: RelicExpeditionBlueprint['rooms'][number]['kind'],
-    x: number,
-    z: number,
-    neighbors: readonly string[]
-): RelicExpeditionBlueprint['rooms'][number] {
-    return { id, name, kind, x, z, neighbors };
-}
-
-function join(playerId: string, username: string): RelicCommand {
-    void playerId;
+function join(username: string): RelicCommand {
     return {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'join-expedition',
@@ -178,8 +177,7 @@ function join(playerId: string, username: string): RelicCommand {
     };
 }
 
-function start(playerId: string, username: string): RelicCommand {
-    void playerId;
+function start(username: string): RelicCommand {
     return {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'start-expedition',
@@ -193,7 +191,7 @@ function submitAndContinue(
     action: Extract<RelicCommand, { kind: 'submit-action'; }>['action'],
     now: number
 ): RelicGameState {
-    const submitted = applyRelicCommand(
+    const submitted = requireRelicCommandApplied(applyRelicCommand(
         state,
         {
             protocolVersion: RELIC_PROTOCOL_VERSION,
@@ -204,12 +202,12 @@ function submitAndContinue(
         },
         {
             senderId: 'alice',
-            now: () => now
+            now: now
         }
-    ).state;
+    )).state;
 
     return submitted.phase === 'review'
-        ? applyRelicCommand(
+        ? requireRelicCommandApplied(applyRelicCommand(
             submitted,
             {
                 protocolVersion: RELIC_PROTOCOL_VERSION,
@@ -219,8 +217,8 @@ function submitAndContinue(
             },
             {
                 senderId: 'alice',
-                now: () => now + 0.5
+                now: now + 0.5
             }
-        ).state
+        )).state
         : submitted;
 }

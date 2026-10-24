@@ -13,7 +13,13 @@ import {
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { transitionRallarAiResultLifecycle } from '@shared/rallar-ai/mod.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
+import { requireRelicCommandApplied } from '../../../packages/tests/relic-hunters/require-relic-command-applied.ts';
 import { isRelicPlanningAiProposalOfPrincipal } from '../src/game/ai/is-relic-planning-ai-proposal-of-principal.ts';
 import {
     addRelicPlanningAiProposal,
@@ -24,7 +30,7 @@ import {
     relicPlanningAiDedupeKey,
     validateRelicPlanningAiSuggestion
 } from '../src/game/ai/relic-planning-ai.ts';
-import { deriveRelicGameViewModel } from '../src/game/game-view-model.ts';
+import { computeRelicGameViewModel } from '../src/game/game-view-model.ts';
 import { deriveSceneObjective } from '../src/game/scene/objectives.ts';
 
 const NOW = 1_700_000_000_000;
@@ -232,12 +238,7 @@ function contextFor(
     snapshot: RelicPublicSnapshot,
     draft = { kind: 'search' as const }
 ) {
-    const viewModel = deriveRelicGameViewModel({
-        snapshot,
-        localPlayerId: 'alice-session',
-        draft,
-        lang: 'en'
-    });
+    const viewModel = computeRelicGameViewModel({ revealedEvents: [], snapshot, localPlayerId: 'alice-session', draft, lang: 'en' });
     return buildRelicPlanningAiContext({
         snapshot,
         localPlayerId: 'alice-session',
@@ -253,7 +254,7 @@ function contextFor(
 
 function planningSnapshot(): RelicPublicSnapshot {
     let state: RelicGameState = createRelicGame('room-1', 'room-1', NOW);
-    state = applyRelicCommand(state, {
+    state = requireRelicCommandApplied(applyRelicCommand(state, {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'join-expedition',
         gameId: 'room-1',
@@ -261,9 +262,9 @@ function planningSnapshot(): RelicPublicSnapshot {
         characterId: 'kael-ironstride'
     }, {
         senderId: 'alice-session',
-        now: () => NOW + 1
-    }).state;
-    state = applyRelicCommand(state, {
+        now: NOW + 1
+    })).state;
+    state = requireRelicCommandApplied(applyRelicCommand(state, {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'join-expedition',
         gameId: 'room-1',
@@ -271,17 +272,17 @@ function planningSnapshot(): RelicPublicSnapshot {
         characterId: 'nyra-vale'
     }, {
         senderId: 'bob-session',
-        now: () => NOW + 2
-    }).state;
-    state = applyRelicCommand(state, {
+        now: NOW + 2
+    })).state;
+    state = requireRelicCommandApplied(applyRelicCommand(state, {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'start-expedition',
         gameId: 'room-1',
         username: 'Alice'
     }, {
         senderId: 'alice-session',
-        now: () => NOW + 3
-    }).state;
+        now: NOW + 3
+    })).state;
     return toPublicRelicSnapshot(state);
 }
 

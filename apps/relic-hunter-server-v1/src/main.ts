@@ -6,22 +6,17 @@ import { createDefaultApiV1DatabaseLifecycle } from '@api-v1/src/db/api-v1-datab
 import { installApiHttpMiddleware } from '@api-v1/src/services/install-api-http-middleware.ts';
 import { requireApiAuthSession, toAuthErrorResponse } from '@api-v1/src/services/request-auth-service.ts';
 import { createApiTimingSink } from '@api-v1/src/services/timing-service.ts';
-import { isRelicCommand, toRelicRoomGroupRef } from '@relic-hunters/mod.ts';
-import { isGroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
+import { RelicGameInboxFailureError } from '@relic-hunters/server/relic-game-inbox-service.ts';
+import { isRelicGameMoveInput } from '@relic-hunters/server/relic-game-move.ts';
+import { RelicGameMutationRefusedError } from '@relic-hunters/server/relic-game-mutation-service.ts';
+import { AppInboxIdempotencyConflictError } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { ApiConfigResponse } from '@shared/api/api-config.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import { initRelicDocsLandingRoute } from './relic-docs-landing-route.ts';
 import { createRelicExpeditionInitialStateFactory } from './relic-expedition-ai.ts';
 import { installRelicHunterGame } from './relic-game-service.ts';
 import { readRelicHunterServerConfiguration } from './relic-hunter-server-configuration.ts';
-import {
-    authorizeRelicCommand,
-    authorizeRelicReset,
-    authorizeRelicSnapshotRead,
-    RelicRestGroupNotFoundError
-} from './relic-rest-auth.ts';
 import { initRelicSwaggerRoutes } from './relic-swagger-routes.ts';
 
 loadEnvironment();
@@ -63,7 +58,10 @@ addEventListener('unload', () => {
         console.error('Failed to stop embedded API-v1 resources:', error);
     });
 });
-const relicGame = await installRelicHunterGame(rallar, {
+const relicGame = installRelicHunterGame(rallar, {
+    mode: configuration.restAuthorization.mode,
+    inbox: rallar.runtime.relicGameInboxService,
+    mutations: rallar.runtime.relicGameMutations,
     createInitialState: createRelicExpeditionInitialStateFactory({
         configuration: configuration.expeditionAi,
         onFallback: (event) => {
@@ -109,29 +107,17 @@ app.get('/api/relic/games/:gameId', async (c) => {
     try {
         const gameId = c.req.param('gameId');
         const session = await requireApiAuthSession(c.req, rallar.runtime.authSessionRepository);
-        authorizeRelicSnapshotRead({
-            mode: configuration.restAuthorization.mode,
-            gameId,
-            session,
-            snapshot: await readRelicGroupSnapshotForPolicy(gameId)
-        });
-        return c.json(await relicGame.ensureSnapshot(gameId));
+        return c.json(await relicGame.ensureSnapshot(gameId, session, crypto.randomUUID()));
     }
     catch (error) {
         return relicRestErrorResponse(c, toError(error));
     }
 });
 
-app.post('/api/relic/games/:gameId/commands', async (c) => {
+app.post('/api/relic/games/:gameId/commands/requests/:requestId', async (c) => {
     try {
         const gameId = c.req.param('gameId');
         const session = await requireApiAuthSession(c.req, rallar.runtime.authSessionRepository);
-        authorizeRelicCommand({
-            mode: configuration.restAuthorization.mode,
-            gameId,
-            session,
-            snapshot: await readRelicGroupSnapshotForPolicy(gameId)
-        });
         const body = await c.req.json().catch(() => undefined);
         const command = {
             ...(typeof body === 'object' && body !== null ? body : {}),
@@ -139,28 +125,22 @@ app.post('/api/relic/games/:gameId/commands', async (c) => {
             username: session.username
         };
 
-        if (!isRelicCommand(command)) {
+        if (!isRelicGameMoveInput(command)) {
             return c.json({ error: 'Invalid relic command' }, 400);
         }
 
-        return c.json(await relicGame.applyCommand(command, session));
+        return c.json(await relicGame.applyCommand(command, session, c.req.param('requestId')));
     }
     catch (error) {
         return relicRestErrorResponse(c, toError(error));
     }
 });
 
-app.post('/api/relic/games/:gameId/reset', async (c) => {
+app.post('/api/relic/games/:gameId/reset/requests/:requestId', async (c) => {
     try {
         const gameId = c.req.param('gameId');
         const session = await requireApiAuthSession(c.req, rallar.runtime.authSessionRepository);
-        authorizeRelicReset({
-            mode: configuration.restAuthorization.mode,
-            gameId,
-            session,
-            snapshot: await readRelicGroupSnapshotForPolicy(gameId)
-        });
-        const snapshot = await relicGame.reset(gameId);
+        const snapshot = await relicGame.reset(gameId, session, c.req.param('requestId'));
         return c.json(snapshot);
     }
     catch (error) {
@@ -179,29 +159,16 @@ if (configuration.apiV1.topology.replay.queueWorkers === 'enabled') {
 Deno.serve({ port: configuration.http.port }, app.fetch);
 console.log(`Relic Hunter server started on port ${configuration.http.port}.`);
 
-async function readRelicGroupSnapshotForPolicy(
-    gameId: string
-): Promise<GroupSnapshot | undefined> {
-    if (configuration.restAuthorization.mode === 'authenticated') {
-        return undefined;
-    }
-
-    return await rallar.runtime.groupStateService.readSnapshot(toRelicRoomGroupRef(gameId));
-}
-
 function relicRestErrorResponse(c: Context, error: Error): Response {
-    if (error instanceof RelicRestGroupNotFoundError) {
-        return c.json({ error: error.message }, error.status);
+    if (error instanceof RelicGameMutationRefusedError) {
+        return c.json({ error: error.message, code: error.result.code }, error.result.httpStatus);
     }
-
-    if (isGroupPolicyDeniedError(error)) {
-        return c.json({
-            error: error.message,
-            code: error.denial.code,
-            details: error.denial.details
-        }, error.status);
+    if (error instanceof RelicGameInboxFailureError) {
+        return Response.json({ error: error.message, code: error.failure.code }, { status: error.failure.status });
     }
-
+    if (error instanceof AppInboxIdempotencyConflictError) {
+        return c.json({ error: error.message, code: error.code }, error.status);
+    }
     return toAuthErrorResponse(c, error);
 }
 

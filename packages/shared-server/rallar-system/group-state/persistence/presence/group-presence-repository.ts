@@ -4,7 +4,9 @@ import type {
     GroupPresenceSummary,
     GroupRef
 } from '@shared/api/group-types.ts';
+
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
+
 import {
     RuntimeStateJsonStore,
     type RuntimeStateEntryValue
@@ -164,11 +166,13 @@ export function canonicalStoredSession(
     );
     assertTrustedGroupRef(decoded, expected, stored.entry.key);
     const value = decodeStoredGroupStateValue(
-        stored.value,
-        decoded,
-        stored.entry.key,
-        decodePersistedGroupPresenceSession,
-        'Stored group presence session value is invalid'
+        {
+            value: stored.value,
+            ref: decoded,
+            storageKey: stored.entry.key,
+            decode: decodePersistedGroupPresenceSession,
+            invalidValueMessage: 'Stored group presence session value is invalid'
+        }
     );
     assertGroupRefIdentity(value, decoded, stored.entry.key);
     if (
@@ -190,11 +194,13 @@ export function canonicalStoredAdmission(
     );
     assertTrustedGroupRef(decoded, expected, stored.entry.key);
     const value = decodeStoredGroupStateValue(
-        stored.value,
-        decoded,
-        stored.entry.key,
-        decodePersistedGroupPresenceAdmission,
-        'Stored group presence admission value is invalid'
+        {
+            value: stored.value,
+            ref: decoded,
+            storageKey: stored.entry.key,
+            decode: decodePersistedGroupPresenceAdmission,
+            invalidValueMessage: 'Stored group presence admission value is invalid'
+        }
     );
     assertGroupRefIdentity(value, decoded, stored.entry.key);
     if (
@@ -213,11 +219,13 @@ export function canonicalStoredSummary(
     const decoded = decodeStoredGroupStateKey(stored.entry.key, decodeGroupStateGroupStorageKey);
     assertTrustedGroupRef(decoded, expected, stored.entry.key);
     const value = decodeStoredGroupStateValue(
-        stored.value,
-        decoded,
-        stored.entry.key,
-        decodePersistedGroupPresenceSummary,
-        'Stored group presence summary value is invalid'
+        {
+            value: stored.value,
+            ref: decoded,
+            storageKey: stored.entry.key,
+            decode: decodePersistedGroupPresenceSummary,
+            invalidValueMessage: 'Stored group presence summary value is invalid'
+        }
     );
     assertGroupRefIdentity(value, decoded, stored.entry.key);
     return { entry: stored.entry, value };

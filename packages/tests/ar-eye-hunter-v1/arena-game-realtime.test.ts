@@ -12,7 +12,15 @@ import {
     waitForState
 } from './arena-runtime-test-harness.ts';
 
-import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import type { RallarRoomRealtimeJsonDefaults } from '@shared-web/browser/rallar-realtime.ts';
 
@@ -327,7 +335,7 @@ describe('arena game realtime acceptance and egress', () => {
         const config = vi.mocked(createArenaRallarGameMatch).mock.calls.at(-1)?.[0];
         const fixture = acceptedIntentFixture(kind, Date.now(), session.sessionId);
         const published = Promise.withResolvers<ArenaSnapshot>();
-        await act(async () => arena.current?.publishArenaSnapshot(fixture.snapshot));
+        await receiveDirectorSnapshot(fixture.snapshot);
         mockMatch.sendIntent.mockImplementationOnce(async (message) => {
             await config?.onIntent?.(createRallarGameEnvelope({
                 protocol: 'ar-eye-hunter.v1',
@@ -369,7 +377,7 @@ describe('arena game realtime acceptance and egress', () => {
         await waitForState(() => arena.current?.connectionState === 'connected');
         mockMatch.status.mockReturnValue(remoteDirectorMatchStatus());
         const fixture = pickupSnapshotFixture(Date.now());
-        await act(async () => arena.current?.publishArenaSnapshot(fixture.snapshot));
+        await receiveDirectorSnapshot(fixture.snapshot);
         mockMatch.sendIntent.mockResolvedValueOnce({ status: 'held-by-other', transport: 'director-relay' });
 
         await act(async () => arena.current?.sendPickupIntent(fixture.intent));
@@ -411,7 +419,7 @@ describe('arena game realtime acceptance and egress', () => {
         const config = vi.mocked(createArenaRallarGameMatch).mock.calls.at(-1)?.[0];
         const lostAtEpochMs = Date.now();
         const fixture = pickupSnapshotFixture(lostAtEpochMs);
-        await act(async () => arena.current?.publishArenaSnapshot(fixture.snapshot));
+        await receiveDirectorSnapshot(fixture.snapshot);
         mockMatch.sendIntent.mockResolvedValueOnce({ status: 'held-by-other', transport: 'director-relay' });
         await act(async () => arena.current?.sendPickupIntent(fixture.intent));
         await waitForState(() => arena.current?.activeEvent?.kind === 'pickup-taken');
@@ -450,7 +458,7 @@ describe('arena game realtime acceptance and egress', () => {
         await waitForState(() => arena.current?.connectionState === 'connected');
         mockMatch.status.mockReturnValue(remoteDirectorMatchStatus());
         const fixture = pickupSnapshotFixture(Date.now());
-        await act(async () => arena.current?.publishArenaSnapshot(fixture.snapshot));
+        await receiveDirectorSnapshot(fixture.snapshot);
         const sent = Promise.withResolvers<void>();
         mockMatch.sendIntent.mockImplementationOnce(async () => {
             sent.resolve();
@@ -463,7 +471,7 @@ describe('arena game realtime acceptance and egress', () => {
         });
 
         expect(mockMatch.sendIntent).toHaveBeenCalledWith(expect.anything(), { resourceId: fixture.pickup.id, ttlMs: 4_000 });
-        expect(arena.current?.activeEvent?.kind).toBe(kind);
+        expect(arena.current?.activeEvent?.kind).toBe(kind ?? fixture.snapshot.activeEvent?.kind);
     });
 
     it('records no loss for a pickup that left the snapshot before its held-by-other result', async () => {
@@ -471,19 +479,19 @@ describe('arena game realtime acceptance and egress', () => {
         await waitForState(() => arena.current?.connectionState === 'connected');
         mockMatch.status.mockReturnValue(remoteDirectorMatchStatus());
         const fixture = pickupSnapshotFixture(Date.now());
-        await act(async () => arena.current?.publishArenaSnapshot(fixture.snapshot));
+        await receiveDirectorSnapshot(fixture.snapshot);
         const result = Promise.withResolvers<{ status: 'held-by-other'; transport: 'director-relay'; }>();
         mockMatch.sendIntent.mockReturnValueOnce(result.promise);
         await act(async () => arena.current?.sendPickupIntent(fixture.intent));
 
-        await act(async () => arena.current?.publishArenaSnapshot({ ...fixture.snapshot, revision: fixture.snapshot.revision + 1, pickups: [] }));
+        await receiveDirectorSnapshot({ ...fixture.snapshot, revision: fixture.snapshot.revision + 1, pickups: [] });
         await act(async () => {
             result.resolve({ status: 'held-by-other', transport: 'director-relay' });
             await result.promise;
         });
 
         expect(arena.current?.arenaSnapshot?.pickups).toEqual([]);
-        expect(arena.current?.activeEvent?.kind).toBeUndefined();
+        expect(arena.current?.activeEvent?.kind).toBe(fixture.snapshot.activeEvent?.kind);
     });
 
     it('records no loss for a held-by-other result that arrives in a later network generation', async () => {
@@ -491,7 +499,7 @@ describe('arena game realtime acceptance and egress', () => {
         await waitForState(() => arena.current?.connectionState === 'connected');
         mockMatch.status.mockReturnValue(remoteDirectorMatchStatus());
         const fixture = pickupSnapshotFixture(Date.now());
-        await act(async () => arena.current?.publishArenaSnapshot(fixture.snapshot));
+        await receiveDirectorSnapshot(fixture.snapshot);
         const result = Promise.withResolvers<{ status: 'held-by-other'; transport: 'director-relay'; }>();
         mockMatch.sendIntent.mockReturnValueOnce(result.promise);
         await act(async () => arena.current?.sendPickupIntent(fixture.intent));
@@ -505,15 +513,17 @@ describe('arena game realtime acceptance and egress', () => {
         });
 
         expect(arena.current?.arenaSnapshot?.pickups.map((pickup) => pickup.id)).toEqual([fixture.pickup.id]);
-        expect(arena.current?.activeEvent?.kind).toBeUndefined();
+        expect(arena.current?.activeEvent?.kind).toBe(fixture.snapshot.activeEvent?.kind);
     });
 
-    it('awaits local match-start acceptance through the canonical intent receiver', async () => {
+    it.each([true, false])('starts a local match through its canonical intent receiver with existing snapshot: %s', async (hasSnapshot) => {
         await arena.render();
         await waitForState(() => arena.current?.directorAttempt.status === 'not-elected');
         mockMatch.status.mockReturnValue(localDirectorMatchStatus());
         const config = vi.mocked(createArenaRallarGameMatch).mock.calls.at(-1)?.[0];
-        await act(async () => arena.current?.publishArenaSnapshot(arenaSnapshot(1)));
+        if (hasSnapshot) {
+            await receiveDirectorSnapshot(arenaSnapshot(1));
+        }
         const published: ArenaSnapshot[] = [];
         mockMatch.sendIntent.mockImplementationOnce(async (payload) => {
             await config?.onIntent?.(createRallarGameEnvelope({
@@ -543,7 +553,7 @@ describe('arena game realtime acceptance and egress', () => {
         const config = vi.mocked(createArenaRallarGameMatch).mock.calls.at(-1)?.[0];
         const fixture = acceptedIntentFixture(kind, Date.now());
         const previous = { ...fixture.snapshot, roomId: 'prior-room' };
-        await act(async () => arena.current?.publishArenaSnapshot(previous));
+        await receiveDirectorSnapshot(previous);
         await act(async () =>
             config?.onIntent?.(createRallarGameEnvelope({
                 protocol: 'ar-eye-hunter.v1',
@@ -572,7 +582,7 @@ describe('arena game realtime acceptance and egress', () => {
             await waitForState(() => arena.current?.directorAttempt.status === 'not-elected');
             const config = vi.mocked(createArenaRallarGameMatch).mock.calls.at(-1)?.[0];
             const fixture = acceptedIntentFixture(kind, Date.now());
-            await act(async () => arena.current?.publishArenaSnapshot(fixture.snapshot));
+            await receiveDirectorSnapshot(fixture.snapshot);
             const published: ArenaSnapshot[] = [];
             onTestFinished(() => {
                 mockMatch.publishSnapshot.mockReset();
@@ -606,7 +616,7 @@ describe('arena game realtime acceptance and egress', () => {
         await arena.render();
         await waitForState(() => arena.current?.directorAttempt.status === 'not-elected');
         const config = vi.mocked(createArenaRallarGameMatch).mock.calls.at(-1)?.[0];
-        await act(async () => arena.current?.publishArenaSnapshot(arenaSnapshot(1)));
+        await receiveDirectorSnapshot(arenaSnapshot(1));
         const before = arena.current?.arenaSnapshot;
         const shot: GameRealtimeMessage = {
             protocol: 'ar-eye-hunter.v1',
@@ -658,7 +668,7 @@ describe('arena game realtime acceptance and egress', () => {
         await waitForState(() => arena.current?.directorAttempt.status === 'not-elected');
         const config = vi.mocked(createArenaRallarGameMatch).mock.calls.at(-1)?.[0];
         const fixture = acceptedIntentFixture(kind, Date.now());
-        await act(async () => arena.current?.publishArenaSnapshot(fixture.snapshot));
+        await receiveDirectorSnapshot(fixture.snapshot);
         const eventStarted = Promise.withResolvers<void>();
         const eventDone = Promise.withResolvers<void>();
         const publishedSnapshots: ArenaSnapshot[] = [];
@@ -982,4 +992,12 @@ function pickupSnapshotFixture(nowEpochMs: number): PickupSnapshotFixture {
         pickup,
         intent: { pickupId: pickup.id, sessionId: 'unset', position: pickup.position, seq: 1, sentAtEpochMs: 0 }
     };
+}
+
+async function receiveDirectorSnapshot(snapshot: ArenaSnapshot): Promise<void> {
+    const config = vi.mocked(createArenaRallarGameMatch).mock.calls.at(-1)?.[0];
+    if (!config?.onSnapshot) {
+        throw new Error('Connected arena must register the director snapshot receiver.');
+    }
+    await act(async () => config.onSnapshot?.(directorEnvelope('snapshot', snapshot)));
 }

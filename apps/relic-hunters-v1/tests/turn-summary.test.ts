@@ -1,7 +1,42 @@
-import type { RelicCharacterId, RelicEvent, RelicGameState, RelicPublicSnapshot } from '@ar-eye-hunter/relic-hunters/mod.ts';
-import { applyRelicCommand, createRelicGame, RELIC_PROTOCOL_VERSION, toPublicRelicSnapshot } from '@ar-eye-hunter/relic-hunters/mod.ts';
-import { describe, expect, it } from 'vitest';
-import { deriveCurrentTurnSummaryModel, isPersonalEvent, turnTimelineCategory } from '../src/game/turn-summary.ts';
+import type {
+    RelicCharacterId,
+    RelicEvent,
+    RelicGameState,
+    RelicPublicSnapshot
+} from '@ar-eye-hunter/relic-hunters/mod.ts';
+import {
+    applyRelicCommand,
+    createRelicGame,
+    RELIC_PROTOCOL_VERSION,
+    toPublicRelicSnapshot
+} from '@ar-eye-hunter/relic-hunters/mod.ts';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
+import { requireRelicCommandApplied } from '../../../packages/tests/relic-hunters/require-relic-command-applied.ts';
+import {
+    deriveCurrentTurnSummaryModel,
+    isPersonalEvent,
+    turnTimelineCategory
+} from '../src/game/turn-summary.ts';
+
+interface RelicTestPlayerAdmission {
+    readonly state: RelicGameState;
+    readonly senderId: string;
+    readonly username: string;
+    readonly characterId: RelicCharacterId;
+    readonly now: number;
+}
+
+interface RelicTestEventInput {
+    readonly id: string;
+    readonly type: RelicEvent['type'];
+    readonly message: string;
+    readonly overrides: Partial<RelicEvent>;
+}
 
 const NOW = 1_700_000_000_000;
 
@@ -26,7 +61,7 @@ describe('turn summary and timeline derivation', () => {
 
     it('summarizes a locked local plan while another hunter is still choosing', () => {
         let state = planningState();
-        state = applyRelicCommand(
+        state = requireRelicCommandApplied(applyRelicCommand(
             state,
             {
                 protocolVersion: RELIC_PROTOCOL_VERSION,
@@ -35,8 +70,8 @@ describe('turn summary and timeline derivation', () => {
                 username: 'Alice',
                 action: { kind: 'move', targetRoomId: 'hallway' }
             },
-            { senderId: 'alice-session', now: () => NOW + 4 }
-        ).state;
+            { senderId: 'alice-session', now: NOW + 4 }
+        )).state;
 
         const summary = deriveCurrentTurnSummaryModel({
             snapshot: toPublicRelicSnapshot(state),
@@ -56,12 +91,17 @@ describe('turn summary and timeline derivation', () => {
 
     it('counts recent personal and castle events in the current turn stats', () => {
         const events: readonly RelicEvent[] = [
-            event('reveal', 'action_revealed', 'Round 1 actions are revealed.'),
-            event('search', 'player_searched', 'Alice searched the Entrance.', {
-                animationCue: { type: 'search_altar', playerId: 'alice-session', roomId: 'entrance' }
+            event({ id: 'reveal', type: 'action_revealed', message: 'Round 1 actions are revealed.', overrides: {} }),
+            event({
+                id: 'search',
+                type: 'player_searched',
+                message: 'Alice searched the Entrance.',
+                overrides: {
+                    animationCue: { type: 'search_altar', playerId: 'alice-session', roomId: 'entrance' }
+                }
             }),
-            event('noise', 'noise_pulse', 'The ruin hears 2 noise.'),
-            event('round-2', 'round_started', 'Round 2 begins.')
+            event({ id: 'noise', type: 'noise_pulse', message: 'The ruin hears 2 noise.', overrides: {} }),
+            event({ id: 'round-2', type: 'round_started', message: 'Round 2 begins.', overrides: {} })
         ];
 
         const summary = deriveCurrentTurnSummaryModel({
@@ -81,20 +121,30 @@ describe('turn summary and timeline derivation', () => {
     });
 
     it('classifies timeline entries for reveal, personal, party, castle, and result rows', () => {
-        const personal = event('search', 'player_searched', 'Alice searched.', {
-            animationCue: { type: 'search_altar', playerId: 'alice-session', roomId: 'entrance' }
+        const personal = event({
+            id: 'search',
+            type: 'player_searched',
+            message: 'Alice searched.',
+            overrides: {
+                animationCue: { type: 'search_altar', playerId: 'alice-session', roomId: 'entrance' }
+            }
         });
-        const party = event('move', 'player_moved', 'Bob moved.', {
-            animationCue: { type: 'camera_move', playerId: 'bob-session', roomId: 'hallway' }
+        const party = event({
+            id: 'move',
+            type: 'player_moved',
+            message: 'Bob moved.',
+            overrides: {
+                animationCue: { type: 'camera_move', playerId: 'bob-session', roomId: 'hallway' }
+            }
         });
 
-        expect(turnTimelineCategory(event('reveal', 'action_revealed', 'Plans revealed.'), 'alice-session').label)
+        expect(turnTimelineCategory(event({ id: 'reveal', type: 'action_revealed', message: 'Plans revealed.', overrides: {} }), 'alice-session').label)
             .toBe('Reveal');
         expect(turnTimelineCategory(personal, 'alice-session').label).toBe('Your Action');
         expect(turnTimelineCategory(party, 'alice-session').label).toBe('Party Action');
-        expect(turnTimelineCategory(event('noise', 'noise_pulse', 'The ruin hears noise.'), 'alice-session').label)
+        expect(turnTimelineCategory(event({ id: 'noise', type: 'noise_pulse', message: 'The ruin hears noise.', overrides: {} }), 'alice-session').label)
             .toBe('Castle Reaction');
-        expect(turnTimelineCategory(event('round', 'round_started', 'Round 2 begins.'), 'alice-session').label)
+        expect(turnTimelineCategory(event({ id: 'round', type: 'round_started', message: 'Round 2 begins.', overrides: {} }), 'alice-session').label)
             .toBe('Result');
         expect(isPersonalEvent(personal, 'alice-session')).toBe(true);
     });
@@ -106,9 +156,14 @@ describe('turn summary and timeline derivation', () => {
                 phase: 'review',
                 submittedPlayerIds: [],
                 events: [
-                    event('reveal', 'action_revealed', 'Round 1 actions are revealed.'),
-                    event('move', 'player_moved', 'Alice moved to Hallway.', {
-                        animationCue: { type: 'camera_move', playerId: 'alice-session', roomId: 'hallway' }
+                    event({ id: 'reveal', type: 'action_revealed', message: 'Round 1 actions are revealed.', overrides: {} }),
+                    event({
+                        id: 'move',
+                        type: 'player_moved',
+                        message: 'Alice moved to Hallway.',
+                        overrides: {
+                            animationCue: { type: 'camera_move', playerId: 'alice-session', roomId: 'hallway' }
+                        }
                     })
                 ]
             },
@@ -153,9 +208,9 @@ function planningSnapshot(): RelicPublicSnapshot {
 
 function planningState(): RelicGameState {
     let state = createRelicGame('game-1', 'room-1', NOW);
-    state = join(state, 'alice-session', 'Alice', 'kael-ironstride', NOW + 1);
-    state = join(state, 'bob-session', 'Bob', 'nyra-vale', NOW + 2);
-    return applyRelicCommand(
+    state = join({ state: state, senderId: 'alice-session', username: 'Alice', characterId: 'kael-ironstride', now: NOW + 1 });
+    state = join({ state: state, senderId: 'bob-session', username: 'Bob', characterId: 'nyra-vale', now: NOW + 2 });
+    return requireRelicCommandApplied(applyRelicCommand(
         state,
         {
             protocolVersion: RELIC_PROTOCOL_VERSION,
@@ -163,18 +218,14 @@ function planningState(): RelicGameState {
             gameId: 'game-1',
             username: 'Alice'
         },
-        { senderId: 'alice-session', now: () => NOW + 3 }
-    ).state;
+        { senderId: 'alice-session', now: NOW + 3 }
+    )).state;
 }
 
 function join(
-    state: RelicGameState,
-    senderId: string,
-    username: string,
-    characterId: RelicCharacterId,
-    now: number
+    { state, senderId, username, characterId, now }: RelicTestPlayerAdmission
 ): RelicGameState {
-    return applyRelicCommand(
+    return requireRelicCommandApplied(applyRelicCommand(
         state,
         {
             protocolVersion: RELIC_PROTOCOL_VERSION,
@@ -183,15 +234,12 @@ function join(
             username,
             characterId
         },
-        { senderId, now: () => now }
-    ).state;
+        { senderId, now: now }
+    )).state;
 }
 
 function event(
-    id: string,
-    type: RelicEvent['type'],
-    message: string,
-    overrides: Partial<RelicEvent> = {}
+    { id, type, message, overrides }: RelicTestEventInput
 ): RelicEvent {
     return {
         id,
@@ -201,5 +249,5 @@ function event(
         tone: 'mystery',
         createdAtEpochMs: NOW,
         ...overrides
-    } as RelicEvent;
+    };
 }

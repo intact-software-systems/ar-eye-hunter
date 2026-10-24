@@ -8,7 +8,12 @@ import type {
     RelicPublicSnapshot
 } from '@relic-hunters/mod.ts';
 import { findRelicCharacter, RELIC_CHARACTERS } from '@relic-hunters/mod.ts';
-import { plural, UI, type Lang } from '../lang.ts';
+
+import {
+    plural,
+    UI,
+    type Lang
+} from '../lang.ts';
 import type { RelicHuntersRuntime } from '../relic-hunters-runtime.ts';
 import { playUiSound } from '../sound.ts';
 import type { RelicPreferences } from '../use-relic-preferences.ts';
@@ -83,7 +88,7 @@ function RelicExpeditionAdmission(props: RelicExpeditionAdmissionProps) {
     const currentPlayer = turn.viewModel.currentPlayer;
     const summary = game.rooms.find((room) => room.roomId === game.roomId);
     const startBlocker = game.snapshot
-        ? deriveLobbyStartBlocker({
+        ? computeLobbyStartBlocker({
             snapshot: game.snapshot,
             currentPlayer,
             isAdmin: turn.viewModel.isAdmin,
@@ -220,7 +225,7 @@ function CharacterSelect({
     );
 }
 
-interface DeriveLobbyStartBlockerInput {
+interface LobbyStartBlockerInput {
     readonly snapshot: RelicPublicSnapshot;
     readonly currentPlayer?: RelicPlayer;
     readonly isAdmin: boolean;
@@ -228,28 +233,33 @@ interface DeriveLobbyStartBlockerInput {
     readonly lang: Lang;
 }
 
-function deriveLobbyStartBlocker({
+function computeLobbyStartBlocker({
     snapshot,
     currentPlayer,
     isAdmin,
     onlineMemberCount,
     lang
-}: DeriveLobbyStartBlockerInput): string | undefined {
+}: LobbyStartBlockerInput): string | undefined {
     const joinedCount = snapshot.players.length;
     const onlineOnlyCount = typeof onlineMemberCount === 'number'
         ? Math.max(0, onlineMemberCount - joinedCount)
         : 0;
-    const keeperName = getKeeperName(snapshot, lang);
+    const keeper = resolveLobbyKeeper(snapshot);
 
     if (!currentPlayer) {
         return lang === 'no'
             ? 'Bli med i ekspedisjonen før jakten kan starte.'
             : 'Join the expedition before the hunt can start.';
     }
+    if (!keeper) {
+        return lang === 'no'
+            ? 'En vokter må utpekes før jakten kan starte.'
+            : 'A Keeper must be assigned before the hunt can start.';
+    }
     if (!isAdmin) {
         return lang === 'no'
-            ? `Bare ${keeperName} kan starte jakten.`
-            : `Only ${keeperName} can start the hunt.`;
+            ? `Bare ${keeper.username} kan starte jakten.`
+            : `Only ${keeper.username} can start the hunt.`;
     }
     if (joinedCount === 0) {
         return lang === 'no'
@@ -264,13 +274,8 @@ function deriveLobbyStartBlocker({
     return undefined;
 }
 
-function getLobbyKeeper(snapshot: RelicPublicSnapshot): RelicPlayer | undefined {
-    const adminPlayerId = snapshot.adminPlayerId ?? snapshot.players[0]?.playerId;
-    return snapshot.players.find((player) => player.playerId === adminPlayerId);
-}
-
-function getKeeperName(snapshot: RelicPublicSnapshot, lang: Lang): string {
-    return getLobbyKeeper(snapshot)?.username ?? (lang === 'no' ? 'Vokteren' : 'the Keeper');
+function resolveLobbyKeeper(snapshot: RelicPublicSnapshot): RelicPlayer | undefined {
+    return snapshot.players.find((player) => player.playerId === snapshot.adminPlayerId);
 }
 
 interface LobbyPartyPanelProps {
@@ -291,18 +296,18 @@ function LobbyPartyPanel({
     if (snapshot.phase !== 'lobby') {
         return null;
     }
-    const u = UI[lang];
+    const labels = UI[lang];
     const joinedCount = snapshot.players.length;
     const onlineKnown = typeof onlineMemberCount === 'number';
     const onlineCount = onlineMemberCount ?? joinedCount;
     const onlineOnlyCount = onlineKnown ? Math.max(0, onlineCount - joinedCount) : 0;
     const offlineJoinedCount = onlineKnown ? Math.max(0, joinedCount - onlineCount) : 0;
     const allJoinedOnline = joinedCount > 0 && onlineOnlyCount === 0 && offlineJoinedCount === 0;
-    const keeper = getLobbyKeeper(snapshot);
+    const keeper = resolveLobbyKeeper(snapshot);
     return (
         <div className="panel lobby-party-panel">
             <div className="lobby-ready-header">
-                <span className="panel-label">{u.huntersSummoned}</span>
+                <span className="panel-label">{labels.huntersSummoned}</span>
                 {(onlineKnown || joinedCount > 0) && (
                     <span className={`lobby-ready-count${allJoinedOnline ? ' all-ready' : ''}`}>
                         {joinedCount}/{onlineKnown ? onlineCount : '?'} {lang === 'no' ? 'med' : 'joined'}
@@ -312,7 +317,7 @@ function LobbyPartyPanel({
             <p className="lobby-keeper-watch">
                 {keeper
                     ? (lang === 'no' ? `Vokter: ${keeper.username}` : `Keeper: ${keeper.username}`)
-                    : u.keeperWatches}
+                    : (lang === 'no' ? 'Ingen vokter er utpekt.' : 'No Keeper is assigned.')}
             </p>
             <div className="lobby-party-summary" aria-label={lang === 'no' ? 'Lobby-medlemskap' : 'Lobby membership'}>
                 <div className="lobby-party-stat">
@@ -392,10 +397,10 @@ interface PartyCoordinationSummary {
     readonly relicCarrierCount: number;
 }
 
-export function derivePartyCoordination(
+export function computePartyCoordination(
     snapshot: RelicPublicSnapshot | undefined,
     localPlayerId: string | undefined,
-    actionKind: RelicActionKind = 'move'
+    actionKind: RelicActionKind
 ): PartyCoordinationSummary | undefined {
     const activePlayers = snapshot?.players.filter((player) => !player.escaped && !player.defeated) ?? [];
     const localPlayer = activePlayers.find((player) => player.playerId === localPlayerId);
@@ -421,7 +426,7 @@ export function derivePartyCoordination(
         submittedCount,
         splitLabel: `${hereCount} ${plural('hunter', hereCount)} here / ${elsewhereCount} elsewhere`,
         readinessLabel: `${submittedCount}/${activePlayers.length} plans locked`,
-        actionHint: partyActionHint({
+        actionHint: computePartyActionHint({
             actionKind,
             currentRoom,
             hereCount,
@@ -523,7 +528,7 @@ interface PartyActionHintInput {
     readonly relicCarrierCount: number;
 }
 
-function partyActionHint({
+function computePartyActionHint({
     actionKind,
     currentRoom,
     hereCount,
@@ -564,11 +569,13 @@ function partyActionHint({
         } elsewhere.`
         : 'The active party is together in this room.';
 }
+
 interface CharacterChoicesProps {
     readonly activeCharacter: RelicCharacter;
     readonly locked: boolean;
     onSelect(characterId: RelicCharacterId): void;
 }
+
 function CharacterChoices({ activeCharacter, locked, onSelect }: CharacterChoicesProps) {
     return (
         <div className="character-grid">
@@ -599,27 +606,28 @@ function CharacterChoices({ activeCharacter, locked, onSelect }: CharacterChoice
         </div>
     );
 }
+
 interface LobbyPartyRosterProps {
     readonly snapshot: RelicPublicSnapshot;
     readonly localPlayerId?: string;
     readonly lang: Lang;
 }
+
 function LobbyPartyRoster({ snapshot, localPlayerId, lang }: LobbyPartyRosterProps) {
-    const adminPlayerId = snapshot.adminPlayerId ?? snapshot.players[0]?.playerId;
     return (
         <div className="lobby-party-list">
             {snapshot.players.map((player) => {
-                const char = findRelicCharacter(player.characterId);
+                const character = findRelicCharacter(player.characterId);
                 const isLocal = player.playerId === localPlayerId;
-                const isKeeper = player.playerId === adminPlayerId;
+                const isKeeper = player.playerId === snapshot.adminPlayerId;
                 return (
                     <div key={player.playerId} className={`lobby-party-row${isLocal ? ' local' : ''}`}>
                         <span
                             className="lobby-party-swatch"
-                            style={{ background: char.colors.accent }}
+                            style={{ background: character.colors.accent }}
                         />
                         <span className="lobby-party-name">{player.username}</span>
-                        <span className="lobby-party-char">{char.name}</span>
+                        <span className="lobby-party-char">{character.name}</span>
                         <span className="lobby-role-badges">
                             {isKeeper && (
                                 <span className="lobby-role-badge">
@@ -636,6 +644,7 @@ function LobbyPartyRoster({ snapshot, localPlayerId, lang }: LobbyPartyRosterPro
         </div>
     );
 }
+
 interface LobbyReadinessHintProps {
     readonly onlineOnlyCount: number;
     readonly offlineJoinedCount: number;
@@ -643,10 +652,11 @@ interface LobbyReadinessHintProps {
     readonly startBlocker?: string;
     readonly lang: Lang;
 }
+
 function LobbyReadinessHint(
     { onlineOnlyCount, offlineJoinedCount, allJoinedOnline, startBlocker, lang }: LobbyReadinessHintProps
 ) {
-    const u = UI[lang];
+    const labels = UI[lang];
     return (
         <>
             {onlineOnlyCount > 0
@@ -681,7 +691,7 @@ function LobbyReadinessHint(
                             : 'The expedition is assembled. The Keeper can start when ready.'}
                     </small>
                 )
-                : <small className="lobby-party-hint">{u.keeperAwaits}</small>}
+                : <small className="lobby-party-hint">{labels.keeperAwaits}</small>}
         </>
     );
 }

@@ -90,6 +90,55 @@ roomBrowserTest(
 );
 
 roomBrowserTest(
+    'plays a two-hunter expedition through visible move, escape, and matching finale controls',
+    async ({ page: host, guest }, testInfo) => {
+        roomBrowserTest.setTimeout(180_000);
+        roomBrowserTest.skip(
+            !['1', 'true'].includes(process.env.RELIC_HUNTERS_FULL_STACK ?? ''),
+            'Requires the paired Relic server.'
+        );
+        await host.goto('/');
+        await registerPrivateHunter(host, 'finale-host');
+        await host.getByRole('button', { name: 'New unlisted room', exact: true }).click();
+        const link = host.getByLabel('Room link', { exact: true });
+        await expect(link).toHaveValue(/#rallar-room\?/);
+        await guest.goto(await link.inputValue());
+        await registerPrivateHunter(guest, 'finale-guest');
+        await playPrivateExpedition(host, guest);
+        for (const [index, destination] of ['Hallway', 'Trap Room', 'Monster Lair', 'Exit'].entries()) {
+            for (const hunter of [host, guest]) {
+                await expect(hunter.locator('.turn-plan-status .panel-label')).toHaveText(`Round ${index + 2}`);
+                await hunter.locator('.action-picker').getByRole('button', { name: /^Move/ }).click();
+                await hunter.locator('.target-choice-grid').getByRole('button', { name: new RegExp(`^${destination}`) })
+                    .click();
+            }
+            await submitBothPlans(host, guest);
+            await expect(host.locator('.turn-plan-status .panel-label')).toHaveText(`Round ${index + 3}`);
+            await expect(guest.locator('.turn-plan-status .panel-label')).toHaveText(`Round ${index + 3}`);
+        }
+        for (const hunter of [host, guest]) {
+            await hunter.locator('.action-picker').getByRole('button', { name: /^Escape/ }).click();
+        }
+        await submitBothPlans(host, guest);
+        for (const hunter of [host, guest]) {
+            await expect(hunter.locator('.victory-panel')).toBeVisible();
+            await expect(hunter.locator('.final-score-row')).toHaveCount(2);
+            await expect(hunter.locator('.final-score-tag.success')).toHaveText(['escaped', 'escaped']);
+            await expect(hunter.locator('.error-panel')).toHaveCount(0);
+        }
+        await expect(guest.locator('.victory-panel h2')).toHaveText(
+            await host.locator('.victory-panel h2').innerText()
+        );
+        await expect(guest.locator('.final-score-row')).toHaveText(
+            await host.locator('.final-score-row').allInnerTexts(),
+            { useInnerText: true }
+        );
+        await host.screenshot({ path: testInfo.outputPath('relic-host-finale.png'), fullPage: true });
+        await guest.screenshot({ path: testInfo.outputPath('relic-guest-finale.png'), fullPage: true });
+    }
+);
+
+roomBrowserTest(
     'replaces a saved room with an invitation and enforces revocation before admission',
     async ({ page: hostPage, guest: guestPage }) => {
         roomBrowserTest.skip(
@@ -242,7 +291,7 @@ roomBrowserTest(
 );
 
 test(
-    'creates a temporary expedition with ten-minute reconnect grace from the visible control',
+    'recovers from an unavailable temporary expedition through Recent rooms and creates another room',
     async ({ page }, testInfo) => {
         test.skip(
             !['1', 'true'].includes(process.env.RELIC_HUNTERS_FULL_STACK ?? ''),
@@ -264,6 +313,58 @@ test(
         });
         await expect(page.getByLabel('Room link', { exact: true })).toHaveValue(/#rallar-room\?/);
         await page.screenshot({ path: testInfo.outputPath('temporary-expedition-created.png'), fullPage: true });
+        const linkField = page.getByLabel('Room link', { exact: true });
+        const firstLink = await linkField.inputValue();
+        const reference = new URLSearchParams(new URL(firstLink).hash.slice('#rallar-room?'.length)).get('groupId');
+        if (!reference) {
+            throw new Error('The temporary room must have a scoped share reference.');
+        }
+        const history = page.getByRole('region', { name: 'Recent rooms', exact: true });
+        await expect(history.getByRole('button', { name: `Return to ${reference}`, exact: true })).toBeVisible();
+        await page.getByRole('button', { name: 'New Room', exact: true }).click();
+        await expect(linkField).not.toHaveValue(firstLink);
+        await expect(linkField).toHaveValue(/#rallar-room\?/);
+        const currentLink = await linkField.inputValue();
+        const currentName = await page.locator('.room-row.active span').innerText();
+        const createBody = response.request().postDataJSON();
+        const authorization = await response.request().headerValue('authorization');
+        if (!authorization) {
+            throw new Error('The owner room mutation must be authenticated.');
+        }
+        // The public owner API arranges unavailability; it does not simulate seven days or physical purge.
+        const archived = await page.request.put(
+            response.url().replace(/\/groups\/.*$/, `/groups/${reference}/requests/${crypto.randomUUID()}`),
+            {
+                headers: {
+                    authorization,
+                    'x-client-id': await response.request().headerValue('x-client-id') ?? '',
+                    'x-session-id': await response.request().headerValue('x-session-id') ?? ''
+                },
+                data: {
+                    status: 'archived',
+                    actorPrincipalId: createBody.actorPrincipalId,
+                    actorSessionId: createBody.actorSessionId
+                }
+            }
+        );
+        expect(archived.ok(), await archived.text()).toBe(true);
+        expect((await archived.json()).group.status).toBe('archived');
+        await history.getByRole('button', { name: `Return to ${reference}`, exact: true }).click();
+        await expect(page.getByRole('alert')).toContainText('Room entry was denied');
+        await expect(page.getByText(`Entered ${reference}.`, { exact: true })).toHaveCount(0);
+        await expect(linkField).toHaveValue(currentLink);
+        await expect(page.locator('.room-row.active span')).toHaveText(currentName);
+        await expect(page.locator('.lobby-party-row')).toHaveCount(0);
+        await expect(page.getByRole('button', { name: /Join as/ })).toBeVisible();
+        await page.getByRole('alert').scrollIntoViewIfNeeded();
+        await page.screenshot({ path: testInfo.outputPath('temporary-expedition-unavailable.png'), fullPage: true });
+        await page.getByRole('button', { name: 'Cancel room entry', exact: true }).click();
+        await page.getByRole('button', { name: 'New Room', exact: true }).click();
+        await expect(linkField).not.toHaveValue(currentLink);
+        await expect(linkField).not.toHaveValue(firstLink);
+        await expect(linkField).toHaveValue(/#rallar-room\?/);
+        await expect(page.locator('.room-row.active')).toHaveCount(1);
+        await page.screenshot({ path: testInfo.outputPath('temporary-expedition-recovered.png'), fullPage: true });
     }
 );
 
@@ -290,4 +391,11 @@ async function playPrivateExpedition(host: Page, guest: Page): Promise<void> {
     await guest.getByRole('button', { name: 'Submit Plan' }).click();
     await expect(host.locator('.turn-plan-status .panel-label')).toHaveText('Round 2');
     await expect(guest.locator('.turn-plan-status .panel-label')).toHaveText('Round 2');
+}
+
+async function submitBothPlans(host: Page, guest: Page): Promise<void> {
+    await host.getByRole('button', { name: 'Submit Plan' }).click();
+    await expect(host.locator('.turn-plan-status')).toContainText('Plan locked');
+    await expect(guest.locator('.turn-plan-counters')).toContainText('1 locked');
+    await guest.getByRole('button', { name: 'Submit Plan' }).click();
 }

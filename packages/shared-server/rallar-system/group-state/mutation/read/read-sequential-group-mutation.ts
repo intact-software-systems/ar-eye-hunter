@@ -173,6 +173,7 @@ function assembleSequentialGroupMutationRead({
     return {
         idempotency: idempotency ?? null,
         group: group ?? null,
+        retiredGroup: groupRead.retiredGroup,
         expiredGroupEntry: groupRead.expiredEntry ?? null,
         actorMember: related.actorMemberEntry?.value ?? null,
         targetMember: resolvedTargetMemberEntry?.value ?? null,

@@ -10,6 +10,11 @@ info:
     and `prod-hardened` profiles default to `group-policy`; then
     snapshot reads require full group read permission, commands require room
     send permission, and reset requires active owner/admin permission.
+    Every mode requires an active platform room; archived or deleted rooms cannot
+    be recreated by reading or writing a game. Commands and resets use durable
+    request identities. Retry the same path and payload after an uncertain result;
+    changing a payload under that identity returns 409. Acknowledged requests
+    return a fresh authorized current snapshot.
 
 servers:
   - url: http://localhost:8090
@@ -46,8 +51,12 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/RoomUnavailable'
+        '503':
+          description: The durable initialization is pending; retry the read.
 
-  /api/relic/games/{gameId}/commands:
+  /api/relic/games/{gameId}/commands/requests/{requestId}:
     post:
       tags: [Relic Hunters]
       summary: Apply an authoritative Relic Hunters command
@@ -63,6 +72,7 @@ paths:
           clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/GameId'
+        - $ref: '#/components/parameters/RequestId'
       requestBody:
         required: true
         content:
@@ -82,8 +92,14 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/RoomUnavailable'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          description: The durable request is still pending; retry the same request identity.
 
-  /api/relic/games/{gameId}/reset:
+  /api/relic/games/{gameId}/reset/requests/{requestId}:
     post:
       tags: [Relic Hunters]
       summary: Reset a Relic Hunters game
@@ -98,6 +114,7 @@ paths:
           clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/GameId'
+        - $ref: '#/components/parameters/RequestId'
       responses:
         '200':
           description: Public Relic Hunters game snapshot after reset.
@@ -109,6 +126,12 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/RoomUnavailable'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          description: The durable request is still pending; retry the same request identity.
 
   /api/relic/openapi.json:
     get:
@@ -157,7 +180,20 @@ components:
       schema:
         type: string
 
+    RequestId:
+      name: requestId
+      in: path
+      required: true
+      description: Stable identity of one logical operation in this room; reuse it for retries.
+      schema:
+        type: string
+        minLength: 1
+
   responses:
+    RoomUnavailable:
+      description: The expedition room is absent, archived, or permanently deleted.
+    Conflict:
+      description: The game rules refused this command or this request identity already belongs to different command data.
     BadRequest:
       description: Request is invalid.
       content:
@@ -516,7 +552,7 @@ components:
 
     RelicCommandRequest:
       description: |
-        Client command body for `/api/relic/games/{gameId}/commands`.
+        Client command body for `/api/relic/games/{gameId}/commands/requests/{requestId}`.
         The server derives `gameId` and `username`; clients normally send only
         `protocolVersion`, `kind`, and the command-specific fields.
       oneOf:

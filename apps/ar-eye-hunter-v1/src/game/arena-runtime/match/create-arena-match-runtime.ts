@@ -1,9 +1,17 @@
-import type { Dispatch, RefObject, SetStateAction } from 'react';
+import type {
+    Dispatch,
+    RefObject,
+    SetStateAction
+} from 'react';
 
 import { rallar } from '@shared-web/browser/rallar.ts';
 
 import { createArenaRallarGameMatch, type ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
-import type { ArenaEvent, ArenaSnapshot, GameRealtimeMessage } from '../../types.ts';
+import type {
+    ArenaEvent,
+    ArenaSnapshot,
+    GameRealtimeMessage
+} from '../../types.ts';
 import type { ArenaPeerMessageHandlers } from '../messages/use-arena-peer-message-handlers.ts';
 import { resolveArenaActiveEvent } from '../state/resolve-arena-active-event.ts';
 import type { ArenaStateAcceptance } from '../state/use-arena-state-acceptance.ts';
@@ -51,6 +59,7 @@ export function createArenaMatchRuntime(
             if (!isCurrent()) {
                 return;
             }
+            input.arenaSnapshotRef.current = envelope.payload;
             input.setArenaSnapshot((previous) => isCurrent() ? envelope.payload : previous);
             const nowEpochMs = input.nowMs();
             input.setActiveEvent((previous) =>

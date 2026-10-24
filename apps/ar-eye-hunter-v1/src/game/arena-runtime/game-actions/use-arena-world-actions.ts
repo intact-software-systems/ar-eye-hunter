@@ -1,5 +1,9 @@
 import { useCallback } from 'react';
-import type { Dispatch, RefObject, SetStateAction } from 'react';
+import type {
+    Dispatch,
+    RefObject,
+    SetStateAction
+} from 'react';
 
 import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -116,7 +120,8 @@ async function startArenaMatchFromIntent(
 }
 
 function publishCurrentArenaSnapshot(input: ArenaWorldActionsInput, snapshot: ArenaSnapshot): void {
-    if (!input.isNetworkEnabled()) {
+    const director = input.directorStatusRef.current;
+    if (!input.isNetworkEnabled() || !director.isDirector || !director.isFresh) {
         return;
     }
     const generation = input.networkGenerationRef.current;
@@ -130,8 +135,7 @@ function publishCurrentArenaSnapshot(input: ArenaWorldActionsInput, snapshot: Ar
             : current
     );
     input.arenaSnapshotRef.current = snapshot;
-    const director = input.directorStatusRef.current;
-    if (input.roomIdRef.current && director.isDirector && director.isFresh) {
+    if (input.roomIdRef.current) {
         input.scheduleReliableArenaSnapshot(snapshot, generation);
         publishArenaMatchEnd(input, toArenaMatchEndedMessage(previous, snapshot), generation);
     }

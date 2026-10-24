@@ -90,6 +90,7 @@ function assembleExactGroupMutationRead(
     return {
         idempotency: idempotencyKey === null ? null : exactEntry(read.idempotency, idempotencyKey),
         group,
+        retiredGroup: read.retiredGroup,
         expiredGroupEntry: read.expiredGroupEntry,
         actorMember: actorMemberEntry?.value ?? null,
         targetMember: targetMemberEntry?.value ?? null,

@@ -2,7 +2,12 @@ import { type GroupMutationRead } from '@shared-server/rallar-system/group-state
 import type { AuditStamp } from '@shared/api/group-types.ts';
 
 import { createTestGroup } from '../../../../create-test-group.ts';
-import { groupMemberStorageKey, groupRef, groupStorageKey, storedEntry } from '../mutation/group-mutation-test-runtime.ts';
+import {
+    groupMemberStorageKey,
+    groupRef,
+    groupStorageKey,
+    storedEntry
+} from '../mutation/group-mutation-test-runtime.ts';
 
 export function createCorruptionMutationRead(): GroupMutationRead {
     const audit = persistenceAuditStamp(1_000, 'alice', 'seed');
@@ -20,7 +25,7 @@ export function createCorruptionMutationRead(): GroupMutationRead {
     };
     return {
         ...{ idempotency: null, group: storedEntry(groupStorageKey(), group) },
-        ...{ expiredGroupEntry: null, actorMember, targetMember: null },
+        ...{ retiredGroup: null, expiredGroupEntry: null, actorMember, targetMember: null },
         ...{ authorityMember: null, directorMember: null },
         actorMemberEntry: storedEntry(groupMemberStorageKey('alice'), actorMember),
         ...{ targetMemberEntry: null, authorityMemberEntry: null, directorMemberEntry: null },
@@ -52,7 +57,7 @@ export function createIdentityMutationRead(): GroupMutationRead {
     };
     return {
         ...{ idempotency: null, group: storedEntry(groupStorageKey(), group) },
-        ...{ expiredGroupEntry: null, actorMember, targetMember: null },
+        ...{ retiredGroup: null, expiredGroupEntry: null, actorMember, targetMember: null },
         ...{ authorityMember: null, directorMember: null },
         actorMemberEntry: storedEntry(groupMemberStorageKey('alice'), actorMember),
         ...{ targetMemberEntry: null, authorityMemberEntry: null, directorMemberEntry: null },
@@ -84,7 +89,7 @@ export function createSnapshotAssemblyMutationRead(): GroupMutationRead {
     };
     return {
         ...{ idempotency: null, group: storedEntry(groupStorageKey(), group) },
-        ...{ expiredGroupEntry: null, actorMember, targetMember: null },
+        ...{ retiredGroup: null, expiredGroupEntry: null, actorMember, targetMember: null },
         ...{ authorityMember: null, directorMember: null },
         actorMemberEntry: storedEntry(groupMemberStorageKey('alice'), actorMember),
         ...{ targetMemberEntry: null, authorityMemberEntry: null, directorMemberEntry: null },

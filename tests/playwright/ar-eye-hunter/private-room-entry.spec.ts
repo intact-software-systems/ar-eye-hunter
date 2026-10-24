@@ -281,7 +281,7 @@ roomBrowserTest(
 );
 
 test(
-    'creates a temporary arena with ten-minute reconnect grace from the visible control',
+    'recovers from an unavailable temporary arena through Recent rooms and creates another room',
     async ({ page }, testInfo) => {
         test.skip(process.env.RALLAR_ARENA_FULL_STACK !== '1', 'Requires the local API-v1 memory fixture.');
         const operations = await openOperations(page, '/');
@@ -300,6 +300,56 @@ test(
         });
         await expect(operations.getByLabel('Room link', { exact: true })).toHaveValue(/#rallar-room\?/);
         await page.screenshot({ path: testInfo.outputPath('temporary-arena-created.png'), fullPage: true });
+        const linkField = operations.getByLabel('Room link', { exact: true });
+        const firstLink = await linkField.inputValue();
+        const reference = new URLSearchParams(new URL(firstLink).hash.slice('#rallar-room?'.length)).get('groupId');
+        if (!reference) {
+            throw new Error('The temporary room must have a scoped share reference.');
+        }
+        const history = operations.getByRole('region', { name: 'Recent rooms', exact: true });
+        await expect(history.getByRole('button', { name: `Return to ${reference}`, exact: true })).toBeVisible();
+        await operations.getByRole('button', { name: 'New Arena', exact: true }).click();
+        await expect(linkField).not.toHaveValue(firstLink);
+        await expect(linkField).toHaveValue(/#rallar-room\?/);
+        const currentLink = await linkField.inputValue();
+        const currentName = await operations.locator('.room-row.active span').innerText();
+        const createBody = response.request().postDataJSON();
+        const authorization = await response.request().headerValue('authorization');
+        if (!authorization) {
+            throw new Error('The owner room mutation must be authenticated.');
+        }
+        // The public owner API arranges unavailability; it does not simulate seven days or physical purge.
+        const archived = await page.request.put(
+            response.url().replace(/\/groups\/.*$/, `/groups/${reference}/requests/${crypto.randomUUID()}`),
+            {
+                headers: {
+                    authorization,
+                    'x-client-id': await response.request().headerValue('x-client-id') ?? '',
+                    'x-session-id': await response.request().headerValue('x-session-id') ?? ''
+                },
+                data: {
+                    status: 'archived',
+                    actorPrincipalId: createBody.actorPrincipalId,
+                    actorSessionId: createBody.actorSessionId
+                }
+            }
+        );
+        expect(archived.ok(), await archived.text()).toBe(true);
+        expect((await archived.json()).group.status).toBe('archived');
+        await history.getByRole('button', { name: `Return to ${reference}`, exact: true }).click();
+        await expect(operations.getByRole('alert')).toContainText('Room entry was denied');
+        await expect(operations.getByText(`Entered ${reference}.`, { exact: true })).toHaveCount(0);
+        await expect(linkField).toHaveValue(currentLink);
+        await expect(operations.locator('.room-row.active span')).toHaveText(currentName);
+        await operations.getByRole('alert').scrollIntoViewIfNeeded();
+        await page.screenshot({ path: testInfo.outputPath('temporary-arena-unavailable.png'), fullPage: true });
+        await operations.getByRole('button', { name: 'Cancel room entry', exact: true }).click();
+        await operations.getByRole('button', { name: 'New Arena', exact: true }).click();
+        await expect(linkField).not.toHaveValue(currentLink);
+        await expect(linkField).not.toHaveValue(firstLink);
+        await expect(linkField).toHaveValue(/#rallar-room\?/);
+        await expect(operations.locator('.room-row.active')).toHaveCount(1);
+        await page.screenshot({ path: testInfo.outputPath('temporary-arena-recovered.png'), fullPage: true });
     }
 );
 

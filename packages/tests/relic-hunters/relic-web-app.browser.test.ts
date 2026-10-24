@@ -31,12 +31,25 @@ import {
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { clearSession, writeSession } from '@shared/api/auth.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
-import { act, createElement, type ReactNode } from 'react';
+import {
+    act,
+    createElement,
+    type ReactNode
+} from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { createBrowserTestStorage } from '../shared-test/browser-test-storage.ts';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import { createTimedOutRoundSnapshots } from './relic-timeout-snapshot-fixture.ts';
+import { requireRelicCommandApplied } from './require-relic-command-applied.ts';
 
 interface MockWsMessage {
     readonly payload: object;
@@ -215,7 +228,7 @@ vi.mock('../../../apps/relic-hunters-v1/src/game/OpeningRelicScene.tsx', async (
 vi.mock('../../../apps/relic-hunters-v1/src/game/sound.ts', () => soundMock);
 
 import App from '../../../apps/relic-hunters-v1/src/app.tsx';
-import { derivePartyCoordination } from '../../../apps/relic-hunters-v1/src/game/hud/relic-party.tsx';
+import { computePartyCoordination } from '../../../apps/relic-hunters-v1/src/game/hud/relic-party.tsx';
 
 describe('Relic Hunters browser app', () => {
     let root: Root | undefined;
@@ -266,6 +279,23 @@ describe('Relic Hunters browser app', () => {
         expect(container.textContent).toContain('1/2 hunters are online');
         expect(container.textContent).toContain('Start Over');
         expect(container.textContent).toContain('Keep Going');
+    });
+
+    it('withholds keeper controls when the authoritative snapshot assigns no administrator', async () => {
+        writeSession(session());
+        rallarMock.roomState = roomState(1);
+        stubSnapshotFetch({ ...snapshotWithPlayers(1), adminPlayerId: undefined });
+
+        await renderApp();
+        await waitFor(() => container.textContent?.includes('Alice') === true);
+
+        expect(container.querySelector('.lobby-begin-btn')).toBeNull();
+        expect(container.querySelector('.timer-limit-selector')).toBeNull();
+        expect(container.querySelector('.lobby-waiting-admin')).not.toBeNull();
+        expect(container.querySelector('.lobby-role-badge')).toBeNull();
+        expect(container.querySelector('.lobby-keeper-watch')?.textContent).toBe('No Keeper is assigned.');
+        expect(container.textContent).not.toContain('Only Alice can start');
+        expect(container.textContent).toContain('A Keeper must be assigned before the hunt can start.');
     });
 
     it('shows whether ambient playback started after a browser button gesture', async () => {
@@ -632,7 +662,7 @@ describe('Relic Hunters browser app', () => {
             ]
         } satisfies RelicPublicSnapshot;
 
-        const summary = derivePartyCoordination(snapshot, 'alice-session', 'steal');
+        const summary = computePartyCoordination(snapshot, 'alice-session', 'steal');
 
         expect(summary).toMatchObject({
             currentRoomName: 'Entrance',
@@ -840,7 +870,7 @@ function snapshotWithPlayers(
     phase: 'lobby' | 'planning' = 'lobby'
 ): RelicPublicSnapshot {
     let state: RelicGameState = createRelicGame('room-1', 'room-1', 1);
-    state = applyRelicCommand(state, {
+    state = requireRelicCommandApplied(applyRelicCommand(state, {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'join-expedition',
         gameId: 'room-1',
@@ -848,11 +878,11 @@ function snapshotWithPlayers(
         characterId: 'kael-ironstride'
     }, {
         senderId: 'alice-session',
-        now: () => 2
-    }).state;
+        now: 2
+    })).state;
 
     if (playerCount === 2) {
-        state = applyRelicCommand(state, {
+        state = requireRelicCommandApplied(applyRelicCommand(state, {
             protocolVersion: RELIC_PROTOCOL_VERSION,
             kind: 'join-expedition',
             gameId: 'room-1',
@@ -860,20 +890,20 @@ function snapshotWithPlayers(
             characterId: 'nyra-vale'
         }, {
             senderId: 'bob-session',
-            now: () => 3
-        }).state;
+            now: 3
+        })).state;
     }
 
     if (phase === 'planning') {
-        state = applyRelicCommand(state, {
+        state = requireRelicCommandApplied(applyRelicCommand(state, {
             protocolVersion: RELIC_PROTOCOL_VERSION,
             kind: 'start-expedition',
             gameId: 'room-1',
             username: 'Alice'
         }, {
             senderId: 'alice-session',
-            now: () => 4
-        }).state;
+            now: 4
+        })).state;
     }
 
     return toPublicRelicSnapshot(state);
@@ -881,21 +911,28 @@ function snapshotWithPlayers(
 
 function generatedSnapshotWithPlayers(): RelicPublicSnapshot {
     let state: RelicGameState = createRelicGameFromBlueprint(
-        'room-1',
-        'room-1',
-        createProceduralRelicExpeditionBlueprint({
-            seed: 'browser-generated',
-            theme: 'Test Keep'
-        }),
-        1,
         {
-            source: 'procedural',
-            seed: 'browser-generated',
-            theme: 'Test Keep',
-            blueprintId: 'browser-generated'
+            gameId: 'room-1',
+            roomId: 'room-1',
+            blueprint: createProceduralRelicExpeditionBlueprint({
+                seed: 'browser-generated',
+                theme: 'Test Keep'
+            }),
+            now: 1,
+            setup: {
+                source: 'procedural',
+                seed: 'browser-generated',
+                theme: 'Test Keep',
+                blueprintId: 'browser-generated'
+            }
         }
+    ).fold(
+        (refusal) => {
+            throw new Error(`Expected a valid fixture blueprint: ${refusal.message}`);
+        },
+        (state) => state
     );
-    state = applyRelicCommand(state, {
+    state = requireRelicCommandApplied(applyRelicCommand(state, {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'join-expedition',
         gameId: 'room-1',
@@ -903,17 +940,17 @@ function generatedSnapshotWithPlayers(): RelicPublicSnapshot {
         characterId: 'kael-ironstride'
     }, {
         senderId: 'alice-session',
-        now: () => 2
-    }).state;
-    state = applyRelicCommand(state, {
+        now: 2
+    })).state;
+    state = requireRelicCommandApplied(applyRelicCommand(state, {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'start-expedition',
         gameId: 'room-1',
         username: 'Alice'
     }, {
         senderId: 'alice-session',
-        now: () => 3
-    }).state;
+        now: 3
+    })).state;
 
     return toPublicRelicSnapshot(state);
 }

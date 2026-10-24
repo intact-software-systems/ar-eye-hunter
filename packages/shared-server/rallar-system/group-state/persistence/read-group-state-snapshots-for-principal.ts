@@ -229,9 +229,8 @@ async function readPrincipalMembersAndGroups(
         members: toActivePrincipalMembers(storedMembers!, input),
         groupsByKey: new Map(refs.flatMap((ref, index) => {
             const [storedGroup] = storedGroups[index]!;
-            return storedGroup === undefined
-                ? []
-                : [[groupStateGroupStorageKey(ref), canonicalStoredGroup(storedGroup, ref).value]];
+            const group = storedGroup === undefined ? undefined : canonicalStoredGroup(storedGroup, ref);
+            return group === undefined ? [] : [[groupStateGroupStorageKey(ref), group.value]];
         }))
     };
 }
@@ -256,9 +255,10 @@ async function readPrincipalGroupSelections(
     );
     return activeMembers.flatMap((member, index) => {
         const [storedGroup] = storedGroups[index];
-        return storedGroup === undefined
-            ? []
-            : [{ member, group: canonicalStoredGroup(storedGroup, toGroupRef(member.value)) }];
+        const group = storedGroup === undefined
+            ? undefined
+            : canonicalStoredGroup(storedGroup, toGroupRef(member.value));
+        return group === undefined ? [] : [{ member, group }];
     });
 }
 
@@ -327,10 +327,11 @@ async function readLiveSelections(
     tally: PrincipalListTally
 ): Promise<readonly (readonly RuntimeStateEntryValue<JsonWireValue>[])[]> {
     tally.statements += 1;
+    const observedAtEpochMs = Date.now();
     const resolved = await resolveRuntimeStateReadBatchLiveValues(
         selectors,
         await repository.readRuntimeStateBatch(selectors),
-        async (_namespace, entry) => await toLiveGroupStateEntryValue(entry)
+        async (namespace, entry) => toLiveGroupStateEntryValue(namespace, entry, observedAtEpochMs)
     );
     if (resolved.status === 'changed') {
         throw new StateSnapshotReadConflictError(toRuntimeStateReadBatchSelectedKey(selectors[0]));

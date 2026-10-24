@@ -7,11 +7,19 @@ import { playUiSound } from '../sound.ts';
 import type { RelicPlayback } from '../use-relic-playback.ts';
 import type { RelicPreferences } from '../use-relic-preferences.ts';
 import type { RelicTurn } from '../use-relic-turn.ts';
-import { ClueJournal, RoomDetailCard, RoomIntel } from './relic-intel.tsx';
-import { RelicLobby, RelicPreferencesControls, SidePanelMenu } from './relic-lobby.tsx';
+import {
+    ClueJournal,
+    RoomDetailCard,
+    RoomIntel
+} from './relic-intel.tsx';
+import {
+    RelicLobby,
+    RelicPreferencesControls,
+    SidePanelMenu
+} from './relic-lobby.tsx';
 import { CastleMap, castleMapExitDistances } from './relic-map.tsx';
 import {
-    derivePartyCoordination,
+    computePartyCoordination,
     PartyChangePrompt,
     PartyCoordinationPanel,
     RelicPartyControls
@@ -141,7 +149,7 @@ function RelicExplorationPanels({ game, turn, playback }: RelicSidePanelProps) {
             />
         );
     }
-    const coordination = derivePartyCoordination(snapshot, session.sessionId, turn.selection.draft.kind);
+    const coordination = computePartyCoordination(snapshot, session.sessionId, turn.selection.draft.kind);
     return (
         <>
             <EscapeDecisionPanel snapshot={snapshot} localPlayerId={session.sessionId} />

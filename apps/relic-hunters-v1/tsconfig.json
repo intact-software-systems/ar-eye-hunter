@@ -39,5 +39,8 @@
     "src/**/*.d.ts",
     "../../packages/relic-hunters/**/*.ts",
     "../../types/**/*.d.ts"
+  ],
+  "exclude": [
+    "../../packages/relic-hunters/server/**"
   ]
 }

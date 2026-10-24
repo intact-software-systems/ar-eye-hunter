@@ -16,6 +16,9 @@ export function computeGroupRetention(read: GroupRetentionService.Read): GroupRe
     }
     const group = stored.value;
     const policy = readGroupRetentionState(group.metadata);
+    if (group.status === 'archived' && policy !== null) {
+        return computeArchivedGroupRetention(read, group);
+    }
     if (group.status !== 'active' || policy === null) {
         return noChange(read, group);
     }
@@ -52,6 +55,26 @@ export function computeGroupRetention(read: GroupRetentionService.Read): GroupRe
         metadataVersion: group.metadataVersion + 1,
         updated: audit
     });
+}
+
+function computeArchivedGroupRetention(
+    read: GroupRetentionService.Read,
+    group: Extract<Group, { status: 'archived'; }>
+): GroupRetentionService.Computed {
+    if (
+        group.archived === null || !Number.isSafeInteger(group.archived.atEpochMs) || group.archived.atEpochMs < 0
+    ) {
+        throw new TypeError('Archived temporary room requires a valid archival timestamp');
+    }
+    return read.attemptAtEpochMs - group.archived.atEpochMs >= 604800000
+        ? computeGroupRetentionWrite(read, {
+            ...group,
+            status: 'deleted',
+            deleted: retentionAudit(read),
+            snapshotVersion: group.snapshotVersion + 1,
+            updated: retentionAudit(read)
+        })
+        : noChange(read, group);
 }
 
 function noChange(read: GroupRetentionService.Read, group: Group): GroupRetentionService.Computed {

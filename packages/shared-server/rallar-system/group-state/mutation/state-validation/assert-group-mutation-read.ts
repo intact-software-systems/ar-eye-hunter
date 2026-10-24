@@ -1,7 +1,12 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
 
-import { assertExactKeys, assertRequiredKeys, requireJsonSafe } from '../../group-state-validation-primitives.ts';
+import {
+    assertExactKeys,
+    assertRequiredKeys,
+    requireJsonSafe
+} from '../../group-state-validation-primitives.ts';
 import { groupStateGroupStorageKey } from '../../persistence/aggregate/group-aggregate-storage-keys.ts';
+import { assertGroupRefIdentity } from '../../persistence/group-state-persistence-contracts.ts';
 import { groupStateIdempotencyStorageKey } from '../../persistence/idempotency/group-idempotency-storage-key.ts';
 import {
     groupStatePresenceSessionStorageKey,
@@ -28,6 +33,7 @@ const GROUP_MUTATION_READ_KEYS = [
     'actorMember',
     'targetMember',
     'authorityMember',
+    'retiredGroup',
     'expiredGroupEntry',
     'expiredTargetPresenceEntry',
     'directorMember',
@@ -84,6 +90,12 @@ function assertReadShape(read: GroupMutationRead): void {
 }
 
 function assertStoredGroupRead(read: GroupMutationRead, ref: GroupRef): void {
+    if (read.retiredGroup !== null) {
+        if (read.group !== null || read.expiredGroupEntry !== null) {
+            throw new TypeError('Retired identity cannot have live or expired group authority');
+        }
+        assertGroupRefIdentity(read.retiredGroup, ref, groupStateGroupStorageKey(ref));
+    }
     if (!read.group) {
         return;
     }

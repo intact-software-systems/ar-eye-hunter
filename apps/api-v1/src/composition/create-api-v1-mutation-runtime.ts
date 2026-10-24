@@ -1,4 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { RELIC_ROOM_DATA_BINDING } from '@relic-hunters/server/relic-game-mutation-service.ts';
+import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-app-data-repository.ts';
+import { RoomOwnedAppData } from '@shared-server/app-data/room-owned-app-data.ts';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import {
@@ -264,6 +267,9 @@ function createMutationGroupStateService(
     );
     return createCachedGroupStateService({
         durable: createGroupStateService({
+            groupOwnedAppData: new RoomOwnedAppData(new PSqlAppDataRepository(input.database), [
+                RELIC_ROOM_DATA_BINDING
+            ]),
             runtimeRepository: resources.runtimeStateRepository,
             capacity: input.groupCapacity,
             groupStateEventStore: resources.groupStateEventStore,

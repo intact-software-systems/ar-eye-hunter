@@ -6,7 +6,7 @@ import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { ResourceInboxHandlerRetryableConflict } from '@shared/queuebox/resource-inbox/resource-inbox-handler-outcome.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
@@ -42,6 +42,7 @@ import {
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
 import { GroupLifecyclePolicyRepository } from '../persistence/group-lifecycle-policy-repository.ts';
 import { GroupStateRepositoryReads } from '../persistence/group-state-repository-reads.ts';
+import { GROUPS_NAMESPACE } from '../persistence/group-state-runtime-namespaces.ts';
 import {
     assertGroupPresenceSummaryRead,
     validateGroupPresenceSummaryReadConsistency,
@@ -206,17 +207,19 @@ export class GroupPresenceSummaryWork {
         >(
             async (inconsistency) => Either.ofLeft(inconsistency),
             async (presence) =>
-                Either.ofRight(toGroupPresenceSummaryWorkReads(items, {
-                    nowEpochMs,
-                    presence,
-                    coalescedTopologyEntry,
-                    topologyReplanPolicyFacts: await this.readTopologyReplanPolicyFacts({
-                        work: first.work,
-                        group: presence.group.value,
+                Either.ofRight(
+                    presence === 'absent' ? [] : toGroupPresenceSummaryWorkReads(items, {
+                        nowEpochMs,
+                        presence,
                         coalescedTopologyEntry,
-                        nowEpochMs
+                        topologyReplanPolicyFacts: await this.readTopologyReplanPolicyFacts({
+                            work: first.work,
+                            group: presence.group.value,
+                            coalescedTopologyEntry,
+                            nowEpochMs
+                        })
                     })
-                }))
+                )
         );
     }
 
@@ -226,7 +229,7 @@ export class GroupPresenceSummaryWork {
      */
     private async readSummaryPresence(
         ref: GroupRef
-    ): Promise<Either<GroupPresenceSummaryReadInconsistency, GroupPresenceSummaryRead>> {
+    ): Promise<Either<GroupPresenceSummaryReadInconsistency, GroupPresenceSummaryRead | 'absent'>> {
         const stored = await new GroupStateRepositoryReads(this.options.runtimeRepository).readPresenceSummaryEntries(
             ref
         );
@@ -237,7 +240,7 @@ export class GroupPresenceSummaryWork {
             });
         }
         if (!stored.group) {
-            throw new TypeError(`Group not found for presence summary: ${ref.groupId}`);
+            return Either.ofRight('absent');
         }
         const presence = {
             group: stored.group,
@@ -400,6 +403,10 @@ export class GroupPresenceSummaryWork {
             },
             (value) => value
         );
+        if (candidateReads.length === 0) {
+            await this.finishAbsentGroupWork(database, candidates);
+            return { outcome: 'written', deferred: [] };
+        }
         const computeStartedAtMs = nowMs();
         const candidateRead = candidateReads[0]!;
         const state = this.expandState(primary, candidateRead);
@@ -412,6 +419,25 @@ export class GroupPresenceSummaryWork {
         );
         const outcome = await this.writeExpansions(database, { primary, expansions, computeStartedAtMs });
         return { outcome, deferred: page.deferred };
+    }
+
+    private async finishAbsentGroupWork(
+        database: PSqlSql,
+        candidates: readonly GroupPresenceSummaryWorkItem[]
+    ): Promise<void> {
+        const completedAt = new Date(this.now());
+        const finishes = candidates.map(({ reservation }) => ({
+            ...reservation,
+            status: EntityStatus.COMPLETED,
+            completedAt
+        }));
+        await runInPSqlTransaction(database, async (transaction) => {
+            for (const finish of finishes) {
+                if (!await writeResourceInboxReservationFinish(transaction, finish)) {
+                    throw new Error('Presence-summary reservation changed before absent-group completion');
+                }
+            }
+        });
     }
 
     /** The summary and snapshot of the group read, computed and checked once for every expansion of its page. */
@@ -642,6 +668,18 @@ async function writePresenceSummary(
     transaction: PSqlSql,
     computed: NonNullable<GroupPresenceSummaryCoalescedWrite['summaryWrite']>
 ): Promise<void> {
+    if (computed.operation === 'insert') {
+        // A missing summary may be repaired only while its exact group predecessor still exists.
+        const guarded = await transaction<{ revision: number; }[]>`
+            update runtime_state_store set revision = revision + 1, updated_ts = now()
+            where store_namespace = ${GROUPS_NAMESPACE} and store_key = ${computed.key}
+              and revision = ${computed.groupExpectedRevision}
+            returning revision
+        `;
+        if (guarded.length !== 1) {
+            throw new GroupPresenceSummaryWriteConflictError(SUMMARY_CHANGED);
+        }
+    }
     const rows = computed.operation === 'insert'
         ? await transaction<{ revision: number; }[]>`
             insert into runtime_state_store (store_namespace, store_key, store_value,

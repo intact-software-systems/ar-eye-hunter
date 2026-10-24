@@ -5,10 +5,22 @@ import type {
     GroupMutationRead
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import type { RuntimeStateEntryValue } from '@shared-server/runtime-state/runtime-state-json-store.ts';
-import type { AuditStamp, Group, GroupMember, GroupPresenceAdmission } from '@shared/api/group-types.ts';
+import type {
+    AuditStamp,
+    Group,
+    GroupMember,
+    GroupPresenceAdmission
+} from '@shared/api/group-types.ts';
+
 import { createTestGroup } from '../../../create-test-group.ts';
 import type { GroupStateTestService } from './group-state-test-runtime.ts';
-import { groupMemberStorageKey, groupRef, groupStorageKey, storagePart, storedEntry } from './mutation/group-mutation-test-runtime.ts';
+import {
+    groupMemberStorageKey,
+    groupRef,
+    groupStorageKey,
+    storagePart,
+    storedEntry
+} from './mutation/group-mutation-test-runtime.ts';
 
 export const BASE_EPOCH_MS = Date.now();
 
@@ -120,6 +132,7 @@ export function createMutationRead(): GroupMutationRead {
     return {
         idempotency: null,
         group,
+        retiredGroup: null,
         expiredGroupEntry: null,
         actorMember: actor.member,
         targetMember: null,

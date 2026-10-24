@@ -55,8 +55,9 @@ New rooms in both games are temporary: empty rooms disappear from discovery, and
 archives them after observing ten minutes of uninterrupted inactivity. Current members may reconnect
 during that grace period under normal admission rules. Activity between observations restarts grace.
 Existing rooms and other applications stay persistent unless creation explicitly selects temporary
-retention. Archival preserves records; permanent deletion after seven archived days is a planned
-separate increment.
+retention. After seven archived days, maintenance permanently removes the room, memberships,
+presence, and its Relic expedition save. Audit and replay evidence retain their existing lifetime.
+A deleted room cannot be recreated by returning to it or replaying an old game command.
 
 Room admission is separate from gameplay participation. Relic still requires
 Join Expedition; AR Eye keeps its director and match lifecycle. The shared

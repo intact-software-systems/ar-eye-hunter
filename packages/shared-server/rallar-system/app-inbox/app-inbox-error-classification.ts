@@ -70,6 +70,7 @@ const TERMINAL_POLICY_BY_CODE = new Map<string, TerminalAppInboxErrorPolicy>([
     ['crdt-authority-denied', { status: 403, queueFailure: 'command-rejected' }],
     ['group-mutation-authority-denied', { status: 403, queueFailure: 'command-rejected' }],
     ['group-already-exists', { status: 409, queueFailure: 'command-rejected' }],
+    ['group-retired', { status: 410, queueFailure: 'command-rejected' }],
     ['group-mutation-idempotency-conflict', { status: 409, queueFailure: 'command-rejected' }],
     ['group-mutation-rejected', { status: 400, queueFailure: 'command-rejected' }],
     ['group-state-event-collision', { status: 409, queueFailure: 'operational' }],
@@ -117,7 +118,11 @@ export function classifyAppInboxError(error: unknown): AppInboxErrorClassificati
     const terminalPolicy = TERMINAL_POLICY_BY_CODE.get(code);
     if (terminalPolicy !== undefined) {
         return toTerminalClassification(
-            toExplicitStatusFailure(error, code, terminalPolicy.status),
+            toExplicitStatusFailure(
+                error instanceof Error ? error : new Error(String(error)),
+                code,
+                terminalPolicy.status
+            ),
             terminalPolicy.queueFailure
         );
     }
@@ -252,8 +257,8 @@ function toCrdtAdminRejectionFailure(error: CrdtHttpAdminRejectionError): AppInb
     });
 }
 
-function toExplicitStatusFailure(error: unknown, code: string, status: number): AppInboxFailure {
-    const message = error instanceof Error ? error.message : String(error);
+function toExplicitStatusFailure(error: Error, code: string, status: number): AppInboxFailure {
+    const message = error.message;
     const denial = toFailureDenial({ code, status, message, details: null });
     return toTerminalAppInboxFailure({
         code,

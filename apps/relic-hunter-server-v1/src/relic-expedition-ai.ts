@@ -21,6 +21,7 @@ import {
 } from '@shared-server/rallar-ai/create-rallar-ai-ollama-provider.ts';
 import { createRallarServerAi } from '@shared-server/rallar-ai/create-rallar-server-ai.ts';
 import type { RallarServerAiJsonRequest } from '@shared-server/rallar-ai/decode-rallar-server-ai-json-request.ts';
+import type { RallarServerAi } from '@shared-server/rallar-ai/rallar-server-ai-contracts.ts';
 import {
     decodeJsonWireValue,
     type JsonWireObject,
@@ -64,7 +65,7 @@ export interface CreateRelicExpeditionInitialStateFactoryOptions {
     readonly mockBlueprint?:
         | RelicExpeditionBlueprint
         | ((
-            input: Readonly<{ gameId: string; reason: RelicInitialStateReason; seed: string; }>
+            input: RelicExpeditionProposalIdentity
         ) => RelicExpeditionBlueprint);
     readonly now?: () => number;
     readonly diagnostics?: RallarAiDiagnosticsSink;
@@ -116,67 +117,85 @@ export function createRelicExpeditionInitialStateFactory(
         }
     });
 
-    return async (gameId, reason) => {
-        const createdAt = now();
-        const seed = createExpeditionSeed(gameId, reason, createdAt);
-        const request = createRelicExpeditionAiRequest({
+    return (gameId, reason) =>
+        generateRelicExpeditionInitialState({
             gameId,
             reason,
-            seed,
-            timeoutMs: options.configuration.timeoutMs
+            createdAt: now(),
+            mode,
+            ai,
+            timeoutMs: options.configuration.timeoutMs,
+            onFallback: options.onFallback
         });
+}
 
-        try {
-            const result = await ai.generateJson(
-                request,
-                { roomId: gameId }
-            );
-            assertRelicExpeditionBlueprint(result.value);
+interface RelicExpeditionProposalIdentity {
+    readonly gameId: string;
+    readonly reason: RelicInitialStateReason;
+    readonly seed: string;
+}
 
-            const visualFit = validateRelicExpeditionVisualFit(result.value);
-            if (!visualFit.ok) {
-                throw new Error(
-                    `Generated blueprint failed Relic visual fit: ${visualFit.errors.join('; ')}`
-                );
+interface RelicExpeditionGeneration {
+    readonly gameId: string;
+    readonly reason: RelicInitialStateReason;
+    readonly createdAt: number;
+    readonly mode: Exclude<RelicAiExpeditionMode, 'off'>;
+    readonly ai: RallarServerAi;
+    readonly timeoutMs: number;
+    readonly onFallback: CreateRelicExpeditionInitialStateFactoryOptions['onFallback'];
+}
+
+async function generateRelicExpeditionInitialState({
+    gameId,
+    reason,
+    createdAt,
+    mode,
+    ai,
+    timeoutMs,
+    onFallback
+}: RelicExpeditionGeneration): Promise<RelicGameState> {
+    const seed = createExpeditionSeed(gameId, reason, createdAt);
+    const request = createRelicExpeditionAiRequest({ gameId, reason, seed, timeoutMs });
+    try {
+        const result = await ai.generateJson(request, { roomId: gameId });
+        assertRelicExpeditionBlueprint(result.value);
+        const visualFit = validateRelicExpeditionVisualFit(result.value);
+        if (!visualFit.ok) {
+            throw new Error(`Generated blueprint failed Relic visual fit: ${visualFit.errors.join('; ')}`);
+        }
+        return createRelicGameFromBlueprint({
+            gameId,
+            roomId: gameId,
+            blueprint: result.value,
+            now: createdAt,
+            setup: {
+                source: mode === 'mock' ? 'mock' : 'rallar-ai',
+                seed: result.value.seed,
+                theme: result.value.theme,
+                blueprintId: result.generationId
             }
-
-            return createRelicGameFromBlueprint(
-                gameId,
-                gameId,
-                result.value,
-                createdAt,
-                {
-                    source: mode === 'mock' ? 'mock' : 'rallar-ai',
-                    seed: result.value.seed,
-                    theme: result.value.theme,
-                    blueprintId: result.generationId
-                }
-            );
-        }
-        catch (error) {
-            options.onFallback?.({
-                gameId,
-                reason,
-                mode,
-                seed,
-                error: toErrorMessage(error)
-            });
-            return createRelicGameFromBlueprint(
-                gameId,
-                gameId,
-                createProceduralRelicExpeditionBlueprint({
-                    seed,
-                    source: 'procedural'
-                }),
-                createdAt,
-                {
-                    source: 'procedural',
-                    seed,
-                    blueprintId: `procedural:${seed}`
-                }
-            );
-        }
-    };
+        }).fold(
+            (refusal) => {
+                throw new Error(`Validated expedition blueprint was refused: ${refusal.message}`);
+            },
+            (state) => state
+        );
+    }
+    catch (error) {
+        onFallback?.({ gameId, reason, mode, seed, error: toErrorMessage(error) });
+        return createRelicGameFromBlueprint({
+            gameId,
+            roomId: gameId,
+            blueprint: createProceduralRelicExpeditionBlueprint({ seed, source: 'procedural' }),
+            now: createdAt,
+            setup: { source: 'procedural', seed, blueprintId: `procedural:${seed}` }
+        }).fold(
+            (refusal) => {
+                throw new Error(`Validated expedition blueprint was refused: ${refusal.message}`);
+            },
+            (state) => state
+        );
+    }
 }
 
 export interface CreateRelicExpeditionAiRequestInput {
@@ -234,7 +253,7 @@ export interface RunRelicExpeditionDeterministicAiEvaluationOptions
     readonly mockBlueprint?:
         | RelicExpeditionBlueprint
         | ((
-            input: Readonly<{ gameId: string; reason: RelicInitialStateReason; seed: string; }>
+            input: RelicExpeditionProposalIdentity
         ) => RelicExpeditionBlueprint);
 }
 

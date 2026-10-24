@@ -1,3 +1,9 @@
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import { computeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import type {
     GroupMutationCommand,
@@ -16,15 +22,10 @@ import type {
     GroupPresenceSummary
 } from '@shared/api/group-types.ts';
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
-import {
-    describe,
-    expect,
-    it
-} from 'vitest';
-import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
-import { createTestGroupStateService } from '../group-state-test-runtime.ts';
 
 import { createTestGroup } from '../../../../create-test-group.ts';
+import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { createTestGroupStateService } from '../group-state-test-runtime.ts';
 import {
     groupMemberStorageKey,
     groupRef as runtimeGroupRef,
@@ -377,6 +378,7 @@ function createMutationRead(): GroupMutationRead {
         idempotency: null,
         connectTriggerLatch: null,
         group: storedEntry(groupStorageKey(), group),
+        retiredGroup: null,
         expiredGroupEntry: null,
         actorMember,
         targetMember: null,

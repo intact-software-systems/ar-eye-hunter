@@ -1,11 +1,16 @@
 import { useMemo } from 'react';
-import type { Dispatch, RefObject, SetStateAction } from 'react';
+import type {
+    Dispatch,
+    RefObject,
+    SetStateAction
+} from 'react';
 
 import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import {
     applyEyeAttackAccepted,
     applyPickupAccepted,
     applyPlayerHitAccepted,
+    createInitialArenaState,
     hydrateArenaSnapshot,
     startArenaMatch,
     toArenaSnapshot,
@@ -141,19 +146,20 @@ async function acceptArenaMatchStart(
     const roomId = input.roomIdRef.current;
     const match = input.arenaMatchRef.current;
     if (
-        !isCurrent() || !previous || !roomId || !match ||
-        (previous.roomId !== undefined && previous.roomId !== roomId)
+        !isCurrent() || !roomId || !match ||
+        (previous?.roomId !== undefined && previous.roomId !== roomId)
     ) {
         return;
     }
     const isCurrentOwner = () =>
         isCurrent() && input.arenaMatchRef.current === match && input.roomIdRef.current === roomId;
     const nowEpochMs = input.nowMs();
-    const result = startArenaMatch(hydrateArenaSnapshot(previous), intent, nowEpochMs);
+    const state = previous ? hydrateArenaSnapshot(previous) : createInitialArenaState(undefined, nowEpochMs);
+    const result = startArenaMatch(state, intent, nowEpochMs);
     if (!result.accepted) {
         return;
     }
-    const snapshot = toArenaSnapshot(result.state, previous.roomId ?? roomId, nowEpochMs);
+    const snapshot = toArenaSnapshot(result.state, previous?.roomId ?? roomId, nowEpochMs);
     input.arenaSnapshotRef.current = snapshot;
     input.setArenaSnapshot((current) => isCurrentOwner() ? snapshot : current);
     publishAcceptedArenaEvents(input, snapshot, isCurrentOwner);

@@ -8,74 +8,111 @@ import type {
 import { legalMoveTargets } from '@relic-hunters/mod.ts';
 import { UI, type Lang } from './lang.ts';
 
-export type ActionDraft = Readonly<{
-    kind: RelicActionInput['kind'];
-    targetRoomId?: string;
-    targetPlayerId?: string;
-}>;
+export interface ActionDraft {
+    readonly kind: RelicActionInput['kind'];
+    readonly targetRoomId?: string;
+    readonly targetPlayerId?: string;
+}
 
 export type ActionConsequenceStatus = 'ok' | 'warn' | 'block';
 
-export type ActionConsequence = Readonly<{
-    text: string;
-    status: ActionConsequenceStatus;
-}>;
+export interface ActionConsequence {
+    readonly text: string;
+    readonly status: ActionConsequenceStatus;
+}
 
-export type RelicActionInfo = Readonly<{
-    label: string;
-    noise: string;
-    description: string;
-}>;
+export interface RelicActionInfo {
+    readonly label: string;
+    readonly noise: string;
+    readonly description: string;
+}
 
-export type RelicActionOption = Readonly<{
-    kind: RelicActionKind;
-    info: RelicActionInfo;
-    consequence: ActionConsequence;
-    legal: boolean;
-    blocker?: string;
-}>;
+export interface RelicActionOption {
+    readonly kind: RelicActionKind;
+    readonly info: RelicActionInfo;
+    readonly consequence: ActionConsequence;
+    readonly legal: boolean;
+    readonly blocker?: string;
+}
 
-export type RelicProgressSummary = Readonly<{
-    relics: string;
-    escape: string;
-}>;
+export interface RelicProgressSummary {
+    readonly relics: string;
+    readonly escape: string;
+}
 
-export type RelicTurnStatus = Readonly<{
-    phase?: RelicPublicSnapshot['phase'];
-    activePlayerCount: number;
-    submittedPlayerCount: number;
-    waitingPlayerCount: number;
-    roundsLeft?: number;
-    canSubmit: boolean;
-    isLocked: boolean;
-}>;
+export interface RelicTurnStatus {
+    readonly phase?: RelicPublicSnapshot['phase'];
+    readonly activePlayerCount: number;
+    readonly submittedPlayerCount: number;
+    readonly waitingPlayerCount: number;
+    readonly roundsLeft?: number;
+    readonly canSubmit: boolean;
+    readonly isLocked: boolean;
+}
 
-export type RelicGameWarning = Readonly<{
-    kind: 'low-health' | 'round-limit' | 'round-noise' | 'search-danger';
-    severity: 'info' | 'warning' | 'danger';
-    message: string;
-}>;
+export interface RelicGameWarning {
+    readonly kind: 'low-health' | 'round-limit' | 'round-noise' | 'search-danger';
+    readonly severity: 'info' | 'warning' | 'danger';
+    readonly message: string;
+}
 
-export type RelicGameViewModel = Readonly<{
-    snapshot?: RelicPublicSnapshot;
-    localPlayerId?: string;
-    currentPlayer?: RelicPlayer;
-    currentRoom?: RelicPublicSnapshot['map'][number];
-    moveTargets: readonly string[];
-    stealTargets: readonly RelicPlayer[];
-    progress?: RelicProgressSummary;
-    objective: string;
-    actionInfo: RelicActionInfo;
-    actionOptions: Readonly<Record<RelicActionKind, RelicActionOption>>;
-    submitBlocker?: string;
-    turnStatus: RelicTurnStatus;
-    warnings: readonly RelicGameWarning[];
-    lowHealthWarning?: RelicGameWarning;
-    roundLimitWarning?: RelicGameWarning;
-    actionBriefDanger?: string;
-    isAdmin: boolean;
-    roundNoiseCount: number;
-}>;
+export interface RelicGameViewModel {
+    readonly snapshot?: RelicPublicSnapshot;
+    readonly localPlayerId?: string;
+    readonly currentPlayer?: RelicPlayer;
+    readonly currentRoom?: RelicPublicSnapshot['map'][number];
+    readonly moveTargets: readonly string[];
+    readonly stealTargets: readonly RelicPlayer[];
+    readonly progress?: RelicProgressSummary;
+    readonly objective: string;
+    readonly actionInfo: RelicActionInfo;
+    readonly actionOptions: Readonly<Record<RelicActionKind, RelicActionOption>>;
+    readonly submitBlocker?: string;
+    readonly turnStatus: RelicTurnStatus;
+    readonly warnings: readonly RelicGameWarning[];
+    readonly lowHealthWarning?: RelicGameWarning;
+    readonly roundLimitWarning?: RelicGameWarning;
+    readonly actionBriefDanger?: string;
+    readonly isAdmin: boolean;
+    readonly roundNoiseCount: number;
+}
+
+export interface RelicGameViewModelInput {
+    readonly snapshot: RelicPublicSnapshot | undefined;
+    readonly localPlayerId: string | undefined;
+    readonly draft: ActionDraft;
+    readonly lang: Lang;
+    readonly revealedEvents: readonly RelicEvent[];
+}
+
+interface RelicActionContext {
+    readonly snapshot: RelicPublicSnapshot | undefined;
+    readonly currentPlayer: RelicPlayer | undefined;
+    readonly currentRoom: RelicPublicSnapshot['map'][number] | undefined;
+    readonly moveTargets: readonly string[];
+    readonly stealTargets: readonly RelicPlayer[];
+}
+
+interface RelicActionOptionInput extends RelicActionContext {
+    readonly kind: RelicActionKind;
+}
+
+interface RelicActionValidationInput {
+    readonly snapshot: RelicPublicSnapshot;
+    readonly player: RelicPlayer;
+    readonly draft: ActionDraft;
+    readonly moveTargets: readonly string[];
+    readonly stealTargets: readonly RelicPlayer[];
+    readonly currentRoom: RelicPublicSnapshot['map'][number] | undefined;
+}
+
+interface RelicWarningsInput {
+    readonly snapshot: RelicPublicSnapshot | undefined;
+    readonly currentPlayer: RelicPlayer | undefined;
+    readonly currentRoom: RelicPublicSnapshot['map'][number] | undefined;
+    readonly draft: ActionDraft;
+    readonly revealedEvents: readonly RelicEvent[];
+}
 
 export const RELIC_ACTION_KINDS: readonly RelicActionKind[] = [
     'move',
@@ -107,19 +144,13 @@ export const RELIC_ACTION_INFO: Readonly<Record<RelicActionKind, RelicActionInfo
     }
 };
 
-export function deriveRelicGameViewModel({
+export function computeRelicGameViewModel({
     snapshot,
     localPlayerId,
     draft,
     lang,
-    revealedEvents = []
-}: Readonly<{
-    snapshot?: RelicPublicSnapshot;
-    localPlayerId?: string;
-    draft: ActionDraft;
-    lang: Lang;
-    revealedEvents?: readonly RelicEvent[];
-}>): RelicGameViewModel {
+    revealedEvents
+}: RelicGameViewModelInput): RelicGameViewModel {
     const currentPlayer = snapshot?.players.find((player) => player.playerId === localPlayerId);
     const currentRoom = snapshot?.map.find((room) => room.id === currentPlayer?.roomId);
     const moveTargets = snapshot && currentPlayer
@@ -132,13 +163,20 @@ export function deriveRelicGameViewModel({
         !player.escaped &&
         !player.defeated
     ) ?? [];
+    const actionContext = { snapshot, currentPlayer, currentRoom, moveTargets, stealTargets };
     const submitBlocker = snapshot && currentPlayer
-        ? actionBlocker(snapshot, currentPlayer, draft, moveTargets, stealTargets, currentRoom)
+        ? computeActionBlocker({ ...actionContext, snapshot, player: currentPlayer, draft })
         : undefined;
-    const turnStatus = deriveTurnStatus(snapshot, currentPlayer, submitBlocker);
-    const warnings = deriveWarnings(snapshot, currentPlayer, currentRoom, draft, revealedEvents);
+    const turnStatus = computeTurnStatus(snapshot, currentPlayer, submitBlocker);
+    const warnings = computeWarnings({
+        snapshot,
+        currentPlayer,
+        currentRoom,
+        draft,
+        revealedEvents
+    });
 
-    const adminPlayerId = snapshot?.adminPlayerId ?? snapshot?.players[0]?.playerId;
+    const adminPlayerId = snapshot?.adminPlayerId;
 
     return {
         snapshot,
@@ -152,55 +190,47 @@ export function deriveRelicGameViewModel({
             ? toObjective(snapshot, currentPlayer, lang)
             : 'Create or join a room to begin the expedition.',
         actionInfo: RELIC_ACTION_INFO[draft.kind],
-        actionOptions: deriveActionOptions(snapshot, currentPlayer, currentRoom, moveTargets, stealTargets),
+        actionOptions: computeActionOptions(actionContext),
         submitBlocker,
         turnStatus,
         warnings,
         lowHealthWarning: warnings.find((warning) => warning.kind === 'low-health'),
         roundLimitWarning: warnings.find((warning) => warning.kind === 'round-limit'),
         actionBriefDanger: warnings.find((warning) => warning.kind === 'search-danger')?.message,
-        isAdmin: currentPlayer?.playerId === adminPlayerId,
-        roundNoiseCount: roundNoiseCount(snapshot, revealedEvents)
+        isAdmin: currentPlayer !== undefined && currentPlayer.playerId === adminPlayerId,
+        roundNoiseCount: computeRoundNoiseCount(snapshot, revealedEvents)
     };
 }
 
-function deriveActionOptions(
-    snapshot: RelicPublicSnapshot | undefined,
-    currentPlayer: RelicPlayer | undefined,
-    currentRoom: RelicPublicSnapshot['map'][number] | undefined,
-    moveTargets: readonly string[],
-    stealTargets: readonly RelicPlayer[]
-): Readonly<Record<RelicActionKind, RelicActionOption>> {
-    return Object.fromEntries(RELIC_ACTION_KINDS.map((kind) => {
-        const blocker = snapshot && currentPlayer
-            ? actionBlocker(snapshot, currentPlayer, { kind }, moveTargets, stealTargets, currentRoom)
-            : undefined;
-        return [
-            kind,
-            {
-                kind,
-                info: RELIC_ACTION_INFO[kind],
-                consequence: actionConsequence(
-                    kind,
-                    snapshot,
-                    currentRoom,
-                    moveTargets,
-                    stealTargets,
-                    currentPlayer
-                ),
-                legal: !blocker,
-                blocker
-            }
-        ];
-    })) as Record<RelicActionKind, RelicActionOption>;
+function computeActionOptions(actionContext: RelicActionContext): Readonly<Record<RelicActionKind, RelicActionOption>> {
+    return {
+        move: computeActionOption({ ...actionContext, kind: 'move' }),
+        search: computeActionOption({ ...actionContext, kind: 'search' }),
+        steal: computeActionOption({ ...actionContext, kind: 'steal' }),
+        escape: computeActionOption({ ...actionContext, kind: 'escape' })
+    };
 }
 
-function deriveTurnStatus(
+function computeActionOption(actionContext: RelicActionOptionInput): RelicActionOption {
+    const { snapshot, currentPlayer, kind } = actionContext;
+    const blocker = snapshot && currentPlayer
+        ? computeActionBlocker({ ...actionContext, snapshot, player: currentPlayer, draft: { kind } })
+        : undefined;
+    return {
+        kind,
+        info: RELIC_ACTION_INFO[kind],
+        consequence: computeActionConsequence(actionContext),
+        legal: !blocker,
+        blocker
+    };
+}
+
+function computeTurnStatus(
     snapshot: RelicPublicSnapshot | undefined,
     currentPlayer: RelicPlayer | undefined,
     submitBlocker: string | undefined
 ): RelicTurnStatus {
-    const activeCount = snapshot ? activePlayerCount(snapshot) : 0;
+    const activeCount = snapshot ? computeActivePlayerCount(snapshot) : 0;
     const submittedCount = snapshot?.submittedPlayerIds.length ?? 0;
     const isLocked = !!(currentPlayer && snapshot &&
         snapshot.submittedPlayerIds.includes(currentPlayer.playerId));
@@ -220,12 +250,8 @@ function deriveTurnStatus(
     };
 }
 
-function deriveWarnings(
-    snapshot: RelicPublicSnapshot | undefined,
-    currentPlayer: RelicPlayer | undefined,
-    currentRoom: RelicPublicSnapshot['map'][number] | undefined,
-    draft: ActionDraft,
-    revealedEvents: readonly RelicEvent[]
+function computeWarnings(
+    { snapshot, currentPlayer, currentRoom, draft, revealedEvents }: RelicWarningsInput
 ): readonly RelicGameWarning[] {
     if (!snapshot) {
         return [];
@@ -253,7 +279,7 @@ function deriveWarnings(
     }
 
     const danger = currentRoom && draft.kind === 'search'
-        ? snapshot.roomInvestigations?.find((investigation) => investigation.roomId === currentRoom.id)?.danger
+        ? snapshot.roomInvestigations.find((investigation) => investigation.roomId === currentRoom.id)?.danger
         : undefined;
     if (danger) {
         warnings.push({
@@ -263,7 +289,7 @@ function deriveWarnings(
         });
     }
 
-    const noiseCount = roundNoiseCount(snapshot, revealedEvents);
+    const noiseCount = computeRoundNoiseCount(snapshot, revealedEvents);
     if (noiseCount >= 3) {
         warnings.push({
             kind: 'round-noise',
@@ -275,13 +301,8 @@ function deriveWarnings(
     return warnings;
 }
 
-export function actionConsequence(
-    kind: RelicActionKind,
-    snapshot: RelicPublicSnapshot | undefined,
-    currentRoom: RelicPublicSnapshot['map'][number] | undefined,
-    moveTargets: readonly string[],
-    stealTargets: readonly RelicPlayer[],
-    currentPlayer: RelicPlayer | undefined
+function computeActionConsequence(
+    { kind, snapshot, currentRoom, moveTargets, stealTargets, currentPlayer }: RelicActionOptionInput
 ): ActionConsequence {
     if (!snapshot || !currentPlayer) {
         return { text: '-', status: 'ok' };
@@ -310,7 +331,7 @@ export function actionConsequence(
     }
 }
 
-export function toProgress(
+function toProgress(
     snapshot: RelicPublicSnapshot,
     localPlayerId: string | undefined
 ): RelicProgressSummary {
@@ -326,7 +347,7 @@ export function toProgress(
     };
 }
 
-export function toObjective(
+function toObjective(
     snapshot: RelicPublicSnapshot,
     currentPlayer: RelicPlayer | undefined,
     lang: Lang
@@ -359,7 +380,7 @@ export function toObjective(
     }
 
     if (snapshot.submittedPlayerIds.includes(currentPlayer.playerId)) {
-        const waiting = activePlayerCount(snapshot) - snapshot.submittedPlayerIds.length;
+        const waiting = computeActivePlayerCount(snapshot) - snapshot.submittedPlayerIds.length;
         return waiting > 0
             ? (lang === 'no'
                 ? `Plan låst. Venter på ${waiting} jeger${waiting === 1 ? '' : 'e'}.`
@@ -373,17 +394,12 @@ export function toObjective(
         : `Find relics, then escape within ${roundsLeft} round${roundsLeft === 1 ? '' : 's'}.`;
 }
 
-export function activePlayerCount(snapshot: RelicPublicSnapshot): number {
+function computeActivePlayerCount(snapshot: RelicPublicSnapshot): number {
     return snapshot.players.filter((player) => !player.escaped && !player.defeated).length;
 }
 
-export function actionBlocker(
-    snapshot: RelicPublicSnapshot,
-    player: RelicPlayer,
-    draft: ActionDraft,
-    moveTargets: readonly string[],
-    stealTargets: readonly RelicPlayer[],
-    currentRoom?: RelicPublicSnapshot['map'][number]
+function computeActionBlocker(
+    { snapshot, player, draft, moveTargets, stealTargets, currentRoom }: RelicActionValidationInput
 ): string | undefined {
     if (snapshot.phase !== 'planning') {
         return 'Start the expedition before locking plans.';
@@ -412,7 +428,7 @@ export function actionBlocker(
     return undefined;
 }
 
-function roundNoiseCount(
+function computeRoundNoiseCount(
     snapshot: RelicPublicSnapshot | undefined,
     revealedEvents: readonly RelicEvent[]
 ): number {
