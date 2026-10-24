@@ -8,7 +8,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { ARENA_RALLAR_GAME_DATA_CHANNEL_LANES } from '../../rallar-game-match-adapter.ts';
 import type { RemotePlayer } from '../../types.ts';
 import type { ArenaConnectionState } from '../arena-connection-contracts.ts';
-import { arenaRoomEntry } from '../arena-room-entry.ts';
+import { arenaRecentRooms, arenaRoomEntry } from '../arena-room-entry.ts';
 
 interface ArenaConnectionSessionLifecycleInput {
     readonly nowMs: () => number;
@@ -41,7 +41,10 @@ export function useArenaConnectionSessionLifecycle(
     ]);
     useEffect(() => {
         void connect();
-        return () => arenaRoomEntry.stop();
+        return () => {
+            void arenaRecentRooms.stop();
+            arenaRoomEntry.stop();
+        };
     }, [connect]);
     useEffect(() => {
         if (input.connectionState !== 'connected') {
@@ -64,6 +67,7 @@ export function useArenaConnectionSessionLifecycle(
 
 async function connectArenaSession(input: ArenaConnectionSessionLifecycleInput): Promise<void> {
     const destination = arenaRoomEntry.start();
+    void arenaRecentRooms.start();
     const generation = input.bumpNetworkGeneration();
     const signal = input.currentNetworkSignal();
     input.setConnectionState('connecting');

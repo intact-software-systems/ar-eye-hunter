@@ -157,8 +157,9 @@ roomBrowserTest(
         await guestOperations.getByRole('button', { name: 'Enter room', exact: true }).click();
         await expect(guestOperations.getByText(`Entered ${reference}.`, { exact: true })).toBeVisible();
         await hostOperations.getByRole('button', { name: 'New code arena', exact: true }).click();
-        await expect(linkField).toHaveValue(/#rallar-room\?.*joinCode=/);
         await expect(linkField).not.toHaveValue(currentLink);
+        // Creating while connected also settles the previous room before rotating the new code.
+        await expect(linkField).toHaveValue(/#rallar-room\?.*joinCode=/, { timeout: 30_000 });
         const nextLink = await linkField.inputValue();
         const nextReference = new URLSearchParams(new URL(nextLink).hash.slice('#rallar-room?'.length)).get('groupId');
         await openOperations(guest, nextLink);
@@ -219,6 +220,63 @@ roomBrowserTest(
         await hostOperations.getByRole('button', { name: '1m', exact: true }).click();
         await expect(guestOperations.locator('.match-panel strong')).toHaveText(/^[01]:\d{2}$/, { timeout: 20_000 });
         await guest.screenshot({ path: testInfo.outputPath('unlisted-arena-participating.png'), fullPage: true });
+    }
+);
+
+roomBrowserTest(
+    'recovers recent arenas after reload and forgets shortcuts without leaving',
+    async ({ page: host, guest }, testInfo) => {
+        // Two browsers, fresh invitations, denial/retry, and two reloads share this journey budget.
+        roomBrowserTest.setTimeout(180_000);
+        roomBrowserTest.skip(process.env.RALLAR_ARENA_FULL_STACK !== '1', 'Requires the local API-v1 memory fixture.');
+        const hostOperations = await openOperations(host, '/');
+        await signIn(host, 'alice');
+        await hostOperations.getByRole('button', { name: 'New unlisted arena', exact: true }).click();
+        const linkField = hostOperations.getByLabel('Room link', { exact: true });
+        await expect(linkField).toHaveValue(/#rallar-room\?/);
+        const firstLink = await linkField.inputValue();
+        const firstRef = new URLSearchParams(new URL(firstLink).hash.slice('#rallar-room?'.length)).get('groupId');
+        if (!firstRef) {
+            throw new Error('The first arena must have a scoped share reference.');
+        }
+        const guestOperations = await openOperations(guest, firstLink);
+        await signIn(guest, 'bob');
+        const history = guestOperations.getByRole('region', { name: 'Recent rooms', exact: true });
+        await expect(history.getByRole('button', { name: `Return to ${firstRef}`, exact: true })).toBeVisible();
+        await hostOperations.getByRole('button', { name: 'New code arena', exact: true }).click();
+        await expect(linkField).not.toHaveValue(firstLink);
+        await expect(linkField).toHaveValue(/joinCode=/, { timeout: 30_000 });
+        const secondLink = await linkField.inputValue();
+        const secondRef = new URLSearchParams(new URL(secondLink).hash.slice('#rallar-room?'.length)).get('groupId');
+        if (!secondRef) {
+            throw new Error('The second arena must have a scoped share reference.');
+        }
+        await openOperations(guest, secondLink);
+        await expect(guestOperations.getByText(`Entered ${secondRef}.`, { exact: true })).toBeVisible();
+        await expect(history.getByRole('button', { name: `Return to ${firstRef}`, exact: true })).toBeVisible();
+        await host.goto('about:blank');
+        await guest.reload();
+        await openOperationsPanel(guest);
+        await expect(guestOperations.getByText(`Entered ${secondRef}.`, { exact: true })).toBeVisible();
+        const admissionPath = `**/groups/${firstRef}/join/requests/*`;
+        await guest.route(
+            admissionPath,
+            (route) => route.fulfill({ status: 403, json: { error: 'Room no longer available' } })
+        );
+        await history.getByRole('button', { name: `Return to ${firstRef}`, exact: true }).click();
+        await expect(guestOperations.getByRole('alert')).toContainText('Room entry was denied');
+        await guest.unroute(admissionPath);
+        await history.getByRole('button', { name: `Return to ${firstRef}`, exact: true }).click();
+        await expect(guestOperations.getByText(`Entered ${firstRef}.`, { exact: true })).toBeVisible();
+        await expect(guestOperations.getByLabel('Room code', { exact: true })).toHaveValue('');
+        await history.getByRole('button', { name: `Forget ${secondRef}`, exact: true }).click();
+        await expect(history.getByRole('button', { name: `Return to ${secondRef}`, exact: true })).toHaveCount(0);
+        await expect(guestOperations.getByText(`Entered ${firstRef}.`, { exact: true })).toBeVisible();
+        await guest.reload();
+        await openOperationsPanel(guest);
+        await expect(history.getByRole('button', { name: `Return to ${firstRef}`, exact: true })).toBeVisible();
+        await expect(history.getByRole('button', { name: `Return to ${secondRef}`, exact: true })).toHaveCount(0);
+        await guest.screenshot({ path: testInfo.outputPath('recent-arena-recovery.png'), fullPage: true });
     }
 );
 

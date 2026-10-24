@@ -9,7 +9,7 @@ import {
     type RelicRoundTransitionEvent,
     type RelicServerEvent
 } from '@relic-hunters/mod.ts';
-import type { RallarRoomEntry } from '@shared-web/browser/rallar-room-entry.ts';
+import type { RallarRecentRooms, RallarRoomEntry } from '@shared-web/browser/rallar-room-entry.ts';
 import type {
     ALDeliveryState,
     RallarAuthChangeListener,
@@ -34,6 +34,8 @@ import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
 import { createRallarAiFunnyRoomName, createRallarAiRoomNameSeed } from '@shared/rallar-ai/mod.ts';
 import type { RallarGameAuthorityClientStatus } from '@shared/rallar-game/mod.ts';
 import { SingleFlight } from '@shared/resilience/single-flight.ts';
+import { startRepeating } from '@shared/resilience/start-repeating.ts';
+import type { Timers } from '@shared/resilience/timers.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { browserRelicRuntimeDeps } from './relic-hunters-browser.ts';
 import {
@@ -116,6 +118,8 @@ export interface RelicRuntimeSnapshotSummary {
 export namespace RelicHuntersRuntime {
     export interface Dependencies {
         readonly roomEntry: RallarRoomEntry;
+        readonly recentRooms: RallarRecentRooms;
+        readonly timers: Timers;
         restoreSession(): AuthSession | undefined;
         start(options: RallarStartOptions): Promise<Pick<RallarStartResult, 'session' | 'connected' | 'roomState'>>;
         subscriptions(): RallarSubscriptionScope;
@@ -155,6 +159,7 @@ export namespace RelicHuntersRuntime {
 
     export interface Connection {
         readonly roomEntry: RallarRoomEntry;
+        readonly recentRooms: RallarRecentRooms;
         readonly session: AuthSession | undefined;
         readonly connectionState: RelicHuntersRuntimePhase;
         readonly diagnostics: RelicRuntimeDiagnostics;
@@ -205,9 +210,9 @@ export class RelicHuntersRuntime {
     private roomListeners: RallarSubscriptionScope | undefined;
     private snapshotRequest = 0;
     private directoryRequest = 0;
-    private repairInterval: ReturnType<typeof setInterval> | undefined;
-    private roundRepairTimer: ReturnType<typeof setTimeout> | undefined;
-    private roundRepairInterval: ReturnType<typeof setInterval> | undefined;
+    private stopSnapshotRepair: (() => void) | undefined;
+    private cancelRoundRepair: (() => void) | undefined;
+    private stopRoundRepair: (() => void) | undefined;
     private roundRepairKey = '';
 
     public constructor(deps: RelicHuntersRuntime.Dependencies = browserRelicRuntimeDeps()) {
@@ -215,6 +220,7 @@ export class RelicHuntersRuntime {
         const session = deps.restoreSession();
         this.connection = {
             roomEntry: deps.roomEntry,
+            recentRooms: deps.recentRooms,
             session,
             connectionState: session ? 'connecting' : 'signed-out',
             diagnostics: initialRelicDiagnostics(session),
@@ -244,6 +250,7 @@ export class RelicHuntersRuntime {
         this.active = true;
         this.diagnose({ middlewareConnected: false });
         this.deps.roomEntry.start();
+        void this.deps.recentRooms.start();
         this.lifecycle = this.deps.subscriptions();
         this.lifecycle.add(this.deps.onAuthChange((state) => this.authChanged(state)));
         this.lifecycle.add(this.deps.roomEntry.onChange((state) => this.entryChanged(state)));
@@ -255,6 +262,7 @@ export class RelicHuntersRuntime {
         this.invalidateConnection();
         this.lifecycle?.unsubscribe();
         this.lifecycle = undefined;
+        void this.deps.recentRooms.stop();
         this.deps.roomEntry.stop();
     }
 
@@ -369,8 +377,8 @@ export class RelicHuntersRuntime {
         this.transport = undefined;
         this.roomListeners?.unsubscribe();
         this.roomListeners = undefined;
-        clearInterval(this.repairInterval);
-        this.repairInterval = undefined;
+        this.stopSnapshotRepair?.();
+        this.stopSnapshotRepair = undefined;
         this.clearRoundRepair();
     }
 
@@ -476,7 +484,12 @@ export class RelicHuntersRuntime {
             ...this.roomDiagnostics(true)
         });
         this.installRoomListeners();
-        this.repairInterval = setInterval(() => this.publishSnapshotRepair(), SNAPSHOT_REPAIR_INTERVAL_MS);
+        this.stopSnapshotRepair = startRepeating({
+            timers: this.deps.timers,
+            intervalMs: SNAPSHOT_REPAIR_INTERVAL_MS,
+            firstRun: 'after-interval',
+            run: () => this.publishSnapshotRepair()
+        });
         if (this.deps.roomEntry.getState().status === 'pending') {
             await this.deps.roomEntry.resume();
         }
@@ -605,7 +618,7 @@ export class RelicHuntersRuntime {
             lastAcceptedSnapshot: summarizeRuntimeSnapshot(snapshot, source),
             lastIgnoredSnapshotReason: undefined,
             lastIgnoredSnapshot: undefined,
-            lastHydratedAtEpochMs: Date.now()
+            lastHydratedAtEpochMs: this.deps.timers.nowMs()
         });
         if (source !== 'rallar-rtc') {
             this.publishSnapshotRepair();
@@ -675,24 +688,26 @@ export class RelicHuntersRuntime {
             return;
         }
         this.roundRepairKey = repair.key;
-        this.roundRepairTimer = setTimeout(
+        this.cancelRoundRepair = this.deps.timers.schedule(
             () => this.startRoundRepair(),
-            Math.max(0, repair.deadlineEpochMs - Date.now())
+            Math.max(0, repair.deadlineEpochMs - this.deps.timers.nowMs())
         );
     }
 
     private startRoundRepair(): void {
-        void this.hydrateRoom('timeout-repair');
-        this.roundRepairInterval = setInterval(() => {
-            void this.hydrateRoom('timeout-repair');
-        }, SNAPSHOT_REPAIR_INTERVAL_MS);
+        this.stopRoundRepair = startRepeating({
+            timers: this.deps.timers,
+            intervalMs: SNAPSHOT_REPAIR_INTERVAL_MS,
+            firstRun: 'now',
+            run: () => this.hydrateRoom('timeout-repair')
+        });
     }
 
     private clearRoundRepair(): void {
-        clearTimeout(this.roundRepairTimer);
-        clearInterval(this.roundRepairInterval);
-        this.roundRepairTimer = undefined;
-        this.roundRepairInterval = undefined;
+        this.cancelRoundRepair?.();
+        this.stopRoundRepair?.();
+        this.cancelRoundRepair = undefined;
+        this.stopRoundRepair = undefined;
         this.roundRepairKey = '';
     }
 
@@ -869,7 +884,7 @@ export class RelicHuntersRuntime {
         }
         this.phase(this.connection.snapshot ? 'ready' : 'degraded', {
             ...this.roomDiagnostics(),
-            lastHydratedAtEpochMs: Date.now(),
+            lastHydratedAtEpochMs: this.deps.timers.nowMs(),
             lastError: this.connection.snapshot ? undefined : 'No current relic snapshot accepted for room.'
         });
         return true;
@@ -923,7 +938,7 @@ export class RelicHuntersRuntime {
             if (result.error) {
                 this.publish({ error: result.error });
             }
-            this.phase(result.phase, { ...result.patch, lastHydratedAtEpochMs: Date.now() });
+            this.phase(result.phase, { ...result.patch, lastHydratedAtEpochMs: this.deps.timers.nowMs() });
         }
         catch (error) {
             this.commandFailed(attempt, input, error);
@@ -967,7 +982,7 @@ export class RelicHuntersRuntime {
             }
             this.phase(this.connection.snapshot ? 'ready' : 'degraded', {
                 snapshotReady: !!this.connection.snapshot,
-                lastHydratedAtEpochMs: Date.now(),
+                lastHydratedAtEpochMs: this.deps.timers.nowMs(),
                 lastError: snapshot ? undefined : 'No relic snapshot returned for reset.'
             });
         }

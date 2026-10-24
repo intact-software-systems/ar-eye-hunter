@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 
 import type { ArenaConnection } from '../game/arena-runtime/arena-connection-contracts.ts';
-import { ARENA_ROOM_SCOPE, arenaRoomEntry } from '../game/arena-runtime/arena-room-entry.ts';
+import { ARENA_ROOM_SCOPE, arenaRecentRooms, arenaRoomEntry } from '../game/arena-runtime/arena-room-entry.ts';
 
 interface ArenaRoomEntryProps {
     readonly arena: ArenaConnection;
@@ -57,6 +57,64 @@ export function ArenaRoomEntry({ arena }: ArenaRoomEntryProps) {
                     )}
                     <button type="button" onClick={() => arenaRoomEntry.cancel()}>Cancel room entry</button>
                 </div>
+            )}
+            <ArenaRecentRooms arena={arena} joining={entry.status === 'joining'} />
+        </section>
+    );
+}
+
+interface ArenaRecentRoomsProps extends ArenaRoomEntryProps {
+    readonly joining: boolean;
+}
+
+function ArenaRecentRooms({ arena, joining }: ArenaRecentRoomsProps) {
+    const [history, setHistory] = useState(arenaRecentRooms.getState());
+    const [selectionFailure, setSelectionFailure] = useState<string | null>(null);
+    useEffect(() => arenaRecentRooms.onChange(setHistory), []);
+    useEffect(() => setSelectionFailure(null), [history.principalId]);
+    const principalId = history.principalId;
+    return (
+        <section className="stack" aria-label="Recent rooms">
+            <h4>Recent rooms</h4>
+            <p className="muted">Saved on this device for your account. Return checks whether you can still enter.</p>
+            {history.status === 'signed-out' && <p>Sign in to see your recent rooms.</p>}
+            {history.status === 'loading' && <p role="status">Loading recent rooms…</p>}
+            {history.status === 'ready' && history.rooms.length === 0 && <p>No recent rooms yet.</p>}
+            {history.failure && (
+                <div>
+                    <p role="alert">{history.failure}</p>
+                    <button type="button" onClick={() => void arenaRecentRooms.retry()}>Retry recent rooms</button>
+                </div>
+            )}
+            {selectionFailure && <p role="alert">{selectionFailure}</p>}
+            {principalId && history.rooms.map(({ roomRef }) => (
+                <div className="room-actions" key={roomRef.groupId}>
+                    <span>{roomRef.groupId}</span>
+                    <button
+                        type="button"
+                        aria-label={`Return to ${roomRef.groupId}`}
+                        disabled={joining}
+                        onClick={() => {
+                            const result = arenaRoomEntry.returnTo(roomRef, principalId);
+                            setSelectionFailure(result.left?.message ?? null);
+                            if (result.right && arena.connectionState === 'connected') {
+                                void arenaRoomEntry.resume();
+                            }
+                        }}
+                    >
+                        Return
+                    </button>
+                    <button
+                        type="button"
+                        aria-label={`Forget ${roomRef.groupId}`}
+                        onClick={() => void arenaRecentRooms.forget(roomRef, principalId)}
+                    >
+                        Forget
+                    </button>
+                </div>
+            ))}
+            {history.rooms.length > 0 && (
+                <p className="muted">Forget removes this shortcut only; it does not leave the room.</p>
             )}
         </section>
     );

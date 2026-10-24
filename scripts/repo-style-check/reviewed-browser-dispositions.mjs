@@ -1033,7 +1033,7 @@ export const reviewedBrowserDispositions = Object.freeze([
     // cancellation, and persistence. The pure codecs remain next to that stateful owner, while
     // membership transport and server admission policy stay in their existing owners.
     Object.freeze({
-        path: 'packages/shared-web/browser/rooms/rallar-room-entry.ts',
+        path: 'packages/shared-web/browser/rooms/entry/rallar-room-entry.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
         maximumMagnitude: 107
@@ -1041,7 +1041,7 @@ export const reviewedBrowserDispositions = Object.freeze([
     // Tab storage is untrusted JSON. The decoder narrows the record, principal, scoped reference,
     // and credential state before constructing a SavedEntry; unchecked values never reach join.
     Object.freeze({
-        path: 'packages/shared-web/browser/rooms/rallar-room-entry.ts',
+        path: 'packages/shared-web/browser/rooms/entry/rallar-room-entry.ts',
         rule: 'boundary.unknown',
         symbol: 'decodeSavedEntry',
         maximumMagnitude: 1

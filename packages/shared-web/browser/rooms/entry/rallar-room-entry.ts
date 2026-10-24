@@ -1,18 +1,21 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
-import { validateRallarGroupRef } from '@shared/api/rallar-validation.ts';
 import { Either, Try } from '@shared/resilience/Either.ts';
 import { SingleFlight } from '@shared/resilience/single-flight.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import { ApiHttpError } from '../api/http-error.ts';
-import { toAuthSessionKey } from '../auth/to-auth-session-key.ts';
-import { BrowserRallarSubscriptionScope, notifyListener } from '../messages/rallar-listener-delivery.ts';
-import type { RallarFacade } from '../rallar-facade-contract.ts';
-import type { RallarStateListener, RallarUnsubscribe } from '../rallar-shared-contracts.ts';
-import type { RallarAuthFacade, RallarAuthState } from '../session/rallar-auth-facade.ts';
-import type { BrowserRallarRooms } from './browser-rallar-rooms.ts';
-import type { RallarJoinRoomOptions, RallarRoomState } from './rallar-room-contracts.ts';
-import type { GroupRef, GroupSnapshot, StateScope } from './room-group-state-translation.ts';
+import { ApiHttpError } from '../../api/http-error.ts';
+import { toAuthSessionKey } from '../../auth/to-auth-session-key.ts';
+import { BrowserRallarSubscriptionScope, notifyListener } from '../../messages/rallar-listener-delivery.ts';
+import type { RallarStateListener, RallarUnsubscribe } from '../../rallar-shared-contracts.ts';
+import type { RallarAuthFacade, RallarAuthState } from '../../session/rallar-auth-facade.ts';
+import type { BrowserRallarRooms } from '../browser-rallar-rooms.ts';
+import type { RallarJoinRoomOptions, RallarRoomState } from '../rallar-room-contracts.ts';
+import type { GroupRef, GroupSnapshot, StateScope } from '../room-group-state-translation.ts';
+import {
+    decodeRoomEntryDestination,
+    decodeScopedDestination,
+    invalidDestination
+} from './room-entry-validation.ts';
 
 const ENTRY_FRAGMENT = '#rallar-room?';
 const ENTRY_FIELDS = new Set(['applicationId', 'workspaceId', 'groupId', 'joinCode']);
@@ -61,6 +64,12 @@ export namespace RallarRoomEntry {
         readonly scope: StateScope;
     }
 
+    export interface Browser {
+        readonly auth: Pick<RallarAuthFacade, 'onChange'>;
+        readonly rooms: Rooms;
+        session(): AuthSession | undefined;
+    }
+
     export interface SavedEntry {
         readonly destination: Destination;
         readonly principalId: string | null;
@@ -87,7 +96,7 @@ export class RallarRoomEntry {
     private sessionKey: string | null = null;
 
     public static createBrowser(
-        rallar: Pick<RallarFacade, 'auth' | 'rooms' | 'session'>,
+        rallar: RallarRoomEntry.Browser,
         config: RallarRoomEntry.Config
     ): RallarRoomEntry {
         return new RallarRoomEntry({
@@ -162,6 +171,21 @@ export class RallarRoomEntry {
             principalId: null,
             failure: null
         }));
+    }
+
+    /** Select a recent room for its account without treating local history as admission. */
+    public returnTo(roomRef: GroupRef, principalId: string): Either<RallarRoomEntry.Failure, RallarRoomEntry.State> {
+        if (!principalId || this.dependencies.auth.session()?.clientId !== principalId) {
+            return Either.ofLeft({
+                kind: 'account-mismatch',
+                message: 'Sign in with the account that visited this room.',
+                admittedRoom: null
+            });
+        }
+        return decodeScopedDestination({ roomRef, joinCode: null }, this.config.scope).mapRight((destination) => {
+            this.invalidateAttempt();
+            return this.publish(this.saveDestination({ status: 'pending', destination, principalId, failure: null }));
+        });
     }
 
     public resume(): Promise<RallarRoomEntry.State> {
@@ -331,7 +355,9 @@ export class RallarRoomEntry {
             }
             return;
         }
-        if (decodeScopedDestination({ roomRef: state.currentRoomRef, joinCode: null }, this.config.scope).left) {
+        const destination =
+            decodeScopedDestination({ roomRef: state.currentRoomRef, joinCode: null }, this.config.scope).right;
+        if (!destination) {
             return;
         }
         if (this.state.destination && isSameGroupRef(this.state.destination.roomRef, state.currentRoomRef)) {
@@ -339,7 +365,7 @@ export class RallarRoomEntry {
         }
         this.publish(this.saveDestination({
             status: 'entered',
-            destination: { roomRef: state.currentRoomRef, joinCode: null },
+            destination,
             principalId: session.clientId,
             failure: null
         }));
@@ -398,6 +424,9 @@ export class RallarRoomEntry {
     private publish(state: RallarRoomEntry.State): RallarRoomEntry.State {
         this.state = state;
         for (const listener of this.listeners) {
+            if (this.state !== state) {
+                break;
+            }
             notifyListener(listener, state);
         }
         return this.state;
@@ -460,27 +489,6 @@ export function toRoomEntryUrl(
     );
 }
 
-function decodeRoomEntryDestination(value: unknown): Either<RallarRoomEntry.Failure, RallarRoomEntry.Destination> {
-    if (!value || typeof value !== 'object' || !('roomRef' in value) || !('joinCode' in value)) {
-        return Either.ofLeft(invalidDestination());
-    }
-    const roomRef = value.roomRef;
-    if (
-        !roomRef || typeof roomRef !== 'object' ||
-        !('applicationId' in roomRef) || typeof roomRef.applicationId !== 'string' ||
-        !('workspaceId' in roomRef) || typeof roomRef.workspaceId !== 'string' ||
-        !('groupId' in roomRef) || typeof roomRef.groupId !== 'string' ||
-        !validateRallarGroupRef(roomRef).ok ||
-        (value.joinCode !== null && (typeof value.joinCode !== 'string' || value.joinCode.trim().length === 0))
-    ) {
-        return Either.ofLeft(invalidDestination());
-    }
-    return Either.ofRight({
-        roomRef: { applicationId: roomRef.applicationId, workspaceId: roomRef.workspaceId, groupId: roomRef.groupId },
-        joinCode: value.joinCode
-    });
-}
-
 function readEntryUrl(url: string): Either<RallarRoomEntry.Failure, URL> {
     return Try.compute(() => new URL(url)).flatMap(
         () => Either.ofLeft(invalidDestination()),
@@ -488,24 +496,6 @@ function readEntryUrl(url: string): Either<RallarRoomEntry.Failure, URL> {
             (parsed.protocol === 'https:' || parsed.protocol === 'http:') && !parsed.username && !parsed.password
                 ? Either.ofRight(parsed)
                 : Either.ofLeft(invalidDestination())
-    );
-}
-
-function invalidDestination(message = 'The room link or reference is invalid.'): RallarRoomEntry.Failure {
-    return { kind: 'invalid-destination', message, admittedRoom: null };
-}
-
-function decodeScopedDestination(
-    value: unknown,
-    scope: StateScope
-): Either<RallarRoomEntry.Failure, RallarRoomEntry.Destination> {
-    return decodeRoomEntryDestination(value).flatMap<RallarRoomEntry.Failure, RallarRoomEntry.Destination>(
-        Either.ofLeft,
-        (destination) =>
-            destination.roomRef.applicationId === scope.applicationId &&
-                destination.roomRef.workspaceId === scope.workspaceId
-                ? Either.ofRight(destination)
-                : Either.ofLeft(invalidDestination('This room belongs to a different application or workspace.'))
     );
 }
 

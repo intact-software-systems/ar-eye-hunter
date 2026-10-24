@@ -4,7 +4,7 @@ import type { RallarJoinRoomOptions, RallarRoomState } from '@shared-web/browser
 import type { RallarAuthChangeListener } from '@shared-web/browser/session/rallar-auth-facade.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
+import { createGroupSnapshotFixture } from '../../authoritative-group-fixtures.ts';
 
 import { describe, expect, it } from 'vitest';
 
@@ -12,7 +12,7 @@ import {
     RallarRoomEntry,
     readRoomEntryDestination,
     toRoomEntryUrl
-} from '@shared-web/browser/rooms/rallar-room-entry.ts';
+} from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
 
 const SCOPE = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
 const DESTINATION: RallarRoomEntry.Destination = {
@@ -169,6 +169,68 @@ class EntryBrowser {
 }
 
 describe('pending room entry lifecycle', () => {
+    it('returns with code-free admission bound to the selected account', async () => {
+        const browser = new EntryBrowser();
+        browser.authenticate();
+        const entry = browser.createEntry();
+        entry.start();
+
+        expect(entry.returnTo(DESTINATION.roomRef, SESSION.clientId).right).toMatchObject({
+            status: 'pending',
+            principalId: 'alice',
+            destination: { ...DESTINATION, joinCode: null }
+        });
+        expect(browser.requests).toEqual([]);
+        expect((await entry.resume()).status).toBe('entered');
+        expect(browser.requests[0]).toMatchObject({ roomRef: DESTINATION.roomRef });
+        expect(browser.requests[0].options.joinCode).toBeUndefined();
+        expect([...browser.storage.values()].join('')).not.toContain(DESTINATION.joinCode);
+    });
+
+    it('rejects a stale account or foreign scope without replacing a fresh invitation', () => {
+        const browser = new EntryBrowser();
+        browser.authenticate();
+        const entry = browser.createEntry();
+        entry.start();
+        entry.enter(DESTINATION);
+
+        expect(entry.returnTo(DESTINATION.roomRef, 'bob').left?.kind).toBe('account-mismatch');
+        expect(entry.returnTo({ ...DESTINATION.roomRef, workspaceId: 'elsewhere' }, 'alice').left?.kind)
+            .toBe('invalid-destination');
+        expect(entry.getState()).toMatchObject({ status: 'pending', destination: DESTINATION, principalId: null });
+        expect(browser.requests).toEqual([]);
+    });
+
+    it('cannot resume a recent-room selection under a replacement account', async () => {
+        const browser = new EntryBrowser();
+        browser.authenticate();
+        const entry = browser.createEntry();
+        entry.start();
+        entry.returnTo(DESTINATION.roomRef, 'alice');
+        browser.authenticate({ ...SESSION, clientId: 'bob', sessionId: 'bob-session' });
+
+        expect(await entry.resume()).toMatchObject({ status: 'failed', failure: { kind: 'account-mismatch' } });
+        expect(browser.requests).toEqual([]);
+    });
+
+    it.each([403, 404, 410])('keeps a denied return visible after server status %s', async (status) => {
+        const browser = new EntryBrowser();
+        browser.authenticate();
+        browser.respond = async () => {
+            throw new ApiHttpError('POST', '/join', status, 'unavailable');
+        };
+        const entry = browser.createEntry();
+        entry.start();
+        entry.returnTo(DESTINATION.roomRef, 'alice');
+
+        expect(await entry.resume()).toMatchObject({
+            status: 'failed',
+            destination: { ...DESTINATION, joinCode: null },
+            failure: { kind: 'denied' }
+        });
+        expect(browser.requests).toHaveLength(1);
+    });
+
     it('survives sign-in and reload, then retains membership without the code or auth credentials', async () => {
         const browser = new EntryBrowser();
         browser.url = shareLink(DESTINATION);
@@ -446,11 +508,17 @@ describe('pending room entry lifecycle', () => {
                 entry.cancel();
             }
         });
+        const observed: RallarRoomEntry.State[] = [];
+        entry.onChange((state) => {
+            observed.push(state);
+        });
 
         await entry.resume();
 
         expect(entry.getState().status).toBe('idle');
         expect(browser.requests).toEqual([]);
+        expect(observed.map((state) => state.status)).toEqual(['pending', 'idle']);
+        expect(observed.at(-1)).toBe(entry.getState());
     });
 
     it('reports previous-room cleanup separately from reconnecting the admitted room', async () => {
