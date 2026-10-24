@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createTestServerAppInbox } from '../../../../packages/tests/shared-server/rallar-server/create-test-server-app-inbox.ts';
 
 import type { PSqlQueueReleaseTiming } from '@shared-server/queuebox/postgres/p-sql-queue-release-timing.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
@@ -132,6 +133,7 @@ Deno.test('runtime construction preserves the owned startup sequence', () => {
         'resource-expiry',
         'runtime-state-expiry',
         'middleware',
+        'register:app-inbox-stop',
         'relic-services',
         'attach-replay',
         'presence-reconciliation',
@@ -361,6 +363,7 @@ function createOperations(
         }
     };
     return {
+        createAppInbox: () => createTestServerAppInbox(),
         createMutationRuntime: () => {
             record('mutation');
             return MUTATION_RUNTIME;
@@ -421,8 +424,7 @@ function createBackgroundTasks(events: string[]): CreateApiV1RuntimeInput['backg
             };
         },
         register: (stop) => {
-            events.push(stop === RTC_STOP ? 'register:rtc-stop' : 'register:retention-stop');
-            assert.ok(stop === RTC_STOP || stop === RETENTION_STOP);
+            events.push(stop === RTC_STOP ? 'register:rtc-stop' : stop === RETENTION_STOP ? 'register:retention-stop' : 'register:app-inbox-stop');
             return () => {};
         },
         stop: () => Promise.resolve()

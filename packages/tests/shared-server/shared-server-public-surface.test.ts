@@ -25,6 +25,7 @@ const expectedRuntimeExports = [
     'RallarServerAppDataConflictError',
     'RallarServerAppDataStore',
     'RallarServerApplication',
+    'RallarServerAppInbox',
     'RallarServerWsRouter',
     'RuntimeStateRetryExhaustedError',
     'RuntimeStateWriteConflictError',

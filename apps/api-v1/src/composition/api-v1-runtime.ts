@@ -1,3 +1,4 @@
+import type { RallarServerAppInbox } from '@shared-server/rallar-server/rallar-server-app-inbox.ts';
 import type { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 import type { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import type { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
@@ -47,6 +48,7 @@ export interface ApiV1Runtime extends
     readonly rtcTopologyDelivery: NonNullable<RallarMiddlewareRuntime['rtcTopologyDelivery']>;
     readonly rtcTopologyReplay: NonNullable<RallarMiddlewareRuntime['rtcTopologyReplay']>;
     readonly appAuthInboxService: AppAuthInboxService;
+    readonly appInbox: RallarServerAppInbox;
     readonly authSessionRepository: AuthSessionRepository;
     readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
     readonly clientRestSnapshotReadSelector: ClientRestSnapshotReadSelector;
@@ -62,6 +64,7 @@ export interface ApiV1Runtime extends
 
 export interface RequireApiV1RuntimeInput extends ApiV1RelicServices {
     readonly runtime: RallarMiddlewareRuntime;
+    readonly appInbox: RallarServerAppInbox;
     readonly authSessionRepository: AuthSessionRepository;
     readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
     readonly clientRestSnapshotReadSelector: ClientRestSnapshotReadSelector;
@@ -100,6 +103,7 @@ export function requireApiV1Runtime(input: RequireApiV1RuntimeInput): ApiV1Runti
 
     return {
         ...runtime,
+        appInbox: input.appInbox,
         relicGameMutations: input.relicGameMutations,
         relicGameInboxService: input.relicGameInboxService,
         clientStateService: runtime.clientStateService,

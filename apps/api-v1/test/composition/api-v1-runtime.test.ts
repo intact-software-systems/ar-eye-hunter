@@ -1,4 +1,6 @@
+import type { RallarServerAppInbox } from '@shared-server/mod.ts';
 import assert from 'node:assert/strict';
+import { createTestServerAppInbox } from '../../../../packages/tests/shared-server/rallar-server/create-test-server-app-inbox.ts';
 
 import { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 import type { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
@@ -37,6 +39,7 @@ Deno.test('requireApiV1Runtime preserves every complete API capability identity'
     assert.equal(complete.rtcTopologyDelivery, runtime.rtcTopologyDelivery);
     assert.equal(complete.rtcTopologyReplay, runtime.rtcTopologyReplay);
     assert.equal(complete.appAuthInboxService, runtime.appAuthInboxService);
+    assert.equal(complete.appInbox, additions.appInbox);
     assert.equal(complete.authSessionRepository, additions.authSessionRepository);
     assert.equal(
         complete.clientRestSnapshotReadSelector,
@@ -115,6 +118,7 @@ interface RuntimeFailureCase {
 }
 
 interface RuntimeAdditions extends ApiV1RelicServices {
+    readonly appInbox: RallarServerAppInbox;
     readonly authSessionRepository: AuthSessionRepository;
     readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
     readonly clientRestSnapshotReadSelector: ClientRestSnapshotReadSelector;
@@ -146,6 +150,7 @@ function createRuntimeCandidate(
 
 function createRuntimeAdditions(): RuntimeAdditions {
     return {
+        appInbox: createTestServerAppInbox(),
         relicGameMutations: {} as ApiV1RelicServices['relicGameMutations'],
         relicGameInboxService: {} as ApiV1RelicServices['relicGameInboxService'],
         authSessionRepository: {} as AuthSessionRepository,

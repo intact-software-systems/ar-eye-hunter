@@ -22,6 +22,8 @@ import {
     onTestFinished
 } from 'vitest';
 
+import { createTestServerAppInbox } from './create-test-server-app-inbox.ts';
+
 interface App {
     webSocketMounted: number;
     restMounted: number;
@@ -45,6 +47,18 @@ describe('RallarServerApplication', () => {
                 wake: () => events.push('wake')
             }
         };
+        const appInbox = createTestServerAppInbox();
+        const operation = appInbox.register({
+            type: 'app:settings:set',
+            decodeCommand: (value) => value,
+            encodeCommand: (value) => value,
+            toBinding: () => ({ contextId: 'settings', resourceId: 'request' }),
+            toLogicalCommand: (value) => value,
+            materialize: (value) => value,
+            encodeResult: (value) => value,
+            decodeResult: (value) => value,
+            handle: async () => null
+        });
         const repositories = new RepositoryManager();
         const appDataRepository = new RecordingAppDataRepository();
         const app: App = {
@@ -53,6 +67,7 @@ describe('RallarServerApplication', () => {
         };
         const server = createRallarServerApplication<typeof runtime, App>({
             runtime,
+            appInbox,
             repositories,
             appDataRepository,
             nowEpochMs: () => 1_000,
@@ -77,7 +92,10 @@ describe('RallarServerApplication', () => {
         server.installWebSocketLifecycle().installWebSocketLifecycle();
         server.mountWebSocket(app).mountWebSocket(app);
         server.mountRest(app).mountRest(app);
+        await expect(operation.readReplay(null)).rejects.toMatchObject({ code: 'app-inbox-lifecycle-rejected' });
         server.start();
+        expect(await operation.readReplay(null)).toBeUndefined();
+        expect(server.appInbox).toBe(appInbox);
 
         const settings = await server.appData.open('settings', {
             codec: {
@@ -113,6 +131,11 @@ describe('RallarServerApplication', () => {
                 key: 'theme'
             })
         ).toMatchObject({ value: 'dark' });
+        runtime.qboxEngine.start = () => {
+            throw new Error('Worker startup failed');
+        };
+        expect(() => server.start()).toThrow('Worker startup failed');
+        await expect(operation.readReplay(null)).rejects.toMatchObject({ code: 'app-inbox-lifecycle-rejected' });
     });
 });
 

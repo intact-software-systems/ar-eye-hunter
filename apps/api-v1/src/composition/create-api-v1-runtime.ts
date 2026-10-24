@@ -7,6 +7,7 @@ import {
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { PSqlQueueReleaseTiming } from '@shared-server/queuebox/postgres/p-sql-queue-release-timing.ts';
 import { initResourceInboxExpiryEviction } from '@shared-server/queuebox/postgres/resource-inbox-maintenance.ts';
+import type { RallarServerAppInbox } from '@shared-server/rallar-server/rallar-server-app-inbox.ts';
 import {
     normalizeAppInboxOptions,
     validateAppInboxAttemptDeadlineMargin,
@@ -94,6 +95,7 @@ import {
 } from '../services/runtime-state-expiry-startup.ts';
 import type { ApiV1BackgroundTaskLifecycle } from './api-v1-background-task-lifecycle.ts';
 import { requireApiV1Runtime, type ApiV1Runtime } from './api-v1-runtime.ts';
+import { createApiV1AppInbox, type CreateApiV1AppInboxInput } from './create-api-v1-app-inbox.ts';
 import {
     createApiV1MutationRuntime,
     type ApiV1MutationRuntime,
@@ -186,6 +188,7 @@ interface ApiV1RuntimeTopology {
 }
 
 export interface ApiV1RuntimeConstructionOperations {
+    createAppInbox(input: CreateApiV1AppInboxInput): RallarServerAppInbox;
     createRelicServices(input: CreateApiV1RelicServicesInput): ApiV1RelicServices;
     createMutationRuntime(input: CreateApiV1MutationRuntimeInput): ApiV1MutationRuntime;
     createRtcTopologyRuntime(input: CreateApiRtcTopologyRuntimeInput): ApiRtcTopologyRuntime;
@@ -257,6 +260,8 @@ export function constructApiV1Runtime(
         inboundStores,
         nowEpochMs: input.nowEpochMs
     });
+    const appInbox = operations.createAppInbox({ mutation, runtime, timing: input.timing });
+    input.backgroundTasks.register(() => appInbox.stop());
     const relic = operations.createRelicServices({
         mutation,
         runtime,
@@ -270,6 +275,7 @@ export function constructApiV1Runtime(
     return operations.requireRuntime({
         runtime,
         ...relic,
+        appInbox,
         authSessionRepository: mutation.authSessionRepository,
         passwordDerivationAdmission: mutation.passwordDerivationAdmission,
         ...selectors,
@@ -422,6 +428,7 @@ function toMutationRuntimeInput(
 }
 
 const PRODUCTION_OPERATIONS: ApiV1RuntimeConstructionOperations = {
+    createAppInbox: createApiV1AppInbox,
     createRelicServices: createApiV1RelicServices,
     createMutationRuntime: createApiV1MutationRuntime,
     createRtcTopologyRuntime: createApiRtcTopologyRuntime,
