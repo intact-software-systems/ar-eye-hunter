@@ -115,6 +115,11 @@ export interface ApiV1GroupAdmissionConfiguration {
 
 export interface ApiV1GroupConfiguration {
     readonly defaultMaxMembers: number | null;
+    /**
+     * Groups whose current snapshot each process keeps between unchanged revisions. Past it the oldest kept group
+     * is dropped and its next read is a full read.
+     */
+    readonly currentSnapshotCacheMaxEntries: number;
     readonly admission: ApiV1GroupAdmissionConfiguration;
 }
 

@@ -79,10 +79,11 @@ function decodeV1dGrowthWorkload(value: ApiJsonValue): V1dGrowthWorkload | undef
         return undefined;
     }
     const { manifestStartedAtEpochMs, manifestCompletedAtEpochMs, manifestAgents, eventHistoryMaxEvents } = value;
-    const { apiProcesses, churnStarted, churnPassed } = value;
+    const { groupCurrentSnapshotCacheMaxEntries, apiProcesses, churnStarted, churnPassed } = value;
     const churnFailedRunIds = value.churnFailedRunIds.filter((runId) => typeof runId === 'string');
     const decodes = isTimeOrNull(manifestStartedAtEpochMs) && isTimeOrNull(manifestCompletedAtEpochMs) &&
         isCount(manifestAgents) && isPositiveCount(eventHistoryMaxEvents) &&
+        isPositiveCount(groupCurrentSnapshotCacheMaxEntries) &&
         isPositiveCount(apiProcesses) && isCount(churnStarted) &&
         isCount(churnPassed) &&
         churnFailedRunIds.length === value.churnFailedRunIds.length;
@@ -93,6 +94,7 @@ function decodeV1dGrowthWorkload(value: ApiJsonValue): V1dGrowthWorkload | undef
             manifestCompletedAtEpochMs,
             manifestAgents,
             eventHistoryMaxEvents,
+            groupCurrentSnapshotCacheMaxEntries,
             apiProcesses,
             churnStarted,
             churnPassed,

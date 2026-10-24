@@ -28,6 +28,7 @@ const COMPLETED_RUN: V1dGrowthRun = {
         manifestCompletedAtEpochMs: WINDOW_STARTED_AT_EPOCH_MS + 4_740_000,
         manifestAgents: 15,
         eventHistoryMaxEvents: 10_000,
+        groupCurrentSnapshotCacheMaxEntries: 32,
         apiProcesses: 2,
         churnStarted: 30,
         churnPassed: 30,

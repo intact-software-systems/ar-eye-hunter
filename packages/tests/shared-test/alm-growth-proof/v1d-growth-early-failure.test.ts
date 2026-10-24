@@ -26,6 +26,7 @@ describe('V1d growth verdict after an early failure', () => {
                 manifestCompletedAtEpochMs: null,
                 manifestAgents: 15,
                 eventHistoryMaxEvents: 10_000,
+                groupCurrentSnapshotCacheMaxEntries: 32,
                 apiProcesses: 3,
                 churnStarted: 1,
                 churnPassed: 0,

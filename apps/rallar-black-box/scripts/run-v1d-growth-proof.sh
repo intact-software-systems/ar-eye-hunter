@@ -76,6 +76,10 @@ readonly REGISTRATION_IP_RATE_LIMIT=500
 readonly LOGIN_IP_RATE_LIMIT=100
 readonly USER_RATE_LIMIT=100
 readonly CRDT_DOCUMENT_TYPE_POLICIES_JSON='[{"documentType":"black-box-map","rollout":"production"}]'
+# A 75-minute run creates about 70 groups, under the API's default of 512 current group snapshots, so each process's
+# heap rises with the filling cache for the whole window. Churn adds 5 groups an iteration; at 32 the cache is full by
+# about minute 17, its count stays put and the process heap after it shows whether anything else grows.
+readonly GROUP_CURRENT_SNAPSHOT_CACHE_MAX_ENTRIES=32
 readonly ADMIN_USERNAME=admin
 readonly ADMIN_PASSWORD=admin
 readonly AGENT_PREFIX=controller
@@ -212,6 +216,7 @@ start_api_process() {
 		RALLAR_AUTH_CREDENTIAL_SECRET="$AUTH_CREDENTIAL_SECRET" \
 		RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET="$OPERATOR_TOKEN_SECRET" \
 		RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON="$CRDT_DOCUMENT_TYPE_POLICIES_JSON" \
+		RALLAR_GROUP_CURRENT_SNAPSHOT_CACHE_MAX_ENTRIES="$GROUP_CURRENT_SNAPSHOT_CACHE_MAX_ENTRIES" \
 		deno run --config apps/api-v1/deno.json --allow-net --allow-env --allow-read --v8-flags=--expose-gc \
 		apps/api-v1/src/main.ts
 }
@@ -405,8 +410,8 @@ wait_for_manifest() {
 
 # The verdict fails without a passed manifest and a clean churn loop, so the workload's outcome joins run.json; the
 # iterations started and the manifest's agents count the accounts the run registered, and the manifest's event history
-# bound is the cap of the test runtime's retained events, and the API processes started say how many heap sample
-# streams the verdict expects.
+# bound is the cap of the test runtime's retained events, the snapshot cache cap the API processes started with is the
+# cap of their kept groups, and the API processes started say how many heap sample streams the verdict expects.
 record_workload() {
 	local runner="$1" distributed failed_run_ids
 	distributed="$(read_distributed_run)"
@@ -416,6 +421,7 @@ record_workload() {
 		--argjson distributed "$distributed" \
 		--argjson manifestAgents "$AGENT_COUNT" \
 		--argjson eventHistoryMaxEvents "$EVENT_HISTORY_MAX_EVENTS" \
+		--argjson groupCurrentSnapshotCacheMaxEntries "$GROUP_CURRENT_SNAPSHOT_CACHE_MAX_ENTRIES" \
 		--argjson apiProcesses "${#API_PORTS[@]}" \
 		--argjson churnStarted "$(count_churn_iterations started)" \
 		--argjson churnPassed "$(count_churn_iterations passed)" \
@@ -425,6 +431,7 @@ record_workload() {
 			manifestCompletedAtEpochMs: ($distributed.completedAtEpochMs // null),
 			manifestAgents: $manifestAgents,
 			eventHistoryMaxEvents: $eventHistoryMaxEvents,
+			groupCurrentSnapshotCacheMaxEntries: $groupCurrentSnapshotCacheMaxEntries,
 			apiProcesses: $apiProcesses,
 			churnStarted: $churnStarted, churnPassed: $churnPassed, churnFailedRunIds: $churnFailedRunIds}' \
 		"$OUT_DIR/run.json" >"$OUT_DIR/run.json.next"

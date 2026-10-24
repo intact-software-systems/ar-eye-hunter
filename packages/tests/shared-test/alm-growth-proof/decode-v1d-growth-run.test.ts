@@ -70,6 +70,7 @@ describe('V1d growth run decoding', () => {
             manifestCompletedAtEpochMs: null,
             manifestAgents: 15,
             eventHistoryMaxEvents: 10_000,
+            groupCurrentSnapshotCacheMaxEntries: 32,
             apiProcesses: 3,
             churnStarted: 3,
             churnPassed: 1,
@@ -77,6 +78,7 @@ describe('V1d growth run decoding', () => {
         };
         const { churnStarted: _churnStarted, ...withoutIterationsStarted } = workload;
         const { eventHistoryMaxEvents: _eventHistoryMaxEvents, ...withoutEventHistoryBound } = workload;
+        const { groupCurrentSnapshotCacheMaxEntries: _cacheCap, ...withoutCacheCap } = workload;
         const toLeft = (recorded: ApiJsonValue) =>
             decodeV1dGrowthRun(toFiles({
                 runJson: JSON.stringify({ windowStartedAtEpochMs: STARTED_AT_EPOCH_MS, workload: recorded })
@@ -101,6 +103,12 @@ describe('V1d growth run decoding', () => {
             'run.json workload is not a recorded runner outcome and churn count'
         ]);
         expect(toLeft({ ...workload, eventHistoryMaxEvents: 0 })).toEqual([
+            'run.json workload is not a recorded runner outcome and churn count'
+        ]);
+        expect(toLeft(withoutCacheCap)).toEqual([
+            'run.json workload is not a recorded runner outcome and churn count'
+        ]);
+        expect(toLeft({ ...workload, groupCurrentSnapshotCacheMaxEntries: 0 })).toEqual([
             'run.json workload is not a recorded runner outcome and churn count'
         ]);
     });

@@ -318,7 +318,7 @@ export const V1D_GROWTH_SURFACES: readonly V1dGrowthSurface[] = [
         id: 20,
         name: 'group-audience cache (GroupStateCurrentSnapshotCache)',
         owner: 'packages/shared-server/rallar-system/group-state/snapshot/group-state-current-snapshot-cache.ts',
-        classification: { growthClass: 'count-capped', cap: 32 },
+        classification: { growthClass: 'count-capped', cap: { source: 'workload-group-current-snapshot-cache' } },
         readers: [toRealtimeReading('caches', 'groupAudienceSnapshots')]
     },
     {
@@ -326,7 +326,7 @@ export const V1D_GROWTH_SURFACES: readonly V1dGrowthSurface[] = [
         name:
             'VersionProbedReadThroughCache entries (the process has one, the group-audience cache, so row 20 reads it)',
         owner: 'packages/shared/cache/store-backed/version-probed-read-through-cache.ts',
-        classification: { growthClass: 'count-capped', cap: 32 },
+        classification: { growthClass: 'count-capped', cap: { source: 'workload-group-current-snapshot-cache' } },
         readers: [toRealtimeReading('caches', 'groupAudienceSnapshots')]
     },
     toServerHeapSurface(

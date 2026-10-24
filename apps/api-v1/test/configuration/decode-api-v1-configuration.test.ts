@@ -261,6 +261,7 @@ Deno.test('configuration decoder validates every numeric policy boundary without
         ['stateApi.circuitBreaker.resetDurationMs', 1],
         ['stateApi.circuitBreaker.samplingDurationMs', 1],
         ['group.defaultMaxMembers', 0],
+        ['group.currentSnapshotCacheMaxEntries', 1],
         ['group.admission.windowMs', 1],
         ['group.admission.joinPrincipal', 1],
         ['group.admission.joinGroup', 1],

@@ -124,7 +124,7 @@ const CONFIGURATION_KEYS_BY_PATH: Readonly<Record<string, ReadonlySet<string>>> 
         'resetDurationMs',
         'samplingDurationMs'
     ]),
-    group: new Set(['defaultMaxMembers', 'admission']),
+    group: new Set(['defaultMaxMembers', 'currentSnapshotCacheMaxEntries', 'admission']),
     'group.admission': new Set([
         'windowMs',
         'joinPrincipal',
@@ -214,6 +214,7 @@ const ENVIRONMENT_NAME_BY_PATH: Readonly<Record<string, string>> = {
     'clientSessions.disconnectedRetentionMs': 'RALLAR_CLIENT_SESSION_DISCONNECTED_RETENTION_MS',
     'stateApi.strictReadAuthorization': 'RALLAR_STATE_STRICT_READ_AUTH',
     'group.defaultMaxMembers': 'RALLAR_GROUP_DEFAULT_MAX_MEMBERS',
+    'group.currentSnapshotCacheMaxEntries': 'RALLAR_GROUP_CURRENT_SNAPSHOT_CACHE_MAX_ENTRIES',
     'group.admission.joinPrincipal': 'RALLAR_GROUP_JOIN_ADMISSION_PRINCIPAL_RATE_LIMIT',
     'group.admission.joinGroup': 'RALLAR_GROUP_JOIN_ADMISSION_GROUP_RATE_LIMIT',
     'group.admission.presencePrincipal': 'RALLAR_GROUP_PRESENCE_CONNECT_PRINCIPAL_RATE_LIMIT',

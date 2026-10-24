@@ -375,6 +375,7 @@ function decodeGroup(
     const defaultMaxMembers = decoder.integer('group.defaultMaxMembers', 0);
     return {
         defaultMaxMembers: defaultMaxMembers === 0 ? null : defaultMaxMembers,
+        currentSnapshotCacheMaxEntries: decoder.integer('group.currentSnapshotCacheMaxEntries', 1),
         admission: {
             windowMs: decoder.integer('group.admission.windowMs', 1),
             joinPrincipal: decoder.integer('group.admission.joinPrincipal', 1),

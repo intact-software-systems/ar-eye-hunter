@@ -238,6 +238,7 @@ function createConfiguredApiV1Runtime(
         groupCapacity: {
             defaultMaxMembers: configuration.group.defaultMaxMembers
         },
+        groupCurrentSnapshotCacheMaxEntries: configuration.group.currentSnapshotCacheMaxEntries,
         groupFormationRecomputeDebounceMs: configuration.topology.recompute.formationDebounceMs,
         groupFormationRecomputeMaxWaitMs: configuration.topology.recompute.formationMaxWaitMs,
         topologyReplay: configuration.topology.replay,

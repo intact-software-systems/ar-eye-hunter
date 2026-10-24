@@ -71,6 +71,7 @@ export function validConfigurationDefaultsSource(): MutableApiV1ConfigurationSou
         },
         group: {
             defaultMaxMembers: 256,
+            currentSnapshotCacheMaxEntries: 512,
             admission: {
                 windowMs: 60_000,
                 joinPrincipal: 60,

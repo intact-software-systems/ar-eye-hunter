@@ -132,6 +132,7 @@ export interface CreateApiV1RuntimeInput {
     readonly appInboxFinishedRetentionMs: number;
     readonly disconnectedSessionRetentionMs: number;
     readonly groupCapacity: GroupPolicyCapacityConfig;
+    readonly groupCurrentSnapshotCacheMaxEntries: number;
     readonly groupFormationRecomputeDebounceMs: number;
     readonly groupFormationRecomputeMaxWaitMs: number;
     readonly databasePubSubMode: ApiV1DatabaseConfiguration['pubSub'];
@@ -411,6 +412,7 @@ function toMutationRuntimeInput(
         appInboxFinishedRetentionMs: input.appInboxFinishedRetentionMs,
         disconnectedSessionRetentionMs: input.disconnectedSessionRetentionMs,
         groupCapacity: input.groupCapacity,
+        groupCurrentSnapshotCacheMaxEntries: input.groupCurrentSnapshotCacheMaxEntries,
         groupFormationRecomputeDebounceMs: input.groupFormationRecomputeDebounceMs,
         groupFormationRecomputeMaxWaitMs: input.groupFormationRecomputeMaxWaitMs,
         adminClientIds: input.adminClientIds,

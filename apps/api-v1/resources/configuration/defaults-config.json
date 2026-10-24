@@ -64,6 +64,7 @@
   },
   "group": {
     "defaultMaxMembers": 256,
+    "currentSnapshotCacheMaxEntries": 512,
     "admission": {
       "windowMs": 60000,
       "joinPrincipal": 60,

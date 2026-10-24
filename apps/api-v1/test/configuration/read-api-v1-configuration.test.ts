@@ -106,6 +106,23 @@ Deno.test('configuration reader rejects a password derivation bound below one', 
     assert.equal(error.issues.some((issue) => issue.path === 'authentication.maxConcurrentPasswordDerivations'), true);
 });
 
+Deno.test('configuration reader keeps 512 current group snapshots unless the environment names a cap', async () => {
+    const fromDefaults = await readApiV1Configuration(readerInput(validConfigurationEnvironment()));
+    assert.equal(fromDefaults.group.currentSnapshotCacheMaxEntries, 512);
+
+    const fromEnvironment = await readApiV1Configuration(readerInput({
+        ...validConfigurationEnvironment(),
+        RALLAR_GROUP_CURRENT_SNAPSHOT_CACHE_MAX_ENTRIES: '32'
+    }));
+    assert.equal(fromEnvironment.group.currentSnapshotCacheMaxEntries, 32);
+    assert.equal(
+        fromEnvironment.profile.appliedEnvironmentOverrideNames.includes(
+            'RALLAR_GROUP_CURRENT_SNAPSHOT_CACHE_MAX_ENTRIES'
+        ),
+        true
+    );
+});
+
 Deno.test('configuration reader keeps production hardening profile-owned', async () => {
     const environment = {
         ...validConfigurationEnvironment('prod'),

@@ -35,10 +35,14 @@ export type V1dGrowthEntityCount =
     | Readonly<{ source: 'registrations'; principalsPerChurnIteration: number; ceiling: V1dGrowthReader; }>;
 
 /**
- * The most a count-capped surface may read: a number the store enforces, or the event history bound the run's
- * workload recorded, which the manifest sets and no surface declaration repeats.
+ * The most a count-capped surface may read: a number the store enforces, or a bound the run's workload recorded,
+ * which no surface declaration repeats: the event history the manifest sets, or the current group snapshots the
+ * script let each API process keep.
  */
-export type V1dGrowthCap = number | Readonly<{ source: 'workload-event-history'; }>;
+export type V1dGrowthCap =
+    | number
+    | Readonly<{ source: 'workload-event-history'; }>
+    | Readonly<{ source: 'workload-group-current-snapshot-cache'; }>;
 
 /**
  * How a surface may grow during the run, and the bound its predicate holds it to.

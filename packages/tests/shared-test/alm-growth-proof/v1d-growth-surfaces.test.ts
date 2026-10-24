@@ -76,6 +76,7 @@ describe('V1d growth surface classification', () => {
                         manifestCompletedAtEpochMs: windowStartedAtEpochMs + 4_500_000,
                         manifestAgents: 15,
                         eventHistoryMaxEvents: 10_000,
+                        groupCurrentSnapshotCacheMaxEntries: 32,
                         apiProcesses: 3,
                         churnStarted: 1,
                         churnPassed: 1,
@@ -108,6 +109,7 @@ describe('V1d growth surface classification', () => {
             manifestCompletedAtEpochMs: windowStartedAtEpochMs + 4_500_000,
             manifestAgents: 15,
             eventHistoryMaxEvents: 10_000,
+            groupCurrentSnapshotCacheMaxEntries: 32,
             apiProcesses: 3,
             churnStarted,
             churnPassed: churnStarted,
@@ -186,13 +188,52 @@ describe('V1d growth surface classification', () => {
         expect(markers?.classification).toEqual({ growthClass: 'count-capped', cap: 512 });
     });
 
-    it('bounds the group-audience snapshot cache and the entries it keeps at 32', () => {
+    describe('group current-snapshot cache', () => {
         const audience = V1D_GROWTH_SURFACES.filter((surface) => surface.id === 20 || surface.id === 21);
+        const windowStartedAtEpochMs = 1_800_000_000_000;
+        const toWorkload = (groupCurrentSnapshotCacheMaxEntries: number) => ({
+            runner: 'passed' as const,
+            manifestStartedAtEpochMs: windowStartedAtEpochMs,
+            manifestCompletedAtEpochMs: windowStartedAtEpochMs + 4_500_000,
+            manifestAgents: 15,
+            eventHistoryMaxEvents: 10_000,
+            groupCurrentSnapshotCacheMaxEntries,
+            apiProcesses: 3,
+            churnStarted: 1,
+            churnPassed: 1,
+            churnFailedRunIds: []
+        });
+        // One API process reporting every 30 s for 20 minutes; its last reading is `lastKept`.
+        const toSamples = (lastKept: number) =>
+            Array.from({ length: 41 }, (_value, sample) => ({
+                atEpochMs: windowStartedAtEpochMs + sample * 30_000,
+                agentId: null,
+                serviceId: 'server-1',
+                value: { caches: { groupAudienceSnapshots: sample === 40 ? lastKept : sample } } satisfies ApiJsonValue
+            }));
+        const computeRows = (workload: ReturnType<typeof toWorkload>, adminRealtime: ReturnType<typeof toSamples>) =>
+            computeV1dGrowthVerdict({
+                surveyedSurfaceIds: audience.map((surface) => surface.id),
+                surfaces: audience,
+                run: { windowStartedAtEpochMs, workload },
+                samples: {
+                    postgres: [],
+                    'admin-system': [],
+                    'admin-queues': [],
+                    'admin-realtime': adminRealtime,
+                    'api-heap': [],
+                    'process-rss': [],
+                    'browser-stats': []
+                }
+            }).rows;
 
-        expect(audience.map((surface) => surface.classification)).toEqual([
-            { growthClass: 'count-capped', cap: 32 },
-            { growthClass: 'count-capped', cap: 32 }
-        ]);
+        it('bounds both rows by the cache cap the run started its API processes with', () => {
+            const kept = computeRows(toWorkload(512), toSamples(71));
+            const overCap = computeRows(toWorkload(32), toSamples(71));
+
+            expect(kept.map((row) => [row.outcome, row.bound])).toEqual([['pass', '≤ 512'], ['pass', '≤ 512']]);
+            expect(overCap.map((row) => [row.outcome, row.bound])).toEqual([['fail', '≤ 32'], ['fail', '≤ 32']]);
+        });
     });
 
     it('bounds the topology idempotency records by the 24-hour finished retention, guarded against rows without expiry', () => {
@@ -215,6 +256,7 @@ describe('V1d growth surface classification', () => {
             manifestCompletedAtEpochMs: windowStartedAtEpochMs + 4_500_000,
             manifestAgents: 15,
             eventHistoryMaxEvents,
+            groupCurrentSnapshotCacheMaxEntries: 32,
             apiProcesses: 3,
             churnStarted: 1,
             churnPassed: 1,

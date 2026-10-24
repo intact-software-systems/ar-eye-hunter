@@ -82,7 +82,12 @@ function resolveV1dGrowthCap(cap: V1dGrowthCap, workload: V1dGrowthWorkload | nu
     if (typeof cap === 'number') {
         return cap;
     }
-    return workload === null ? null : workload.eventHistoryMaxEvents;
+    if (workload === null) {
+        return null;
+    }
+    return cap.source === 'workload-event-history'
+        ? workload.eventHistoryMaxEvents
+        : workload.groupCurrentSnapshotCacheMaxEntries;
 }
 
 function computeCountCappedAssessment(
