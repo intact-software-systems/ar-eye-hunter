@@ -1,4 +1,10 @@
 import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
+import {
     createRelicGame,
     isRelicHunterEvent,
     isRelicSnapshot,
@@ -15,11 +21,7 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
-import {
-    describe,
-    expect,
-    it
-} from 'vitest';
+
 import { createAppInboxTestResilience } from '../shared-server/rallar-system/app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createTestAuthSession } from '../shared-server/rallar-system/group-state/group-state-test-runtime.ts';
 import { TestWebSocket } from '../shared/websocket/test-web-socket.ts';
@@ -125,11 +127,19 @@ describe('Relic committed notifications', () => {
                 // Raw WebSocket delivery is at least once; ordered application is a receiver responsibility.
                 await expect.poll(async () => {
                     await engine.executeOnce();
-                    const transitionIds = socket.sent.map((frame) => decodePersistedALMessage(frame))
-                        .filter((message) => message.payload.typeId === 'relic.event.v1')
+                    const received = socket.sent.map((frame) => decodePersistedALMessage(frame));
+                    const transitionIds = received.filter((message) => message.payload.typeId === 'relic.event.v1')
                         .map((message) => message.id.msgId);
-                    return [...new Set(transitionIds)].sort();
-                }, { timeout: 5_000 }).toEqual(transitions.map((message) => message.id.msgId).sort());
+                    const privateEventIds = received.filter((message) => message.payload.typeId === 'relic.hunter.v1')
+                        .map((message) => message.id.msgId);
+                    return {
+                        transitionIds: [...new Set(transitionIds)].sort(),
+                        privateEventCount: new Set(privateEventIds).size
+                    };
+                }, { timeout: 5_000 }).toEqual({
+                    transitionIds: transitions.map((message) => message.id.msgId).sort(),
+                    privateEventCount: 2
+                });
                 const frames = socket.sent.map((frame) => decodePersistedALMessage(frame));
                 const delivered = [...new Map(frames.map((message) => [message.id.msgId, message])).values()];
                 for (const transition of delivered.filter((message) => message.payload.typeId === 'relic.event.v1')) {
