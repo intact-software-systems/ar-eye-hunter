@@ -104,7 +104,7 @@ describe('retention through the registered AppInbox capability', () => {
                 readPresenceSummaryEntries: async (ref) => {
                     const read = await current.repository.readPresenceSummaryEntries(ref);
                     reads += 1;
-                    if (reads <= conflicts && read.status === 'stable' && read.group) {
+                    if (reads <= conflicts && read.group) {
                         await current.repository.updateGroup({
                             ...read.group.value,
                             displayName: `Concurrent edit ${reads}`,

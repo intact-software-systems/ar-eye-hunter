@@ -9,7 +9,6 @@ import type {
     GroupStateCausalRevision
 } from '@shared/api/group-types.ts';
 
-import { resolveRuntimeStateReadBatchLiveValues } from '../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
 import type { RuntimeStateEntryRead, RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntryPageOptions } from '../../../runtime-state/runtime-state-repository.ts';
 import { decodeAuthSessionBySessionIdEntry } from '../../auth/persistence/auth-session-persistence.ts';
@@ -28,7 +27,11 @@ import {
 } from './aggregate/group-aggregate-storage-keys.ts';
 import { isRetiredGroupIdentity, type RetiredGroupIdentity } from './aggregate/retired-group-identity.ts';
 import { toGroupLifecyclePolicyRead } from './group-lifecycle-policy-repository.ts';
-import { decodeStoredGroupStateKey, decodeStoredGroupStateValue } from './group-state-persistence-contracts.ts';
+import {
+    decodeStoredGroupStateKey,
+    decodeStoredGroupStateValue,
+    toGroupStateReadBatchLiveSelections
+} from './group-state-persistence-contracts.ts';
 import {
     GROUPS_NAMESPACE,
     IDEMPOTENT_NAMESPACE,
@@ -53,23 +56,20 @@ import {
 } from './presence/group-presence-storage-keys.ts';
 import {
     readGroupStateMutationExactEntries,
-    type GroupStateMutationExactReadInput,
-    type GroupStateMutationExactReadResult
+    type GroupStateMutationExactEntries,
+    type GroupStateMutationExactReadInput
 } from './read-exact-group-state-mutation.ts';
 import { readGroupRetirementEntries, type GroupRetirementEntry } from './read-group-retirement-entries.ts';
 import { toGroupPresenceSummarySelectors } from './read-group-state-authority.ts';
 
-/** A presence summary's stored rows, read as one consistent snapshot; a changed row comes back as `concurrent-change`. */
-export type GroupPresenceSummaryStoredRead =
-    | Readonly<{ status: 'concurrent-change'; }>
-    | Readonly<{
-        status: 'stable';
-        group: RuntimeStateEntryValue<Group> | undefined;
-        members: readonly RuntimeStateEntryValue<GroupMember>[];
-        admissions: readonly RuntimeStateEntryValue<GroupPresenceAdmission>[];
-        presenceSessions: readonly RuntimeStateEntryValue<GroupPresenceSession>[];
-        current: RuntimeStateEntryValue<GroupPresenceSummary> | undefined;
-    }>;
+/** A presence summary's stored rows, read as one consistent snapshot. */
+export interface GroupPresenceSummaryStoredRead {
+    readonly group: RuntimeStateEntryValue<Group> | undefined;
+    readonly members: readonly RuntimeStateEntryValue<GroupMember>[];
+    readonly admissions: readonly RuntimeStateEntryValue<GroupPresenceAdmission>[];
+    readonly presenceSessions: readonly RuntimeStateEntryValue<GroupPresenceSession>[];
+    readonly current: RuntimeStateEntryValue<GroupPresenceSummary> | undefined;
+}
 
 export namespace GroupStateRepositoryReads {
     export interface GroupRead extends RuntimeStateEntryRead<Group> {
@@ -85,13 +85,13 @@ export namespace GroupStateRepositoryReads {
 export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
     async readMutationExactEntries(
         input: GroupStateMutationExactReadInput
-    ): Promise<GroupStateMutationExactReadResult> {
+    ): Promise<GroupStateMutationExactEntries> {
         const observedAtEpochMs = Date.now();
         return await readGroupStateMutationExactEntries(
             {
                 repository: this.repository,
                 input: input,
-                toLiveEntryValue: async (namespace, entry) => await this.toLiveJsonEntryValue(namespace, entry),
+                observedAtEpochMs,
                 decoders: {
                     group: (entry) => canonicalStoredGroupRecord(entry, input.aggregateRef),
                     presenceSummary: (entry) => canonicalStoredSummary(entry, input.aggregateRef),
@@ -144,7 +144,7 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
             : undefined;
     }
 
-    override async findGroupEntry(ref: GroupRef): Promise<RuntimeStateEntryValue<Group> | undefined> {
+    async findGroupEntry(ref: GroupRef): Promise<RuntimeStateEntryValue<Group> | undefined> {
         return (await this.readGroupEntry(ref)).value;
     }
 
@@ -275,7 +275,7 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
         return (await this.findPresenceEntry(ref))?.value;
     }
 
-    override async listPresenceSessions(ref: GroupRef): Promise<readonly GroupPresenceSession[]> {
+    async listPresenceSessions(ref: GroupRef): Promise<readonly GroupPresenceSession[]> {
         return (await this.listPresenceSessionEntries(ref)).map(({ value }) => value);
     }
 
@@ -347,20 +347,16 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
      * rows come from one database snapshot rather than one statement each (D295).
      */
     async readPresenceSummaryEntries(ref: GroupRef): Promise<GroupPresenceSummaryStoredRead> {
+        const observedAtEpochMs = Date.now();
         const selectors = toGroupPresenceSummarySelectors(ref);
-        const resolved = await resolveRuntimeStateReadBatchLiveValues(
+        const [group, members, summary, sessions, admissions] = toGroupStateReadBatchLiveSelections(
             selectors,
             await this.repository.readRuntimeStateBatch(selectors),
-            async (namespace, entry) => await this.toLiveJsonEntryValue(namespace, entry)
+            observedAtEpochMs
         );
-        if (resolved.status === 'changed') {
-            return { status: 'concurrent-change' };
-        }
-        const [group, members, summary, sessions, admissions] = resolved.selections;
         const storedGroup = group.entries[0];
         const storedSummary = summary.entries[0];
         return {
-            status: 'stable',
             group: storedGroup === undefined ? undefined : canonicalStoredGroup(storedGroup, ref),
             members: members.entries.map((entry) => canonicalStoredMember(entry, ref)),
             admissions: admissions.entries.map((entry) => canonicalStoredAdmission(entry, ref)),

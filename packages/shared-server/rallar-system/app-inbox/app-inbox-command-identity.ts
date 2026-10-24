@@ -2,7 +2,12 @@ import type { ResourceInboxCompletionNotifications } from '@shared/queuebox/reso
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { decodeJsonWireText, type JsonWireObject, type JsonWireValue } from '../protocol/json-wire-identity.ts';
 import { AppInboxTypeUnavailableError, decodePersistedAppInboxCommand } from './app-inbox-command-decoding.ts';
-import { AppInboxType, toAppInboxCompletionAwaitability, type AppInboxEnqueueInput } from './app-inbox-contracts.ts';
+import {
+    AppInboxType,
+    isAppInboxType,
+    toAppInboxCompletionAwaitability,
+    type AppInboxEnqueueInput
+} from './app-inbox-contracts.ts';
 
 interface ValidAppInboxCommandIdentity {
     readonly valid: true;
@@ -35,7 +40,6 @@ const APP_INBOX_GROUP_TOPIC = 'app-inbox.group-state';
 const APP_INBOX_AUTH_TOPIC = 'app-inbox.auth-state';
 const APP_INBOX_CRDT_TOPIC = 'app-inbox.crdt-state';
 const APP_INBOX_ADMIN_TOPIC = 'app-inbox.admin-operations';
-const APP_INBOX_OPERATIONS = new Set<string>(Object.values(AppInboxType));
 const APP_INBOX_GROUP_OPERATIONS = new Set<AppInboxType>([
     ...Object.values(AppInboxType).filter((operation) => operation.startsWith('GROUP_')),
     AppInboxType.TOPOLOGY_CONFIG_PUT,
@@ -133,7 +137,8 @@ export function validatePersistedAppInboxCommandIdentity(
     }
     if (
         dispatchedOperation !== command.type ||
-        !isOperationForTopic(dispatchedOperation, input.topicId)
+        !isOperationForTopic(dispatchedOperation, input.topicId) ||
+        (command.type.startsWith('app:') && command.topicId !== undefined && command.topicId !== input.topicId)
     ) {
         return toInvalidIdentity(input.topicId, 'corrupt');
     }
@@ -175,10 +180,6 @@ function isOperationForTopic(
     return topicId === APP_INBOX_GROUP_TOPIC
         ? APP_INBOX_GROUP_OPERATIONS.has(operation)
         : topicId === APP_INBOX_CLIENT_TOPIC && operation.startsWith('CLIENT_');
-}
-
-function isAppInboxType(value: string): value is AppInboxType {
-    return APP_INBOX_OPERATIONS.has(value);
 }
 
 function isJsonWireObject(value: JsonWireValue | undefined): value is JsonWireObject {

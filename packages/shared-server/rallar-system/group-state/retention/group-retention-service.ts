@@ -3,7 +3,6 @@ import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 import { writeRoomOwnedAppData, type RoomOwnedAppData } from '../../../app-data/room-owned-app-data.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import { AppInboxIdempotencyConflictError } from '../../app-inbox/app-inbox-contracts.ts';
 import { validateComputedProjection, type ComputedDataValidationIssue } from '../../computed-data-validation.ts';
 import { computeSha256CanonicalJson } from '../../protocol/canonical-json.ts';
@@ -46,7 +45,7 @@ export namespace GroupRetentionService {
         readonly ingress: Ingress;
         readonly attemptAtEpochMs: number;
         readonly attemptCount: number;
-        readonly authority: Extract<GroupPresenceSummaryStoredRead, { status: 'stable'; }>;
+        readonly authority: GroupPresenceSummaryStoredRead;
         readonly idempotency: GroupMutationIdempotencyRecord | null;
         readonly retirementEntries: readonly GroupRetirementEntry[];
         readonly ownedAppData: readonly RoomOwnedAppData.Read[];
@@ -114,9 +113,6 @@ export class GroupRetentionService {
         // Observe the surviving authority fence before inventories that can miss a concurrent insertion.
         // Missing-summary repairs and owned-save insertions advance it, forcing a fresh deletion attempt.
         const authority = await this.dependencies.repository.readPresenceSummaryEntries(ingress.command.groupRef);
-        if (authority.status !== 'stable') {
-            throw new RuntimeStateWriteConflictError();
-        }
         const [idempotency, retirementEntries, ownedAppData] = await Promise.all([
             this.dependencies.repository.findIdempotentGroupMutationReceipt(
                 ingress.command.groupRef,

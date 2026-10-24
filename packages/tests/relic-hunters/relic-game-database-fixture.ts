@@ -20,9 +20,9 @@ import {
     requireMutationWrite
 } from '../shared-server/rallar-system/group-state/retention/group-retention-database-fixture.ts';
 
-export async function createGameFixture() {
+export async function createGameFixture(gameId = 'expedition-1') {
     const fixture = await createRetentionDatabaseFixture();
-    const ref = toRelicRoomGroupRef('expedition-1');
+    const ref = toRelicRoomGroupRef(gameId);
     const { computed } = await prepareMutation(
         fixture,
         mutationDescriptor({
@@ -77,7 +77,7 @@ export async function prepareGameWrite(
 
 export async function refreshGamePresence(fixture: Awaited<ReturnType<typeof createGameFixture>>): Promise<void> {
     const observed = await fixture.repository.readPresenceSummaryEntries(fixture.ref);
-    if (observed.status !== 'stable' || observed.group === undefined || observed.current === undefined) {
+    if (observed.group === undefined || observed.current === undefined) {
         throw new Error('Expected the initialized room and presence summary');
     }
     const computed = computeGroupPresenceSummary({

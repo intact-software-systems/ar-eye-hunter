@@ -8,10 +8,7 @@ import type {
     GroupSnapshot
 } from '@shared/api/group-types.ts';
 
-import {
-    resolveRuntimeStateReadBatchLiveValues,
-    type RuntimeStateReadBatchLiveSelection
-} from '../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
+import type { RuntimeStateReadBatchLiveSelection } from '../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
 import { type RuntimeStateReadBatchSelector } from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
@@ -25,6 +22,7 @@ import {
     GROUP_LIFECYCLE_POLICIES_NAMESPACE,
     type GroupLifecyclePolicyRead
 } from './group-lifecycle-policy-repository.ts';
+import { toGroupStateReadBatchLiveSelections } from './group-state-persistence-contracts.ts';
 import {
     GROUPS_NAMESPACE,
     IDEMPOTENT_NAMESPACE,
@@ -74,7 +72,6 @@ export type GroupStateMutationExactAuthSession =
 
 /** The rows one exact read selected, all from the same statement. */
 export interface GroupStateMutationExactEntries {
-    readonly status: 'stable';
     readonly groups: readonly RuntimeStateEntryValue<Group>[];
     readonly retiredGroup: RetiredGroupIdentity | null;
     readonly expiredGroupEntry: RuntimeStateEntry | null;
@@ -87,10 +84,6 @@ export interface GroupStateMutationExactEntries {
     readonly groupSnapshot: GroupStateMutationExactSnapshot;
     readonly authSession: GroupStateMutationExactAuthSession;
 }
-
-export type GroupStateMutationExactReadResult =
-    | Readonly<{ status: 'concurrent-change'; }>
-    | GroupStateMutationExactEntries;
 
 export interface GroupStateMutationExactReadDecoders {
     group(entry: RuntimeStateEntryValue<JsonWireValue>): RuntimeStateEntryValue<Group | RetiredGroupIdentity>;
@@ -118,7 +111,7 @@ export interface GroupStateMutationExactReadDecoders {
         sessionId: string,
         entry: RuntimeStateEntryValue<JsonWireValue>
     ): RuntimeStateEntryValue<PersistedAuthSession>;
-    groupSnapshot(rows: Extract<GroupStateAuthorityBatchRead, { status: 'stable'; }>): GroupSnapshot | undefined;
+    groupSnapshot(rows: GroupStateAuthorityBatchRead): GroupSnapshot | undefined;
 }
 
 type IdentitySlotKind = 'idempotency' | 'member' | 'presence' | 'admission';
@@ -149,34 +142,28 @@ type ExactReadSelectorSink = (selector: RuntimeStateReadBatchSelector, slot: Rea
 export interface GroupStateMutationExactReadRequest {
     readonly repository: RuntimeStateRepositoryLike;
     readonly input: GroupStateMutationExactReadInput;
-    readonly toLiveEntryValue: (
-        namespace: string,
-        entry: RuntimeStateEntry
-    ) => Promise<RuntimeStateEntryValue<JsonWireValue> | undefined>;
+    readonly observedAtEpochMs: number;
     readonly decoders: GroupStateMutationExactReadDecoders;
 }
 
 export async function readGroupStateMutationExactEntries({
     repository,
     input,
-    toLiveEntryValue,
+    observedAtEpochMs,
     decoders
-}: GroupStateMutationExactReadRequest): Promise<GroupStateMutationExactReadResult> {
+}: GroupStateMutationExactReadRequest): Promise<GroupStateMutationExactEntries> {
     const { selectors, slots } = createSelectors(input, {
         requestIds: requireUniqueDenseStrings(input.requestIds, 'request IDs'),
         memberIds: requireUniqueDenseStrings(input.memberPrincipalIds, 'member principal IDs'),
         sessionIds: requireUniqueDenseStrings(input.presenceSessionIds, 'presence session IDs'),
         admissionIds: requireUniqueDenseStrings(input.admissionPrincipalIds, 'admission principal IDs')
     });
-    const resolved = await resolveRuntimeStateReadBatchLiveValues(
+    const liveSelections = toGroupStateReadBatchLiveSelections(
         selectors,
         await repository.readRuntimeStateBatch(selectors),
-        toLiveEntryValue
+        observedAtEpochMs
     );
-    if (resolved.status === 'changed') {
-        return { status: 'concurrent-change' };
-    }
-    const selections = slots.map((slot, index) => ({ slot, selection: resolved.selections[index] }));
+    const selections = slots.map((slot, index) => ({ slot, selection: liveSelections[index] }));
     return toExactReadResult(input, selections, decoders);
 }
 
@@ -190,7 +177,6 @@ function toExactReadResult(
     const records = (group?.entries ?? []).map((entry) => decoders.group(entry));
     const retirement = records.find((entry) => isRetiredGroupIdentity(entry.value));
     return {
-        status: 'stable',
         groups: records.flatMap((entry) =>
             isRetiredGroupIdentity(entry.value) ? [] : [{ entry: entry.entry, value: entry.value }]
         ),
@@ -208,7 +194,6 @@ function toExactReadResult(
             ? {
                 status: 'read',
                 snapshot: decoders.groupSnapshot({
-                    status: 'stable',
                     group: group?.entries[0],
                     members: findSlotSelection(selections, 'roster')?.entries ?? [],
                     summary: summary?.entries[0],

@@ -4,6 +4,11 @@ import type {
     GroupSnapshot
 } from '@shared/api/group-types.ts';
 
+import type { RuntimeStateReadBatchLiveSelection } from '../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
+import type {
+    RuntimeStateReadBatchSelection,
+    RuntimeStateReadBatchSelector
+} from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
@@ -58,6 +63,28 @@ export function toLiveGroupStateEntryValue(
             `Stored group-state JSON is invalid: ${error instanceof Error ? error.message : String(error)}`
         );
     }
+}
+
+/** Decode one selected snapshot at its captured time without rereading or removing expired rows. */
+export function toGroupStateReadBatchLiveSelections(
+    selectors: readonly RuntimeStateReadBatchSelector[],
+    selections: readonly RuntimeStateReadBatchSelection[],
+    observedAtEpochMs: number
+): readonly RuntimeStateReadBatchLiveSelection<JsonWireValue>[] {
+    return selections.map((selection, index) => {
+        const entries: RuntimeStateEntryValue<JsonWireValue>[] = [];
+        const expiredEntries: RuntimeStateEntry[] = [];
+        for (const entry of selection.entries) {
+            const live = toLiveGroupStateEntryValue(selectors[index].namespace, entry, observedAtEpochMs);
+            if (live === undefined) {
+                expiredEntries.push(entry);
+            }
+            else {
+                entries.push(live);
+            }
+        }
+        return { selectorId: selection.selectorId, entries, expiredEntries };
+    });
 }
 
 export function assertGroupRefIdentity(

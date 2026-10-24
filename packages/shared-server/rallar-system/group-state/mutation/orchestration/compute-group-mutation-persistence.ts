@@ -100,14 +100,17 @@ function computeGroupMutationGuardedBatch(
     }
     const guard = computeGroupMutationGuard(computed);
     if (computed.guard.kind === 'presence' && computed.presenceAdmission?.operation === 'insert') {
-        // An absent admission cannot itself fence a prearchive insert after retirement deletes it.
-        // Existing admissions and heartbeat updates keep their per-principal/session contention boundary.
-        if (read.group === null) {
-            throw new TypeError('Initial presence admission requires its observed group');
+        // Retirement deletes the member too, so this exact revision fences an admission that was
+        // absent before archival without making unrelated members contend on the group row.
+        const member = read.targetMemberEntry;
+        if (member === null) {
+            throw new TypeError('Initial presence admission requires its observed member');
         }
-        return validateRuntimeStateGuardedBatch({
-            guard: groupStateUpdateGroupDescriptor(read.group.value, read.group.entry.revision),
-            effects: [{ effectId: 'presence-session', ...guard }, ...effects]
+        effects.push({
+            effectId: 'presence-member-fence',
+            ...groupStateMemberPutDescriptor(member.value),
+            operation: 'update',
+            expectedRevision: member.entry.revision
         });
     }
     return validateRuntimeStateGuardedBatch({ guard, effects });

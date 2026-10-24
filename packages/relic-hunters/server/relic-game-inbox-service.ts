@@ -1,7 +1,7 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { decodePersistedAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
+import { validateAppInboxCommandIdentity } from '@shared-server/rallar-system/app-inbox/app-inbox-command-identity.ts';
 import {
-    AppInboxType,
+    AppInboxIdempotencyConflictError,
     type AppInboxEnqueueInput,
     type AppInboxMessageContext
 } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -11,15 +11,10 @@ import type {
     AppInboxEntryRepository,
     AppInboxResultRepository
 } from '@shared-server/rallar-system/app-inbox/app-inbox-persistence-ports.ts';
-import { toPhysicalAppInboxQueueKey } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
 import {
     encodeAppInboxCommand,
     encodeAppInboxResult
 } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
-import {
-    assertMatchingAppInboxCommand,
-    assertMatchingAppInboxEnqueue
-} from '@shared-server/rallar-system/app-inbox/assert-matching-app-inbox-command.ts';
 import type { AppInboxResultWaiter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-result-waiter.ts';
 import {
     createAppInboxClientRuntime,
@@ -33,7 +28,6 @@ import {
     createAppInboxHandlerRuntime,
     type AppInboxHandlerRuntime
 } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-handler-runtime.ts';
-import { toLogicalAppInboxCommand } from '@shared-server/rallar-system/app-inbox/logical-app-inbox-command.ts';
 import { timeRallarAsync, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import {
     requireExactKeys,
@@ -41,7 +35,11 @@ import {
     requireRecord,
     requireString
 } from '@shared-server/rallar-system/protocol/exact-object-decoding.ts';
-import { serializeCanonicalMutationCommand } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import {
+    computeMutationCommandDigest,
+    serializeCanonicalMutationCommand
+} from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import {
     EntityStatus,
     type Key,
@@ -49,6 +47,7 @@ import {
 } from '@shared/queuebox/ResourceEntry.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+
 import { toRelicRoomGroupRef, type RelicGameState } from '../mod.ts';
 import { encodeRelicGameStateAppData } from './encode-relic-game-state-app-data.ts';
 import {
@@ -82,6 +81,8 @@ export namespace RelicGameInboxService {
 
 /** Owns transport admission and durable completion; the mutation service owns one fresh attempt. */
 export class RelicGameInboxService {
+    static readonly operation = 'app:relic-hunters:mutate';
+
     private readonly dependencies: RelicGameInboxService.Dependencies;
     private readonly config: RelicGameInboxService.Config;
     private readonly client: AppInboxClientRuntime;
@@ -93,7 +94,7 @@ export class RelicGameInboxService {
         this.client = createAppInboxClientRuntime({
             ...dependencies,
             ...config,
-            defaultTopicId: AppInboxType.RELIC_GAME_MUTATE,
+            defaultTopicId: RelicGameInboxService.operation,
             wakeOwningQueue: dependencies.wakeQueue
         });
         this.handler = createAppInboxHandlerRuntime({
@@ -102,7 +103,7 @@ export class RelicGameInboxService {
             resultRepository: dependencies.resourceInboxResultsRepository
         });
         this.handler.registry.registerHandler({
-            type: AppInboxType.RELIC_GAME_MUTATE,
+            type: RelicGameInboxService.operation,
             decodeCommand: decodeRelicGameCommand,
             encodeResult: (result: RelicGameMutationService.Result) =>
                 encodeAppInboxResult(result, 'Relic mutation result'),
@@ -116,12 +117,16 @@ export class RelicGameInboxService {
     ): Promise<AppInboxResultWaiter.Wait> {
         const command = captureRelicGameCommand(value);
         const received = toRelicEnqueue(command, null);
-        const key = toPhysicalAppInboxQueueKey({ ...received, resourceId: command.requestId });
-        const identity = serializeCanonicalMutationCommand(toLogicalAppInboxCommand(received));
+        const key = toStrictAppInboxQueueKey({
+            topicId: RelicGameInboxService.operation,
+            contextId: command.gameId,
+            resourceId: command.requestId
+        });
         const retained = await this.dependencies.resourceInboxRepository.findByKey(key);
         if (retained !== null) {
-            assertMatchingAppInboxCommand(retained, received, identity);
-            return { key, enqueue: decodePersistedAppInboxEnqueue(retained), winner: false };
+            const enqueue = decodeBoundRelicEntry(retained);
+            assertMatchingRelicEnqueue(key, enqueue, received);
+            return { key, enqueue, winner: false };
         }
         // Proposal generation may use AI. It completes before the reservation transaction is entered.
         const service = this.dependencies.service;
@@ -133,12 +138,7 @@ export class RelicGameInboxService {
             received,
             async () => prepared
         );
-        assertMatchingAppInboxEnqueue({
-            resourceId: key.resourceId,
-            existing: reservation.enqueue,
-            incoming: received,
-            receivedCommandIdentity: identity
-        });
+        assertMatchingRelicEnqueue(reservation.key, reservation.enqueue, received);
         this.dependencies.wakeQueue();
         return reservation;
     }
@@ -165,9 +165,9 @@ export class RelicGameInboxService {
         command: RelicGameMutationService.Command,
         context: AppInboxMessageContext<RelicGameMutationService.Result>
     ): Promise<RelicGameMutationService.Result> {
-        const ingress = decodeRelicGameIngress(context.enqueue.authority);
-        if (!jsonEquals(command, ingress.command) || !jsonEquals(context.enqueue, toRelicEnqueue(command, ingress))) {
-            throw new TypeError('Relic queue identity differs from its canonical ingress');
+        const ingress = decodeBoundRelicIngress(context.enqueue, context.entry.key);
+        if (!jsonEquals(command, ingress.command)) {
+            throw new TypeError('Relic queue command differs from its ingress');
         }
         const service = this.dependencies.service;
         const timing = {
@@ -230,13 +230,56 @@ export class RelicGameInboxFailureError extends Error {
     }
 }
 
+function decodeBoundRelicEntry(entry: ResourceEntry): AppInboxEnqueueInput {
+    const identity = validateAppInboxCommandIdentity(entry);
+    if (!identity.valid) {
+        throw new TypeError('Relic queue entry has a corrupt operation binding');
+    }
+    return identity.command;
+}
+
+function assertMatchingRelicEnqueue(key: Key, existing: AppInboxEnqueueInput, incoming: AppInboxEnqueueInput): void {
+    const ingress = decodeBoundRelicIngress(existing, key);
+    const receivedCommand = decodeRelicGameCommand(incoming.data);
+    const existingIdentity = {
+        type: existing.type,
+        data: encodeAppInboxCommand(ingress.command, 'Logical Relic mutation command')
+    };
+    const incomingIdentity = { type: incoming.type, data: incoming.data };
+    if (serializeCanonicalMutationCommand(existingIdentity) !== serializeCanonicalMutationCommand(incomingIdentity)) {
+        throw new AppInboxIdempotencyConflictError(
+            receivedCommand.requestId,
+            computeMutationCommandDigest(existingIdentity),
+            computeMutationCommandDigest(incomingIdentity)
+        );
+    }
+}
+
+function decodeBoundRelicIngress(enqueue: AppInboxEnqueueInput, key: Key): RelicGameMutationService.Ingress {
+    const command = decodeRelicGameCommand(enqueue.data);
+    const ingress = decodeRelicGameIngress(enqueue.authority);
+    const expected = toRelicEnqueue(command, ingress);
+    const expectedKey = toStrictAppInboxQueueKey({
+        topicId: RelicGameInboxService.operation,
+        contextId: command.gameId,
+        resourceId: command.requestId
+    });
+    if (
+        !jsonEquals(command, ingress.command) || !jsonEquals(enqueue, expected) ||
+        !jsonEquals(key, expectedKey)
+    ) {
+        throw new TypeError('Relic queue identity differs from its canonical ingress');
+    }
+    return ingress;
+}
+
 function toRelicEnqueue(
     command: RelicGameMutationService.Command,
     ingress: RelicGameMutationService.Ingress | null
 ): AppInboxEnqueueInput {
     return {
-        type: AppInboxType.RELIC_GAME_MUTATE,
-        topicId: AppInboxType.RELIC_GAME_MUTATE,
+        type: RelicGameInboxService.operation,
+        topicId: RelicGameInboxService.operation,
         contextId: command.gameId,
         resourceId: command.requestId,
         senderId: command.actor.sessionId,

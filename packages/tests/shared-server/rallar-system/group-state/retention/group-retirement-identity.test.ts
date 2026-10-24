@@ -91,10 +91,42 @@ describe('permanently retired scoped identities', () => {
         await seedRetentionRoom(fixture);
         const group = await fixture.repository.findGroup(RETENTION_REF);
         await fixture.runtime.upsert(GROUPS_NAMESPACE, groupStateGroupStorageKey(RETENTION_REF), JSON.stringify(group), Date.now() - 1);
+        const expired = await fixture.runtime.findEntry(GROUPS_NAMESPACE, groupStateGroupStorageKey(RETENTION_REF));
+        const read = await fixture.repository.readMutationExactEntries({
+            aggregateRef: RETENTION_REF,
+            includeGroup: true,
+            includePresenceSummary: true,
+            includeLifecyclePolicy: false,
+            includeGroupSnapshot: false,
+            authSessionId: null,
+            requestIds: [],
+            memberPrincipalIds: [],
+            presenceSessionIds: [],
+            admissionPrincipalIds: []
+        });
+        expect(read.groups).toEqual([]);
+        expect(read.expiredGroupEntry).toEqual(expired);
+        expect(await fixture.runtime.findEntry(GROUPS_NAMESPACE, groupStateGroupStorageKey(RETENTION_REF))).toEqual(expired);
         const recreated = await prepareMutation(fixture, createDescriptor('recreate-expired'));
         expect(recreated.computed.outcome).toBe('write');
         await commitMutation(fixture, requireMutationWrite(recreated.computed));
         expect((await fixture.repository.findGroup(RETENTION_REF))?.status).toBe('active');
+    }, 30_000);
+
+    it('fences expired-ID recreation when a concurrent writer refreshes the observed group', async () => {
+        fixture = await createRetentionDatabaseFixture();
+        await seedRetentionRoom(fixture);
+        const group = await fixture.repository.findGroup(RETENTION_REF);
+        const key = groupStateGroupStorageKey(RETENTION_REF);
+        await fixture.runtime.upsert(GROUPS_NAMESPACE, key, JSON.stringify(group), Date.now() - 1);
+        const recreated = await prepareMutation(fixture, createDescriptor('stale-recreation'));
+        await fixture.runtime.upsert(GROUPS_NAMESPACE, key, JSON.stringify(group), NEVER_EXPIRE_AT_TIMESTAMP);
+        const refreshed = await fixture.runtime.findEntry(GROUPS_NAMESPACE, key);
+
+        await expect(commitMutation(fixture, requireMutationWrite(recreated.computed)))
+            .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
+        expect(await fixture.runtime.findEntry(GROUPS_NAMESPACE, key)).toEqual(refreshed);
+        expect(await fixture.repository.findGroup(RETENTION_REF)).toEqual(group);
     }, 30_000);
 
     it.each(['active', 'persistent'] as const)('keeps %s rooms', async (kind) => {

@@ -224,8 +224,7 @@ export class GroupPresenceSummaryWork {
     }
 
     /**
-     * The group's summary rows, read as one consistent set; rows changed mid-read or contradicting each other are a
-     * typed inconsistency.
+     * The group's summary rows, read as one consistent set; rows contradicting each other are a typed inconsistency.
      */
     private async readSummaryPresence(
         ref: GroupRef
@@ -233,12 +232,6 @@ export class GroupPresenceSummaryWork {
         const stored = await new GroupStateRepositoryReads(this.options.runtimeRepository).readPresenceSummaryEntries(
             ref
         );
-        if (stored.status === 'concurrent-change') {
-            return Either.ofLeft({
-                code: 'group-presence-summary-concurrent-change',
-                message: 'Group presence summary rows changed while they were read'
-            });
-        }
         if (!stored.group) {
             return Either.ofRight('absent');
         }

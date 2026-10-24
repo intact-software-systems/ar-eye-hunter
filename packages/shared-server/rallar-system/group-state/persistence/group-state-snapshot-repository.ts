@@ -1,5 +1,4 @@
 import type {
-    Group,
     GroupMember,
     GroupPresenceSession,
     GroupPresenceSummary,
@@ -15,7 +14,6 @@ import type {
 import { RuntimeStateJsonStore, type RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
-import { readStableStateSnapshot } from '../../state-events/state-snapshot-read.ts';
 import type { GroupSnapshotPage, GroupSnapshotPageOptions } from '../group-state-service-contracts.ts';
 import type { GroupStateCurrentSnapshotCache } from '../snapshot/group-state-current-snapshot-cache.ts';
 import { canonicalStoredGroup, toGroupStateAuthorityGuard } from './aggregate/group-aggregate-repository.ts';
@@ -61,7 +59,7 @@ import {
 
 /**
  * A snapshot, or undefined for a group without a live row, and the version of exactly the stored rows the read selected;
- * null when it came from several reads. An absent group is versioned by the rows it leaves, such as its member rows.
+ * null when no row was selected. An absent group is versioned by the rows it leaves, such as its member rows.
  */
 export interface VersionedGroupSnapshot {
     readonly snapshot: GroupSnapshot | undefined;
@@ -81,17 +79,11 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
         super(repository);
     }
 
-    protected abstract findGroupEntry(
-        ref: GroupRef
-    ): Promise<RuntimeStateEntryValue<Group> | undefined>;
-
     protected abstract listMembers(ref: GroupRef): Promise<readonly GroupMember[]>;
 
     protected abstract findPresenceSummaryEntry(
         ref: GroupRef
     ): Promise<RuntimeStateEntryValue<GroupPresenceSummary> | undefined>;
-
-    protected abstract listPresenceSessions(ref: GroupRef): Promise<readonly GroupPresenceSession[]>;
 
     async listSnapshots(scope: GroupScope): Promise<readonly GroupSnapshot[]> {
         const observedAtEpochMs = Date.now();
@@ -278,16 +270,14 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
         const batch = await readGroupStateAuthorityBatch(
             this.repository,
             ref,
-            async (namespace, entry) => await this.toLiveJsonEntryValue(namespace, entry)
+            observedAtEpochMs
         );
-        return batch.status === 'stable'
-            ? this.toStableAuthoritativeSnapshot(ref, batch, observedAtEpochMs)
-            : await this.readStableAuthoritativeSnapshot(ref, observedAtEpochMs);
+        return this.toStableAuthoritativeSnapshot(ref, batch, observedAtEpochMs);
     }
 
     /**
      * The snapshot as of the caller's instant with the version of exactly the rows it was assembled from, read in
-     * one statement; a read that had to fall back to several statements carries no version.
+     * one statement; a read selecting no row carries no version.
      */
     async readVersionedSnapshot(
         reader: RuntimeStateReadBatchVersionReader,
@@ -297,20 +287,15 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
         const batch = await readVersionedGroupStateSnapshotBatch({
             reader,
             ref,
-            observedAtEpochMs,
-            toLiveEntryValue: async (namespace, entry) => await this.toLiveJsonEntryValue(namespace, entry)
+            observedAtEpochMs
         });
-        if (batch.read.status === 'stable') {
-            const stable = this.toStableAuthoritativeSnapshot(ref, batch.read, observedAtEpochMs);
-            return { snapshot: stable?.snapshot, version: batch.version ?? null };
-        }
-        const fallback = await this.readStableAuthoritativeSnapshot(ref, observedAtEpochMs);
-        return { snapshot: fallback?.snapshot, version: null };
+        const stable = this.toStableAuthoritativeSnapshot(ref, batch.read, observedAtEpochMs);
+        return { snapshot: stable?.snapshot, version: batch.version ?? null };
     }
 
     protected toStableAuthoritativeSnapshot(
         ref: GroupRef,
-        batch: Extract<GroupStateAuthorityBatchRead, { status: 'stable'; }>,
+        batch: GroupStateAuthorityBatchRead,
         observedAtEpochMs: number
     ): GroupStateAuthoritativeSnapshot | undefined {
         if (batch.group === undefined) {
@@ -346,37 +331,6 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
             toLivePresenceSessionsSelector(`${groupStateGroupStorageKey(ref)}:`, observedAtEpochMs)
         );
         return stored.map((entry) => canonicalStoredSession(entry, ref).value);
-    }
-
-    /** The several-statement read that retries until the aggregate is unchanged around its children. */
-    private async readStableAuthoritativeSnapshot(
-        ref: GroupRef,
-        observedAtEpochMs: number
-    ): Promise<GroupStateAuthoritativeSnapshot | undefined> {
-        return await readStableStateSnapshot({
-            snapshotKey: groupStateGroupStorageKey(ref),
-            readAggregate: async () => await this.findGroupEntry(ref),
-            readChildren: async () => {
-                const [members, summary, sessions] = await Promise.all([
-                    this.listMembers(ref),
-                    this.findPresenceSummaryEntry(ref),
-                    this.listPresenceSessions(ref)
-                ]);
-                return [members, { summary: summary?.value, sessions }] as const;
-            },
-            assemble: (stored, members, presence) => ({
-                snapshot: this.toSnapshot({
-                    group: stored.value,
-                    members,
-                    summary: presence.summary,
-                    authoritativeSessions: presence.sessions,
-                    groupRevision: stored.value.snapshotVersion,
-                    observedAtEpochMs,
-                    sessionLeaseFields: 'authoritative'
-                }),
-                authorityGuard: toGroupStateAuthorityGuard(ref, stored)
-            })
-        });
     }
 
     protected override async toLiveJsonEntryValue(

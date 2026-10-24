@@ -1,5 +1,4 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { resolveRuntimeStateReadBatchLiveValues } from '../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
 import type {
     RuntimeStateReadBatchSelection,
     RuntimeStateReadBatchSelector,
@@ -7,10 +6,11 @@ import type {
     RuntimeStateReadBatchVersionReader
 } from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
-import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
+import type { RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import { toSessionPurgeAfterEpochMs } from '../../presence/session-expiry.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { groupStateGroupStorageKey } from './aggregate/group-aggregate-storage-keys.ts';
+import { toGroupStateReadBatchLiveSelections } from './group-state-persistence-contracts.ts';
 import {
     GROUPS_NAMESPACE,
     MEMBERS_NAMESPACE,
@@ -19,20 +19,12 @@ import {
     SESSIONS_NAMESPACE
 } from './group-state-runtime-namespaces.ts';
 
-export type GroupStateAuthorityBatchRead =
-    | Readonly<{ status: 'concurrent-change'; }>
-    | Readonly<{
-        status: 'stable';
-        group: RuntimeStateEntryValue<JsonWireValue> | undefined;
-        members: readonly RuntimeStateEntryValue<JsonWireValue>[];
-        summary: RuntimeStateEntryValue<JsonWireValue> | undefined;
-        sessions: readonly RuntimeStateEntryValue<JsonWireValue>[];
-    }>;
-
-type GroupStateLiveEntryValue = (
-    namespace: string,
-    entry: RuntimeStateEntry
-) => Promise<RuntimeStateEntryValue<JsonWireValue> | undefined>;
+export interface GroupStateAuthorityBatchRead {
+    readonly group: RuntimeStateEntryValue<JsonWireValue> | undefined;
+    readonly members: readonly RuntimeStateEntryValue<JsonWireValue>[];
+    readonly summary: RuntimeStateEntryValue<JsonWireValue> | undefined;
+    readonly sessions: readonly RuntimeStateEntryValue<JsonWireValue>[];
+}
 
 export interface VersionedGroupStateSnapshotBatchRead {
     readonly read: GroupStateAuthorityBatchRead;
@@ -43,13 +35,13 @@ export interface VersionedGroupStateSnapshotBatchRead {
 export async function readGroupStateAuthorityBatch(
     repository: RuntimeStateRepositoryLike,
     ref: GroupRef,
-    toLiveEntryValue: GroupStateLiveEntryValue
+    observedAtEpochMs: number
 ): Promise<GroupStateAuthorityBatchRead> {
     const selectors = toGroupStateAuthoritySelectors(ref);
-    return await toGroupStateAuthorityBatchRead(
+    return toGroupStateAuthorityBatchRead(
         selectors,
         await repository.readRuntimeStateBatch(selectors),
-        toLiveEntryValue
+        observedAtEpochMs
     );
 }
 
@@ -57,7 +49,6 @@ export interface ReadVersionedGroupStateSnapshotBatchInput {
     readonly reader: RuntimeStateReadBatchVersionReader;
     readonly ref: GroupRef;
     readonly observedAtEpochMs: number;
-    readonly toLiveEntryValue: GroupStateLiveEntryValue;
 }
 
 /** A group snapshot's rows at the instant, with the version of exactly those rows, from one statement. */
@@ -67,23 +58,22 @@ export async function readVersionedGroupStateSnapshotBatch(
     const selectors = toGroupStateSnapshotSelectors(input.ref, input.observedAtEpochMs);
     const batch = await input.reader.readRuntimeStateBatchWithVersion(selectors);
     return {
-        read: await toGroupStateAuthorityBatchRead(selectors, batch.selections, input.toLiveEntryValue),
+        read: toGroupStateAuthorityBatchRead(selectors, batch.selections, input.observedAtEpochMs),
         version: batch.version
     };
 }
 
-async function toGroupStateAuthorityBatchRead(
+function toGroupStateAuthorityBatchRead(
     selectors: readonly RuntimeStateReadBatchSelector[],
     selections: readonly RuntimeStateReadBatchSelection[],
-    toLiveEntryValue: GroupStateLiveEntryValue
-): Promise<GroupStateAuthorityBatchRead> {
-    const resolved = await resolveRuntimeStateReadBatchLiveValues(selectors, selections, toLiveEntryValue);
-    if (resolved.status === 'changed') {
-        return { status: 'concurrent-change' };
-    }
-    const [group, members, summary, sessions] = resolved.selections;
+    observedAtEpochMs: number
+): GroupStateAuthorityBatchRead {
+    const [group, members, summary, sessions] = toGroupStateReadBatchLiveSelections(
+        selectors,
+        selections,
+        observedAtEpochMs
+    );
     return {
-        status: 'stable',
         group: group.entries[0],
         members: members.entries,
         summary: summary.entries[0],

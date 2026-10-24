@@ -53,8 +53,8 @@ function createTransportFixture() {
             enqueue: async (command) => {
                 commands.push(command);
                 return {
-                    key: { topicId: 'RELIC_GAME_MUTATE', contextId: command.gameId, resourceId: command.requestId },
-                    enqueue: { type: 'RELIC_GAME_MUTATE', contextId: command.gameId, data: null },
+                    key: { topicId: 'app:relic-hunters:mutate', contextId: command.gameId, resourceId: command.requestId },
+                    enqueue: { type: 'app:relic-hunters:mutate', contextId: command.gameId, data: null },
                     winner: true
                 };
             }

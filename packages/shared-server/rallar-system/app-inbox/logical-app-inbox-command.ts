@@ -55,11 +55,6 @@ export function toLogicalAppInboxCommand(
             data: encodeJsonWireValue(decodeGroupRetentionCommand(enqueue.data))
         });
     }
-    if (enqueue.type === AppInboxType.RELIC_GAME_MUTATE) {
-        // The actor and move are command data; authority contains the captured initial-state proposal.
-        // The game owner validates their exact schemas and binding before executing an attempt.
-        return encodeLogicalCommand({ type: enqueue.type, authority: null, data: enqueue.data });
-    }
     return encodeLogicalCommand({
         type: enqueue.type,
         authority: enqueue.authority === undefined

@@ -65,11 +65,17 @@ export const AppInboxType = {
     CRDT_SNAPSHOT_COMPACT: 'CRDT_SNAPSHOT_COMPACT',
     CRDT_LIFECYCLE_UPDATE: 'CRDT_LIFECYCLE_UPDATE',
     CRDT_ERASE: 'CRDT_ERASE',
-    RELIC_GAME_MUTATE: 'RELIC_GAME_MUTATE',
     ADMIN_PRUNE_EXPIRED: 'ADMIN_PRUNE_EXPIRED'
 } as const;
 
-export type AppInboxType = (typeof AppInboxType)[keyof typeof AppInboxType];
+/** App-owned operations use their own namespace and an exact operation-named topic. */
+export type AppInboxType = (typeof AppInboxType)[keyof typeof AppInboxType] | `app:${string}:${string}`;
+
+const PLATFORM_APP_INBOX_TYPES = new Set<string>(Object.values(AppInboxType));
+
+export function isAppInboxType(value: string): value is AppInboxType {
+    return PLATFORM_APP_INBOX_TYPES.has(value) || /^app:[a-z0-9][a-z0-9.-]*:[a-z0-9][a-z0-9.-]*$/u.test(value);
+}
 
 /** Enqueued by no request path that waits for the result, so no instance can hold a waiter for its completion. */
 const FIRE_AND_FORGET_APP_INBOX_TYPES: ReadonlySet<AppInboxType> = new Set([

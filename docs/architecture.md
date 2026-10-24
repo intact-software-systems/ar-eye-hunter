@@ -113,8 +113,9 @@ purge deadlines, and externally supplied idle anchors. Existing rows need no mig
 snapshot. It shares the presence-summary liveness computation, but never trusts a stale summary for
 archival. `Group.emptySinceEpochMs` is the only idle clock. A fingerprint of canonical presence,
 admission, and member storage revisions detects activity between scans and restarts grace from the
-fresh attempt time. The first presence admission also guards the observed group revision; ordinary
-heartbeats and reconnects with an existing admission retain their admission-row guard.
+fresh attempt time. The first presence admission conditionally updates the observed member revision
+in the same transaction as its session guard. This fences permanent deletion without contending on
+the group row; heartbeats and reconnects with an existing admission keep their existing guards.
 
 The internal `GROUP_RETENTION_RECONCILE` AppInbox registration owns each maintenance attempt. Pure
 compute and validate prepare the group CAS, admission fences, exact-revision presence deletes,
@@ -135,7 +136,9 @@ expired IDs keep their existing recreation behavior. Audit and idempotency/repla
 their existing lifetime; unrelated application data is untouched.
 
 Relic's server-only mutation owner in `packages/relic-hunters/server` shares that group revision
-fence. Every API worker registers `RELIC_GAME_MUTATE` before maintenance starts. Each attempt reads
+fence. Every API worker registers the app-owned `app:relic-hunters:mutate` operation before maintenance
+starts. Shared AppInbox accepts generic namespaced application operations; Relic owns command and
+proposal-independent replay identity, schema validation and game policy. Each attempt reads
 the current issued session, room policy and save, computes and validates outside the transaction,
 then first advances the observed group revision before the save CAS, private publication provenance,
 final WS outbox and durable acknowledgement commit together. Expected rule refusals are values;

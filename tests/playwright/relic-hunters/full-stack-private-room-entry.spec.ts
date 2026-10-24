@@ -6,6 +6,9 @@ import {
 
 import { roomBrowserTest } from '../room-browser-fixture.ts';
 
+// Includes review animation, automatic continuation, and delivery of the next authoritative state.
+const automaticReviewTransitionTimeoutMs = 30_000;
+
 test('retains a manual private destination through signed-out reload and cancellation', async ({ page }) => {
     await page.goto('/');
     await page.getByLabel('Room reference', { exact: true }).fill('private-expedition');
@@ -113,15 +116,19 @@ roomBrowserTest(
                     .click();
             }
             await submitBothPlans(host, guest);
-            await expect(host.locator('.turn-plan-status .panel-label')).toHaveText(`Round ${index + 3}`);
-            await expect(guest.locator('.turn-plan-status .panel-label')).toHaveText(`Round ${index + 3}`);
+            await expect(host.locator('.turn-plan-status .panel-label')).toHaveText(`Round ${index + 3}`, {
+                timeout: automaticReviewTransitionTimeoutMs
+            });
+            await expect(guest.locator('.turn-plan-status .panel-label')).toHaveText(`Round ${index + 3}`, {
+                timeout: automaticReviewTransitionTimeoutMs
+            });
         }
         for (const hunter of [host, guest]) {
             await hunter.locator('.action-picker').getByRole('button', { name: /^Escape/ }).click();
         }
         await submitBothPlans(host, guest);
         for (const hunter of [host, guest]) {
-            await expect(hunter.locator('.victory-panel')).toBeVisible();
+            await expect(hunter.locator('.victory-panel')).toBeVisible({ timeout: automaticReviewTransitionTimeoutMs });
             await expect(hunter.locator('.final-score-row')).toHaveCount(2);
             await expect(hunter.locator('.final-score-tag.success')).toHaveText(['escaped', 'escaped']);
             await expect(hunter.locator('.error-panel')).toHaveCount(0);
@@ -389,8 +396,12 @@ async function playPrivateExpedition(host: Page, guest: Page): Promise<void> {
     await expect(guest.getByRole('button', { name: 'Submit Plan' })).toBeEnabled();
     await host.getByRole('button', { name: 'Submit Plan' }).click();
     await guest.getByRole('button', { name: 'Submit Plan' }).click();
-    await expect(host.locator('.turn-plan-status .panel-label')).toHaveText('Round 2');
-    await expect(guest.locator('.turn-plan-status .panel-label')).toHaveText('Round 2');
+    await expect(host.locator('.turn-plan-status .panel-label')).toHaveText('Round 2', {
+        timeout: automaticReviewTransitionTimeoutMs
+    });
+    await expect(guest.locator('.turn-plan-status .panel-label')).toHaveText('Round 2', {
+        timeout: automaticReviewTransitionTimeoutMs
+    });
 }
 
 async function submitBothPlans(host: Page, guest: Page): Promise<void> {
