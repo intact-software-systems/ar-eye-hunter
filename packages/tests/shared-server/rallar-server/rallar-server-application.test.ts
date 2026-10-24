@@ -103,6 +103,22 @@ describe('RallarServerApplication', () => {
         server.mountWebSocket(app).mountWebSocket(app);
         server.mountRest(app).mountRest(app);
         expect((await operation.readReplay(null))?.left).toMatchObject({ code: 'app-inbox-lifecycle-rejected' });
+        server.start({ queueWorkers: 'disabled' });
+        expect(events).not.toContain('start');
+        expect(await operation.readAdmission(null)).toBeUndefined();
+        expect(() =>
+            appInbox.register({
+                type: 'app:settings:late',
+                decodeEnvelope: () => null,
+                encodeEnvelope: () => ({ data: null }),
+                toBinding: () => ({ contextId: 'settings', resourceId: 'late' }),
+                toLogicalCommand: () => null,
+                materialize: () => null,
+                encodeResult: () => null,
+                decodeResult: () => null,
+                handle: async () => null
+            })
+        ).toThrow('registration is sealed');
         server.start();
         expect(await operation.readReplay(null)).toBeUndefined();
         expect(server.appInbox).toBe(appInbox);

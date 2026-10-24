@@ -39,8 +39,12 @@ Server-side applications use the public `RallarServerApplication.appInbox`
 capability. A trusted registration owns its canonical envelope, logical command
 projection, winner-only immutable capture, result binding and domain attempt.
 Every claimant registers before workers start, using the same capability
-instance exposed by the server facade. Application code does not construct
-internal clients, handlers or reservations.
+instance exposed by the server facade. All producer processes call
+`rallar.start({ queueWorkers })` after registration: startup seals registration
+and opens admission even when local workers are disabled. `rallar.start()`
+retains its default worker startup. API background-task shutdown closes the same
+owner in either mode. Application code does not construct internal clients,
+handlers or reservations.
 
 `enqueue` returns a bound durable admission; its `wait()` returns the exact
 stored result. `readAdmission` validates and returns pending or completed

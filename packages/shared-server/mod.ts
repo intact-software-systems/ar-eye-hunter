@@ -102,6 +102,7 @@ export {
 export type {
     CreateRallarServerApplicationInput,
     RallarServerApplicationRouteInstallers,
+    RallarServerApplicationStartConfig,
     RallarServerApplicationSystemInstallers,
     RallarServerQueueEngine,
     RallarServerRouteInstaller,

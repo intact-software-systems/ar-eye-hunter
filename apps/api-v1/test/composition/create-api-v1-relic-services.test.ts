@@ -2,21 +2,31 @@ import assert from 'node:assert/strict';
 
 import { createRelicGame, toRelicRoomGroupRef } from '@relic-hunters/mod.ts';
 import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-app-data-repository.ts';
+import {
+    createRallarServerApplication,
+    type RallarServerAppInbox,
+    type RallarServerApplication,
+    type RallarServerRuntime
+} from '@shared-server/mod.ts';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { AuthSessionPersistence } from '@shared-server/rallar-system/auth/persistence/auth-session-persistence.ts';
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import { toGroupMutationAttemptFacts } from '@shared-server/rallar-system/group-state/mutation/to-group-mutation-attempt-facts.ts';
+import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
+import { InMemoryQueueBox } from '@shared/mod.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 
 import defaults from '../../resources/configuration/defaults-config.json' with { type: 'json' };
 import { createApiV1AppInbox, type CreateApiV1AppInboxInput } from '../../src/composition/create-api-v1-app-inbox.ts';
 import { createApiV1MutationRuntime, type ApiV1MutationRuntime } from '../../src/composition/create-api-v1-mutation-runtime.ts';
 import { createApiV1RelicServices } from '../../src/composition/create-api-v1-relic-services.ts';
+import { startApiProcess } from '../../src/runtime/api-process-startup.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { withPGliteSql } from '../db/pglite-auth-test-harness.ts';
 
-Deno.test('a cold API worker completes a Relic command admitted by another worker and retention deletes its save', async () => {
+Deno.test('a passive API producer admits new work and pending/completed replay while a cold active claimant owns execution and retention', async () => {
     await withPGliteSql(async (database) => {
         const now = Date.now();
         const producer = createMutationRuntime(database, now);
@@ -39,8 +49,6 @@ Deno.test('a cold API worker completes a Relic command admitted by another worke
             authorization: 'group-policy' as const,
             move: null
         };
-        firstAppInbox.start();
-        const reservation = await first.relicGameInboxService.enqueue(command, async () => createRelicGame(command.gameId, command.gameId, now));
         const worker = createMutationRuntime(database, now);
         const coldRuntime = createQueueRuntime(worker);
         const reader = coldRuntime.inboxQueueReader;
@@ -53,43 +61,83 @@ Deno.test('a cold API worker completes a Relic command admitted by another worke
             nowEpochMs: () => now,
             timing: () => {}
         });
-        coldAppInbox.start();
-        await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createApiV1TestQueueResilience());
-        assert.deepEqual(await cold.relicGameInboxService.wait(reservation), { status: 'initialized', gameId: 'cold-expedition' });
-        const [durable] = await database<{ status: string; }[]>`
-            select ris_status as status from resource_inbox_results where ris_resource_id = 'cold-initialize'
-        `;
-        assert.equal(durable.status, 'COMPLETED');
-        const saves = new PSqlAppDataRepository(database);
-        const saveKey = { namespace: 'relic-hunter-v1', storeName: 'relic-hunter-games', key: 'cold-expedition' };
-        assert.ok(await saves.findEntry(saveKey));
+        const firstApplication = createApplication(producer, firstRuntime, firstAppInbox);
+        const coldApplication = createApplication(worker, coldRuntime, coldAppInbox);
+        let producerWorkerStarts = 0;
+        const originalStart = firstRuntime.qboxEngine.start.bind(firstRuntime.qboxEngine);
+        firstRuntime.qboxEngine.start = () => {
+            producerWorkerStarts += 1;
+            originalStart();
+        };
+        try {
+            await startApiProcess({
+                runtimeReadiness: Promise.resolve(),
+                listen: () => ({ name: 'passive-http-listener' }),
+                startApplication: () => firstApplication.start({ queueWorkers: 'disabled' }),
+                stopAfterStartupFailure: async () => {
+                    await firstRuntime.qboxEngine.stop();
+                }
+            });
+            assert.equal(producerWorkerStarts, 0);
+            const proposal = async () => createRelicGame(command.gameId, command.gameId, now);
+            const admission = await first.relicGameInboxService.enqueue(command, proposal);
+            const pending = await first.relicGameInboxService.enqueue(command, async () => {
+                throw new Error('Pending replay must not create another proposal');
+            });
+            assert.equal(
+                await new PSqlAppDataRepository(database).findEntry({ namespace: 'relic-hunter-v1', storeName: 'relic-hunter-games', key: command.gameId }),
+                undefined
+            );
+            coldApplication.start({ queueWorkers: 'enabled' });
+            await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createApiV1TestQueueResilience());
+            assert.deepEqual(await cold.relicGameInboxService.wait(admission), { status: 'initialized', gameId: 'cold-expedition' });
+            assert.deepEqual(await first.relicGameInboxService.wait(pending), { status: 'initialized', gameId: command.gameId });
+            assert.deepEqual(
+                await first.relicGameInboxService.execute(command, async () => {
+                    throw new Error('Completed replay must not create another proposal');
+                }),
+                { status: 'initialized', gameId: command.gameId }
+            );
+            assert.equal(producerWorkerStarts, 0);
+            const [durable] = await database<{ status: string; }[]>`
+                select ris_status as status from resource_inbox_results where ris_resource_id = 'cold-initialize'
+            `;
+            assert.equal(durable.status, 'COMPLETED');
+            const saves = new PSqlAppDataRepository(database);
+            const saveKey = { namespace: 'relic-hunter-v1', storeName: 'relic-hunter-games', key: 'cold-expedition' };
+            assert.ok(await saves.findEntry(saveKey));
 
-        const reset = await first.relicGameInboxService.enqueue(
-            { ...command, operation: 'reset', requestId: 'cold-reset' },
-            async () => createRelicGame(command.gameId, command.gameId, now)
-        );
-        await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createApiV1TestQueueResilience());
-        assert.deepEqual(await cold.relicGameInboxService.wait(reset), { status: 'applied', gameId: 'cold-expedition' });
-        const [publication] = await database<{ sender: string; }[]>`
-            select ri_resource::jsonb #>> '{id,senderId}' as sender from resource_inbox where ri_type_id = 'WS_OUTBOX' and ri_resource_id like 'relic:%'
-        `;
-        assert.equal(publication.sender, 'default-qbox-server');
+            const reset = await first.relicGameInboxService.enqueue(
+                { ...command, operation: 'reset', requestId: 'cold-reset' },
+                async () => createRelicGame(command.gameId, command.gameId, now)
+            );
+            await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createApiV1TestQueueResilience());
+            assert.deepEqual(await cold.relicGameInboxService.wait(reset), { status: 'applied', gameId: 'cold-expedition' });
+            const [publication] = await database<{ sender: string; }[]>`
+                select ri_resource::jsonb #>> '{id,senderId}' as sender from resource_inbox where ri_type_id = 'WS_OUTBOX' and ri_resource_id like 'relic:%'
+            `;
+            assert.equal(publication.sender, 'default-qbox-server');
 
-        const ref = toRelicRoomGroupRef(command.gameId);
-        const stored = await worker.groupsRepository.findGroupEntry(ref);
-        assert.ok(stored);
-        const archived = { ...stored.value.updated, atEpochMs: now - 604800000 };
-        await worker.groupsRepository.updateGroup({ ...stored.value, status: 'archived', archived, deleted: null }, stored.entry.revision);
-        const retention = worker.groupStateService.retention;
-        const ingress = retention.capture({ groupRef: ref, requestId: 'cold-delete', observedAtEpochMs: now });
-        const observed = await retention.read(ingress, 1);
-        const computed = retention.compute(observed);
-        assert.deepEqual(retention.validate(observed, computed), []);
-        await database.begin((transaction) => retention.write(transaction, computed));
-        assert.equal(await saves.findEntry(saveKey), undefined);
-        assert.equal(await worker.groupsRepository.findGroupEntry(ref), undefined);
-        await coldRuntime.qboxEngine.stop();
-        await firstRuntime.qboxEngine.stop();
+            const ref = toRelicRoomGroupRef(command.gameId);
+            const stored = await worker.groupsRepository.findGroupEntry(ref);
+            assert.ok(stored);
+            const archived = { ...stored.value.updated, atEpochMs: now - 604800000 };
+            await worker.groupsRepository.updateGroup({ ...stored.value, status: 'archived', archived, deleted: null }, stored.entry.revision);
+            const retention = worker.groupStateService.retention;
+            const ingress = retention.capture({ groupRef: ref, requestId: 'cold-delete', observedAtEpochMs: now });
+            const observed = await retention.read(ingress, 1);
+            const computed = retention.compute(observed);
+            assert.deepEqual(retention.validate(observed, computed), []);
+            await database.begin((transaction) => retention.write(transaction, computed));
+            assert.equal(await saves.findEntry(saveKey), undefined);
+            assert.equal(await worker.groupsRepository.findGroupEntry(ref), undefined);
+        }
+        finally {
+            await coldRuntime.qboxEngine.stop();
+            await firstRuntime.qboxEngine.stop();
+            await coldApplication.runtime.wsQBoxServerService.dispose();
+            await firstApplication.runtime.wsQBoxServerService.dispose();
+        }
     });
 });
 
@@ -163,4 +211,31 @@ function createQueueRuntime(mutation: ApiV1MutationRuntime): CreateApiV1AppInbox
         flightEntryListener: (settlement) => qboxEngine.retainSettlingWork(InboxQueueReader.INBOX_ENQUEUE_TYPE, settlement)
     });
     return { inboxQueueReader, qboxEngine };
+}
+
+function createApplication(
+    mutation: ApiV1MutationRuntime,
+    runtime: CreateApiV1AppInboxInput['runtime'],
+    appInbox: RallarServerAppInbox
+): RallarServerApplication<RallarServerRuntime, unknown> {
+    return createRallarServerApplication<RallarServerRuntime, unknown>({
+        appInbox,
+        runtime: {
+            qboxEngine: runtime.qboxEngine,
+            wsQBoxServerService: createDefaultWsQueueBoxServerService({
+                name: 'cold-worker',
+                outbox: new InMemoryQueueBox(),
+                socket: mutation.webSocketServer,
+                inboundVolatileStores: undefined,
+                readAuthenticatedConnectionScope: () => undefined,
+                queueEngine: runtime.qboxEngine
+            })
+        },
+        repositories: new RepositoryManager(),
+        appDataRepository: new PSqlAppDataRepository(mutation.database),
+        nowEpochMs: Date.now,
+        ws: {},
+        systemInstallers: { installSystemTopics: () => {}, installWebSocketLifecycle: () => {} },
+        routeInstallers: { webSocket: () => {}, rest: [] }
+    });
 }

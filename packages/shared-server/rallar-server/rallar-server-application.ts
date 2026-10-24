@@ -34,6 +34,10 @@ export interface RallarServerApplicationRouteInstallers<TApp> {
     readonly rest: readonly RallarServerRouteInstaller<TApp>[];
 }
 
+export interface RallarServerApplicationStartConfig {
+    readonly queueWorkers: 'enabled' | 'disabled';
+}
+
 export interface CreateRallarServerApplicationInput<TRuntime extends RallarServerRuntime, TApp> {
     readonly appInbox: RallarServerAppInbox;
     readonly runtime: TRuntime;
@@ -110,8 +114,11 @@ export class RallarServerApplication<TRuntime extends RallarServerRuntime, TApp>
         return this;
     }
 
-    start(): void {
+    start(config: RallarServerApplicationStartConfig = { queueWorkers: 'enabled' }): void {
         this.appInbox.start();
+        if (config.queueWorkers === 'disabled') {
+            return;
+        }
         try {
             this.runtime.qboxEngine.start();
         }

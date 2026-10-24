@@ -74,8 +74,10 @@ apps/api-v1/src/main.ts
 ```
 
 `main.ts` installs system topics and WebSocket lifecycle, mounts WebSocket and
-REST routes, binds the HTTP server, awaits runtime readiness, and only then
-starts QueueBox workers when the configured runtime permits them. All configured
+REST routes, binds the HTTP server, awaits runtime readiness, and then calls
+`rallar.start({ queueWorkers })`. Startup always seals registration and opens
+application admission. Local QueueBox workers start only when enabled; a passive
+producer still admits durable work for another claimant. All configured
 AppInbox handlers and all four queue task families are registered before a
 queue engine can be returned or started.
 
@@ -126,8 +128,11 @@ or predecessor-format fallback.
 Server-side applications register namespaced operations through
 `RallarServerApplication.appInbox`, exported as `RallarServerAppInbox` from
 `@shared-server/mod.ts`. Every process that can claim the queue registers the
-same operations on the same capability instance before `rallar.start()` seals
-registration and starts workers. Applications do not assemble private AppInbox
+same operations on the same capability instance before `rallar.start(...)` seals
+registration and opens admission. `rallar.start()` keeps the default of starting
+local workers; `rallar.start({ queueWorkers: 'disabled' })` opens a passive
+producer's admission without starting local workers. API background-task shutdown
+closes the same AppInbox owner in either mode. Applications do not assemble private AppInbox
 clients, handlers, reservation or completion owners.
 
 A registration supplies its canonical envelope codec, logical identity,

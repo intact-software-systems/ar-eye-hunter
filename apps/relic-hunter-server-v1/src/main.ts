@@ -151,9 +151,7 @@ rallar.installSystemTopics();
 rallar.installWebSocketLifecycle();
 rallar.mountWebSocket(app);
 rallar.mountRest(app);
-if (configuration.apiV1.topology.replay.queueWorkers === 'enabled') {
-    rallar.start();
-}
+rallar.start({ queueWorkers: configuration.apiV1.topology.replay.queueWorkers });
 
 Deno.serve({ port: configuration.http.port }, app.fetch);
 console.log(`Relic Hunter server started on port ${configuration.http.port}.`);

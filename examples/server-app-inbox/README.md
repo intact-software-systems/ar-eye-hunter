@@ -19,8 +19,12 @@ insert into app_counter values ('visits', 0, 0);
 Register on **every queue claimant**, using the same `appInbox` instance that
 `RallarServerApplication` exposes. Construct the database and public capability,
 register application operations, construct the server facade with that capability,
-and then start the server. Registration is sealed by `rallar.start()` before
-workers start.
+and then start the server. `rallar.start()` seals registration, opens admission
+and starts local workers. A passive producer instead calls
+`rallar.start({ queueWorkers: 'disabled' })` after registration and before accepting
+requests. It admits commands and pending/completed replay for a remote claimant
+without running local workers. API process shutdown closes the same AppInbox
+owner through its registered background-task cleanup in either mode.
 
 ```ts
 import type { PSqlSql, RallarServerApplication, RallarServerRuntime } from '@shared-server/mod.ts';
