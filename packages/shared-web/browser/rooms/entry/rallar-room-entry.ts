@@ -3,19 +3,19 @@ import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { Either, Try } from '@shared/resilience/Either.ts';
 import { SingleFlight } from '@shared/resilience/single-flight.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import { ApiHttpError } from '../api/http-error.ts';
-import { toAuthSessionKey } from '../auth/to-auth-session-key.ts';
-import { BrowserRallarSubscriptionScope, notifyListener } from '../messages/rallar-listener-delivery.ts';
-import type { RallarStateListener, RallarUnsubscribe } from '../rallar-shared-contracts.ts';
-import type { RallarAuthFacade, RallarAuthState } from '../session/rallar-auth-facade.ts';
-import type { BrowserRallarRooms } from './browser-rallar-rooms.ts';
-import type { RallarJoinRoomOptions, RallarRoomState } from './rallar-room-contracts.ts';
+import { ApiHttpError } from '../../api/http-error.ts';
+import { toAuthSessionKey } from '../../auth/to-auth-session-key.ts';
+import { BrowserRallarSubscriptionScope, notifyListener } from '../../messages/rallar-listener-delivery.ts';
+import type { RallarStateListener, RallarUnsubscribe } from '../../rallar-shared-contracts.ts';
+import type { RallarAuthFacade, RallarAuthState } from '../../session/rallar-auth-facade.ts';
+import type { BrowserRallarRooms } from '../browser-rallar-rooms.ts';
+import type { RallarJoinRoomOptions, RallarRoomState } from '../rallar-room-contracts.ts';
+import type { GroupRef, GroupSnapshot, StateScope } from '../room-group-state-translation.ts';
 import {
     decodeRoomEntryDestination,
     decodeScopedDestination,
     invalidDestination
 } from './room-entry-validation.ts';
-import type { GroupRef, GroupSnapshot, StateScope } from './room-group-state-translation.ts';
 
 const ENTRY_FRAGMENT = '#rallar-room?';
 const ENTRY_FIELDS = new Set(['applicationId', 'workspaceId', 'groupId', 'joinCode']);

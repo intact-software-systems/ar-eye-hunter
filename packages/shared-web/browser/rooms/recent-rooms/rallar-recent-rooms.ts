@@ -6,7 +6,7 @@ import { BrowserRallarSubscriptionScope, notifyListener } from '../../messages/r
 import type { RallarDataFacade, RallarDataStore } from '../../rallar-data.ts';
 import type { RallarStateListener, RallarUnsubscribe } from '../../rallar-shared-contracts.ts';
 import type { RallarAuthFacade } from '../../session/rallar-auth-facade.ts';
-import type { RallarRoomEntry } from '../rallar-room-entry.ts';
+import type { RallarRoomEntry } from '../entry/rallar-room-entry.ts';
 import { computeRecentRoomHistory, decodeRecentRoomHistory } from './recent-room-history.ts';
 
 const HISTORY_KEY = 'history';

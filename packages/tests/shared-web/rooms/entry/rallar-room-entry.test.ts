@@ -4,7 +4,7 @@ import type { RallarJoinRoomOptions, RallarRoomState } from '@shared-web/browser
 import type { RallarAuthChangeListener } from '@shared-web/browser/session/rallar-auth-facade.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
+import { createGroupSnapshotFixture } from '../../authoritative-group-fixtures.ts';
 
 import { describe, expect, it } from 'vitest';
 
@@ -12,7 +12,7 @@ import {
     RallarRoomEntry,
     readRoomEntryDestination,
     toRoomEntryUrl
-} from '@shared-web/browser/rooms/rallar-room-entry.ts';
+} from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
 
 const SCOPE = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
 const DESTINATION: RallarRoomEntry.Destination = {

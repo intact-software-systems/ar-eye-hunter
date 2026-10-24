@@ -3,8 +3,8 @@ import '../../../setup-browser-indexeddb.ts';
 
 import { createRallarDataFacade, type RallarDataStore } from '@shared-web/browser/rallar-data.ts';
 import type { RallarStateListener } from '@shared-web/browser/rallar-shared-contracts.ts';
+import { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
 import type { RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
-import { RallarRoomEntry } from '@shared-web/browser/rooms/rallar-room-entry.ts';
 import { RallarRecentRooms } from '@shared-web/browser/rooms/recent-rooms/rallar-recent-rooms.ts';
 import type { RallarAuthChangeListener } from '@shared-web/browser/session/rallar-auth-facade.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
