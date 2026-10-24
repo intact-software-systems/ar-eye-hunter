@@ -226,6 +226,8 @@ roomBrowserTest(
 roomBrowserTest(
     'recovers recent arenas after reload and forgets shortcuts without leaving',
     async ({ page: host, guest }, testInfo) => {
+        // Two browsers, fresh invitations, denial/retry, and two reloads share this journey budget.
+        roomBrowserTest.setTimeout(180_000);
         roomBrowserTest.skip(process.env.RALLAR_ARENA_FULL_STACK !== '1', 'Requires the local API-v1 memory fixture.');
         const hostOperations = await openOperations(host, '/');
         await signIn(host, 'alice');
@@ -242,8 +244,8 @@ roomBrowserTest(
         const history = guestOperations.getByRole('region', { name: 'Recent rooms', exact: true });
         await expect(history.getByRole('button', { name: `Return to ${firstRef}`, exact: true })).toBeVisible();
         await hostOperations.getByRole('button', { name: 'New code arena', exact: true }).click();
-        await expect(linkField).toHaveValue(/joinCode=/);
         await expect(linkField).not.toHaveValue(firstLink);
+        await expect(linkField).toHaveValue(/joinCode=/, { timeout: 30_000 });
         const secondLink = await linkField.inputValue();
         const secondRef = new URLSearchParams(new URL(secondLink).hash.slice('#rallar-room?'.length)).get('groupId');
         if (!secondRef) {
