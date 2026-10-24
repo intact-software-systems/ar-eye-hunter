@@ -228,9 +228,9 @@ roomBrowserTest(
         roomBrowserTest.skip(process.env.RALLAR_ARENA_FULL_STACK !== '1', 'Requires the local API-v1 memory fixture.');
         const hostOperations = await openOperations(host, '/');
         await signIn(host, 'alice');
-        await hostOperations.getByRole('button', { name: 'New code arena', exact: true }).click();
+        await hostOperations.getByRole('button', { name: 'New unlisted arena', exact: true }).click();
         const linkField = hostOperations.getByLabel('Room link', { exact: true });
-        await expect(linkField).toHaveValue(/joinCode=/);
+        await expect(linkField).toHaveValue(/#rallar-room\?/);
         const firstLink = await linkField.inputValue();
         const firstRef = new URLSearchParams(new URL(firstLink).hash.slice('#rallar-room?'.length)).get('groupId');
         if (!firstRef) {

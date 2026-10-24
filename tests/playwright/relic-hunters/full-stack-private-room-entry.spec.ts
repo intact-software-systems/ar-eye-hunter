@@ -188,9 +188,9 @@ roomBrowserTest(
         );
         await host.goto('/');
         await registerPrivateHunter(host, 'recent-host');
-        await host.getByRole('button', { name: 'New code room', exact: true }).click();
+        await host.getByRole('button', { name: 'New unlisted room', exact: true }).click();
         const linkField = host.getByLabel('Room link', { exact: true });
-        await expect(linkField).toHaveValue(/joinCode=/);
+        await expect(linkField).toHaveValue(/#rallar-room\?/);
         const firstLink = await linkField.inputValue();
         const firstRef = new URLSearchParams(new URL(firstLink).hash.slice('#rallar-room?'.length)).get('groupId');
         if (!firstRef) {

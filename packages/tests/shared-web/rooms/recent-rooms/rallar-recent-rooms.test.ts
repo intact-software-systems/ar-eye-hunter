@@ -129,6 +129,26 @@ afterEach(async () => {
 });
 
 describe('recent room navigation history', () => {
+    it('records a created room using only its scoped reference from the full group snapshot', async () => {
+        const browser = createBrowser();
+        const history = browser.createHistory();
+        await history.start();
+        const roomRef = { ...SCOPE, groupId: 'created-room' };
+        const currentRoom = createGroupSnapshotFixture({ ...roomRef, sessionIds: ['alice-session'] });
+        for (const listener of browser.roomListeners) {
+            void listener({ rooms: [], members: [], currentRoom, currentRoomId: roomRef.groupId, currentRoomRef: currentRoom.group });
+        }
+        await history.whenIdle();
+
+        expect(history.getState()).toEqual({
+            principalId: 'alice',
+            status: 'ready',
+            failure: null,
+            rooms: [{ roomRef, visitedAtEpochMs: browser.now }]
+        });
+        expect(browser.entry.getState().destination).toEqual({ roomRef, joinCode: null });
+    });
+
     it('persists ten distinct visits newest first and rehydrates without credentials', async () => {
         const browser = createBrowser();
         const history = browser.createHistory();

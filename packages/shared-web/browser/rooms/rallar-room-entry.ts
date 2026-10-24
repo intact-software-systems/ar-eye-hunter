@@ -351,7 +351,9 @@ export class RallarRoomEntry {
             }
             return;
         }
-        if (decodeScopedDestination({ roomRef: state.currentRoomRef, joinCode: null }, this.config.scope).left) {
+        const destination =
+            decodeScopedDestination({ roomRef: state.currentRoomRef, joinCode: null }, this.config.scope).right;
+        if (!destination) {
             return;
         }
         if (this.state.destination && isSameGroupRef(this.state.destination.roomRef, state.currentRoomRef)) {
@@ -359,7 +361,7 @@ export class RallarRoomEntry {
         }
         this.publish(this.saveDestination({
             status: 'entered',
-            destination: { roomRef: state.currentRoomRef, joinCode: null },
+            destination,
             principalId: session.clientId,
             failure: null
         }));
