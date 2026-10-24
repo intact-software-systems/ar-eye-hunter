@@ -87,8 +87,13 @@ import {
     type ApiMutationInboxFactories
 } from '../services/create-api-mutation-inbox-factories.ts';
 
-/** Groups whose current snapshot this server keeps between unchanged revisions. */
-const GROUP_CURRENT_SNAPSHOT_CACHE_MAX_ENTRIES = 512;
+/**
+ * Groups whose current snapshot this server keeps between unchanged revisions.
+ * A kept snapshot measured about 160 KB. 512 entries do not bound a run that
+ * creates fewer groups than that: the cap never fills, so nothing is dropped.
+ * 32 entries is about 5 MB and drops the oldest group once the run passes it.
+ */
+const GROUP_CURRENT_SNAPSHOT_CACHE_MAX_ENTRIES = 32;
 
 export interface ApiV1MutationRuntimeResilience {
     readonly inbox: ResourceInboxResilience;
