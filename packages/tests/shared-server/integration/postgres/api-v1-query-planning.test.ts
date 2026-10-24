@@ -45,17 +45,18 @@ describe('API PostgreSQL query planning', () => {
                         select pg_backend_pid() as pid, current_setting('jit') as jit
                     `;
                     await transaction`set local jit_above_cost = 0`;
-                    const [explanation] = await transaction<{ 'QUERY PLAN': readonly Record<string, unknown>[]; }[]>`
-                        explain (analyze, format json) select sum(value) from generate_series(1, 1000) value
+                    const explanation = await transaction<{ 'QUERY PLAN': string; }[]>`
+                        explain (analyze, format text) select sum(value) from generate_series(1, 1000) value
                     `;
-                    return { ...connection, plan: explanation['QUERY PLAN'][0] };
+                    return { ...connection, plan: explanation.map((row) => row['QUERY PLAN']).join('\n') };
                 }));
             const [connections] = await Promise.all([Promise.all(requests), ready.promise]);
 
             expect(new Set(connections.map((connection) => connection.pid)).size).toBe(3);
             for (const connection of connections) {
                 expect(connection.jit).toBe('off');
-                expect(connection.plan).not.toHaveProperty('JIT');
+                expect(connection.plan).toContain('Execution Time:');
+                expect(connection.plan).not.toMatch(/^JIT:/m);
             }
             const [result] = await lifecycle.database<{ total: number; }[]>`select 2 + 3 as total`;
             expect(result.total).toBe(5);
