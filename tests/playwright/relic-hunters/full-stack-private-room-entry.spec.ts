@@ -208,10 +208,11 @@ roomBrowserTest(
         if (!secondRef) {
             throw new Error('The second expedition must have a scoped share reference.');
         }
+        // Sharing is complete; release the host scene before the guest switches rooms.
+        await host.goto('about:blank');
         await guest.goto(secondLink);
         await expect(guest.getByText(`Entered ${secondRef}.`, { exact: true })).toBeVisible();
         await expect(history.getByRole('button', { name: `Return to ${firstRef}`, exact: true })).toBeVisible();
-        await host.goto('about:blank');
         await guest.reload();
         await expect(guest.getByText(`Entered ${secondRef}.`, { exact: true })).toBeVisible();
         const admissionPath = `**/groups/${firstRef}/join/requests/*`;
@@ -235,6 +236,7 @@ roomBrowserTest(
         await expect(history.getByRole('button', { name: `Return to ${secondRef}`, exact: true })).toHaveCount(0);
         await expect(guest.locator('.lobby-party-row')).toHaveCount(0);
         await expect(guest.getByRole('button', { name: /Join as/ })).toBeVisible();
+        await history.scrollIntoViewIfNeeded();
         await guest.screenshot({ path: testInfo.outputPath('recent-expedition-recovery.png'), fullPage: true });
     }
 );
