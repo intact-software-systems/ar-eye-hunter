@@ -324,6 +324,9 @@ const PRODUCTION_OPERATIONS: ApiV1DatabaseLifecycleOperations = {
             postgres(input.connectionUrl, {
                 max: input.max,
                 idle_timeout: input.idleTimeoutSeconds,
+                // These pools serve short API and queue operations. Retained history can inflate plan
+                // estimates enough to trigger JIT, whose compilation costs more than these indexed reads.
+                connection: { jit: 'off' },
                 types: {
                     timestampWithoutTimeZone: createPostgresTimestampWithoutTimeZoneTextType()
                 }

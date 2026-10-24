@@ -1,5 +1,11 @@
 import { load } from 'js-yaml';
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+    chmod,
+    mkdtemp,
+    readFile,
+    rm,
+    writeFile
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, it } from 'vitest';
@@ -7,10 +13,10 @@ import { expect, it } from 'vitest';
 import { validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { runOwnedTestProcess } from './owned-test-process.ts';
 
-interface LogStep {
+interface ControllerWorkflowStep {
     readonly name: string;
-    readonly if: string;
-    readonly run: string;
+    readonly if?: string;
+    readonly run?: string;
 }
 
 it('streams a bounded redacted API log reader without writing to the controller', async (context) => {
@@ -28,7 +34,18 @@ it('streams a bounded redacted API log reader without writing to the controller'
                         type: 'object',
                         required: ['steps'],
                         properties: {
-                            steps: { type: 'array', items: { type: 'object' } }
+                            steps: {
+                                type: 'array',
+                                items: {
+                                    type: 'object',
+                                    required: ['name'],
+                                    properties: {
+                                        name: { type: 'string' },
+                                        if: { type: 'string' },
+                                        run: { type: 'string' }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -36,11 +53,11 @@ it('streams a bounded redacted API log reader without writing to the controller'
         }
     };
     expect(validateJsonSchema(schema, workflow).ok).toBe(true);
-    const steps = (workflow as { jobs: { deploy: { steps: LogStep[]; }; }; }).jobs.deploy.steps;
+    const steps = (workflow as { jobs: { deploy: { steps: ControllerWorkflowStep[]; }; }; }).jobs.deploy.steps;
     const step = steps.find((candidate) => candidate.name === 'Read recent API logs');
     expect(step, 'Operators need diagnostics without a deployment.').toBeDefined();
-    if (!step) {
-        throw new Error('Missing log action');
+    if (!step || typeof step.run !== 'string') {
+        throw new Error('Missing executable log action');
     }
     expect(step.if).toBe('inputs.action == \'logs\'');
     const fixture = await mkdtemp(path.join(tmpdir(), 'rallar-log-workflow-'));
