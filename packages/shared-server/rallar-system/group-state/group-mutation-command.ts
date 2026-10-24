@@ -3,6 +3,7 @@ import {
     normalizeRallarGroupDirectorHeartbeatTtlMs
 } from '@shared/api/group-director.ts';
 import { toNormalizedGroupLifecyclePolicy } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
+import { GROUP_RETENTION_METADATA_KEY, toInitialGroupRetentionState } from '@shared/api/group-retention.ts';
 import type {
     CreateGroupRequest,
     JoinGroupRequest,
@@ -90,6 +91,7 @@ function toCreateCommand(
     randomId: () => string
 ): GroupMutationCommand {
     const commandId = request.requestId ?? randomId();
+    const retention = toInitialGroupRetentionState(request.retention);
     return {
         operation: 'createGroup',
         aggregateRef: { ...scope, groupId: request.groupId },
@@ -107,7 +109,10 @@ function toCreateCommand(
                 : { lifecyclePolicy: toNormalizedGroupLifecyclePolicy(request.lifecyclePolicy) }),
             maxMembers: request.maxMembers ?? null,
             maxSessionsPerMember: request.maxSessionsPerMember ?? null,
-            metadata: structuredClone(request.metadata ?? {}),
+            metadata: {
+                ...structuredClone(request.metadata ?? {}),
+                ...(retention === null ? {} : { [GROUP_RETENTION_METADATA_KEY]: { ...retention } })
+            },
             createdByPrincipalId: request.createdByPrincipalId,
             expiresAtEpochMs: request.expiresAtEpochMs ?? null,
             purgeAfterEpochMs: request.purgeAfterEpochMs ?? null,

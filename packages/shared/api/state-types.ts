@@ -9,6 +9,7 @@ import type {
 import type { GroupDirectoryListing } from './group-directory/group-directory-listing.ts';
 import type { GroupLayoutIdentity } from './group-lifecycle/group-layout-identity.ts';
 import type { GroupLifecyclePolicyInput } from './group-lifecycle/group-lifecycle-policy.ts';
+import type { GroupRetentionIntent } from './group-retention.ts';
 import type {
     Group,
     GroupJoinMode,
@@ -87,6 +88,7 @@ export interface CreateGroupRequest extends MutationActorInput {
     readonly kind: Group['kind'];
     readonly joinMode?: GroupJoinMode;
     readonly directoryListing?: GroupDirectoryListing;
+    readonly retention?: GroupRetentionIntent;
     readonly maxMembers?: number;
     readonly maxSessionsPerMember?: number;
     readonly metadata?: ApiJsonObject;

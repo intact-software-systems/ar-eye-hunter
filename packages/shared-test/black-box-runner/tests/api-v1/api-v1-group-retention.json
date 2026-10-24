@@ -1,0 +1,535 @@
+{
+  "variables": {
+    "apiPrimary": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    },
+    "applicationId": "retention-rooms-{runId}",
+    "workspaceId": "default-{runId}",
+    "aliceUsername": {
+      "env": "RALLAR_ALICE_USERNAME",
+      "default": "alice"
+    },
+    "alicePassword": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "bobUsername": {
+      "env": "RALLAR_BOB_USERNAME",
+      "default": "bob"
+    },
+    "bobPassword": {
+      "env": "RALLAR_BOB_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "roomId": "temporary-room-{runId}"
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "primary": {
+      "type": "http",
+      "baseUrl": "{apiPrimary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ],
+  "description": "Temporary room opt-in, bounded grace, empty discovery and Quick Join exclusion, scoped admission, server-owned metadata, deadline rejection, and explicit archival.",
+  "steps": [
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-retention-alice-{runId}",
+        "body": {
+          "username": "{aliceUsername}",
+          "password": "{alicePassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceSessionId": "body.sessionId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-retention-bob-{runId}",
+        "body": {
+          "username": "{bobUsername}",
+          "password": "{bobPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobSessionId": "body.sessionId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createTemporary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/bb-retention-create-room-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{roomId}",
+          "displayName": "Temporary room {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "retention": {
+            "mode": "temporary"
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{roomId}",
+            "emptySinceEpochMs": null,
+            "metadata": {
+              "rallarRetention": {
+                "mode": "temporary",
+                "reconnectGraceMs": 600000,
+                "emptyPresenceFingerprint": null
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "hideEmptyTemporary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "entries": [],
+          "nextCursor": null
+        }
+      }
+    },
+    {
+      "name": "excludeEmptyFromQuickJoin",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/quick-join/requests/bb-retention-quick-empty-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "includeEmpty": true
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "unavailable"
+        }
+      }
+    },
+    {
+      "name": "preserveRetentionOnMetadataReplacement",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{roomId}/requests/bb-retention-replace-metadata-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "metadata": {
+            "theme": "ocean",
+            "rallarRetention": {
+              "mode": "persistent"
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "metadata": {
+              "theme": "ocean",
+              "rallarRetention": {
+                "mode": "temporary",
+                "reconnectGraceMs": 600000,
+                "emptyPresenceFingerprint": null
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "rejectTemporaryexpiresAtEpochMs",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{roomId}/requests/bb-retention-reject-expiresAtEpochMs-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "expiresAtEpochMs": 4000000000000
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-mutation-rejected",
+          "status": 400
+        }
+      }
+    },
+    {
+      "name": "rejectTemporarypurgeAfterEpochMs",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{roomId}/requests/bb-retention-reject-purgeAfterEpochMs-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "purgeAfterEpochMs": 4000000000000
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-mutation-rejected",
+          "status": 400
+        }
+      }
+    },
+    {
+      "name": "rejectTemporaryemptySinceEpochMs",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{roomId}/requests/bb-retention-reject-emptySinceEpochMs-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "emptySinceEpochMs": 4000000000000
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-mutation-rejected",
+          "status": 400
+        }
+      }
+    },
+    {
+      "name": "allowScopedLinkDuringGrace",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{roomId}/join/requests/bb-retention-join-by-link-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{roomId}",
+            "status": "active"
+          },
+          "memberCount": 2
+        }
+      }
+    },
+    {
+      "name": "allowExplicitOwnerArchive",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{roomId}/requests/bb-retention-owner-archive-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "status": "archived"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "status": "archived",
+            "metadata": {
+              "rallarRetention": {
+                "mode": "temporary",
+                "reconnectGraceMs": 600000,
+                "emptyPresenceFingerprint": null
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "createPersistentByDefault",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/bb-retention-create-persistent-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "persistent-{runId}",
+          "displayName": "Persistent room",
+          "kind": "room",
+          "joinMode": "open"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "metadata": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "includeEmptyPersistent",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/quick-join/requests/bb-retention-quick-persistent-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "includeEmpty": true
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "joined",
+          "snapshot": {
+            "group": {
+              "groupId": "persistent-{runId}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "rejectInvalidGrace",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/bb-retention-invalid-grace-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "invalid-grace-{runId}",
+          "displayName": "Temporary room {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "retention": {
+            "mode": "temporary",
+            "reconnectGraceMs": 999
+          }
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "api-mutation-request-invalid",
+          "status": 400
+        }
+      }
+    },
+    {
+      "name": "rejectTemporaryAbsoluteExpiry",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/bb-retention-invalid-expiry-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "invalid-expiry-{runId}",
+          "displayName": "Temporary room {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "retention": {
+            "mode": "temporary"
+          },
+          "expiresAtEpochMs": 4000000000000
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "api-mutation-request-invalid",
+          "status": 400
+        }
+      }
+    },
+    {
+      "name": "rejectRawRetentionMetadata",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/bb-retention-raw-metadata-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "raw-metadata-{runId}",
+          "displayName": "Invalid room",
+          "kind": "room",
+          "metadata": {
+            "rallarRetention": {
+              "mode": "temporary",
+              "reconnectGraceMs": 600000,
+              "emptyPresenceFingerprint": null
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "api-mutation-request-invalid",
+          "status": 400
+        }
+      }
+    }
+  ]
+}

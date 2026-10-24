@@ -5858,6 +5858,32 @@ components:
         fallbackMs:
           type: integer
           format: int64
+    GroupRetentionIntent:
+      description: >-
+        Creation-only room lifetime. Omission or persistent keeps the room until an explicit
+        lifecycle action. A temporary room is hidden from discovery while empty and archives
+        after its reconnect grace. Archival preserves records and denies further entry.
+        Temporary policy cannot be combined with absolute expiry or purge deadlines.
+      oneOf:
+        - type: object
+          required: [mode]
+          additionalProperties: false
+          properties:
+            mode:
+              type: string
+              enum: [persistent]
+        - type: object
+          required: [mode]
+          additionalProperties: false
+          properties:
+            mode:
+              type: string
+              enum: [temporary]
+            reconnectGraceMs:
+              type: integer
+              minimum: 1000
+              maximum: 86400000
+              default: 600000
     CreateGroupRequest:
       type: object
       required: [groupId, displayName, kind]
@@ -5880,6 +5906,8 @@ components:
           type: string
           enum: [listed, unlisted]
           description: Listing intent, independent of admission credentials. Unlisted rooms are excluded from discovery and Quick Join; scoped entry still uses normal admission. The setting is returned in metadata.rallarDirectoryListing.
+        retention:
+          $ref: '#/components/schemas/GroupRetentionIntent'
         maxMembers:
           type: integer
           format: int64
@@ -5887,15 +5915,17 @@ components:
           type: integer
           format: int64
         metadata:
-          description: Extensible group metadata. On create, rallarDirectoryListing defaults to listed when absent and an explicit directoryListing takes precedence. On update, the stored listing key is preserved; use directoryListing to change it.
+          description: Extensible group metadata. rallarDirectoryListing defaults to listed when absent and explicit directoryListing takes precedence. rallarRetention is server-owned and cannot be supplied in creation metadata; use retention intent instead.
           type: object
           additionalProperties: true
         expiresAtEpochMs:
           type: integer
           format: int64
+          description: Absolute expiry for persistent rooms; rejected for temporary rooms.
         purgeAfterEpochMs:
           type: integer
           format: int64
+          description: Absolute storage expiry for persistent rooms; rejected for temporary rooms.
         lifecyclePolicy:
           $ref: '#/components/schemas/GroupLifecyclePolicyInput'
         reason:
@@ -5931,18 +5961,21 @@ components:
           type: integer
           format: int64
         metadata:
-          description: Extensible group metadata. On create, rallarDirectoryListing defaults to listed when absent and an explicit directoryListing takes precedence. On update, the stored listing key is preserved; use directoryListing to change it.
+          description: Extensible group metadata. The stored rallarDirectoryListing and rallarRetention entries are preserved even when replacement metadata carries different values. Use directoryListing to change listing. Retention can be selected only at creation.
           type: object
           additionalProperties: true
         expiresAtEpochMs:
           type: integer
           format: int64
+          description: Rejected for temporary rooms.
         emptySinceEpochMs:
           type: integer
           format: int64
+          description: Rejected for temporary rooms, whose idle observation is server-owned.
         purgeAfterEpochMs:
           type: integer
           format: int64
+          description: Rejected for temporary rooms.
         reason:
           type: string
         traceId:

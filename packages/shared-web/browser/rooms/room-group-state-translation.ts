@@ -117,6 +117,7 @@ export interface RoomCreateGroupStateFields extends
         | 'description'
         | 'joinMode'
         | 'directoryListing'
+        | 'retention'
         | 'maxMembers'
         | 'maxSessionsPerMember'
         | 'metadata'
@@ -220,6 +221,7 @@ export function toCreateGroupStateRequest(
         ...(room.description === undefined ? {} : { description: room.description }),
         joinMode: room.joinMode ?? 'invite-only',
         ...(room.directoryListing === undefined ? {} : { directoryListing: room.directoryListing }),
+        ...(room.retention === undefined ? {} : { retention: room.retention }),
         ...(room.maxMembers === undefined ? {} : { maxMembers: room.maxMembers }),
         ...(room.maxSessionsPerMember === undefined
             ? {}

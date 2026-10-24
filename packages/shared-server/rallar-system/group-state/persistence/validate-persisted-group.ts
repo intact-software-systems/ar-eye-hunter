@@ -14,6 +14,7 @@ import {
     GROUP_TRANSPORT_STATES
 } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import { MAX_GROUP_CONCURRENT_EDGE_SETUPS } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
+import { readGroupRetentionState } from '@shared/api/group-retention.ts';
 import type { AuditStamp, Group, GroupMember, GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
 
@@ -102,7 +103,7 @@ export function validateStoredGroup(group: unknown, ref: GroupRef): asserts grou
     requireOneOf(value.joinMode, ['invite-only', 'code', 'open'], 'Stored group joinMode');
     nullablePositiveSafeInteger(value.maxMembers, 'Stored group maxMembers');
     nullablePositiveSafeInteger(value.maxSessionsPerMember, 'Stored group maxSessionsPerMember');
-    requireJsonSafe(requireRecord(value.metadata, 'Stored group metadata'), 'Stored group metadata');
+    assertStoredGroupRetention(value);
     requirePositiveSafeInteger(value.activeMemberCount, 'Stored group activeMemberCount');
     requireNonEmptyString(value.ownerPrincipalId, 'Stored group ownerPrincipalId');
     requirePositiveSafeInteger(value.snapshotVersion, 'Stored group snapshotVersion');
@@ -116,6 +117,21 @@ export function validateStoredGroup(group: unknown, ref: GroupRef): asserts grou
     requireOneOf(value.lifecycleState, GROUP_LIFECYCLE_STATES, 'Stored group lifecycleState');
     assertStoredGroupFormation(value);
     assertStoredGroupTransport(value);
+}
+
+function assertStoredGroupRetention(group: ValidationRecord): void {
+    const metadata = requireRecord(group.metadata, 'Stored group metadata');
+    requireJsonSafe(metadata, 'Stored group metadata');
+    const retention = readGroupRetentionState(metadata);
+    if (retention === null) {
+        return;
+    }
+    if (group.expiresAtEpochMs !== null || group.purgeAfterEpochMs !== null) {
+        throw new TypeError('Stored temporary group must not have absolute expiry or purge deadlines');
+    }
+    if ((retention.emptyPresenceFingerprint === null) !== (group.emptySinceEpochMs === null)) {
+        throw new TypeError('Stored temporary group idle clock and presence observation must agree');
+    }
 }
 
 function assertStoredGroupLifecycleAudits(value: ValidationRecord): void {
