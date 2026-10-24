@@ -116,6 +116,7 @@ export interface RoomCreateGroupStateFields extends
         | 'displayName'
         | 'description'
         | 'joinMode'
+        | 'directoryListing'
         | 'maxMembers'
         | 'maxSessionsPerMember'
         | 'metadata'
@@ -218,6 +219,7 @@ export function toCreateGroupStateRequest(
         kind: 'room',
         ...(room.description === undefined ? {} : { description: room.description }),
         joinMode: room.joinMode ?? 'invite-only',
+        ...(room.directoryListing === undefined ? {} : { directoryListing: room.directoryListing }),
         ...(room.maxMembers === undefined ? {} : { maxMembers: room.maxMembers }),
         ...(room.maxSessionsPerMember === undefined
             ? {}
@@ -402,30 +404,6 @@ export function toLeaveRoomMemberGroupStateRequest(
     };
 }
 
-export function toRoomFormationGroupStateRequest(
-    input: ToRoomFormationGroupStateRequestInput
-): RoomFormationGroupStateRequest {
-    const audit: TransitionStateGroupLifecycleBody = input.reason === undefined ? {} : { reason: input.reason };
-    switch (input.command.command) {
-        case 'connect':
-            return {
-                command: 'connect',
-                body: {
-                    ...audit,
-                    expectedFormationEpoch: input.command.expectedFormationEpoch,
-                    expectedLayout: input.command.expectedLayout
-                }
-            };
-        case 'reconfigure':
-            return {
-                command: 'reconfigure',
-                body: input.command.landing === undefined ? audit : { ...audit, landing: input.command.landing }
-            };
-        default:
-            return { command: input.command.command, body: audit };
-    }
-}
-
 export function toRallarRoomSummary(input: ToRallarRoomSummaryInput): RallarRoomSummary {
     return {
         roomId: readGroupId(input.snapshot),
@@ -516,6 +494,7 @@ function toRoomUpdateFields(request: UpdateStateGroupBody): UpdateStateGroupBody
         ...(request.kind === undefined ? {} : { kind: request.kind }),
         ...(request.status === undefined ? {} : { status: request.status }),
         ...(request.joinMode === undefined ? {} : { joinMode: request.joinMode }),
+        ...(request.directoryListing === undefined ? {} : { directoryListing: request.directoryListing }),
         ...(request.maxMembers === undefined ? {} : { maxMembers: request.maxMembers }),
         ...(request.maxSessionsPerMember === undefined
             ? {}

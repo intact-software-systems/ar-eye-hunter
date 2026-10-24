@@ -1478,6 +1478,32 @@
       "description": "Group directory contract: a non-member lists joinable open groups as safe entries, with kind and name filters, a stable keyset-paged order, an empty lobby hidden by default, members excluded once they can read the room in full, ETag revalidation with 304, and typed 400/401 failures."
     },
     {
+      "id": "api-v1-group-directory-listing",
+      "recipe": "tests/api-v1/api-v1-group-directory-listing.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-directory-listing",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "Unlisted rooms: scoped entry without discovery, create/update listing intent, caller authorization, ETag removal, Quick Join exclusion, replay, and membership preservation."
+    },
+    {
       "id": "api-v1-group-quick-join",
       "recipe": "tests/api-v1/api-v1-group-quick-join.json",
       "category": "api-v1-black-box",

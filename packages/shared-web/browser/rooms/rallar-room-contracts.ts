@@ -82,6 +82,7 @@ export interface RallarCreateRoomInput extends
         CreateStateGroupBody,
         | 'description'
         | 'joinMode'
+        | 'directoryListing'
         | 'maxMembers'
         | 'maxSessionsPerMember'
         | 'metadata'
@@ -107,6 +108,7 @@ export interface RallarUpdateRoomInput extends
         | 'description'
         | 'kind'
         | 'joinMode'
+        | 'directoryListing'
         | 'maxMembers'
         | 'maxSessionsPerMember'
         | 'metadata'

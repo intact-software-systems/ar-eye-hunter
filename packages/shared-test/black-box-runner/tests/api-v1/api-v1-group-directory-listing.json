@@ -1,0 +1,627 @@
+{
+  "variables": {
+    "apiPrimary": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    },
+    "applicationId": "unlisted-rooms-{runId}",
+    "workspaceId": "default-{runId}",
+    "aliceUsername": {
+      "env": "RALLAR_ALICE_USERNAME",
+      "default": "alice"
+    },
+    "alicePassword": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "bobUsername": {
+      "env": "RALLAR_BOB_USERNAME",
+      "default": "bob"
+    },
+    "bobPassword": {
+      "env": "RALLAR_BOB_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "roomId": "unlisted-room-{runId}"
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "primary": {
+      "type": "http",
+      "baseUrl": "{apiPrimary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ],
+  "description": "Unlisted rooms: scoped entry without discovery, create/update listing intent, caller authorization, ETag removal, Quick Join exclusion, replay, and membership preservation.",
+  "steps": [
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-unlisted-alice-{runId}",
+        "body": {
+          "username": "{aliceUsername}",
+          "password": "{alicePassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceSessionId": "body.sessionId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-unlisted-bob-{runId}",
+        "body": {
+          "username": "{bobUsername}",
+          "password": "{bobPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobSessionId": "body.sessionId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createPublicByDefault",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/bb-unlisted-create-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{roomId}",
+          "displayName": "Shared room {runId}",
+          "kind": "room",
+          "joinMode": "open"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{roomId}",
+            "joinMode": "open"
+          }
+        }
+      }
+    },
+    {
+      "name": "publicDefaultIsListed",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "outputs": {
+          "publicEtag": "headers.etag"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "entries": [
+            {
+              "groupRef": {
+                "groupId": "{roomId}"
+              },
+              "joinMode": "open"
+            }
+          ],
+          "nextCursor": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "hideRoom",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{roomId}/requests/bb-unlisted-hideRoom-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "directoryListing": "unlisted"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "joinMode": "open",
+            "metadata": {
+              "rallarDirectoryListing": "unlisted"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "replayHide",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{roomId}/requests/bb-unlisted-hideRoom-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "directoryListing": "unlisted"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "joinMode": "open",
+            "metadata": {
+              "rallarDirectoryListing": "unlisted"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "rejectChangedReuse",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{roomId}/requests/bb-unlisted-hideRoom-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "directoryListing": "listed"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "app-inbox-idempotency-conflict",
+          "status": 409
+        }
+      }
+    },
+    {
+      "name": "oldValidatorRemovesHiddenRoom",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}",
+          "If-None-Match": "{publicEtag}"
+        },
+        "outputs": {
+          "hiddenEtag": "headers.etag"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "entries": [],
+          "nextCursor": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "quickJoinCannotFindHiddenRoom",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/quick-join/requests/bb-unlisted-quick-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "includeEmpty": true
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "unavailable"
+        }
+      }
+    },
+    {
+      "name": "enterHiddenRoomByReference",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{roomId}/join/requests/bb-unlisted-enter-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "hidingKeepsTheMember",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{roomId}/requests/bb-unlisted-hidingKeepsTheMember-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "directoryListing": "unlisted"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "memberCannotListRoom",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{roomId}/requests/bb-unlisted-memberCannotListRoom-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "directoryListing": "listed"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "authorization-denied",
+          "status": 403
+        }
+      }
+    },
+    {
+      "name": "metadataDoesNotRelistRoom",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{roomId}/requests/bb-unlisted-metadataDoesNotRelistRoom-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "metadata": {
+            "theme": "forest",
+            "rallarDirectoryListing": "listed"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "metadata": {
+              "theme": "forest",
+              "rallarDirectoryListing": "unlisted"
+            }
+          },
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "activeMemberStillReadsHiddenRoom",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{roomId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "metadata": {
+              "rallarDirectoryListing": "unlisted"
+            }
+          },
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "leaveMembershipForDirectoryCheck",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{roomId}/members/{bobClientId}/requests/bb-unlisted-leave-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "status": "left"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "left"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "listRoom",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{roomId}/requests/bb-unlisted-listRoom-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "directoryListing": "listed"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "metadata": {
+              "rallarDirectoryListing": "listed"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "relistingInvalidatesHiddenValidator",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}",
+          "If-None-Match": "{hiddenEtag}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "entries": [
+            {
+              "groupRef": {
+                "groupId": "{roomId}"
+              },
+              "joinMode": "open"
+            }
+          ],
+          "nextCursor": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "createUnlistedFromBirth",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/bb-unlisted-create-hidden-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "hidden-at-birth-{runId}",
+          "displayName": "Hidden at birth {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "directoryListing": "unlisted"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "joinMode": "open",
+            "metadata": {
+              "rallarDirectoryListing": "unlisted"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "newUnlistedRoomIsNeverListed",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true&q=Hidden%20at%20birth",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "entries": [],
+          "nextCursor": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "invalidListingIsRejected",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/bb-unlisted-invalid-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "invalid-{runId}",
+          "displayName": "Shared room {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "directoryListing": "invalid"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "api-mutation-request-invalid",
+          "status": 400
+        }
+      }
+    }
+  ]
+}

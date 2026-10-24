@@ -10,7 +10,7 @@ test('retains a manual private destination through signed-out reload and cancell
     await page.goto('/');
     await page.getByLabel('Room reference', { exact: true }).fill('private-expedition');
     await page.getByLabel('Room code', { exact: true }).fill('private-code');
-    await page.getByRole('button', { name: 'Enter private room', exact: true }).click();
+    await page.getByRole('button', { name: 'Enter room', exact: true }).click();
     await expect(page.getByText('Sign in to enter this room.', { exact: true })).toBeVisible();
     await page.reload();
     await expect(page.getByText('Sign in to enter this room.', { exact: true })).toBeVisible();
@@ -80,7 +80,7 @@ roomBrowserTest(
             await outsiderPage.goto(link);
             await expect(outsiderPage.getByRole('alert')).toContainText('Room entry was denied');
             await outsiderPage.getByLabel('Room code', { exact: true }).fill(joinCode);
-            await outsiderPage.getByRole('button', { name: 'Enter private room', exact: true }).click();
+            await outsiderPage.getByRole('button', { name: 'Enter room', exact: true }).click();
             await expect(outsiderPage.getByText(`Entered ${groupId}.`, { exact: true })).toBeVisible();
         }
         finally {
@@ -127,6 +127,55 @@ roomBrowserTest(
         await guestPage.reload();
         await expect(guestPage.getByText(`Entered ${groupId}.`, { exact: true })).toBeVisible();
         await expect(guestPage.getByRole('button', { name: /Join as/ })).toBeVisible();
+    }
+);
+
+roomBrowserTest(
+    'shares an unlisted expedition and keeps participants when the host hides it',
+    async ({ page: host, guest }, testInfo) => {
+        roomBrowserTest.skip(
+            !['1', 'true'].includes(process.env.RELIC_HUNTERS_FULL_STACK ?? ''),
+            'Requires the paired Relic server.'
+        );
+        await host.goto('/');
+        await registerPrivateHunter(host, 'unlisted-host');
+        await expect(host.getByRole('button', { name: 'New unlisted room', exact: true })).toBeVisible();
+        await host.getByRole('button', { name: 'New unlisted room', exact: true }).click();
+        await expect(host.getByRole('button', { name: 'List room', exact: true })).toBeEnabled();
+        const link = await host.getByLabel('Room link', { exact: true }).inputValue();
+        expect(link).toContain('#rallar-room?');
+        expect(link).not.toContain('joinCode=');
+        const roomName = await host.locator('.room-row.active span').innerText();
+        await guest.goto('/');
+        await registerPrivateHunter(guest, 'unlisted-guest');
+        await guest.getByRole('button', { name: 'Refresh', exact: true }).click();
+        await expect(guest.locator('.room-row').filter({ hasText: roomName })).toHaveCount(0);
+        await host.route('**/groups/*/requests/*', async (route) => {
+            if (route.request().method() === 'PUT' && route.request().postDataJSON().directoryListing) {
+                await route.fulfill({ status: 403, json: { error: 'Listing unavailable' } });
+            }
+            else {
+                await route.continue();
+            }
+        });
+        await host.getByRole('button', { name: 'List room', exact: true }).click();
+        await expect(host.getByRole('alert')).toContainText('Could not change room listing');
+        await expect(host.getByRole('button', { name: 'List room', exact: true })).toBeEnabled();
+        await host.unroute('**/groups/*/requests/*');
+        await host.getByRole('button', { name: 'List room', exact: true }).click();
+        await expect(host.getByRole('button', { name: 'Unlist room', exact: true })).toBeEnabled();
+        await guest.getByRole('button', { name: 'Refresh', exact: true }).click();
+        await expect(guest.locator('.room-row').filter({ hasText: roomName })).toHaveCount(1);
+        await host.getByRole('button', { name: 'Unlist room', exact: true }).click();
+        await expect(host.getByRole('button', { name: 'List room', exact: true })).toBeEnabled();
+        await guest.getByRole('button', { name: 'Refresh', exact: true }).click();
+        await expect(guest.locator('.room-row').filter({ hasText: roomName })).toHaveCount(0);
+        await guest.goto(link);
+        await expect(guest.getByRole('button', { name: /Join as/ })).toBeVisible();
+        await host.getByRole('button', { name: 'List room', exact: true }).click();
+        await host.getByRole('button', { name: 'Unlist room', exact: true }).click();
+        await playPrivateExpedition(host, guest);
+        await guest.screenshot({ path: testInfo.outputPath('unlisted-expedition-participating.png'), fullPage: true });
     }
 );
 

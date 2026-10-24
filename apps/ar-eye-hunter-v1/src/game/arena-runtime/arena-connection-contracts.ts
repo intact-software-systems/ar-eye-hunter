@@ -13,6 +13,7 @@ import type { ALReceiptMode } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { AuthSessionStorageKind } from '@shared/api/auth.ts';
+import type { GroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
 import type { GroupDirectoryEntry, GroupDirectoryOrder } from '@shared/api/group-directory/group-directory-types.ts';
 import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
 
@@ -169,7 +170,10 @@ export interface ArenaConnection {
     logout(): Promise<void>;
     refreshRooms(): Promise<void>;
     changeDirectoryOrder(order: GroupDirectoryOrder): Promise<void>;
-    createArenaRoom(joinMode?: GroupJoinMode): Promise<GroupSnapshot | undefined>;
+    createArenaRoom(
+        joinMode?: GroupJoinMode,
+        directoryListing?: GroupDirectoryListing
+    ): Promise<GroupSnapshot | undefined>;
     quickJoinArenaRoom(): Promise<'joined' | 'unavailable' | undefined>;
     joinRoom(roomId: string): Promise<void>;
     appointSelfAsDirector(): Promise<void>;

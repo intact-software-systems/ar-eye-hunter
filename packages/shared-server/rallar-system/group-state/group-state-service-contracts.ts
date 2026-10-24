@@ -17,6 +17,7 @@ import type {
     GroupJoinCodeResponse,
     HeartbeatGroupPresenceSessionRequest,
     JoinGroupRequest,
+    MutationActorInput,
     RemoveGroupMemberRequest,
     RevokeGroupInviteRequest,
     RotateGroupJoinCodeRequest,
@@ -109,33 +110,53 @@ export type GroupMutationAuthority = IssuedAuthSession | GroupMutationAuthorityP
 
 export const GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS = 253_402_300_799_999;
 
-export interface GroupMutationDescriptor {
-    readonly operation: GroupMutationCommand['operation'];
+interface GroupMutationDescriptorIdentity {
     readonly scope: StateScope;
     readonly groupId: string;
     readonly targetPrincipalId: string | null;
     readonly sessionId: string | null;
-    readonly request:
-        | GroupConnectAppInboxPayload['request']
-        | GroupReconfigureAppInboxPayload['request']
-        | CreateGroupRequest
-        | UpdateGroupRequest
-        | AppointGroupDirectorRequest
-        | JoinGroupRequest
-        | CreateGroupInviteRequest
-        | RevokeGroupInviteRequest
-        | AcceptGroupInviteRequest
-        | RotateGroupJoinCodeRequest
-        | RemoveGroupMemberRequest
-        | BanGroupMemberRequest
-        | UnbanGroupMemberRequest
-        | SetGroupMemberRoleRequest
-        | TransferGroupOwnershipRequest
-        | UpsertGroupMemberRequest
-        | ConnectGroupPresenceSessionRequest
-        | HeartbeatGroupPresenceSessionRequest
-        | DisconnectGroupPresenceSessionRequest;
 }
+
+interface GroupMutationRequests {
+    readonly createGroup: CreateGroupRequest;
+    readonly updateGroup: UpdateGroupRequest;
+    readonly appointDirector: AppointGroupDirectorRequest;
+    readonly planGroupLayout: MutationActorInput;
+    readonly connectGroup: GroupConnectAppInboxPayload['request'];
+    readonly startGroupFormation: MutationActorInput;
+    readonly resetGroupFormation: MutationActorInput;
+    readonly activateGroup: MutationActorInput;
+    readonly reconfigureGroup: GroupReconfigureAppInboxPayload['request'];
+    readonly failGroupFormation: MutationActorInput;
+    readonly applyPlannedLayout: MutationActorInput;
+    readonly updateGroupActivationStatus: MutationActorInput;
+    readonly pauseGroupTransport: MutationActorInput;
+    readonly resumeGroupTransport: MutationActorInput;
+    readonly joinGroup: JoinGroupRequest;
+    readonly acceptGroupInvite: AcceptGroupInviteRequest;
+    readonly createGroupInvite: CreateGroupInviteRequest;
+    readonly revokeGroupInvite: RevokeGroupInviteRequest;
+    readonly grantGroupAdmission: MutationActorInput;
+    readonly declineGroupAdmission: MutationActorInput;
+    readonly removeGroupMember: RemoveGroupMemberRequest;
+    readonly banGroupMember: BanGroupMemberRequest;
+    readonly unbanGroupMember: UnbanGroupMemberRequest;
+    readonly setGroupMemberRole: SetGroupMemberRoleRequest;
+    readonly transferGroupOwnership: TransferGroupOwnershipRequest;
+    readonly upsertMember: UpsertGroupMemberRequest;
+    readonly rotateGroupJoinCode: RotateGroupJoinCodeRequest;
+    readonly connectPresence: ConnectGroupPresenceSessionRequest;
+    readonly heartbeatPresence: HeartbeatGroupPresenceSessionRequest;
+    readonly disconnectPresence: DisconnectGroupPresenceSessionRequest;
+}
+
+/** The operation owns its request shape; command translation preserves that relationship. */
+export type GroupMutationDescriptor = {
+    [Operation in GroupMutationCommand['operation']]: GroupMutationDescriptorIdentity & {
+        readonly operation: Operation;
+        readonly request: GroupMutationRequests[Operation];
+    };
+}[GroupMutationCommand['operation']];
 
 export interface GroupMutationIngress {
     readonly authorityProof: GroupMutationAuthorityProof | null;

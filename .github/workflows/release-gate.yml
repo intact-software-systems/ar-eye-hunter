@@ -18,8 +18,8 @@ permissions:
   actions: read
 
 jobs:
-  # Every lane below runs in parallel on its own runner. A caller's `needs` on this reusable workflow
-  # fails when any blocking lane fails; the ALM observation job is continue-on-error.
+  # Every lane runs in parallel on its own runner. A caller waits for all lanes, and any failed lane
+  # fails this reusable workflow.
   checks:
     name: Static checks
     runs-on: ubuntu-latest
@@ -187,7 +187,8 @@ jobs:
   e2e-game-rooms:
     name: Browser tests (game rooms)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Allow slow browser setup plus the observed 16 minutes for both game suites.
+    timeout-minutes: 30
     env:
       DATABASE_URL: postgresql://app:app@localhost:5432/appdb
       RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory

@@ -1,4 +1,4 @@
-import type { JsonWireValue } from '../../../protocol/json-wire-identity.ts';
+import type { JsonWireObject, JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import { GroupMutationRejectedError, type GroupMutationCommand } from '../group-mutation-contracts.ts';
 import {
     isGroupInputRecord,
@@ -60,7 +60,7 @@ export function validateGroupMutationRequest(
     if (operation === 'connectPresence' || operation === 'heartbeatPresence' || operation === 'disconnectPresence') {
         return [...issues, ...validateGroupPresenceMutationRequest(operation, request)];
     }
-    return [...issues, ...validateGroupMutationOperationInput({ operation, input: request })];
+    return [...issues, ...validateGroupMutationOperationInput({ operation, input: request as JsonWireObject })];
 }
 
 export function validateGroupPresenceMutationRequest(
@@ -167,6 +167,7 @@ const GROUP_MUTATION_REQUEST_KEYS: Readonly<Record<GroupMutationCommand['operati
         'description',
         'kind',
         'joinMode',
+        'directoryListing',
         'maxMembers',
         'maxSessionsPerMember',
         'metadata',
@@ -183,6 +184,7 @@ const GROUP_MUTATION_REQUEST_KEYS: Readonly<Record<GroupMutationCommand['operati
         'kind',
         'status',
         'joinMode',
+        'directoryListing',
         'maxMembers',
         'maxSessionsPerMember',
         'metadata',

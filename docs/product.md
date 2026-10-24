@@ -29,11 +29,14 @@ rules, rendering, and product policy.
 `docs/architecture.md` records why these boundaries exist. `examples/README.md`
 shows the smallest copyable use of each surface.
 
-## Private room entry
+## Sharing rooms
 
 AR Eye Hunter and Relic Hunters let hosts create code-protected or invite-only
 rooms, share a link, rotate a code, and invite an account or revoke its invitation.
-Private rooms stay outside the open directory. A link identifies its application,
+Hosts can also create an open unlisted room or hide an existing open room. Unlisted rooms stay
+outside discovery and Quick Join, while anyone with the scoped link can request entry. Owners and
+admins can list them again without changing membership. Listing does not bypass capacity, bans,
+or lifecycle admission rules. Private rooms stay outside the open directory regardless of listing. A link identifies its application,
 workspace, and room; an invite-only link still requires an account invitation.
 
 Guests keep the intended destination through sign-in and tab reload. They can

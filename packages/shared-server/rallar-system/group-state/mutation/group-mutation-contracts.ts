@@ -1,3 +1,4 @@
+import type { GroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
 import type { GroupEvidenceWatermark } from '@shared/api/group-lifecycle/activation-status/compute-group-formation-reading.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type {
@@ -66,6 +67,8 @@ export type GroupMutationCommand =
                     description: string | null;
                     kind: Group['kind'];
                     joinMode: GroupJoinMode;
+                    /** Sparse listing intent; omission uses metadata or the listed default. */
+                    directoryListing?: GroupDirectoryListing;
                     maxMembers: number | null;
                     maxSessionsPerMember: number | null;
                     metadata: Readonly<Group['metadata']>;
@@ -89,6 +92,8 @@ export type GroupMutationCommand =
                     kind: Group['kind'] | null;
                     status: GroupStatus | null;
                     joinMode: GroupJoinMode | null;
+                    /** Sparse listing intent; omission preserves the current stored setting. */
+                    directoryListing?: GroupDirectoryListing;
                     maxMembers: number | null;
                     maxSessionsPerMember: number | null;
                     metadata: Readonly<Group['metadata']> | null;
@@ -554,28 +559,28 @@ export type PresenceAdmissionCandidate =
         expectedRevision: number;
     }>;
 
-export type GroupMutationDomainWrite = Readonly<{
-    outcome: 'write';
-    guard: GroupGuardCandidate | PresenceGuardCandidate;
-    members: readonly GroupMember[];
-    initialPresenceSummary: InitialGroupPresenceSummaryCandidate | null;
-    presenceAdmission: PresenceAdmissionCandidate | null;
-    event: GroupEvent;
-    receipt: GroupMutationReceipt;
-    idempotency: GroupMutationIdempotencyRecord | null;
-    outboxWrites: readonly AppOutboxInsert[];
-    lifecyclePolicy: GroupLifecyclePolicy | null;
+export interface GroupMutationDomainWrite {
+    readonly outcome: 'write';
+    readonly guard: GroupGuardCandidate | PresenceGuardCandidate;
+    readonly members: readonly GroupMember[];
+    readonly initialPresenceSummary: InitialGroupPresenceSummaryCandidate | null;
+    readonly presenceAdmission: PresenceAdmissionCandidate | null;
+    readonly event: GroupEvent;
+    readonly receipt: GroupMutationReceipt;
+    readonly idempotency: GroupMutationIdempotencyRecord | null;
+    readonly outboxWrites: readonly AppOutboxInsert[];
+    readonly lifecyclePolicy: GroupLifecyclePolicy | null;
     /** Accepted layout committed atomically with the authoritative group row. */
-    acceptedLayoutPromotion: Extract<PlannedLayoutPromotion, { outcome: 'apply'; }> | null;
+    readonly acceptedLayoutPromotion: Extract<PlannedLayoutPromotion, { outcome: 'apply'; }> | null;
     /** Planned layout revision re-asserted by a layout-fenced command. */
-    plannedLayoutFence: GroupPlannedLayoutRow | null;
-    layoutTombstones: GroupLayoutTombstones | null;
-    connectTriggerLatchEffect: RuntimeStateGuardedBatchEffect | null;
-}>;
+    readonly plannedLayoutFence: GroupPlannedLayoutRow | null;
+    readonly layoutTombstones: GroupLayoutTombstones | null;
+    readonly connectTriggerLatchEffect: RuntimeStateGuardedBatchEffect | null;
+}
 
-export type GroupMutationPersistence = Readonly<{
-    guardedBatch: RuntimeStateGuardedBatchWrite;
-    lifecyclePolicyWrite:
+export interface GroupMutationPersistence {
+    readonly guardedBatch: RuntimeStateGuardedBatchWrite;
+    readonly lifecyclePolicyWrite:
         | Readonly<{
             namespace: string;
             key: string;
@@ -584,12 +589,12 @@ export type GroupMutationPersistence = Readonly<{
             updatedAtIsoTimestamp: string;
         }>
         | null;
-    eventWrite: Readonly<{
+    readonly eventWrite: Readonly<{
         event: GroupEvent;
         workspaceKey: string;
         eventJson: string;
     }>;
-}>;
+}
 
 export type GroupMutationComputedWrite =
     & GroupMutationDomainWrite

@@ -175,6 +175,13 @@ function toPhaseRecord(phase: StateWriteDiagnosticPhase): DiagnosticRecord | und
         eventStart: 'approximate-completion-minus-rounded-duration',
         exactKindEndpoints: 'unavailable',
         selectedDueTimestamp: 'unavailable',
+        executorCounterBoundary: 'app-inbox-transaction-scope',
+        executorCounterLimits: [
+            'statement-call-to-completion-sum',
+            'begin-wait-until-callback-entry',
+            'failed-before-entry-reports-zero-begin-wait',
+            'driver-transaction-control-not-counted'
+        ],
         reservationObservationBoundary: 'postgres-update-returning',
         reservationObservationLimits: [
             'ordinary-unobserved-postgres-retry-only',
@@ -254,7 +261,7 @@ function toTimingRecord(
     ) {
         return undefined;
     }
-    return {
+    const record: DiagnosticRecord = {
         record: 'timing',
         component: event.component,
         operation: event.operation,
@@ -265,6 +272,27 @@ function toTimingRecord(
         queueAgeMs: typeof queueAgeMs === 'number' ? queueAgeMs : 'unavailable',
         dueAgeMs: typeof dueAgeMs === 'number' ? dueAgeMs : 'unavailable'
     };
+    if (event.component !== 'app-inbox-phase' || event.operation !== 'transaction') {
+        return record;
+    }
+    const executorCounters = toTransactionExecutorCounters(event.details);
+    return executorCounters ? { ...record, executorCounters } : undefined;
+}
+
+function toTransactionExecutorCounters(details: RallarTimingEvent['details']): DiagnosticRecord | undefined {
+    const statements = details?.statements;
+    const executorWaitMs = details?.executorWaitMs;
+    const beginWaitMs = details?.beginWaitMs;
+    if (statements === undefined && executorWaitMs === undefined && beginWaitMs === undefined) {
+        return { availability: 'unavailable' };
+    }
+    if (
+        !isNonnegative(statements) || !Number.isSafeInteger(statements) || !isNonnegative(executorWaitMs) ||
+        !isNonnegative(beginWaitMs)
+    ) {
+        return undefined;
+    }
+    return { availability: 'available', statements, executorWaitMs, beginWaitMs };
 }
 
 function toReleaseRecord(

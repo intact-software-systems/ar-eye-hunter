@@ -59,6 +59,7 @@ function readDirectory(
         timing: () => {}
     });
     const strict = options.strict ?? true;
+    const nowEpochMs = options.nowEpochMs;
     const dependencies = createGroupStateRouteTestDependencies({
         strictReadAuthorization: strict,
         groupService: {
@@ -74,7 +75,7 @@ function readDirectory(
         },
         groupDefaultMaxMembers: options.groupDefaultMaxMembers ?? null,
         rtcRttRepository: options.rtcRttRepository,
-        nowEpochMs: options.nowEpochMs === undefined ? undefined : () => options.nowEpochMs!,
+        nowEpochMs: nowEpochMs === undefined ? undefined : () => nowEpochMs,
         requireApiAuthSession: () =>
             options.authenticated === false
                 ? Promise.reject(authenticationRequired('Unauthorized: Missing bearer token'))
@@ -420,6 +421,47 @@ Deno.test('group directory invalidates a validator when count capacity visibilit
         assert.equal(response.status, 200);
         assert.deepEqual((await readPage(response)).entries, []);
     }
+});
+
+Deno.test('unlisting removes a room despite an old ETag and relisting makes it discoverable again', async () => {
+    const snapshot = openSnapshot('shared-link-room', ['bob']);
+    const first = await readDirectory([snapshot]);
+    const etag = first.headers.get('etag');
+    assert.ok(etag);
+    const hidden = { ...snapshot, group: { ...snapshot.group, metadata: { rallarDirectoryListing: 'unlisted' } } };
+
+    const response = await readDirectory([hidden], { headers: { 'if-none-match': etag } });
+    assert.equal(response.status, 200);
+    assert.notEqual(response.headers.get('etag'), etag);
+    assert.deepEqual((await readPage(response)).entries, []);
+    const hiddenEtag = response.headers.get('etag');
+    assert.ok(hiddenEtag);
+    const relisted = { ...snapshot, group: { ...snapshot.group, metadata: { rallarDirectoryListing: 'listed' } } };
+    const restored = await readDirectory([relisted], { headers: { 'if-none-match': hiddenEtag } });
+    assert.equal(restored.status, 200);
+    assert.deepEqual((await readPage(restored)).entries.map((entry) => entry.groupRef.groupId), ['shared-link-room']);
+});
+
+Deno.test('unlisted and corrupt rooms expose neither directory data nor latency evidence reads', async () => {
+    const snapshot = openSnapshot('hidden', ['bob']);
+    let rttReads = 0;
+    const snapshots = ['unlisted', 'future-mode'].map((listing) => ({
+        ...snapshot,
+        group: { ...snapshot.group, metadata: { rallarDirectoryListing: listing } }
+    }));
+    const response = await readDirectory(snapshots, {
+        path: `${DIRECTORY_PATH}?includeEmpty=true&order=peer-rtt`,
+        rtcRttRepository: {
+            listMeasurementEntriesForEndpoints: async () => {
+                rttReads += 1;
+                return [];
+            }
+        }
+    });
+
+    assert.equal(response.status, 200);
+    assert.deepEqual((await readPage(response)).entries, []);
+    assert.equal(rttReads, 0);
 });
 
 Deno.test('group directory denies cross-origin access to its response and validator for an untrusted origin', async () => {

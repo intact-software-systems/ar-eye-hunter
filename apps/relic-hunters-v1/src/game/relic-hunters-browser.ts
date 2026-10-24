@@ -26,6 +26,7 @@ export function browserRelicRuntimeDeps(): RelicHuntersRuntime.Dependencies {
         subscriptions: () => rallar.subscriptions(),
         roomState: () => rallar.rooms.state(),
         refreshRooms: () => rallar.rooms.refresh(),
+        listDirectory: (request) => rallar.rooms.directory(request, { scope: RELIC_ROOM_SCOPE }),
         waitForPresence: (roomId, options) => rallar.rooms.waitForPresence(roomId, options),
         onRoomsChange: (handler) => rallar.rooms.onChange(handler),
         onSnapshotMessage: (handler) =>
@@ -38,7 +39,8 @@ export function browserRelicRuntimeDeps(): RelicHuntersRuntime.Dependencies {
         onHunterEventMessage: (roomId, subscription) => subscribeRelicHunterEvents(rallar, roomId, subscription),
         authorityStatus: () => authority.status(),
         publishRtcSnapshot: (snapshot) => authority.publishSnapshotRepair(snapshot),
-        createRoom: (displayName, joinMode) => rallar.rooms.createAndSwitch({ displayName, joinMode }),
+        createRoom: (displayName, joinMode, directoryListing) =>
+            rallar.rooms.createAndSwitch({ displayName, joinMode, directoryListing }),
         joinRoom: async (roomId) => {
             await rallar.rooms.enter(roomId);
         },

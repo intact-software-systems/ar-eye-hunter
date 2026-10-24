@@ -72,6 +72,22 @@ can replace an invitation with stale or incorrectly scoped state. Both games
 consume the shared entry owner and retain their own participation rules.
 `examples/browser-startup-room/README.md` shows the browser sequence.
 
+## Discovery listing is group policy
+
+Create and update accept sparse `directoryListing` intent and store it in canonical
+`Group.metadata.rallarDirectoryListing`. Absence means `listed`; a malformed present value is hidden.
+This uses the existing metadata extension map without changing persisted schemas or adding a migration.
+Generic metadata replacement preserves the stored listing key; explicit listing intent owns changes.
+The server computes from the fresh group read and commits through the existing AppInbox CAS boundary,
+so conflict redelivery retains concurrent metadata changes and exact replay retains its original result.
+
+Directory and Quick Join share one listing reader. Hiding invalidates the next conditional directory
+read and prevents a stale Quick Join candidate from committing. It does not revoke membership or
+presence. A scoped link still enters through ordinary admission. Both games discover public rooms
+through scoped safe directory summaries and keep those summaries separate from member snapshots.
+Relic paginates and deduplicates directory results, retains visibly stale results after failure, and
+fences obsolete request and session responses. Listing is not access control.
+
 ## Data, CRDT, Motion, and Game stay separate
 
 These are different authorities, not different transports for the same fact.

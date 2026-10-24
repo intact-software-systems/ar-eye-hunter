@@ -10,8 +10,9 @@ import type {
 } from 'react';
 
 import { rallar } from '@shared-web/browser/rallar.ts';
-import type { RallarDirectorStatus, RallarRoomSummary } from '@shared-web/browser/rallar.ts';
+import type { RallarCreateRoomInput, RallarDirectorStatus, RallarRoomSummary } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { GroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
 import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
 import { createRallarAiFunnyRoomName, createRallarAiRoomNameSeed } from '@shared/rallar-ai/mod.ts';
@@ -152,7 +153,11 @@ function useArenaRoomActions(
     refreshRooms: ArenaConnection['refreshRooms']
 ): Pick<ArenaConnection, 'createArenaRoom' | 'quickJoinArenaRoom' | 'joinRoom'> {
     const createArenaRoom = useCallback(
-        (joinMode: GroupJoinMode = 'open') => createAndSelectArenaRoom(input, refreshRooms, joinMode),
+        (joinMode: GroupJoinMode = 'open', directoryListing?: GroupDirectoryListing) =>
+            createAndSelectArenaRoom(input, refreshRooms, {
+                joinMode,
+                ...(directoryListing === undefined ? {} : { directoryListing })
+            }),
         [
             input.sessionRef,
             input.setRoomId,
@@ -233,7 +238,7 @@ function adoptArenaRoom(input: ArenaSessionActionsInput, roomId: string | undefi
 async function createAndSelectArenaRoom(
     input: ArenaSessionActionsInput,
     refreshRooms: ArenaConnection['refreshRooms'],
-    joinMode: GroupJoinMode
+    options: Pick<RallarCreateRoomInput, 'joinMode' | 'directoryListing'>
 ): Promise<GroupSnapshot | undefined> {
     const { sessionRef, rooms } = input;
     const session = sessionRef.current;
@@ -250,7 +255,7 @@ async function createAndSelectArenaRoom(
     input.setError(undefined);
     let snapshot: GroupSnapshot;
     try {
-        snapshot = await rallar.rooms.createAndSwitch({ displayName, joinMode });
+        snapshot = await rallar.rooms.createAndSwitch({ displayName, ...options });
     }
     catch (error) {
         if (sessionRef.current?.sessionId !== session.sessionId || sessionRef.current?.clientId !== session.clientId) {
