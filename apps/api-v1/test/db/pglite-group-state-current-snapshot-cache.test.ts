@@ -338,6 +338,31 @@ Deno.test('the cache sizes the groups it keeps and never keeps more than its ent
     }
 });
 
+Deno.test('reading one group past the entries cap drops the oldest and reading it again is a full read', async () => {
+    const maxEntries = 2;
+    const second = { ...REF, groupId: 'second-room' };
+    const third = { ...REF, groupId: 'third-room' };
+    const seeded = await seedCache(maxEntries);
+    try {
+        for (const ref of [second, third]) {
+            await seeded.repository.putGroup(groupFixture(ref, `Kept ${ref.groupId}`));
+            await seeded.repository.putMember({ ...createMember('alice', 'owner'), ...ref });
+        }
+
+        await seeded.cache.readSnapshot(REF);
+        await seeded.cache.readSnapshot(second);
+        await seeded.cache.readSnapshot(third);
+
+        assert.equal(seeded.cache.size(), maxEntries);
+        const fullReadsBeforeOldest = seeded.fullReads();
+        assert.equal((await seeded.cache.readSnapshot(REF))?.group.groupId, REF.groupId);
+        assert.equal(seeded.fullReads(), fullReadsBeforeOldest + 1);
+    }
+    finally {
+        await seeded.close();
+    }
+});
+
 Deno.test('a principal in 21 unchanged kept groups costs one version statement for all of them, and a changed group one probe plus one value read', async () => {
     const seeded = await seedCache(32);
     try {

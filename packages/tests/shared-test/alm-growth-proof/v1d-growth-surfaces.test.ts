@@ -186,6 +186,15 @@ describe('V1d growth surface classification', () => {
         expect(markers?.classification).toEqual({ growthClass: 'count-capped', cap: 512 });
     });
 
+    it('bounds the group-audience snapshot cache and the entries it keeps at 32', () => {
+        const audience = V1D_GROWTH_SURFACES.filter((surface) => surface.id === 20 || surface.id === 21);
+
+        expect(audience.map((surface) => surface.classification)).toEqual([
+            { growthClass: 'count-capped', cap: 32 },
+            { growthClass: 'count-capped', cap: 32 }
+        ]);
+    });
+
     it('bounds the topology idempotency records by the 24-hour finished retention, guarded against rows without expiry', () => {
         const configMutations = V1D_GROWTH_SURFACES.find((surface) => surface.readers.some((reader) => reader.path.includes('group-topology:config-mutation')));
 
