@@ -1504,6 +1504,33 @@
       "description": "Unlisted rooms: scoped entry without discovery, create/update listing intent, caller authorization, ETag removal, Quick Join exclusion, replay, and membership preservation."
     },
     {
+      "id": "api-v1-group-retention",
+      "recipe": "tests/api-v1/api-v1-group-retention.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes",
+        "api-v1-group-retention"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-retention",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "Temporary room opt-in, bounded grace, empty discovery and Quick Join exclusion, scoped admission, server-owned metadata, deadline rejection, and explicit archival."
+    },
+    {
       "id": "api-v1-group-quick-join",
       "recipe": "tests/api-v1/api-v1-group-quick-join.json",
       "category": "api-v1-black-box",

@@ -788,7 +788,7 @@ describe('useRallarArena auth lifecycle', () => {
         expect(arena.current?.openRoomsStatus).toBe('ready');
     });
 
-    it('creates a new arena by switching rooms and clearing stale remote players', async () => {
+    it('creates a temporary arena by switching rooms and clearing stale remote players', async () => {
         mockRallar.rooms.createAndSwitch.mockResolvedValue({
             group: {
                 groupId: 'arena-2'
@@ -842,7 +842,8 @@ describe('useRallarArena auth lifecycle', () => {
 
         expect(mockRallar.rooms.createAndSwitch).toHaveBeenCalledWith({
             displayName: expect.stringContaining('AR Eye Hunter Arena:'),
-            joinMode: 'open'
+            joinMode: 'open',
+            retention: { mode: 'temporary', reconnectGraceMs: 600_000 }
         });
         expect(mockRallar.rooms.create).not.toHaveBeenCalled();
         expect(arena.current?.roomId).toBe('arena-2');

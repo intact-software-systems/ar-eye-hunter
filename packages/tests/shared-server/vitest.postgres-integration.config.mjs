@@ -17,6 +17,9 @@ export default {
             'packages/tests/shared-server/integration/postgres/test-support/*.test.ts',
             adminPrunePageTest,
             'packages/tests/shared-server/rallar-system/group-state/mutation/group-connect-trigger-sql.test.ts',
+            'packages/tests/shared-server/rallar-system/group-state/retention/group-retention-concurrency.test.ts',
+            'packages/tests/shared-server/rallar-system/group-state/retention/group-retention-inbox.test.ts',
+            'packages/tests/shared-server/rallar-system/group-state/retention/group-retention-pages.test.ts',
             ...topologyConcurrencyTests
         ]
     }

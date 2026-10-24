@@ -14,6 +14,10 @@ import {
 } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import { initPresenceExpiryReconciliation } from '@shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.ts';
+import {
+    startGroupRetentionReconciliation,
+    type StartGroupRetentionReconciliationInput
+} from '@shared-server/rallar-system/group-state/retention/reconcile-group-retention.ts';
 import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/create-rallar-middleware.ts';
 import type { CreateRallarMiddlewareOptions } from '@shared-server/rallar-system/middleware/rallar-middleware-construction.ts';
 import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/rallar-middleware-runtime.ts';
@@ -43,6 +47,7 @@ import { createVolatileALInboundRuntimeStores } from '@shared/alm/al-runtime-sto
 import type { ALVolatileInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALOutboundCapturedPolicyTiming } from '@shared/alm/outbound/admission/al-outbound-captured-policy-timing.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
+import { createDefaultBackgroundTimers } from '@shared/resilience/timers.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { WsQueueBoxServerReceiptObserver } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 
@@ -182,6 +187,7 @@ export interface ApiV1RuntimeConstructionOperations {
     startPresenceReconciliation(
         runtime: Pick<RallarMiddlewareRuntime, 'appClientInboxService' | 'groupStateInboxService'>
     ): Promise<void>;
+    startRetentionReconciliation(input: StartGroupRetentionReconciliationInput): () => Promise<void>;
     createSnapshotSelectors(
         mutation: ApiV1MutationRuntime,
         timing: RallarTimingSink
@@ -243,8 +249,7 @@ export function constructApiV1Runtime(
         nowEpochMs: input.nowEpochMs
     });
     rtcTopology.topologyReplay.attach({ wsQueueBoxServerService: runtime.wsQBoxServerService });
-    void operations.startPresenceReconciliation(runtime)
-        .catch((error) => console.error('Failed to initialise presence expiry reconciliation:', error));
+    startGroupMaintenance({ runtime, mutation, input, operations });
     const selectors = operations.createSnapshotSelectors(mutation, input.timing);
     return operations.requireRuntime({
         runtime,
@@ -256,6 +261,31 @@ export function constructApiV1Runtime(
         topologyServices: topology,
         backgroundTasks: input.backgroundTasks
     });
+}
+
+interface StartGroupMaintenanceInput {
+    readonly runtime: RallarMiddlewareRuntime;
+    readonly mutation: ApiV1MutationRuntime;
+    readonly input: CreateApiV1RuntimeInput;
+    readonly operations: ApiV1RuntimeConstructionOperations;
+}
+
+/** Queue capabilities exist before maintenance starts; the runtime owns stopping and draining retention scans. */
+function startGroupMaintenance({ runtime, mutation, input, operations }: StartGroupMaintenanceInput): void {
+    void operations.startPresenceReconciliation(runtime)
+        .catch((error) => console.error('Failed to initialise presence expiry reconciliation:', error));
+    input.backgroundTasks.register(operations.startRetentionReconciliation({
+        repository: mutation.groupsRepository,
+        enqueue: async (command) => {
+            await runtime.groupStateInboxService.enqueueGroupRetention(command);
+        },
+        timers: createDefaultBackgroundTimers(),
+        now: input.nowEpochMs,
+        newObservationId: () => crypto.randomUUID(),
+        onFailure: (error) => console.error('Group retention reconciliation failed:', error),
+        intervalMs: 60_000,
+        pageSize: 100
+    }));
 }
 
 /** The mutation runtime's stores and expiry workers start before middleware owns its queue. */
@@ -374,6 +404,7 @@ const PRODUCTION_OPERATIONS: ApiV1RuntimeConstructionOperations = {
     startRuntimeStateExpiry,
     createMiddleware: createSharedMiddleware,
     startPresenceReconciliation: initPresenceExpiryReconciliation,
+    startRetentionReconciliation: startGroupRetentionReconciliation,
     createSnapshotSelectors: (mutation, timing) =>
         createApiStateSnapshotReadSelectors({
             clientDurable: mutation.clientsRepository,

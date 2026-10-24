@@ -44,7 +44,8 @@ describe('AR Eye private arena creation', () => {
         expect(arena.current?.error).toBe('The new arena is ready, but leaving the previous arena failed. Your membership there remains.');
         expect(mockRallar.rooms.createAndSwitch).toHaveBeenCalledWith({
             displayName: expect.stringContaining('AR Eye Hunter Arena:'),
-            joinMode: 'code'
+            joinMode: 'code',
+            retention: { mode: 'temporary', reconnectGraceMs: 600_000 }
         });
     });
 });

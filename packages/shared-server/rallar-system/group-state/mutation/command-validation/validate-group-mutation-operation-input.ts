@@ -3,6 +3,7 @@ import {
     GROUP_LAYOUT_IDENTITY_KEYS,
     GROUP_LAYOUT_IDENTITY_STATES
 } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import { assertGroupRetentionIntent, GROUP_RETENTION_METADATA_KEY } from '@shared/api/group-retention.ts';
 import type { JsonWireObject, JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import type { GroupMutationCommand } from '../group-mutation-contracts.ts';
 import {
@@ -103,6 +104,7 @@ export function validateGroupMutationOperationInput(
     if (operation === 'createGroup') {
         return [
             ...issues,
+            ...validateRetentionCreationInput(input),
             ...(input.lifecyclePolicy === undefined
                 ? []
                 : validateGroupLifecyclePolicyInputShape(input.lifecyclePolicy)),
@@ -112,6 +114,34 @@ export function validateGroupMutationOperationInput(
                 { key: 'purgeAfterEpochMs', kind: 'positive-integer' }
             ], 'Group createGroup')
         ];
+    }
+    return issues;
+}
+
+function validateRetentionCreationInput(input: JsonWireObject): readonly TypeError[] {
+    const issues: TypeError[] = [];
+    if (isGroupInputRecord(input.metadata) && Object.hasOwn(input.metadata, GROUP_RETENTION_METADATA_KEY)) {
+        issues.push(new TypeError('Group retention metadata is server-owned; use creation retention intent'));
+    }
+    if (input.retention === undefined) {
+        return issues;
+    }
+    try {
+        assertGroupRetentionIntent(input.retention);
+        if (
+            input.retention.mode === 'temporary' &&
+            (input.expiresAtEpochMs !== undefined || input.purgeAfterEpochMs !== undefined)
+        ) {
+            issues.push(
+                new TypeError('Group temporary retention cannot be combined with absolute expiry or purge deadlines')
+            );
+        }
+    }
+    catch (error) {
+        if (!(error instanceof TypeError)) {
+            throw error;
+        }
+        issues.push(error);
     }
     return issues;
 }

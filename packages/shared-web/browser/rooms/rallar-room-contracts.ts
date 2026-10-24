@@ -83,6 +83,7 @@ export interface RallarCreateRoomInput extends
         | 'description'
         | 'joinMode'
         | 'directoryListing'
+        | 'retention'
         | 'maxMembers'
         | 'maxSessionsPerMember'
         | 'metadata'

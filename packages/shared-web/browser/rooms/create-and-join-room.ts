@@ -150,6 +150,7 @@ function toCreateOptions(
         ...(input.description === undefined ? {} : { description: input.description }),
         ...(input.joinMode === undefined ? {} : { joinMode: input.joinMode }),
         ...(input.directoryListing === undefined ? {} : { directoryListing: input.directoryListing }),
+        ...(input.retention === undefined ? {} : { retention: input.retention }),
         ...(input.maxMembers === undefined ? {} : { maxMembers: input.maxMembers }),
         ...(input.maxSessionsPerMember === undefined
             ? {}

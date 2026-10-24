@@ -1,4 +1,5 @@
 import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -45,6 +46,8 @@ import {
 } from '../presence/group-presence-session-cleanup-app-inbox-payload.ts';
 import { decodeGroupQuickJoinCommand, decodeQuickJoinGroupResult } from '../quick-join/group-quick-join-codec.ts';
 import type { GroupQuickJoinCommand, GroupQuickJoinInput } from '../quick-join/group-quick-join-contracts.ts';
+import { registerGroupRetentionInbox, toGroupRetentionEnqueue } from '../retention/group-retention-inbox.ts';
+import type { GroupRetentionService } from '../retention/group-retention-service.ts';
 import { decodeGroupStateAppInboxCommand } from './decode-group-state-app-inbox-command.ts';
 import {
     GROUP_MUTATION_INBOX_TYPES,
@@ -57,6 +60,7 @@ import {
 } from './group-state-inbox-handler.ts';
 import { decodeGroupStateInboxDurableResult } from './group-state-inbox-result-codec.ts';
 import type { GroupStateInboxDurableResult } from './group-state-inbox-result.ts';
+import { timeGroupStatePhase, type GroupStatePhaseTiming } from './time-group-state-phase.ts';
 import { toAuthenticatedGroupMutationQueueKey } from './to-authenticated-group-mutation-queue-key.ts';
 import { toGroupMutationDescriptor } from './to-group-mutation-descriptor.ts';
 import { toGroupSystemCommandEnqueue } from './to-group-system-command-enqueue.ts';
@@ -89,6 +93,7 @@ export class GroupStateInboxService {
     private readonly wakeQueue?: () => void;
     private readonly serviceId: string;
     private readonly nowEpochMs: () => number;
+    private readonly timing: RallarTimingSink | undefined;
 
     public readonly groupStateService: GroupStateService;
 
@@ -122,6 +127,7 @@ export class GroupStateInboxService {
         this.wakeQueue = config.wakeOwningQueue;
         this.serviceId = config.serviceId;
         this.nowEpochMs = config.options?.nowEpochMs ?? Date.now;
+        this.timing = config.timing;
         this.groupStateInboxHandler = new GroupStateInboxHandler({
             mutationService: this.groupStateService,
             sessionGenerationLifecycle: this.groupStateService.sessionGenerationLifecycle,
@@ -135,7 +141,17 @@ export class GroupStateInboxService {
             nowEpochMs: this.nowEpochMs
         });
         this.registerMessageHandlers();
-        this.handlers.assertRegistrationComplete([...GROUP_MUTATION_INBOX_TYPES, AppInboxType.GROUP_QUICK_JOIN]);
+        this.handlers.assertRegistrationComplete([
+            ...GROUP_MUTATION_INBOX_TYPES,
+            AppInboxType.GROUP_QUICK_JOIN,
+            AppInboxType.GROUP_RETENTION_RECONCILE
+        ]);
+    }
+
+    async enqueueGroupRetention(command: GroupRetentionService.Command): Promise<ResourceEntry> {
+        return await this.queueEntryWriter.enqueue(
+            toGroupRetentionEnqueue(this.groupStateService.retention.capture(command))
+        );
     }
 
     async enqueueExpiredPresenceSessions(atEpochMs: number): Promise<number> {
@@ -272,15 +288,32 @@ export class GroupStateInboxService {
         context: AppInboxMessageContext<QuickJoinGroupResult>
     ): Promise<QuickJoinGroupResult> {
         const service = this.groupStateService.quickJoin;
-        const read = await service.read(context.enqueue.authority, context.entry.dequeueAudit.attempts);
+        const timing: GroupStatePhaseTiming = {
+            timing: this.timing,
+            component: 'group-quick-join',
+            serviceId: this.serviceId,
+            requestId: command.requestId,
+            scope: command.scope,
+            groupId: undefined,
+            principalId: command.actorPrincipalId,
+            sessionId: command.actorSessionId,
+            attempt: context.entry.dequeueAudit.attempts
+        };
+        const read = await timeGroupStatePhase(
+            timing,
+            'read',
+            () => service.read(context.enqueue.authority, timing.attempt)
+        );
         if (!jsonEquals(command, read.command)) {
             throw new GroupMutationAuthorizationError('Quick Join ingress and command differ');
         }
-        const computed = service.compute(read);
-        const mutationIssue = service.validate(read, computed)[0];
-        if (mutationIssue) {
-            throw mutationIssue.cause;
-        }
+        const computed = await timeGroupStatePhase(timing, 'compute', () => service.compute(read));
+        await timeGroupStatePhase(timing, 'validate', () => {
+            const mutationIssue = service.validate(read, computed)[0];
+            if (mutationIssue) {
+                throw mutationIssue.cause;
+            }
+        });
         const completionInput = {
             ...this.transactionWriter.readCompletionFacts(context),
             durableResult: computed.result,
@@ -291,11 +324,12 @@ export class GroupStateInboxService {
         if (issue) {
             throw issue.cause;
         }
-        const result = await this.transactionWriter.writeComputedMutation(
-            context,
-            completion,
-            async (transaction) => await service.write(transaction, computed)
-        );
+        const result = await timeGroupStatePhase(timing, 'write', () =>
+            this.transactionWriter.writeComputedMutation(
+                context,
+                completion,
+                (transaction) => service.write(transaction, computed)
+            ));
         this.wakeQueue?.();
         if (result.status === 'joined') {
             await this.groupStateService.observeSnapshot(result.snapshot);
@@ -316,6 +350,13 @@ export class GroupStateInboxService {
     }
 
     private registerMessageHandlers(): void {
+        registerGroupRetentionInbox(this.handlers, {
+            service: this.groupStateService.retention,
+            transactionWriter: this.transactionWriter,
+            wakeQueue: this.wakeQueue,
+            timing: this.timing,
+            serviceId: this.serviceId
+        });
         this.handlers.registerHandler({
             type: AppInboxType.GROUP_QUICK_JOIN,
             decodeCommand: decodeGroupQuickJoinCommand,

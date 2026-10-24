@@ -6,6 +6,7 @@ import type { GroupMutationDescriptor } from '../group-state/group-state-service
 import { decodeGroupMutationDescriptor } from '../group-state/inbox/decode-group-state-inbox-authority.ts';
 import { assertGroupMutationCommand } from '../group-state/mutation/command-validation/assert-group-mutation-command.ts';
 import { decodeGroupQuickJoinCommand } from '../group-state/quick-join/group-quick-join-codec.ts';
+import { decodeGroupRetentionCommand } from '../group-state/retention/group-retention-service.ts';
 import { encodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../protocol/json-wire-identity.ts';
 import { decodeRtcRttAppInboxCommand } from '../rtc-rtt/inbox/rtc-rtt-app-inbox-authority.ts';
 import {
@@ -41,6 +42,13 @@ export function toLogicalAppInboxCommand(
             type: enqueue.type,
             authority: null,
             data: encodeJsonWireValue({ ...command, actorSessionId: null }, 'Logical Quick Join command')
+        });
+    }
+    if (enqueue.type === AppInboxType.GROUP_RETENTION_RECONCILE) {
+        return encodeLogicalCommand({
+            type: enqueue.type,
+            authority: null,
+            data: encodeJsonWireValue(decodeGroupRetentionCommand(enqueue.data))
         });
     }
     return encodeLogicalCommand({
