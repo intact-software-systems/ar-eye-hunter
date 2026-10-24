@@ -168,6 +168,7 @@ const GROUP_MUTATION_REQUEST_KEYS: Readonly<Record<GroupMutationCommand['operati
         'kind',
         'joinMode',
         'directoryListing',
+        'retention',
         'maxMembers',
         'maxSessionsPerMember',
         'metadata',

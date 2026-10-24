@@ -11,14 +11,19 @@ import type {
 
 import { resolveRuntimeStateReadBatchLiveValues } from '../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
 import type { RuntimeStateEntryRead, RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import type { RuntimeStateEntryPageOptions } from '../../../runtime-state/runtime-state-repository.ts';
 import { decodeAuthSessionBySessionIdEntry } from '../../auth/persistence/auth-session-persistence.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
 import { assertGroupMutationIdempotencyRecord } from '../mutation/state-validation/assert-group-mutation-result.ts';
 import { assertStoredIdempotency, canonicalStoredGroup } from './aggregate/group-aggregate-repository.ts';
-import { groupStateGroupStorageKey, groupStateScopeStorageKey } from './aggregate/group-aggregate-storage-keys.ts';
+import {
+    decodeGroupStateGroupStorageKey,
+    groupStateGroupStorageKey,
+    groupStateScopeStorageKey
+} from './aggregate/group-aggregate-storage-keys.ts';
 import { toGroupLifecyclePolicyRead } from './group-lifecycle-policy-repository.ts';
-import { decodeStoredGroupStateValue } from './group-state-persistence-contracts.ts';
+import { decodeStoredGroupStateKey, decodeStoredGroupStateValue } from './group-state-persistence-contracts.ts';
 import {
     GROUPS_NAMESPACE,
     IDEMPOTENT_NAMESPACE,
@@ -59,6 +64,13 @@ export type GroupPresenceSummaryStoredRead =
         presenceSessions: readonly RuntimeStateEntryValue<GroupPresenceSession>[];
         current: RuntimeStateEntryValue<GroupPresenceSummary> | undefined;
     }>;
+
+export namespace GroupStateRepositoryReads {
+    export interface GroupPage {
+        readonly groups: readonly Group[];
+        readonly nextKey: string | null;
+    }
+}
 
 export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
     async readMutationExactEntries(
@@ -152,6 +164,23 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
                 presenceRevision: summary?.value.causalRevision.presenceRevision ?? 0
             }
             : undefined;
+    }
+
+    /** Cross-scope maintenance scans advance by physical key even when an expired row yields no live group. */
+    async listGroupsPage(options: RuntimeStateEntryPageOptions): Promise<GroupStateRepositoryReads.GroupPage> {
+        if (!Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > 500) {
+            throw new TypeError('Group maintenance page limit must be an integer from 1 through 500');
+        }
+        const entries = await this.repository.findEntriesByPrefixPage(GROUPS_NAMESPACE, '', options);
+        const groups: Group[] = [];
+        for (const entry of entries) {
+            const stored = await this.toLiveJsonEntryValue(GROUPS_NAMESPACE, entry);
+            if (stored !== undefined) {
+                const ref = decodeStoredGroupStateKey(entry.key, decodeGroupStateGroupStorageKey);
+                groups.push(canonicalStoredGroup(stored, ref).value);
+            }
+        }
+        return { groups, nextKey: entries.length === options.limit ? entries[entries.length - 1].key : null };
     }
 
     async listGroups(scope: GroupScope): Promise<readonly Group[]> {

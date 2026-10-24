@@ -1,5 +1,6 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupDirectoryEntry, GroupDirectoryPage } from '@shared/api/group-directory/group-directory-types.ts';
+import { readGroupRetentionState } from '@shared/api/group-retention.ts';
 import { toCanonicalGroupRef, type GroupSnapshot } from '@shared/api/group-types.ts';
 
 import {
@@ -63,7 +64,8 @@ export function matchesGroupDirectoryQuery(
 ): boolean {
     return (query.kind === null || snapshot.group.kind === query.kind) &&
         (query.q === null || snapshot.group.displayName.toLowerCase().includes(query.q)) &&
-        (query.includeEmpty || snapshot.onlineMemberCount > 0);
+        (snapshot.onlineMemberCount > 0 ||
+            (query.includeEmpty && readGroupRetentionState(snapshot.group.metadata) === null));
 }
 
 /**

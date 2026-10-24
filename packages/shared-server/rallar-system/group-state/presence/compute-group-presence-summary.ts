@@ -72,7 +72,7 @@ export function computeGroupPresenceSummary(
         return { outcome: 'no-op', evaluatedAtEpochMs: nowEpochMs, summary: current };
     }
 
-    const content = deriveGroupPresenceSummaryContent(read, nowEpochMs);
+    const content = computeGroupPresenceSummaryContent(read, nowEpochMs);
     const currentContentMatches = current !== undefined &&
         groupPresenceSummaryContentEquals(current, content);
     if (
@@ -125,7 +125,7 @@ export function validateGroupPresenceSummary(
     return validateComputedProjection(expected, input.computed, 'computed');
 }
 
-function deriveGroupPresenceSummaryContent(
+export function computeGroupPresenceSummaryContent(
     read: GroupPresenceSummaryRead,
     nowEpochMs: number
 ): GroupPresenceSummaryContent {

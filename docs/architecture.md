@@ -101,6 +101,34 @@ through scoped safe directory summaries and keep those summaries separate from m
 Relic paginates and deduplicates directory results, retains visibly stale results after failure, and
 fences obsolete request and session responses. Listing is not access control.
 
+## Temporary retention is a separate group-state capability
+
+Creation accepts `retention: { mode: 'temporary', reconnectGraceMs? }` or persistent intent. Absence
+means persistent. Temporary grace defaults to 600,000 ms, bounded from 1,000 through 86,400,000 ms.
+Canonical temporary state lives in reserved `Group.metadata.rallarRetention`; malformed present state
+fails closed. Generic metadata updates preserve it, and temporary rooms reject absolute expiry,
+purge deadlines, and externally supplied idle anchors. Existing rows need no migration.
+
+`GroupRetentionService` reads the group, members, admissions, and presence from one authoritative
+snapshot. It shares the presence-summary liveness computation, but never trusts a stale summary for
+archival. `Group.emptySinceEpochMs` is the only idle clock. A fingerprint of canonical presence,
+admission, and member storage revisions detects activity between scans and restarts grace from the
+fresh attempt time. Ordinary connect and heartbeat writes gain no group-row update.
+
+The internal `GROUP_RETENTION_RECONCILE` AppInbox registration owns each maintenance attempt. Pure
+compute and validate prepare the group CAS, admission fences, exact-revision presence deletes,
+event, receipt, and final summary outbox row before transaction entry. AppInbox atomically writes
+them with the exact durable result. A conflicting first connect, reconnect, heartbeat, roster change,
+or metadata update invalidates the stale archive; QueueBox redelivery rereads fresh authority.
+Immutable scoped command identity preserves exact replay and rejects changed request-ID reuse.
+
+Runtime maintenance visits at most 100 physical group keys per minute per API process, advances its
+cursor through expired rows, submits active temporary candidates, and drains on shutdown. Instances
+may overlap safely through optimistic writes; scanning and queue load may delay archival. Discovery
+and Quick Join hide empty temporary rooms even with `includeEmpty`, while direct entry still uses
+normal admission. Archival keeps durable records. Seven-day physical cleanup requires a separate
+application-data, audit, and replay-evidence contract.
+
 ## Data, CRDT, Motion, and Game stay separate
 
 These are different authorities, not different transports for the same fact.

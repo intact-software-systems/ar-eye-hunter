@@ -27,9 +27,10 @@ the maintainer's selected existing-measurement scope.
 private-room entry in both games and is merged.
 [PR #701](https://github.com/intact-software-systems/ar-eye-hunter/pull/701) delivered slice 5
 through the existing create/update and room-entry owners and is merged as `ea3240c7`.
-Recovery and recent-room navigation are implemented in
-[PR #705](https://github.com/intact-software-systems/ar-eye-hunter/pull/705), pending review and maintainer merge;
-retention policy follows separately.
+Recovery and recent-room navigation were delivered in
+[PR #705](https://github.com/intact-software-systems/ar-eye-hunter/pull/705), merged as `eceabcc7d`.
+The current increment adds explicit temporary-room retention and guarded archival; permanent cleanup
+follows as a separate increment after its retained-data contract is defined.
 
 ## Current foundation
 
@@ -109,8 +110,8 @@ all-or-none admission decisions before it becomes a platform promise.
 
 | Priority    | Outcomes                                                                                    |
 | ----------- | ------------------------------------------------------------------------------------------- |
-| Current     | Review and merge recovery/recent-room navigation (6), PR #705.                              |
-| Next        | Temporary/persistent retention decisions (6), after recovery is merged.                     |
+| Current     | Explicit temporary-room opt-in, empty-room hiding, and guarded archival (6).                |
+| Next        | Permanent cleanup of archived temporary rooms, with explicit data-retention boundaries.     |
 | Then        | Automatic directory freshness (7), introducing push when the experience needs it.           |
 | Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them. |
 | Later       | Scheduled rooms (8) and a separate tournament capability.                                   |
@@ -263,8 +264,13 @@ notifications, and malformed persisted records have focused coverage. Both games
 cover reload, fresh-link precedence, denied return/retry, and durable Forget. Simultaneous tabs remain
 latest-value history and may overwrite a local edit.
 
-After this increment merges, separately define temporary versus persistent room retention, reconnect
-grace, hiding, archival, and deletion. Reconnect grace and deletion must not race each other. Decide
+[PR #706](https://github.com/intact-software-systems/ar-eye-hunter/pull/706) delivers the retention
+increment: explicit temporary creation with a default ten-minute reconnect grace, empty-room hiding,
+and archival after guarded inactivity observations.
+Existing rooms and omitted creation intent stay persistent. The maintainer selected this temporary
+default for both games and seven days of archived retention before deletion. Archival preserves
+records; permanent cleanup follows separately after its application-data,
+audit, and replay-evidence contract is defined. Reconnect grace and deletion must not race each other. Decide
 “play again” behavior with each application's activity lifecycle.
 
 Corrupt-row isolation belongs to operator reliability in slice 9, not this recovery feature.

@@ -51,6 +51,13 @@ precedence over a restored destination. Forget removes only the local shortcut; 
 the room or change membership. History loading or storage failures are shown separately from entry
 failures and can be retried.
 
+New rooms in both games are temporary: empty rooms disappear from discovery, and server maintenance
+archives them after observing ten minutes of uninterrupted inactivity. Current members may reconnect
+during that grace period under normal admission rules. Activity between observations restarts grace.
+Existing rooms and other applications stay persistent unless creation explicitly selects temporary
+retention. Archival preserves records; permanent deletion after seven archived days is a planned
+separate increment.
+
 Room admission is separate from gameplay participation. Relic still requires
 Join Expedition; AR Eye keeps its director and match lifecycle. The shared
 browser entry owner and a host-sharing example are documented in

@@ -8,7 +8,11 @@ interface OpenApiSchema {
     readonly type?: string;
     readonly items?: { readonly $ref?: string; };
     readonly enum?: readonly string[];
-    readonly default?: string;
+    readonly default?: string | number;
+    readonly minimum?: number;
+    readonly maximum?: number;
+    readonly additionalProperties?: boolean;
+    readonly oneOf?: readonly OpenApiSchema[];
     readonly nullable?: boolean;
     readonly required?: readonly string[];
     readonly properties?: Readonly<Record<string, OpenApiSchema>>;
@@ -239,6 +243,30 @@ Deno.test('directory OpenAPI exposes opt-in peer ordering and mandatory nullable
     assert.ok(entry.required?.includes('peerRttMs'));
     assert.equal(entry.properties?.peerRttMs.type, 'number');
     assert.equal(entry.properties?.peerRttMs.nullable, true);
+});
+
+Deno.test('group creation documents closed retention intent and bounded temporary grace', async () => {
+    const response = await installApiDocumentationRoutes(new Hono()).request('/api/openapi.json');
+    const document = await response.json() as OpenApiDocument;
+    const create = document.components.schemas.CreateGroupRequest;
+    assert.equal(create.properties?.retention.$ref, '#/components/schemas/GroupRetentionIntent');
+    assert.equal(create.required?.includes('retention'), false);
+    const choices = document.components.schemas.GroupRetentionIntent?.oneOf;
+    assert.equal(choices?.length, 2);
+    const persistent = choices?.find((choice) => choice.properties?.mode.enum?.includes('persistent'));
+    const temporary = choices?.find((choice) => choice.properties?.mode.enum?.includes('temporary'));
+    assert.equal(persistent?.additionalProperties, false);
+    assert.deepEqual(persistent?.required, ['mode']);
+    assert.deepEqual(Object.keys(persistent?.properties ?? {}), ['mode']);
+    assert.equal(temporary?.additionalProperties, false);
+    assert.deepEqual(temporary?.required, ['mode']);
+    assert.deepEqual(temporary?.properties?.reconnectGraceMs, {
+        type: 'integer',
+        minimum: 1_000,
+        maximum: 86_400_000,
+        default: 600_000
+    });
+    assert.equal(document.components.schemas.UpdateGroupRequest.properties?.retention, undefined);
 });
 
 function assertOpenApiRequestSchema(

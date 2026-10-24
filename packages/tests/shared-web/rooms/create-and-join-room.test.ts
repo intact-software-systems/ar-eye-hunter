@@ -64,6 +64,27 @@ describe('room creation through the browser facade and HTTP workflow', () => {
         expect(requests[0]).toEqual(requests[1]);
     });
 
+    it('sends temporary retention intent through creation retries without placing it in app metadata', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const snapshot = createRoomSnapshot('temporary-room', ['session-1']);
+        respond(() => requests.length === 1 ? new Response('unavailable', { status: 503 }) : json(snapshot));
+
+        await createRallarFacade().rooms.create({
+            displayName: 'Temporary room',
+            scope,
+            maxAttempts: 2,
+            retention: { mode: 'temporary', reconnectGraceMs: 60_000 },
+            metadata: { theme: 'forest' }
+        });
+
+        expect(requests).toHaveLength(3);
+        expect(requests[0]).toEqual(requests[1]);
+        expect(requests[0].body).toMatchObject({
+            retention: { mode: 'temporary', reconnectGraceMs: 60_000 },
+            metadata: { theme: 'forest' }
+        });
+    });
+
     it('sends unlisted creation through the facade without replacing room metadata', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const base = createRoomSnapshot('hidden-room', ['session-1']);

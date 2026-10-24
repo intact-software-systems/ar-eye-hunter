@@ -5,6 +5,40 @@ import { reviewedBrowserDispositions } from './reviewed-browser-dispositions.mjs
 import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // Whole-owner retention review: canonical ingress mapping remains one closed
+    // command translation; aggregate update keeps authorization, retained metadata
+    // and the resulting candidate together. These exact warning-tier sums permit
+    // no growth and no function-size or hard-tier exception.
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/group-state/group-mutation-command.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 50
+    }),
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/group-state/mutation/aggregate/compute-group-aggregate-mutation.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 52
+    }),
+    // One private object decoder owns raw retention JSON. Exact-key, mode,
+    // bounded-integer and fingerprint checks finish before canonical state leaves
+    // this module. Its three raw annotations never become trusted policy fields.
+    Object.freeze({
+        path: 'packages/shared/api/group-retention.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requireRetentionRecord',
+        maximumMagnitude: 3
+    }),
+    // These direct group contract owners serve reusable API consumers. Retention
+    // sits beside the existing group contracts; a forwarding directory would add
+    // a navigation hop without introducing a new feature or lifecycle boundary.
+    Object.freeze({
+        path: 'packages/shared/api',
+        rule: 'layout.feature-prefix-cluster',
+        symbol: 'prefix:group',
+        maximumMagnitude: 7
+    }),
     // Task17 whole-file self-review: this fixed local module is admitted as an
     // object with the one named callable before invocation. Import errors remain
     // visible; the assertion narrows the validated entry, never production options.
@@ -843,7 +877,7 @@ export const reviewedDispositions = Object.freeze([
         path: 'packages/shared/api',
         rule: 'layout.directory-density',
         symbol: 'api',
-        maximumMagnitude: 23
+        maximumMagnitude: 24
     }),
     Object.freeze({
         path: 'packages/shared/api',

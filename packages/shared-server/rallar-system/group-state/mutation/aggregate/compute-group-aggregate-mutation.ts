@@ -9,6 +9,7 @@ import {
     type GroupDirectoryListing
 } from '@shared/api/group-directory/group-directory-listing.ts';
 import type { GroupPolicyDenied } from '@shared/api/group-policy-types.ts';
+import { GROUP_RETENTION_METADATA_KEY, readGroupRetentionState } from '@shared/api/group-retention.ts';
 import type { AuditStamp, Group, GroupEventType, GroupStatus } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
@@ -51,6 +52,19 @@ export function computeUpdate(
     const authorityDenial = toUpdateAuthorityDenial(command, read);
     if (authorityDenial) {
         return rejectedByGroupPolicy({ command, read, facts, denial: authorityDenial });
+    }
+    if (
+        readGroupRetentionState(stored.value.metadata) !== null &&
+        (command.input.expiresAtEpochMs !== null || command.input.purgeAfterEpochMs !== null ||
+            command.input.emptySinceEpochMs !== null)
+    ) {
+        return rejected({
+            command,
+            read,
+            facts,
+            rejectionCode: 'group-mutation-rejected',
+            message: 'Temporary room deadlines and idle observations are server-owned.'
+        });
     }
     const allowsArchivedDeletion = stored.value.status === 'archived' && command.input.status === 'deleted';
     if (!allowsArchivedDeletion) {
@@ -329,6 +343,11 @@ function computeUpdatedGroupMetadata(
     const setting = directoryListing ?? current[GROUP_DIRECTORY_LISTING_METADATA_KEY];
     if (setting !== undefined) {
         metadata[GROUP_DIRECTORY_LISTING_METADATA_KEY] = setting;
+    }
+    delete metadata[GROUP_RETENTION_METADATA_KEY];
+    const retention = readGroupRetentionState(current);
+    if (retention !== null) {
+        metadata[GROUP_RETENTION_METADATA_KEY] = { ...retention };
     }
     return metadata;
 }

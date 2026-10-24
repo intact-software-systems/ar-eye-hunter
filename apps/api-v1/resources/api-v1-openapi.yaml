@@ -651,7 +651,8 @@ paths:
         Entries carry no member roster,
         sessions, or metadata. Groups the caller already reads in full are
         returned by the group snapshot list instead. Rooms with nobody online
-        are omitted unless `includeEmpty` is true. Entries are ordered by
+        are omitted unless `includeEmpty` is true; empty temporary rooms stay hidden
+        regardless of that option. Entries are ordered by
         online member count (descending), then group id, and paged with an
         opaque keyset cursor. With `order=peer-rtt`, equal occupancy is ordered by
         known peer RTT ascending, unknown RTT last, then group id. `peerRttMs` is
@@ -711,7 +712,7 @@ paths:
         - name: includeEmpty
           in: query
           required: false
-          description: Include rooms with no online member.
+          description: Include persistent rooms with no online member. Empty temporary rooms remain hidden.
           schema:
             type: boolean
             default: false
@@ -895,6 +896,7 @@ paths:
         capacity and lifecycle admission policy as manual join. Never creates a
         group or pending admission request. Joined and unavailable outcomes are
         durable for this caller and request ID; conflicting reuse returns 409.
+        Empty temporary rooms are excluded even when includeEmpty is true.
         Room membership does not enroll the caller in an application activity.
       security:
         - bearerAuth: []
@@ -5858,6 +5860,32 @@ components:
         fallbackMs:
           type: integer
           format: int64
+    GroupRetentionIntent:
+      description: >-
+        Creation-only room lifetime. Omission or persistent keeps the room until an explicit
+        lifecycle action. A temporary room is hidden from discovery while empty and archives
+        after its reconnect grace. Archival preserves records and denies further entry.
+        Temporary policy cannot be combined with absolute expiry or purge deadlines.
+      oneOf:
+        - type: object
+          required: [mode]
+          additionalProperties: false
+          properties:
+            mode:
+              type: string
+              enum: [persistent]
+        - type: object
+          required: [mode]
+          additionalProperties: false
+          properties:
+            mode:
+              type: string
+              enum: [temporary]
+            reconnectGraceMs:
+              type: integer
+              minimum: 1000
+              maximum: 86400000
+              default: 600000
     CreateGroupRequest:
       type: object
       required: [groupId, displayName, kind]
@@ -5880,6 +5908,8 @@ components:
           type: string
           enum: [listed, unlisted]
           description: Listing intent, independent of admission credentials. Unlisted rooms are excluded from discovery and Quick Join; scoped entry still uses normal admission. The setting is returned in metadata.rallarDirectoryListing.
+        retention:
+          $ref: '#/components/schemas/GroupRetentionIntent'
         maxMembers:
           type: integer
           format: int64
@@ -5887,15 +5917,17 @@ components:
           type: integer
           format: int64
         metadata:
-          description: Extensible group metadata. On create, rallarDirectoryListing defaults to listed when absent and an explicit directoryListing takes precedence. On update, the stored listing key is preserved; use directoryListing to change it.
+          description: Extensible group metadata. rallarDirectoryListing defaults to listed when absent and explicit directoryListing takes precedence. rallarRetention is server-owned and cannot be supplied in creation metadata; use retention intent instead.
           type: object
           additionalProperties: true
         expiresAtEpochMs:
           type: integer
           format: int64
+          description: Absolute expiry for persistent rooms; rejected for temporary rooms.
         purgeAfterEpochMs:
           type: integer
           format: int64
+          description: Absolute storage expiry for persistent rooms; rejected for temporary rooms.
         lifecyclePolicy:
           $ref: '#/components/schemas/GroupLifecyclePolicyInput'
         reason:
@@ -5931,18 +5963,21 @@ components:
           type: integer
           format: int64
         metadata:
-          description: Extensible group metadata. On create, rallarDirectoryListing defaults to listed when absent and an explicit directoryListing takes precedence. On update, the stored listing key is preserved; use directoryListing to change it.
+          description: Extensible group metadata. The stored rallarDirectoryListing and rallarRetention entries are preserved even when replacement metadata carries different values. Use directoryListing to change listing. Retention can be selected only at creation.
           type: object
           additionalProperties: true
         expiresAtEpochMs:
           type: integer
           format: int64
+          description: Rejected for temporary rooms.
         emptySinceEpochMs:
           type: integer
           format: int64
+          description: Rejected for temporary rooms, whose idle observation is server-owned.
         purgeAfterEpochMs:
           type: integer
           format: int64
+          description: Rejected for temporary rooms.
         reason:
           type: string
         traceId:
@@ -6213,7 +6248,7 @@ components:
         includeEmpty:
           type: boolean
           default: false
-          description: Include groups with no distinct online members.
+          description: Include persistent groups with no distinct online members. Empty temporary groups remain excluded.
 
     QuickJoinGroupResult:
       oneOf:
