@@ -185,6 +185,7 @@
       },
       "expect": {
         "status": 200,
+        "comparison": "compatible-complete",
         "body": {
           "entries": [],
           "nextCursor": null
@@ -401,7 +402,8 @@
         "status": 201,
         "body": {
           "group": {
-            "metadata": {}
+            "groupId": "persistent-{runId}",
+            "status": "active"
           }
         }
       }
