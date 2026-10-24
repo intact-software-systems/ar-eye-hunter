@@ -48,13 +48,16 @@ export namespace GroupRetentionService {
         readonly idempotency: GroupMutationIdempotencyRecord | null;
     }
 
+    export interface ComputedWrite
+        extends Pick<GroupMutationComputedWrite, 'persistence' | 'outboxWrites' | 'receipt'> {
+        readonly outcome: 'write';
+        readonly group: Group;
+    }
+
     export type Computed =
         | Readonly<{ outcome: 'absent'; receipt: null; }>
         | Readonly<{ outcome: 'no-op' | 'replay'; receipt: GroupMutationReceipt; }>
-        | (
-            & Pick<GroupMutationComputedWrite, 'persistence' | 'outboxWrites' | 'receipt'>
-            & Readonly<{ outcome: 'write'; group: Group; }>
-        );
+        | ComputedWrite;
 
     export interface Result {
         readonly groupRef: GroupRef;

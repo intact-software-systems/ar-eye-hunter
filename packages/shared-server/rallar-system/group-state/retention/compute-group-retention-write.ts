@@ -28,7 +28,7 @@ interface RetentionReceiptInput {
 export function computeGroupRetentionWrite(
     read: GroupRetentionService.Read,
     group: Group
-): Extract<GroupRetentionService.Computed, { outcome: 'write'; }> {
+): GroupRetentionService.ComputedWrite {
     const stored = read.authority.group;
     if (stored === undefined) {
         throw new TypeError('Retention write requires its observed group');
@@ -128,7 +128,7 @@ function toRetentionEvent(read: GroupRetentionService.Read, group: Group): Group
 }
 
 function computeArchivePresenceFences(read: GroupRetentionService.Read): RuntimeStateGuardedBatchEffect[] {
-    // Presence precedes admission, matching the normal connection writer. The group CAS already fences the roster.
+    // Every observed presence revision and active principal admission must agree before archival can commit.
     const effects: RuntimeStateGuardedBatchEffect[] = read.authority.presenceSessions.map((stored) => ({
         effectId: `retention-presence:${stored.value.sessionId}`,
         ...groupStateDeletePresenceDescriptor(stored.value, stored.entry.revision)

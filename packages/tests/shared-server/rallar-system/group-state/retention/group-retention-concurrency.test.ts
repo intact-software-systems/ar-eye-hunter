@@ -74,6 +74,37 @@ describe('retention conditional writes on real database storage', () => {
         }
     }, 30_000);
 
+    it.each(['first-connect', 'reconnect', 'heartbeat'] as const)('converges overlapping archive and %s transactions', async (operation) => {
+        fixture = await createRetentionDatabaseFixture();
+        await seedRetentionRoom(fixture);
+        await seedPriorActivity(fixture, operation);
+        await commitRetention(fixture, (await prepareRetention(fixture, 'observe-overlap')).computed);
+        fixture.nowEpochMs += 1_000;
+        const archive = await prepareRetention(fixture, 'archive-overlap');
+        const activity = await prepareMutation(fixture, activityDescriptor(fixture, operation));
+        const outcomes = await Promise.allSettled([
+            commitRetention(fixture, archive.computed),
+            commitMutation(fixture, requireMutationWrite(activity.computed))
+        ]);
+        expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1);
+        const rejected = outcomes.find((outcome) => outcome.status === 'rejected');
+        if (!rejected || rejected.status !== 'rejected') {
+            throw new Error('Exactly one stale mutation must lose');
+        }
+        expect(['runtime-state-write-conflict', '40P01']).toContain(rejected.reason.code);
+        if (outcomes[0].status === 'fulfilled') {
+            await expect(retryMutation(fixture, activity.ingress)).rejects.toMatchObject({ denial: { code: 'group-archived' } });
+            expect((await fixture.repository.findGroup(RETENTION_REF))?.status).toBe('archived');
+            expect(await fixture.repository.listPresenceSessions(RETENTION_REF)).toEqual([]);
+        }
+        else {
+            const retry = fixture.retention.compute(await fixture.retention.read(archive.ingress, 2));
+            await commitRetention(fixture, retry);
+            expect((await fixture.repository.findGroup(RETENTION_REF))?.status).toBe('active');
+            expect((await fixture.repository.listPresenceSessions(RETENTION_REF)).some((session) => session.status === 'active')).toBe(true);
+        }
+    }, 30_000);
+
     it.each(['first', 'second'] as const)('allows only the %s archiver to commit and replays that receipt exactly', async (winner) => {
         fixture = await createRetentionDatabaseFixture();
         await seedRetentionRoom(fixture);
