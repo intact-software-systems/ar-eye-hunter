@@ -107,7 +107,7 @@ describe('Relic public application AppInbox', () => {
             await handlers[0](message, context);
             expect(proposals).toBe(1);
             expect((await fixture.data.read(fixture.ref))[0].entry).toBeNull();
-            expect(await fixture.storage.sql`select ri_status, ri_attempts from resource_inbox where ri_type_id = 'APP_INBOX'`).toEqual([{
+            expect(await fixture.storage.sql`select ri_status, ri_attempts::int as ri_attempts from resource_inbox where ri_type_id = 'APP_INBOX'`).toEqual([{
                 ri_status: 'NEW',
                 ri_attempts: 0
             }]);
