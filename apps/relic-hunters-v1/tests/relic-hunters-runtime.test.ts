@@ -8,7 +8,8 @@ import {
 } from '@relic-hunters/mod.ts';
 import { waitForSettledRead } from '@shared-web/browser/connection/wait-for-settled-read.ts';
 import { BrowserRallarSubscriptionScope } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
-import { RallarRoomEntry } from '@shared-web/browser/rallar-room-entry.ts';
+import { createRallarDataFacade } from '@shared-web/browser/rallar-data.ts';
+import { RallarRecentRooms, RallarRoomEntry } from '@shared-web/browser/rallar-room-entry.ts';
 import type {
     RallarAuthChangeListener,
     RallarRoomPresenceWaitOptions,
@@ -19,19 +20,46 @@ import type {
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupDirectoryEntry, GroupDirectoryPage, GroupDirectoryRequest } from '@shared/api/group-directory/group-directory-types.ts';
 import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
+import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createGroupSnapshotFixture } from '../../../packages/tests/shared-web/authoritative-group-fixtures.ts';
 import { RelicHuntersRuntime } from '../src/game/relic-hunters-runtime.ts';
 import type { RelicWsCommandDelivery } from '../src/game/send-relic-ws-command.ts';
 
 const runtimes: RelicHuntersRuntime[] = [];
-afterEach(() => {
+afterEach(async () => {
     for (const runtime of runtimes.splice(0)) {
         runtime.stop();
+        await runtime.getState().recentRooms.whenIdle();
     }
 });
 
 describe('RelicHuntersRuntime', () => {
+    it('records and returns to recent rooms without joining or resetting the expedition, then stops history', async () => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = startRuntime(backend);
+        await runtime.start();
+        expect(runtime.getState().recentRooms).toBe(backend.recentRooms);
+        await runtime.getState().joinRoom('recent-a');
+        await runtime.getState().joinRoom('recent-b');
+        await backend.recentRooms.whenIdle();
+        expect(backend.recentRooms.getState().rooms.map((visit) => visit.roomRef.groupId)).toEqual(['recent-b', 'recent-a']);
+
+        backend.roomEntry.returnTo({ applicationId: 'rallar-server', workspaceId: 'default', groupId: 'recent-a' }, 'client-1');
+        await backend.roomEntry.resume();
+        await backend.recentRooms.whenIdle();
+        expect(runtime.getState().roomId).toBe('recent-a');
+        expect(backend.commands).toEqual([]);
+        expect(runtime.getState().snapshot?.players).toEqual([]);
+
+        backend.signOut();
+        expect(backend.recentRooms.getState()).toMatchObject({ status: 'signed-out', rooms: [] });
+        runtime.stop();
+        await backend.recentRooms.whenIdle();
+        backend.setRooms(stateFor('late-room'));
+        expect(backend.recentRooms.getState().rooms).toEqual([]);
+    });
+
     it('loads safe public directory pages without turning them into member snapshots', async () => {
         const backend = new RelicRuntimeBackend();
         backend.setRooms({ rooms: [], currentRoomId: undefined, members: [] });
@@ -409,6 +437,7 @@ class RelicRuntimeBackend implements RelicHuntersRuntime.Dependencies {
     private readonly roomListeners = new Set<(state: RallarRoomState) => void>();
     private readonly snapshotListeners = new Set<(event: RelicServerEvent) => void>();
     public readonly roomEntry: RallarRoomEntry;
+    public readonly recentRooms: RallarRecentRooms;
 
     public constructor() {
         const storage = new Map<string, string>();
@@ -425,6 +454,14 @@ class RelicRuntimeBackend implements RelicHuntersRuntime.Dependencies {
                 }
             },
             location: { read: () => 'http://localhost/', replace: () => undefined, onChange: () => () => undefined }
+        }, { scope: { applicationId: 'rallar-server', workspaceId: 'default' } });
+        const data = createRallarDataFacade({ manager: new RepositoryManager(), resolveScopeKey: (scope) => scope });
+        const dbName = `relic-recent-rooms-${crypto.randomUUID()}`;
+        this.recentRooms = new RallarRecentRooms({
+            auth: { session: () => this.session, onChange: (listener) => this.onAuthChange(listener) },
+            entry: this.roomEntry,
+            data: { open: (input, options) => data.open(input, { ...options, dbName, sync: false }) },
+            now: () => Date.now()
         }, { scope: { applicationId: 'rallar-server', workspaceId: 'default' } });
     }
 
@@ -612,3 +649,4 @@ function directoryEntry(groupId: string): GroupDirectoryEntry {
         peerRttMs: null
     };
 }
+import '../../../packages/tests/setup-browser-indexeddb.ts';

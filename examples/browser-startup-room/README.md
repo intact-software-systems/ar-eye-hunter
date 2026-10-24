@@ -82,13 +82,20 @@ For private links or a saved destination, capture entry before startup. This is 
 alternative to unconditional room creation above; a pending invitation takes priority.
 
 ```ts
-import { RallarRoomEntry, toRoomEntryUrl } from '@shared-web/browser/rallar-room-entry.ts';
+import {
+    RallarRecentRooms,
+    RallarRoomEntry,
+    toRoomEntryUrl
+} from '@shared-web/browser/rallar-room-entry.ts';
 
 const scope = { applicationId: 'demo-game', workspaceId: 'default' };
 rallar.configure({ apiBaseUrl: 'http://localhost:8080', ...scope });
 const entry = RallarRoomEntry.createBrowser(rallar, { scope });
+const recentRooms = RallarRecentRooms.createBrowser(rallar, entry, { scope });
 const unsubscribe = entry.onChange(renderRoomEntry);
+const unsubscribeHistory = recentRooms.onChange(renderRecentRooms);
 entry.start();
+await recentRooms.start();
 
 // Keep the entry owner alive while the application displays its sign-in form.
 // After restoring a session or completing sign-in:
@@ -109,6 +116,8 @@ link.fold(showEntryError, (url) => renderShareLink(url, rotated.expiresAtEpochMs
 
 // Component cleanup.
 unsubscribe();
+unsubscribeHistory();
+await recentRooms.stop();
 entry.stop();
 ```
 
@@ -118,6 +127,15 @@ the code from tab storage and binds the saved room to the principal. Authenticat
 cancellation, and destination changes fence late completions. An invite-only link
 uses `joinCode: null`; the host must first invite the guest's account reference.
 Room entry does not enroll that account in application-owned gameplay.
+
+History is optional navigation and never selects a room during hydration. Render its loading,
+empty, and failed states; `recentRooms.retry()` retries local storage without repeating admission.
+For a user-selected visit, pass its full `roomRef` and the displayed history's `principalId` to
+`entry.returnTo(roomRef, principalId)`. Display the returned `left` failure, or call `entry.resume()`
+after success when the connection is ready. The selection is bound to that account and rechecks
+current server admission without a saved code. `recentRooms.forget(roomRef, principalId)` removes
+only the shortcut. The ten newest distinct references and visit timestamps are stored through
+Rallar Data per account and application/workspace; no credentials or availability claims are saved.
 
 An unlisted open room uses the same entry owner and a link without a code:
 

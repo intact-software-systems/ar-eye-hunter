@@ -27,7 +27,8 @@ the maintainer's selected existing-measurement scope.
 private-room entry in both games and is merged.
 [PR #701](https://github.com/intact-software-systems/ar-eye-hunter/pull/701) delivered slice 5
 through the existing create/update and room-entry owners and is merged as `ea3240c7`.
-Recovery and recent-room navigation are the current increment; retention policy follows separately.
+Recovery and recent-room navigation are the current increment in
+[PR #705](https://github.com/intact-software-systems/ar-eye-hunter/pull/705); retention policy follows separately.
 
 ## Current foundation
 

@@ -55,6 +55,62 @@ export function RelicRoomEntry({ game }: RelicRoomEntryProps) {
                     <button type="button" onClick={() => owner.cancel()}>Cancel room entry</button>
                 </div>
             )}
+            <RelicRecentRooms game={game} joining={entry.status === 'joining'} />
+        </section>
+    );
+}
+
+interface RelicRecentRoomsProps extends RelicRoomEntryProps {
+    readonly joining: boolean;
+}
+
+function RelicRecentRooms({ game, joining }: RelicRecentRoomsProps) {
+    const owner = game.recentRooms;
+    const [history, setHistory] = useState(owner.getState());
+    const [selectionFailure, setSelectionFailure] = useState<string | null>(null);
+    useEffect(() => owner.onChange(setHistory), [owner]);
+    useEffect(() => setSelectionFailure(null), [history.principalId]);
+    const principalId = history.principalId;
+    return (
+        <section className="stack" aria-label="Recent rooms">
+            <h4>Recent rooms</h4>
+            <p>
+                Saved on this device for your account. Return checks access; Join Expedition remains a separate action.
+            </p>
+            {history.status === 'signed-out' && <p>Sign in to see your recent rooms.</p>}
+            {history.status === 'loading' && <p role="status">Loading recent rooms…</p>}
+            {history.status === 'ready' && history.rooms.length === 0 && <p>No recent rooms yet.</p>}
+            {history.failure && (
+                <div>
+                    <p role="alert">{history.failure}</p>
+                    <button type="button" onClick={() => void owner.retry()}>Retry recent rooms</button>
+                </div>
+            )}
+            {selectionFailure && <p role="alert">{selectionFailure}</p>}
+            {principalId && history.rooms.map(({ roomRef }) => (
+                <div className="button-grid" key={roomRef.groupId}>
+                    <span>{roomRef.groupId}</span>
+                    <button
+                        type="button"
+                        aria-label={`Return to ${roomRef.groupId}`}
+                        disabled={joining}
+                        onClick={() => {
+                            const result = game.roomEntry.returnTo(roomRef, principalId);
+                            setSelectionFailure(result.left?.message ?? null);
+                        }}
+                    >
+                        Return
+                    </button>
+                    <button
+                        type="button"
+                        aria-label={`Forget ${roomRef.groupId}`}
+                        onClick={() => void owner.forget(roomRef, principalId)}
+                    >
+                        Forget
+                    </button>
+                </div>
+            ))}
+            {history.rooms.length > 0 && <p>Forget removes this shortcut only; it does not leave the room.</p>}
         </section>
     );
 }

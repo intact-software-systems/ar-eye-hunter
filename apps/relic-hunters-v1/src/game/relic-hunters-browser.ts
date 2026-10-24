@@ -1,5 +1,5 @@
 import { RELIC_TOPICS, RELIC_TYPES, type RelicServerEvent } from '@relic-hunters/mod.ts';
-import { RallarRoomEntry } from '@shared-web/browser/rallar-room-entry.ts';
+import { RallarRecentRooms, RallarRoomEntry } from '@shared-web/browser/rallar-room-entry.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import { fetchRelicSnapshot, resetRelicGame, sendRelicCommand } from './api.ts';
 import { createRelicAuthorityClientBridge } from './rallar-game-authority-adapter.ts';
@@ -14,8 +14,11 @@ const SNAPSHOT_CHANNEL = { topicId: RELIC_TOPICS.snapshot, typeId: RELIC_TYPES.s
 /** The browser facade owns admission and transport; the runtime owns the expedition page lifecycle. */
 export function browserRelicRuntimeDeps(): RelicHuntersRuntime.Dependencies {
     const authority = createRelicAuthorityClientBridge(rallar);
+    const roomEntry = RallarRoomEntry.createBrowser(rallar, { scope: RELIC_ROOM_SCOPE });
+    const recentRooms = RallarRecentRooms.createBrowser(rallar, roomEntry, { scope: RELIC_ROOM_SCOPE });
     return {
-        roomEntry: RallarRoomEntry.createBrowser(rallar, { scope: RELIC_ROOM_SCOPE }),
+        roomEntry,
+        recentRooms,
         restoreSession: () => rallar.auth.restore(),
         login: (username, password) => rallar.auth.login({ username, password }),
         register: (username, password, displayName) =>

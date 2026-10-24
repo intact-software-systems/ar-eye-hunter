@@ -45,6 +45,12 @@ entry discards the saved code and associates the return destination with that
 account. Active members can return after code rotation or expiry; new entrants
 still need valid admission, and banned members and inactive rooms remain denied.
 
+Both games keep up to ten recent rooms on this device for each account and application/workspace.
+Return checks current server admission without saving a room code. A fresh invitation still takes
+precedence over a restored destination. Forget removes only the local shortcut; it does not leave
+the room or change membership. History loading or storage failures are shown separately from entry
+failures and can be retried.
+
 Room admission is separate from gameplay participation. Relic still requires
 Join Expedition; AR Eye keeps its director and match lifecycle. The shared
 browser entry owner and a host-sharing example are documented in

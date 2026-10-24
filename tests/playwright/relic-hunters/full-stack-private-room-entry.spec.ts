@@ -179,6 +179,66 @@ roomBrowserTest(
     }
 );
 
+roomBrowserTest(
+    'recovers recent expeditions without joining the activity and persists Forget',
+    async ({ page: host, guest }, testInfo) => {
+        roomBrowserTest.skip(
+            !['1', 'true'].includes(process.env.RELIC_HUNTERS_FULL_STACK ?? ''),
+            'Requires the paired Relic server.'
+        );
+        await host.goto('/');
+        await registerPrivateHunter(host, 'recent-host');
+        await host.getByRole('button', { name: 'New code room', exact: true }).click();
+        const linkField = host.getByLabel('Room link', { exact: true });
+        await expect(linkField).toHaveValue(/joinCode=/);
+        const firstLink = await linkField.inputValue();
+        const firstRef = new URLSearchParams(new URL(firstLink).hash.slice('#rallar-room?'.length)).get('groupId');
+        if (!firstRef) {
+            throw new Error('The first expedition must have a scoped share reference.');
+        }
+        await guest.goto(firstLink);
+        await registerPrivateHunter(guest, 'recent-guest');
+        const history = guest.getByRole('region', { name: 'Recent rooms', exact: true });
+        await expect(history.getByRole('button', { name: `Return to ${firstRef}`, exact: true })).toBeVisible();
+        await host.getByRole('button', { name: 'New code room', exact: true }).click();
+        await expect(linkField).toHaveValue(/joinCode=/);
+        await expect(linkField).not.toHaveValue(firstLink);
+        const secondLink = await linkField.inputValue();
+        const secondRef = new URLSearchParams(new URL(secondLink).hash.slice('#rallar-room?'.length)).get('groupId');
+        if (!secondRef) {
+            throw new Error('The second expedition must have a scoped share reference.');
+        }
+        await guest.goto(secondLink);
+        await expect(guest.getByText(`Entered ${secondRef}.`, { exact: true })).toBeVisible();
+        await expect(history.getByRole('button', { name: `Return to ${firstRef}`, exact: true })).toBeVisible();
+        await host.goto('about:blank');
+        await guest.reload();
+        await expect(guest.getByText(`Entered ${secondRef}.`, { exact: true })).toBeVisible();
+        const admissionPath = `**/groups/${firstRef}/join/requests/*`;
+        await guest.route(
+            admissionPath,
+            (route) => route.fulfill({ status: 403, json: { error: 'Room no longer available' } })
+        );
+        await history.getByRole('button', { name: `Return to ${firstRef}`, exact: true }).click();
+        await expect(guest.getByRole('alert')).toContainText('Room entry was denied');
+        await guest.unroute(admissionPath);
+        await history.getByRole('button', { name: `Return to ${firstRef}`, exact: true }).click();
+        await expect(guest.getByText(`Entered ${firstRef}.`, { exact: true })).toBeVisible();
+        await expect(guest.getByLabel('Room code', { exact: true })).toHaveValue('');
+        await expect(guest.locator('.lobby-party-row')).toHaveCount(0);
+        await expect(guest.getByRole('button', { name: /Join as/ })).toBeVisible();
+        await history.getByRole('button', { name: `Forget ${secondRef}`, exact: true }).click();
+        await expect(history.getByRole('button', { name: `Return to ${secondRef}`, exact: true })).toHaveCount(0);
+        await expect(guest.getByText(`Entered ${firstRef}.`, { exact: true })).toBeVisible();
+        await guest.reload();
+        await expect(history.getByRole('button', { name: `Return to ${firstRef}`, exact: true })).toBeVisible();
+        await expect(history.getByRole('button', { name: `Return to ${secondRef}`, exact: true })).toHaveCount(0);
+        await expect(guest.locator('.lobby-party-row')).toHaveCount(0);
+        await expect(guest.getByRole('button', { name: /Join as/ })).toBeVisible();
+        await guest.screenshot({ path: testInfo.outputPath('recent-expedition-recovery.png'), fullPage: true });
+    }
+);
+
 async function registerPrivateHunter(page: Page, role: string): Promise<void> {
     const suffix = crypto.randomUUID();
     await page.getByRole('button', { name: 'Register', exact: true }).click();

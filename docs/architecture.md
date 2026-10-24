@@ -72,6 +72,19 @@ can replace an invitation with stale or incorrectly scoped state. Both games
 consume the shared entry owner and retain their own participation rules.
 `examples/browser-startup-room/README.md` shows the browser sequence.
 
+`RallarRecentRooms`, exposed from the same narrow entry, owns device-local history through Rallar
+Data. Its store is scoped to the captured principal, application, and workspace. It records only
+the ten latest distinct scoped references and visit timestamps after successful entry, with no
+credentials or cached claims about access. The owner serializes store lifecycle and local edits;
+its pure codec validates persisted history and computes visit/forget changes. Cross-tab history
+is latest-value state, so simultaneous edits may replace each other.
+
+History hydration never selects a room. An explicit Return passes the displayed principal to
+`RallarRoomEntry.returnTo`; the entry owner rejects stale account/scope selections and runs existing
+server admission without a saved code. Forget changes only local history. Storage retry cannot
+repeat admission, and neither action enrolls a Relic player or resets an activity. Room expiry,
+membership revocation, and retention remain server policy.
+
 ## Discovery listing is group policy
 
 Create and update accept sparse `directoryListing` intent and store it in canonical

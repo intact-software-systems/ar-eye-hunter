@@ -1,3 +1,4 @@
+import '../setup-browser-indexeddb.ts';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { expect, vi } from 'vitest';
@@ -8,7 +9,7 @@ import type { RallarGameMatchStatus, RallarGamePeerReadiness } from '@shared-web
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
-import { arenaRoomEntry } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/arena-room-entry.ts';
+import { arenaRecentRooms, arenaRoomEntry } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/arena-room-entry.ts';
 import { useRallarArena, type ArenaConnection } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/use-rallar-arena.ts';
 import type { ArenaRallarGameMatchHandle } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
 import { createInitialArenaState, toArenaSnapshot } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
@@ -116,9 +117,12 @@ const mockRallar = vi.hoisted(() => ({
     subscriptions: vi.fn()
 }));
 
-vi.mock('@shared-web/browser/rallar.ts', () => ({
-    rallar: mockRallar
-}));
+vi.mock('@shared-web/browser/rallar.ts', async () => {
+    const { createRallarDataFacade } = await import('@shared-web/browser/rallar-data.ts');
+    const { RepositoryManager } = await import('@shared/cache/RepositoryManager.ts');
+    const data = createRallarDataFacade({ manager: new RepositoryManager(), resolveScopeKey: (scope) => scope });
+    return { rallar: { ...mockRallar, data } };
+});
 
 vi.mock('@shared-web/browser/connection/connection-http-api.ts', () => ({
     readApiConfig: vi.fn(() =>
@@ -208,6 +212,7 @@ export class ArenaRuntimeTestHarness {
 
     async dispose(): Promise<void> {
         await this.unmount();
+        await arenaRecentRooms.stop();
         vi.useRealTimers();
         vi.restoreAllMocks();
         vi.clearAllMocks();
@@ -239,7 +244,10 @@ function resetArenaSessionFixture(): void {
     mockRallar.session.mockReturnValue(session);
     mockRallar.auth.onChange.mockImplementation((listener) => {
         authListeners.add(listener);
-        return unsubscribe;
+        return () => {
+            authListeners.delete(listener);
+            unsubscribe();
+        };
     });
     mockRallar.start.mockResolvedValue({
         session,
@@ -418,3 +426,4 @@ function emptyArenaMatchStatus(): RallarGameMatchStatus {
         updatedAtEpochMs: 1
     };
 }
+import '../setup-browser-indexeddb.ts';

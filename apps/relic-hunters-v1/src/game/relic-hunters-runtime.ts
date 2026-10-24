@@ -9,7 +9,7 @@ import {
     type RelicRoundTransitionEvent,
     type RelicServerEvent
 } from '@relic-hunters/mod.ts';
-import type { RallarRoomEntry } from '@shared-web/browser/rallar-room-entry.ts';
+import type { RallarRecentRooms, RallarRoomEntry } from '@shared-web/browser/rallar-room-entry.ts';
 import type {
     ALDeliveryState,
     RallarAuthChangeListener,
@@ -116,6 +116,7 @@ export interface RelicRuntimeSnapshotSummary {
 export namespace RelicHuntersRuntime {
     export interface Dependencies {
         readonly roomEntry: RallarRoomEntry;
+        readonly recentRooms: RallarRecentRooms;
         restoreSession(): AuthSession | undefined;
         start(options: RallarStartOptions): Promise<Pick<RallarStartResult, 'session' | 'connected' | 'roomState'>>;
         subscriptions(): RallarSubscriptionScope;
@@ -155,6 +156,7 @@ export namespace RelicHuntersRuntime {
 
     export interface Connection {
         readonly roomEntry: RallarRoomEntry;
+        readonly recentRooms: RallarRecentRooms;
         readonly session: AuthSession | undefined;
         readonly connectionState: RelicHuntersRuntimePhase;
         readonly diagnostics: RelicRuntimeDiagnostics;
@@ -215,6 +217,7 @@ export class RelicHuntersRuntime {
         const session = deps.restoreSession();
         this.connection = {
             roomEntry: deps.roomEntry,
+            recentRooms: deps.recentRooms,
             session,
             connectionState: session ? 'connecting' : 'signed-out',
             diagnostics: initialRelicDiagnostics(session),
@@ -244,6 +247,7 @@ export class RelicHuntersRuntime {
         this.active = true;
         this.diagnose({ middlewareConnected: false });
         this.deps.roomEntry.start();
+        void this.deps.recentRooms.start();
         this.lifecycle = this.deps.subscriptions();
         this.lifecycle.add(this.deps.onAuthChange((state) => this.authChanged(state)));
         this.lifecycle.add(this.deps.roomEntry.onChange((state) => this.entryChanged(state)));
@@ -255,6 +259,7 @@ export class RelicHuntersRuntime {
         this.invalidateConnection();
         this.lifecycle?.unsubscribe();
         this.lifecycle = undefined;
+        void this.deps.recentRooms.stop();
         this.deps.roomEntry.stop();
     }
 

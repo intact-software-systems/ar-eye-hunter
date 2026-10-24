@@ -1,6 +1,6 @@
 # Room Recovery Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Return to recent rooms safely in both game consumers.
 
@@ -53,19 +53,19 @@ is composed beside the entry owner in each application.
 - Both app UIs use `entry.returnTo(visit.roomRef, history.principalId)`; entry
   failures are returned as Either and shown without destroying newer intent.
 
-- [ ] Write bound-return tests for successful code-free admission, account changes,
+- [x] Write bound-return tests for successful code-free admission, account changes,
       scope rejection preserving current destination, denied server entry and fresh-link precedence.
-- [ ] Run `npx vitest run packages/tests/shared-web/rooms/rallar-room-entry.test.ts`.
+- [x] Run `npx vitest run packages/tests/shared-web/rooms/rallar-room-entry.test.ts`.
       Expected: new behavior fails because returnTo does not exist; existing 34 tests pass.
-- [ ] Implement returnTo with existing validation, persistence and attempt fencing.
-- [ ] Add real IndexedDB tests for history ordering/deduplication/cap10/reload/forget,
+- [x] Implement returnTo with existing validation, persistence and attempt fencing.
+- [x] Add real IndexedDB tests for history ordering/deduplication/cap10/reload/forget,
       auth+scope isolation, no credentials, failure/retry, invalid persisted data,
       late hydration/write completion, same-account restart, and duplicate entry notifications.
-- [ ] Run `npx vitest run packages/tests/shared-web/rooms/recent-rooms/rallar-recent-rooms.test.ts`.
+- [x] Run `npx vitest run packages/tests/shared-web/rooms/recent-rooms/rallar-recent-rooms.test.ts`.
       Expected: missing history implementation fails. Implement lifecycle owner using Rallar Data.
-- [ ] Run both focused room-entry/history tests and
+- [x] Run both focused room-entry/history tests and
       `npm run typecheck --workspace @ar-eye-hunter/shared-web`. Expected: exit 0.
-- [ ] Commit shared behavior with `feat: add account-scoped recent room recovery` and
+- [x] Commit shared behavior with `feat: add account-scoped recent room recovery` and
       open one draft PR including roadmap progression and design scope.
 
 ### Task 2: Both game consumers and delivery
@@ -84,14 +84,14 @@ is composed beside the entry owner in each application.
 one history instance. Relic dependencies/connection expose `recentRooms`; AR Eye exports
 `arenaRecentRooms`. Start/stop beside entry; history failure remains independently visible.
 
-- [ ] Add lifecycle and rendered-controls tests first: start/stop subscriptions,
+- [x] Add lifecycle and rendered-controls tests first: start/stop subscriptions,
       account replacement, Return/Forget interaction, and Relic no automatic Join Expedition.
-- [ ] Run affected tests; expected new behavior fails before integration.
-- [ ] Compose shared owner and add Recent rooms loading/empty/error/list controls in both UIs.
+- [x] Run affected tests; expected new behavior fails before integration.
+- [x] Compose shared owner and add Recent rooms loading/empty/error/list controls in both UIs.
 - [ ] Run affected focused suites and both workspace builds. Expected: exit 0.
 - [ ] Run real browser flows proving reload, Return, Forget, fresh-link precedence,
       denied recovery, and Relic activity separation. Expected: all focused cases pass.
-- [ ] Run `npm run pr:delivery -- status` before broader checks; repair real conflicts only.
+- [x] Run `npm run pr:delivery -- status` before broader checks; repair real conflicts only.
 - [ ] Run shared-web public API/entrypoint tests, browser bundle boundaries, applicable
       package/app suites and repo style/structure checks. Expected: pass or explicitly assessed
       warning-only findings with no retained touched-file violation.
