@@ -50,8 +50,8 @@ describe('RallarServerApplication', () => {
         const appInbox = createTestServerAppInbox();
         const operation = appInbox.register({
             type: 'app:settings:set',
-            decodeCommand: (value) => value,
-            encodeCommand: (value) => value,
+            decodeEnvelope: (value) => value.data,
+            encodeEnvelope: (value) => ({ data: value }),
             toBinding: () => ({ contextId: 'settings', resourceId: 'request' }),
             toLogicalCommand: (value) => value,
             materialize: (value) => value,
@@ -81,7 +81,7 @@ describe('RallarServerApplication', () => {
                     target.webSocketMounted += 1;
                     events.push('websocket-route');
                 },
-                rest: [(target) => {
+                rest: [function installTestRestRoutes (target) {
                     target.restMounted += 1;
                     events.push('rest-route');
                 }]
@@ -92,7 +92,7 @@ describe('RallarServerApplication', () => {
         server.installWebSocketLifecycle().installWebSocketLifecycle();
         server.mountWebSocket(app).mountWebSocket(app);
         server.mountRest(app).mountRest(app);
-        await expect(operation.readReplay(null)).rejects.toMatchObject({ code: 'app-inbox-lifecycle-rejected' });
+        expect((await operation.readReplay(null))?.left).toMatchObject({ code: 'app-inbox-lifecycle-rejected' });
         server.start();
         expect(await operation.readReplay(null)).toBeUndefined();
         expect(server.appInbox).toBe(appInbox);
@@ -135,7 +135,7 @@ describe('RallarServerApplication', () => {
             throw new Error('Worker startup failed');
         };
         expect(() => server.start()).toThrow('Worker startup failed');
-        await expect(operation.readReplay(null)).rejects.toMatchObject({ code: 'app-inbox-lifecycle-rejected' });
+        expect((await operation.readReplay(null))?.left).toMatchObject({ code: 'app-inbox-lifecycle-rejected' });
     });
 });
 

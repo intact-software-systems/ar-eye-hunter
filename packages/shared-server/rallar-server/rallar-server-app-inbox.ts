@@ -1,6 +1,6 @@
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { Either } from '@shared/resilience/Either.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import type { PSqlSql, PSqlTransactionWrite } from '../postgres/p-sql-sql.ts';
@@ -14,7 +14,7 @@ import {
     type AppInboxEnqueueInput,
     type AppInboxMessageContext
 } from '../rallar-system/app-inbox/app-inbox-contracts.ts';
-import type { AppInboxFailure } from '../rallar-system/app-inbox/app-inbox-failure.ts';
+import { toTerminalAppInboxFailure, type AppInboxFailure } from '../rallar-system/app-inbox/app-inbox-failure.ts';
 import type { AppInboxOptions } from '../rallar-system/app-inbox/app-inbox-options.ts';
 import type {
     AppInboxEntryRepository,
@@ -66,12 +66,20 @@ export namespace RallarServerAppInbox {
         readonly resourceId: string;
     }
 
+    /** Existing canonical application envelope; optional fields follow the persisted AppInbox wire contract. */
+    export interface Envelope {
+        readonly data: JsonWireValue;
+        readonly authority?: JsonWireValue;
+        readonly senderId?: string;
+    }
+
     export interface Registration<Command, Result> {
         readonly type: `app:${string}:${string}`;
-        readonly decodeCommand: (value: JsonWireValue) => Command;
-        readonly encodeCommand: (command: Command) => JsonWireValue;
+        /** Owns the canonical data/authority/sender representation, including cross-field binding validation. */
+        readonly decodeEnvelope: (envelope: Envelope) => Command;
+        readonly encodeEnvelope: (command: Command) => Envelope;
         readonly toBinding: (command: Command) => Binding;
-        /** Caller semantics, including scope and authority, before volatile winner facts. */
+        /** Logical caller semantics and authorization identity, independent of captured envelope facts. */
         readonly toLogicalCommand: (command: Command) => JsonWireValue;
         /**
          * Exactly once for the reservation winner. Bounded clock/ID capture and row construction only;
@@ -80,11 +88,13 @@ export namespace RallarServerAppInbox {
          */
         readonly materialize: (command: Command) => Command;
         readonly encodeResult: (result: Result) => JsonWireValue;
-        readonly decodeResult: (value: JsonWireValue) => Result;
+        /** Validates the exact stored result against the validated retained winner, including its captured facts. */
+        readonly decodeResult: (value: JsonWireValue, command: Command) => Result;
         /** One delivery, one full read -> compute -> validate -> commit attempt. QueueBox owns retries. */
         readonly handle: (command: Command, context: AppInboxMessageContext<Result>) => Promise<Result>;
     }
 
+    /** Admission/idempotency policy failures are Left values; corrupt invariants and unexpected exceptions remain distinct. */
     export interface Operation<Command, Result> {
         submit(command: Command): Promise<Either<AppInboxFailure, Result>>;
         /** A validated miss permits external proposal work; concurrent misses may each compute a proposal. */
@@ -133,9 +143,9 @@ export class RallarServerAppInbox {
         const registered = Object.freeze({ ...registration });
         this.handlers.registry.registerHandler({
             type: registered.type,
-            decodeCommand: registered.decodeCommand,
+            decodeCommand: (data: JsonWireValue) => data,
             encodeResult: registered.encodeResult,
-            handle: (command, context) => this.runRegisteredAttempt(registered, command, context)
+            handle: (_data, context) => this.runRegisteredAttempt(registered, context)
         });
         return Object.freeze({
             submit: (command: Command) => this.submit(registered, command),
@@ -181,9 +191,9 @@ export class RallarServerAppInbox {
 
     private async runRegisteredAttempt<Command, Result>(
         registration: RallarServerAppInbox.Registration<Command, Result>,
-        command: Command,
         context: AppInboxMessageContext<Result>
     ): Promise<Result> {
+        const command = registration.decodeEnvelope(context.enqueue);
         const enqueue = toRegisteredEnqueue(registration, command);
         assertRegisteredEntry(registration, context.entry, enqueue);
         Object.freeze(context);
@@ -204,30 +214,66 @@ export class RallarServerAppInbox {
         registration: RallarServerAppInbox.Registration<Command, Result>,
         command: Command
     ): Promise<Either<AppInboxFailure, Result>> {
-        this.requireRunning();
-        const received = toRegisteredEnqueue(registration, command);
-        const retained = await this.readRetained(registration, received);
-        if (retained) {
-            return await this.client.resultWaiter.waitForResult(retained, registration.decodeResult);
+        const admission = this.getAdmissionFailure();
+        if (admission) {
+            return Either.ofLeft(admission);
         }
-        this.requireRunning();
-        const reservation = await this.client.reservationClient.reserveMaterializedEntry(received, async () => {
-            const decoded = registration.decodeCommand(received.data);
-            const materialized = toRegisteredEnqueue(registration, registration.materialize(decoded));
-            assertMatchingRegisteredCommand(received, materialized);
-            return materialized;
-        });
-        assertRegisteredEntry(registration, reservation.entry, received);
-        return await this.client.resultWaiter.waitForResult(reservation, registration.decodeResult);
+        try {
+            const received = toRegisteredEnqueue(registration, command);
+            const retained = await this.readRetained(registration, received);
+            if (retained) {
+                return await this.waitForRegisteredResult(registration, retained);
+            }
+            const stopped = this.getAdmissionFailure();
+            if (stopped) {
+                return Either.ofLeft(stopped);
+            }
+            const reservation = await this.client.reservationClient.reserveMaterializedEntry(received, async () => {
+                const decoded = registration.decodeEnvelope(received);
+                const materialized = toRegisteredEnqueue(registration, registration.materialize(decoded));
+                assertMatchingRegisteredCommand(registration, received, materialized);
+                return materialized;
+            });
+            assertRegisteredEntry(registration, reservation.entry, received);
+            return await this.waitForRegisteredResult(registration, reservation);
+        }
+        catch (error) {
+            if (error instanceof AppInboxIdempotencyConflictError) {
+                return Either.ofLeft(toTerminalAppInboxFailure(error));
+            }
+            throw error;
+        }
     }
 
     private async readReplay<Command, Result>(
         registration: RallarServerAppInbox.Registration<Command, Result>,
         command: Command
     ): Promise<Either<AppInboxFailure, Result> | undefined> {
-        this.requireRunning();
-        const retained = await this.readRetained(registration, toRegisteredEnqueue(registration, command));
-        return retained ? await this.client.resultWaiter.waitForResult(retained, registration.decodeResult) : undefined;
+        const admission = this.getAdmissionFailure();
+        if (admission) {
+            return Either.ofLeft(admission);
+        }
+        try {
+            const retained = await this.readRetained(registration, toRegisteredEnqueue(registration, command));
+            return retained ? await this.waitForRegisteredResult(registration, retained) : undefined;
+        }
+        catch (error) {
+            if (error instanceof AppInboxIdempotencyConflictError) {
+                return Either.ofLeft(toTerminalAppInboxFailure(error));
+            }
+            throw error;
+        }
+    }
+
+    private async waitForRegisteredResult<Command, Result>(
+        registration: RallarServerAppInbox.Registration<Command, Result>,
+        retained: AppInboxResultWaiter.Wait
+    ): Promise<Either<AppInboxFailure, Result>> {
+        const command = registration.decodeEnvelope(retained.enqueue);
+        return await this.client.resultWaiter.waitForResult(
+            retained,
+            (value) => registration.decodeResult(value, command)
+        );
     }
 
     private async readRetained<Command, Result>(
@@ -243,12 +289,12 @@ export class RallarServerAppInbox {
         return { enqueue, key, winner: false };
     }
 
-    private requireRunning(): void {
-        if (this.state !== 'running') {
-            throw Object.assign(new Error('Application AppInbox is not accepting commands'), {
-                code: 'app-inbox-lifecycle-rejected'
-            });
-        }
+    private getAdmissionFailure(): AppInboxFailure | undefined {
+        return this.state === 'running' ? undefined : toTerminalAppInboxFailure({
+            code: 'app-inbox-lifecycle-rejected',
+            status: 503,
+            message: 'Application AppInbox is not accepting commands'
+        });
     }
 }
 
@@ -256,8 +302,16 @@ function toRegisteredEnqueue<Command, Result>(
     registration: RallarServerAppInbox.Registration<Command, Result>,
     command: Command
 ): AppInboxEnqueueInput {
-    const data = decodeJsonWireText(JSON.stringify(encodeJsonWireValue(registration.encodeCommand(command))));
-    const decoded = registration.decodeCommand(data);
+    const encoded = registration.encodeEnvelope(command);
+    const envelope: RallarServerAppInbox.Envelope = {
+        data: detachWireValue(encoded.data),
+        ...(encoded.authority === undefined ? {} : { authority: detachWireValue(encoded.authority) }),
+        ...(encoded.senderId === undefined ? {} : { senderId: encoded.senderId })
+    };
+    if (envelope.senderId !== undefined && typeof envelope.senderId !== 'string') {
+        throw new TypeError('Application AppInbox sender must be a string');
+    }
+    const decoded = registration.decodeEnvelope(envelope);
     const binding = registration.toBinding(decoded);
     for (const value of [binding.contextId, binding.resourceId]) {
         if (typeof value !== 'string' || value.length === 0 || value.length > 128) {
@@ -269,8 +323,7 @@ function toRegisteredEnqueue<Command, Result>(
         topicId: registration.type,
         contextId: binding.contextId,
         resourceId: binding.resourceId,
-        authority: encodeJsonWireValue(registration.toLogicalCommand(decoded)),
-        data
+        ...envelope
     };
 }
 
@@ -292,7 +345,13 @@ function assertRegisteredEntry<Command, Result>(
         throw new AppInboxCommandIdentityError('corrupt');
     }
     const stored = identity.command;
-    const projected = toRegisteredEnqueue(registration, registration.decodeCommand(stored.data));
+    let projected: AppInboxEnqueueInput;
+    try {
+        projected = toRegisteredEnqueue(registration, registration.decodeEnvelope(stored));
+    }
+    catch {
+        throw new AppInboxCommandIdentityError('corrupt');
+    }
     const key = toRegisteredKey(projected);
     const route = message.route;
     if (
@@ -300,17 +359,31 @@ function assertRegisteredEntry<Command, Result>(
         stored.type !== registration.type || !sameKey(toRegisteredKey(stored), key) ||
         route?.topicId !== key.topicId || route.contextId !== key.contextId || route.resourceId !== key.resourceId ||
         serializeCanonicalMutationCommand(stored.authority ?? null) !==
-            serializeCanonicalMutationCommand(projected.authority ?? null)
+            serializeCanonicalMutationCommand(projected.authority ?? null) ||
+        serializeCanonicalMutationCommand(stored.data) !== serializeCanonicalMutationCommand(projected.data) ||
+        stored.senderId !== projected.senderId
     ) {
         throw new AppInboxCommandIdentityError('corrupt');
     }
-    assertMatchingRegisteredCommand(received, projected);
+    assertMatchingRegisteredCommand(registration, received, projected);
     return stored;
 }
 
-function assertMatchingRegisteredCommand(received: AppInboxEnqueueInput, existing: AppInboxEnqueueInput): void {
-    const receivedIdentity = { type: received.type, ...toRegisteredKey(received), logical: received.authority ?? null };
-    const existingIdentity = { type: existing.type, ...toRegisteredKey(existing), logical: existing.authority ?? null };
+function assertMatchingRegisteredCommand<Command, Result>(
+    registration: RallarServerAppInbox.Registration<Command, Result>,
+    received: AppInboxEnqueueInput,
+    existing: AppInboxEnqueueInput
+): void {
+    const receivedIdentity = {
+        type: received.type,
+        ...toRegisteredKey(received),
+        logical: registration.toLogicalCommand(registration.decodeEnvelope(received))
+    };
+    const existingIdentity = {
+        type: existing.type,
+        ...toRegisteredKey(existing),
+        logical: registration.toLogicalCommand(registration.decodeEnvelope(existing))
+    };
     if (serializeCanonicalMutationCommand(receivedIdentity) !== serializeCanonicalMutationCommand(existingIdentity)) {
         throw new AppInboxIdempotencyConflictError(
             received.resourceId ?? '',
@@ -330,4 +403,8 @@ async function readBoundResult(repository: AppInboxResultRepository, key: Key): 
         throw new AppInboxCommandIdentityError('corrupt');
     }
     return result;
+}
+
+function detachWireValue(value: JsonWireValue): JsonWireValue {
+    return decodeJsonWireText(JSON.stringify(encodeJsonWireValue(value)));
 }

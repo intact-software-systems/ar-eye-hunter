@@ -1,8 +1,8 @@
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
-import { validateAppInboxCommandIdentity } from '../app-inbox-command-identity.ts';
-import { AppInboxIdempotencyConflictError, type AppInboxEnqueueInput } from '../app-inbox-contracts.ts';
+import { AppInboxCommandIdentityError, validateAppInboxCommandIdentity } from '../app-inbox-command-identity.ts';
+import type { AppInboxEnqueueInput } from '../app-inbox-contracts.ts';
 import type { AppInboxEntryRepository } from '../app-inbox-persistence-ports.ts';
 import {
     createAppInboxResourceEntry,
@@ -57,11 +57,7 @@ export class AppInboxReservationClient {
         );
         const validation = validateAppInboxCommandIdentity(entry);
         if (!validation.valid) {
-            throw new AppInboxIdempotencyConflictError(
-                entry.key.resourceId,
-                'invalid-existing-command',
-                'invalid-received-command'
-            );
+            throw new AppInboxCommandIdentityError('corrupt');
         }
         return {
             entry,

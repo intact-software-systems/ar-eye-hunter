@@ -23,9 +23,8 @@ Deno.test('route installers mount representative API and websocket behavior in o
     const installers = constructApiV1RouteInstallers(createInput(), TEST_OPERATIONS);
 
     installers.webSocket(app);
-    for (const install of installers.rest) {
-        install(app);
-    }
+    assert.equal(installers.rest.length, 1, 'the fixed API inventory has one aggregate mount boundary');
+    installers.rest[0](app);
 
     assert.equal((await app.request('/api/ws/session-1')).status, 426);
     const config = await (await app.request('/api/config')).json();

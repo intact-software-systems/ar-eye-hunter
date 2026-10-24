@@ -7,6 +7,7 @@ import {
 
 import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { AppInboxReservationClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-reservation-client.ts';
+import { toResourceEntryWithKey } from '@shared/queuebox/ResourceEntry.ts';
 
 import { TestResourceInbox } from '../test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxQueueMessageFixture } from '../test-support/create-app-inbox-queue-message-fixture.ts';
@@ -21,6 +22,17 @@ const ENQUEUE: AppInboxEnqueueInput = {
 };
 
 describe('AppInboxReservationClient materialized reservation', () => {
+    it('distinguishes a corrupt retained reservation from ordinary idempotency conflict', async () => {
+        const client = new AppInboxReservationClient({
+            repository: { writeMaterializedIfAbsentOrReplaceExpired: async (entry) => toResourceEntryWithKey(entry.key, 'APP_INBOX', { corrupt: true }) },
+            creationNow: Temporal.Now.instant,
+            createMessage: createAppInboxQueueMessageFixture
+        }, { serviceId: 'server-1' });
+        await expect(client.reserveMaterializedEntry(ENQUEUE, async () => {
+            throw new Error('A retained row must not recapture facts');
+        })).rejects.toMatchObject({ code: 'app-inbox-malformed-command', operationSource: 'corrupt' });
+    });
+
     it('retains the placeholder creation instant to the millisecond when materializing and replaying the winning data', async () => {
         const queue = new TestResourceInbox(new Map());
         let createdAt = Temporal.Instant.from('2026-10-13T23:59:59.123456789Z');

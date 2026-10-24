@@ -149,12 +149,13 @@ export function constructApiV1RouteInstallers<
     operations: ApiV1RouteInstallerOperations<Runtime>
 ): ApiV1RouteInstallers {
     const construction = createApiV1RouteConstruction(input, operations);
+    function installApiV1RestRoutes(app: Hono): void {
+        registerApiV1StateRoutes(app, construction);
+        registerApiV1AdministrationRoutes(app, construction);
+    }
     return {
         webSocket: createApiV1WsRouteInstaller(construction),
-        rest: [
-            ...createApiV1StateRouteInstallers(construction),
-            ...createApiV1AdministrationRouteInstallers(construction)
-        ]
+        rest: [installApiV1RestRoutes]
     };
 }
 
@@ -210,100 +211,77 @@ function createApiV1WsRouteInstaller<
         });
 }
 
-function createApiV1StateRouteInstallers<
+function registerApiV1StateRoutes<
     Runtime extends ApiV1RouteInstallerRuntime,
     Topology extends ApiV1RouteInstallerTopology,
->(
-    construction: ApiV1RouteConstruction<Runtime, Topology>
-): readonly RallarServerRouteInstaller<Hono>[] {
+>(app: Hono, construction: ApiV1RouteConstruction<Runtime, Topology>): void {
     const { input, requireSession, snapshots } = construction;
-    return [
-        (app) =>
-            configRoutes.registerConfigRoutes(app, {
-                requireApiAuthSession: requireSession,
-                now: input.nowEpochMs,
-                createTokenId: input.createTokenId,
-                appAuthInbox: input.runtime.appAuthInboxService,
-                passwordDerivationAdmission: input.runtime.passwordDerivationAdmission,
-                authUserRepository: input.authUserRepository,
-                authentication: input.authentication,
-                operatorToken: input.operatorToken,
-                publicConfiguration: input.publicConfiguration
-            }),
-        (app) =>
-            iceRoutes.registerIceRoutes(app, {
-                requireApiAuthSession: requireSession,
-                configuration: input.ice,
-                nowEpochMs: input.nowEpochMs
-            }),
-        snapshots.client,
-        snapshots.group,
-        (app) =>
-            spaStatisticsRoutes.registerSpaStatisticsRoutes(app, {
-                statistics: input.admin.statistics,
-                requireApiAuthSession: requireSession
-            }),
-        (app) =>
-            graphTopologyRoutes.registerGraphTopologyRoutes(app, {
-                groupStateService: snapshots.graphGroupStateService,
-                graphDiagnostics: {
-                    readScopedGlobalGraphDiagnostic,
-                    readGroupGraphDiagnostic
-                },
-                topologyQuery: input.topology.topologyQuery,
-                topologyPlanning: input.topology.topologyPlanning,
-                processTopologyAppInbox: (authority, enqueue) =>
-                    graphTopologyRoutes.processTopologyAppInbox(
-                        input.runtime.topologyInboxService,
-                        authority,
-                        enqueue
-                    ),
-                requireApiAuthSession: requireSession,
-                adminClientIds: input.topology.adminClientIds,
-                readLifecyclePolicy: (ref) => input.topology.groupStateRepository.readLifecyclePolicy(ref),
-                readPlannedLayoutFingerprint: input.topology.readPlannedLayoutFingerprint,
-                strictReadAuthorization: input.strictReadAuthorization,
-                now: input.nowEpochMs
-            })
-    ];
+    configRoutes.registerConfigRoutes(app, {
+        requireApiAuthSession: requireSession,
+        now: input.nowEpochMs,
+        createTokenId: input.createTokenId,
+        appAuthInbox: input.runtime.appAuthInboxService,
+        passwordDerivationAdmission: input.runtime.passwordDerivationAdmission,
+        authUserRepository: input.authUserRepository,
+        authentication: input.authentication,
+        operatorToken: input.operatorToken,
+        publicConfiguration: input.publicConfiguration
+    });
+    iceRoutes.registerIceRoutes(app, {
+        requireApiAuthSession: requireSession,
+        configuration: input.ice,
+        nowEpochMs: input.nowEpochMs
+    });
+    snapshots.client(app);
+    snapshots.group(app);
+    spaStatisticsRoutes.registerSpaStatisticsRoutes(app, {
+        statistics: input.admin.statistics,
+        requireApiAuthSession: requireSession
+    });
+    graphTopologyRoutes.registerGraphTopologyRoutes(app, {
+        groupStateService: snapshots.graphGroupStateService,
+        graphDiagnostics: {
+            readScopedGlobalGraphDiagnostic,
+            readGroupGraphDiagnostic
+        },
+        topologyQuery: input.topology.topologyQuery,
+        topologyPlanning: input.topology.topologyPlanning,
+        processTopologyAppInbox: (authority, enqueue) =>
+            graphTopologyRoutes.processTopologyAppInbox(input.runtime.topologyInboxService, authority, enqueue),
+        requireApiAuthSession: requireSession,
+        adminClientIds: input.topology.adminClientIds,
+        readLifecyclePolicy: (ref) => input.topology.groupStateRepository.readLifecyclePolicy(ref),
+        readPlannedLayoutFingerprint: input.topology.readPlannedLayoutFingerprint,
+        strictReadAuthorization: input.strictReadAuthorization,
+        now: input.nowEpochMs
+    });
 }
 
-function createApiV1AdministrationRouteInstallers<
+function registerApiV1AdministrationRoutes<
     Runtime extends ApiV1RouteInstallerRuntime,
     Topology extends ApiV1RouteInstallerTopology,
->(
-    construction: ApiV1RouteConstruction<Runtime, Topology>
-): readonly RallarServerRouteInstaller<Hono>[] {
+>(app: Hono, construction: ApiV1RouteConstruction<Runtime, Topology>): void {
     const { authorizeCrdtDocumentAccess, input, requireSession } = construction;
-    return [
-        (app) =>
-            crdtAdminRoutes.registerCrdtAdminRoutes(app, {
-                repository: input.crdtLogRepository,
-                crdtAdminMutations: input.crdtMutations,
-                adminClientIds: input.topology.adminClientIds,
-                requireApiAdminSession: async (context) => await requireSession(context.req),
-                requireApiUserSession: async (context) => await requireSession(context.req),
-                authorizeCatchUp: ({ document, session }) =>
-                    authorizeCrdtDocumentAccess({
-                        document,
-                        actorPrincipalId: session.username,
-                        sessionId: session.sessionId
-                    })
-            }),
-        (app) =>
-            registerAdminOperationsRoutes(app, {
-                adminClientIds: input.topology.adminClientIds,
-                operations: input.admin.operations,
-                requireApiAuthSession: requireSession
-            }),
-        (app) =>
-            adminSupportRoutes.registerAdminSupportRoutes(app, {
-                adminClientIds: input.topology.adminClientIds,
-                support: input.admin.support,
-                requireApiAuthSession: requireSession
-            }),
-        swaggerRoutes.installApiDocumentationRoutes
-    ];
+    crdtAdminRoutes.registerCrdtAdminRoutes(app, {
+        repository: input.crdtLogRepository,
+        crdtAdminMutations: input.crdtMutations,
+        adminClientIds: input.topology.adminClientIds,
+        requireApiAdminSession: async (context) => await requireSession(context.req),
+        requireApiUserSession: async (context) => await requireSession(context.req),
+        authorizeCatchUp: ({ document, session }) =>
+            authorizeCrdtDocumentAccess({ document, actorPrincipalId: session.username, sessionId: session.sessionId })
+    });
+    registerAdminOperationsRoutes(app, {
+        adminClientIds: input.topology.adminClientIds,
+        operations: input.admin.operations,
+        requireApiAuthSession: requireSession
+    });
+    adminSupportRoutes.registerAdminSupportRoutes(app, {
+        adminClientIds: input.topology.adminClientIds,
+        support: input.admin.support,
+        requireApiAuthSession: requireSession
+    });
+    swaggerRoutes.installApiDocumentationRoutes(app);
 }
 
 const PRODUCTION_OPERATIONS: ApiV1RouteInstallerOperations<ApiV1Runtime> = {

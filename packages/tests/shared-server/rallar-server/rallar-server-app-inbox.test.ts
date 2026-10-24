@@ -5,8 +5,11 @@ import { RallarServerAppInbox, type AppInboxMessageContext, type JsonWireValue, 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
+import { createAppInboxResourceEntry } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
 import { createAppInboxRetryFinalizer } from '@shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts';
 import { computeAppOutboxInsert, writeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
+import { serializeCanonicalMutationCommand } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { toResourceEntryWithKey } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -46,19 +49,67 @@ describe('public application AppInbox', () => {
         expect(await storage.sql`select quantity, revision from inventory`).toEqual([{ quantity: 7, revision: 1 }]);
     });
 
+    it.each([{ status: 'pending', remaining: 7, quantity: 7 }, { status: 'completed', remaining: 123, quantity: 10 }] as const)(
+        'consumes a canonical $status envelope without rewriting or recapturing its winner',
+        async ({ status, remaining, quantity }) => {
+            const original = await seedCanonicalStock(status, { remaining: 123, capturedAt: 501 });
+            const harness = createHarness(storage.sql);
+            const operation = registerStock(harness);
+            harness.inbox.start();
+            const result = await drain(harness.reader, operation.readReplay(COMMAND));
+            expect(result).toEqual(Either.ofRight({ remaining, capturedAt: 501 }));
+            expect(await operation.submit(COMMAND)).toEqual(result);
+            expect(harness.facts).toEqual([]);
+            expect(await storage.sql`select ri_resource from resource_inbox where ri_type_id = 'APP_INBOX'`).toEqual([{ ri_resource: original }]);
+            expect(await storage.sql`select quantity from inventory`).toEqual([{ quantity }]);
+        }
+    );
+
+    it.each([{ wrong: 'warehouse', warehouse: 'warehouse-2', operation: 'reserve' }, {
+        wrong: 'operation',
+        warehouse: COMMAND.warehouse,
+        operation: 'inspect'
+    }])('rejects valid-shaped results bound to the wrong $wrong on every replay path', async ({ warehouse, operation: resultOperation }) => {
+        const result = {
+            remaining: 123,
+            capturedAt: 501,
+            warehouse,
+            operation: resultOperation
+        };
+        await seedCanonicalStock('completed', result);
+        const harness = createHarness(storage.sql);
+        const operation = registerStock(harness, decodeBoundStockResult);
+        harness.inbox.start();
+        expect((await operation.readReplay(COMMAND))?.left).toMatchObject({ code: 'app-inbox-result-corrupt' });
+        expect((await operation.submit(COMMAND)).left).toMatchObject({ code: 'app-inbox-result-corrupt' });
+        expect(harness.facts).toEqual([]);
+        expect(await storage.sql`select quantity from inventory`).toEqual([{ quantity: 10 }]);
+    });
+
+    it('binds exact stored results to retained winner facts rather than uncaptured caller data', async () => {
+        const exact = { remaining: 123, capturedAt: 501, warehouse: COMMAND.warehouse, operation: 'reserve' };
+        await seedCanonicalStock('completed', exact);
+        const harness = createHarness(storage.sql);
+        const operation = registerStock(harness, decodeBoundStockResult);
+        harness.inbox.start();
+        expect(await operation.readReplay(COMMAND)).toEqual(Either.ofRight(exact));
+        expect(await operation.submit(COMMAND)).toEqual(Either.ofRight(exact));
+        expect(harness.facts).toEqual([]);
+    });
+
     it('rejects conflicting semantics before winner capture and binds scope to the durable key', async () => {
         const harness = createHarness(storage.sql);
         const operation = registerStock(harness);
         harness.inbox.start();
         await drain(harness.reader, operation.submit(COMMAND));
-        await expect(operation.readReplay({ ...COMMAND, quantity: 4 })).rejects.toMatchObject({ code: 'app-inbox-idempotency-conflict' });
-        await expect(operation.submit({ ...COMMAND, quantity: 4 })).rejects.toMatchObject({ code: 'app-inbox-idempotency-conflict' });
+        expect((await operation.readReplay({ ...COMMAND, quantity: 4 }))?.left).toMatchObject({ code: 'app-inbox-idempotency-conflict', status: 409 });
+        expect((await operation.submit({ ...COMMAND, quantity: 4 })).left).toMatchObject({ code: 'app-inbox-idempotency-conflict', status: 409 });
         expect(harness.facts).toEqual([101]);
         await storage.sql`update resource_inbox set fk_ext_bank_id = 'wrong-scope' where ri_topic_id = ${TYPE}`;
         await expect(operation.submit({ ...COMMAND, warehouse: 'wrong-scope' })).rejects.toMatchObject({ code: 'app-inbox-malformed-command' });
     });
 
-    it.each(['route', 'authority', 'data', 'result'])('fails closed on a corrupt durable %s', async (corruption) => {
+    it.each(['route', 'authority', 'data', 'sender', 'result'])('fails closed on a corrupt durable %s', async (corruption) => {
         const harness = createHarness(storage.sql);
         const operation = registerStock(harness);
         harness.inbox.start();
@@ -75,7 +126,10 @@ describe('public application AppInbox', () => {
             }
             else {
                 const command = JSON.parse(envelope.payload.resource);
-                if (corruption === 'authority') {
+                if (corruption === 'sender') {
+                    command.senderId = 'another-session';
+                }
+                else if (corruption === 'authority') {
                     command.authority.quantity = 99;
                 }
                 else {
@@ -115,11 +169,11 @@ describe('public application AppInbox', () => {
     it('admits only sealed registrations and refuses submissions after shutdown', async () => {
         const harness = createHarness(storage.sql);
         const operation = registerStock(harness);
-        await expect(operation.submit(COMMAND)).rejects.toMatchObject({ code: 'app-inbox-lifecycle-rejected' });
+        expect((await operation.submit(COMMAND)).left).toMatchObject({ code: 'app-inbox-lifecycle-rejected', status: 503 });
         harness.inbox.start();
         expect(() => registerStock(harness)).toThrow();
         harness.inbox.stop();
-        await expect(operation.submit(COMMAND)).rejects.toMatchObject({ code: 'app-inbox-lifecycle-rejected' });
+        expect((await operation.submit(COMMAND)).left).toMatchObject({ code: 'app-inbox-lifecycle-rejected', status: 503 });
         expect(await storage.sql`select * from resource_inbox`).toEqual([]);
     });
 
@@ -156,10 +210,10 @@ describe('public application AppInbox', () => {
         const proposalGate = Promise.withResolvers<void>();
         const operation = harness.inbox.register({
             type: 'app:inventory:proposal',
-            decodeCommand: decodeStock,
-            encodeCommand: (command: StockCommand) => ({ ...command }),
+            decodeEnvelope: decodeStockEnvelope,
+            encodeEnvelope: encodeStockEnvelope,
             toBinding: (command) => ({ contextId: command.warehouse, resourceId: command.requestId }),
-            toLogicalCommand: (command) => ({ warehouse: command.warehouse, requestId: command.requestId, quantity: command.quantity }),
+            toLogicalCommand: toStockLogicalCommand,
             materialize: (command) => {
                 harness.facts.push(command.capturedAt ?? 0);
                 return command;
@@ -195,7 +249,7 @@ describe('public application AppInbox', () => {
         expect(harness.facts).toHaveLength(1);
         expect(results).toEqual([Either.ofRight(harness.facts[0]), Either.ofRight(harness.facts[0])]);
         expect(await submitWithExternalProposal(COMMAND)).toEqual(results[0]);
-        await expect(submitWithExternalProposal({ ...COMMAND, quantity: 4 })).rejects.toMatchObject({ code: 'app-inbox-idempotency-conflict' });
+        expect((await submitWithExternalProposal({ ...COMMAND, quantity: 4 })).left).toMatchObject({ code: 'app-inbox-idempotency-conflict' });
         expect(proposals).toBe(2);
         expect(harness.facts).toHaveLength(1);
         expect(await storage.sql`select quantity, revision from inventory`).toEqual([{ quantity: 7, revision: 1 }]);
@@ -298,20 +352,20 @@ function createHarness(database: PSqlSql): Harness {
     };
 }
 
-function registerStock(harness: Harness) {
+function registerStock(harness: Harness, decodeResult: (value: JsonWireValue, command: StockCommand) => JsonWireValue = decodeStockResult) {
     return harness.inbox.register({
         type: TYPE,
-        decodeCommand: decodeStock,
-        encodeCommand: (command: StockCommand) => ({ ...command }),
+        decodeEnvelope: decodeStockEnvelope,
+        encodeEnvelope: encodeStockEnvelope,
         toBinding: (command: StockCommand) => ({ contextId: command.warehouse, resourceId: command.requestId }),
-        toLogicalCommand: (command: StockCommand) => ({ warehouse: command.warehouse, requestId: command.requestId, quantity: command.quantity }),
+        toLogicalCommand: toStockLogicalCommand,
         materialize: (command: StockCommand) => {
             const capturedAt = 101 + harness.facts.length;
             harness.facts.push(capturedAt);
             return { ...command, capturedAt };
         },
         encodeResult: (result: JsonWireValue) => result,
-        decodeResult: decodeStockResult,
+        decodeResult,
         handle: (command: StockCommand, context: AppInboxMessageContext<JsonWireValue>) => reserveStock(harness, command, context)
     });
 }
@@ -375,10 +429,10 @@ async function drain<Result>(reader: InboxQueueReader, pending: Promise<Result>)
     return await observed;
 }
 
-function decodeStockResult(value: JsonWireValue): JsonWireValue {
+function decodeStockResult(value: JsonWireValue, command: StockCommand): JsonWireValue {
     if (
         !value || typeof value !== 'object' || Array.isArray(value) || !('remaining' in value) || typeof value.remaining !== 'number' ||
-        typeof value.capturedAt !== 'number'
+        typeof value.capturedAt !== 'number' || value.capturedAt !== command.capturedAt
     ) {
         throw new TypeError('Malformed stock result');
     }
@@ -394,4 +448,59 @@ async function waitForEntry(database: PSqlSql): Promise<void> {
         await new Promise((resolve) => setTimeout(resolve, 2));
     }
     throw new Error('Command did not reach durable reservation');
+}
+
+function encodeStockEnvelope(command: StockCommand): RallarServerAppInbox.Envelope {
+    return { senderId: 'inventory-session', data: { ...command, capturedAt: null }, authority: { ...command } };
+}
+
+function decodeStockEnvelope(envelope: RallarServerAppInbox.Envelope): StockCommand {
+    const logical = decodeStock(envelope.data);
+    const captured = decodeStock(envelope.authority ?? null);
+    if (
+        envelope.senderId !== 'inventory-session' || logical.capturedAt !== null ||
+        serializeCanonicalMutationCommand(toStockLogicalCommand(logical)) !== serializeCanonicalMutationCommand(toStockLogicalCommand(captured))
+    ) {
+        throw new TypeError('Stock envelope binding mismatch');
+    }
+    return captured;
+}
+
+function decodeBoundStockResult(value: JsonWireValue, command: StockCommand): JsonWireValue {
+    const result = decodeStockResult(value, command);
+    if (
+        !result || typeof result !== 'object' || Array.isArray(result) || result.warehouse !== command.warehouse ||
+        result.operation !== (command.quantity === 0 ? 'inspect' : 'reserve')
+    ) {
+        throw new TypeError('Stock result belongs to another command');
+    }
+    return result;
+}
+
+async function seedCanonicalStock(status: 'pending' | 'completed', result: JsonWireValue): Promise<string> {
+    const envelope = {
+        type: TYPE,
+        topicId: TYPE,
+        contextId: COMMAND.warehouse,
+        resourceId: COMMAND.requestId,
+        senderId: 'inventory-session',
+        data: { ...COMMAND },
+        authority: { ...COMMAND, capturedAt: 501 }
+    } as const;
+    const entry = createAppInboxResourceEntry(envelope, 'existing-inventory-worker', {
+        creationNow: Temporal.Now.instant,
+        createMessage: ({ key, enqueue }) =>
+            newALUntargetedMessage('existing-inventory-worker', newALRoute(key.topicId, key.contextId, key.resourceId), enqueue.type, enqueue)
+    });
+    const repositories = createPSqlResourceInboxRepository(storage.sql, () => new Date());
+    await repositories.entries.writeMaterializedIfAbsentOrReplaceExpired(entry, async () => entry);
+    if (status === 'completed') {
+        await storage.sql`update resource_inbox set ri_status = 'COMPLETED' where ri_type_id = 'APP_INBOX'`;
+        await new ResourceInboxResultsRepository(storage.sql).replace({ ...toResourceEntryWithKey(entry.key, 'APP_INBOX', result), status: 'COMPLETED' });
+    }
+    return entry.resource;
+}
+
+function toStockLogicalCommand(command: StockCommand): JsonWireValue {
+    return { warehouse: command.warehouse, requestId: command.requestId, quantity: command.quantity };
 }
