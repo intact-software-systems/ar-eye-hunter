@@ -217,8 +217,8 @@ function createApplication(
     mutation: ApiV1MutationRuntime,
     runtime: CreateApiV1AppInboxInput['runtime'],
     appInbox: RallarServerAppInbox
-): RallarServerApplication<RallarServerRuntime, unknown> {
-    return createRallarServerApplication<RallarServerRuntime, unknown>({
+): RallarServerApplication<RallarServerRuntime, void> {
+    return createRallarServerApplication<RallarServerRuntime, void>({
         appInbox,
         runtime: {
             qboxEngine: runtime.qboxEngine,

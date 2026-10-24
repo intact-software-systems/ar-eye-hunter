@@ -227,9 +227,10 @@ export function constructApiV1Runtime(
     operations: ApiV1RuntimeConstructionOperations
 ): ApiV1Runtime {
     requireRuntimeAppInboxDeadline(input);
+    const { wsRuntimeName, nowEpochMs, timing } = input;
     const startupGeneration = input.backgroundTasks.beginStartupGeneration();
     const almReceiptDiagnostics = createRallarAlmReceiptDiagnosticsRecorder({
-        nowEpochMs: input.nowEpochMs,
+        nowEpochMs,
         capacity: RALLAR_ALM_RECEIPT_DIAGNOSTICS_CAPACITY
     });
     const appInboxCompletionNotices = createApiV1AppInboxCompletionNotices({
@@ -247,29 +248,22 @@ export function constructApiV1Runtime(
         appInboxCompletionNotices,
         rtcTopology,
         topology,
-        wsRuntimeName: input.wsRuntimeName,
+        wsRuntimeName,
         queuePubSubChannel: input.queuePubSubChannel,
         queuePubSubPublisherId: input.queuePubSubPublisherId,
         queuePubSubLocalBus: input.queuePubSubLocalBus,
         databasePubSubMode: input.databasePubSubMode,
         databaseNotification: input.databaseNotification,
-        timing: input.timing,
+        timing,
         outboxStageTiming: input.outboxStageTiming,
         wsReceiptObserver: input.wsReceiptObserver,
         almReceiptDiagnostics,
         inboundStores,
-        nowEpochMs: input.nowEpochMs
+        nowEpochMs
     });
-    const appInbox = operations.createAppInbox({ mutation, runtime, timing: input.timing });
+    const appInbox = operations.createAppInbox({ mutation, runtime, timing });
     input.backgroundTasks.register(() => appInbox.stop());
-    const relic = operations.createRelicServices({
-        mutation,
-        appInbox,
-        runtime,
-        wsRuntimeName: input.wsRuntimeName,
-        nowEpochMs: input.nowEpochMs,
-        timing: input.timing
-    });
+    const relic = operations.createRelicServices({ mutation, appInbox, runtime, wsRuntimeName, nowEpochMs, timing });
     rtcTopology.topologyReplay.attach({ wsQueueBoxServerService: runtime.wsQBoxServerService });
     startGroupMaintenance({ runtime, mutation, input, operations });
     const selectors = operations.createSnapshotSelectors(mutation, input.timing);

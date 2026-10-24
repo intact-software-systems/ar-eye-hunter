@@ -36,8 +36,13 @@ beforeEach(async () => {
 afterEach(async () => await storage?.close());
 
 describe('public application AppInbox', () => {
-    it('returns durable admission and a matching pending admission before any worker runs', async () => {
-        const harness = createHarness(storage.sql);
+    it('returns durable admission and wakes its owner before any worker runs or result wait begins', async () => {
+        const wakeObservations: Promise<readonly { status: string; }[]>[] = [];
+        const harness = createHarness(storage.sql, () => {
+            wakeObservations.push(
+                storage.sql<{ status: string; }[]>`select ri_status as status from resource_inbox where ri_type_id = 'APP_INBOX'`.then((rows) => rows)
+            );
+        });
         const operation = registerStock(harness);
         harness.inbox.start();
         expect(await operation.readAdmission(COMMAND)).toBeUndefined();
@@ -46,25 +51,54 @@ describe('public application AppInbox', () => {
         const replay = await operation.readAdmission(COMMAND);
         expect(replay?.left).toBeUndefined();
         expect(replay?.right).toBeDefined();
+        expect(await Promise.all(wakeObservations)).toEqual([[{ status: 'NEW' }]]);
         expect(harness.facts).toEqual([101]);
         expect(harness.afterCommit).toEqual([]);
         expect(await storage.sql`select quantity, revision from inventory`).toEqual([{ quantity: 10, revision: 0 }]);
         expect(await storage.sql`select ri_status from resource_inbox where ri_type_id = 'APP_INBOX'`).toEqual([{ ri_status: 'NEW' }]);
         expect((await operation.enqueue({ ...COMMAND, quantity: 4 })).left).toMatchObject({ code: 'app-inbox-idempotency-conflict' });
         expect((await operation.readAdmission({ ...COMMAND, quantity: 4 }))?.left).toMatchObject({ code: 'app-inbox-idempotency-conflict' });
-        expect(await drain(harness.reader, admitted.right!.wait())).toEqual(Either.ofRight({ remaining: 7, capturedAt: 101 }));
+        await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
+        expect(await storage.sql`select ri_status from resource_inbox where ri_type_id = 'APP_INBOX'`).toEqual([{ ri_status: 'COMPLETED' }]);
+        expect(await admitted.right!.wait()).toEqual(Either.ofRight({ remaining: 7, capturedAt: 101 }));
         expect(await replay!.right!.wait()).toEqual(Either.ofRight({ remaining: 7, capturedAt: 101 }));
+        expect(wakeObservations).toHaveLength(1);
         expect(harness.afterCommit).toEqual([7]);
         expect(harness.facts).toEqual([101]);
+    });
+
+    it('retains admitted work when its wake port fails and wakes the retained admission on retry', async () => {
+        let wakes = 0;
+        const harness = createHarness(storage.sql, () => {
+            wakes += 1;
+            if (wakes === 1) {
+                throw new Error('Owning queue unavailable');
+            }
+        });
+        const operation = registerStock(harness);
+        harness.inbox.start();
+        await expect(operation.enqueue(COMMAND)).rejects.toThrow('Owning queue unavailable');
+        expect(await storage.sql`select ri_status from resource_inbox where ri_type_id = 'APP_INBOX'`).toEqual([{ ri_status: 'NEW' }]);
+        const retry = await operation.enqueue(COMMAND);
+        expect(retry.right).toBeDefined();
+        expect(wakes).toBe(2);
+        expect(harness.facts).toEqual([101]);
+        expect(await drain(harness.reader, retry.right!.wait())).toEqual(Either.ofRight({ remaining: 7, capturedAt: 101 }));
+        expect(wakes).toBe(2);
+        expect(harness.afterCommit).toEqual([7]);
     });
 
     it('binds admitted waiters to the retained command and applies lifecycle and corruption checks before admission', async () => {
         const exact = { remaining: 123, capturedAt: 501, warehouse: COMMAND.warehouse, operation: 'reserve' };
         await seedCanonicalStock('completed', exact);
-        const harness = createHarness(storage.sql);
+        let wakes = 0;
+        const harness = createHarness(storage.sql, () => {
+            wakes += 1;
+        });
         const operation = registerStock(harness, decodeBoundStockResult);
         expect((await operation.enqueue(COMMAND)).left).toMatchObject({ code: 'app-inbox-lifecycle-rejected' });
         expect((await operation.readAdmission(COMMAND))?.left).toMatchObject({ code: 'app-inbox-lifecycle-rejected' });
+        expect(wakes).toBe(0);
         harness.inbox.start();
         const admitted = await operation.enqueue(COMMAND);
         expect(await admitted.right!.wait()).toEqual(Either.ofRight(exact));
@@ -72,17 +106,24 @@ describe('public application AppInbox', () => {
         await storage.sql`update resource_inbox set ri_resource = replace(ri_resource, 'inventory-session', 'wrong-session') where ri_type_id = 'APP_INBOX'`;
         await expect(operation.readAdmission(COMMAND)).rejects.toMatchObject({ code: 'app-inbox-malformed-command' });
         await expect(operation.enqueue(COMMAND)).rejects.toMatchObject({ code: 'app-inbox-malformed-command' });
+        expect(wakes).toBe(1);
         expect(harness.afterCommit).toEqual([]);
     });
 
-    it('commits exact results and replays the winner without recapturing facts', async () => {
-        const harness = createHarness(storage.sql);
+    it('commits exact results and replays the winner without recapturing facts or waking from result waits', async () => {
+        let wakes = 0;
+        const harness = createHarness(storage.sql, () => {
+            wakes += 1;
+        });
         const operation = registerStock(harness);
         harness.inbox.start();
         const first = await drain(harness.reader, operation.submit(COMMAND));
         expect(first).toEqual(Either.ofRight({ remaining: 7, capturedAt: 101 }));
+        expect(wakes).toBe(1);
         expect(await operation.readReplay(COMMAND)).toEqual(first);
+        expect(wakes).toBe(1);
         expect(await operation.submit(COMMAND)).toEqual(first);
+        expect(wakes).toBe(2);
         expect(harness.facts).toEqual([101]);
         expect(harness.afterCommit).toEqual([7]);
         expect(await storage.sql`select quantity, revision from inventory`).toEqual([{ quantity: 7, revision: 1 }]);
@@ -205,8 +246,11 @@ describe('public application AppInbox', () => {
         expect(await storage.sql`select quantity from inventory`).toEqual([{ quantity: 10 }]);
     });
 
-    it('admits only sealed registrations and refuses submissions after shutdown', async () => {
-        const harness = createHarness(storage.sql);
+    it('admits only sealed registrations and refuses submissions after shutdown without waking workers', async () => {
+        let wakes = 0;
+        const harness = createHarness(storage.sql, () => {
+            wakes += 1;
+        });
         const operation = registerStock(harness);
         expect((await operation.submit(COMMAND)).left).toMatchObject({ code: 'app-inbox-lifecycle-rejected', status: 503 });
         harness.inbox.start();
@@ -214,6 +258,7 @@ describe('public application AppInbox', () => {
         harness.inbox.stop();
         expect((await operation.submit(COMMAND)).left).toMatchObject({ code: 'app-inbox-lifecycle-rejected', status: 503 });
         expect(await storage.sql`select * from resource_inbox`).toEqual([]);
+        expect(wakes).toBe(0);
     });
 
     it('keeps the committed winner when an after-commit effect fails', async () => {
@@ -361,7 +406,7 @@ interface Harness {
     alwaysConflict: boolean;
 }
 
-function createHarness(database: PSqlSql): Harness {
+function createHarness(database: PSqlSql, wakeOwningQueue: () => void = () => {}): Harness {
     const repositories = createPSqlResourceInboxRepository(database, () => new Date());
     const results = new ResourceInboxResultsRepository(database);
     const finalizeRetry = createAppInboxRetryFinalizer({ database });
@@ -375,7 +420,7 @@ function createHarness(database: PSqlSql): Harness {
         resourceInboxRepository: repositories.entries,
         resourceInboxResultsRepository: results,
         database,
-        wakeOwningQueue: () => {}
+        wakeOwningQueue
     }, { serviceId: 'inventory-worker', options: { waitMaxElapsedMsecs: 2000, waitRetryIntervalMsecs: 1, waitMaxRetryIntervalMsecs: 5, waitJitterRatio: 0 } });
     return {
         inbox,

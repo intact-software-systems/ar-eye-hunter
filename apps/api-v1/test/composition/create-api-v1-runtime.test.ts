@@ -352,10 +352,7 @@ const TEST_TOPOLOGY_DELIVERY: CreateApiV1RuntimeInput['topologyDelivery'] = {
 const RTC_STOP = () => Promise.resolve();
 const RETENTION_STOP = () => Promise.resolve();
 
-function createOperations(
-    events: string[],
-    failAt?: string
-): ApiV1RuntimeConstructionOperations {
+function createOperations(events: string[], failAt?: string): ApiV1RuntimeConstructionOperations {
     const appInbox = createTestServerAppInbox();
     const record = (name: string): void => {
         events.push(name);

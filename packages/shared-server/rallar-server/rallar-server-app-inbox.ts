@@ -52,6 +52,7 @@ export namespace RallarServerAppInbox {
         readonly resourceInboxRepository: EntryRepository;
         readonly resourceInboxResultsRepository: AppInboxResultRepository;
         readonly database: PSqlSql;
+        /** Synchronous scheduling signal. A failure propagates without rolling back the durable admission. */
         readonly wakeOwningQueue: () => void;
     }
 
@@ -101,6 +102,7 @@ export namespace RallarServerAppInbox {
 
     /** Admission/idempotency policy failures are Left values; corrupt invariants and unexpected exceptions remain distinct. */
     export interface Operation<Command, Result> {
+        /** Returns validated durable admission after waking its owning queue; execution is not awaited. */
         enqueue(command: Command): Promise<Either<AppInboxFailure, Admission<Result>>>;
         /** Returns retained pending/completed admission immediately; only a validated miss permits proposal work. */
         readAdmission(command: Command): Promise<Either<AppInboxFailure, Admission<Result>> | undefined>;
@@ -113,6 +115,7 @@ export namespace RallarServerAppInbox {
 /** Application registration/admission policy over the existing AppInbox reservation, worker and transaction owners. */
 export class RallarServerAppInbox {
     private readonly entries: RallarServerAppInbox.EntryRepository;
+    private readonly wakeOwningQueue: () => void;
     private readonly client: AppInboxClientRuntime;
     private readonly handlers: AppInboxHandlerRuntime;
     private readonly activeContexts = new WeakSet<object>();
@@ -120,6 +123,7 @@ export class RallarServerAppInbox {
 
     constructor(dependencies: RallarServerAppInbox.Dependencies, config: RallarServerAppInbox.Config) {
         this.entries = dependencies.resourceInboxRepository;
+        this.wakeOwningQueue = dependencies.wakeOwningQueue;
         const results: AppInboxResultRepository = {
             replace: (entry) => dependencies.resourceInboxResultsRepository.replace(entry),
             findByKey: (key) => readBoundResult(dependencies.resourceInboxResultsRepository, key)
@@ -251,6 +255,7 @@ export class RallarServerAppInbox {
             const received = toRegisteredEnqueue(registration, command);
             const retained = await this.readRetained(registration, received);
             if (retained) {
+                this.wakeOwningQueue();
                 return Either.ofRight(this.createAdmission(registration, retained));
             }
             const stopped = this.getAdmissionFailure();
@@ -264,6 +269,7 @@ export class RallarServerAppInbox {
                 return materialized;
             });
             assertRegisteredEntry(registration, reservation.entry, received);
+            this.wakeOwningQueue();
             return Either.ofRight(this.createAdmission(registration, reservation));
         }
         catch (error) {
@@ -299,9 +305,11 @@ export class RallarServerAppInbox {
         retained: AppInboxResultWaiter.Wait
     ): RallarServerAppInbox.Admission<Result> {
         const command = registration.decodeEnvelope(retained.enqueue);
+        // Enqueue owns queue wakes. Subscribe then read: retained work may have completed before this wait begins.
+        const observed = { enqueue: retained.enqueue, key: retained.key, winner: false };
         return Object.freeze({
             wait: () =>
-                this.client.resultWaiter.waitForResult(retained, (value) => registration.decodeResult(value, command))
+                this.client.resultWaiter.waitForResult(observed, (value) => registration.decodeResult(value, command))
         });
     }
 
