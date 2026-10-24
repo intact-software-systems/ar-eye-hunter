@@ -7,25 +7,25 @@ import {
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 import {
-    V1D_GROWTH_SURFACES,
-    V1D_GROWTH_SURVEY_SURFACE_IDS
-} from '../../../shared-test/rallar-bb-test/alm/growth-proof/v1d-growth-surfaces.ts';
-import { computeV1dGrowthVerdict } from '../../../shared-test/rallar-bb-test/alm/growth-proof/v1d-growth-verdict.ts';
+    GROWTH_SURFACES,
+    GROWTH_SURVEY_SURFACE_IDS
+} from '../../../shared-test/rallar-bb-test/alm/growth-proof/growth-surfaces.ts';
+import { computeGrowthVerdict } from '../../../shared-test/rallar-bb-test/alm/growth-proof/growth-verdict.ts';
 import { readMediumScaleChurnClientCount } from '../api-v1-recipe-test-fixture.ts';
 
-describe('V1d growth surface classification', () => {
+describe('Growth surface classification', () => {
     it('classifies every surface of the growth survey, each with at least one reader', () => {
-        const ids = V1D_GROWTH_SURFACES.map((surface) => surface.id);
-        const names = V1D_GROWTH_SURFACES.map((surface) => surface.name);
+        const ids = GROWTH_SURFACES.map((surface) => surface.id);
+        const names = GROWTH_SURFACES.map((surface) => surface.name);
 
         expect(new Set(names).size).toBe(names.length);
-        expect(V1D_GROWTH_SURVEY_SURFACE_IDS).toHaveLength(75);
-        expect(V1D_GROWTH_SURVEY_SURFACE_IDS.filter((id) => !ids.includes(id))).toEqual([]);
-        expect(V1D_GROWTH_SURFACES.filter((surface) => surface.readers.length === 0)).toEqual([]);
+        expect(GROWTH_SURVEY_SURFACE_IDS).toHaveLength(75);
+        expect(GROWTH_SURVEY_SURFACE_IDS.filter((id) => !ids.includes(id))).toEqual([]);
+        expect(GROWTH_SURFACES.filter((surface) => surface.readers.length === 0)).toEqual([]);
     });
 
     it('keeps each runtime-state namespace with one surface, so a namespace has one class', () => {
-        const namespaces = V1D_GROWTH_SURFACES.flatMap((surface) =>
+        const namespaces = GROWTH_SURFACES.flatMap((surface) =>
             surface.readers
                 .filter((reader) => reader.source === 'postgres' && reader.path[1] === 'byNamespace')
                 .map((reader) => reader.path[2])
@@ -35,7 +35,7 @@ describe('V1d growth surface classification', () => {
     });
 
     it('guards the resource_inbox total against rows stamped never to expire', () => {
-        const total = V1D_GROWTH_SURFACES.find((surface) => surface.id === 1);
+        const total = GROWTH_SURFACES.find((surface) => surface.id === 1);
 
         expect(total?.classification.growthClass).toBe('ttl-beyond-run');
         expect(total?.readers).toEqual([{
@@ -49,7 +49,7 @@ describe('V1d growth surface classification', () => {
     // An APP_INBOX fact is stamped never to expire until its finish gives it the retention expiry, so the facts in
     // flight at a sample come and go; only the settled rows say whether something never expires.
     it('passes the resource_inbox total while its in-flight facts come and go, and fails it when settled rows rise', () => {
-        const total = V1D_GROWTH_SURFACES.find((surface) => surface.id === 1)!;
+        const total = GROWTH_SURFACES.find((surface) => surface.id === 1)!;
         const windowStartedAtEpochMs = 1_800_000_000_000;
         const toSamples = (settledAt: (sample: number) => number) =>
             Array.from({ length: 151 }, (_value, sample) => ({
@@ -65,7 +65,7 @@ describe('V1d growth surface classification', () => {
                 } satisfies ApiJsonValue
             }));
         const computeOutcome = (settledAt: (sample: number) => number) =>
-            computeV1dGrowthVerdict({
+            computeGrowthVerdict({
                 surveyedSurfaceIds: [1],
                 surfaces: [total],
                 run: {
@@ -101,7 +101,7 @@ describe('V1d growth surface classification', () => {
     // An account is registered before its principal connects, so mid-iteration the auth users run ahead of the
     // principals; what bounds them is the accounts the run registered.
     it('bounds the auth users by the accounts the run registered, and the client ids by the usernames', () => {
-        const authUsers = V1D_GROWTH_SURFACES.find((surface) => surface.readers.some((reader) => reader.path.includes('auth-users:by-username')))!;
+        const authUsers = GROWTH_SURFACES.find((surface) => surface.readers.some((reader) => reader.path.includes('auth-users:by-username')))!;
         const windowStartedAtEpochMs = 1_800_000_000_000;
         const toWorkload = (churnStarted: number) => ({
             runner: 'passed' as const,
@@ -137,7 +137,7 @@ describe('V1d growth surface classification', () => {
                 };
             });
         const computeOutcomes = (churnStarted: number, clientIdsAhead: number) =>
-            computeV1dGrowthVerdict({
+            computeGrowthVerdict({
                 surveyedSurfaceIds: [authUsers.id],
                 surfaces: [authUsers],
                 run: { windowStartedAtEpochMs, workload: toWorkload(churnStarted) },
@@ -158,7 +158,7 @@ describe('V1d growth surface classification', () => {
     });
 
     it('counts per churn iteration the clients the medium-scale churn recipe registers', () => {
-        const authUsers = V1D_GROWTH_SURFACES.find((surface) => surface.readers.some((reader) => reader.path.includes('auth-users:by-username')));
+        const authUsers = GROWTH_SURFACES.find((surface) => surface.readers.some((reader) => reader.path.includes('auth-users:by-username')));
 
         expect(authUsers?.classification).toMatchObject({
             entityCount: { source: 'registrations', principalsPerChurnIteration: readMediumScaleChurnClientCount() }
@@ -169,7 +169,7 @@ describe('V1d growth surface classification', () => {
     // WS_OUTBOX message's deadline is a day: the proof's probe found every sent, owner and ordering row stamped 24 h.
     it('bounds the server outbound admission rows by the day their WS_OUTBOX messages live, the inbound by the hour', () => {
         const toClassification = (namespace: string) =>
-            V1D_GROWTH_SURFACES.find((surface) => surface.readers.some((reader) => reader.path.includes(namespace)))?.classification;
+            GROWTH_SURFACES.find((surface) => surface.readers.some((reader) => reader.path.includes(namespace)))?.classification;
 
         expect(toClassification('server-ws-qbox:*:outbound:admission')).toEqual({
             growthClass: 'ttl-beyond-run',
@@ -183,13 +183,13 @@ describe('V1d growth surface classification', () => {
     });
 
     it('bounds a page\'s delivered markers at 256 per inbound store across its two stores', () => {
-        const markers = V1D_GROWTH_SURFACES.find((surface) => surface.id === 49);
+        const markers = GROWTH_SURFACES.find((surface) => surface.id === 49);
 
         expect(markers?.classification).toEqual({ growthClass: 'count-capped', cap: 512 });
     });
 
     describe('group current-snapshot cache', () => {
-        const audience = V1D_GROWTH_SURFACES.filter((surface) => surface.id === 20 || surface.id === 21);
+        const audience = GROWTH_SURFACES.filter((surface) => surface.id === 20 || surface.id === 21);
         const windowStartedAtEpochMs = 1_800_000_000_000;
         const toWorkload = (groupCurrentSnapshotCacheMaxEntries: number) => ({
             runner: 'passed' as const,
@@ -212,7 +212,7 @@ describe('V1d growth surface classification', () => {
                 value: { caches: { groupAudienceSnapshots: sample === 40 ? lastKept : sample } } satisfies ApiJsonValue
             }));
         const computeRows = (workload: ReturnType<typeof toWorkload>, adminRealtime: ReturnType<typeof toSamples>) =>
-            computeV1dGrowthVerdict({
+            computeGrowthVerdict({
                 surveyedSurfaceIds: audience.map((surface) => surface.id),
                 surfaces: audience,
                 run: { windowStartedAtEpochMs, workload },
@@ -237,7 +237,7 @@ describe('V1d growth surface classification', () => {
     });
 
     it('bounds the topology idempotency records by the 24-hour finished retention, guarded against rows without expiry', () => {
-        const configMutations = V1D_GROWTH_SURFACES.find((surface) => surface.readers.some((reader) => reader.path.includes('group-topology:config-mutation')));
+        const configMutations = GROWTH_SURFACES.find((surface) => surface.readers.some((reader) => reader.path.includes('group-topology:config-mutation')));
 
         expect(configMutations?.classification).toEqual({ growthClass: 'ttl-beyond-run', ttlMs: 86_400_000 });
         expect(configMutations?.readers[0]?.neverExpiringPath).toEqual([
@@ -248,7 +248,7 @@ describe('V1d growth surface classification', () => {
     });
 
     describe('black-box runtime event history', () => {
-        const surface = V1D_GROWTH_SURFACES.find((candidate) => candidate.readers.some((reader) => reader.path.join('.') === 'eventHistory.retainedEvents'))!;
+        const surface = GROWTH_SURFACES.find((candidate) => candidate.readers.some((reader) => reader.path.join('.') === 'eventHistory.retainedEvents'))!;
         const windowStartedAtEpochMs = 1_800_000_000_000;
         const toWorkload = (eventHistoryMaxEvents: number) => ({
             runner: 'passed' as const,
@@ -275,7 +275,7 @@ describe('V1d growth surface classification', () => {
                 }))
             );
         const computeRow = (workload: ReturnType<typeof toWorkload> | null, browserStats: ReturnType<typeof toSamples>) =>
-            computeV1dGrowthVerdict({
+            computeGrowthVerdict({
                 surveyedSurfaceIds: [surface.id],
                 surfaces: [surface],
                 run: { windowStartedAtEpochMs, workload },

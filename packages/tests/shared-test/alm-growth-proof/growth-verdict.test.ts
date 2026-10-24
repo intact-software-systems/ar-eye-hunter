@@ -6,21 +6,21 @@ import {
 
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
-import type { V1dGrowthSamplePoint } from '../../../shared-test/rallar-bb-test/alm/growth-proof/v1d-growth-series.ts';
+import type { GrowthSamplePoint } from '../../../shared-test/rallar-bb-test/alm/growth-proof/growth-series.ts';
 import type {
-    V1dGrowthClassification,
-    V1dGrowthReader,
-    V1dGrowthSurface
-} from '../../../shared-test/rallar-bb-test/alm/growth-proof/v1d-growth-surface.ts';
+    GrowthClassification,
+    GrowthReader,
+    GrowthSurface
+} from '../../../shared-test/rallar-bb-test/alm/growth-proof/growth-surface.ts';
 import {
-    computeV1dGrowthVerdict,
-    type V1dGrowthRun,
-    type V1dGrowthSamples,
-    type V1dGrowthVerdictRow
-} from '../../../shared-test/rallar-bb-test/alm/growth-proof/v1d-growth-verdict.ts';
+    computeGrowthVerdict,
+    type GrowthRun,
+    type GrowthSamples,
+    type GrowthVerdictRow
+} from '../../../shared-test/rallar-bb-test/alm/growth-proof/growth-verdict.ts';
 
 const WINDOW_STARTED_AT_EPOCH_MS = 1_800_000_000_000;
-const COMPLETED_RUN: V1dGrowthRun = {
+const COMPLETED_RUN: GrowthRun = {
     windowStartedAtEpochMs: WINDOW_STARTED_AT_EPOCH_MS,
     workload: {
         runner: 'passed',
@@ -39,9 +39,9 @@ const MINUTE_MS = 60_000;
 const SAMPLE_INTERVAL_MS = 30_000;
 const MIB = 1_048_576;
 const MB = 1_000_000;
-const POSTGRES_READER: V1dGrowthReader = { source: 'postgres', path: ['tables', 'surface_under_test'], absent: 'zero', neverExpiringPath: null };
-const HEAP_READER: V1dGrowthReader = { source: 'api-heap', path: ['heapUsed'], absent: 'no-reading', neverExpiringPath: null };
-const PAGE_HEAP_READER: V1dGrowthReader = {
+const POSTGRES_READER: GrowthReader = { source: 'postgres', path: ['tables', 'surface_under_test'], absent: 'zero', neverExpiringPath: null };
+const HEAP_READER: GrowthReader = { source: 'api-heap', path: ['heapUsed'], absent: 'no-reading', neverExpiringPath: null };
+const PAGE_HEAP_READER: GrowthReader = {
     source: 'browser-stats',
     path: ['browser', 'pageHeap', 'usedJSHeapSize'],
     absent: 'no-reading',
@@ -51,15 +51,15 @@ const PAGE_HEAP_READER: V1dGrowthReader = {
 function toPoints(
     minutes: number,
     valueAt: (elapsedMinutes: number) => ApiJsonValue
-): readonly V1dGrowthSamplePoint[] {
+): readonly GrowthSamplePoint[] {
     return toReporterPoints({ agentId: null, serviceId: null }, minutes, valueAt);
 }
 
 function toReporterPoints(
-    reporter: Pick<V1dGrowthSamplePoint, 'agentId' | 'serviceId'>,
+    reporter: Pick<GrowthSamplePoint, 'agentId' | 'serviceId'>,
     minutes: number,
     valueAt: (elapsedMinutes: number) => ApiJsonValue
-): readonly V1dGrowthSamplePoint[] {
+): readonly GrowthSamplePoint[] {
     const count = Math.floor((minutes * MINUTE_MS) / SAMPLE_INTERVAL_MS) + 1;
     return Array.from({ length: count }, (_value, index) => {
         const elapsedMs = index * SAMPLE_INTERVAL_MS;
@@ -72,7 +72,7 @@ function toReporterPoints(
 }
 
 /** Three agents whose page heaps follow `heapAt`, each a little apart from the others. */
-function toPageHeapPoints(minutes: number, heapAt: (elapsedMinutes: number) => number): readonly V1dGrowthSamplePoint[] {
+function toPageHeapPoints(minutes: number, heapAt: (elapsedMinutes: number) => number): readonly GrowthSamplePoint[] {
     return ['controller-01', 'controller-02', 'controller-03'].flatMap((agentId, agent) =>
         toReporterPoints(
             { agentId, serviceId: null },
@@ -86,7 +86,7 @@ function toPageHeapPoints(minutes: number, heapAt: (elapsedMinutes: number) => n
 function toAgentsPageHeapPoints(
     minutes: number,
     agents: ReadonlyArray<readonly [agentId: string, heapAt: (elapsedMinutes: number) => number, minutes?: number]>
-): readonly V1dGrowthSamplePoint[] {
+): readonly GrowthSamplePoint[] {
     return agents.flatMap(([agentId, heapAt, agentMinutes]) =>
         toReporterPoints(
             { agentId, serviceId: null },
@@ -101,7 +101,7 @@ function toSawtoothMb(minute: number): number {
     return [50, 55, 60, 65, 190][Math.round(minute * 2) % 5]! * MB;
 }
 
-function toSamples(overrides: Partial<V1dGrowthSamples>): V1dGrowthSamples {
+function toSamples(overrides: Partial<GrowthSamples>): GrowthSamples {
     return {
         postgres: [],
         'admin-system': [],
@@ -119,14 +119,14 @@ function toPostgresTable(value: number): ApiJsonValue {
 }
 
 function toSurface(
-    classification: V1dGrowthClassification,
-    reader: V1dGrowthReader = POSTGRES_READER
-): V1dGrowthSurface {
+    classification: GrowthClassification,
+    reader: GrowthReader = POSTGRES_READER
+): GrowthSurface {
     return { id: 1, name: 'surface under test', owner: 'test', classification, readers: [reader] };
 }
 
-function computeSingleRow(surface: V1dGrowthSurface, samples: V1dGrowthSamples): V1dGrowthVerdictRow {
-    const verdict = computeV1dGrowthVerdict({
+function computeSingleRow(surface: GrowthSurface, samples: GrowthSamples): GrowthVerdictRow {
+    const verdict = computeGrowthVerdict({
         surveyedSurfaceIds: [surface.id],
         surfaces: [surface],
         run: COMPLETED_RUN,
@@ -136,22 +136,22 @@ function computeSingleRow(surface: V1dGrowthSurface, samples: V1dGrowthSamples):
     return verdict.rows[0]!;
 }
 
-const PRINCIPALS: V1dGrowthReader = {
+const PRINCIPALS: GrowthReader = {
     source: 'postgres',
     path: ['tables', 'principals'],
     absent: 'zero',
     neverExpiringPath: null
 };
-const DURABLE: V1dGrowthClassification = {
+const DURABLE: GrowthClassification = {
     growthClass: 'durable',
     entity: 'principals',
     entityCount: { source: 'samples', reader: PRINCIPALS },
     rowsPerEntity: 5
 };
 
-const TTL_WITHIN_RUN: V1dGrowthClassification = { growthClass: 'ttl-within-run', ttlMs: 10 * MINUTE_MS, sweepMs: MINUTE_MS };
+const TTL_WITHIN_RUN: GrowthClassification = { growthClass: 'ttl-within-run', ttlMs: 10 * MINUTE_MS, sweepMs: MINUTE_MS };
 
-describe('V1d growth verdict', () => {
+describe('Growth verdict', () => {
     it('passes a TTL surface that plateaus after its time-to-live and one sweep', () => {
         const plateau = (minute: number) => toPostgresTable(Math.round(Math.min(minute, 11) * 100));
         const row = computeSingleRow(toSurface(TTL_WITHIN_RUN), toSamples({ postgres: toPoints(30, plateau) }));
@@ -178,7 +178,7 @@ describe('V1d growth verdict', () => {
     });
 
     it('passes a count-capped surface at its cap and fails it one above', () => {
-        const capped: V1dGrowthClassification = { growthClass: 'count-capped', cap: 256 };
+        const capped: GrowthClassification = { growthClass: 'count-capped', cap: 256 };
         const atCap = (minute: number) => toPostgresTable(Math.min(256, Math.round(minute * 40)));
         const overCap = (minute: number) => toPostgresTable(minute === 20 ? 257 : Math.min(256, Math.round(minute * 40)));
 
@@ -210,7 +210,7 @@ describe('V1d growth verdict', () => {
     });
 
     it('fails a registered-account surface at a sample whose ceiling reading is missing, instead of passing it', () => {
-        const registered: V1dGrowthClassification = {
+        const registered: GrowthClassification = {
             growthClass: 'durable',
             entity: 'accounts',
             entityCount: {
@@ -231,12 +231,12 @@ describe('V1d growth verdict', () => {
     });
 
     it('declares an accepted append-only history: reports its growth, counts it apart from passes, fails nothing', () => {
-        const history: V1dGrowthClassification = {
+        const history: GrowthClassification = {
             growthClass: 'declared-append-only',
             history: 'one event per state mutation'
         };
         const linear = (minute: number) => toPostgresTable(Math.round(minute * 10));
-        const verdict = computeV1dGrowthVerdict({
+        const verdict = computeGrowthVerdict({
             surveyedSurfaceIds: [1],
             surfaces: [toSurface(history)],
             run: COMPLETED_RUN,
@@ -250,7 +250,7 @@ describe('V1d growth verdict', () => {
     });
 
     it('passes a TTL-beyond-run surface growing linearly and reports its projected bound', () => {
-        const beyondRun: V1dGrowthClassification = { growthClass: 'ttl-beyond-run', ttlMs: 24 * 60 * MINUTE_MS };
+        const beyondRun: GrowthClassification = { growthClass: 'ttl-beyond-run', ttlMs: 24 * 60 * MINUTE_MS };
         const linear = (minute: number) => toPostgresTable(Math.round(minute * 10));
         const row = computeSingleRow(toSurface(beyondRun), toSamples({ postgres: toPoints(75, linear) }));
 
@@ -261,7 +261,7 @@ describe('V1d growth verdict', () => {
     // Rows that arrive when sessions close come in a late burst: the run rate stays near zero, so only an absolute
     // tolerance can tell that from an acceleration, and the projection takes the faster of the two rates.
     it('passes a TTL-beyond-run surface whose rows arrive late at under 60 an hour, projecting the late rate', () => {
-        const beyondRun: V1dGrowthClassification = { growthClass: 'ttl-beyond-run', ttlMs: 720 * 60 * MINUTE_MS };
+        const beyondRun: GrowthClassification = { growthClass: 'ttl-beyond-run', ttlMs: 720 * 60 * MINUTE_MS };
         const lateBurst = (minute: number) => toPostgresTable(131 + Math.round(Math.max(0, minute - 60) * 0.9));
         const row = computeSingleRow(toSurface(beyondRun), toSamples({ postgres: toPoints(75, lateBurst) }));
 
@@ -271,7 +271,7 @@ describe('V1d growth verdict', () => {
     });
 
     it('fails a TTL-beyond-run surface that accelerates past 1.5 × its run rate + 60 an hour', () => {
-        const beyondRun: V1dGrowthClassification = { growthClass: 'ttl-beyond-run', ttlMs: 24 * 60 * MINUTE_MS };
+        const beyondRun: GrowthClassification = { growthClass: 'ttl-beyond-run', ttlMs: 24 * 60 * MINUTE_MS };
         const accelerating = (minute: number) => toPostgresTable(Math.round(minute * 2 + Math.max(0, minute - 60) * 10));
         const row = computeSingleRow(toSurface(beyondRun), toSamples({ postgres: toPoints(75, accelerating) }));
 
@@ -281,7 +281,7 @@ describe('V1d growth verdict', () => {
     });
 
     it('never projects a TTL-beyond-run surface holding rows below the rows it holds', () => {
-        const beyondRun: V1dGrowthClassification = { growthClass: 'ttl-beyond-run', ttlMs: 24 * 60 * MINUTE_MS };
+        const beyondRun: GrowthClassification = { growthClass: 'ttl-beyond-run', ttlMs: 24 * 60 * MINUTE_MS };
         const falling = (minute: number) => toPostgresTable(Math.max(40, 300 - Math.round(minute * 10)));
         const row = computeSingleRow(toSurface(beyondRun), toSamples({ postgres: toPoints(75, falling) }));
 
@@ -290,7 +290,7 @@ describe('V1d growth verdict', () => {
     });
 
     it('says a TTL-beyond-run surface sampled throughout without a row holds none, not a projection of 0', () => {
-        const beyondRun: V1dGrowthClassification = { growthClass: 'ttl-beyond-run', ttlMs: 24 * 60 * MINUTE_MS };
+        const beyondRun: GrowthClassification = { growthClass: 'ttl-beyond-run', ttlMs: 24 * 60 * MINUTE_MS };
         const row = computeSingleRow(toSurface(beyondRun), toSamples({ postgres: toPoints(75, () => toPostgresTable(0)) }));
 
         expect(row).toMatchObject({ outcome: 'pass', max: 0, bound: 'ttl 24 h; projected ≤ 0 (no rows held)' });
@@ -333,7 +333,7 @@ describe('V1d growth verdict', () => {
         const flat = (minute: number) => ({ heapUsed: 60 * MIB + (Math.round(minute * 2) % 2 === 0 ? 0 : MIB) });
         const climbing = (minute: number) => ({ heapUsed: 60 * MIB + Math.round(minute * MIB) });
         const heapSurface = toSurface({ growthClass: 'heap' }, HEAP_READER);
-        const verdict = computeV1dGrowthVerdict({
+        const verdict = computeGrowthVerdict({
             surveyedSurfaceIds: [1],
             surfaces: [heapSurface],
             run: COMPLETED_RUN,
@@ -357,7 +357,7 @@ describe('V1d growth verdict', () => {
 
     it('reports a missing API process\'s heap as a no-data row of its own, from the process count the run recorded', () => {
         const flat = (minute: number) => ({ heapUsed: 60 * MIB + (Math.round(minute * 2) % 2 === 0 ? 0 : MIB) });
-        const verdict = computeV1dGrowthVerdict({
+        const verdict = computeGrowthVerdict({
             surveyedSurfaceIds: [1],
             surfaces: [toSurface({ growthClass: 'heap' }, HEAP_READER)],
             run: { ...COMPLETED_RUN, workload: { ...COMPLETED_RUN.workload!, apiProcesses: 3 } },
@@ -533,7 +533,7 @@ describe('V1d growth verdict', () => {
 
     it('fails a surveyed surface without a class, and the whole verdict with it', () => {
         const linear = (minute: number) => toPostgresTable(Math.round(minute * 10));
-        const verdict = computeV1dGrowthVerdict({
+        const verdict = computeGrowthVerdict({
             surveyedSurfaceIds: [1, 2],
             surfaces: [toSurface({ growthClass: 'count-capped', cap: 1_000 })],
             run: COMPLETED_RUN,
@@ -548,13 +548,13 @@ describe('V1d growth verdict', () => {
     });
 
     it('fails a runtime-state namespace the samples hold but no surface reads', () => {
-        const reader: V1dGrowthReader = {
+        const reader: GrowthReader = {
             source: 'postgres',
             path: ['runtimeState', 'byNamespace', 'known'],
             absent: 'zero',
             neverExpiringPath: null
         };
-        const verdict = computeV1dGrowthVerdict({
+        const verdict = computeGrowthVerdict({
             surveyedSurfaceIds: [1],
             surfaces: [toSurface({ growthClass: 'count-capped', cap: 10 }, reader)],
             run: COMPLETED_RUN,
@@ -590,13 +590,13 @@ describe('V1d growth verdict', () => {
     });
 
     it('takes the largest agent reading in each sample interval for a browser surface', () => {
-        const reader: V1dGrowthReader = {
+        const reader: GrowthReader = {
             source: 'browser-stats',
             path: ['rallar', 'alm', 'orderingTracks'],
             absent: 'no-reading',
             neverExpiringPath: null
         };
-        const points: readonly V1dGrowthSamplePoint[] = [
+        const points: readonly GrowthSamplePoint[] = [
             { atEpochMs: WINDOW_STARTED_AT_EPOCH_MS + 1_000, agentId: 'controller-01', serviceId: null, value: toTracks(10) },
             { atEpochMs: WINDOW_STARTED_AT_EPOCH_MS + 2_000, agentId: 'controller-02', serviceId: null, value: toTracks(40) },
             { atEpochMs: WINDOW_STARTED_AT_EPOCH_MS + 31_000, agentId: 'controller-01', serviceId: null, value: toTracks(12) },
@@ -611,8 +611,8 @@ describe('V1d growth verdict', () => {
     });
 
     it('fails a TTL surface whose rows stamped never to expire rise, and passes it while they hold', () => {
-        const beyondRun: V1dGrowthClassification = { growthClass: 'ttl-beyond-run', ttlMs: 24 * 60 * MINUTE_MS };
-        const reader: V1dGrowthReader = {
+        const beyondRun: GrowthClassification = { growthClass: 'ttl-beyond-run', ttlMs: 24 * 60 * MINUTE_MS };
+        const reader: GrowthReader = {
             source: 'postgres',
             path: ['runtimeState', 'byNamespace', 'outbox-proofs'],
             absent: 'zero',
@@ -635,7 +635,7 @@ describe('V1d growth verdict', () => {
     });
 
     it('fails an unbounded surface whose readings rise during the run', () => {
-        const unbounded: V1dGrowthClassification = { growthClass: 'unbounded', missingBound: 'rows never expire' };
+        const unbounded: GrowthClassification = { growthClass: 'unbounded', missingBound: 'rows never expire' };
         const rising = (minute: number) => toPostgresTable(Math.round(minute * 4));
         const row = computeSingleRow(toSurface(unbounded), toSamples({ postgres: toPoints(30, rising) }));
 
@@ -644,9 +644,9 @@ describe('V1d growth verdict', () => {
     });
 
     it('reports an unbounded surface that never grows as unexercised: a follow-up, neither a pass nor a fail', () => {
-        const unbounded: V1dGrowthClassification = { growthClass: 'unbounded', missingBound: 'rows never expire' };
+        const unbounded: GrowthClassification = { growthClass: 'unbounded', missingBound: 'rows never expire' };
         const flat = () => toPostgresTable(3);
-        const verdict = computeV1dGrowthVerdict({
+        const verdict = computeGrowthVerdict({
             surveyedSurfaceIds: [1],
             surfaces: [toSurface(unbounded)],
             run: COMPLETED_RUN,
@@ -659,9 +659,9 @@ describe('V1d growth verdict', () => {
     });
 
     it('reports an unbounded surface that starts high and falls as unexercised, never a pass', () => {
-        const unbounded: V1dGrowthClassification = { growthClass: 'unbounded', missingBound: 'rows never expire' };
+        const unbounded: GrowthClassification = { growthClass: 'unbounded', missingBound: 'rows never expire' };
         const falling = (minute: number) => toPostgresTable(Math.max(5, 40 - Math.round(minute)));
-        const verdict = computeV1dGrowthVerdict({
+        const verdict = computeGrowthVerdict({
             surveyedSurfaceIds: [1],
             surfaces: [toSurface(unbounded)],
             run: COMPLETED_RUN,
@@ -676,9 +676,9 @@ describe('V1d growth verdict', () => {
     // The unbounded predicate compares each reading to the first one only: a regrowth that stays below the first
     // reading is not a rise.
     it('reports an unbounded surface that starts high, drops and regrows below its first reading as unexercised', () => {
-        const unbounded: V1dGrowthClassification = { growthClass: 'unbounded', missingBound: 'rows never expire' };
+        const unbounded: GrowthClassification = { growthClass: 'unbounded', missingBound: 'rows never expire' };
         const dropsAndRegrows = (minute: number) => toPostgresTable(minute < 10 ? 40 - minute * 3 : 10 + Math.round(minute));
-        const verdict = computeV1dGrowthVerdict({
+        const verdict = computeGrowthVerdict({
             surveyedSurfaceIds: [1],
             surfaces: [toSurface(unbounded)],
             run: COMPLETED_RUN,
@@ -689,7 +689,7 @@ describe('V1d growth verdict', () => {
     });
 
     it('fails an unbounded surface that rises and then falls back', () => {
-        const unbounded: V1dGrowthClassification = { growthClass: 'unbounded', missingBound: 'rows never expire' };
+        const unbounded: GrowthClassification = { growthClass: 'unbounded', missingBound: 'rows never expire' };
         const risesThenFalls = (minute: number) => toPostgresTable(minute < 15 ? Math.round(minute) : 1);
         const row = computeSingleRow(toSurface(unbounded), toSamples({ postgres: toPoints(30, risesThenFalls) }));
 
@@ -697,7 +697,7 @@ describe('V1d growth verdict', () => {
     });
 
     it('fails the verdict when the run recorded no workload outcome', () => {
-        const verdict = computeV1dGrowthVerdict({
+        const verdict = computeGrowthVerdict({
             surveyedSurfaceIds: [],
             surfaces: [],
             run: { windowStartedAtEpochMs: WINDOW_STARTED_AT_EPOCH_MS, workload: null },
@@ -709,7 +709,7 @@ describe('V1d growth verdict', () => {
     });
 
     it('fails the verdict when the manifest did not pass or a churn iteration failed, naming the iterations', () => {
-        const verdict = computeV1dGrowthVerdict({
+        const verdict = computeGrowthVerdict({
             surveyedSurfaceIds: [],
             surfaces: [],
             run: {
@@ -731,7 +731,7 @@ describe('V1d growth verdict', () => {
     });
 
     it('fails the verdict when no churn iteration passed', () => {
-        const verdict = computeV1dGrowthVerdict({
+        const verdict = computeGrowthVerdict({
             surveyedSurfaceIds: [],
             surfaces: [],
             run: { windowStartedAtEpochMs: WINDOW_STARTED_AT_EPOCH_MS, workload: { ...COMPLETED_RUN.workload!, churnPassed: 0 } },
@@ -743,7 +743,7 @@ describe('V1d growth verdict', () => {
     });
 
     it('reads an array length step', () => {
-        const reader: V1dGrowthReader = {
+        const reader: GrowthReader = {
             source: 'admin-realtime',
             path: ['almReceipts', 'diagnostics', 'messages', 'length'],
             absent: 'no-reading',

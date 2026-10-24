@@ -80,7 +80,7 @@ green order:
 Manifest 23 is the workload of the local ALM growth proof. It streams for 78
 minutes so traffic covers the proof's whole 75-minute window, at 2 Hz because
 agents refuse an `rtc.stream` above 10,000 frames (78 minutes at 2 Hz is
-9,360). The script creates and migrates a fresh `v1d_growth_*` database on the
+9,360). The script creates and migrates a fresh `growth_proof_*` database on the
 dev Postgres container, launches three API processes on the one database as the
 medium-scale gate runs them (timing logs and `--expose-gc` on, every retention
 at its committed default), the control server, the headless SPA and one worker
@@ -94,7 +94,7 @@ waits for the manifest to finish, records the runner's outcome, the churn
 iterations started, passed and failed and the manifest's agents in `run.json`
 (the verdict fails without a passed manifest and a clean churn loop), stops
 everything, drops the database and writes `verdict.md` from
-`write-v1d-growth-verdict.ts`. A 75-minute run directory takes about 4.2 GB
+`write-growth-verdict.ts`. A 75-minute run directory takes about 4.2 GB
 (proof run 2 without its timing log: control-server storage 1.9 GB, world-fleet
 artefacts 2.0 GB, churn artefacts 0.2 GB). It is a manual run; launch it from a
 terminal whose Chromium can connect WebRTC on the local network.
@@ -103,10 +103,10 @@ the same fields:
 
 ```json
 {
-  "paths": ["apps/rallar-black-box/scripts/run-v1d-growth-proof.sh"],
+  "paths": ["apps/rallar-black-box/scripts/run-growth-proof.sh"],
   "owner": "Knut-Helge Vik",
-  "command": "apps/rallar-black-box/scripts/run-v1d-growth-proof.sh --minutes 75",
-  "reason": "The ALM V1d growth proof: 75 minutes of a 15-browser fleet, the churn recipes and a sampler on one local Postgres-backed stack, judged by the growth verdict. Too long and too heavy for any CI lane; run it on a quiet machine with no worktree edits during the run."
+  "command": "apps/rallar-black-box/scripts/run-growth-proof.sh --minutes 75",
+  "reason": "The ALM growth proof: 75 minutes of a 15-browser fleet, the churn recipes and a sampler on one local Postgres-backed stack, judged by the growth verdict. Too long and too heavy for any CI lane; run it on a quiet machine with no worktree edits during the run."
 }
 ```
 

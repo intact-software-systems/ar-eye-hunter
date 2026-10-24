@@ -1,70 +1,70 @@
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
-import { computeV1dGrowthAssessment } from './compute-v1d-growth-assessment.ts';
-import { computeV1dPageHeapAssessment } from './compute-v1d-page-heap-assessment.ts';
-import type { V1dGrowthAssessment, V1dGrowthOutcome } from './v1d-growth-assessment.ts';
+import { computeGrowthAssessment } from './compute-growth-assessment.ts';
+import { computeGrowthPageHeapAssessment } from './compute-growth-page-heap-assessment.ts';
+import type { GrowthAssessment, GrowthOutcome } from './growth-assessment.ts';
 import {
     isApiJsonObject,
-    toV1dGrowthAgentReadings,
-    toV1dGrowthSeries,
-    type V1dGrowthSamplePoint
-} from './v1d-growth-series.ts';
+    toGrowthAgentReadings,
+    toGrowthSeries,
+    type GrowthSamplePoint
+} from './growth-series.ts';
 import type {
-    V1dGrowthClass,
-    V1dGrowthReader,
-    V1dGrowthSampleSource,
-    V1dGrowthSurface
-} from './v1d-growth-surface.ts';
-import { computeV1dGrowthWorkloadIssues, type V1dGrowthWorkload } from './v1d-growth-workload.ts';
+    GrowthClass,
+    GrowthReader,
+    GrowthSampleSource,
+    GrowthSurface
+} from './growth-surface.ts';
+import { computeGrowthWorkloadIssues, type GrowthWorkload } from './growth-workload.ts';
 
-export type V1dGrowthSamples = Readonly<Record<V1dGrowthSampleSource, readonly V1dGrowthSamplePoint[]>>;
+export type GrowthSamples = Readonly<Record<GrowthSampleSource, readonly GrowthSamplePoint[]>>;
 
 /** Where the run's window starts, and the workload outcome the script recorded when it closed. */
-export interface V1dGrowthRun {
+export interface GrowthRun {
     readonly windowStartedAtEpochMs: number;
     /** Null when the run ended before the script recorded the workload's outcome. */
-    readonly workload: V1dGrowthWorkload | null;
+    readonly workload: GrowthWorkload | null;
 }
 
-export interface V1dGrowthVerdictInput {
+export interface GrowthVerdictInput {
     /** The surfaces the growth survey found; each needs a classified surface. */
     readonly surveyedSurfaceIds: readonly number[];
-    readonly surfaces: readonly V1dGrowthSurface[];
-    readonly run: V1dGrowthRun;
-    readonly samples: V1dGrowthSamples;
+    readonly surfaces: readonly GrowthSurface[];
+    readonly run: GrowthRun;
+    readonly samples: GrowthSamples;
 }
 
-export interface V1dGrowthVerdictRow extends V1dGrowthAssessment {
+export interface GrowthVerdictRow extends GrowthAssessment {
     /** Null for a runtime-state namespace the samples hold but the survey never listed. */
     readonly surfaceId: number | null;
     readonly surface: string;
     readonly reader: string;
-    readonly growthClass: V1dGrowthClass | 'unclassified';
+    readonly growthClass: GrowthClass | 'unclassified';
 }
 
 /** Passed only with a complete workload and every reading passing or declared. */
-export interface V1dGrowthVerdict {
+export interface GrowthVerdict {
     readonly passed: boolean;
     readonly windowStartedAtEpochMs: number;
-    readonly workload: V1dGrowthWorkload | null;
+    readonly workload: GrowthWorkload | null;
     readonly workloadIssues: readonly string[];
     /** The unbounded surfaces the workload never grew: neither passed nor failed, and named for follow-up. */
     readonly followUps: readonly string[];
-    readonly rows: readonly V1dGrowthVerdictRow[];
+    readonly rows: readonly GrowthVerdictRow[];
 }
 
 const NAMESPACE_PATH = ['runtimeState', 'byNamespace'] as const;
 
 /** Outcomes that do not block the verdict; an unexercised surface is listed as a follow-up instead. */
-const SETTLED_OUTCOMES: ReadonlySet<V1dGrowthOutcome> = new Set(['pass', 'declared', 'unbounded-unexercised']);
+const SETTLED_OUTCOMES: ReadonlySet<GrowthOutcome> = new Set(['pass', 'declared', 'unbounded-unexercised']);
 
-export function computeV1dGrowthVerdict(input: V1dGrowthVerdictInput): V1dGrowthVerdict {
+export function computeGrowthVerdict(input: GrowthVerdictInput): GrowthVerdict {
     const classifiedIds = new Set(input.surfaces.map((surface) => surface.id));
     const rows = [
         ...input.surfaces.flatMap((surface) =>
             surface.readers.flatMap((reader) =>
                 toServiceIds(input.samples[reader.source], reader.source, input.run.workload).map((serviceId) =>
-                    computeV1dGrowthVerdictRow({ surface, reader, serviceId, verdictInput: input })
+                    computeGrowthVerdictRow({ surface, reader, serviceId, verdictInput: input })
                 )
             )
         ),
@@ -75,7 +75,7 @@ export function computeV1dGrowthVerdict(input: V1dGrowthVerdictInput): V1dGrowth
             toUnclassifiedRow(null, `runtime_state_store namespace ${namespace}`)
         )
     ];
-    const workloadIssues = computeV1dGrowthWorkloadIssues(input.run.workload);
+    const workloadIssues = computeGrowthWorkloadIssues(input.run.workload);
     return {
         passed: workloadIssues.length === 0 &&
             rows.every((row) => SETTLED_OUTCOMES.has(row.outcome)),
@@ -89,15 +89,15 @@ export function computeV1dGrowthVerdict(input: V1dGrowthVerdictInput): V1dGrowth
     };
 }
 
-interface ComputeV1dGrowthVerdictRowInput {
-    readonly surface: V1dGrowthSurface;
-    readonly reader: V1dGrowthReader;
+interface ComputeGrowthVerdictRowInput {
+    readonly surface: GrowthSurface;
+    readonly reader: GrowthReader;
     /** The API process whose readings this row judges; null where the source's readings name no process. */
     readonly serviceId: string | null;
-    readonly verdictInput: V1dGrowthVerdictInput;
+    readonly verdictInput: GrowthVerdictInput;
 }
 
-function computeV1dGrowthVerdictRow(input: ComputeV1dGrowthVerdictRowInput): V1dGrowthVerdictRow {
+function computeGrowthVerdictRow(input: ComputeGrowthVerdictRowInput): GrowthVerdictRow {
     const { surface, reader, serviceId } = input;
     const readerPoints = input.verdictInput.samples[reader.source].filter((point) => point.serviceId === serviceId);
     const pageHeap = surface.classification.growthClass === 'heap' && reader.source === 'browser-stats';
@@ -107,26 +107,26 @@ function computeV1dGrowthVerdictRow(input: ComputeV1dGrowthVerdictRowInput): V1d
         reader: `${reader.source} ${reader.path.join('.')}${serviceId === null ? '' : ` ${serviceId}`}`,
         growthClass: surface.classification.growthClass,
         ...(pageHeap
-            ? computeV1dPageHeapAssessment(
-                toV1dGrowthAgentReadings(readerPoints, reader, input.verdictInput.run.windowStartedAtEpochMs)
+            ? computeGrowthPageHeapAssessment(
+                toGrowthAgentReadings(readerPoints, reader, input.verdictInput.run.windowStartedAtEpochMs)
             )
-            : computeV1dGrowthClassAssessment(input, readerPoints))
+            : computeGrowthClassAssessment(input, readerPoints))
     };
 }
 
 /** The reading judged by its surface's class, with the companion series that class reads from the same samples. */
-function computeV1dGrowthClassAssessment(
-    input: ComputeV1dGrowthVerdictRowInput,
-    readerPoints: readonly V1dGrowthSamplePoint[]
-): V1dGrowthAssessment {
+function computeGrowthClassAssessment(
+    input: ComputeGrowthVerdictRowInput,
+    readerPoints: readonly GrowthSamplePoint[]
+): GrowthAssessment {
     const { surface, reader } = input;
     const { samples, run } = input.verdictInput;
-    const toSeries = (seriesReader: V1dGrowthReader) =>
-        toV1dGrowthSeries(samples[seriesReader.source], seriesReader, run.windowStartedAtEpochMs);
+    const toSeries = (seriesReader: GrowthReader) =>
+        toGrowthSeries(samples[seriesReader.source], seriesReader, run.windowStartedAtEpochMs);
     const classification = surface.classification;
     const entityCount = classification.growthClass === 'durable' ? classification.entityCount : undefined;
-    return computeV1dGrowthAssessment(classification, {
-        series: toV1dGrowthSeries(readerPoints, reader, run.windowStartedAtEpochMs),
+    return computeGrowthAssessment(classification, {
+        series: toGrowthSeries(readerPoints, reader, run.windowStartedAtEpochMs),
         entitySeries: entityCount?.source === 'samples' ? toSeries(entityCount.reader) : [],
         ceilingSeries: entityCount?.source === 'registrations' ? toSeries(entityCount.ceiling) : [],
         neverExpiringSeries: reader.neverExpiringPath === null
@@ -141,9 +141,9 @@ function computeV1dGrowthClassAssessment(
  * some of the processes the run recorded starting sampled no heap, each absent one gets a no-data row of its own.
  */
 function toServiceIds(
-    points: readonly V1dGrowthSamplePoint[],
-    source: V1dGrowthSampleSource,
-    workload: V1dGrowthWorkload | null
+    points: readonly GrowthSamplePoint[],
+    source: GrowthSampleSource,
+    workload: GrowthWorkload | null
 ): readonly (string | null)[] {
     const serviceIds = [...new Set(points.map((point) => point.serviceId))].sort();
     if (serviceIds.length === 0) {
@@ -157,7 +157,7 @@ function toServiceIds(
     ];
 }
 
-function toUnreadNamespaces(input: V1dGrowthVerdictInput): readonly string[] {
+function toUnreadNamespaces(input: GrowthVerdictInput): readonly string[] {
     const read = new Set(
         input.surfaces.flatMap((surface) => surface.readers)
             .filter((reader) =>
@@ -176,8 +176,8 @@ function toNamespaces(value: ApiJsonValue): readonly string[] {
     return isApiJsonObject(byNamespace) ? Object.keys(byNamespace) : [];
 }
 
-function toUnclassifiedRow(surfaceId: number | null, surface: string): V1dGrowthVerdictRow {
-    const outcome: V1dGrowthOutcome = 'unclassified';
+function toUnclassifiedRow(surfaceId: number | null, surface: string): GrowthVerdictRow {
+    const outcome: GrowthOutcome = 'unclassified';
     return {
         surfaceId,
         surface,

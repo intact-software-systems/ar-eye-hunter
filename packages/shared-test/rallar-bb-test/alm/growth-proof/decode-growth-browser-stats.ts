@@ -1,11 +1,11 @@
 import type { ApiJsonObject, ApiJsonValue } from '@shared/api/api-json-value.ts';
 
-import { decodeV1dGrowthLines, isPositiveNumber, type DecodedV1dGrowthPoints } from './decode-v1d-growth-lines.ts';
-import { isApiJsonObject, type V1dGrowthSamplePoint } from './v1d-growth-series.ts';
+import { decodeGrowthLines, isPositiveNumber, type DecodedGrowthPoints } from './decode-growth-lines.ts';
+import { isApiJsonObject, type GrowthSamplePoint } from './growth-series.ts';
 
 /** One agent's stats snapshot as a sample point, and whether its page heap was read without a forced collection. */
 interface BrowserStatsSnapshot {
-    readonly point: V1dGrowthSamplePoint;
+    readonly point: GrowthSamplePoint;
     readonly unforcedPageHeap: boolean;
 }
 
@@ -15,10 +15,10 @@ interface BrowserStatsSnapshot {
  * Polls overlap, so a snapshot seen twice counts once. Each page heap dropped for lacking a forced collection counts
  * as one skipped line, as an unforced API heap sample does.
  */
-export function decodeV1dBrowserStats(text: string): DecodedV1dGrowthPoints {
+export function decodeGrowthBrowserStats(text: string): DecodedGrowthPoints {
     const seen = new Set<string>();
     let unforcedPageHeaps = 0;
-    const decoded = decodeV1dGrowthLines(text, (value) => {
+    const decoded = decodeGrowthLines(text, (value) => {
         const poll = isApiJsonObject(value) ? value.value : undefined;
         if (!isApiJsonObject(poll)) {
             return undefined;
@@ -34,7 +34,7 @@ export function decodeV1dBrowserStats(text: string): DecodedV1dGrowthPoints {
     return { points: decoded.points, skippedLines: decoded.skippedLines + unforcedPageHeaps };
 }
 
-function isFirstSnapshot(point: V1dGrowthSamplePoint, seen: Set<string>): boolean {
+function isFirstSnapshot(point: GrowthSamplePoint, seen: Set<string>): boolean {
     const census = isApiJsonObject(point.value) && point.value.browser !== undefined;
     const key = `${point.agentId}:${point.atEpochMs}:${census ? 'census' : 'stats'}`;
     const first = !seen.has(key);

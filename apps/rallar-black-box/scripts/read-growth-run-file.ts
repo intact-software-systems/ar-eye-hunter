@@ -5,7 +5,7 @@ import path from 'node:path';
  * A sampler that never wrote a file leaves its readings absent, which the verdict reports as no data. Any other read
  * failure, and a file past `maxBytes`, stops the verdict instead of reading as no data.
  */
-export async function readV1dGrowthRunFile(runDir: string, fileName: string, maxBytes: number): Promise<string> {
+export async function readGrowthRunFile(runDir: string, fileName: string, maxBytes: number): Promise<string> {
     const filePath = path.join(runDir, fileName);
     const size = await readFileSize(filePath);
     if (size === undefined) {

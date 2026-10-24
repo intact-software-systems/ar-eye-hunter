@@ -1,13 +1,13 @@
-import type { V1dGrowthOutcome } from './v1d-growth-assessment.ts';
-import { toV1dGrowthMinutes } from './v1d-growth-series.ts';
-import type { V1dGrowthVerdict, V1dGrowthVerdictRow } from './v1d-growth-verdict.ts';
+import type { GrowthOutcome } from './growth-assessment.ts';
+import { toGrowthMinutes } from './growth-series.ts';
+import type { GrowthVerdict, GrowthVerdictRow } from './growth-verdict.ts';
 
-export interface V1dGrowthVerdictDocumentInput {
-    readonly verdict: V1dGrowthVerdict;
+export interface GrowthVerdictDocumentInput {
+    readonly verdict: GrowthVerdict;
     readonly skippedLines: number;
 }
 
-const OUTCOMES: readonly V1dGrowthOutcome[] = [
+const OUTCOMES: readonly GrowthOutcome[] = [
     'pass',
     'declared',
     'fail',
@@ -18,13 +18,13 @@ const OUTCOMES: readonly V1dGrowthOutcome[] = [
 ];
 const MINUTE_MS = 60_000;
 
-export function toV1dGrowthVerdictMarkdown(input: V1dGrowthVerdictDocumentInput): string {
+export function toGrowthVerdictMarkdown(input: GrowthVerdictDocumentInput): string {
     const { verdict } = input;
     const counts = OUTCOMES.map((outcome) =>
         `${verdict.rows.filter((row) => row.outcome === outcome).length} ${outcome}`
     );
     return [
-        '# V1d growth verdict',
+        '# Growth verdict',
         '',
         `**${verdict.passed ? 'PASS' : 'FAIL'}**: ${verdict.rows.length} readings: ${counts.join(', ')}. ` +
         `Sample lines skipped: ${input.skippedLines}.`,
@@ -58,12 +58,12 @@ export function toV1dGrowthVerdictMarkdown(input: V1dGrowthVerdictDocumentInput)
     ].join('\n');
 }
 
-function toWorkloadLine(verdict: V1dGrowthVerdict): string {
+function toWorkloadLine(verdict: GrowthVerdict): string {
     const workload = verdict.workload;
     if (workload === null) {
         return 'Workload: not recorded.';
     }
-    const toOffset = (atEpochMs: number) => toV1dGrowthMinutes(atEpochMs - verdict.windowStartedAtEpochMs);
+    const toOffset = (atEpochMs: number) => toGrowthMinutes(atEpochMs - verdict.windowStartedAtEpochMs);
     const completed = workload.manifestCompletedAtEpochMs === null
         ? 'past the window\'s end'
         : `${toOffset(workload.manifestCompletedAtEpochMs)} min of the window`;
@@ -75,7 +75,7 @@ function toWorkloadLine(verdict: V1dGrowthVerdict): string {
         `${workload.churnFailedRunIds.length} failed.`;
 }
 
-function toTableRow(row: V1dGrowthVerdictRow): string {
+function toTableRow(row: GrowthVerdictRow): string {
     const cells = [
         row.surfaceId === null ? '-' : String(row.surfaceId),
         row.surface,

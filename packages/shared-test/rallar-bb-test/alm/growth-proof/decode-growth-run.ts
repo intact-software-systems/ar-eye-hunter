@@ -1,19 +1,19 @@
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
-import { decodeV1dBrowserStats } from './decode-v1d-browser-stats.ts';
+import { decodeGrowthBrowserStats } from './decode-growth-browser-stats.ts';
 import {
+    decodeGrowthLines,
     decodeJsonLine,
-    decodeV1dGrowthLines,
     isPositiveNumber,
-    type DecodedV1dGrowthPoints
-} from './decode-v1d-growth-lines.ts';
-import { isApiJsonObject } from './v1d-growth-series.ts';
-import type { V1dGrowthRun, V1dGrowthSamples } from './v1d-growth-verdict.ts';
-import type { V1dGrowthRunnerOutcome, V1dGrowthWorkload } from './v1d-growth-workload.ts';
+    type DecodedGrowthPoints
+} from './decode-growth-lines.ts';
+import { isApiJsonObject } from './growth-series.ts';
+import type { GrowthRun, GrowthSamples } from './growth-verdict.ts';
+import type { GrowthRunnerOutcome, GrowthWorkload } from './growth-workload.ts';
 
 /** The sampler's files of one growth-proof run directory, as text. */
-export interface V1dGrowthRunFiles {
+export interface GrowthRunFiles {
     readonly runJson: string;
     readonly postgres: string;
     readonly adminSystem: string;
@@ -25,22 +25,22 @@ export interface V1dGrowthRunFiles {
     readonly apiHeap: string;
 }
 
-export interface DecodedV1dGrowthRun {
-    readonly run: V1dGrowthRun;
-    readonly samples: V1dGrowthSamples;
+export interface DecodedGrowthRun {
+    readonly run: GrowthRun;
+    readonly samples: GrowthSamples;
     /** Sample lines that did not decode, such as a line torn by the sampler's stop; each is skipped. */
     readonly skippedLines: number;
 }
 
-export function decodeV1dGrowthRun(files: V1dGrowthRunFiles): Either<readonly string[], DecodedV1dGrowthRun> {
-    return decodeV1dGrowthRunSettings(files.runJson).mapRight((run) => {
+export function decodeGrowthRun(files: GrowthRunFiles): Either<readonly string[], DecodedGrowthRun> {
+    return decodeGrowthRunSettings(files.runJson).mapRight((run) => {
         const postgres = decodeSampleLines(files.postgres);
         const adminSystem = decodeSampleLines(files.adminSystem);
         const adminQueues = decodeSampleLines(files.adminQueues);
         const adminRealtime = decodeSampleLines(files.adminRealtime);
         const apiHeap = decodeHeapSampleLines(files.apiHeap);
         const processRss = decodeSampleLines(files.processRss);
-        const browserStats = decodeV1dBrowserStats(files.controlRun);
+        const browserStats = decodeGrowthBrowserStats(files.controlRun);
         const decoded = [postgres, adminSystem, adminQueues, adminRealtime, apiHeap, processRss, browserStats];
         return {
             run,
@@ -58,7 +58,7 @@ export function decodeV1dGrowthRun(files: V1dGrowthRunFiles): Either<readonly st
     });
 }
 
-function decodeV1dGrowthRunSettings(text: string): Either<readonly string[], V1dGrowthRun> {
+function decodeGrowthRunSettings(text: string): Either<readonly string[], GrowthRun> {
     const value = decodeJsonLine(text);
     const windowStartedAtEpochMs = isApiJsonObject(value) ? value.windowStartedAtEpochMs : undefined;
     if (!isPositiveNumber(windowStartedAtEpochMs)) {
@@ -68,13 +68,13 @@ function decodeV1dGrowthRunSettings(text: string): Either<readonly string[], V1d
     if (recorded === undefined) {
         return Either.ofRight({ windowStartedAtEpochMs, workload: null });
     }
-    const workload = decodeV1dGrowthWorkload(recorded);
+    const workload = decodeGrowthWorkload(recorded);
     return workload === undefined
         ? Either.ofLeft(['run.json workload is not a recorded runner outcome and churn count'])
         : Either.ofRight({ windowStartedAtEpochMs, workload });
 }
 
-function decodeV1dGrowthWorkload(value: ApiJsonValue): V1dGrowthWorkload | undefined {
+function decodeGrowthWorkload(value: ApiJsonValue): GrowthWorkload | undefined {
     if (!isApiJsonObject(value) || !isRunnerOutcome(value.runner) || !Array.isArray(value.churnFailedRunIds)) {
         return undefined;
     }
@@ -111,7 +111,7 @@ function isPositiveCount(value: ApiJsonValue | undefined): value is number {
     return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 }
 
-function isRunnerOutcome(value: ApiJsonValue | undefined): value is V1dGrowthRunnerOutcome {
+function isRunnerOutcome(value: ApiJsonValue | undefined): value is GrowthRunnerOutcome {
     return value === 'passed' || value === 'failed' || value === 'outlasted-window';
 }
 
@@ -120,8 +120,8 @@ function isTimeOrNull(value: ApiJsonValue | undefined): value is number | null {
 }
 
 /** One `{ "atEpochMs": …, "value": … }` object per line. */
-function decodeSampleLines(text: string): DecodedV1dGrowthPoints {
-    return decodeV1dGrowthLines(
+function decodeSampleLines(text: string): DecodedGrowthPoints {
+    return decodeGrowthLines(
         text,
         (value) =>
             isApiJsonObject(value) && isPositiveNumber(value.atEpochMs) && value.value !== undefined
@@ -134,8 +134,8 @@ function decodeSampleLines(text: string): DecodedV1dGrowthPoints {
  * One `api-process` `heap-sample` timing line per line, each naming the process that took it. A sample taken without
  * a forced full collection measures garbage awaiting collection, so it is skipped.
  */
-function decodeHeapSampleLines(text: string): DecodedV1dGrowthPoints {
-    return decodeV1dGrowthLines(
+function decodeHeapSampleLines(text: string): DecodedGrowthPoints {
+    return decodeGrowthLines(
         text,
         (value) =>
             isApiJsonObject(value) && value.type === 'rallar.timing' && value.component === 'api-process' &&

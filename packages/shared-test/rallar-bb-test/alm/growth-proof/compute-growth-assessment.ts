@@ -3,19 +3,19 @@ import {
     computeDurableAssessment,
     computeRegisteredAssessment,
     computeUnboundedAssessment
-} from './compute-v1d-unexpiring-assessment.ts';
-import { toV1dGrowthNoData, type V1dGrowthAssessment, type V1dGrowthSeriesInput } from './v1d-growth-assessment.ts';
+} from './compute-growth-unexpiring-assessment.ts';
+import { toGrowthNoData, type GrowthAssessment, type GrowthSeriesInput } from './growth-assessment.ts';
 import {
-    computeV1dGrowthMax,
-    computeV1dGrowthPlateau,
-    computeV1dGrowthSlopePerHour,
-    toV1dGrowthLastElapsedMs,
-    toV1dGrowthMinutes,
-    toV1dGrowthRounded,
-    type V1dGrowthSeriesPoint
-} from './v1d-growth-series.ts';
-import type { V1dGrowthCap, V1dGrowthClassification } from './v1d-growth-surface.ts';
-import type { V1dGrowthWorkload } from './v1d-growth-workload.ts';
+    computeGrowthMax,
+    computeGrowthPlateau,
+    computeGrowthSlopePerHour,
+    toGrowthLastElapsedMs,
+    toGrowthMinutes,
+    toGrowthRounded,
+    type GrowthSeriesPoint
+} from './growth-series.ts';
+import type { GrowthCap, GrowthClassification } from './growth-surface.ts';
+import type { GrowthWorkload } from './growth-workload.ts';
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 3_600_000;
@@ -31,13 +31,13 @@ export const HEAP_WARM_UP_MS = 10 * MINUTE_MS;
 export const HEAP_SLOPE_LIMIT_BYTES_PER_HOUR = 10 * MB;
 export const HEAP_MAX_PLATEAU_FACTOR = 2;
 
-export function computeV1dGrowthAssessment(
-    classification: V1dGrowthClassification,
-    input: V1dGrowthSeriesInput
-): V1dGrowthAssessment {
+export function computeGrowthAssessment(
+    classification: GrowthClassification,
+    input: GrowthSeriesInput
+): GrowthAssessment {
     switch (classification.growthClass) {
         case 'count-capped':
-            return computeCountCappedAssessment(resolveV1dGrowthCap(classification.cap, input.workload), input.series);
+            return computeCountCappedAssessment(resolveGrowthCap(classification.cap, input.workload), input.series);
         case 'ttl-within-run':
             return toExpiryHeldAssessment(
                 computeTtlWithinRunAssessment(classification.ttlMs, classification.sweepMs, input.series),
@@ -63,11 +63,11 @@ export function computeV1dGrowthAssessment(
 
 /** A time-to-live bounds only rows that carry one: rows stamped never to expire that rise during the run fail it. */
 function toExpiryHeldAssessment(
-    assessment: V1dGrowthAssessment,
-    neverExpiringSeries: readonly V1dGrowthSeriesPoint[]
-): V1dGrowthAssessment {
+    assessment: GrowthAssessment,
+    neverExpiringSeries: readonly GrowthSeriesPoint[]
+): GrowthAssessment {
     const first = neverExpiringSeries[0]?.value ?? 0;
-    const max = computeV1dGrowthMax(neverExpiringSeries) ?? first;
+    const max = computeGrowthMax(neverExpiringSeries) ?? first;
     return max <= first || assessment.outcome === 'no-data'
         ? assessment
         : {
@@ -78,7 +78,7 @@ function toExpiryHeldAssessment(
 }
 
 /** Null where the cap is the workload's and the run recorded none. */
-function resolveV1dGrowthCap(cap: V1dGrowthCap, workload: V1dGrowthWorkload | null): number | null {
+function resolveGrowthCap(cap: GrowthCap, workload: GrowthWorkload | null): number | null {
     if (typeof cap === 'number') {
         return cap;
     }
@@ -92,17 +92,17 @@ function resolveV1dGrowthCap(cap: V1dGrowthCap, workload: V1dGrowthWorkload | nu
 
 function computeCountCappedAssessment(
     cap: number | null,
-    series: readonly V1dGrowthSeriesPoint[]
-): V1dGrowthAssessment {
+    series: readonly GrowthSeriesPoint[]
+): GrowthAssessment {
     const bound = `≤ ${cap ?? 'unrecorded'}`;
-    const max = computeV1dGrowthMax(series);
+    const max = computeGrowthMax(series);
     if (max === null || cap === null) {
-        return toV1dGrowthNoData(bound);
+        return toGrowthNoData(bound);
     }
     return {
         bound,
-        firstPlateau: computeV1dGrowthPlateau(series, 0),
-        slopePerHour: computeV1dGrowthSlopePerHour(series, toV1dGrowthLastElapsedMs(series) - LAST_WINDOW_MS),
+        firstPlateau: computeGrowthPlateau(series, 0),
+        slopePerHour: computeGrowthSlopePerHour(series, toGrowthLastElapsedMs(series) - LAST_WINDOW_MS),
         max,
         outcome: max <= cap ? 'pass' : 'fail',
         reason: max <= cap ? `every reading ≤ ${cap}` : `a reading of ${max} exceeds the cap ${cap}`
@@ -112,18 +112,18 @@ function computeCountCappedAssessment(
 function computeTtlWithinRunAssessment(
     ttlMs: number,
     sweepMs: number,
-    series: readonly V1dGrowthSeriesPoint[]
-): V1dGrowthAssessment {
+    series: readonly GrowthSeriesPoint[]
+): GrowthAssessment {
     const bound = `ttl ${Math.round(ttlMs / 1_000)} s + sweep ${Math.round(sweepMs / 1_000)} s`;
-    const max = computeV1dGrowthMax(series);
+    const max = computeGrowthMax(series);
     if (max === null) {
-        return toV1dGrowthNoData(bound);
+        return toGrowthNoData(bound);
     }
     const warmUpMs = ttlMs + sweepMs;
-    const lastElapsedMs = toV1dGrowthLastElapsedMs(series);
+    const lastElapsedMs = toGrowthLastElapsedMs(series);
     const windowStartMs = Math.max(lastElapsedMs - LAST_WINDOW_MS, warmUpMs);
-    const firstPlateau = computeV1dGrowthPlateau(series, warmUpMs);
-    const slopePerHour = computeV1dGrowthSlopePerHour(series, windowStartMs);
+    const firstPlateau = computeGrowthPlateau(series, warmUpMs);
+    const slopePerHour = computeGrowthSlopePerHour(series, windowStartMs);
     if (lastElapsedMs - windowStartMs < MIN_SLOPE_WINDOW_MS || slopePerHour === null || firstPlateau === null) {
         return {
             bound,
@@ -131,8 +131,8 @@ function computeTtlWithinRunAssessment(
             slopePerHour,
             max,
             outcome: 'insufficient',
-            reason: `the run ends ${toV1dGrowthMinutes(lastElapsedMs)} min in; the plateau needs ` +
-                `${toV1dGrowthMinutes(warmUpMs + MIN_SLOPE_WINDOW_MS)} min`
+            reason: `the run ends ${toGrowthMinutes(lastElapsedMs)} min in; the plateau needs ` +
+                `${toGrowthMinutes(warmUpMs + MIN_SLOPE_WINDOW_MS)} min`
         };
     }
     const lastWindowGrowth = slopePerHour * (LAST_WINDOW_MS / HOUR_MS);
@@ -145,11 +145,9 @@ function computeTtlWithinRunAssessment(
         max,
         outcome: plateaued ? 'pass' : 'fail',
         reason: plateaued
-            ? `grew ${toV1dGrowthRounded(lastWindowGrowth)} in the last 15 min (tolerance ${
-                toV1dGrowthRounded(tolerance)
-            })`
-            : `still rising after ttl + sweep: ${toV1dGrowthRounded(lastWindowGrowth)} in the last 15 min ` +
-                `exceeds ${toV1dGrowthRounded(tolerance)}`
+            ? `grew ${toGrowthRounded(lastWindowGrowth)} in the last 15 min (tolerance ${toGrowthRounded(tolerance)})`
+            : `still rising after ttl + sweep: ${toGrowthRounded(lastWindowGrowth)} in the last 15 min ` +
+                `exceeds ${toGrowthRounded(tolerance)}`
     };
 }
 
@@ -158,20 +156,20 @@ function computeTtlWithinRunAssessment(
  * 1.5 × the run's rate plus 60 rows an hour. The projection holds the faster of the two rates for one ttl, and never
  * less than the rows already held.
  */
-function computeTtlBeyondRunAssessment(ttlMs: number, series: readonly V1dGrowthSeriesPoint[]): V1dGrowthAssessment {
+function computeTtlBeyondRunAssessment(ttlMs: number, series: readonly GrowthSeriesPoint[]): GrowthAssessment {
     const toBound = (projected: number) =>
         `ttl ${toHours(ttlMs)} h; projected ≤ ${Math.round(projected)} (max(run, last 15 min) rate × ttl)`;
-    const max = computeV1dGrowthMax(series);
-    const runRatePerHour = computeV1dGrowthSlopePerHour(series, 0);
+    const max = computeGrowthMax(series);
+    const runRatePerHour = computeGrowthSlopePerHour(series, 0);
     if (max === null || runRatePerHour === null) {
-        return toV1dGrowthNoData(toBound(0));
+        return toGrowthNoData(toBound(0));
     }
-    const lastElapsedMs = toV1dGrowthLastElapsedMs(series);
-    const slopePerHour = computeV1dGrowthSlopePerHour(series, lastElapsedMs - LAST_WINDOW_MS);
+    const lastElapsedMs = toGrowthLastElapsedMs(series);
+    const slopePerHour = computeGrowthSlopePerHour(series, lastElapsedMs - LAST_WINDOW_MS);
     const projectedRatePerHour = Math.max(runRatePerHour, slopePerHour ?? 0, 0);
     const projected = Math.max(max, projectedRatePerHour * (ttlMs / HOUR_MS));
     const bound = projected === 0 ? `ttl ${toHours(ttlMs)} h; projected ≤ 0 (no rows held)` : toBound(projected);
-    const firstPlateau = computeV1dGrowthPlateau(series, 0);
+    const firstPlateau = computeGrowthPlateau(series, 0);
     if (lastElapsedMs < LAST_WINDOW_MS + MIN_SLOPE_WINDOW_MS || slopePerHour === null) {
         return {
             bound,
@@ -179,8 +177,8 @@ function computeTtlBeyondRunAssessment(ttlMs: number, series: readonly V1dGrowth
             slopePerHour,
             max,
             outcome: 'insufficient',
-            reason: `the run ends ${toV1dGrowthMinutes(lastElapsedMs)} min in; a linear check needs ` +
-                `${toV1dGrowthMinutes(LAST_WINDOW_MS + MIN_SLOPE_WINDOW_MS)} min`
+            reason: `the run ends ${toGrowthMinutes(lastElapsedMs)} min in; a linear check needs ` +
+                `${toGrowthMinutes(LAST_WINDOW_MS + MIN_SLOPE_WINDOW_MS)} min`
         };
     }
     const limit = (1 + LINEAR_ACCELERATION_TOLERANCE) * Math.max(runRatePerHour, 0) +
@@ -193,36 +191,35 @@ function computeTtlBeyondRunAssessment(ttlMs: number, series: readonly V1dGrowth
         max,
         outcome: linear ? 'pass' : 'fail',
         reason: linear
-            ? `grows at most linearly: last 15 min ${toV1dGrowthRounded(slopePerHour)}/h, run ${
-                toV1dGrowthRounded(runRatePerHour)
+            ? `grows at most linearly: last 15 min ${toGrowthRounded(slopePerHour)}/h, run ${
+                toGrowthRounded(runRatePerHour)
             }/h`
-            : `accelerating: last 15 min ${toV1dGrowthRounded(slopePerHour)}/h exceeds ${toV1dGrowthRounded(limit)}/h`
+            : `accelerating: last 15 min ${toGrowthRounded(slopePerHour)}/h exceeds ${toGrowthRounded(limit)}/h`
     };
 }
 
-function computeHeapAssessment(series: readonly V1dGrowthSeriesPoint[]): V1dGrowthAssessment {
+function computeHeapAssessment(series: readonly GrowthSeriesPoint[]): GrowthAssessment {
     const bound = `slope within ±${HEAP_SLOPE_LIMIT_BYTES_PER_HOUR / MB} MB/h after ` +
-        `${toV1dGrowthMinutes(HEAP_WARM_UP_MS)} min; max < ${HEAP_MAX_PLATEAU_FACTOR} × first plateau`;
+        `${toGrowthMinutes(HEAP_WARM_UP_MS)} min; max < ${HEAP_MAX_PLATEAU_FACTOR} × first plateau`;
     const afterWarmUp = series.filter((point) => point.elapsedMs >= HEAP_WARM_UP_MS);
-    const max = computeV1dGrowthMax(afterWarmUp);
-    const firstPlateau = computeV1dGrowthPlateau(series, HEAP_WARM_UP_MS);
-    const slopePerHour = computeV1dGrowthSlopePerHour(series, HEAP_WARM_UP_MS);
+    const max = computeGrowthMax(afterWarmUp);
+    const firstPlateau = computeGrowthPlateau(series, HEAP_WARM_UP_MS);
+    const slopePerHour = computeGrowthSlopePerHour(series, HEAP_WARM_UP_MS);
     if (series.length === 0) {
-        return toV1dGrowthNoData(bound);
+        return toGrowthNoData(bound);
     }
     if (
         max === null || firstPlateau === null || slopePerHour === null ||
-        toV1dGrowthLastElapsedMs(series) < HEAP_WARM_UP_MS + MIN_SLOPE_WINDOW_MS
+        toGrowthLastElapsedMs(series) < HEAP_WARM_UP_MS + MIN_SLOPE_WINDOW_MS
     ) {
         return {
             bound,
             firstPlateau,
             slopePerHour,
-            max: computeV1dGrowthMax(series),
+            max: computeGrowthMax(series),
             outcome: 'insufficient',
-            reason:
-                `the run ends ${toV1dGrowthMinutes(toV1dGrowthLastElapsedMs(series))} min in; the heap check needs ` +
-                `${toV1dGrowthMinutes(HEAP_WARM_UP_MS + MIN_SLOPE_WINDOW_MS)} min`
+            reason: `the run ends ${toGrowthMinutes(toGrowthLastElapsedMs(series))} min in; the heap check needs ` +
+                `${toGrowthMinutes(HEAP_WARM_UP_MS + MIN_SLOPE_WINDOW_MS)} min`
         };
     }
     const flat = Math.abs(slopePerHour) <= HEAP_SLOPE_LIMIT_BYTES_PER_HOUR;
@@ -233,9 +230,9 @@ function computeHeapAssessment(series: readonly V1dGrowthSeriesPoint[]): V1dGrow
         slopePerHour,
         max,
         outcome: flat && belowDouble ? 'pass' : 'fail',
-        reason: `slope ${toV1dGrowthRounded(slopePerHour / MB)} MB/h${flat ? '' : ' exceeds the limit'}; ` +
-            `max ${toV1dGrowthRounded(max / MB)} MB against the first plateau ` +
-            `${toV1dGrowthRounded(firstPlateau.value / MB)} MB` +
+        reason: `slope ${toGrowthRounded(slopePerHour / MB)} MB/h${flat ? '' : ' exceeds the limit'}; ` +
+            `max ${toGrowthRounded(max / MB)} MB against the first plateau ` +
+            `${toGrowthRounded(firstPlateau.value / MB)} MB` +
             `${belowDouble ? '' : ', twice it or more'}`
     };
 }

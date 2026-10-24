@@ -1,11 +1,11 @@
-import type { V1dGrowthPlateau, V1dGrowthSeriesPoint } from './v1d-growth-series.ts';
-import type { V1dGrowthWorkload } from './v1d-growth-workload.ts';
+import type { GrowthPlateau, GrowthSeriesPoint } from './growth-series.ts';
+import type { GrowthWorkload } from './growth-workload.ts';
 
 /**
  * `declared` is a history R3 declares and reports: never passed or failed. `unbounded-unexercised` is an unbounded
  * surface the workload never grew, so nothing proves it bounded: a follow-up, neither a pass nor a fail.
  */
-export type V1dGrowthOutcome =
+export type GrowthOutcome =
     | 'pass'
     | 'declared'
     | 'fail'
@@ -15,9 +15,9 @@ export type V1dGrowthOutcome =
     | 'unbounded-unexercised';
 
 /** What one reading of one surface showed against its class's predicate. */
-export interface V1dGrowthAssessment {
+export interface GrowthAssessment {
     readonly bound: string;
-    readonly firstPlateau: V1dGrowthPlateau | null;
+    readonly firstPlateau: GrowthPlateau | null;
     /**
      * The slope the predicate read: the last 15 minutes; everything after the warm-up for the heap, of its bucket
      * medians for a page heap; the whole run for a durable, declared or unbounded surface.
@@ -25,23 +25,23 @@ export interface V1dGrowthAssessment {
     readonly slopePerHour: number | null;
     /** The largest reading; a page heap's raw peak, reported beside its medians and not judged. */
     readonly max: number | null;
-    readonly outcome: V1dGrowthOutcome;
+    readonly outcome: GrowthOutcome;
     readonly reason: string;
 }
 
-export interface V1dGrowthSeriesInput {
-    readonly series: readonly V1dGrowthSeriesPoint[];
+export interface GrowthSeriesInput {
+    readonly series: readonly GrowthSeriesPoint[];
     /** The entity counts a durable surface grows with, read from the same samples; empty for every other class. */
-    readonly entitySeries: readonly V1dGrowthSeriesPoint[];
+    readonly entitySeries: readonly GrowthSeriesPoint[];
     /** The reading a durable surface counting registrations may not exceed; empty for every other class. */
-    readonly ceilingSeries: readonly V1dGrowthSeriesPoint[];
+    readonly ceilingSeries: readonly GrowthSeriesPoint[];
     /** The reading's rows stamped never to expire; empty where the store stamps none. */
-    readonly neverExpiringSeries: readonly V1dGrowthSeriesPoint[];
+    readonly neverExpiringSeries: readonly GrowthSeriesPoint[];
     /** What the run's workload did, which counts the accounts it registered; null when the run recorded none. */
-    readonly workload: V1dGrowthWorkload | null;
+    readonly workload: GrowthWorkload | null;
 }
 
-export function toV1dGrowthNoData(bound: string): V1dGrowthAssessment {
+export function toGrowthNoData(bound: string): GrowthAssessment {
     return {
         bound,
         firstPlateau: null,

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The ALM V1d growth proof: a hand-launched local stack on a fresh Postgres database, held for the whole window,
+# The ALM growth proof: a hand-launched local stack on a fresh Postgres database, held for the whole window,
 # driving the 15-agent 78-minute principal multicast manifest and the medium-scale churn recipes side by side
 # while a sampler records the database, the admin reads, process memory and the agents' stats every 30 s.
 # Three API processes share the database, as the medium-scale gate runs them: the churn reads through all three
@@ -8,7 +8,7 @@
 # After the window it waits for the manifest when it is due to finish within the drain bound, records the
 # workload's outcome in run.json, stops everything, drops the database and writes the growth verdict.
 #
-# Usage: apps/rallar-black-box/scripts/run-v1d-growth-proof.sh [--minutes 75] [--out <run-dir>]
+# Usage: apps/rallar-black-box/scripts/run-growth-proof.sh [--minutes 75] [--out <run-dir>]
 # Needs: the dev Postgres container running, Docker, Deno, Node, jq, lsof; nothing else listening on the ports below.
 # Do not edit the worktree while it runs: the headless SPA serves from it. Launch it from a terminal whose Chromium
 # can connect WebRTC on the local network: where its mDNS host candidates do not resolve, every agent's RTC connect
@@ -56,7 +56,7 @@ readonly POSTGRES_HOST_PORT=5432
 readonly POSTGRES_ADMIN_DATABASE=appdb
 
 readonly MANIFEST=apps/rallar-black-box/manifests/hetzner/23-rtc-messages-principal-15-agent-78m-2hz-tree.json
-readonly ROW_COUNTS_SQL=apps/rallar-black-box/scripts/v1d-growth-proof-row-counts.sql
+readonly ROW_COUNTS_SQL=apps/rallar-black-box/scripts/growth-proof-row-counts.sql
 
 readonly SAMPLE_INTERVAL_SECONDS=30
 readonly SERVICE_READY_TIMEOUT_SECONDS=180
@@ -70,8 +70,8 @@ readonly MANIFEST_END_MARGIN_SECONDS=300
 readonly STOP_GRACE_SECONDS=20
 readonly CONTROL_SAMPLE_ENVELOPES=2000
 
-readonly AUTH_CREDENTIAL_SECRET=local-v1d-growth-proof-auth-credential-secret-v1
-readonly OPERATOR_TOKEN_SECRET=local-v1d-growth-proof-operator-secret-v1
+readonly AUTH_CREDENTIAL_SECRET=local-growth-proof-auth-credential-secret-v1
+readonly OPERATOR_TOKEN_SECRET=local-growth-proof-operator-secret-v1
 readonly REGISTRATION_IP_RATE_LIMIT=500
 readonly LOGIN_IP_RATE_LIMIT=100
 readonly USER_RATE_LIMIT=100
@@ -83,7 +83,7 @@ readonly GROUP_CURRENT_SNAPSHOT_CACHE_MAX_ENTRIES=32
 readonly ADMIN_USERNAME=admin
 readonly ADMIN_PASSWORD=admin
 readonly AGENT_PREFIX=controller
-readonly AGENT_PASSWORD_PREFIX=v1d-growth-proof-agent
+readonly AGENT_PASSWORD_PREFIX=growth-proof-agent
 
 AGENT_COUNT="$(jq -r '.metadata.participantCount' "$MANIFEST")"
 MESH_MIN_SIZE="$(jq -r '.metadata.rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE' "$MANIFEST")"
@@ -94,10 +94,10 @@ readonly AGENT_COUNT MESH_MIN_SIZE MANIFEST_SECONDS DISTRIBUTED_RUN_ID EVENT_HIS
 
 STAMP="$(date -u +%Y%m%dt%H%M%Sz)"
 readonly STAMP
-readonly DATABASE_NAME="v1d_growth_${STAMP}"
+readonly DATABASE_NAME="growth_proof_${STAMP}"
 readonly RUN_DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_HOST_PORT}/${DATABASE_NAME}"
-readonly CONTROL_RUN_ID="v1d-growth-proof-control-${STAMP}"
-OUT_DIR="${OUT_DIR:-tmp/v1d-growth-proof/${STAMP}}"
+readonly CONTROL_RUN_ID="growth-proof-control-${STAMP}"
+OUT_DIR="${OUT_DIR:-tmp/growth-proof/${STAMP}}"
 mkdir -p "$OUT_DIR/samples" "$OUT_DIR/churn" "$OUT_DIR/control-storage"
 OUT_DIR="$(cd "$OUT_DIR" && pwd)"
 readonly OUT_DIR
@@ -295,7 +295,7 @@ run_churn_loop() {
 	sleep "$LOGIN_WINDOW_SECONDS"
 	while (($(date +%s) < WINDOW_END_EPOCH_S)); do
 		iteration=$((iteration + 1))
-		run_id="v1d-growth-churn-${STAMP}-$(printf '%03d' "$iteration")"
+		run_id="growth-churn-${STAMP}-$(printf '%03d' "$iteration")"
 		echo "$iteration $run_id started" >>"$OUT_DIR/churn-iterations.txt"
 		if env \
 			RALLAR_API_BASE_URL="$API_BASE_URL" \
@@ -321,7 +321,7 @@ run_churn_loop() {
 }
 
 read_admin_token() {
-	curl -sf -X POST "$API_BASE_URL/api/auth/login/requests/v1d-growth-proof-sampler-login-${STAMP}" \
+	curl -sf -X POST "$API_BASE_URL/api/auth/login/requests/growth-proof-sampler-login-${STAMP}" \
 		-H 'content-type: application/json' \
 		-d "{\"username\":\"${ADMIN_USERNAME}\",\"password\":\"${ADMIN_PASSWORD}\"}"
 }
@@ -521,4 +521,4 @@ log "runner: $RUNNER_OUTCOME; churn iterations: $(count_churn_iterations passed)
 tear_down
 
 log "writing the verdict"
-node --import tsx apps/rallar-black-box/scripts/write-v1d-growth-verdict.ts --run-dir "$OUT_DIR"
+node --import tsx apps/rallar-black-box/scripts/write-growth-verdict.ts --run-dir "$OUT_DIR"

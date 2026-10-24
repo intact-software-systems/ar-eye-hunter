@@ -4,11 +4,11 @@ import {
     it
 } from 'vitest';
 
-import { toV1dGrowthVerdictMarkdown } from '../../../shared-test/rallar-bb-test/alm/growth-proof/to-v1d-growth-verdict-markdown.ts';
+import { toGrowthVerdictMarkdown } from '../../../shared-test/rallar-bb-test/alm/growth-proof/to-growth-verdict-markdown.ts';
 
-describe('V1d growth verdict document', () => {
+describe('Growth verdict document', () => {
     it('tables every reading with its class, plateau, slope, max, bound and verdict, and lists the reasons', () => {
-        const markdown = toV1dGrowthVerdictMarkdown({
+        const markdown = toGrowthVerdictMarkdown({
             skippedLines: 1,
             verdict: {
                 passed: false,

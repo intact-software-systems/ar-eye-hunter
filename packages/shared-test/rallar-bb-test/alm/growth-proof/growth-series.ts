@@ -1,9 +1,9 @@
 import type { ApiJsonObject, ApiJsonValue } from '@shared/api/api-json-value.ts';
 
-import type { V1dGrowthReader } from './v1d-growth-surface.ts';
+import type { GrowthReader } from './growth-surface.ts';
 
 /** One sample as its source file recorded it. */
-export interface V1dGrowthSamplePoint {
+export interface GrowthSamplePoint {
     readonly atEpochMs: number;
     /** The agent a browser reading came from; null for a process or database reading. */
     readonly agentId: string | null;
@@ -13,23 +13,23 @@ export interface V1dGrowthSamplePoint {
 }
 
 /** One reading of one surface, measured from the start of the run's window. */
-export interface V1dGrowthSeriesPoint {
+export interface GrowthSeriesPoint {
     readonly elapsedMs: number;
     readonly value: number;
 }
 
 /** One browser agent's own reading, before the agents' readings meet in one series. */
-export interface V1dGrowthAgentReading extends V1dGrowthSeriesPoint {
+export interface GrowthAgentReading extends GrowthSeriesPoint {
     readonly agentId: string;
 }
 
-export interface V1dGrowthPlateau {
+export interface GrowthPlateau {
     readonly atElapsedMs: number;
     readonly value: number;
 }
 
 /** One reading of a sample the reader found a number in, with the agent it came from, if any. */
-interface V1dGrowthReading extends V1dGrowthSeriesPoint {
+interface GrowthReading extends GrowthSeriesPoint {
     readonly agentId: string | null;
 }
 
@@ -41,30 +41,30 @@ const AGENT_BUCKET_MS = 30_000;
 /** The first plateau is the median of this window, starting where the surface's warm-up ends. */
 const PLATEAU_WINDOW_MS = 300_000;
 
-export function toV1dGrowthSeries(
-    points: readonly V1dGrowthSamplePoint[],
-    reader: V1dGrowthReader,
+export function toGrowthSeries(
+    points: readonly GrowthSamplePoint[],
+    reader: GrowthReader,
     windowStartedAtEpochMs: number
-): readonly V1dGrowthSeriesPoint[] {
-    const readings = toV1dGrowthReadings(points, reader, windowStartedAtEpochMs);
+): readonly GrowthSeriesPoint[] {
+    const readings = toGrowthReadings(points, reader, windowStartedAtEpochMs);
     const byAgent = readings.some((reading) => reading.agentId !== null);
     return byAgent ? toAgentBucketMaxima(readings) : readings.map(({ elapsedMs, value }) => ({ elapsedMs, value }));
 }
 
-export function toV1dGrowthAgentReadings(
-    points: readonly V1dGrowthSamplePoint[],
-    reader: V1dGrowthReader,
+export function toGrowthAgentReadings(
+    points: readonly GrowthSamplePoint[],
+    reader: GrowthReader,
     windowStartedAtEpochMs: number
-): readonly V1dGrowthAgentReading[] {
-    return toV1dGrowthReadings(points, reader, windowStartedAtEpochMs).flatMap(({ elapsedMs, agentId, value }) =>
+): readonly GrowthAgentReading[] {
+    return toGrowthReadings(points, reader, windowStartedAtEpochMs).flatMap(({ elapsedMs, agentId, value }) =>
         agentId === null ? [] : [{ elapsedMs, agentId, value }]
     );
 }
 
 /** One agent's own series, kept apart from every other agent's. */
-export interface V1dGrowthAgentSeries {
+export interface GrowthAgentSeries {
     readonly agentId: string;
-    readonly series: readonly V1dGrowthSeriesPoint[];
+    readonly series: readonly GrowthSeriesPoint[];
 }
 
 /**
@@ -73,12 +73,12 @@ export interface V1dGrowthAgentSeries {
  * `fromElapsedMs` on has an empty series. Only complete buckets count: a bucket the agent's own last reading falls
  * inside is left out.
  */
-export function computeV1dGrowthAgentBucketMedians(
-    readings: readonly V1dGrowthAgentReading[],
+export function computeGrowthAgentBucketMedians(
+    readings: readonly GrowthAgentReading[],
     bucketMs: number,
     fromElapsedMs: number
-): readonly V1dGrowthAgentSeries[] {
-    const byAgent = new Map<string, V1dGrowthAgentReading[]>();
+): readonly GrowthAgentSeries[] {
+    const byAgent = new Map<string, GrowthAgentReading[]>();
     for (const reading of readings) {
         byAgent.set(reading.agentId, [...(byAgent.get(reading.agentId) ?? []), reading]);
     }
@@ -92,9 +92,9 @@ export function computeV1dGrowthAgentBucketMedians(
 
 /** One agent's readings as bucket medians, leaving out the bucket its last reading falls inside. */
 function toCompleteBucketMedians(
-    readings: readonly V1dGrowthAgentReading[],
+    readings: readonly GrowthAgentReading[],
     bucketMs: number
-): readonly V1dGrowthSeriesPoint[] {
+): readonly GrowthSeriesPoint[] {
     const lastElapsedMs = readings.reduce((last, reading) => Math.max(last, reading.elapsedMs), 0);
     const byBucket = new Map<number, number[]>();
     for (const reading of readings) {
@@ -104,22 +104,22 @@ function toCompleteBucketMedians(
     return [...byBucket.entries()]
         .filter(([bucket]) => bucket + bucketMs <= lastElapsedMs)
         .sort(([left], [right]) => left - right)
-        .map(([bucket, values]) => ({ elapsedMs: bucket, value: computeV1dGrowthMedian(values) }));
+        .map(([bucket, values]) => ({ elapsedMs: bucket, value: computeGrowthMedian(values) }));
 }
 
-function toV1dGrowthReadings(
-    points: readonly V1dGrowthSamplePoint[],
-    reader: V1dGrowthReader,
+function toGrowthReadings(
+    points: readonly GrowthSamplePoint[],
+    reader: GrowthReader,
     windowStartedAtEpochMs: number
-): readonly V1dGrowthReading[] {
+): readonly GrowthReading[] {
     return points.flatMap((point) => {
         const elapsedMs = point.atEpochMs - windowStartedAtEpochMs;
-        const value = toV1dGrowthValue(point.value, reader);
+        const value = toGrowthValue(point.value, reader);
         return elapsedMs >= 0 && value !== undefined ? [{ elapsedMs, agentId: point.agentId, value }] : [];
     });
 }
 
-function toV1dGrowthValue(value: ApiJsonValue, reader: V1dGrowthReader): number | undefined {
+function toGrowthValue(value: ApiJsonValue, reader: GrowthReader): number | undefined {
     let current: ApiJsonValue = value;
     for (const step of reader.path) {
         const next = Array.isArray(current) && step === 'length'
@@ -139,7 +139,7 @@ export function isApiJsonObject(value: ApiJsonValue | undefined): value is ApiJs
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function toAgentBucketMaxima(readings: readonly V1dGrowthSeriesPoint[]): readonly V1dGrowthSeriesPoint[] {
+function toAgentBucketMaxima(readings: readonly GrowthSeriesPoint[]): readonly GrowthSeriesPoint[] {
     const maxima = new Map<number, number>();
     for (const reading of readings) {
         const bucket = Math.floor(reading.elapsedMs / AGENT_BUCKET_MS) * AGENT_BUCKET_MS;
@@ -151,8 +151,8 @@ function toAgentBucketMaxima(readings: readonly V1dGrowthSeriesPoint[]): readonl
 }
 
 /** The least-squares slope per hour of the points from `fromElapsedMs` on; null below two distinct instants. */
-export function computeV1dGrowthSlopePerHour(
-    series: readonly V1dGrowthSeriesPoint[],
+export function computeGrowthSlopePerHour(
+    series: readonly GrowthSeriesPoint[],
     fromElapsedMs: number
 ): number | null {
     const window = series.filter((point) => point.elapsedMs >= fromElapsedMs);
@@ -166,37 +166,37 @@ export function computeV1dGrowthSlopePerHour(
     return variance === 0 ? null : (covariance / variance) * HOUR_MS;
 }
 
-export function computeV1dGrowthPlateau(
-    series: readonly V1dGrowthSeriesPoint[],
+export function computeGrowthPlateau(
+    series: readonly GrowthSeriesPoint[],
     warmUpMs: number
-): V1dGrowthPlateau | null {
+): GrowthPlateau | null {
     const window = series
         .filter((point) => point.elapsedMs >= warmUpMs && point.elapsedMs <= warmUpMs + PLATEAU_WINDOW_MS)
         .map((point) => point.value);
-    return window.length === 0 ? null : { atElapsedMs: warmUpMs, value: computeV1dGrowthMedian(window) };
+    return window.length === 0 ? null : { atElapsedMs: warmUpMs, value: computeGrowthMedian(window) };
 }
 
 /** The median of a non-empty list. */
-function computeV1dGrowthMedian(values: readonly number[]): number {
+function computeGrowthMedian(values: readonly number[]): number {
     const sorted = [...values].sort((left, right) => left - right);
     const middle = Math.floor(sorted.length / 2);
     return sorted.length % 2 === 1 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2;
 }
 
-export function computeV1dGrowthMax(series: readonly V1dGrowthSeriesPoint[]): number | null {
+export function computeGrowthMax(series: readonly GrowthSeriesPoint[]): number | null {
     return series.length === 0
         ? null
         : series.reduce((max, point) => Math.max(max, point.value), Number.NEGATIVE_INFINITY);
 }
 
-export function toV1dGrowthLastElapsedMs(series: readonly V1dGrowthSeriesPoint[]): number {
+export function toGrowthLastElapsedMs(series: readonly GrowthSeriesPoint[]): number {
     return series.length === 0 ? 0 : series[series.length - 1]!.elapsedMs;
 }
 
-export function toV1dGrowthMinutes(milliseconds: number): number {
+export function toGrowthMinutes(milliseconds: number): number {
     return Math.round((milliseconds / 60_000) * 10) / 10;
 }
 
-export function toV1dGrowthRounded(value: number): number {
+export function toGrowthRounded(value: number): number {
     return Math.round(value * 100) / 100;
 }

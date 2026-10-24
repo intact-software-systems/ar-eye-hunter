@@ -3,17 +3,17 @@ import {
     HEAP_SLOPE_LIMIT_BYTES_PER_HOUR,
     HEAP_WARM_UP_MS,
     MB
-} from './compute-v1d-growth-assessment.ts';
-import { toV1dGrowthNoData, type V1dGrowthAssessment, type V1dGrowthOutcome } from './v1d-growth-assessment.ts';
+} from './compute-growth-assessment.ts';
+import { toGrowthNoData, type GrowthAssessment, type GrowthOutcome } from './growth-assessment.ts';
 import {
-    computeV1dGrowthAgentBucketMedians,
-    computeV1dGrowthMax,
-    computeV1dGrowthSlopePerHour,
-    toV1dGrowthMinutes,
-    toV1dGrowthRounded,
-    type V1dGrowthAgentReading,
-    type V1dGrowthAgentSeries
-} from './v1d-growth-series.ts';
+    computeGrowthAgentBucketMedians,
+    computeGrowthMax,
+    computeGrowthSlopePerHour,
+    toGrowthMinutes,
+    toGrowthRounded,
+    type GrowthAgentReading,
+    type GrowthAgentSeries
+} from './growth-series.ts';
 
 const PAGE_HEAP_BUCKET_MS = 5 * 60_000;
 const PAGE_HEAP_MIN_BUCKETS = 3;
@@ -21,13 +21,13 @@ const PAGE_HEAP_MIN_BUCKETS = 3;
 /** One agent's verdict on the page heap predicate; `severity` orders agents of the same outcome, worst highest. */
 interface AgentPageHeapJudgement {
     readonly agentId: string;
-    readonly outcome: V1dGrowthOutcome;
+    readonly outcome: GrowthOutcome;
     readonly severity: number;
     readonly bucketCount: number;
-    readonly assessment: V1dGrowthAssessment;
+    readonly assessment: GrowthAssessment;
 }
 
-const OUTCOME_RANK: Readonly<Partial<Record<V1dGrowthOutcome, number>>> = { fail: 2, insufficient: 1 };
+const OUTCOME_RANK: Readonly<Partial<Record<GrowthOutcome, number>>> = { fail: 2, insufficient: 1 };
 
 /**
  * A `heap` surface's browser page heap, which holds the page's product structures and the bounded harness event
@@ -37,28 +37,28 @@ const OUTCOME_RANK: Readonly<Partial<Record<V1dGrowthOutcome, number>>> = { fail
  * agent fails, is insufficient if any agent is and none fails, and passes only when every agent passes; it reports
  * the worst agent's numbers and names it. The raw peak is only reported.
  */
-export function computeV1dPageHeapAssessment(readings: readonly V1dGrowthAgentReading[]): V1dGrowthAssessment {
+export function computeGrowthPageHeapAssessment(readings: readonly GrowthAgentReading[]): GrowthAssessment {
     const bound =
         `page heap (product structures + the bounded black-box event history): each agent's 5-minute bucket ` +
-        `medians after ${toV1dGrowthMinutes(HEAP_WARM_UP_MS)} min: slope within ` +
+        `medians after ${toGrowthMinutes(HEAP_WARM_UP_MS)} min: slope within ` +
         `±${HEAP_SLOPE_LIMIT_BYTES_PER_HOUR / MB} MB/h; last < ${HEAP_MAX_PLATEAU_FACTOR} × first`;
-    const judged = computeV1dGrowthAgentBucketMedians(readings, PAGE_HEAP_BUCKET_MS, HEAP_WARM_UP_MS)
+    const judged = computeGrowthAgentBucketMedians(readings, PAGE_HEAP_BUCKET_MS, HEAP_WARM_UP_MS)
         .map((agent) => judgeAgentPageHeap(agent, bound));
     const worst = judged.reduce<AgentPageHeapJudgement | undefined>(
         (current, next) => (current === undefined || isWorse(next, current) ? next : current),
         undefined
     );
     if (worst === undefined) {
-        return toV1dGrowthNoData(bound);
+        return toGrowthNoData(bound);
     }
-    const max = computeV1dGrowthMax(readings.filter((reading) => reading.elapsedMs >= HEAP_WARM_UP_MS));
+    const max = computeGrowthMax(readings.filter((reading) => reading.elapsedMs >= HEAP_WARM_UP_MS));
     return {
         ...worst.assessment,
         max,
         reason: worst.outcome === 'insufficient'
             ? toInsufficientReason(judged.filter((agent) => agent.outcome === 'insufficient'), judged.length)
             : `agent ${worst.agentId} (worst of ${judged.length}): ${worst.assessment.reason}; ` +
-                `raw peak ${toV1dGrowthRounded((max ?? 0) / MB)} MB, not judged`
+                `raw peak ${toGrowthRounded((max ?? 0) / MB)} MB, not judged`
     };
 }
 
@@ -74,11 +74,11 @@ function isWorse(next: AgentPageHeapJudgement, current: AgentPageHeapJudgement):
     return rankDifference === 0 ? next.severity > current.severity : rankDifference > 0;
 }
 
-function judgeAgentPageHeap(agent: V1dGrowthAgentSeries, bound: string): AgentPageHeapJudgement {
+function judgeAgentPageHeap(agent: GrowthAgentSeries, bound: string): AgentPageHeapJudgement {
     const { agentId, series } = agent;
     const first = series[0];
     const last = series[series.length - 1];
-    const slopePerHour = computeV1dGrowthSlopePerHour(series, 0);
+    const slopePerHour = computeGrowthSlopePerHour(series, 0);
     if (series.length < PAGE_HEAP_MIN_BUCKETS || first === undefined || last === undefined || slopePerHour === null) {
         return toInsufficientJudgement(agent, bound);
     }
@@ -99,16 +99,14 @@ function judgeAgentPageHeap(agent: V1dGrowthAgentSeries, bound: string): AgentPa
             max: null,
             outcome,
             reason:
-                `bucket median slope ${toV1dGrowthRounded(slopePerHour / MB)} MB/h${
-                    flat ? '' : ' exceeds the limit'
-                }; ` +
-                `last bucket median ${toV1dGrowthRounded(last.value / MB)} MB against the first ` +
-                `${toV1dGrowthRounded(first.value / MB)} MB${belowDouble ? '' : ', twice it or more'}`
+                `bucket median slope ${toGrowthRounded(slopePerHour / MB)} MB/h${flat ? '' : ' exceeds the limit'}; ` +
+                `last bucket median ${toGrowthRounded(last.value / MB)} MB against the first ` +
+                `${toGrowthRounded(first.value / MB)} MB${belowDouble ? '' : ', twice it or more'}`
         }
     };
 }
 
-function toInsufficientJudgement(agent: V1dGrowthAgentSeries, bound: string): AgentPageHeapJudgement {
+function toInsufficientJudgement(agent: GrowthAgentSeries, bound: string): AgentPageHeapJudgement {
     const first = agent.series[0];
     return {
         agentId: agent.agentId,
@@ -118,7 +116,7 @@ function toInsufficientJudgement(agent: V1dGrowthAgentSeries, bound: string): Ag
         assessment: {
             bound,
             firstPlateau: first === undefined ? null : { atElapsedMs: first.elapsedMs, value: first.value },
-            slopePerHour: computeV1dGrowthSlopePerHour(agent.series, 0),
+            slopePerHour: computeGrowthSlopePerHour(agent.series, 0),
             max: null,
             outcome: 'insufficient',
             reason: `${agent.series.length} complete 5-minute buckets after the warm-up`

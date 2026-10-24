@@ -7,15 +7,15 @@ import {
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 import {
-    decodeV1dGrowthRun,
-    type V1dGrowthRunFiles
-} from '../../../shared-test/rallar-bb-test/alm/growth-proof/decode-v1d-growth-run.ts';
-import { V1D_GROWTH_SURFACES } from '../../../shared-test/rallar-bb-test/alm/growth-proof/v1d-growth-surfaces.ts';
-import { computeV1dGrowthVerdict } from '../../../shared-test/rallar-bb-test/alm/growth-proof/v1d-growth-verdict.ts';
+    decodeGrowthRun,
+    type GrowthRunFiles
+} from '../../../shared-test/rallar-bb-test/alm/growth-proof/decode-growth-run.ts';
+import { GROWTH_SURFACES } from '../../../shared-test/rallar-bb-test/alm/growth-proof/growth-surfaces.ts';
+import { computeGrowthVerdict } from '../../../shared-test/rallar-bb-test/alm/growth-proof/growth-verdict.ts';
 
 const STARTED_AT_EPOCH_MS = 1_800_000_000_000;
 
-function toFiles(overrides: Partial<V1dGrowthRunFiles>): V1dGrowthRunFiles {
+function toFiles(overrides: Partial<GrowthRunFiles>): GrowthRunFiles {
     return {
         runJson: JSON.stringify({ windowStartedAtEpochMs: STARTED_AT_EPOCH_MS }),
         postgres: '',
@@ -53,12 +53,12 @@ function toStatsEnvelope(agentId: string, atEpochMs: number, payload: ApiJsonVal
     return { kind: 'stats', agentId, atEpochMs, payload: { kind: 'stats', atEpochMs, payload } };
 }
 
-describe('V1d growth run decoding', () => {
+describe('Growth run decoding', () => {
     it('reads the window start, and no workload while the script has not recorded one', () => {
-        const decoded = decodeV1dGrowthRun(toFiles({}));
+        const decoded = decodeGrowthRun(toFiles({}));
 
         expect(decoded.right?.run).toEqual({ windowStartedAtEpochMs: STARTED_AT_EPOCH_MS, workload: null });
-        expect(decodeV1dGrowthRun(toFiles({ runJson: '{}' })).left).toEqual([
+        expect(decodeGrowthRun(toFiles({ runJson: '{}' })).left).toEqual([
             'run.json windowStartedAtEpochMs is not a time'
         ]);
     });
@@ -80,12 +80,12 @@ describe('V1d growth run decoding', () => {
         const { eventHistoryMaxEvents: _eventHistoryMaxEvents, ...withoutEventHistoryBound } = workload;
         const { groupCurrentSnapshotCacheMaxEntries: _cacheCap, ...withoutCacheCap } = workload;
         const toLeft = (recorded: ApiJsonValue) =>
-            decodeV1dGrowthRun(toFiles({
+            decodeGrowthRun(toFiles({
                 runJson: JSON.stringify({ windowStartedAtEpochMs: STARTED_AT_EPOCH_MS, workload: recorded })
             })).left;
 
         expect(
-            decodeV1dGrowthRun(toFiles({
+            decodeGrowthRun(toFiles({
                 runJson: JSON.stringify({ windowStartedAtEpochMs: STARTED_AT_EPOCH_MS, workload })
             })).right?.run.workload
         ).toEqual(workload);
@@ -118,7 +118,7 @@ describe('V1d growth run decoding', () => {
             JSON.stringify({ atEpochMs: STARTED_AT_EPOCH_MS + 30_000, value: { tables: { crdt_updates: 0 } } }),
             '{"atEpochMs": 18000000'
         ].join('\n');
-        const decoded = decodeV1dGrowthRun(toFiles({ postgres })).right;
+        const decoded = decodeGrowthRun(toFiles({ postgres })).right;
 
         expect(decoded?.samples.postgres).toEqual([
             {
@@ -137,7 +137,7 @@ describe('V1d growth run decoding', () => {
             toHeapSampleLine('server-b', STARTED_AT_EPOCH_MS + 61_000, true)
         ].join('\n');
 
-        expect(decodeV1dGrowthRun(toFiles({ apiHeap })).right?.samples['api-heap']).toEqual([
+        expect(decodeGrowthRun(toFiles({ apiHeap })).right?.samples['api-heap']).toEqual([
             {
                 atEpochMs: STARTED_AT_EPOCH_MS + 60_000,
                 agentId: null,
@@ -155,7 +155,7 @@ describe('V1d growth run decoding', () => {
 
     it('skips a heap sample taken without a forced collection', () => {
         const apiHeap = toHeapSampleLine('server-a', STARTED_AT_EPOCH_MS + 60_000, false);
-        const decoded = decodeV1dGrowthRun(toFiles({ apiHeap })).right;
+        const decoded = decodeGrowthRun(toFiles({ apiHeap })).right;
 
         expect(decoded?.samples['api-heap']).toEqual([]);
         expect(decoded?.skippedLines).toBe(1);
@@ -187,7 +187,7 @@ describe('V1d growth run decoding', () => {
             atEpochMs: STARTED_AT_EPOCH_MS + 30_000,
             value: { stats: [periodic], events: [ledger, { kind: 'event', agentId: 'controller-01', payload: {} }] }
         });
-        const decoded = decodeV1dGrowthRun(toFiles({ controlRun: [poll, poll].join('\n') })).right;
+        const decoded = decodeGrowthRun(toFiles({ controlRun: [poll, poll].join('\n') })).right;
 
         expect(decoded?.samples['browser-stats'].map(({ agentId, atEpochMs }) => [agentId, atEpochMs])).toEqual([
             ['controller-02', STARTED_AT_EPOCH_MS + 5_000],
@@ -221,9 +221,9 @@ describe('V1d growth run decoding', () => {
                     ]
                 }
             });
-        const forced = decodeV1dGrowthRun(toFiles({ controlRun: toCensusPoll(true) })).right;
-        const unforced = decodeV1dGrowthRun(toFiles({ controlRun: toCensusPoll(false) })).right;
-        const pageHeapSurface = V1D_GROWTH_SURFACES.find((surface) =>
+        const forced = decodeGrowthRun(toFiles({ controlRun: toCensusPoll(true) })).right;
+        const unforced = decodeGrowthRun(toFiles({ controlRun: toCensusPoll(false) })).right;
+        const pageHeapSurface = GROWTH_SURFACES.find((surface) =>
             surface.classification.growthClass === 'heap' && surface.readers[0]?.path.includes('pageHeap')
         )!;
 
@@ -233,7 +233,7 @@ describe('V1d growth run decoding', () => {
         });
         expect(unforced?.samples['browser-stats'][0]?.value).not.toHaveProperty('browser.pageHeap');
         expect(
-            computeV1dGrowthVerdict({
+            computeGrowthVerdict({
                 surveyedSurfaceIds: [pageHeapSurface.id],
                 surfaces: [pageHeapSurface],
                 run: unforced!.run,
@@ -261,7 +261,7 @@ describe('V1d growth run decoding', () => {
             });
         const overlapping = [toPoll(false), toPoll(false)].join('\n');
 
-        expect(decodeV1dGrowthRun(toFiles({ controlRun: overlapping })).right?.skippedLines).toBe(1);
-        expect(decodeV1dGrowthRun(toFiles({ controlRun: toPoll(true) })).right?.skippedLines).toBe(0);
+        expect(decodeGrowthRun(toFiles({ controlRun: overlapping })).right?.skippedLines).toBe(1);
+        expect(decodeGrowthRun(toFiles({ controlRun: toPoll(true) })).right?.skippedLines).toBe(0);
     });
 });

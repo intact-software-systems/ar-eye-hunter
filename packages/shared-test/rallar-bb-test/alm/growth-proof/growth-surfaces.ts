@@ -1,7 +1,7 @@
-import type { V1dGrowthClassification, V1dGrowthReader, V1dGrowthSurface } from './v1d-growth-surface.ts';
+import type { GrowthClassification, GrowthReader, GrowthSurface } from './growth-surface.ts';
 
 /** The growth survey's rows: every one of them needs a classified surface below. */
-export const V1D_GROWTH_SURVEY_SURFACE_IDS: readonly number[] = Array.from(
+export const GROWTH_SURVEY_SURFACE_IDS: readonly number[] = Array.from(
     { length: 75 },
     (_value, index) => index + 1
 );
@@ -16,15 +16,15 @@ const AL_ORDERING_TRACKS_PER_STORE = 256;
 const AL_DELIVERED_MARKERS_PER_STORE = 256;
 const BROWSER_INBOUND_STORES = 2;
 
-const HEAP: V1dGrowthClassification = { growthClass: 'heap' };
+const HEAP: GrowthClassification = { growthClass: 'heap' };
 /** The committed `appInbox.finishedRetentionMs` default; the run keeps it, so these rows grow for its whole length. */
-const FINISHED_APP_INBOX_RETENTION: V1dGrowthClassification = { growthClass: 'ttl-beyond-run', ttlMs: DAY_MS };
-const AL_REPOSITORY_ROWS: V1dGrowthClassification = {
+const FINISHED_APP_INBOX_RETENTION: GrowthClassification = { growthClass: 'ttl-beyond-run', ttlMs: DAY_MS };
+const AL_REPOSITORY_ROWS: GrowthClassification = {
     growthClass: 'ttl-within-run',
     ttlMs: AL_REPOSITORY_TTL_MS,
     sweepMs: RUNTIME_STATE_SWEEP_MS
 };
-const API_HEAP: V1dGrowthReader = {
+const API_HEAP: GrowthReader = {
     source: 'api-heap',
     path: ['heapUsed'],
     absent: 'no-reading',
@@ -35,34 +35,34 @@ const API_HEAP: V1dGrowthReader = {
  * event history, which the workload bounds and the black-box runtime event history surface reads. A page heap row
  * judges that sum.
  */
-const PAGE_HEAP: V1dGrowthReader = toBrowserReading('browser', 'pageHeap', 'usedJSHeapSize');
-const CONTROL_RSS: V1dGrowthReader = {
+const PAGE_HEAP: GrowthReader = toBrowserReading('browser', 'pageHeap', 'usedJSHeapSize');
+const CONTROL_RSS: GrowthReader = {
     source: 'process-rss',
     path: ['control'],
     absent: 'no-reading',
     neverExpiringPath: null
 };
 
-function toPostgresCount(...path: readonly string[]): V1dGrowthReader {
+function toPostgresCount(...path: readonly string[]): GrowthReader {
     return { source: 'postgres', path, absent: 'zero', neverExpiringPath: null };
 }
 
-function toPostgresExpiringCount(path: readonly string[], neverExpiringPath: readonly string[]): V1dGrowthReader {
+function toPostgresExpiringCount(path: readonly string[], neverExpiringPath: readonly string[]): GrowthReader {
     return { source: 'postgres', path, absent: 'zero', neverExpiringPath };
 }
 
-function toNamespaceCount(namespace: string): V1dGrowthReader {
+function toNamespaceCount(namespace: string): GrowthReader {
     return toPostgresExpiringCount(
         ['runtimeState', 'byNamespace', namespace],
         ['runtimeState', 'neverExpireByNamespace', namespace]
     );
 }
 
-function toBrowserReading(...path: readonly string[]): V1dGrowthReader {
+function toBrowserReading(...path: readonly string[]): GrowthReader {
     return { source: 'browser-stats', path, absent: 'no-reading', neverExpiringPath: null };
 }
 
-function toIndexedDbRows(databaseStore: string): V1dGrowthReader {
+function toIndexedDbRows(databaseStore: string): GrowthReader {
     return {
         source: 'browser-stats',
         path: ['browser', 'indexedDbRows', databaseStore],
@@ -71,19 +71,19 @@ function toIndexedDbRows(databaseStore: string): V1dGrowthReader {
     };
 }
 
-function toRealtimeReading(...path: readonly string[]): V1dGrowthReader {
+function toRealtimeReading(...path: readonly string[]): GrowthReader {
     return { source: 'admin-realtime', path, absent: 'no-reading', neverExpiringPath: null };
 }
 
-function toServerHeapSurface(id: number, name: string, owner: string): V1dGrowthSurface {
+function toServerHeapSurface(id: number, name: string, owner: string): GrowthSurface {
     return { id, name, owner, classification: HEAP, readers: [API_HEAP] };
 }
 
-function toPageHeapSurface(id: number, name: string, owner: string): V1dGrowthSurface {
+function toPageHeapSurface(id: number, name: string, owner: string): GrowthSurface {
     return { id, name, owner, classification: HEAP, readers: [PAGE_HEAP] };
 }
 
-function toDurable(entity: string, entityNamespace: string, rowsPerEntity: number): V1dGrowthClassification {
+function toDurable(entity: string, entityNamespace: string, rowsPerEntity: number): GrowthClassification {
     return {
         growthClass: 'durable',
         entity,
@@ -98,13 +98,13 @@ const PER_PRINCIPAL = toDurable('principals', 'client-state:principals', 1);
 const PER_MEMBERSHIP = toDurable('memberships', 'group-state:members', 1);
 /** A churn principal joins the medium-scale profile's five groups, and each group's owner adds one membership. */
 const MEMBERSHIPS_PER_PRINCIPAL = toDurable('principals', 'client-state:principals', 6);
-/** The clients the medium-scale churn recipe registers; `v1d-growth-surfaces.test.ts` reads them from the recipe. */
+/** The clients the medium-scale churn recipe registers; `growth-surfaces.test.ts` reads them from the recipe. */
 const MEDIUM_SCALE_PRINCIPALS_PER_CHURN_ITERATION = 100;
 /**
  * An account is registered before its principal connects, so the auth users run ahead of the principals while an
  * iteration registers; they grow with the accounts the run registered, a client id never without its username.
  */
-const PER_REGISTERED_ACCOUNT: V1dGrowthClassification = {
+const PER_REGISTERED_ACCOUNT: GrowthClassification = {
     growthClass: 'durable',
     entity: 'registered accounts',
     entityCount: {
@@ -119,7 +119,7 @@ const PER_REGISTERED_ACCOUNT: V1dGrowthClassification = {
  * Every growth surface with its class, bound and readers: the survey's 75 rows, then the runtime-state namespaces
  * the sampler found that the survey did not list.
  */
-export const V1D_GROWTH_SURFACES: readonly V1dGrowthSurface[] = [
+export const GROWTH_SURFACES: readonly GrowthSurface[] = [
     {
         id: 1,
         name: 'resource_inbox rows that carry an expiry (retry horizon, WS_INBOX, topology publication)',
