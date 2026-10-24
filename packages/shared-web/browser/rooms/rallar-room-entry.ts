@@ -7,7 +7,6 @@ import { toError } from '@shared/resilience/to-error.ts';
 import { ApiHttpError } from '../api/http-error.ts';
 import { toAuthSessionKey } from '../auth/to-auth-session-key.ts';
 import { BrowserRallarSubscriptionScope, notifyListener } from '../messages/rallar-listener-delivery.ts';
-import type { RallarFacade } from '../rallar-facade-contract.ts';
 import type { RallarStateListener, RallarUnsubscribe } from '../rallar-shared-contracts.ts';
 import type { RallarAuthFacade, RallarAuthState } from '../session/rallar-auth-facade.ts';
 import type { BrowserRallarRooms } from './browser-rallar-rooms.ts';
@@ -61,6 +60,12 @@ export namespace RallarRoomEntry {
         readonly scope: StateScope;
     }
 
+    export interface Browser {
+        readonly auth: Pick<RallarAuthFacade, 'onChange'>;
+        readonly rooms: Rooms;
+        session(): AuthSession | undefined;
+    }
+
     export interface SavedEntry {
         readonly destination: Destination;
         readonly principalId: string | null;
@@ -87,7 +92,7 @@ export class RallarRoomEntry {
     private sessionKey: string | null = null;
 
     public static createBrowser(
-        rallar: Pick<RallarFacade, 'auth' | 'rooms' | 'session'>,
+        rallar: RallarRoomEntry.Browser,
         config: RallarRoomEntry.Config
     ): RallarRoomEntry {
         return new RallarRoomEntry({
@@ -162,6 +167,21 @@ export class RallarRoomEntry {
             principalId: null,
             failure: null
         }));
+    }
+
+    /** Select a recent room for its account without treating local history as admission. */
+    public returnTo(roomRef: GroupRef, principalId: string): Either<RallarRoomEntry.Failure, RallarRoomEntry.State> {
+        if (!principalId || this.dependencies.auth.session()?.clientId !== principalId) {
+            return Either.ofLeft({
+                kind: 'account-mismatch',
+                message: 'Sign in with the account that visited this room.',
+                admittedRoom: null
+            });
+        }
+        return decodeScopedDestination({ roomRef, joinCode: null }, this.config.scope).mapRight((destination) => {
+            this.invalidateAttempt();
+            return this.publish(this.saveDestination({ status: 'pending', destination, principalId, failure: null }));
+        });
     }
 
     public resume(): Promise<RallarRoomEntry.State> {

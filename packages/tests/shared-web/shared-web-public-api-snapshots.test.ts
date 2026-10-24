@@ -15,7 +15,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
     {
         filePath: 'packages/shared-web/browser/rallar-room-entry.ts',
         expected: {
-            values: ['RallarRoomEntry', 'readRoomEntryDestination', 'toRoomEntryUrl'],
+            values: ['RallarRecentRooms', 'RallarRoomEntry', 'readRoomEntryDestination', 'toRoomEntryUrl'],
             types: [],
             starExports: [],
             namespaceExports: []
