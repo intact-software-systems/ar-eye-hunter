@@ -72,6 +72,8 @@ roomBrowserTest(
 roomBrowserTest(
     'Quick Joined peers keep the match countdown and results when the host renderer was paused',
     async ({ page: alice, guest: bob }, testInfo) => {
+        // One-minute play plus paused-render setup and captured peer results can exceed two minutes.
+        roomBrowserTest.setTimeout(180_000);
         roomBrowserTest.skip(process.env.RALLAR_ARENA_FULL_STACK !== '1', 'Requires the local API-v1 memory fixture.');
         await alice.addInitScript(installAnimationFrameGate);
         const [aliceOperations, bobOperations] = await Promise.all([signIn(alice, 'alice'), signIn(bob, 'bob')]);
