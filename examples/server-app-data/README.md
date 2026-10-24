@@ -1,23 +1,30 @@
 # Server App Data
 
-Use `rallar.appData.open(...)` on the server for app-owned durable state that does
-not belong in Rallar group/client snapshots. Examples include match state,
-leaderboards, scenario drafts, API-side feature flags, and per-room server
-diagnostics.
+Use `rallar.appData.open(...)` for typed reads of application-owned durable state,
+such as leaderboards, scenario drafts, feature flags, and server diagnostics.
+This storage is separate from browser-local `rallar.data`.
+
+**Incoming mutations use `rallar.appInbox`.** An HTTP or WS handler must submit a
+registered operation; it must not call an app-data update helper as a direct
+mutation fallback. The operation reads fresh state, computes and validates the
+complete candidate, then writes through its transaction-bound repository under
+`rallar.appInbox.commit(...)`. AppInbox owns retry and durable completion.
+See [Server application AppInbox](../server-app-inbox/README.md) for an executable
+non-game example, and [Server Authoritative Game](../server-authoritative-game/README.md)
+for room-owned state and publication.
 
 ```ts
-import type { AppDataValueCodec } from '@shared-server/app-data/app-data-value-codec.ts';
-import { RallarServerAppDataConflictError } from '@shared-server/app-data/rallar-server-app-data-conflict-error.ts';
 import type {
+    AppDataValueCodec,
+    JsonWireValue,
     RallarServerApplication,
     RallarServerRuntime
-} from '@shared-server/rallar-server/rallar-server-application.ts';
-import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+} from '@shared-server/mod.ts';
 
 interface LeaderboardEntry {
-    principalId: string;
-    score: number;
-    updatedAtEpochMs: number;
+    readonly principalId: string;
+    readonly score: number;
+    readonly updatedAtEpochMs: number;
 }
 
 const LEADERBOARD_CODEC: AppDataValueCodec<LeaderboardEntry> = {
@@ -26,59 +33,30 @@ const LEADERBOARD_CODEC: AppDataValueCodec<LeaderboardEntry> = {
     decode: decodeLeaderboardEntry
 };
 
-export async function installLeaderboard(
-    rallar: RallarServerApplication<RallarServerRuntime, unknown>
-) {
-    const leaderboard = await rallar.appData.open(
-        'leaderboard',
-        {
-            namespace: 'demo-game',
-            codec: LEADERBOARD_CODEC,
-            readConsistency: 'fresh',
-            maxConflictRetries: 8
-        }
+export async function readLeaderboard(
+    rallar: RallarServerApplication<RallarServerRuntime, unknown>,
+    limit: number
+): Promise<readonly LeaderboardEntry[]> {
+    const leaderboard = await rallar.appData.open('leaderboard', {
+        namespace: 'demo-game',
+        codec: LEADERBOARD_CODEC,
+        readConsistency: 'fresh',
+        maxConflictRetries: 8
+    });
+    return (await leaderboard.getAll()).sort((left, right) => right.score - left.score).slice(
+        0,
+        limit
     );
-
-    async function addScore(
-        principalId: string,
-        scoreDelta: number
-    ): Promise<LeaderboardEntry> {
-        try {
-            return await leaderboard.updateOrCreate(principalId, (current) => ({
-                principalId,
-                score: (current?.score ?? 0) + scoreDelta,
-                updatedAtEpochMs: Date.now()
-            }));
-        }
-        catch (error) {
-            if (error instanceof RallarServerAppDataConflictError) {
-                throw new Error('Leaderboard write conflicted. Retry the request.');
-            }
-
-            throw error;
-        }
-    }
-
-    async function top(limit = 10): Promise<readonly LeaderboardEntry[]> {
-        return (await leaderboard.getAll())
-            .sort((a, b) => b.score - a.score)
-            .slice(0, limit);
-    }
-
-    return {
-        addScore,
-        top
-    };
 }
 
 function decodeLeaderboardEntry(value: JsonWireValue): LeaderboardEntry {
     if (
-        value === null ||
-        Array.isArray(value) ||
-        typeof value !== 'object' ||
-        typeof value.principalId !== 'string' ||
-        typeof value.score !== 'number' ||
-        typeof value.updatedAtEpochMs !== 'number'
+        value === null || Array.isArray(value) || typeof value !== 'object' ||
+        Object.keys(value).length !== 3 ||
+        !('principalId' in value) || !('score' in value) || !('updatedAtEpochMs' in value) ||
+        typeof value.principalId !== 'string' || typeof value.score !== 'number' ||
+        !Number.isFinite(value.score) || typeof value.updatedAtEpochMs !== 'number' ||
+        !Number.isSafeInteger(value.updatedAtEpochMs) || value.updatedAtEpochMs < 0
     ) {
         throw new TypeError('Leaderboard entry is malformed.');
     }
@@ -90,11 +68,6 @@ function decodeLeaderboardEntry(value: JsonWireValue): LeaderboardEntry {
 }
 ```
 
-Server app data is separate from browser-local `rallar.data`. Browser data is
-for local latest-value state such as preferences and drafts. Server app data is
-for authoritative app state that must survive server restarts and be shared
-across clients.
-
-Prefer fresh reads for cross-process correctness. Use
-`readConsistency: 'cache-first'` only for data that can tolerate a process-local
-cached value.
+Use fresh reads for decisions shared across processes. `cache-first` is suitable
+only when a stale process-local value is acceptable. Stored schema mismatches
+and malformed values fail at the codec boundary.

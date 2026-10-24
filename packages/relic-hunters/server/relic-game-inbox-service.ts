@@ -1,33 +1,8 @@
-import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { validateAppInboxCommandIdentity } from '@shared-server/rallar-system/app-inbox/app-inbox-command-identity.ts';
-import {
-    AppInboxIdempotencyConflictError,
-    type AppInboxEnqueueInput,
-    type AppInboxMessageContext
-} from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
-import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import type {
-    AppInboxEntryRepository,
-    AppInboxResultRepository
-} from '@shared-server/rallar-system/app-inbox/app-inbox-persistence-ports.ts';
-import {
-    encodeAppInboxCommand,
-    encodeAppInboxResult
-} from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
-import type { AppInboxResultWaiter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-result-waiter.ts';
-import {
-    createAppInboxClientRuntime,
-    type AppInboxClientRuntime
-} from '@shared-server/rallar-system/app-inbox/client/create-app-inbox-client-runtime.ts';
-import {
-    computeAppInboxCompletion,
-    validateAppInboxCompletion
-} from '@shared-server/rallar-system/app-inbox/handler/app-inbox-completion-computation.ts';
-import {
-    createAppInboxHandlerRuntime,
-    type AppInboxHandlerRuntime
-} from '@shared-server/rallar-system/app-inbox/handler/app-inbox-handler-runtime.ts';
+    AppInboxFailure,
+    AppInboxMessageContext,
+    RallarServerAppInbox
+} from '@shared-server/mod.ts';
 import { timeRallarAsync, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import {
     requireExactKeys,
@@ -35,18 +10,8 @@ import {
     requireRecord,
     requireString
 } from '@shared-server/rallar-system/protocol/exact-object-decoding.ts';
-import {
-    computeMutationCommandDigest,
-    serializeCanonicalMutationCommand
-} from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
-import { toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
-import {
-    EntityStatus,
-    type Key,
-    type ResourceEntry
-} from '@shared/queuebox/ResourceEntry.ts';
+import { encodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
-import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { toRelicRoomGroupRef, type RelicGameState } from '../mod.ts';
 import { encodeRelicGameStateAppData } from './encode-relic-game-state-app-data.ts';
@@ -58,101 +23,76 @@ import {
 } from './relic-game-mutation-service.ts';
 
 export namespace RelicGameInboxService {
-    export interface Entries extends AppInboxEntryRepository {
-        findByKey(key: Key): Promise<ResourceEntry | null>;
-    }
-
     export interface Dependencies {
         readonly service: RelicGameMutationService;
-        readonly inboxQueueReader: InboxQueueReader;
-        readonly resourceInboxRepository: Entries;
-        readonly resourceInboxResultsRepository: AppInboxResultRepository;
-        readonly database: PSqlSql;
+        readonly appInbox: RallarServerAppInbox;
         readonly wakeQueue: () => void;
     }
 
     export interface Config {
         readonly serviceId: string;
         readonly serverPeerId: string;
-        readonly finishedRetentionMs: number;
+        readonly nowEpochMs: () => number;
         readonly timing?: RallarTimingSink;
-        readonly options?: AppInboxOptions;
     }
 }
 
-/** Owns transport admission and durable completion; the mutation service owns one fresh attempt. */
+/** Owns game admission/proposals and one mutation attempt through the application's public AppInbox. */
 export class RelicGameInboxService {
     static readonly operation = 'app:relic-hunters:mutate';
 
     private readonly dependencies: RelicGameInboxService.Dependencies;
     private readonly config: RelicGameInboxService.Config;
-    private readonly client: AppInboxClientRuntime;
-    private readonly handler: AppInboxHandlerRuntime;
+    private readonly operation: RallarServerAppInbox.Operation<
+        RelicGameMutationService.Ingress,
+        RelicGameMutationService.Result
+    >;
 
     constructor(dependencies: RelicGameInboxService.Dependencies, config: RelicGameInboxService.Config) {
         this.dependencies = dependencies;
         this.config = config;
-        this.client = createAppInboxClientRuntime({
-            ...dependencies,
-            ...config,
-            defaultTopicId: RelicGameInboxService.operation,
-            wakeOwningQueue: dependencies.wakeQueue
-        });
-        this.handler = createAppInboxHandlerRuntime({
-            ...dependencies,
-            ...config,
-            resultRepository: dependencies.resourceInboxResultsRepository
-        });
-        this.handler.registry.registerHandler({
+        this.operation = dependencies.appInbox.register({
             type: RelicGameInboxService.operation,
-            decodeCommand: decodeRelicGameCommand,
+            decodeEnvelope: decodeRelicEnvelope,
+            encodeEnvelope: encodeRelicEnvelope,
+            toBinding: ({ command }) => ({ contextId: command.gameId, resourceId: command.requestId }),
+            toLogicalCommand: ({ command }) => encodeJsonWireValue(command, 'Logical Relic mutation command'),
+            materialize: (ingress) => ({ ...ingress, capturedAtEpochMs: config.nowEpochMs() }),
             encodeResult: (result: RelicGameMutationService.Result) =>
-                encodeAppInboxResult(result, 'Relic mutation result'),
-            handle: (command, context) => this.process(command, context)
+                encodeJsonWireValue(result, 'Relic mutation result'),
+            decodeResult: (value, ingress) => decodeRelicGameResult(value, ingress.command),
+            handle: (ingress, context) => this.mutateGame(ingress, context)
         });
     }
 
     async enqueue(
         value: RelicGameMutationService.CommandInput,
         createInitialState: () => Promise<RelicGameState>
-    ): Promise<AppInboxResultWaiter.Wait> {
+    ): Promise<RallarServerAppInbox.Admission<RelicGameMutationService.Result>> {
         const command = captureRelicGameCommand(value);
-        const received = toRelicEnqueue(command, null);
-        const key = toStrictAppInboxQueueKey({
-            topicId: RelicGameInboxService.operation,
-            contextId: command.gameId,
-            resourceId: command.requestId
-        });
-        const retained = await this.dependencies.resourceInboxRepository.findByKey(key);
-        if (retained !== null) {
-            const enqueue = decodeBoundRelicEntry(retained);
-            assertMatchingRelicEnqueue(key, enqueue, received);
-            return { key, enqueue, winner: false };
+        const ingress: RelicGameMutationService.Ingress = {
+            command,
+            initial: null,
+            // Only reservation materialization captures time; this deterministic admission probe is never retained.
+            capturedAtEpochMs: 0,
+            serverPeerId: this.config.serverPeerId
+        };
+        const retained = await this.operation.readAdmission(ingress);
+        if (retained) {
+            return retained.fold(throwRelicInboxFailure, (admission) => admission);
         }
-        // Proposal generation may use AI. It completes before the reservation transaction is entered.
         const service = this.dependencies.service;
-        const observed = await service.read(service.capture(command, null, this.config.serverPeerId));
+        const observed = await service.read(ingress);
         const initial = service.needsInitialState(observed) ? await createInitialState() : null;
-        const ingress = service.capture(command, initial, this.config.serverPeerId);
-        const prepared = toRelicEnqueue(command, ingress);
-        const reservation = await this.client.reservationClient.reserveMaterializedEntry(
-            received,
-            async () => prepared
-        );
-        assertMatchingRelicEnqueue(reservation.key, reservation.enqueue, received);
-        this.dependencies.wakeQueue();
-        return reservation;
+        const admitted = await this.operation.enqueue({ ...ingress, initial });
+        return admitted.fold(throwRelicInboxFailure, (admission) => admission);
     }
 
-    async wait(reservation: AppInboxResultWaiter.Wait): Promise<RelicGameMutationService.Result> {
-        const command = decodeRelicGameCommand(reservation.enqueue.data);
-        const outcome = await this.client.resultWaiter.waitForResult(
-            reservation,
-            (value) => decodeRelicGameResult(value, command)
-        );
-        return outcome.fold((failure) => {
-            throw new RelicGameInboxFailureError(failure);
-        }, (result) => result);
+    async wait(
+        admission: RallarServerAppInbox.Admission<RelicGameMutationService.Result>
+    ): Promise<RelicGameMutationService.Result> {
+        const outcome = await admission.wait();
+        return outcome.fold(throwRelicInboxFailure, (result) => result);
     }
 
     async execute(
@@ -162,14 +102,11 @@ export class RelicGameInboxService {
         return await this.wait(await this.enqueue(command, createInitialState));
     }
 
-    private async process(
-        command: RelicGameMutationService.Command,
+    private async mutateGame(
+        ingress: RelicGameMutationService.Ingress,
         context: AppInboxMessageContext<RelicGameMutationService.Result>
     ): Promise<RelicGameMutationService.Result> {
-        const ingress = decodeBoundRelicIngress(context.enqueue, context.entry.key);
-        if (!jsonEquals(command, ingress.command)) {
-            throw new TypeError('Relic queue command differs from its ingress');
-        }
+        const { command } = ingress;
         const service = this.dependencies.service;
         const timing = {
             component: 'relic-game',
@@ -196,23 +133,13 @@ export class RelicGameInboxService {
                 throw issue.cause;
             }
         });
-        const completionFacts = {
-            ...this.handler.transactionWriter.readCompletionFacts(context),
-            durableResult: computed.result,
-            status: EntityStatus.COMPLETED
-        };
-        const completion = computeAppInboxCompletion(completionFacts);
-        const completionIssue = validateAppInboxCompletion(completionFacts, completion)[0];
-        if (completionIssue !== undefined) {
-            throw completionIssue.cause;
-        }
         const result = await timeRallarAsync(
             this.config.timing,
             { ...timing, operation: 'write' },
             () =>
-                this.handler.transactionWriter.writeComputedMutation(
+                this.dependencies.appInbox.commit(
                     context,
-                    completion,
+                    computed.result,
                     (transaction) => service.write(transaction, computed)
                 )
         );
@@ -231,65 +158,28 @@ export class RelicGameInboxFailureError extends Error {
     }
 }
 
-function decodeBoundRelicEntry(entry: ResourceEntry): AppInboxEnqueueInput {
-    const identity = validateAppInboxCommandIdentity(entry);
-    if (!identity.valid) {
-        throw new TypeError('Relic queue entry has a corrupt operation binding');
-    }
-    return identity.command;
-}
-
-function assertMatchingRelicEnqueue(key: Key, existing: AppInboxEnqueueInput, incoming: AppInboxEnqueueInput): void {
-    const ingress = decodeBoundRelicIngress(existing, key);
-    const receivedCommand = decodeRelicGameCommand(incoming.data);
-    const existingIdentity = {
-        type: existing.type,
-        data: encodeAppInboxCommand(ingress.command, 'Logical Relic mutation command')
-    };
-    const incomingIdentity = { type: incoming.type, data: incoming.data };
-    if (serializeCanonicalMutationCommand(existingIdentity) !== serializeCanonicalMutationCommand(incomingIdentity)) {
-        throw new AppInboxIdempotencyConflictError(
-            receivedCommand.requestId,
-            computeMutationCommandDigest(existingIdentity),
-            computeMutationCommandDigest(incomingIdentity)
-        );
-    }
-}
-
-function decodeBoundRelicIngress(enqueue: AppInboxEnqueueInput, key: Key): RelicGameMutationService.Ingress {
-    const command = decodeRelicGameCommand(enqueue.data);
-    const ingress = decodeRelicGameIngress(enqueue.authority);
-    const expected = toRelicEnqueue(command, ingress);
-    const expectedKey = toStrictAppInboxQueueKey({
-        topicId: RelicGameInboxService.operation,
-        contextId: command.gameId,
-        resourceId: command.requestId
-    });
-    if (
-        !jsonEquals(command, ingress.command) || !jsonEquals(enqueue, expected) ||
-        !jsonEquals(key, expectedKey)
-    ) {
-        throw new TypeError('Relic queue identity differs from its canonical ingress');
+function decodeRelicEnvelope(envelope: RallarServerAppInbox.Envelope): RelicGameMutationService.Ingress {
+    const command = decodeRelicGameCommand(envelope.data);
+    const ingress = decodeRelicGameIngress(envelope.authority);
+    if (!jsonEquals(command, ingress.command) || envelope.senderId !== command.actor.sessionId) {
+        throw new TypeError('Relic envelope differs from its canonical ingress');
     }
     return ingress;
 }
 
-function toRelicEnqueue(
-    command: RelicGameMutationService.Command,
-    ingress: RelicGameMutationService.Ingress | null
-): AppInboxEnqueueInput {
+function encodeRelicEnvelope(ingress: RelicGameMutationService.Ingress): RallarServerAppInbox.Envelope {
     return {
-        type: RelicGameInboxService.operation,
-        topicId: RelicGameInboxService.operation,
-        contextId: command.gameId,
-        resourceId: command.requestId,
-        senderId: command.actor.sessionId,
-        authority: ingress === null ? null : encodeAppInboxCommand({
+        data: encodeJsonWireValue(ingress.command, 'Relic mutation command'),
+        senderId: ingress.command.actor.sessionId,
+        authority: encodeJsonWireValue({
             ...ingress,
             initial: ingress.initial === null ? null : encodeRelicGameStateAppData(ingress.initial)
-        }, 'Relic mutation ingress'),
-        data: encodeAppInboxCommand(command, 'Relic mutation command')
+        }, 'Relic mutation ingress')
     };
+}
+
+function throwRelicInboxFailure(failure: AppInboxFailure): never {
+    throw new RelicGameInboxFailureError(failure);
 }
 
 function decodeRelicGameResult(

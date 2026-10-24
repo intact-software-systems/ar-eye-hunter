@@ -264,6 +264,7 @@ export function constructApiV1Runtime(
     input.backgroundTasks.register(() => appInbox.stop());
     const relic = operations.createRelicServices({
         mutation,
+        appInbox,
         runtime,
         wsRuntimeName: input.wsRuntimeName,
         nowEpochMs: input.nowEpochMs,

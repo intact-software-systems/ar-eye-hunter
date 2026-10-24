@@ -36,6 +36,45 @@ beforeEach(async () => {
 afterEach(async () => await storage?.close());
 
 describe('public application AppInbox', () => {
+    it('returns durable admission and a matching pending admission before any worker runs', async () => {
+        const harness = createHarness(storage.sql);
+        const operation = registerStock(harness);
+        harness.inbox.start();
+        expect(await operation.readAdmission(COMMAND)).toBeUndefined();
+        const admitted = await operation.enqueue(COMMAND);
+        expect(admitted.left).toBeUndefined();
+        const replay = await operation.readAdmission(COMMAND);
+        expect(replay?.left).toBeUndefined();
+        expect(replay?.right).toBeDefined();
+        expect(harness.facts).toEqual([101]);
+        expect(harness.afterCommit).toEqual([]);
+        expect(await storage.sql`select quantity, revision from inventory`).toEqual([{ quantity: 10, revision: 0 }]);
+        expect(await storage.sql`select ri_status from resource_inbox where ri_type_id = 'APP_INBOX'`).toEqual([{ ri_status: 'NEW' }]);
+        expect((await operation.enqueue({ ...COMMAND, quantity: 4 })).left).toMatchObject({ code: 'app-inbox-idempotency-conflict' });
+        expect((await operation.readAdmission({ ...COMMAND, quantity: 4 }))?.left).toMatchObject({ code: 'app-inbox-idempotency-conflict' });
+        expect(await drain(harness.reader, admitted.right!.wait())).toEqual(Either.ofRight({ remaining: 7, capturedAt: 101 }));
+        expect(await replay!.right!.wait()).toEqual(Either.ofRight({ remaining: 7, capturedAt: 101 }));
+        expect(harness.afterCommit).toEqual([7]);
+        expect(harness.facts).toEqual([101]);
+    });
+
+    it('binds admitted waiters to the retained command and applies lifecycle and corruption checks before admission', async () => {
+        const exact = { remaining: 123, capturedAt: 501, warehouse: COMMAND.warehouse, operation: 'reserve' };
+        await seedCanonicalStock('completed', exact);
+        const harness = createHarness(storage.sql);
+        const operation = registerStock(harness, decodeBoundStockResult);
+        expect((await operation.enqueue(COMMAND)).left).toMatchObject({ code: 'app-inbox-lifecycle-rejected' });
+        expect((await operation.readAdmission(COMMAND))?.left).toMatchObject({ code: 'app-inbox-lifecycle-rejected' });
+        harness.inbox.start();
+        const admitted = await operation.enqueue(COMMAND);
+        expect(await admitted.right!.wait()).toEqual(Either.ofRight(exact));
+        expect(harness.facts).toEqual([]);
+        await storage.sql`update resource_inbox set ri_resource = replace(ri_resource, 'inventory-session', 'wrong-session') where ri_type_id = 'APP_INBOX'`;
+        await expect(operation.readAdmission(COMMAND)).rejects.toMatchObject({ code: 'app-inbox-malformed-command' });
+        await expect(operation.enqueue(COMMAND)).rejects.toMatchObject({ code: 'app-inbox-malformed-command' });
+        expect(harness.afterCommit).toEqual([]);
+    });
+
     it('commits exact results and replays the winner without recapturing facts', async () => {
         const harness = createHarness(storage.sql);
         const operation = registerStock(harness);
@@ -469,7 +508,8 @@ function decodeStockEnvelope(envelope: RallarServerAppInbox.Envelope): StockComm
 function decodeBoundStockResult(value: JsonWireValue, command: StockCommand): JsonWireValue {
     const result = decodeStockResult(value, command);
     if (
-        !result || typeof result !== 'object' || Array.isArray(result) || result.warehouse !== command.warehouse ||
+        !result || typeof result !== 'object' || Array.isArray(result) || !('warehouse' in result) || !('operation' in result) ||
+        result.warehouse !== command.warehouse ||
         result.operation !== (command.quantity === 0 ? 'inspect' : 'reserve')
     ) {
         throw new TypeError('Stock result belongs to another command');

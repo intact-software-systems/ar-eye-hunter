@@ -5,6 +5,7 @@ import {
 } from '@relic-hunters/server/relic-game-mutation-service.ts';
 import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-app-data-repository.ts';
 import { RoomOwnedAppData } from '@shared-server/app-data/room-owned-app-data.ts';
+import type { RallarServerAppInbox } from '@shared-server/mod.ts';
 import { AuthSessionPersistence } from '@shared-server/rallar-system/auth/persistence/auth-session-persistence.ts';
 import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/rallar-middleware-runtime.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
@@ -18,7 +19,8 @@ export interface ApiV1RelicServices {
 
 export interface CreateApiV1RelicServicesInput {
     readonly mutation: ApiV1MutationRuntime;
-    readonly runtime: Pick<RallarMiddlewareRuntime, 'inboxQueueReader' | 'qboxEngine'>;
+    readonly appInbox: RallarServerAppInbox;
+    readonly runtime: Pick<RallarMiddlewareRuntime, 'qboxEngine'>;
     readonly wsRuntimeName: string;
     readonly nowEpochMs: () => number;
     readonly timing: RallarTimingSink;
@@ -33,17 +35,13 @@ export function createApiV1RelicServices(input: CreateApiV1RelicServicesInput): 
     }, { now: input.nowEpochMs });
     const relicGameInboxService = new RelicGameInboxService({
         service: relicGameMutations,
-        inboxQueueReader: runtime.inboxQueueReader,
-        resourceInboxRepository: mutation.resourceInboxRepository.entries,
-        resourceInboxResultsRepository: mutation.resourceInboxResultsRepository,
-        database: mutation.database,
+        appInbox: input.appInbox,
         wakeQueue: () => runtime.qboxEngine.wake()
     }, {
         serviceId: mutation.serviceId,
         serverPeerId: input.wsRuntimeName,
-        finishedRetentionMs: mutation.appInboxFinishedRetentionMs,
-        timing: input.timing,
-        options: mutation.appInboxOptions
+        nowEpochMs: input.nowEpochMs,
+        timing: input.timing
     });
     return { relicGameMutations, relicGameInboxService };
 }

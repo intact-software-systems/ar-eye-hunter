@@ -50,7 +50,7 @@ Shared server owns:
 - `createRallarMiddleware(...)`, including complete inbox-handler construction
   and exact queue-task registration;
 - `createRallarServerApplication(...)`, which exposes the real WebSocket router
-  and app-data owner;
+  app-data owner and application AppInbox;
 - domain read/compute/validate/write services;
 - QueueBox, AppInbox, runtime-state, state-event, topology replay, and
   feature-owned persistence behavior.
@@ -64,6 +64,8 @@ apps/api-v1/src/main.ts
        -> composition/create-api-v1-mutation-runtime.ts
        -> composition/create-api-v1-topology-services.ts
        -> rallar-system/middleware/create-rallar-middleware.ts
+       -> composition/create-api-v1-app-inbox.ts
+       -> composition/create-api-v1-relic-services.ts
   -> composition/create-api-v1-admin-services.ts
   -> composition/create-api-v1-system-installers.ts
   -> composition/create-api-v1-route-installers.ts
@@ -118,6 +120,38 @@ successful response fields are mandatory fields by default. Current writers
 define the accepted stored shape. A malformed value or schema mismatch fails at
 its owning typed corruption boundary; there is no runtime dual-read, backfill,
 or predecessor-format fallback.
+
+## Application operations
+
+Server-side applications register namespaced operations through
+`RallarServerApplication.appInbox`, exported as `RallarServerAppInbox` from
+`@shared-server/mod.ts`. Every process that can claim the queue registers the
+same operations on the same capability instance before `rallar.start()` seals
+registration and starts workers. Applications do not assemble private AppInbox
+clients, handlers, reservation or completion owners.
+
+A registration supplies its canonical envelope codec, logical identity,
+winner-only immutable fact capture, command-bound result decoder and one
+read/compute/validate/write handler. The generic product owns admission,
+identity validation, reservation, transaction completion and QueueBox retries;
+the application owns authorization, proposals and mutation/publication policy.
+`commit` receives the exact result and a transaction-bound write and resolves
+after state, final outbox and completion commit together.
+
+`enqueue` returns `Either<failure, Admission<Result>>` after durable admission;
+its bound `wait()` decodes the exact retained winner's result. `readAdmission`
+returns retained pending or completed admission immediately, or `undefined` only
+for a validated miss. Only that miss permits an external proposal call.
+`submit` and `readReplay` are completion-waiting conveniences over those same
+paths. Expected lifecycle/idempotency failures are Left values; corrupt stored
+invariants remain distinct failures. A WS delivery handler can finish after
+admission while a REST boundary waits for completion.
+
+See [the non-game counter example](../../examples/server-app-inbox/README.md)
+and [Relic's application consumer](../relic-hunters/server/relic-game-inbox-service.ts).
+Both use the existing queue and transaction owner. Retained Relic data,
+authority and sender remain in their canonical representation; reusable product
+code contains no game policy or predecessor decoder.
 
 ## WebSocket entry
 

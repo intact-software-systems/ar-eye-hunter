@@ -50,13 +50,23 @@ describe('RallarServerApplication', () => {
         const appInbox = createTestServerAppInbox();
         const operation = appInbox.register({
             type: 'app:settings:set',
-            decodeEnvelope: (value) => value.data,
+            decodeEnvelope: (value) => {
+                if (value.data !== null) {
+                    throw new TypeError('Settings lifecycle command must be null');
+                }
+                return value.data;
+            },
             encodeEnvelope: (value) => ({ data: value }),
             toBinding: () => ({ contextId: 'settings', resourceId: 'request' }),
             toLogicalCommand: (value) => value,
             materialize: (value) => value,
             encodeResult: (value) => value,
-            decodeResult: (value) => value,
+            decodeResult: (value) => {
+                if (value !== null) {
+                    throw new TypeError('Settings lifecycle result must be null');
+                }
+                return value;
+            },
             handle: async () => null
         });
         const repositories = new RepositoryManager();
@@ -215,6 +225,6 @@ class RecordingAppDataRepository implements AppDataRepository {
     }
 
     private toKey(input: AppDataKey): string {
-        return `${input.namespace}:${input.storeName}:${input.key}`;
+        return JSON.stringify([input.namespace, input.storeName, input.key]);
     }
 }

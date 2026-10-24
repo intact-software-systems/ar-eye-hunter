@@ -52,11 +52,7 @@ function createTransportFixture() {
             },
             enqueue: async (command) => {
                 commands.push(command);
-                return {
-                    key: { topicId: 'app:relic-hunters:mutate', contextId: command.gameId, resourceId: command.requestId },
-                    enqueue: { type: 'app:relic-hunters:mutate', contextId: command.gameId, data: null },
-                    winner: true
-                };
+                return { wait: () => Promise.reject(new Error('WS admission must not wait for completion')) };
             }
         },
         mutations: { readCurrentSnapshot: async () => current }

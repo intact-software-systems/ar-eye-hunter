@@ -1,235 +1,66 @@
 # Server Authoritative Game
 
-Use Rallar Server when game truth should live on the server. Browser clients
-send commands through REST or a validated WS topic; the server mutates durable
-app data, then publishes a room snapshot to the players in that room.
+Game commands enter `rallar.appInbox` through authenticated REST or a validated
+WS topic. A game-owned service reads current authority and state, computes and
+validates the full candidate, then writes state, publication intent and the
+exact durable acknowledgement in one AppInbox transaction.
+
+[RelicGameInboxService](../../packages/relic-hunters/server/relic-game-inbox-service.ts)
+is the concrete consumer. It registers `app:relic-hunters:mutate` through the
+public `RallarServerAppInbox` capability. Every API claimant registers it on the
+same instance exposed by `RallarServerApplication.appInbox` before workers start;
+[API composition](../../apps/api-v1/src/composition/create-api-v1-relic-services.ts)
+shows that dependency order.
 
 ```ts
-import type { AppDataValueCodec } from '@shared-server/app-data/app-data-value-codec.ts';
-import type { RallarServerAppDataStore } from '@shared-server/app-data/rallar-server-app-data-store.ts';
-import type {
-    RallarServerApplication,
-    RallarServerRuntime
-} from '@shared-server/rallar-server/rallar-server-application.ts';
-import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
-import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
+import { RelicGameInboxService } from '@relic-hunters/server/relic-game-inbox-service.ts';
+import type { RelicGameMutationService } from '@relic-hunters/server/relic-game-mutation-service.ts';
+import type { RallarServerApplication, RallarServerRuntime } from '@shared-server/mod.ts';
 
-interface GameCommand {
-    gameId: string;
-    seq: number;
-    action: 'ready' | 'fire' | 'pickup';
-}
-
-interface GameState {
-    gameId: string;
-    roomId: string;
-    revision: number;
-    readyPeerIds: readonly string[];
-    events: readonly string[];
-}
-
-type GameSnapshot = Pick<GameState, 'gameId' | 'revision' | 'readyPeerIds'>;
-
-const GAME_STATE_CODEC: AppDataValueCodec<GameState> = {
-    schemaVersion: 1,
-    encode: (value) => ({ ...value }),
-    decode: decodeGameState
-};
-
-export async function installGameAuthority(
-    rallar: RallarServerApplication<RallarServerRuntime, unknown>
+function installGameMutations(
+    rallar: RallarServerApplication<RallarServerRuntime, unknown>,
+    service: RelicGameMutationService
 ) {
-    const games = await rallar.appData.open('demo-games', {
-        namespace: 'demo-game',
-        codec: GAME_STATE_CODEC,
-        readConsistency: 'fresh',
-        maxConflictRetries: 8
-    });
-
-    const authority = new GameAuthority({ rallar, games });
-    authority.installTopics();
-    return {
-        applyCommand: (command: GameCommand, senderId: string, roomRef: GroupRef) =>
-            authority.applyCommand(command, senderId, roomRef),
-        readSnapshot: (gameId: string) => authority.readSnapshot(gameId)
-    };
-}
-
-namespace GameAuthority {
-    export interface Dependencies {
-        readonly rallar: RallarServerApplication<RallarServerRuntime, unknown>;
-        readonly games: RallarServerAppDataStore<GameState>;
-    }
-}
-
-class GameAuthority {
-    readonly #dependencies: GameAuthority.Dependencies;
-
-    constructor(dependencies: GameAuthority.Dependencies) {
-        this.#dependencies = dependencies;
-    }
-
-    private async publishSnapshot(state: GameState, roomRef: GroupRef): Promise<void> {
-        const snapshot: GameSnapshot = {
-            gameId: state.gameId,
-            revision: state.revision,
-            readyPeerIds: state.readyPeerIds
-        };
-
-        const result = await this.#dependencies.rallar.ws.publish({
-            message: newALBroadcastMessage(
-                'demo-game-server',
-                newALRoute(
-                    'room.demo.snapshot',
-                    state.roomId,
-                    `${state.gameId}:${state.revision}`
-                ),
-                'room',
-                'room.demo.snapshot.v1',
-                snapshot,
-                {
-                    reliability: 'at-least-once',
-                    ttlMs: 15_000,
-                    groupRef: roomRef
-                }
-            ),
-            fanout: 'live-only'
-        });
-        if (result.status === 'failed') {
-            // The players missed this revision; they catch up from readSnapshot.
-            console.warn(
-                `Snapshot ${state.gameId}@${state.revision} was not published: ${result.reason}`
-            );
-        }
-    }
-
-    async applyCommand(
-        command: GameCommand,
-        senderId: string,
-        roomRef: GroupRef
-    ): Promise<GameSnapshot> {
-        const state = await this.#dependencies.games.updateOrCreate(command.gameId, (current) => {
-            const previous: GameState = current ?? {
-                gameId: command.gameId,
-                roomId: roomRef.groupId,
-                revision: 0,
-                readyPeerIds: [],
-                events: []
-            };
-
-            if (
-                command.action === 'ready' &&
-                previous.readyPeerIds.includes(senderId)
-            ) {
-                return previous;
-            }
-
-            return {
-                ...previous,
-                revision: previous.revision + 1,
-                readyPeerIds: command.action === 'ready'
-                    ? [...previous.readyPeerIds, senderId]
-                    : previous.readyPeerIds,
-                events: [
-                    ...previous.events,
-                    `${senderId}:${command.seq}:${command.action}`
-                ]
-            };
-        });
-
-        await this.publishSnapshot(state, roomRef);
-        return {
-            gameId: state.gameId,
-            revision: state.revision,
-            readyPeerIds: state.readyPeerIds
-        };
-    }
-
-    installTopics(): void {
-        this.#dependencies.rallar.ws.defineTopic<GameCommand>({
-            topicId: 'room.demo.command',
-            typeId: 'room.demo.command.v1',
-            scope: 'room',
-            fanout: 'none',
-            maxPayloadBytes: 16 * 1024,
-            validate: (value, context) =>
-                isGameCommand(value) &&
-                context.roomRef !== undefined &&
-                value.gameId === context.roomRef.groupId
-        });
-
-        this.#dependencies.rallar.ws.on<GameCommand>(
-            {
-                topicId: 'room.demo.command',
-                typeId: 'room.demo.command.v1'
-            },
-            async (message, context) => {
-                if (context.roomRef) {
-                    await this.applyCommand(message.payload, context.senderId, context.roomRef);
-                }
-            }
-        );
-    }
-
-    async readSnapshot(gameId: string): Promise<GameSnapshot | undefined> {
-        const state = await this.#dependencies.games.get(gameId);
-        return state
-            ? {
-                gameId: state.gameId,
-                revision: state.revision,
-                readyPeerIds: state.readyPeerIds
-            }
-            : undefined;
-    }
-}
-
-function decodeGameState(value: JsonWireValue): GameState {
-    if (
-        value === null ||
-        Array.isArray(value) ||
-        typeof value !== 'object' ||
-        !('gameId' in value) ||
-        typeof value.gameId !== 'string' ||
-        !('roomId' in value) ||
-        typeof value.roomId !== 'string' ||
-        !('revision' in value) ||
-        typeof value.revision !== 'number' ||
-        !('readyPeerIds' in value) ||
-        !Array.isArray(value.readyPeerIds) ||
-        !value.readyPeerIds.every((entry) => typeof entry === 'string') ||
-        !('events' in value) ||
-        !Array.isArray(value.events) ||
-        !value.events.every((entry) => typeof entry === 'string')
-    ) {
-        throw new TypeError('Game state is malformed.');
-    }
-    return {
-        gameId: value.gameId,
-        roomId: value.roomId,
-        revision: value.revision,
-        readyPeerIds: value.readyPeerIds,
-        events: value.events
-    };
-}
-
-function isGameCommand(value: unknown): value is GameCommand {
-    if (!value || typeof value !== 'object') {
-        return false;
-    }
-
-    return 'gameId' in value && typeof value.gameId === 'string' &&
-        'seq' in value && typeof value.seq === 'number' &&
-        'action' in value &&
-        (
-            value.action === 'ready' ||
-            value.action === 'fire' ||
-            value.action === 'pickup'
-        );
+    return new RelicGameInboxService({
+        appInbox: rallar.appInbox,
+        service,
+        wakeQueue: () => rallar.runtime.qboxEngine.wake()
+    }, { serviceId: 'game-worker', serverPeerId: rallar.ws.serverPeerId, nowEpochMs: Date.now });
 }
 ```
 
-This pattern is useful for turn commands, match lifecycle, scores, loot, and
-other state where browser peers should not be final authority. For high-rate
-pose/input streams, keep using room RTC lanes and periodically reconcile from a
-server snapshot.
+Call this during composition before `rallar.start()`. The game owner keeps:
+
+- issued-session and current room-policy authorization on every attempt;
+- command identity and schema checks, and proposal validation;
+- a validated retained-admission check before any external AI proposal;
+- winner-only immutable fact capture, with no provider call in the reservation;
+- the observed group revision fence, save CAS and publication policy;
+- command-bound durable-result decoding and a fresh authorized snapshot read
+  after the acknowledgement.
+
+[The mutation service](../../packages/relic-hunters/server/relic-game-mutation-service.ts)
+exposes `read -> compute -> validate -> write(transaction, computed)`.
+`appInbox.commit(context, result, write)` supplies the transaction and persists
+completion atomically. A conflict exits to outer QueueBox redelivery, which
+starts again with a fresh read. There is no game-owned queue or retry loop.
+
+REST waits for completion. WS handlers await durable admission and return; they
+do not hold an ordered delivery track while the mutation worker runs. A matching
+pending replay returns the retained admission immediately. AppInbox later runs
+the operation, and committed outbox rows carry room snapshots and private hunter
+events. Queue wakes occur after commit; live audience resolution uses committed
+authority.
+
+The durable Relic envelope is canonical: `data` holds the logical command,
+`authority` holds the captured ingress, and `senderId` is the actor session.
+Retained rows use that same decoder. Replay returns the original acknowledgement,
+then the REST boundary reads current state so an old acknowledgement cannot
+resurrect a reset or deleted expedition.
+
+For the transport boundary, see
+[RelicHunterGameService](../../apps/relic-hunter-server-v1/src/relic-game-service.ts).
+For a smaller non-game public-import example, see
+[Server application AppInbox](../server-app-inbox/README.md). High-rate pose and
+input presentation can still use room RTC lanes with authoritative snapshot
+reconciliation.

@@ -9,7 +9,6 @@ import { createApiTimingSink } from '@api-v1/src/services/timing-service.ts';
 import { RelicGameInboxFailureError } from '@relic-hunters/server/relic-game-inbox-service.ts';
 import { isRelicGameMoveInput } from '@relic-hunters/server/relic-game-move.ts';
 import { RelicGameMutationRefusedError } from '@relic-hunters/server/relic-game-mutation-service.ts';
-import { AppInboxIdempotencyConflictError } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { ApiConfigResponse } from '@shared/api/api-config.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
@@ -165,9 +164,6 @@ function relicRestErrorResponse(c: Context, error: Error): Response {
     }
     if (error instanceof RelicGameInboxFailureError) {
         return Response.json({ error: error.message, code: error.failure.code }, { status: error.failure.status });
-    }
-    if (error instanceof AppInboxIdempotencyConflictError) {
-        return c.json({ error: error.message, code: error.code }, error.status);
     }
     return toAuthErrorResponse(c, error);
 }

@@ -10,8 +10,9 @@ import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import defaults from '../../resources/configuration/defaults-config.json' with { type: 'json' };
+import { createApiV1AppInbox, type CreateApiV1AppInboxInput } from '../../src/composition/create-api-v1-app-inbox.ts';
 import { createApiV1MutationRuntime, type ApiV1MutationRuntime } from '../../src/composition/create-api-v1-mutation-runtime.ts';
-import { createApiV1RelicServices, type CreateApiV1RelicServicesInput } from '../../src/composition/create-api-v1-relic-services.ts';
+import { createApiV1RelicServices } from '../../src/composition/create-api-v1-relic-services.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { withPGliteSql } from '../db/pglite-auth-test-harness.ts';
 
@@ -21,8 +22,10 @@ Deno.test('a cold API worker completes a Relic command admitted by another worke
         const producer = createMutationRuntime(database, now);
         await seedRoom(producer, now);
         const firstRuntime = createQueueRuntime(producer);
+        const firstAppInbox = createApiV1AppInbox({ mutation: producer, runtime: firstRuntime, timing: () => {} });
         const first = createApiV1RelicServices({
             mutation: producer,
+            appInbox: firstAppInbox,
             runtime: firstRuntime,
             wsRuntimeName: 'default-qbox-server',
             nowEpochMs: () => now,
@@ -36,17 +39,21 @@ Deno.test('a cold API worker completes a Relic command admitted by another worke
             authorization: 'group-policy' as const,
             move: null
         };
+        firstAppInbox.start();
         const reservation = await first.relicGameInboxService.enqueue(command, async () => createRelicGame(command.gameId, command.gameId, now));
         const worker = createMutationRuntime(database, now);
         const coldRuntime = createQueueRuntime(worker);
         const reader = coldRuntime.inboxQueueReader;
+        const coldAppInbox = createApiV1AppInbox({ mutation: worker, runtime: coldRuntime, timing: () => {} });
         const cold = createApiV1RelicServices({
             mutation: worker,
+            appInbox: coldAppInbox,
             runtime: coldRuntime,
             wsRuntimeName: 'default-qbox-server',
             nowEpochMs: () => now,
             timing: () => {}
         });
+        coldAppInbox.start();
         await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createApiV1TestQueueResilience());
         assert.deepEqual(await cold.relicGameInboxService.wait(reservation), { status: 'initialized', gameId: 'cold-expedition' });
         const [durable] = await database<{ status: string; }[]>`
@@ -149,7 +156,7 @@ async function seedRoom(mutation: ApiV1MutationRuntime, now: number): Promise<vo
     await mutation.database.begin((transaction) => service.write(transaction, computed));
 }
 
-function createQueueRuntime(mutation: ApiV1MutationRuntime): CreateApiV1RelicServicesInput['runtime'] {
+function createQueueRuntime(mutation: ApiV1MutationRuntime): CreateApiV1AppInboxInput['runtime'] {
     const qboxEngine = new InboxOutboxEngine();
     const inboxQueueReader = new InboxQueueReader(mutation.queueBox, {
         ...mutation.appInboxDequeueOptions,

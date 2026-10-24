@@ -94,8 +94,16 @@ export namespace RallarServerAppInbox {
         readonly handle: (command: Command, context: AppInboxMessageContext<Result>) => Promise<Result>;
     }
 
+    /** Wait is bound to the actual validated retained winner; callers cannot supply or replace its command. */
+    export interface Admission<Result> {
+        wait(): Promise<Either<AppInboxFailure, Result>>;
+    }
+
     /** Admission/idempotency policy failures are Left values; corrupt invariants and unexpected exceptions remain distinct. */
     export interface Operation<Command, Result> {
+        enqueue(command: Command): Promise<Either<AppInboxFailure, Admission<Result>>>;
+        /** Returns retained pending/completed admission immediately; only a validated miss permits proposal work. */
+        readAdmission(command: Command): Promise<Either<AppInboxFailure, Admission<Result>> | undefined>;
         submit(command: Command): Promise<Either<AppInboxFailure, Result>>;
         /** A validated miss permits external proposal work; concurrent misses may each compute a proposal. */
         readReplay(command: Command): Promise<Either<AppInboxFailure, Result> | undefined>;
@@ -148,6 +156,8 @@ export class RallarServerAppInbox {
             handle: (_data, context) => this.runRegisteredAttempt(registered, context)
         });
         return Object.freeze({
+            enqueue: (command: Command) => this.enqueue(registered, command),
+            readAdmission: (command: Command) => this.readAdmission(registered, command),
             submit: (command: Command) => this.submit(registered, command),
             readReplay: (command: Command) => this.readReplay(registered, command)
         });
@@ -214,6 +224,25 @@ export class RallarServerAppInbox {
         registration: RallarServerAppInbox.Registration<Command, Result>,
         command: Command
     ): Promise<Either<AppInboxFailure, Result>> {
+        const admission = await this.enqueue(registration, command);
+        return admission.left ? Either.ofLeft(admission.left) : await admission.right!.wait();
+    }
+
+    private async readReplay<Command, Result>(
+        registration: RallarServerAppInbox.Registration<Command, Result>,
+        command: Command
+    ): Promise<Either<AppInboxFailure, Result> | undefined> {
+        const admission = await this.readAdmission(registration, command);
+        if (!admission) {
+            return undefined;
+        }
+        return admission.left ? Either.ofLeft(admission.left) : await admission.right!.wait();
+    }
+
+    private async enqueue<Command, Result>(
+        registration: RallarServerAppInbox.Registration<Command, Result>,
+        command: Command
+    ): Promise<Either<AppInboxFailure, RallarServerAppInbox.Admission<Result>>> {
         const admission = this.getAdmissionFailure();
         if (admission) {
             return Either.ofLeft(admission);
@@ -222,7 +251,7 @@ export class RallarServerAppInbox {
             const received = toRegisteredEnqueue(registration, command);
             const retained = await this.readRetained(registration, received);
             if (retained) {
-                return await this.waitForRegisteredResult(registration, retained);
+                return Either.ofRight(this.createAdmission(registration, retained));
             }
             const stopped = this.getAdmissionFailure();
             if (stopped) {
@@ -235,7 +264,7 @@ export class RallarServerAppInbox {
                 return materialized;
             });
             assertRegisteredEntry(registration, reservation.entry, received);
-            return await this.waitForRegisteredResult(registration, reservation);
+            return Either.ofRight(this.createAdmission(registration, reservation));
         }
         catch (error) {
             if (error instanceof AppInboxIdempotencyConflictError) {
@@ -245,17 +274,17 @@ export class RallarServerAppInbox {
         }
     }
 
-    private async readReplay<Command, Result>(
+    private async readAdmission<Command, Result>(
         registration: RallarServerAppInbox.Registration<Command, Result>,
         command: Command
-    ): Promise<Either<AppInboxFailure, Result> | undefined> {
+    ): Promise<Either<AppInboxFailure, RallarServerAppInbox.Admission<Result>> | undefined> {
         const admission = this.getAdmissionFailure();
         if (admission) {
             return Either.ofLeft(admission);
         }
         try {
             const retained = await this.readRetained(registration, toRegisteredEnqueue(registration, command));
-            return retained ? await this.waitForRegisteredResult(registration, retained) : undefined;
+            return retained ? Either.ofRight(this.createAdmission(registration, retained)) : undefined;
         }
         catch (error) {
             if (error instanceof AppInboxIdempotencyConflictError) {
@@ -265,15 +294,15 @@ export class RallarServerAppInbox {
         }
     }
 
-    private async waitForRegisteredResult<Command, Result>(
+    private createAdmission<Command, Result>(
         registration: RallarServerAppInbox.Registration<Command, Result>,
         retained: AppInboxResultWaiter.Wait
-    ): Promise<Either<AppInboxFailure, Result>> {
+    ): RallarServerAppInbox.Admission<Result> {
         const command = registration.decodeEnvelope(retained.enqueue);
-        return await this.client.resultWaiter.waitForResult(
-            retained,
-            (value) => registration.decodeResult(value, command)
-        );
+        return Object.freeze({
+            wait: () =>
+                this.client.resultWaiter.waitForResult(retained, (value) => registration.decodeResult(value, command))
+        });
     }
 
     private async readRetained<Command, Result>(

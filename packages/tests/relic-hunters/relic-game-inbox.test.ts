@@ -17,7 +17,7 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { createAppInboxTestResilience } from '../shared-server/rallar-system/app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { connectGameSession } from './relic-game-database-fixture.ts';
-import { createInboxFixture } from './relic-game-inbox-fixture.ts';
+import { createInboxFixture, toRelicInboxTestKey } from './relic-game-inbox-fixture.ts';
 
 describe('Relic AppInbox ownership', () => {
     it('captures one proposal outside reservation, replays the acknowledgement and refuses a changed command', async () => {
@@ -50,11 +50,11 @@ describe('Relic AppInbox ownership', () => {
             expect(timings.filter((event) => event.component === 'relic-game')).toEqual(phases);
             expect((await fixture.data.read(fixture.ref))[0].entry).toEqual(saved);
             await expect(fixture.inbox.enqueue({ ...fixture.command, operation: 'reset' }, proposal))
-                .rejects.toMatchObject({ status: 409 });
+                .rejects.toMatchObject({ failure: { status: 409 } });
             await expect(fixture.inbox.enqueue({
                 ...fixture.command,
                 actor: { ...fixture.command.actor, issuedAtEpochMs: fixture.command.actor.issuedAtEpochMs + 1 }
-            }, proposal)).rejects.toMatchObject({ status: 409 });
+            }, proposal)).rejects.toMatchObject({ failure: { status: 409 } });
             expect(proposals).toBe(1);
         }
         finally {
@@ -97,14 +97,17 @@ describe('Relic AppInbox ownership', () => {
             const command = { ...fixture.command, operation: 'command' as const, move };
             const proposal = async () => createRelicGame(fixture.ref.groupId, fixture.ref.groupId, fixture.nowEpochMs);
             const queued = await fixture.inbox.enqueue(command, proposal);
-            expect(queued.enqueue.data).toMatchObject({ move: { ...move, characterId: null } });
+            const retained = await fixture.resources.entries.findByKey(toRelicInboxTestKey(fixture));
+            const stored = JSON.parse(JSON.parse(retained!.resource).payload.resource);
+            expect(stored.data).toMatchObject({ move: { ...move, characterId: null } });
             expect(() => decodeRelicGameCommand(command)).toThrow();
             const replay = await fixture.inbox.enqueue({ ...command, move: { ...move, characterId: undefined } }, proposal);
-            expect(replay.key).toEqual(queued.key);
-            expect(replay.winner).toBe(false);
+            expect(await fixture.resources.entries.findByKey(toRelicInboxTestKey(fixture))).toEqual(retained);
+            await fixture.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
+            expect(await fixture.inbox.wait(replay)).toEqual(await fixture.inbox.wait(queued));
             await expect(fixture.inbox.enqueue({ ...command, move: { ...move, username: 'another-user' } }, proposal))
-                .rejects.toMatchObject({ status: 409 });
-            const action = await fixture.inbox.enqueue({
+                .rejects.toMatchObject({ failure: { status: 409 } });
+            await fixture.inbox.enqueue({
                 ...command,
                 requestId: 'explicit-action-omission',
                 move: {
@@ -115,14 +118,17 @@ describe('Relic AppInbox ownership', () => {
                     action: { kind: 'search' }
                 }
             }, proposal);
-            expect(action.enqueue.data).toMatchObject({ move: { action: { kind: 'search', targetRoomId: null, targetPlayerId: null } } });
+            const action = await fixture.resources.entries.findByKey(toRelicInboxTestKey(fixture, 'explicit-action-omission'));
+            expect(JSON.parse(JSON.parse(action!.resource).payload.resource).data).toMatchObject({
+                move: { action: { kind: 'search', targetRoomId: null, targetPlayerId: null } }
+            });
         }
         finally {
             await fixture.storage.close();
         }
     }, 30_000);
 
-    it.each(['command', 'topic', 'request', 'dispatched-operation'])(
+    it.each(['command', 'topic', 'request', 'dispatched-operation', 'sender', 'proposal'])(
         'refuses a corrupt stored %s binding before replay or proposal capture',
         async (binding) => {
             const fixture = await createInboxFixture();
@@ -133,7 +139,7 @@ describe('Relic AppInbox ownership', () => {
                     return createRelicGame(fixture.ref.groupId, fixture.ref.groupId, fixture.nowEpochMs);
                 };
                 const queued = await fixture.inbox.enqueue(fixture.command, proposal);
-                const entry = await fixture.resources.entries.findByKey(queued.key);
+                const entry = await fixture.resources.entries.findByKey(toRelicInboxTestKey(fixture));
                 if (entry === null) {
                     throw new Error('Expected queued Relic command');
                 }
@@ -141,6 +147,12 @@ describe('Relic AppInbox ownership', () => {
                 const enqueue = JSON.parse(message.payload.resource);
                 if (binding === 'command') {
                     enqueue.authority.command.actor.sessionId = 'another-session';
+                }
+                if (binding === 'sender') {
+                    enqueue.senderId = 'another-session';
+                }
+                if (binding === 'proposal') {
+                    enqueue.authority.initial.gameId = 'another-game';
                 }
                 if (binding === 'topic') {
                     enqueue.topicId = 'app:another-game:mutate';
@@ -153,12 +165,12 @@ describe('Relic AppInbox ownership', () => {
                 }
                 message.payload.resource = JSON.stringify(enqueue);
                 await fixture.storage.sql`update resource_inbox set ri_resource = ${JSON.stringify(message)}
-                    where ri_topic_id = ${queued.key.topicId} and fk_ext_bank_id = ${queued.key.contextId}
-                    and ri_resource_id = ${queued.key.resourceId}`;
-                await expect(fixture.inbox.enqueue(fixture.command, proposal)).rejects.toThrow(TypeError);
+                    where ri_topic_id = ${toRelicInboxTestKey(fixture).topicId} and fk_ext_bank_id = ${toRelicInboxTestKey(fixture).contextId}
+                    and ri_resource_id = ${toRelicInboxTestKey(fixture).resourceId}`;
+                await expect(fixture.inbox.enqueue(fixture.command, proposal)).rejects.toMatchObject({ code: 'app-inbox-malformed-command' });
                 expect(proposals).toBe(1);
                 expect((await fixture.data.read(fixture.ref))[0].entry).toBeNull();
-                expect(await fixture.results.findByKey(queued.key)).toBeUndefined();
+                expect(await fixture.results.findByKey(toRelicInboxTestKey(fixture))).toBeUndefined();
             }
             finally {
                 await fixture.storage.close();
@@ -175,21 +187,21 @@ describe('Relic AppInbox ownership', () => {
         try {
             const proposal = vi.fn(async () => createRelicGame(fixture.ref.groupId, fixture.ref.groupId, fixture.nowEpochMs));
             const queued = await fixture.inbox.enqueue(fixture.command, proposal);
-            const entry = await fixture.resources.entries.findByKey(queued.key);
+            const entry = await fixture.resources.entries.findByKey(toRelicInboxTestKey(fixture));
             if (entry === null) {
                 throw new Error('Expected the queued Relic request');
             }
             await fixture.results.replace({ ...entry, status: 'COMPLETED', resource: JSON.stringify(corrupt) });
             await fixture.storage.sql`update resource_inbox set ri_status = 'COMPLETED'
-                where ri_topic_id = ${queued.key.topicId} and fk_ext_bank_id = ${queued.key.contextId}
-                and ri_resource_id = ${queued.key.resourceId}`;
-            const resultBefore = await fixture.results.findByKey(queued.key);
+                where ri_topic_id = ${toRelicInboxTestKey(fixture).topicId} and fk_ext_bank_id = ${toRelicInboxTestKey(fixture).contextId}
+                and ri_resource_id = ${toRelicInboxTestKey(fixture).resourceId}`;
+            const resultBefore = await fixture.results.findByKey(toRelicInboxTestKey(fixture));
             const replay = await fixture.inbox.enqueue(fixture.command, proposal);
             await expect(fixture.inbox.wait(replay)).rejects.toMatchObject({
                 failure: { code: 'app-inbox-result-corrupt', status: 500 }
             });
             expect(proposal).toHaveBeenCalledTimes(1);
-            expect(await fixture.results.findByKey(queued.key)).toEqual(resultBefore);
+            expect(await fixture.results.findByKey(toRelicInboxTestKey(fixture))).toEqual(resultBefore);
             expect((await fixture.data.read(fixture.ref))[0].entry).toBeNull();
             expect(await fixture.storage.sql`select ri_resource_id from resource_inbox where ri_type_id = 'WS_OUTBOX'`).toHaveLength(0);
         }
@@ -238,7 +250,7 @@ describe('Relic AppInbox ownership', () => {
                 for (let pass = 0; pass < 20; pass += 1) {
                     fixture.nowEpochMs += 1;
                     await fixture.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
-                    if ((await fixture.resources.entries.findByKey(broken.key))?.dequeueAudit.attempts === 20) {
+                    if ((await fixture.resources.entries.findByKey(toRelicInboxTestKey(fixture, 'unexpected-rule-fault')))?.dequeueAudit.attempts === 20) {
                         break;
                     }
                 }
@@ -289,7 +301,7 @@ describe('Relic AppInbox ownership', () => {
             // One draining pass can serve NEW then RETRY; each distinct delivery still executes one complete attempt.
             await fixture.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, resilience);
             expect(await fixture.inbox.wait(queued)).toMatchObject({ status: 'refused', code: 'room-unavailable', httpStatus: 404 });
-            expect((await fixture.resources.entries.findByKey(queued.key))?.dequeueAudit.attempts).toBe(2);
+            expect((await fixture.resources.entries.findByKey(toRelicInboxTestKey(fixture)))?.dequeueAudit.attempts).toBe(2);
             expect(
                 timings.filter((event) => event.component === 'relic-game' && event.details?.attempt === 2)
                     .map((event) => event.operation)
@@ -325,11 +337,11 @@ describe('Relic AppInbox ownership', () => {
             for (let pass = 0; pass < 20; pass += 1) {
                 fixture.nowEpochMs += 1;
                 await fixture.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, resilience);
-                if ((await fixture.resources.entries.findByKey(queued.key))?.dequeueAudit.attempts === 20) {
+                if ((await fixture.resources.entries.findByKey(toRelicInboxTestKey(fixture)))?.dequeueAudit.attempts === 20) {
                     break;
                 }
             }
-            expect((await fixture.resources.entries.findByKey(queued.key))?.dequeueAudit.attempts).toBe(20);
+            expect((await fixture.resources.entries.findByKey(toRelicInboxTestKey(fixture)))?.dequeueAudit.attempts).toBe(20);
             for (let attempt = 1; attempt <= 20; attempt += 1) {
                 const phases = timings.filter((event) => event.component === 'relic-game' && event.details?.attempt === attempt);
                 expect(phases.map((event) => event.operation)).toEqual(['read', 'compute', 'validate', 'write']);
@@ -359,7 +371,7 @@ describe('Relic AppInbox ownership', () => {
             expect((await fixture.data.read(fixture.ref))[0].entry).toBeNull();
             expect(await fixture.repository.findGroupEntry(fixture.ref)).toEqual(before);
             expect(await fixture.storage.sql`select ri_resource_id from resource_inbox where ri_type_id = 'WS_OUTBOX'`).toHaveLength(0);
-            expect((await fixture.results.findByKey(enqueued.key))?.status).not.toBe('COMPLETED');
+            expect((await fixture.results.findByKey(toRelicInboxTestKey(fixture)))?.status).not.toBe('COMPLETED');
         }
         finally {
             await fixture.storage.close();
