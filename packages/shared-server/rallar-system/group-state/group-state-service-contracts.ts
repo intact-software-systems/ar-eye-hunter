@@ -35,6 +35,7 @@ import type {
 } from './mutation/aggregate/compute-planned-layout-promotion.ts';
 
 import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
+import type { RoomOwnedAppData } from '../../app-data/room-owned-app-data.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../runtime-state/runtime-state-repository.ts';
 import type { IssuedAuthSession } from '../auth/persistence/auth-session-types.ts';
@@ -256,6 +257,8 @@ export interface GroupStateRuntime {
 
 export interface GroupStateServiceDependencies {
     readonly runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
+    /** Configured room-owned stores; absent when the application owns no room data. */
+    readonly groupOwnedAppData?: Pick<RoomOwnedAppData, 'read'>;
     /**
      * Operational capacity defaults from runtime configuration; absent when the
      * runtime configures none, which keeps stored-cap-only admission.

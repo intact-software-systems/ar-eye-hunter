@@ -1,8 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import type { GroupStateRepositoryReads } from '@shared-server/rallar-system/group-state/persistence/group-state-repository-reads.ts';
 import type { GroupRetentionService } from '@shared-server/rallar-system/group-state/retention/group-retention-service.ts';
 import { startGroupRetentionReconciliation } from '@shared-server/rallar-system/group-state/retention/reconcile-group-retention.ts';
+
 import { createTestGroup } from '../../../../create-test-group.ts';
 import { createManualTimers } from '../../../../shared/resilience/manual-timers.ts';
 
@@ -11,7 +16,7 @@ function temporaryGroup(groupId: string) {
 }
 
 describe('bounded retention reconciliation lifecycle', () => {
-    it('visits each page once per tick, skips persistent rooms, wraps, and restarts from the first page', async () => {
+    it('visits active and archived temporary rooms once per tick, skips persistent rooms, and wraps', async () => {
         const timers = createManualTimers(1_000);
         const commands: GroupRetentionService.Command[] = [];
         const cursors: (string | undefined)[] = [];
@@ -31,7 +36,10 @@ describe('bounded retention reconciliation lifecycle', () => {
                     cursors.push(options.afterKey);
                     return options.afterKey === undefined
                         ? { groups: [temporaryGroup('one'), createTestGroup({ groupId: 'persistent' })], nextKey: 'middle' }
-                        : { groups: [temporaryGroup('two')], nextKey: null };
+                        : {
+                            groups: [createTestGroup({ ...temporaryGroup('two'), status: 'archived', archived: createTestGroup().updated, deleted: null })],
+                            nextKey: null
+                        };
                 }
             },
             enqueue: async (command: GroupRetentionService.Command) => {

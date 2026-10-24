@@ -1,7 +1,13 @@
 import { validateAuthoritativeGroupEvent } from '@shared/api/authoritative-state-validation.ts';
-import type { Group, GroupEvent, GroupRef, GroupScope } from '@shared/api/group-types.ts';
+import type {
+    Group,
+    GroupEvent,
+    GroupRef,
+    GroupScope
+} from '@shared/api/group-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
+
 import type { RuntimeStateGuardedBatchUpdate } from '../../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import {
     RuntimeStateJsonStore,
@@ -30,6 +36,11 @@ import { GROUPS_NAMESPACE } from '../group-state-runtime-namespaces.ts';
 import { decodeGroupStateIdempotencyStorageKey } from '../idempotency/group-idempotency-storage-key.ts';
 import { validatePersistedGroup } from '../validate-persisted-group.ts';
 import { decodeGroupStateGroupStorageKey, groupStateGroupStorageKey } from './group-aggregate-storage-keys.ts';
+import {
+    decodeRetiredGroupIdentity,
+    isRetiredGroupIdentity,
+    type RetiredGroupIdentity
+} from './retired-group-identity.ts';
 
 export class GroupAggregateRepository extends RuntimeStateJsonStore {
     private readonly events: GroupStateEventStore;
@@ -142,10 +153,10 @@ export function materializeGroupStateAuthorityGuard(
     };
 }
 
-export function canonicalStoredGroup(
+export function canonicalStoredGroupRecord(
     stored: RuntimeStateEntryValue<JsonWireValue>,
     expectedScope: GroupScope
-): RuntimeStateEntryValue<Group> {
+): RuntimeStateEntryValue<Group | RetiredGroupIdentity> {
     let decoded: GroupRef;
     try {
         decoded = decodeGroupStateGroupStorageKey(stored.entry.key);
@@ -168,15 +179,31 @@ export function canonicalStoredGroup(
     if (isGroupRef(expectedScope)) {
         assertGroupRefIdentity(decoded, expectedScope, stored.entry.key);
     }
+    if (
+        stored.value !== null && typeof stored.value === 'object' &&
+        'kind' in stored.value && stored.value.kind === 'retired-group'
+    ) {
+        return { entry: stored.entry, value: decodeRetiredGroupIdentity(stored, decoded) };
+    }
     const value = decodeStoredGroupStateValue(
-        stored.value,
-        decoded,
-        stored.entry.key,
-        decodePersistedGroup,
-        'Stored group value is invalid'
+        {
+            value: stored.value,
+            ref: decoded,
+            storageKey: stored.entry.key,
+            decode: decodePersistedGroup,
+            invalidValueMessage: 'Stored group value is invalid'
+        }
     );
     assertGroupRefIdentity(value, decoded, stored.entry.key);
     return { entry: stored.entry, value };
+}
+
+export function canonicalStoredGroup(
+    stored: RuntimeStateEntryValue<JsonWireValue>,
+    expectedScope: GroupScope
+): RuntimeStateEntryValue<Group> | undefined {
+    const record = canonicalStoredGroupRecord(stored, expectedScope);
+    return isRetiredGroupIdentity(record.value) ? undefined : { entry: record.entry, value: record.value };
 }
 
 export function toGroupStateAuthorityGuard(
@@ -187,6 +214,9 @@ export function toGroupStateAuthorityGuard(
         entry: stored.entry,
         value: decodeJsonWireValue(stored.value, 'Stored group authority value')
     }, ref);
+    if (canonical === undefined) {
+        throw new TypeError('Retired group cannot authorize a mutation');
+    }
     assertAuthorityFencePhysicalExpiry(canonical);
     return {
         groupRef: { ...ref },
@@ -217,11 +247,13 @@ function decodeGroupStateAuthorityGuard(
     let value: Group;
     try {
         value = decodeStoredGroupStateValue(
-            JSON.parse(entry.value),
-            guard.groupRef,
-            entry.key,
-            decodePersistedGroup,
-            'Stored authority-fence group value is invalid'
+            {
+                value: JSON.parse(entry.value),
+                ref: guard.groupRef,
+                storageKey: entry.key,
+                decode: decodePersistedGroup,
+                invalidValueMessage: 'Stored authority-fence group value is invalid'
+            }
         );
     }
     catch (error) {

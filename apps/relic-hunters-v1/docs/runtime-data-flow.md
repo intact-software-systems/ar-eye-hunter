@@ -1,6 +1,6 @@
 # Runtime Data Flow
 
-Last reviewed: 2026-10-23.
+Last reviewed: 2026-10-24.
 
 ## Modules
 
@@ -11,8 +11,12 @@ Last reviewed: 2026-10-23.
   phases, diagnostics, room summaries, the current room id, and the accepted
   relic snapshot.
 - `src/game/api.ts` performs authenticated REST calls to the relic server.
-- `apps/relic-hunter-server-v1/src/relic-game-service.ts` persists game state,
-  serializes commands per game id, and publishes snapshots through Rallar WS.
+- `apps/relic-hunter-server-v1/src/relic-game-service.ts` adapts REST and WS requests to
+  `packages/relic-hunters/server` and reads the fresh authorized snapshot after completion.
+- `RelicGameInboxService` owns durable request identity, fresh-attempt processing and atomic
+  AppInbox completion. `RelicGameMutationService` reads session/room/save facts, computes and
+  validates the result, then writes the group revision guard, save CAS, publication provenance
+  and final WS outbox in the caller transaction. Every API worker registers the handler.
 - `apps/relic-hunter-server-v1/src/relic-expedition-ai.ts` optionally creates
   initial game state from a server-side RallarAI expedition blueprint before
   gameplay begins. Disabled mode preserves the current static map; mock and
@@ -66,19 +70,21 @@ page that is hidden or frozen starts a checkpoint at once, and one started as th
 after the save resumes the command under the same message id and deadline (30 s). A command admitted inside the last
 interval before the page ends is lost with the page, and its handle reads `unobservable`. A checkpoint that lags past
 its bound (10 s by default) makes the next command fail with `storage-unavailable` instead of being sent. There is no
-command id in the model, so only the ALM message-id dedup within the deadline plus grace stops a repeat: the server
-re-acknowledges a resumed command it already admitted without applying it again, and drops one past its deadline as
-expired. The reload-mid-command browser scenario exercises this boundary separately from ordinary
+command id in the gameplay model: the WS message ID supplies durable AppInbox request identity. The server
+re-acknowledges a resumed command without applying it again; transport delivery also rejects messages past their
+deadline. Changed command content under an existing request identity is refused. The reload-mid-command browser scenario exercises this boundary separately from ordinary
 room restoration; its current result belongs in the PR validation evidence.
 
 ```text
-command -> WS unicast to the server -> server ACK (receipt) -> applyCommand -> persisted state -> outbox snapshot (receiver) -> WS snapshot subscription
-reset -> REST reset endpoint -> persisted new game -> outbox snapshot -> REST response snapshot
+command -> WS unicast -> AppInbox admission / server ACK -> fresh read / compute / validate -> group + save CAS / durable result / outbox commit -> WS snapshot
+reset -> request-scoped REST -> AppInbox -> group + new save CAS / result / outbox commit -> fresh authorized REST snapshot
 ```
 
-REST (`POST /api/relic/games/:gameId/commands`) is used only before the browser knows the WS
+REST (`POST /api/relic/games/:gameId/commands/requests/:requestId`) is used only before the browser knows the WS
 server's peer id, never after a WS attempt. The UI shows the command's receipt state and the applied snapshot's
-arrival.
+arrival. Reset uses `POST /api/relic/games/:gameId/reset/requests/:requestId`. Each browser operation
+captures one request ID and retains it through retries. A snapshot GET gives its initialization attempt a fresh
+identity, then reads current authorized state; an older denied read cannot poison later admission.
 
 The server also tells the acting hunter what became of a command, on `room.relic.hunter` / `relic.hunter.v1`: a
 principal broadcast in the room, receipted, that only the acting hunter's own live sessions in the room receive.
@@ -86,7 +92,11 @@ Relic keys its players by session, so the event names the session that sent the 
 session uses it; the hunter's other sessions are other players and drop it. After a submitted plan it carries the
 recorded action for the round (`action-recorded`), which the page does not render because the locked-plan card
 already shows the plan it submitted; after a command a rule refused it carries the rule's text (`command-refused`),
-which the page shows as the command error. A storage or session failure on the WS path is still only logged until a
+which the page shows as the command error. Accepted phase, round or expedition changes expire that refusal;
+a later action receipt also clears the displayed refusal while preserving unrelated transport failures.
+Late refusal events cannot restore a stale gameplay error over the finale. The committed provenance captures
+the private recipient audience; a session joining later does not receive historical feedback.
+A storage or session failure on the WS path is still only logged until a
 reply channel exists.
 
 ```text
@@ -97,8 +107,9 @@ refused command -> outbox hunter event with the rule's text (the hunter's princi
 ## Expedition Setup Path
 
 Initial expedition setup is server-owned and happens before a `RelicGameState`
-is persisted. The Relic server centralizes missing-state creation for room
-hydration, reset, and command-created games:
+is persisted. The Relic server captures setup proposals before AppInbox processing for room
+hydration, reset, and command-created games; pure domain validation decides acceptance using a captured time.
+Each writer first verifies the live room and its group revision, so a retired room or save cannot be recreated:
 
 ```text
 off -> create static game -> persisted state -> normal public snapshot

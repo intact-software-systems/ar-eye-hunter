@@ -34,7 +34,7 @@ export async function readExactGroupMutation({
     command,
     includeGroupSnapshot,
     authSessionId
-}: ReadExactGroupMutationInput): Promise<ExactGroupMutationRead | null> {
+}: ReadExactGroupMutationInput): Promise<ExactGroupMutationRead> {
     const actorPrincipalId = command.input.actorPrincipalId;
     const targetPrincipalId = resolveGroupMutationTargetPrincipalId(command);
     const targetSessionId = resolveGroupMutationTargetSessionId(command);
@@ -51,13 +51,11 @@ export async function readExactGroupMutation({
         presenceSessionIds: uniqueDefined([targetSessionId]),
         admissionPrincipalIds: uniqueDefined([targetPrincipalId])
     });
-    return read.status === 'stable'
-        ? {
-            read: assembleExactGroupMutationRead(command, read),
-            groupSnapshot: read.groupSnapshot,
-            authSession: read.authSession
-        }
-        : null;
+    return {
+        read: assembleExactGroupMutationRead(command, read),
+        groupSnapshot: read.groupSnapshot,
+        authSession: read.authSession
+    };
 }
 
 function assembleExactGroupMutationRead(
@@ -90,6 +88,7 @@ function assembleExactGroupMutationRead(
     return {
         idempotency: idempotencyKey === null ? null : exactEntry(read.idempotency, idempotencyKey),
         group,
+        retiredGroup: read.retiredGroup,
         expiredGroupEntry: read.expiredGroupEntry,
         actorMember: actorMemberEntry?.value ?? null,
         targetMember: targetMemberEntry?.value ?? null,

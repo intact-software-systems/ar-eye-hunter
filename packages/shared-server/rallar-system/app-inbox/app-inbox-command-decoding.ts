@@ -6,9 +6,7 @@ import {
     type JsonWireObject,
     type JsonWireValue
 } from '../protocol/json-wire-identity.ts';
-import { AppInboxType, type AppInboxEnqueueInput } from './app-inbox-contracts.ts';
-
-const APP_INBOX_TYPES = new Set<string>(Object.values(AppInboxType));
+import { isAppInboxType, type AppInboxEnqueueInput } from './app-inbox-contracts.ts';
 
 export class AppInboxTypeUnavailableError extends TypeError {
     constructor() {
@@ -29,7 +27,7 @@ export function decodeAppInboxEnqueue(
         label: 'AppInbox enqueue'
     });
     requireString(enqueue.type, 'AppInbox enqueue type');
-    if (!APP_INBOX_TYPES.has(enqueue.type)) {
+    if (!isAppInboxType(enqueue.type)) {
         throw new AppInboxTypeUnavailableError();
     }
     for (const field of ['topicId', 'resourceId', 'senderId'] as const) {
@@ -39,7 +37,7 @@ export function decodeAppInboxEnqueue(
     }
     requireString(enqueue.contextId, 'AppInbox enqueue contextId');
     return {
-        type: enqueue.type as AppInboxType,
+        type: enqueue.type,
         ...(typeof enqueue.topicId === 'string' ? { topicId: enqueue.topicId } : {}),
         ...(typeof enqueue.resourceId === 'string' ? { resourceId: enqueue.resourceId } : {}),
         contextId: enqueue.contextId,

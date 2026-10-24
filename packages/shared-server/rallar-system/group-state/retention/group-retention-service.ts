@@ -1,8 +1,8 @@
 import type { Group, GroupRef } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
+import { writeRoomOwnedAppData, type RoomOwnedAppData } from '../../../app-data/room-owned-app-data.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import { AppInboxIdempotencyConflictError } from '../../app-inbox/app-inbox-contracts.ts';
 import { validateComputedProjection, type ComputedDataValidationIssue } from '../../computed-data-validation.ts';
 import { computeSha256CanonicalJson } from '../../protocol/canonical-json.ts';
@@ -22,6 +22,7 @@ import type {
 import { writeGroupMutation } from '../mutation/write/write-group-mutation.ts';
 import type { GroupPresenceSummaryStoredRead } from '../persistence/group-state-repository-reads.ts';
 import type { GroupStateRepository } from '../persistence/group-state-repository.ts';
+import type { GroupRetirementEntry } from '../persistence/read-group-retirement-entries.ts';
 import { computeGroupRetention } from './compute-group-retention.ts';
 
 export namespace GroupRetentionService {
@@ -44,14 +45,17 @@ export namespace GroupRetentionService {
         readonly ingress: Ingress;
         readonly attemptAtEpochMs: number;
         readonly attemptCount: number;
-        readonly authority: Extract<GroupPresenceSummaryStoredRead, { status: 'stable'; }>;
+        readonly authority: GroupPresenceSummaryStoredRead;
         readonly idempotency: GroupMutationIdempotencyRecord | null;
+        readonly retirementEntries: readonly GroupRetirementEntry[];
+        readonly ownedAppData: readonly RoomOwnedAppData.Read[];
     }
 
     export interface ComputedWrite
         extends Pick<GroupMutationComputedWrite, 'persistence' | 'outboxWrites' | 'receipt'> {
         readonly outcome: 'write';
         readonly group: Group;
+        readonly ownedAppDataWrites: readonly RoomOwnedAppData.Write[];
     }
 
     export type Computed =
@@ -65,9 +69,10 @@ export namespace GroupRetentionService {
     }
 
     export interface Dependencies {
+        readonly groupOwnedAppData: Pick<RoomOwnedAppData, 'read'>;
         readonly repository: Pick<
             GroupStateRepository,
-            'readPresenceSummaryEntries' | 'findIdempotentGroupMutationReceipt'
+            'readPresenceSummaryEntries' | 'findIdempotentGroupMutationReceipt' | 'readRetirementEntries'
         >;
     }
 
@@ -105,17 +110,29 @@ export class GroupRetentionService {
         requirePositiveInteger(attemptCount, 'Retention attempt');
         const attemptAtEpochMs = Math.max(this.config.now(), ingress.capturedAtEpochMs);
         requireEpoch(attemptAtEpochMs, 'Retention attempt time');
-        const [authority, idempotency] = await Promise.all([
-            this.dependencies.repository.readPresenceSummaryEntries(ingress.command.groupRef),
-            this.dependencies.repository.findIdempotentGroupMutationReceipt(ingress.command.groupRef, ingress.commandId)
+        // Observe the surviving authority fence before inventories that can miss a concurrent insertion.
+        // Missing-summary repairs and owned-save insertions advance it, forcing a fresh deletion attempt.
+        const authority = await this.dependencies.repository.readPresenceSummaryEntries(ingress.command.groupRef);
+        const [idempotency, retirementEntries, ownedAppData] = await Promise.all([
+            this.dependencies.repository.findIdempotentGroupMutationReceipt(
+                ingress.command.groupRef,
+                ingress.commandId
+            ),
+            this.dependencies.repository.readRetirementEntries(ingress.command.groupRef),
+            this.dependencies.groupOwnedAppData.read(ingress.command.groupRef)
         ]);
-        if (authority.status !== 'stable') {
-            throw new RuntimeStateWriteConflictError();
-        }
         if (idempotency !== undefined && idempotency.commandHash !== ingress.commandHash) {
             throw new AppInboxIdempotencyConflictError(ingress.commandId, idempotency.commandHash, ingress.commandHash);
         }
-        return { ingress, attemptAtEpochMs, attemptCount, authority, idempotency: idempotency ?? null };
+        return {
+            ingress,
+            attemptAtEpochMs,
+            attemptCount,
+            authority,
+            idempotency: idempotency ?? null,
+            retirementEntries,
+            ownedAppData
+        };
     }
 
     compute(read: GroupRetentionService.Read): GroupRetentionService.Computed {
@@ -132,6 +149,9 @@ export class GroupRetentionService {
     async write(transaction: PSqlSql, computed: GroupRetentionService.Computed): Promise<void> {
         if (computed.outcome === 'write') {
             await writeGroupMutation(transaction, computed);
+            for (const write of computed.ownedAppDataWrites) {
+                await writeRoomOwnedAppData(transaction, write);
+            }
         }
     }
 }

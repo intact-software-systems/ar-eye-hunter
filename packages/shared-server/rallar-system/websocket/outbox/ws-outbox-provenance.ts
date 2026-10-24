@@ -1,4 +1,4 @@
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessageRow } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs } from '@shared/al-contracts/al-policy.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
@@ -36,7 +36,7 @@ export const WS_OUTBOX_PROVENANCE_NAMESPACE = 'ws-outbox-provenance';
 
 export interface WsOutboxProvenance {
     readonly version: 1;
-    readonly producerKind: 'state-sync' | 'auth-session-invalidation' | 'crdt' | 'rtc-topology';
+    readonly producerKind: 'state-sync' | 'auth-session-invalidation' | 'crdt' | 'rtc-topology' | 'room-application';
     readonly queueKey: Key;
     readonly typeId: string;
     readonly messageId: string;
@@ -141,43 +141,51 @@ export class WsOutboxProvenanceReader {
             if (proof.expiresAtMs <= this.dependencies.nowMs()) {
                 throw new TypeError('WS producer provenance expired during verification');
             }
-            if (proof.target.kind === 'exact-invalidated-session') {
-                return {
-                    admittedAudience: proof.target.admittedAudience,
-                    recipientScope: undefined,
-                    sessionInvalidation: proof.target.sessionInvalidation
-                };
-            }
-            if (proof.target.kind === 'scoped-world-broadcast') {
-                return {
-                    admittedAudience: undefined,
-                    recipientScope: proof.target.scope,
-                    broadWorld: true
-                };
-            }
-            if (proof.target.kind === 'scoped-principal-unicast') {
-                return {
-                    admittedAudience: proof.target.admittedAudience,
-                    recipientScope: {
-                        applicationId: proof.target.principalRef.applicationId,
-                        workspaceId: proof.target.principalRef.workspaceId
-                    },
-                    principalTargetId: proof.target.peerId
-                };
-            }
-            if (proof.target.kind === 'scoped-room-broadcast') {
-                return { admittedAudience: proof.target.admittedAudience, recipientScope: undefined };
-            }
-            const scope = proof.target.kind === 'scoped-unicast' ? proof.target.scope : proof.target.principalRef;
-            return {
-                admittedAudience: proof.target.admittedAudience,
-                recipientScope: { applicationId: scope.applicationId, workspaceId: scope.workspaceId }
-            };
+            return toProducerAuthority(proof.target, message);
         }
         catch (cause) {
             throw new ALAdmissionCorruptionError(key, toError(cause));
         }
     }
+}
+
+/** Converts already verified durable authority into the dequeue contract. */
+function toProducerAuthority(target: WsOutboxProvenance['target'], message: ALMessage): WsOutboxProducerAuthority {
+    if (target.kind === 'exact-invalidated-session') {
+        return {
+            admittedAudience: target.admittedAudience,
+            recipientScope: undefined,
+            sessionInvalidation: target.sessionInvalidation
+        };
+    }
+    if (target.kind === 'scoped-world-broadcast') {
+        return {
+            admittedAudience: undefined,
+            recipientScope: target.scope,
+            broadWorld: true
+        };
+    }
+    if (target.kind === 'scoped-principal-unicast') {
+        return {
+            admittedAudience: target.admittedAudience,
+            recipientScope: {
+                applicationId: target.principalRef.applicationId,
+                workspaceId: target.principalRef.workspaceId
+            },
+            principalTargetId: target.peerId
+        };
+    }
+    if (
+        target.kind === 'scoped-room-broadcast' ||
+        (target.kind === 'scoped-principal-broadcast' && readALTargetGroupRef(message) !== undefined)
+    ) {
+        return { admittedAudience: target.admittedAudience, recipientScope: undefined };
+    }
+    const scope = target.kind === 'scoped-unicast' ? target.scope : target.principalRef;
+    return {
+        admittedAudience: target.admittedAudience,
+        recipientScope: { applicationId: scope.applicationId, workspaceId: scope.workspaceId }
+    };
 }
 
 export function toWsOutboxProvenanceKey(key: Key): string {
@@ -227,7 +235,8 @@ export function decodeWsOutboxProvenance(value: unknown): WsOutboxProvenance {
     if (
         proof.version !== 1 ||
         (proof.producerKind !== 'state-sync' && proof.producerKind !== 'auth-session-invalidation' &&
-            proof.producerKind !== 'crdt' && proof.producerKind !== 'rtc-topology')
+            proof.producerKind !== 'crdt' && proof.producerKind !== 'rtc-topology' &&
+            proof.producerKind !== 'room-application')
     ) {
         throw new TypeError('Unsupported WS producer provenance version or kind');
     }
@@ -340,12 +349,18 @@ function validateWsOutboxProvenance(input: WsOutboxProvenanceValidation): readon
     const { message, entry, proof, nowMs } = input;
     const issues: string[] = [];
     const expiresAtMs = resolveALMessageExpireAtMs(message);
-    if (proof.producerKind === 'rtc-topology') {
+    if (proof.producerKind === 'rtc-topology' || proof.producerKind === 'room-application') {
+        const principalPublication = proof.producerKind === 'room-application' &&
+            proof.target.kind === 'scoped-principal-broadcast';
+        // Principal envelopes carry no recipient list. Their committed proof freezes the audience,
+        // just as it does for client state-sync; validation below binds the exact scoped principal.
         if (
-            proof.target.kind !== 'scoped-room-broadcast' || message.targets?.mode !== 'broadcast' ||
-            !jsonEquals(message.targets.recipientPeerIds, proof.target.admittedAudience)
+            !principalPublication && (
+                proof.target.kind !== 'scoped-room-broadcast' || message.targets?.mode !== 'broadcast' ||
+                !jsonEquals(message.targets.recipientPeerIds, proof.target.admittedAudience)
+            )
         ) {
-            issues.push('RTC topology provenance differs from its frozen page audience');
+            issues.push('Room publication provenance differs from its frozen audience');
         }
     }
     if ((proof.producerKind === 'auth-session-invalidation') !== (proof.target.kind === 'exact-invalidated-session')) {

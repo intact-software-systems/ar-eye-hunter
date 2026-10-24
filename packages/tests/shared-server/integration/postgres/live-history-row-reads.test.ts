@@ -1,4 +1,15 @@
-import type { PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
+import type {
+    PSqlParameter,
+    PSqlRows,
+    PSqlSql
+} from '@shared-server/postgres/p-sql-sql.ts';
+import type { ClientMutationStateBatchInput } from '@shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { readGroupStateSnapshotVersions } from '@shared-server/rallar-system/group-state/persistence/read-group-state-authority.ts';
@@ -9,9 +20,18 @@ import type {
     RuntimeStateReadBatchSelection,
     RuntimeStateReadBatchSelector
 } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
-import type { ClientInstance, ClientPrincipal, ClientPrincipalRef, ClientSession } from '@shared/api/client-types.ts';
-import type { AuditStamp, GroupMember, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
-import { describe, expect, it } from 'vitest';
+import type {
+    ClientInstance,
+    ClientPrincipal,
+    ClientPrincipalRef,
+    ClientSession
+} from '@shared/api/client-types.ts';
+import type {
+    AuditStamp,
+    GroupMember,
+    GroupPresenceSession,
+    GroupRef
+} from '@shared/api/group-types.ts';
 
 import { createTestGroup } from '../../../create-test-group.ts';
 import { createRuntimeStatePostgresSql, type PostgresSql } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
@@ -28,13 +48,13 @@ class PresenceRowCountingRuntime extends PSqlRuntimeStateRepository {
 
     override async readRuntimeStateBatch(selectors: readonly RuntimeStateReadBatchSelector[]) {
         const selections = await super.readRuntimeStateBatch(selectors);
-        this.presenceRows += countPresenceRows(selectors, selections);
+        this.presenceRows += computePresenceRowCount(selectors, selections);
         return selections;
     }
 
     override async readRuntimeStateBatchWithVersion(selectors: readonly RuntimeStateReadBatchSelector[]) {
         const batch = await super.readRuntimeStateBatchWithVersion(selectors);
-        this.presenceRows += countPresenceRows(selectors, batch.selections);
+        this.presenceRows += computePresenceRowCount(selectors, batch.selections);
         return batch;
     }
 
@@ -118,7 +138,10 @@ describe('Postgres reads of live history rows', () => {
                 presenceSessionIds: [],
                 admissionPrincipalIds: []
             });
-            expect(mutationRead.status).toBe('stable');
+            expect(mutationRead.groupSnapshot).toMatchObject({
+                status: 'read',
+                snapshot: { activeSessions: [live] }
+            });
             expect(runtime.takePresenceRows()).toBe(3);
         });
     });
@@ -170,7 +193,7 @@ async function seedClient(clients: ClientStateRepository, ref: ClientPrincipalRe
     await clients.insertSession(session(ref, 'bob-open', SESSION_EXPIRES_AT_EPOCH_MS));
 }
 
-function ownRead(ref: ClientPrincipalRef, sessionId: string) {
+function ownRead(ref: ClientPrincipalRef, sessionId: string): ClientMutationStateBatchInput {
     return {
         principalRef: ref,
         instanceRef: null,
@@ -301,7 +324,7 @@ function audit(): AuditStamp {
     };
 }
 
-function countPresenceRows(
+function computePresenceRowCount(
     selectors: readonly RuntimeStateReadBatchSelector[],
     selections: readonly RuntimeStateReadBatchSelection[]
 ): number {

@@ -1,3 +1,10 @@
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { type GroupMutationIdempotencyRecord, type GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import {
     groupStateGroupStorageKey,
@@ -12,11 +19,22 @@ import {
     groupStatePresenceSummaryStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-import type { AuditStamp, Group, GroupMember, GroupPresenceAdmission, GroupPresenceSession } from '@shared/api/group-types.ts';
-import { describe, expect, it, vi } from 'vitest';
+import type {
+    AuditStamp,
+    Group,
+    GroupMember,
+    GroupPresenceAdmission,
+    GroupPresenceSession
+} from '@shared/api/group-types.ts';
+
 import { createTestGroup } from '../../../../create-test-group.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
-import { groupMemberStorageKey, groupRef, groupStorageKey, storedEntry } from '../mutation/group-mutation-test-runtime.ts';
+import {
+    groupMemberStorageKey,
+    groupRef,
+    groupStorageKey,
+    storedEntry
+} from '../mutation/group-mutation-test-runtime.ts';
 
 describe('GroupStateRepository persistence', () => {
     it('encodes canonical group storage keys for every required identity component', () => {
@@ -326,6 +344,7 @@ function createMutationRead(): GroupMutationRead {
     return {
         idempotency: null,
         group: storedEntry(groupStorageKey(), group),
+        retiredGroup: null,
         expiredGroupEntry: null,
         actorMember,
         targetMember: null,

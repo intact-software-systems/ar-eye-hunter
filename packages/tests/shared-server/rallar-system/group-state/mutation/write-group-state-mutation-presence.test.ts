@@ -1,16 +1,13 @@
-import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-import { describe, expect, it } from 'vitest';
-
-import type { GroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-import { groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state/persistence/idempotency/group-idempotency-storage-key.ts';
 import {
-    groupStatePresenceAdmissionStorageKey,
-    groupStatePresenceSessionStorageKey
-} from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
-import { toSessionPurgeAfterEpochMs } from '@shared-server/rallar-system/presence/session-expiry.ts';
+    describe,
+    expect,
+    it
+} from 'vitest';
+
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
+
 import { createTestGroupStateRuntime, createTestGroupStateService } from '../group-state-test-runtime.ts';
 import { ApplyingGuardedBatchRepository, OrderedGroupEventStore } from './group-mutation-test-runtime.ts';
 
@@ -20,7 +17,7 @@ const SCOPE = {
 } as const;
 
 describe('GroupStateService guarded presence batch', () => {
-    it('materializes exact connect and heartbeat bundles before their events', async () => {
+    it('persists connect and heartbeat sessions with admission, durable receipts and events', async () => {
         const runtime = new ApplyingGuardedBatchRepository();
         const eventStore = new OrderedGroupEventStore(runtime);
         const startedAtEpochMs = 1_900_000_000_000;
@@ -42,6 +39,7 @@ describe('GroupStateService guarded presence batch', () => {
             createdByPrincipalId: 'alice',
             requestId: 'presence-update-seed'
         });
+        eventStore.events.length = 0;
         nowEpochMs = startedAtEpochMs + 1_000;
         const connectReceipt = await service.connectPresenceSessionReceipt(
             SCOPE,
@@ -56,7 +54,6 @@ describe('GroupStateService guarded presence batch', () => {
             }
         );
         const repository = createTestGroupStateRepository(runtime, eventStore);
-        const connectedGroup = await repository.findGroup(ref);
         const admission = await repository.findPresenceAdmissionEntry({
             ...ref,
             principalId: 'alice'
@@ -68,7 +65,7 @@ describe('GroupStateService guarded presence batch', () => {
         const connectEvent = eventStore.events.find(
             ({ eventId }) => eventId === connectReceipt.eventId
         );
-        if (!connectedGroup || !admission || !connectIdempotency || !connectEvent) {
+        if (!admission || !connectIdempotency || !connectEvent) {
             throw new Error('Expected the complete presence connect bundle');
         }
         const connectedSession = {
@@ -86,34 +83,38 @@ describe('GroupStateService guarded presence batch', () => {
             disconnectReason: null
         } as const;
 
-        expect(runtime.batches.at(-1)).toEqual({
-            guard: {
-                operation: 'insert',
-                namespace: 'group-state:sessions',
-                key: groupStatePresenceSessionStorageKey(connectedSession),
-                value: JSON.stringify(connectedSession),
-                expireAtTimestamp: toSessionPurgeAfterEpochMs(
-                    connectedSession.expiresAtEpochMs,
-                    connectedSession.disconnectedAtEpochMs
-                )
-            },
-            effects: [
-                {
-                    effectId: 'presence-admission',
-                    operation: 'insert',
-                    namespace: 'group-state:presence-admissions',
-                    key: groupStatePresenceAdmissionStorageKey({
-                        ...ref,
-                        principalId: 'alice'
-                    }),
-                    value: JSON.stringify(admission.value),
-                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
-                },
-                exactReceiptEffect(ref, 'presence-update-connect', connectIdempotency)
-            ]
+        const presence = await repository.findPresenceEntry({ ...ref, sessionId: 'session-a' });
+        expect(presence?.value).toEqual(connectedSession);
+        expect(presence?.entry.expireAtTimestamp).toBe(startedAtEpochMs + 20_000 + 86_400_000);
+        expect(admission.value).toEqual({
+            ...ref,
+            principalId: 'alice',
+            admittedSessions: [{
+                sessionId: 'session-a',
+                generationId: 'generation-a',
+                generationVersion: nowEpochMs,
+                connectedAtEpochMs: nowEpochMs
+            }],
+            updatedAtEpochMs: nowEpochMs
         });
+        expect(connectReceipt).toMatchObject({
+            aggregateRef: ref,
+            requestId: 'presence-update-connect',
+            outcome: 'applied',
+            eventId: expect.any(String),
+            rejection: null
+        });
+        expect(connectIdempotency.receipt).toEqual(connectReceipt);
+        expect(connectReceipt.acceptedStorageRevision).toBe(presence?.entry.revision);
+        expect(connectEvent).toMatchObject({
+            ...ref,
+            eventId: connectReceipt.eventId,
+            eventType: 'session-connected',
+            requestId: 'presence-update-connect',
+            occurredAtEpochMs: nowEpochMs
+        });
+        expect(eventStore.events).toEqual([connectEvent]);
 
-        runtime.resetObservations();
         eventStore.events.length = 0;
         nowEpochMs = startedAtEpochMs + 2_000;
         const heartbeatReceipt = await service.heartbeatPresenceSessionReceipt(
@@ -128,7 +129,7 @@ describe('GroupStateService guarded presence batch', () => {
                 requestId: 'presence-update-heartbeat'
             }
         );
-        const presence = await repository.findPresenceEntry({
+        const heartbeatPresence = await repository.findPresenceEntry({
             ...ref,
             sessionId: 'session-a'
         });
@@ -139,30 +140,37 @@ describe('GroupStateService guarded presence batch', () => {
         const heartbeatEvent = eventStore.events.find(
             ({ eventId }) => eventId === heartbeatReceipt.eventId
         );
-        if (!presence || !heartbeatIdempotency || !heartbeatEvent) {
+        if (!heartbeatPresence || !heartbeatIdempotency || !heartbeatEvent) {
             throw new Error('Expected the complete presence heartbeat bundle');
         }
-        expect(runtime.batches).toEqual([
-            {
-                guard: {
-                    operation: 'update',
-                    namespace: 'group-state:sessions',
-                    key: groupStatePresenceSessionStorageKey(presence.value),
-                    expectedRevision: 0,
-                    value: JSON.stringify(presence.value),
-                    expireAtTimestamp: toSessionPurgeAfterEpochMs(
-                        presence.value.expiresAtEpochMs,
-                        presence.value.disconnectedAtEpochMs
-                    )
-                },
-                effects: [exactReceiptEffect(ref, 'presence-update-heartbeat', heartbeatIdempotency)]
-            }
-        ]);
-        expect(runtime.transactionOrder).toEqual(['batch', 'event', 'commit']);
+        expect(heartbeatPresence.value).toEqual({
+            ...connectedSession,
+            lastHeartbeatAtEpochMs: nowEpochMs,
+            expiresAtEpochMs: startedAtEpochMs + 30_000
+        });
+        expect(heartbeatPresence.entry.expireAtTimestamp).toBe(startedAtEpochMs + 30_000 + 86_400_000);
+        expect((await repository.findPresenceAdmissionEntry({ ...ref, principalId: 'alice' }))?.value)
+            .toEqual(admission.value);
+        expect(heartbeatIdempotency.receipt).toEqual(heartbeatReceipt);
+        expect(heartbeatReceipt.acceptedStorageRevision).toBe(heartbeatPresence.entry.revision);
+        expect(heartbeatReceipt).toMatchObject({
+            aggregateRef: ref,
+            requestId: 'presence-update-heartbeat',
+            outcome: 'applied',
+            eventId: expect.any(String),
+            rejection: null
+        });
+        expect(heartbeatEvent).toMatchObject({
+            ...ref,
+            eventId: heartbeatReceipt.eventId,
+            eventType: 'session-heartbeat',
+            requestId: 'presence-update-heartbeat',
+            occurredAtEpochMs: nowEpochMs
+        });
         expect(eventStore.events).toEqual([heartbeatEvent]);
     });
 
-    it('materializes an exact expiry delete guard and admission update', async () => {
+    it('expires the session and releases its admission with a durable receipt and event', async () => {
         const runtime = new ApplyingGuardedBatchRepository();
         const eventStore = new OrderedGroupEventStore(runtime);
         let nowEpochMs = 1_900_000_000_000;
@@ -193,81 +201,96 @@ describe('GroupStateService guarded presence batch', () => {
             expiresAtEpochMs: nowEpochMs + 500,
             requestId: 'presence-expiry-connect'
         });
-        runtime.resetObservations();
         eventStore.events.length = 0;
         nowEpochMs += 1_000;
 
         const written = await groupRuntime.maintenance.expireExpiredPresenceSessions(nowEpochMs);
-        const batch = runtime.batches[0];
         const repository = createTestGroupStateRepository(runtime, eventStore);
         const admission = await repository.findPresenceAdmissionEntry({
             ...ref,
             principalId: 'alice'
         });
-        if (!batch || !admission) {
+        if (!admission) {
             throw new Error('Expected the complete presence expiry bundle');
         }
 
         expect(written).toHaveLength(1);
-        expect(batch.guard).toEqual({
-            operation: 'delete',
-            namespace: 'group-state:sessions',
-            key: groupStatePresenceSessionStorageKey({
-                ...ref,
-                sessionId: 'expiry-session'
-            }),
-            expectedRevision: 0
+        expect(admission.value).toEqual({
+            ...ref,
+            principalId: 'alice',
+            admittedSessions: [],
+            updatedAtEpochMs: nowEpochMs
         });
-        expect(batch.effects[0]).toEqual({
-            effectId: 'presence-admission',
-            operation: 'update',
-            namespace: 'group-state:presence-admissions',
-            key: groupStatePresenceAdmissionStorageKey({
-                ...ref,
-                principalId: 'alice'
-            }),
-            expectedRevision: 0,
-            value: JSON.stringify(admission.value),
-            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+        const expiryEvent = eventStore.events[0];
+        if (!expiryEvent || expiryEvent.requestId === null) {
+            throw new Error('Expected a durable expiry event with its request identity');
+        }
+        const expiryReceipt = await repository.findIdempotentGroupMutationReceipt(ref, expiryEvent.requestId);
+        expect(expiryReceipt?.receipt).toMatchObject({
+            aggregateRef: ref,
+            requestId: expiryEvent.requestId,
+            outcome: 'applied',
+            eventId: expiryEvent.eventId,
+            rejection: null
         });
-        expect(
-            batch.effects.slice(1).map(({ effectId, operation, namespace }) => ({
-                effectId,
-                operation,
-                namespace
-            }))
-        ).toEqual([
-            {
-                effectId: 'receipt',
-                operation: 'insert',
-                namespace: 'group-state:idempotent'
-            }
-        ]);
+        expect(expiryEvent).toMatchObject({
+            ...ref,
+            eventType: 'session-disconnected',
+            occurredAtEpochMs: nowEpochMs
+        });
         expect(
             await repository.findPresenceSession({
                 ...ref,
                 sessionId: 'expiry-session'
             })
         ).toBeUndefined();
-        expect(runtime.transactionOrder).toEqual(['batch', 'event', 'commit']);
         expect(eventStore.events).toHaveLength(1);
     });
-});
 
-function exactReceiptEffect(
-    ref: GroupRef,
-    requestId: string,
-    value: GroupMutationIdempotencyRecord
-) {
-    return {
-        effectId: 'receipt',
-        operation: 'insert',
-        namespace: 'group-state:idempotent',
-        key: groupStateIdempotencyStorageKey(ref, requestId),
-        value: JSON.stringify(value),
-        expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
-    } as const;
-}
+    it.each(['guard', 'presence-admission', 'receipt', 'presence-member-fence'])(
+        'rolls an initial connect back completely when %s conflicts',
+        async (conflictTarget) => {
+            const runtime = new ApplyingGuardedBatchRepository();
+            const eventStore = new OrderedGroupEventStore(runtime);
+            const nowEpochMs = 1_900_000_000_000;
+            let generatedId = 0;
+            const service = createTestGroupStateService({
+                runtimeRepository: runtime,
+                groupStateEventStoreFor: () => eventStore,
+                now: () => nowEpochMs,
+                randomId: () => `presence-conflict-id-${++generatedId}`,
+                serviceId: 'presence-conflict-service'
+            });
+            const ref = groupRef('presence-conflict');
+            await service.createGroup(SCOPE, {
+                groupId: ref.groupId,
+                displayName: 'Presence conflict',
+                kind: 'room',
+                joinMode: 'open',
+                createdByPrincipalId: 'alice',
+                requestId: 'presence-conflict-seed'
+            });
+            const repository = createTestGroupStateRepository(runtime, eventStore);
+            const before = new Map([...runtime.data].filter(([key]) => key.startsWith('group-state:')));
+            const eventsBefore = [...eventStore.events];
+            runtime.forceNextConflict(conflictTarget);
+
+            await expect(service.connectPresenceSessionReceipt(SCOPE, ref.groupId, 'session-conflict', {
+                principalId: 'alice',
+                generationId: 'generation-conflict',
+                connectionGenerationId: 'ws-generation-conflict',
+                expiresAtEpochMs: nowEpochMs + 30_000,
+                requestId: 'presence-conflict-connect'
+            })).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
+
+            expect(await repository.findPresenceSession({ ...ref, sessionId: 'session-conflict' })).toBeUndefined();
+            expect(await repository.findPresenceAdmissionEntry({ ...ref, principalId: 'alice' })).toBeUndefined();
+            expect(await repository.findIdempotentGroupMutationReceipt(ref, 'presence-conflict-connect')).toBeUndefined();
+            expect(new Map([...runtime.data].filter(([key]) => key.startsWith('group-state:')))).toEqual(before);
+            expect(eventStore.events).toEqual(eventsBefore);
+        }
+    );
+});
 
 function groupRef(groupId: string): GroupRef {
     return { ...SCOPE, groupId };

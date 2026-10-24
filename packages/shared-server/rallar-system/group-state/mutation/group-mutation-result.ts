@@ -19,7 +19,6 @@ import type { RuntimeStateGuardedBatchEffect } from '../../../runtime-state/guar
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import { computeAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import { GroupPolicyDeniedError } from '../policy/group-policy-result.ts';
-
 import type { InitialGroupPresenceSummaryCandidate } from '../presence/group-initial-presence-summary.ts';
 import type { GroupPlannedLayoutRow, PlannedLayoutPromotion } from './aggregate/compute-planned-layout-promotion.ts';
 import type {
@@ -37,7 +36,11 @@ import type {
 } from './group-mutation-contracts.ts';
 import { GroupAlreadyExistsError, GroupMutationRejectedError } from './group-mutation-contracts.ts';
 import { groupMutationIdempotencyKey } from './group-mutation-idempotency-key.ts';
-import { GroupConnectDeniedError, type GroupMutationRejectionCode } from './group-mutation-rejection-codes.ts';
+import {
+    GroupConnectDeniedError,
+    GroupRetiredError,
+    type GroupMutationRejectionCode
+} from './group-mutation-rejection-codes.ts';
 import { computeGroupMutationPersistence } from './orchestration/compute-group-mutation-persistence.ts';
 
 const DEFAULT_GROUP_JOIN_CODE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
@@ -158,7 +161,7 @@ export function computeGroupMutationWriteResult(
         layoutTombstones,
         connectTriggerLatchEffect: input.connectTriggerLatchEffect ?? null
     };
-    return { ...computed, persistence: computeGroupMutationPersistence(computed) };
+    return { ...computed, persistence: computeGroupMutationPersistence(computed, read) };
 }
 
 function toGroupMutationIdempotency(
@@ -237,11 +240,18 @@ export function rejectedByGroupPolicy(
 
 export function toGroupMutationRejectionError(
     computed: Extract<GroupMutationComputed, { outcome: 'rejected'; }>
-): GroupAlreadyExistsError | GroupConnectDeniedError | GroupMutationRejectedError | GroupPolicyDeniedError {
+):
+    | GroupRetiredError
+    | GroupAlreadyExistsError
+    | GroupConnectDeniedError
+    | GroupMutationRejectedError
+    | GroupPolicyDeniedError {
     const message = computed.receipt.rejection ?? 'Group mutation rejected';
     switch (computed.rejectionCode) {
         case 'group-policy-denied':
             return new GroupPolicyDeniedError(computed.policyDenial);
+        case 'group-retired':
+            return new GroupRetiredError(message);
         case 'group-already-exists':
             return new GroupAlreadyExistsError(message);
         case 'group-connect-stale-epoch':

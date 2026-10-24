@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "c3075aa417227e11ce5595cd401f6f1c23c84cad",
+      "source": {
+        "path": "apps/ar-eye-hunter-v1/src/game/BabylonArena.tsx",
+        "blob": "3d7e57912c10c578c90bbeb2013338f202a51972"
+      },
+      "targets": [
+        "apps/ar-eye-hunter-v1/src/game/babylon-arena.tsx",
+        "apps/ar-eye-hunter-v1/src/game/scene/arena-peer-view.ts",
+        "apps/ar-eye-hunter-v1/src/game/scene/arena-scene-contracts.ts",
+        "apps/ar-eye-hunter-v1/src/game/scene/arena-scene-effects.ts",
+        "apps/ar-eye-hunter-v1/src/game/scene/arena-scene-feedback.ts",
+        "apps/ar-eye-hunter-v1/src/game/scene/arena-scene-geometry.ts",
+        "apps/ar-eye-hunter-v1/src/game/scene/arena-scene-runtime.ts",
+        "apps/ar-eye-hunter-v1/src/game/scene/arena-scene-state.ts",
+        "apps/ar-eye-hunter-v1/src/game/scene/arena-scene-step.ts",
+        "apps/ar-eye-hunter-v1/src/game/scene/arena-scene-theme.ts",
+        "apps/ar-eye-hunter-v1/src/game/scene/arena-target-view.ts",
+        "apps/ar-eye-hunter-v1/src/game/scene/arena-touch-input.ts",
+        "apps/ar-eye-hunter-v1/src/game/scene/arena-world-view.ts"
+      ]
+    }
+  ]
+}

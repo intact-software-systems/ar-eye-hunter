@@ -22,9 +22,11 @@ import type {
 import { type RtcTopologyPublicationRepository } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository.ts';
 
 import type { ApiV1BackgroundTaskLifecycle } from './api-v1-background-task-lifecycle.ts';
+import type { ApiV1RelicServices } from './create-api-v1-relic-services.ts';
 import type { ApiV1TopologyServices } from './create-api-v1-topology-services.ts';
 
 export interface ApiV1Runtime extends
+    ApiV1RelicServices,
     Omit<
         RallarMiddlewareRuntime,
         | 'clientStateService'
@@ -52,7 +54,7 @@ export interface ApiV1Runtime extends
     readonly topologyServices: ApiV1TopologyServices;
 }
 
-export interface RequireApiV1RuntimeInput {
+export interface RequireApiV1RuntimeInput extends ApiV1RelicServices {
     readonly runtime: RallarMiddlewareRuntime;
     readonly authSessionRepository: AuthSessionRepository;
     readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
@@ -90,6 +92,8 @@ export function requireApiV1Runtime(input: RequireApiV1RuntimeInput): ApiV1Runti
 
     return {
         ...runtime,
+        relicGameMutations: input.relicGameMutations,
+        relicGameInboxService: input.relicGameInboxService,
         clientStateService: runtime.clientStateService,
         groupStateService: runtime.groupStateService,
         rtcTopologyPublicationRepository: runtime.rtcTopologyPublicationRepository,

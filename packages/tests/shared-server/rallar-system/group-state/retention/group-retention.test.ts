@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
@@ -8,7 +12,12 @@ import type { Group } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
 import { presenceConnectEnqueue } from '../inbox/group-state-inbox-presence-fixtures.ts';
-import { createAuthorityHarness, processAuthenticated, SCOPE, type AuthorityHarness } from '../inbox/group-state-inbox-test-runtime.ts';
+import {
+    createAuthorityHarness,
+    processAuthenticated,
+    SCOPE,
+    type AuthorityHarness
+} from '../inbox/group-state-inbox-test-runtime.ts';
 
 const REF = { ...SCOPE, groupId: 'retained-room' };
 
@@ -34,7 +43,7 @@ describe('temporary room retention decisions', () => {
         fixture.nowEpochMs += 1;
         const archived = await reconcile(fixture, 'archive');
         expect(archived.receipt?.outcome).toBe('applied');
-        expect(await group(fixture)).toMatchObject({ status: 'archived', archived: { atEpochMs: fixture.nowEpochMs } });
+        expect(await group(fixture)).toMatchObject({ status: 'archived', deleted: null, archived: { atEpochMs: fixture.nowEpochMs } });
         expect((await fixture.harness.repository.listEvents(REF)).map((event) => event.eventType))
             .toEqual(['group-created', 'group-updated', 'group-archived']);
     });
@@ -173,7 +182,7 @@ describe('temporary room retention decisions', () => {
 async function createFixture(temporary = true): Promise<RetentionFixture> {
     const harness = await createAuthorityHarness(['owner']);
     const clock = { nowEpochMs: harness.nowEpochMs };
-    const service = new GroupRetentionService({ repository: harness.repository }, {
+    const service = new GroupRetentionService({ repository: harness.repository, groupOwnedAppData: { read: async () => [] } }, {
         now: () => clock.nowEpochMs,
         serviceId: 'retention-service'
     });

@@ -7,25 +7,22 @@ import type {
     GroupRef,
     GroupSnapshot
 } from '@shared/api/group-types.ts';
-import {
-    resolveRuntimeStateReadBatchLiveValues,
-    type RuntimeStateReadBatchLiveSelection
-} from '../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
+
+import type { RuntimeStateReadBatchLiveSelection } from '../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
 import { type RuntimeStateReadBatchSelector } from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import { AUTH_SESSIONS_BY_SESSION_NAMESPACE, authSessionKey } from '../../auth/persistence/auth-storage-keys.ts';
-import {
-    decodePersistedAuthSession,
-    type PersistedAuthSession
-} from '../../auth/persistence/persisted-auth-session.ts';
+import type { PersistedAuthSession } from '../../auth/persistence/persisted-auth-session.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
 import { groupStateGroupStorageKey } from './aggregate/group-aggregate-storage-keys.ts';
+import { isRetiredGroupIdentity, type RetiredGroupIdentity } from './aggregate/retired-group-identity.ts';
 import {
     GROUP_LIFECYCLE_POLICIES_NAMESPACE,
     type GroupLifecyclePolicyRead
 } from './group-lifecycle-policy-repository.ts';
+import { toGroupStateReadBatchLiveSelections } from './group-state-persistence-contracts.ts';
 import {
     GROUPS_NAMESPACE,
     IDEMPOTENT_NAMESPACE,
@@ -42,26 +39,26 @@ import {
 } from './presence/group-presence-storage-keys.ts';
 import { toGroupStateAuthoritySelectors, type GroupStateAuthorityBatchRead } from './read-group-state-authority.ts';
 
-export type GroupStateMutationExactReadInput = Readonly<{
-    aggregateRef: GroupRef;
-    includeGroup: boolean;
-    includePresenceSummary: boolean;
-    includeLifecyclePolicy: boolean;
+export interface GroupStateMutationExactReadInput {
+    readonly aggregateRef: GroupRef;
+    readonly includeGroup: boolean;
+    readonly includePresenceSummary: boolean;
+    readonly includeLifecyclePolicy: boolean;
     /** The whole roster and every session as well, so the group's snapshot comes from the same statement. */
-    includeGroupSnapshot: boolean;
+    readonly includeGroupSnapshot: boolean;
     /** The authenticated session the attempt re-checks, selected by the same statement; null for internal authority. */
-    authSessionId: string | null;
-    requestIds: readonly string[];
-    memberPrincipalIds: readonly string[];
-    presenceSessionIds: readonly string[];
-    admissionPrincipalIds: readonly string[];
-}>;
+    readonly authSessionId: string | null;
+    readonly requestIds: readonly string[];
+    readonly memberPrincipalIds: readonly string[];
+    readonly presenceSessionIds: readonly string[];
+    readonly admissionPrincipalIds: readonly string[];
+}
 
-type ExactEntry<Identity extends string, Value> = Readonly<{
-    identity: Identity;
-    entry: RuntimeStateEntryValue<Value> | null;
-    expiredEntry: RuntimeStateEntry | null;
-}>;
+interface ExactEntry<Identity extends string, Value> {
+    readonly identity: Identity;
+    readonly entry: RuntimeStateEntryValue<Value> | null;
+    readonly expiredEntry: RuntimeStateEntry | null;
+}
 
 /** The group snapshot an exact read assembled from its own rows; unread when the input did not ask for it. */
 export type GroupStateMutationExactSnapshot =
@@ -75,8 +72,8 @@ export type GroupStateMutationExactAuthSession =
 
 /** The rows one exact read selected, all from the same statement. */
 export interface GroupStateMutationExactEntries {
-    readonly status: 'stable';
     readonly groups: readonly RuntimeStateEntryValue<Group>[];
+    readonly retiredGroup: RetiredGroupIdentity | null;
     readonly expiredGroupEntry: RuntimeStateEntry | null;
     readonly presenceSummaries: readonly RuntimeStateEntryValue<GroupPresenceSummary>[];
     readonly idempotency: readonly ExactEntry<string, GroupMutationIdempotencyRecord>[];
@@ -88,12 +85,8 @@ export interface GroupStateMutationExactEntries {
     readonly authSession: GroupStateMutationExactAuthSession;
 }
 
-export type GroupStateMutationExactReadResult =
-    | Readonly<{ status: 'concurrent-change'; }>
-    | GroupStateMutationExactEntries;
-
-export type GroupStateMutationExactReadDecoders = Readonly<{
-    group(entry: RuntimeStateEntryValue<JsonWireValue>): RuntimeStateEntryValue<Group>;
+export interface GroupStateMutationExactReadDecoders {
+    group(entry: RuntimeStateEntryValue<JsonWireValue>): RuntimeStateEntryValue<Group | RetiredGroupIdentity>;
     presenceSummary(
         entry: RuntimeStateEntryValue<JsonWireValue>
     ): RuntimeStateEntryValue<GroupPresenceSummary>;
@@ -118,8 +111,8 @@ export type GroupStateMutationExactReadDecoders = Readonly<{
         sessionId: string,
         entry: RuntimeStateEntryValue<JsonWireValue>
     ): RuntimeStateEntryValue<PersistedAuthSession>;
-    groupSnapshot(rows: Extract<GroupStateAuthorityBatchRead, { status: 'stable'; }>): GroupSnapshot | undefined;
-}>;
+    groupSnapshot(rows: GroupStateAuthorityBatchRead): GroupSnapshot | undefined;
+}
 
 type IdentitySlotKind = 'idempotency' | 'member' | 'presence' | 'admission';
 
@@ -146,30 +139,31 @@ interface ExactReadSelectorSet {
 
 type ExactReadSelectorSink = (selector: RuntimeStateReadBatchSelector, slot: ReadSlot) => void;
 
-export async function readGroupStateMutationExactEntries(
-    repository: RuntimeStateRepositoryLike,
-    input: GroupStateMutationExactReadInput,
-    toLiveEntryValue: (
-        namespace: string,
-        entry: RuntimeStateEntry
-    ) => Promise<RuntimeStateEntryValue<JsonWireValue> | undefined>,
-    decoders: GroupStateMutationExactReadDecoders
-): Promise<GroupStateMutationExactReadResult> {
+export interface GroupStateMutationExactReadRequest {
+    readonly repository: RuntimeStateRepositoryLike;
+    readonly input: GroupStateMutationExactReadInput;
+    readonly observedAtEpochMs: number;
+    readonly decoders: GroupStateMutationExactReadDecoders;
+}
+
+export async function readGroupStateMutationExactEntries({
+    repository,
+    input,
+    observedAtEpochMs,
+    decoders
+}: GroupStateMutationExactReadRequest): Promise<GroupStateMutationExactEntries> {
     const { selectors, slots } = createSelectors(input, {
         requestIds: requireUniqueDenseStrings(input.requestIds, 'request IDs'),
         memberIds: requireUniqueDenseStrings(input.memberPrincipalIds, 'member principal IDs'),
         sessionIds: requireUniqueDenseStrings(input.presenceSessionIds, 'presence session IDs'),
         admissionIds: requireUniqueDenseStrings(input.admissionPrincipalIds, 'admission principal IDs')
     });
-    const resolved = await resolveRuntimeStateReadBatchLiveValues(
+    const liveSelections = toGroupStateReadBatchLiveSelections(
         selectors,
         await repository.readRuntimeStateBatch(selectors),
-        toLiveEntryValue
+        observedAtEpochMs
     );
-    if (resolved.status === 'changed') {
-        return { status: 'concurrent-change' };
-    }
-    const selections = slots.map((slot, index) => ({ slot, selection: resolved.selections[index] }));
+    const selections = slots.map((slot, index) => ({ slot, selection: liveSelections[index] }));
     return toExactReadResult(input, selections, decoders);
 }
 
@@ -180,9 +174,13 @@ function toExactReadResult(
 ): GroupStateMutationExactEntries {
     const group = findSlotSelection(selections, 'group');
     const summary = findSlotSelection(selections, 'presence-summary');
+    const records = (group?.entries ?? []).map((entry) => decoders.group(entry));
+    const retirement = records.find((entry) => isRetiredGroupIdentity(entry.value));
     return {
-        status: 'stable',
-        groups: (group?.entries ?? []).map((entry) => decoders.group(entry)),
+        groups: records.flatMap((entry) =>
+            isRetiredGroupIdentity(entry.value) ? [] : [{ entry: entry.entry, value: entry.value }]
+        ),
+        retiredGroup: retirement && isRetiredGroupIdentity(retirement.value) ? retirement.value : null,
         expiredGroupEntry: group?.expiredEntries[0] ?? null,
         presenceSummaries: (summary?.entries ?? []).map((entry) => decoders.presenceSummary(entry)),
         idempotency: toExactEntries(selections, 'idempotency', decoders.idempotency),
@@ -196,7 +194,6 @@ function toExactReadResult(
             ? {
                 status: 'read',
                 snapshot: decoders.groupSnapshot({
-                    status: 'stable',
                     group: group?.entries[0],
                     members: findSlotSelection(selections, 'roster')?.entries ?? [],
                     summary: summary?.entries[0],

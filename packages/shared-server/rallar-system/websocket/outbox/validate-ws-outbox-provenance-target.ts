@@ -1,4 +1,4 @@
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { validateALSessionInvalidationMessage } from '@shared/alm/outbound/admission/al-session-invalidation-authority.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { requiresWsQueueBoxServerRecipientScope } from '@shared/services/ws-queue-box-server/scope/requires-ws-queue-box-server-recipient-scope.ts';
@@ -35,9 +35,14 @@ export function validateWsOutboxProvenanceTarget(
         const principalRef = targets?.mode === 'broadcast' && targets.scope === 'principal'
             ? targets.principalRef
             : undefined;
+        const groupRef = readALTargetGroupRef(message);
         return principalRef?.applicationId === target.principalRef.applicationId &&
                 principalRef.workspaceId === target.principalRef.workspaceId &&
-                principalRef.principalId === target.principalRef.principalId
+                principalRef.principalId === target.principalRef.principalId &&
+                (groupRef === undefined || (
+                    groupRef.applicationId === principalRef.applicationId &&
+                    groupRef.workspaceId === principalRef.workspaceId
+                ))
             ? []
             : ['WS provenance target differs from scoped principal identity'];
     }

@@ -4,13 +4,18 @@ import type {
     RelicPublicSnapshot
 } from '@relic-hunters/mod.ts';
 import { findRelicCharacter } from '@relic-hunters/mod.ts';
+
 import { RELIC_ACTION_KINDS } from '../game-view-model.ts';
-import { plural, UI, type Lang } from '../lang.ts';
+import {
+    plural,
+    UI,
+    type Lang
+} from '../lang.ts';
 import type { RelicHuntersRuntime } from '../relic-hunters-runtime.ts';
 import { playUiSound } from '../sound.ts';
 import type { RelicTurn } from '../use-relic-turn.ts';
 import { castleMapExitDistances } from './relic-map.tsx';
-import { derivePartyCoordination } from './relic-party.tsx';
+import { computePartyCoordination } from './relic-party.tsx';
 
 interface RelicRoundPlanProps {
     readonly game: RelicHuntersRuntime.Connection;
@@ -83,7 +88,7 @@ function RelicActionPicker({ turn }: RelicTurnPanelProps) {
 function RelicActionBrief({ turn }: RelicTurnPanelProps) {
     const view = turn.viewModel;
     const coordination = view.snapshot
-        ? derivePartyCoordination(view.snapshot, view.localPlayerId, turn.selection.draft.kind)
+        ? computePartyCoordination(view.snapshot, view.localPlayerId, turn.selection.draft.kind)
         : undefined;
     return (
         <div className="action-brief">

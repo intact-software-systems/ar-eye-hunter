@@ -6,8 +6,18 @@ import {
     type RelicGameState,
     type RelicPublicSnapshot
 } from '@relic-hunters/mod.ts';
-import { describe, expect, it } from 'vitest';
-import { deriveSceneObjective, roomHasResolvedClue, shortestOpenRoomPath } from '../../../apps/relic-hunters-v1/src/game/scene/objectives.ts';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
+import {
+    deriveSceneObjective,
+    roomHasResolvedClue,
+    shortestOpenRoomPath
+} from '../../../apps/relic-hunters-v1/src/game/scene/objectives.ts';
+import { requireRelicCommandApplied } from './require-relic-command-applied.ts';
 
 describe('Relic scene objective derivation', () => {
     it('recommends movement when the current room has no strong clue', () => {
@@ -225,7 +235,7 @@ describe('Relic scene objective derivation', () => {
 
 function planningSnapshot(): RelicPublicSnapshot {
     let state: RelicGameState = createRelicGame('room-1', 'room-1', 1);
-    state = applyRelicCommand(state, {
+    state = requireRelicCommandApplied(applyRelicCommand(state, {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'join-expedition',
         gameId: 'room-1',
@@ -233,17 +243,17 @@ function planningSnapshot(): RelicPublicSnapshot {
         characterId: 'kael-ironstride'
     }, {
         senderId: 'alice-session',
-        now: () => 2
-    }).state;
-    state = applyRelicCommand(state, {
+        now: 2
+    })).state;
+    state = requireRelicCommandApplied(applyRelicCommand(state, {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'start-expedition',
         gameId: 'room-1',
         username: 'Alice'
     }, {
         senderId: 'alice-session',
-        now: () => 3
-    }).state;
+        now: 3
+    })).state;
 
     return toPublicRelicSnapshot(state);
 }

@@ -1,5 +1,10 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { afterEach, describe, expect, it } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
@@ -13,7 +18,12 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { createAppInboxTestResilience } from '../../app-inbox/test-support/app-inbox-resource-fixtures.ts';
-import { createRetentionDatabaseFixture, RETENTION_REF, seedRetentionRoom, type RetentionDatabaseFixture } from './group-retention-database-fixture.ts';
+import {
+    createRetentionDatabaseFixture,
+    RETENTION_REF,
+    seedRetentionRoom,
+    type RetentionDatabaseFixture
+} from './group-retention-database-fixture.ts';
 
 let fixture: RetentionDatabaseFixture | undefined;
 afterEach(async () => {
@@ -87,12 +97,14 @@ describe('retention through the registered AppInbox capability', () => {
         const current = fixture;
         let reads = 0;
         const retention = new GroupRetentionService({
+            groupOwnedAppData: { read: async () => [] },
             repository: {
+                readRetirementEntries: (ref) => current.repository.readRetirementEntries(ref),
                 findIdempotentGroupMutationReceipt: (ref, id) => current.repository.findIdempotentGroupMutationReceipt(ref, id),
                 readPresenceSummaryEntries: async (ref) => {
                     const read = await current.repository.readPresenceSummaryEntries(ref);
                     reads += 1;
-                    if (reads <= conflicts && read.status === 'stable' && read.group) {
+                    if (reads <= conflicts && read.group) {
                         await current.repository.updateGroup({
                             ...read.group.value,
                             displayName: `Concurrent edit ${reads}`,

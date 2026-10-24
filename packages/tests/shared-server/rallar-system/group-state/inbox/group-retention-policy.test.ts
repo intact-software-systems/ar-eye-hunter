@@ -153,7 +153,7 @@ describe('temporary room discovery', () => {
         const connected = await processAsOwner(harness, presenceConnectEnqueue(ROOM_REF.groupId, 'owner', harness.nowEpochMs));
         expect(connected.left).toBeUndefined();
         const observed = await harness.repository.readPresenceSummaryEntries(ROOM_REF);
-        if (observed.status !== 'stable' || observed.group === undefined || observed.current === undefined) {
+        if (observed.group === undefined || observed.current === undefined) {
             throw new Error('Expected the created group and its initial summary');
         }
         expect(observed.presenceSessions).toHaveLength(1);

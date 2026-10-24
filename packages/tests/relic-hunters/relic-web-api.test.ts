@@ -1,18 +1,35 @@
 // @vitest-environment happy-dom
 
-import { createRelicGame, RELIC_PROTOCOL_VERSION, toPublicRelicSnapshot, type RelicCommand } from '@relic-hunters/mod.ts';
+import {
+    createRelicGame,
+    RELIC_PROTOCOL_VERSION,
+    toPublicRelicSnapshot,
+    type RelicCommand
+} from '@relic-hunters/mod.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { clearSession, writeSession } from '@shared/api/auth.ts';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fetchRelicSnapshot, resetRelicGame, sendRelicCommand } from '../../../apps/relic-hunters-v1/src/game/api.ts';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+import {
+    fetchRelicSnapshot,
+    resetRelicGame,
+    sendRelicCommand
+} from '../../../apps/relic-hunters-v1/src/game/api.ts';
 
 describe('Relic Hunters web API client', () => {
     beforeEach(() => {
-        installMemoryLocalStorage();
-        clearSession();
         vi.unstubAllGlobals();
         installMemoryLocalStorage();
+        clearSession();
     });
+
+    afterEach(() => vi.unstubAllGlobals());
 
     it('does not call relic endpoints without a browser auth session', async () => {
         const fetch = vi.fn();
@@ -27,7 +44,7 @@ describe('Relic Hunters web API client', () => {
     it('sends command requests with encoded game id and browser auth headers', async () => {
         writeSession(session());
         const fetch = vi.fn<typeof globalThis.fetch>(async () =>
-            new Response(JSON.stringify({ gameId: 'room/1' }), {
+            new Response(JSON.stringify(toPublicRelicSnapshot(createRelicGame('room/1', 'room/1', 1))), {
                 status: 200,
                 headers: { 'content-type': 'application/json' }
             })
@@ -39,7 +56,7 @@ describe('Relic Hunters web API client', () => {
 
         expect(fetch).toHaveBeenCalledTimes(1);
         const [url, init = {}] = fetch.mock.calls[0];
-        expect(url).toBe('/api/relic/games/room%2F1/commands');
+        expect(url).toMatch(/^\/api\/relic\/games\/room%2F1\/commands\/requests\/[0-9a-f-]{36}$/);
         expect(init.method).toBe('POST');
         expect(init.headers).toMatchObject({
             authorization: 'Bearer token-1',
@@ -47,6 +64,15 @@ describe('Relic Hunters web API client', () => {
             'x-client-id': 'client-1'
         });
         expect(JSON.parse(String(init.body))).toEqual(command);
+    });
+
+    it('gives each reset a request identity and rejects malformed success payloads', async () => {
+        writeSession(session());
+        const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response(JSON.stringify({ gameId: 'room-1' })));
+        vi.stubGlobal('fetch', fetch);
+        await expect(resetRelicGame('room-1')).rejects.toThrow('not a Relic snapshot');
+        expect(fetch.mock.calls[0][0]).toMatch(/^\/api\/relic\/games\/room-1\/reset\/requests\/[0-9a-f-]{36}$/);
+        await expect(sendRelicCommand('room-1', joinCommand())).rejects.toThrow('not a Relic snapshot');
     });
 
     it('reads a Relic snapshot body and rejects one that names no game incarnation', async () => {

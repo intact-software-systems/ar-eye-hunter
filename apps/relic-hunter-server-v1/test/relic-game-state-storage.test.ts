@@ -1,51 +1,38 @@
 import {
+    applyRelicCommand,
     createRelicGame,
     RELIC_PROTOCOL_VERSION,
     type RelicCommand,
-    type RelicExpeditionSetupMetadata,
-    type RelicGameState
+    type RelicExpeditionSetupMetadata
 } from '@relic-hunters/mod.ts';
-import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { decodeRelicGameStateAppData } from '@relic-hunters/server/decode-relic-game-state-app-data.ts';
+import { encodeRelicGameStateAppData } from '@relic-hunters/server/encode-relic-game-state-app-data.ts';
 import { expect } from '@std/expect';
 import { describe, it } from '@std/testing/bdd';
-import { encodeRelicGameStateAppData } from '../src/encode-relic-game-state-app-data.ts';
-import { installRelicHunterGame } from '../src/relic-game-service.ts';
 
-type RelicServer = Parameters<typeof installRelicHunterGame>[0];
-type CommandHandler = Parameters<RelicServer['ws']['on']>[1];
+import { requireRelicCommandApplied } from '../../../packages/tests/relic-hunters/require-relic-command-applied.ts';
 
-// A lobby game has no administrator and no round running, which the rules express as undefined fields. The stored
-// value must be JSON-safe, as the SQL-backed app-data store encodes it (pre-existing: the codec refused them).
 describe('Relic game state storage', () => {
-    it('stores a joined lobby game whose round has not started and reads it back', async () => {
-        const store = createEncodingStore();
-        const handlers: CommandHandler[] = [];
-        await installRelicHunterGame(createServer(store, handlers), {
-            createInitialState: (gameId) => Promise.resolve(createRelicGame(gameId, gameId, 1)),
-            readSession: () => Promise.resolve({ username: 'Alice', clientId: 'alice-client' })
-        });
-
-        await handlers[0]({ payload: joinCommand('room-1') }, {
+    it('round-trips a joined lobby through JSON without inventing a round start', () => {
+        const game = requireRelicCommandApplied(applyRelicCommand(createRelicGame('room-1', 'room-1', 1), joinCommand('room-1'), {
             senderId: 'alice-session',
-            roomId: 'room-1',
-            roomRef: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'room-1' }
-        });
-
-        const stored = store.read('room-1');
-        expect(stored?.players.map((player) => player.playerId)).toEqual(['alice-session']);
-        expect(stored?.phase).toBe('lobby');
-        expect(stored !== undefined && 'roundStartedAtEpochMs' in stored).toBe(false);
+            now: 2
+        })).state;
+        const encoded = encodeRelicGameStateAppData(game);
+        const stored = decodeRelicGameStateAppData(JSON.parse(JSON.stringify(encoded)));
+        expect(stored.players.map((player) => player.playerId)).toEqual(['alice-session']);
+        expect(stored.phase).toBe('lobby');
+        expect(stored.adminPlayerId).toBe('alice-session');
+        expect('roundStartedAtEpochMs' in stored).toBe(false);
+        expect(stored.createdAtEpochMs).toBe(1);
+        expect(stored.updatedAtEpochMs).toBe(2);
     });
 
-    it('stores a fresh expedition that has no administrator yet', async () => {
-        const store = createEncodingStore();
-        const service = await installRelicHunterGame(createServer(store, []), {
-            createInitialState: (gameId) => Promise.resolve(createRelicGame(gameId, gameId, 1)),
-            readSession: () => Promise.resolve(undefined)
-        });
-
-        await expect(service.ensureSnapshot('room-2')).resolves.toMatchObject({ gameId: 'room-2', phase: 'lobby' });
-        expect(store.read('room-2')?.adminPlayerId).toBeUndefined();
+    it('round-trips a fresh expedition with no administrator', () => {
+        const encoded = encodeRelicGameStateAppData(createRelicGame('room-2', 'room-2', 1));
+        const stored = decodeRelicGameStateAppData(JSON.parse(JSON.stringify(encoded)));
+        expect(stored).toMatchObject({ gameId: 'room-2', phase: 'lobby', players: [] });
+        expect(stored.adminPlayerId).toBeUndefined();
     });
 
     it('leaves out only undefined plain properties: a non-plain value and a cycle still reach the JSON-safety check', () => {
@@ -66,54 +53,6 @@ describe('Relic game state storage', () => {
         expect(() => encodeRelicGameStateAppData({ ...game, setup: cyclicSetup })).toThrow('contains a cycle');
     });
 });
-
-interface EncodingStore {
-    readonly codec: { encode?: (value: RelicGameState) => JsonWireValue; decode?: (value: JsonWireValue) => RelicGameState; };
-    read(key: string): RelicGameState | undefined;
-}
-
-function createEncodingStore(): EncodingStore & { rows: Map<string, string>; } {
-    const rows = new Map<string, string>();
-    const codec: EncodingStore['codec'] = {};
-    return {
-        rows,
-        codec,
-        read: (key) => {
-            const row = rows.get(key);
-            return row === undefined || codec.decode === undefined ? undefined : codec.decode(JSON.parse(row));
-        }
-    };
-}
-
-function createServer(
-    store: ReturnType<typeof createEncodingStore>,
-    handlers: CommandHandler[]
-): RelicServer {
-    return {
-        appData: {
-            open: (_name, options) => {
-                store.codec.encode = options.codec.encode;
-                store.codec.decode = options.codec.decode;
-                return Promise.resolve({
-                    get: (key: string) => Promise.resolve(store.read(key)),
-                    set: (key: string, value: RelicGameState) => {
-                        store.rows.set(key, JSON.stringify(options.codec.encode(value)));
-                        return Promise.resolve();
-                    },
-                    setIfAbsent: () => Promise.reject(new Error('Relic does not use setIfAbsent.'))
-                });
-            }
-        },
-        ws: {
-            serverPeerId: 'relic-server',
-            defineTopic: () => {},
-            on: (_selector, handler) => {
-                handlers.push(handler);
-            },
-            publish: () => Promise.resolve()
-        }
-    };
-}
 
 function joinCommand(gameId: string): RelicCommand {
     return {

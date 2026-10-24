@@ -6,6 +6,7 @@ import {
 /** The registry the type and every runtime check derive from. */
 export const GROUP_MUTATION_REJECTION_CODES = [
     'group-already-exists',
+    'group-retired',
     'group-mutation-rejected',
     'group-policy-denied',
     ...GROUP_CONNECT_REJECTION_CODES
@@ -43,5 +44,14 @@ export class GroupConnectDeniedError extends Error {
         super(message);
         this.name = 'GroupConnectDeniedError';
         this.code = code;
+    }
+}
+
+export class GroupRetiredError extends Error {
+    readonly status = 410;
+    readonly code = 'group-retired';
+    constructor(message: string) {
+        super(message);
+        this.name = 'GroupRetiredError';
     }
 }

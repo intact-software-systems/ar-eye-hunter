@@ -14,6 +14,7 @@ import type { RallarGroupFormationMetricsRecorder } from '@shared-server/rallar-
 
 import type { ApiV1BackgroundTaskLifecycle } from '../../src/composition/api-v1-background-task-lifecycle.ts';
 import { requireApiV1Runtime } from '../../src/composition/api-v1-runtime.ts';
+import type { ApiV1RelicServices } from '../../src/composition/create-api-v1-relic-services.ts';
 import type { ApiV1TopologyServices } from '../../src/composition/create-api-v1-topology-services.ts';
 
 Deno.test('requireApiV1Runtime preserves every complete API capability identity', () => {
@@ -48,6 +49,8 @@ Deno.test('requireApiV1Runtime preserves every complete API capability identity'
     assert.equal(complete.almReceiptDiagnostics, additions.almReceiptDiagnostics);
     assert.equal(complete.backgroundTasks, additions.backgroundTasks);
     assert.equal(complete.topologyServices, additions.topologyServices);
+    assert.equal(complete.relicGameMutations, additions.relicGameMutations);
+    assert.equal(complete.relicGameInboxService, additions.relicGameInboxService);
 });
 
 Deno.test('requireApiV1Runtime rejects every incomplete shared runtime capability', () => {
@@ -108,7 +111,7 @@ interface RuntimeFailureCase {
     readonly message: RegExp;
 }
 
-interface RuntimeAdditions {
+interface RuntimeAdditions extends ApiV1RelicServices {
     readonly authSessionRepository: AuthSessionRepository;
     readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
     readonly clientRestSnapshotReadSelector: ClientRestSnapshotReadSelector;
@@ -138,6 +141,8 @@ function createRuntimeCandidate(
 
 function createRuntimeAdditions(): RuntimeAdditions {
     return {
+        relicGameMutations: {} as ApiV1RelicServices['relicGameMutations'],
+        relicGameInboxService: {} as ApiV1RelicServices['relicGameInboxService'],
         authSessionRepository: {} as AuthSessionRepository,
         passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 1 }),
         clientRestSnapshotReadSelector: {} as ClientRestSnapshotReadSelector,

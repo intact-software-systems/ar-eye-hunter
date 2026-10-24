@@ -35,15 +35,17 @@ import {
 } from '../../persistence/presence/group-presence-write-descriptors.ts';
 import type {
     GroupMutationDomainWrite,
-    GroupMutationPersistence
+    GroupMutationPersistence,
+    GroupMutationRead
 } from '../group-mutation-contracts.ts';
 
 export function computeGroupMutationPersistence(
-    computed: GroupMutationDomainWrite
+    computed: GroupMutationDomainWrite,
+    read: GroupMutationRead
 ): GroupMutationPersistence {
     return {
         guardedBatch: computeRuntimeStateGuardedBatchWrite(
-            computeGroupMutationGuardedBatch(computed)
+            computeGroupMutationGuardedBatch(computed, read)
         ),
         lifecyclePolicyWrite: computed.lifecyclePolicy === null
             ? null
@@ -68,7 +70,8 @@ export function computeGroupMutationPersistence(
 }
 
 function computeGroupMutationGuardedBatch(
-    computed: GroupMutationDomainWrite
+    computed: GroupMutationDomainWrite,
+    read: GroupMutationRead
 ): RuntimeStateGuardedBatch {
     const effects: RuntimeStateGuardedBatchEffect[] = [];
     effects.push(...computePresenceAndMembershipEffects(computed));
@@ -95,10 +98,22 @@ function computeGroupMutationGuardedBatch(
             })
         });
     }
-    return validateRuntimeStateGuardedBatch({
-        guard: computeGroupMutationGuard(computed),
-        effects
-    });
+    const guard = computeGroupMutationGuard(computed);
+    if (computed.guard.kind === 'presence' && computed.presenceAdmission?.operation === 'insert') {
+        // Retirement deletes the member too, so this exact revision fences an admission that was
+        // absent before archival without making unrelated members contend on the group row.
+        const member = read.targetMemberEntry;
+        if (member === null) {
+            throw new TypeError('Initial presence admission requires its observed member');
+        }
+        effects.push({
+            effectId: 'presence-member-fence',
+            ...groupStateMemberPutDescriptor(member.value),
+            operation: 'update',
+            expectedRevision: member.entry.revision
+        });
+    }
+    return validateRuntimeStateGuardedBatch({ guard, effects });
 }
 
 function computeGroupMutationGuard(

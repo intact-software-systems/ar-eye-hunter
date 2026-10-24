@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Accepted match before canvas shot</title>
+    <style>
+    canvas { width: 640px; height: 480px; display: block; }
+    .mobile-fps-controls, .crosshair, .arena-audio-controls, .mobile-rotate-prompt { display: none; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module">
+    import { injectIntoGlobalHook } from '/@react-refresh';
+        injectIntoGlobalHook(window);
+        window.$RefreshReg$ = () => {};
+        window.$RefreshSig$ = () => (type) => type;
+    </script>
+    <script type="module" src="./arena-shot-browser-fixture.tsx"></script>
+  </body>
+</html>

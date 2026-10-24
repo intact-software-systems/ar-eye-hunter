@@ -82,7 +82,10 @@ export function createGroupStateRuntime(
             { repository: repositoryFor(runtime), authSessions },
             { capacity: dependencies.capacity ?? { defaultMaxMembers: null }, serviceId: dependencies.serviceId, now }
         ),
-        retention: new GroupRetentionService({ repository: repositoryFor(runtime) }, {
+        retention: new GroupRetentionService({
+            repository: repositoryFor(runtime),
+            groupOwnedAppData: dependencies.groupOwnedAppData ?? { read: async () => [] }
+        }, {
             serviceId: dependencies.serviceId,
             now
         }),

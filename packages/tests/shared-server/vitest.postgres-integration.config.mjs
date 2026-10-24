@@ -20,6 +20,17 @@ export default {
             'packages/tests/shared-server/rallar-system/group-state/retention/group-retention-concurrency.test.ts',
             'packages/tests/shared-server/rallar-system/group-state/retention/group-retention-inbox.test.ts',
             'packages/tests/shared-server/rallar-system/group-state/retention/group-retention-pages.test.ts',
+            'packages/tests/shared-server/rallar-system/group-state/retention/group-retention-deletion.test.ts',
+            'packages/tests/shared-server/rallar-system/group-state/retention/group-retention-summary-deletion.test.ts',
+            'packages/tests/shared-server/rallar-system/group-state/retention/group-retirement-identity.test.ts',
+            'packages/tests/shared-server/rallar-system/group-state/retention/group-retirement-owned-data.test.ts',
+            'packages/tests/shared-server/rallar-system/group-state/retention/group-retirement-stale-writers.test.ts',
+            'packages/tests/shared-server/app-data/room-owned-app-data.test.ts',
+            'packages/tests/relic-hunters/relic-game-authorization.test.ts',
+            'packages/tests/relic-hunters/relic-game-inbox.test.ts',
+            'packages/tests/relic-hunters/relic-game-mutation.test.ts',
+            'packages/tests/relic-hunters/relic-game-publication.test.ts',
+            'packages/tests/relic-hunters/relic-game-retention.test.ts',
             ...topologyConcurrencyTests
         ]
     }

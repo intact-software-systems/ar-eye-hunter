@@ -1,8 +1,22 @@
-import { useEffect, useEffectEvent, useRef, useState } from 'react';
+import {
+    useEffect,
+    useEffectEvent,
+    useRef,
+    useState
+} from 'react';
 
-import type { RelicActionInput, RelicActionKind, RelicEvent, RelicPublicSnapshot } from '@relic-hunters/mod.ts';
+import type {
+    RelicActionInput,
+    RelicActionKind,
+    RelicEvent,
+    RelicPublicSnapshot
+} from '@relic-hunters/mod.ts';
 
-import { deriveRelicGameViewModel, type ActionDraft, type RelicGameViewModel } from './game-view-model.ts';
+import {
+    computeRelicGameViewModel,
+    type ActionDraft,
+    type RelicGameViewModel
+} from './game-view-model.ts';
 import type { RelicHuntersRuntime } from './relic-hunters-runtime.ts';
 import { deriveSceneObjective, type SceneObjective } from './scene/objectives.ts';
 import { playActionSound, playUiSound } from './sound.ts';
@@ -42,7 +56,7 @@ export function useRelicTurn(
     revealedEvents: readonly RelicEvent[]
 ): RelicTurn {
     const selection = useRelicTurnSelection(game);
-    const viewModel = deriveRelicGameViewModel({
+    const viewModel = computeRelicGameViewModel({
         snapshot: game.snapshot,
         localPlayerId: game.session?.sessionId,
         draft: selection.draft,

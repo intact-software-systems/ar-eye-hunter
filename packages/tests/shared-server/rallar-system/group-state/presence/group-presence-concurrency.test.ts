@@ -1,3 +1,9 @@
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
@@ -5,17 +11,23 @@ import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/opt
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
-import { describe, expect, it } from 'vitest';
+
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
-import { convergeSummaryForTest, createService, requireSnapshot, seedOpenGroup } from './group-presence-test-runtime.ts';
+import {
+    convergeSummaryForTest,
+    createService,
+    requireSnapshot,
+    seedOpenGroup
+} from './group-presence-test-runtime.ts';
 
 const BASE_EPOCH_MS = Date.now();
 
 describe('group presence concurrency', () => {
-    it('accepts two independent presence sessions without a group aggregate guard', async () => {
+    it('accepts two independent sessions with an existing admission without a group aggregate guard', async () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'two-session-room');
+        await seedPresenceAdmission(runtime, 'two-session-room');
         runtime.resetGuards();
         const results = await Promise.all([
             createService(runtime, 2_000).connectPresenceSession(SCOPE, 'two-session-room', 'session-a', {
@@ -78,10 +90,11 @@ describe('group presence concurrency', () => {
         );
     });
 
-    it('commits presence independently while an aggregate CAS write is held', async () => {
+    it('commits existing-admission presence independently while an aggregate CAS write is held', async () => {
         const runtime = new GroupBarrierRepository();
         runtime.serializeGroupTestTransactions = false;
         await seedOpenGroup(runtime, 'presence-lane-bypass-room');
+        await seedPresenceAdmission(runtime, 'presence-lane-bypass-room');
         runtime.resetGuards();
         let nowEpochMs = BASE_EPOCH_MS + 2_000;
         const service = createService(runtime, () => nowEpochMs);
@@ -407,3 +420,20 @@ describe('group presence concurrency', () => {
         }
     );
 });
+
+async function seedPresenceAdmission(runtime: GroupBarrierRepository, groupId: string): Promise<void> {
+    const service = createService(runtime, 1_500);
+    await service.connectPresenceSession(SCOPE, groupId, 'admission-seed', {
+        principalId: 'alice',
+        generationId: 'admission-seed',
+        connectionGenerationId: 'admission-seed-ws',
+        expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
+        requestId: 'admission-seed-connect'
+    });
+    await service.disconnectPresenceSession(SCOPE, groupId, 'admission-seed', {
+        generationId: 'admission-seed',
+        connectionGenerationId: 'admission-seed-ws',
+        disconnectedAtEpochMs: 1_500,
+        requestId: 'admission-seed-disconnect'
+    });
+}

@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import type {
     GroupMutationCommand,
@@ -10,10 +14,20 @@ import { canGovernGroupMember } from '@shared-server/rallar-system/group-state/p
 import { canConnectGroupPresenceSession, canJoinGroup } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import { GROUP_LIFECYCLE_STATES, type GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
-import type { AuditStamp, Group, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
-import { createTestGroup } from '../../../create-test-group.ts';
+import type {
+    AuditStamp,
+    Group,
+    GroupMember,
+    GroupSnapshot
+} from '@shared/api/group-types.ts';
 
-import { groupMemberStorageKey, groupRef, groupStorageKey, storedEntry } from './mutation/group-mutation-test-runtime.ts';
+import { createTestGroup } from '../../../create-test-group.ts';
+import {
+    groupMemberStorageKey,
+    groupRef,
+    groupStorageKey,
+    storedEntry
+} from './mutation/group-mutation-test-runtime.ts';
 
 const EVERY_LIFECYCLE_STATE = GROUP_LIFECYCLE_STATES;
 
@@ -132,6 +146,7 @@ function baseRead(lifecycleState: GroupLifecycleState): GroupMutationRead {
     return {
         idempotency: null,
         group: storedEntry(groupStorageKey(), groupIn(lifecycleState)),
+        retiredGroup: null,
         expiredGroupEntry: null,
         actorMember,
         targetMember: null,

@@ -3,21 +3,30 @@ import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/g
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import { toGroupMemberPolicy } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import { validateGroupLifecyclePolicy } from '@shared/api/group-lifecycle/validate-group-lifecycle-policy.ts';
-import type { AuditStamp, Group, GroupMember, GroupPresenceSummary } from '@shared/api/group-types.ts';
+import type {
+    AuditStamp,
+    Group,
+    GroupMember,
+    GroupPresenceSummary
+} from '@shared/api/group-types.ts';
+
 import { computeFormationTimerEntries } from '../../formation-timer-outbox-entry.ts';
 import { toExpiredAwareInsertCandidate } from '../../presence/group-expired-state-authority.ts';
 import {
     nextInitialGroupSnapshotVersion,
     toInitialGroupPresenceSummaryCandidate
 } from '../../presence/group-initial-presence-summary.ts';
-import { auditStamp, computeGroupMutationWriteResult, rejected } from '../group-mutation-result.ts';
-
 import type {
     GroupMutationCommand,
     GroupMutationComputed,
     GroupMutationFacts,
     GroupMutationRead
 } from '../group-mutation-contracts.ts';
+import {
+    auditStamp,
+    computeGroupMutationWriteResult,
+    rejected
+} from '../group-mutation-result.ts';
 
 interface CreateInitialGroupInput {
     readonly command: Extract<GroupMutationCommand, { operation: 'createGroup'; }>;
@@ -171,7 +180,7 @@ export function computeCreate(
 }
 
 interface GroupCreateDenial {
-    readonly rejectionCode: 'group-mutation-rejected' | 'group-already-exists';
+    readonly rejectionCode: 'group-mutation-rejected' | 'group-already-exists' | 'group-retired';
     readonly message: string;
 }
 
@@ -183,6 +192,12 @@ function toCreateDenial(
         return {
             rejectionCode: 'group-mutation-rejected',
             message: 'Creator authority does not match createdByPrincipalId'
+        };
+    }
+    if (read.retiredGroup !== null) {
+        return {
+            rejectionCode: 'group-retired',
+            message: `Group identity is permanently retired: ${command.aggregateRef.groupId}`
         };
     }
     if (read.group) {

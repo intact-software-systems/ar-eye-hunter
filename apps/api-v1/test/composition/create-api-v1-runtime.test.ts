@@ -129,6 +129,7 @@ Deno.test('runtime construction preserves the owned startup sequence', () => {
         'resource-expiry',
         'runtime-state-expiry',
         'middleware',
+        'relic-services',
         'attach-replay',
         'presence-reconciliation',
         'retention-reconciliation',
@@ -328,6 +329,11 @@ function createOperations(
         createMiddleware: () => {
             record('middleware');
             return SHARED_RUNTIME;
+        },
+        createRelicServices: (input) => {
+            assert.equal(input.wsRuntimeName, 'ws-test');
+            record('relic-services');
+            return { relicGameMutations: {} as never, relicGameInboxService: {} as never };
         },
         startPresenceReconciliation: () => {
             record('presence-reconciliation');

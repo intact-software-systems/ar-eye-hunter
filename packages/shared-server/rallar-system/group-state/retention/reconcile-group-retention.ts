@@ -69,7 +69,10 @@ async function reconcileGroupRetention(
         if (lifecycle.stopped) {
             return;
         }
-        if (group.status === 'active' && readGroupRetentionState(group.metadata) !== null) {
+        if (
+            (group.status === 'active' || group.status === 'archived') &&
+            readGroupRetentionState(group.metadata) !== null
+        ) {
             await input.enqueue({ groupRef: toCanonicalGroupRef(group), requestId, observedAtEpochMs });
         }
     }

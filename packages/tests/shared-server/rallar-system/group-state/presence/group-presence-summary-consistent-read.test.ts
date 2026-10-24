@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import { GroupStateRepositoryReads } from '@shared-server/rallar-system/group-state/persistence/group-state-repository-reads.ts';
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
+import { GROUPS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
@@ -115,18 +116,25 @@ describe('the presence summary read (D295)', () => {
         expect(read.left).toMatchObject({ code: 'group-presence-summary-roster-inconsistent' });
     });
 
-    it('answers rows that changed while they were read as a concurrent change, not as an inconsistent roster', async () => {
+    it('omits an expired group without removing its physical row', async () => {
         const runtime = new GroupBarrierRepository();
         const command = await seedGroupWithMember(runtime, 'bob');
-        vi.spyOn(GroupStateRepositoryReads.prototype, 'readPresenceSummaryEntries')
-            .mockResolvedValueOnce({ status: 'concurrent-change' });
+        const key = groupStateGroupStorageKey(groupRef(GROUP_ID));
+        const stored = await runtime.findEntry(GROUPS_NAMESPACE, key);
+        if (!stored) {
+            throw new Error('Seeded group is required');
+        }
+        await runtime.upsert(GROUPS_NAMESPACE, key, stored.value, Date.now() - 1);
+        const expired = await runtime.findEntry(GROUPS_NAMESPACE, key);
 
         const read = await createWork(runtime).read(
             [{ work: command, reservation: summaryReservationRead(command.commandId) }],
             BASE_EPOCH_MS + 1_000
         );
 
-        expect(read.left).toMatchObject({ code: 'group-presence-summary-concurrent-change' });
+        expect(read.left).toBeUndefined();
+        expect(read.right).toEqual([]);
+        expect(await runtime.findEntry(GROUPS_NAMESPACE, key)).toEqual(expired);
     });
 });
 

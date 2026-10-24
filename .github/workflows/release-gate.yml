@@ -215,12 +215,24 @@ jobs:
             tests/playwright/ar-eye-hunter/private-room-entry.spec.ts \
             tests/playwright/ar-eye-hunter/quick-join.spec.ts --project=desktop-delivery
 
+      - name: Run AR Eye real-canvas reconciliation regression
+        run: |
+          npx playwright test --config apps/ar-eye-hunter-v1/playwright.config.ts \
+            tests/playwright/ar-eye-hunter/quick-join.spec.ts --project=desktop-delivery \
+            --grep 'director canvas shot'
+
       - name: Run Relic private room entry browser tests
         env:
           RELIC_HUNTERS_FULL_STACK: '1'
         run: |
           npx playwright test --config apps/relic-hunters-v1/playwright.full-stack.config.ts \
-            tests/playwright/relic-hunters/full-stack-private-room-entry.spec.ts --trace=retain-on-failure
+            tests/playwright/relic-hunters/full-stack-private-room-entry.spec.ts \
+            tests/playwright/relic-hunters/full-stack-http.spec.ts --trace=retain-on-failure
+
+      - name: Run Relic private feedback click regression
+        run: |
+          npx playwright test --config apps/relic-hunters-v1/playwright.config.ts \
+            tests/playwright/relic-hunters/private-feedback.spec.ts --trace=retain-on-failure
 
       - name: Upload game room failure evidence
         if: failure()

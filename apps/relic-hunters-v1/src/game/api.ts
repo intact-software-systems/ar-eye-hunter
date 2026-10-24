@@ -1,4 +1,8 @@
-import { decodeRelicSnapshotPayload, type RelicCommand, type RelicPublicSnapshot } from '@relic-hunters/mod.ts';
+import {
+    decodeRelicSnapshotPayload,
+    type RelicCommand,
+    type RelicPublicSnapshot
+} from '@relic-hunters/mod.ts';
 import { readApiBaseUrl } from '@shared-web/browser/api-client-config.ts';
 import { readSession } from '@shared/api/auth.ts';
 
@@ -21,11 +25,7 @@ export async function fetchRelicSnapshot(gameId: string): Promise<RelicPublicSna
         throw new Error(`Failed to load expedition: ${response.status}`);
     }
 
-    const decoded = decodeRelicSnapshotPayload(await response.json());
-    if (decoded.left) {
-        throw new Error(`Failed to load expedition: ${decoded.left.message}`);
-    }
-    return decoded.right;
+    return await decodeRelicResponse(response, 'Failed to load expedition');
 }
 
 export async function resetRelicGame(gameId: string): Promise<RelicPublicSnapshot | undefined> {
@@ -34,18 +34,21 @@ export async function resetRelicGame(gameId: string): Promise<RelicPublicSnapsho
         return undefined;
     }
 
-    const response = await fetch(`${readApiBaseUrl()}/api/relic/games/${encodeURIComponent(gameId)}/reset`, {
-        method: 'POST',
-        headers: {
-            authorization: `Bearer ${session.accessToken}`,
-            'x-client-id': session.clientId
+    const response = await fetch(
+        `${readApiBaseUrl()}/api/relic/games/${encodeURIComponent(gameId)}/reset/requests/${crypto.randomUUID()}`,
+        {
+            method: 'POST',
+            headers: {
+                authorization: `Bearer ${session.accessToken}`,
+                'x-client-id': session.clientId
+            }
         }
-    });
+    );
     if (!response.ok) {
         throw new Error(`Failed to reset expedition: ${response.status}`);
     }
 
-    return await response.json() as RelicPublicSnapshot;
+    return await decodeRelicResponse(response, 'Failed to reset expedition');
 }
 
 export async function sendRelicCommand(
@@ -57,19 +60,30 @@ export async function sendRelicCommand(
         return undefined;
     }
 
-    const response = await fetch(`${readApiBaseUrl()}/api/relic/games/${encodeURIComponent(gameId)}/commands`, {
-        method: 'POST',
-        headers: {
-            authorization: `Bearer ${session.accessToken}`,
-            'content-type': 'application/json',
-            'x-client-id': session.clientId
-        },
-        body: JSON.stringify(command)
-    });
+    const response = await fetch(
+        `${readApiBaseUrl()}/api/relic/games/${encodeURIComponent(gameId)}/commands/requests/${crypto.randomUUID()}`,
+        {
+            method: 'POST',
+            headers: {
+                authorization: `Bearer ${session.accessToken}`,
+                'content-type': 'application/json',
+                'x-client-id': session.clientId
+            },
+            body: JSON.stringify(command)
+        }
+    );
     if (!response.ok) {
         const body = await response.text().catch(() => '');
         throw new Error(`Failed to send expedition command: ${response.status} ${body}`);
     }
 
-    return await response.json() as RelicPublicSnapshot;
+    return await decodeRelicResponse(response, 'Failed to send expedition command');
+}
+
+async function decodeRelicResponse(response: Response, failure: string): Promise<RelicPublicSnapshot> {
+    const decoded = decodeRelicSnapshotPayload(await response.json());
+    if (decoded.right === undefined) {
+        throw new Error(`${failure}: ${decoded.left?.message ?? 'Invalid expedition snapshot'}`);
+    }
+    return decoded.right;
 }

@@ -97,6 +97,11 @@ import {
     type CreateApiV1MutationRuntimeInput
 } from './create-api-v1-mutation-runtime.ts';
 import {
+    createApiV1RelicServices,
+    type ApiV1RelicServices,
+    type CreateApiV1RelicServicesInput
+} from './create-api-v1-relic-services.ts';
+import {
     createApiV1TopologyServices,
     type ApiV1TopologyServices,
     type CreateApiV1TopologyServicesInput
@@ -175,6 +180,7 @@ interface ApiV1RuntimeTopology {
 }
 
 export interface ApiV1RuntimeConstructionOperations {
+    createRelicServices(input: CreateApiV1RelicServicesInput): ApiV1RelicServices;
     createMutationRuntime(input: CreateApiV1MutationRuntimeInput): ApiV1MutationRuntime;
     createRtcTopologyRuntime(input: CreateApiRtcTopologyRuntimeInput): ApiRtcTopologyRuntime;
     createTopologyServices(input: CreateApiV1TopologyServicesInput): ApiV1TopologyServices;
@@ -210,13 +216,7 @@ export function constructApiV1Runtime(
     input: CreateApiV1RuntimeInput,
     operations: ApiV1RuntimeConstructionOperations
 ): ApiV1Runtime {
-    const deadlineIssues = validateAppInboxAttemptDeadlineMargin(
-        input.appInboxOptions,
-        input.resilience.inbox.reservationLeaseMs
-    );
-    if (deadlineIssues.length > 0) {
-        throw new Error(deadlineIssues.map((issue) => issue.message).join('; '));
-    }
+    requireRuntimeAppInboxDeadline(input);
     const startupGeneration = input.backgroundTasks.beginStartupGeneration();
     const almReceiptDiagnostics = createRallarAlmReceiptDiagnosticsRecorder({
         nowEpochMs: input.nowEpochMs,
@@ -248,11 +248,19 @@ export function constructApiV1Runtime(
         almReceiptDiagnostics,
         nowEpochMs: input.nowEpochMs
     });
+    const relic = operations.createRelicServices({
+        mutation,
+        runtime,
+        wsRuntimeName: input.wsRuntimeName,
+        nowEpochMs: input.nowEpochMs,
+        timing: input.timing
+    });
     rtcTopology.topologyReplay.attach({ wsQueueBoxServerService: runtime.wsQBoxServerService });
     startGroupMaintenance({ runtime, mutation, input, operations });
     const selectors = operations.createSnapshotSelectors(mutation, input.timing);
     return operations.requireRuntime({
         runtime,
+        ...relic,
         authSessionRepository: mutation.authSessionRepository,
         passwordDerivationAdmission: mutation.passwordDerivationAdmission,
         ...selectors,
@@ -261,6 +269,16 @@ export function constructApiV1Runtime(
         topologyServices: topology,
         backgroundTasks: input.backgroundTasks
     });
+}
+
+function requireRuntimeAppInboxDeadline(input: CreateApiV1RuntimeInput): void {
+    const deadlineIssues = validateAppInboxAttemptDeadlineMargin(
+        input.appInboxOptions,
+        input.resilience.inbox.reservationLeaseMs
+    );
+    if (deadlineIssues.length > 0) {
+        throw new Error(deadlineIssues.map((issue) => issue.message).join('; '));
+    }
 }
 
 interface StartGroupMaintenanceInput {
@@ -390,6 +408,7 @@ function toMutationRuntimeInput(
 }
 
 const PRODUCTION_OPERATIONS: ApiV1RuntimeConstructionOperations = {
+    createRelicServices: createApiV1RelicServices,
     createMutationRuntime: createApiV1MutationRuntime,
     createRtcTopologyRuntime: createApiRtcTopologyRuntime,
     createTopologyServices: createApiV1TopologyServices,

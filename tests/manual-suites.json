@@ -1,12 +1,11 @@
 [
   {
     "paths": [
-      "tests/playwright/relic-hunters/web.spec.ts",
-      "tests/playwright/relic-hunters/server-api.spec.ts"
+      "tests/playwright/relic-hunters/web.spec.ts"
     ],
     "owner": "Knut-Helge Vik",
     "command": "npm run test:playwright:relic",
-    "reason": "The Relic browser CI lane selects the full-stack private-entry suite; these standalone browser/server tests remain manual. 2026-09-29 run: 24 passed, 1 failed (web.spec.ts camera-mode flyover), 1 skipped; fix or delete before adding these tests to the lane."
+    "reason": "The Relic browser CI lane selects the real full-stack suites; these focused browser UI and scene-observation tests remain a separate manual workload."
   },
   {
     "paths": [

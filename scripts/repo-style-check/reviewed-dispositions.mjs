@@ -5,6 +5,91 @@ import { reviewedBrowserDispositions } from './reviewed-browser-dispositions.mjs
 import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // Independent whole-owner review: One keyed remote-avatar lifecycle owns motion, health and shot presentation.
+    // This warning-tier cap permits no growth and waives no other rule.
+    Object.freeze({
+        path: 'apps/ar-eye-hunter-v1/src/game/scene/arena-peer-view.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 79
+    }),
+    // Independent whole-owner review: One frame owner keeps input, prediction and accepted shot ordering visible.
+    // This warning-tier cap permits no growth and waives no other rule.
+    Object.freeze({
+        path: 'apps/ar-eye-hunter-v1/src/game/scene/arena-scene-step.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 102
+    }),
+    // Independent whole-owner review: One keyed target/pickup visual lifecycle owns creation, attack cues and disposal.
+    // This warning-tier cap permits no growth and waives no other rule.
+    Object.freeze({
+        path: 'apps/ar-eye-hunter-v1/src/game/scene/arena-target-view.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 96
+    }),
+    // Independent whole-owner review: One input adapter maps visible controls and finite key choices to the same input state.
+    // This warning-tier cap permits no growth and waives no other rule.
+    Object.freeze({
+        path: 'apps/ar-eye-hunter-v1/src/game/scene/arena-touch-input.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 56
+    }),
+    // Independent whole-owner review: One scenery assembly owns arena meshes, materials and their labels.
+    // This warning-tier cap permits no growth and waives no other rule.
+    Object.freeze({
+        path: 'apps/ar-eye-hunter-v1/src/game/scene/arena-world-view.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 74
+    }),
+    // Independent whole-owner review: One persisted game mutation owner keeps fresh authorization, decision and conditional write explicit.
+    // This warning-tier cap permits no growth and waives no other rule.
+    Object.freeze({
+        path: 'packages/relic-hunters/server/relic-game-mutation-service.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 57
+    }),
+    // Independent whole-owner review: One summary work lifecycle keeps claim, read, expansion, conditional write and settlement together.
+    // This warning-tier cap permits no growth and waives no other rule.
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 59
+    }),
+    // Independent whole-owner review: One immutable producer proof contract owns scoped target decoding, digesting and validation.
+    // This warning-tier cap permits no growth and waives no other rule.
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 50
+    }),
+    // Independent boundary review: Raw stored-command fields are checked by requireString before the decoder returns domain data.
+    Object.freeze({
+        path: 'packages/relic-hunters/server/relic-game-move.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requireNullableString',
+        maximumMagnitude: 1
+    }),
+    // Independent boundary review: Untrusted AI proposal data is checked by blueprint and visual-fit validators; only issues leave.
+    Object.freeze({
+        path: 'apps/relic-hunter-server-v1/src/relic-expedition-ai.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateExpeditionEvaluationBlueprint',
+        maximumMagnitude: 1
+    }),
+    // Independent boundary review: A caught unknown is immediately normalized to Error.message or String for reporting.
+    Object.freeze({
+        path: 'apps/relic-hunter-server-v1/src/relic-expedition-ai.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toErrorMessage',
+        maximumMagnitude: 1
+    }),
     // Whole-owner retention review: canonical ingress mapping remains one closed
     // command translation; aggregate update keeps authorization, retained metadata
     // and the resulting candidate together. These exact warning-tier sums permit

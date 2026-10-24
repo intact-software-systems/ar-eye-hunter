@@ -1,7 +1,12 @@
-import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
+import {
+    useEffect,
+    useState,
+    type Dispatch,
+    type SetStateAction
+} from 'react';
 
 import type { ArenaConnection } from '../game/arena-runtime/arena-connection-contracts.ts';
-import { BabylonArena } from '../game/BabylonArena.tsx';
+import { BabylonArena } from '../game/babylon-arena.tsx';
 import { colorForId } from '../game/color.ts';
 import {
     createInitialCombatState,
@@ -9,9 +14,19 @@ import {
     createInitialVitalsState,
     getWeaponStats
 } from '../game/simulation.ts';
-import type { ArenaMatchState, PlayerCombatState, PlayerLoadoutState, PlayerVitalsState } from '../game/types.ts';
+import type {
+    ArenaMatchState,
+    PlayerCombatState,
+    PlayerLoadoutState,
+    PlayerVitalsState
+} from '../game/types.ts';
 import { SquadLinkChip } from './squad-link-chip.tsx';
 import { toDirectorLabel, toMatchLabel } from './to-arena-labels.ts';
+
+interface ArenaPresentationClock {
+    readonly matchId: string | undefined;
+    readonly nowEpochMs: number;
+}
 
 interface ArenaPresentation {
     readonly localCombat: PlayerCombatState;
@@ -44,16 +59,17 @@ export function useArenaPresentation(arena: ArenaConnection, nowMs: () => number
     const [localVitals, setLocalVitals] = useState(createInitialVitalsState);
     const [localLoadout, setLocalLoadout] = useState(createInitialLoadoutState);
     const [dismissedMatchId, setDismissedMatchId] = useState<string | undefined>();
-    const [clockNow, setClockNow] = useState(nowMs);
+    const [clock, setClock] = useState<ArenaPresentationClock>(() => ({ matchId: undefined, nowEpochMs: nowMs() }));
     const match = arena.arenaSnapshot?.match;
     useEffect(() => {
         if (match?.status !== 'active') {
             return;
         }
         setDismissedMatchId(undefined);
-        const interval = window.setInterval(() => setClockNow(nowMs()), 500);
+        const interval = window.setInterval(() => setClock({ matchId: match.matchId, nowEpochMs: nowMs() }), 500);
         return () => window.clearInterval(interval);
     }, [match?.status, match?.matchId, nowMs]);
+    const clockNow = clock.matchId === match?.matchId ? clock.nowEpochMs : nowMs();
     return {
         localCombat,
         localVitals,
@@ -77,6 +93,18 @@ export function ArenaScene({ arena, presentation, diagnosticsAttributes }: Arena
             roomId={arena.roomId}
             roomReady={arena.connectionState === 'connected' && Boolean(arena.roomId)}
             networkEnabled={arena.networkEnabled}
+            authority={{
+                roomId: arena.roomId,
+                sessionId: arena.directorStatus.appointment?.sessionId,
+                epoch: arena.directorStatus.appointment?.epoch,
+                local: arena.directorStatus.isDirector,
+                fresh: arena.directorStatus.isFresh && arena.networkEnabled,
+                freshUntilEpochMs: arena.directorStatus.appointment
+                    ? (arena.directorStatus.lastHeartbeatAtEpochMs ??
+                        arena.directorStatus.appointment.appointedAtEpochMs) +
+                        arena.directorStatus.appointment.heartbeatTtlMs
+                    : 0
+            }}
             linkState={arena.linkState}
             presenceNotices={arena.presenceNotices}
             diagnosticsAttributes={diagnosticsAttributes}

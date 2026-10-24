@@ -31,8 +31,9 @@ Recovery and recent-room navigation were delivered in
 [PR #705](https://github.com/intact-software-systems/ar-eye-hunter/pull/705), merged as `eceabcc7d`.
 [PR #706](https://github.com/intact-software-systems/ar-eye-hunter/pull/706) delivered temporary-room
 retention and guarded archival. Production Quick Join verification exposed a deployment mismatch
-and database latency, so the current increment restores that clickable workflow and its regression
-coverage. Seven-day deletion follows, including Relic expedition saves as selected by the maintainer.
+and database latency, repaired in merged [PR #707](https://github.com/intact-software-systems/ar-eye-hunter/pull/707).
+The current increment implements seven-day deletion including Relic expedition saves as selected by
+the maintainer, and fixes the match/feedback defects exposed by two-player production click testing.
 
 ## Current foundation
 
@@ -112,9 +113,8 @@ all-or-none admission decisions before it becomes a platform promise.
 
 | Priority    | Outcomes                                                                                    |
 | ----------- | ------------------------------------------------------------------------------------------- |
-| Current     | Reliable deployed Quick Join, database latency repair, and human-clickable workflow tests.  |
-| Next        | Seven-day deletion of archived temporary rooms and their Relic expedition saves (6).        |
-| Then        | Automatic directory freshness (7), introducing push when the experience needs it.           |
+| Current     | Seven-day deletion with Relic save fencing and verified two-player gameplay (6).            |
+| Next        | Automatic directory freshness (7), introducing push when the experience needs it.           |
 | Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them. |
 | Later       | Scheduled rooms (8) and a separate tournament capability.                                   |
 

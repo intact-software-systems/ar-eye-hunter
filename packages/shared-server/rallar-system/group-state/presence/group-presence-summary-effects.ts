@@ -10,7 +10,12 @@ import type {
 } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
-import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    type Key,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
+
 import type { ResourceInboxReservationFinish } from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
 import {
     computeAppOutboxInsert,
@@ -84,6 +89,7 @@ export interface GroupPresenceSummaryComputedWork {
 export type GroupPresenceSummaryWrite =
     | Readonly<{
         operation: 'insert';
+        groupExpectedRevision: number;
         namespace: string;
         key: string;
         value: string;
@@ -171,7 +177,7 @@ export function computeGroupPresenceSummaryWork(
     return {
         work,
         summary,
-        summaryWrite: computeGroupPresenceSummaryWrite(summary),
+        summaryWrite: computeGroupPresenceSummaryWrite(summary, read.presence.group.entry.revision),
         snapshot,
         downstreamOutboxWrites: downstreamOutboxEntries.map(computeAppOutboxInsert),
         topologyReplan: computeTopologyReplan({ work, read, summary, snapshot, options }),
@@ -225,7 +231,8 @@ export function toGroupPresenceSummaryPredecessorCausalRevision(
 }
 
 function computeGroupPresenceSummaryWrite(
-    computed: GroupPresenceSummaryComputed
+    computed: GroupPresenceSummaryComputed,
+    groupExpectedRevision: number
 ): GroupPresenceSummaryWrite | null {
     if (computed.outcome === 'no-op') {
         return null;
@@ -237,7 +244,7 @@ function computeGroupPresenceSummaryWrite(
         expireAtIsoTimestamp: new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
     };
     return computed.operation === 'insert'
-        ? { ...persisted, operation: 'insert' }
+        ? { ...persisted, operation: 'insert', groupExpectedRevision }
         : {
             ...persisted,
             operation: 'update',

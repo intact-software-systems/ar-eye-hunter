@@ -1,13 +1,17 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { buildSync } from 'esbuild';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 const repoRoot = process.cwd();
 
-// The layering CLAUDE.md describes: `shared` is runtime-agnostic and depends on nothing, graph and
-// the two runtime halves sit above it, and only shared-test may reach across into both halves.
-// A package may import an alias only if it is listed here.
+// Runtime-agnostic packages stay below the browser and server halves.
+// Explicit runtime boundaries may add dependencies without exposing them through the pure entry.
 const PACKAGE_DEPENDENCIES: Readonly<Record<string, readonly string[]>> = {
     shared: [],
     'shared-graph': ['shared'],
@@ -15,6 +19,10 @@ const PACKAGE_DEPENDENCIES: Readonly<Record<string, readonly string[]>> = {
     'shared-server': ['shared', 'shared-graph'],
     'shared-test': ['shared', 'shared-graph', 'shared-web', 'shared-server'],
     'relic-hunters': ['shared']
+};
+
+const SOURCE_BOUNDARY_DEPENDENCIES: Readonly<Record<string, readonly string[]>> = {
+    'packages/relic-hunters/server/': ['shared-server']
 };
 
 const ALIAS_BY_PACKAGE: Readonly<Record<string, string>> = {
@@ -46,8 +54,11 @@ function readImportedAliases(filePath: string): readonly string[] {
     return [...source.matchAll(/from\s+'(@[\w-]+)\//gu)].map((match) => match[1]);
 }
 
-function toAllowedAliases(packageName: string): ReadonlySet<string> {
-    const allowed = PACKAGE_DEPENDENCIES[packageName] ?? [];
+function toAllowedAliases(packageName: string, filePath: string): ReadonlySet<string> {
+    const sourceDependencies = Object.entries(SOURCE_BOUNDARY_DEPENDENCIES)
+        .filter(([boundary]) => filePath.startsWith(boundary))
+        .flatMap(([, dependencies]) => dependencies);
+    const allowed = [...PACKAGE_DEPENDENCIES[packageName], ...sourceDependencies];
     return new Set([ALIAS_BY_PACKAGE[packageName], ...allowed.map((name) => ALIAS_BY_PACKAGE[name])]);
 }
 
@@ -69,11 +80,10 @@ describe('package dependency direction', () => {
     it.each(Object.keys(PACKAGE_DEPENDENCIES))(
         'keeps every %s import inside its declared dependencies',
         (packageName) => {
-            const allowed = toAllowedAliases(packageName);
             const violations = readSourceFiles(`packages/${packageName}`).flatMap((filePath) =>
                 readImportedAliases(filePath)
                     .filter((alias) => Object.values(ALIAS_BY_PACKAGE).includes(alias))
-                    .filter((alias) => !allowed.has(alias))
+                    .filter((alias) => !toAllowedAliases(packageName, filePath).has(alias))
                     .map((alias) => `${filePath} imports ${alias}`)
             );
 
@@ -94,6 +104,30 @@ describe('package dependency direction', () => {
             const declared = Object.keys(config.compilerOptions?.paths ?? {}).map((mapping) => mapping.replace(/\/\*$/u, ''));
 
             expect(declared.filter((alias) => !permitted.has(alias)).toSorted()).toEqual([]);
+        }
+    );
+
+    it.each(['packages/relic-hunters/mod.ts', ...readSourceFiles('packages/relic-hunters/src')])(
+        'bundles %s for browsers without server runtime code',
+        (entry) => {
+            const bundle = buildSync({
+                absWorkingDir: repoRoot,
+                entryPoints: [entry],
+                bundle: true,
+                platform: 'browser',
+                format: 'esm',
+                target: 'es2022',
+                tsconfig: 'tsconfig.json',
+                treeShaking: false,
+                write: false,
+                metafile: true
+            });
+            const serverInputs = Object.keys(bundle.metafile.inputs).filter((filePath) =>
+                filePath.startsWith('packages/relic-hunters/server/') ||
+                filePath.startsWith('packages/shared-server/')
+            );
+
+            expect(serverInputs).toEqual([]);
         }
     );
 

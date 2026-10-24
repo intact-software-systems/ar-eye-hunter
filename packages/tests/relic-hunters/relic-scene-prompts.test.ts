@@ -7,9 +7,20 @@ import {
     type RelicGameState,
     type RelicPublicSnapshot
 } from '@relic-hunters/mod.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import { ROAM_MARGIN, ROOM_SIZE } from '../../../apps/relic-hunters-v1/src/game/scene/constants.ts';
-import { computeScenePrompt, roomClueHotspot, roomClueHotspots, samePrompt } from '../../../apps/relic-hunters-v1/src/game/scene/prompts.ts';
+import {
+    computeScenePrompt,
+    roomClueHotspot,
+    roomClueHotspots,
+    samePrompt
+} from '../../../apps/relic-hunters-v1/src/game/scene/prompts.ts';
+import { requireRelicCommandApplied } from './require-relic-command-applied.ts';
 
 describe('Relic scene prompt computation', () => {
     it('shows a turn-based move prompt near an open doorway', () => {
@@ -220,7 +231,7 @@ describe('Relic scene prompt computation', () => {
 
 function lobbySnapshot(): RelicPublicSnapshot {
     let state: RelicGameState = createRelicGame('room-1', 'room-1', 1);
-    state = applyRelicCommand(state, {
+    state = requireRelicCommandApplied(applyRelicCommand(state, {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'join-expedition',
         gameId: 'room-1',
@@ -228,15 +239,15 @@ function lobbySnapshot(): RelicPublicSnapshot {
         characterId: 'kael-ironstride'
     }, {
         senderId: 'alice-session',
-        now: () => 2
-    }).state;
+        now: 2
+    })).state;
 
     return toPublicRelicSnapshot(state);
 }
 
 function planningSnapshot(): RelicPublicSnapshot {
     let state: RelicGameState = createRelicGame('room-1', 'room-1', 1);
-    state = applyRelicCommand(state, {
+    state = requireRelicCommandApplied(applyRelicCommand(state, {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'join-expedition',
         gameId: 'room-1',
@@ -244,17 +255,17 @@ function planningSnapshot(): RelicPublicSnapshot {
         characterId: 'kael-ironstride'
     }, {
         senderId: 'alice-session',
-        now: () => 2
-    }).state;
-    state = applyRelicCommand(state, {
+        now: 2
+    })).state;
+    state = requireRelicCommandApplied(applyRelicCommand(state, {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'start-expedition',
         gameId: 'room-1',
         username: 'Alice'
     }, {
         senderId: 'alice-session',
-        now: () => 3
-    }).state;
+        now: 3
+    })).state;
 
     return toPublicRelicSnapshot(state);
 }

@@ -6,6 +6,7 @@ import {
     RELIC_PROTOCOL_VERSION,
     toPublicRelicSnapshot,
     type RelicCommand,
+    type RelicHunterEvent,
     type RelicPublicSnapshot,
     type RelicServerEvent
 } from '@relic-hunters/mod.ts';
@@ -21,14 +22,26 @@ import type {
     RallarStartOptions
 } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { GroupDirectoryEntry, GroupDirectoryPage, GroupDirectoryRequest } from '@shared/api/group-directory/group-directory-types.ts';
+import type {
+    GroupDirectoryEntry,
+    GroupDirectoryPage,
+    GroupDirectoryRequest
+} from '@shared/api/group-directory/group-directory-types.ts';
 import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+import { requireRelicCommandApplied } from '../../../packages/tests/relic-hunters/require-relic-command-applied.ts';
 import { createGroupSnapshotFixture } from '../../../packages/tests/shared-web/authoritative-group-fixtures.ts';
 import { createManualTimers } from '../../../packages/tests/shared/resilience/manual-timers.ts';
 import { RelicHuntersRuntime } from '../src/game/relic-hunters-runtime.ts';
 import type { RelicWsCommandDelivery } from '../src/game/send-relic-ws-command.ts';
+import type { RelicHunterEventSubscription } from '../src/game/subscribe-relic-hunter-events.ts';
 
 const runtimes: RelicHuntersRuntime[] = [];
 afterEach(async () => {
@@ -39,6 +52,54 @@ afterEach(async () => {
 });
 
 describe('RelicHuntersRuntime', () => {
+    it('clears a private rule refusal when authoritative gameplay advances and ignores late refusals after the finale', async () => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = startRuntime(backend);
+        await runtime.start();
+        const refusal = refusedPlan();
+        backend.deliverHunterEvent(refusal);
+        expect(runtime.getState().error).toBe(refusal.text);
+        backend.deliverSnapshot(relicSnapshot('room-1', 20));
+        expect(runtime.getState().error).toBe(refusal.text);
+        backend.deliverSnapshot({ ...relicSnapshot('room-1', 21), phase: 'finished' });
+        expect(runtime.getState().error).toBeUndefined();
+        backend.deliverHunterEvent(refusal);
+        expect(runtime.getState().error).toBeUndefined();
+    });
+
+    it('clears obsolete rule feedback when another live tab records a plan before the finale', async () => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = startRuntime(backend);
+        await runtime.start();
+        backend.deliverHunterEvent(refusedPlan());
+        backend.deliverHunterEvent({
+            protocolVersion: RELIC_PROTOCOL_VERSION,
+            gameId: 'room-1',
+            principalId: 'alice-client',
+            playerId: 'alice-session',
+            kind: 'action-recorded',
+            round: 1,
+            action: { kind: 'search' }
+        });
+        expect(runtime.getState().error).toBeUndefined();
+        backend.deliverSnapshot({ ...relicSnapshot('room-1', 21), phase: 'finished' });
+        expect(runtime.getState().error).toBeUndefined();
+    });
+
+    it('preserves a transport failure when a newer snapshot expires earlier rule feedback', async () => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = startRuntime(backend);
+        await runtime.start();
+        backend.deliverHunterEvent(refusedPlan());
+        backend.sendWsCommand = async () => {
+            throw new Error('Connection unavailable');
+        };
+        await runtime.getState().submitAction({ kind: 'search' });
+        expect(runtime.getState().error).toBe('Connection unavailable');
+        backend.deliverSnapshot({ ...relicSnapshot('room-1', 21), phase: 'finished' });
+        expect(runtime.getState().error).toBe('Connection unavailable');
+    });
+
     it('timestamps hydration, commands, and resets using its injected clock', async () => {
         const backend = new RelicRuntimeBackend();
         const runtime = startRuntime(backend);
@@ -59,14 +120,14 @@ describe('RelicHuntersRuntime', () => {
         const backend = new RelicRuntimeBackend();
         let game = createRelicGame('room-1', 'room-1', 1);
         const command = { protocolVersion: RELIC_PROTOCOL_VERSION, gameId: 'room-1', username: 'Alice' };
-        game = applyRelicCommand(game, { ...command, kind: 'join-expedition' }, {
+        game = requireRelicCommandApplied(applyRelicCommand(game, { ...command, kind: 'join-expedition' }, {
             senderId: 'client-1',
-            now: () => 2
-        }).state;
-        game = applyRelicCommand(game, { ...command, kind: 'start-expedition' }, {
+            now: 2
+        })).state;
+        game = requireRelicCommandApplied(applyRelicCommand(game, { ...command, kind: 'start-expedition' }, {
             senderId: 'client-1',
-            now: () => backend.timers.nowMs()
-        }).state;
+            now: backend.timers.nowMs()
+        })).state;
         const snapshot = toPublicRelicSnapshot(game);
         expect(snapshot.phase).toBe('planning');
         backend.fetchSnapshot = async (roomId) => {
@@ -491,6 +552,7 @@ class RelicRuntimeBackend implements RelicHuntersRuntime.Dependencies {
     private state = stateFor('room-1');
     private readonly authListeners = new Set<RallarAuthChangeListener>();
     private readonly roomListeners = new Set<(state: RallarRoomState) => void>();
+    private readonly hunterListeners = new Set<RelicHunterEventSubscription>();
     private readonly snapshotListeners = new Set<(event: RelicServerEvent) => void>();
     public readonly roomEntry: RallarRoomEntry;
     public readonly recentRooms: RallarRecentRooms;
@@ -605,8 +667,16 @@ class RelicRuntimeBackend implements RelicHuntersRuntime.Dependencies {
     public onRoundTransitionMessage() {
         return () => undefined;
     }
-    public onHunterEventMessage() {
-        return () => undefined;
+    public onHunterEventMessage(_roomId: string, subscription: RelicHunterEventSubscription) {
+        this.hunterListeners.add(subscription);
+        return () => {
+            this.hunterListeners.delete(subscription);
+        };
+    }
+    public deliverHunterEvent(event: RelicHunterEvent): void {
+        for (const subscription of this.hunterListeners) {
+            subscription.onEvent(event);
+        }
     }
     public authorityStatus() {
         return undefined;
@@ -703,5 +773,17 @@ function directoryEntry(groupId: string): GroupDirectoryEntry {
         isFull: false,
         lifecycleState: 'active',
         peerRttMs: null
+    };
+}
+
+function refusedPlan(): RelicHunterEvent {
+    return {
+        protocolVersion: RELIC_PROTOCOL_VERSION,
+        gameId: 'room-1',
+        principalId: 'alice-client',
+        playerId: 'alice-session',
+        kind: 'command-refused',
+        command: 'submit-action',
+        text: 'Review the revealed actions before planning the next turn.'
     };
 }

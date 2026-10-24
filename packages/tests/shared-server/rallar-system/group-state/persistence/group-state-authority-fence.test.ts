@@ -1,5 +1,4 @@
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
 import type { RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
@@ -104,7 +103,7 @@ describe('GroupStateRepository authority fence', () => {
         }
     });
 
-    it('uses one dense batch read as the authority snapshot on capable repositories', async () => {
+    it('reads one consistent authority batch and observes expired members without deleting them', async () => {
         const runtime = new BatchReadRuntimeStateRepository();
         const repository = createTestGroupStateRepository(runtime);
         const { group, owner } = fixture();
@@ -124,13 +123,11 @@ describe('GroupStateRepository authority fence', () => {
             expiredEntry!.value,
             Date.now() - 1
         );
-        const fallbackRuntime = cloneRuntime(runtime);
-        const expected = await createTestGroupStateRepository(fallbackRuntime).readSnapshotWithAuthorityGuard(
-            group
-        );
+        const groupEntry = await repository.findGroupEntry(group);
         runtime.rejectIndividualReads = true;
 
-        const observation = await repository.readSnapshotWithAuthorityGuard(group);
+        const ref = { applicationId: group.applicationId, workspaceId: group.workspaceId, groupId: group.groupId };
+        const observation = await repository.readSnapshotWithAuthorityGuard(ref);
         const groupKey = groupStateGroupStorageKey(group);
 
         expect(runtime.batchReadCalls).toEqual([
@@ -161,7 +158,12 @@ describe('GroupStateRepository authority fence', () => {
                 }
             ]
         ]);
-        expect(observation).toEqual(expected);
+        expect(observation?.authorityGuard).toEqual({
+            groupRef: ref,
+            entry: groupEntry?.entry,
+            causalGroupRevision: 1
+        });
+        expect(observation?.snapshot.group).toEqual(group);
         expect(observation?.snapshot.members).toEqual([owner]);
         expect([...runtime.data.values()].some((entry) => entry.key === expiredMemberKey)).toBe(true);
     });

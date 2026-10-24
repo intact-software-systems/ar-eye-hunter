@@ -1,6 +1,6 @@
 # Current State
 
-Last reviewed: 2026-10-23.
+Last reviewed: 2026-10-24.
 
 ## Scope and ownership
 
@@ -58,6 +58,9 @@ Gameplay commands use the Rallar WS command channel when a server identity is
 known. REST is used before that identity is available, and reset uses its REST
 endpoint. A failed WS attempt is never resent through REST. Snapshot hydration,
 WS delivery, RTC repair, and timeout repair all use the same acceptance policy.
+The server reads live session and room authority on every AppInbox attempt. Its group revision and
+save CAS share the deletion fence; no process-local game cache or serial command queue owns truth.
+Only the explicit administrator identity grants Keeper controls, badges and start permission.
 Room membership and cosmetic avatar motion never authorize game actions.
 
 Disconnected expedition hunters remain in game state. After the round deadline,

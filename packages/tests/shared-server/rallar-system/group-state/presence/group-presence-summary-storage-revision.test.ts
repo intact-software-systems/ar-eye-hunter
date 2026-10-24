@@ -1,4 +1,10 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import { parseTemporalPlainDateTime, toPgTimestamp } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import type {
     GroupMutationCommand,
@@ -9,9 +15,14 @@ import { computeGroupMutation } from '@shared-server/rallar-system/group-state/m
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
-import type { AuditStamp, Group, GroupMember, GroupRef } from '@shared/api/group-types.ts';
+import type {
+    AuditStamp,
+    Group,
+    GroupMember,
+    GroupRef
+} from '@shared/api/group-types.ts';
 import { decodeCanonicalGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
-import { describe, expect, it } from 'vitest';
+
 import { createTestGroup } from '../../../../create-test-group.ts';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { SCOPE } from '../mutation/group-mutation-test-runtime.ts';
@@ -158,6 +169,7 @@ function mutationRead(storageRevision: number): GroupMutationRead {
     return {
         idempotency: null,
         group: stored(groupStateGroupStorageKey(ref), group, storageRevision),
+        retiredGroup: null,
         expiredGroupEntry: null,
         actorMember: null,
         targetMember: null,

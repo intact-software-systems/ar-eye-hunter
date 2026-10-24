@@ -47,7 +47,7 @@ export async function createRetentionDatabaseFixture(): Promise<RetentionDatabas
     });
     const owner = createTestAuthSession('owner');
     await new AuthSessionRepository(runtime).putSession(owner);
-    const retention = new GroupRetentionService({ repository }, config);
+    const retention = new GroupRetentionService({ repository, groupOwnedAppData: { read: async () => [] } }, config);
     return Object.assign(clock, { storage, runtime, repository, mutations, retention, owner });
 }
 
