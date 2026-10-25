@@ -1,5 +1,3 @@
-const DEFAULT_APP_INBOX_CONFLICT_RETRY_MAX_DELAY_MS = 250;
-
 export const DEFAULT_APP_INBOX_WAIT_MAX_ELAPSED_MSECS = 10_000;
 export const DEFAULT_APP_INBOX_WAIT_RETRY_INTERVAL_MSECS = 500;
 export const DEFAULT_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MSECS = 20_000;
@@ -85,15 +83,6 @@ export function validateAppInboxAttemptDeadlineMargin(
             message:
                 `AppInbox attempt deadline margin ${marginMs} ms must lie inside the ${reservationLeaseMs} ms reservation lease`
         }];
-}
-
-/** A positive integer ceiling; invalid explicit policy fails at construction instead of silently defaulting. */
-export function resolveAppInboxConflictRetryMaxDelayMs(options: AppInboxOptions): number {
-    const delayMs = options.conflictRetryMaxDelayMs ?? DEFAULT_APP_INBOX_CONFLICT_RETRY_MAX_DELAY_MS;
-    if (!Number.isSafeInteger(delayMs) || delayMs < 1 || delayMs > MAX_APP_INBOX_FINISHED_RETENTION_MS) {
-        throw new RangeError(`AppInbox conflict retry maximum delay must be a positive safe integer no greater than ${MAX_APP_INBOX_FINISHED_RETENTION_MS}`);
-    }
-    return delayMs;
 }
 
 /** How far below its reservation lease an attempt's deadline falls. */

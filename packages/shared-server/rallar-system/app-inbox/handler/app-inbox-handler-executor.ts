@@ -43,7 +43,7 @@ import {
 import { toTerminalAppInboxFailure } from '../app-inbox-failure.ts';
 import {
     resolveAppInboxAttemptDeadlineMarginMs,
-    resolveAppInboxConflictRetryMaxDelayMs,
+    MAX_APP_INBOX_FINISHED_RETENTION_MS,
     type AppInboxOptions
 } from '../app-inbox-options.ts';
 import type { AppInboxResultRepository } from '../app-inbox-persistence-ports.ts';
@@ -52,6 +52,8 @@ import { computeAppInboxCompletion, validateAppInboxCompletion } from './app-inb
 import type { AppInboxHandlerRegistration } from './app-inbox-handler-registration.ts';
 import { timeAppInboxPhase } from './app-inbox-phase-timing.ts';
 import { AppInboxTransactionWriter } from './app-inbox-transaction-writer.ts';
+
+const DEFAULT_APP_INBOX_CONFLICT_RETRY_MAX_DELAY_MS = 250;
 
 interface AppInboxExecutionAttempt<Command, Result> extends AppInboxHandlerExecutor.Input<Command, Result> {
     readonly undecodedEnqueue: AppInboxEnqueueInput;
@@ -494,4 +496,13 @@ export class AppInboxHandlerExecutor {
             phase.action
         );
     }
+}
+
+/** A positive integer ceiling; invalid explicit policy fails at construction instead of silently defaulting. */
+function resolveAppInboxConflictRetryMaxDelayMs(options: AppInboxOptions): number {
+    const delayMs = options.conflictRetryMaxDelayMs ?? DEFAULT_APP_INBOX_CONFLICT_RETRY_MAX_DELAY_MS;
+    if (!Number.isSafeInteger(delayMs) || delayMs < 1 || delayMs > MAX_APP_INBOX_FINISHED_RETENTION_MS) {
+        throw new RangeError(`AppInbox conflict retry maximum delay must be a positive safe integer no greater than ${MAX_APP_INBOX_FINISHED_RETENTION_MS}`);
+    }
+    return delayMs;
 }
