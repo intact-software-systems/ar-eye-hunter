@@ -52,7 +52,7 @@ Deno.test('AppInbox rejects invalid attempt and delay bounds instead of silently
         for (const value of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1]) {
             const input = validDecodeApiV1ConfigurationInput();
             input.environmentSource = { group: { roomOwnedAppDataBindings: [] }, appInbox: { retry: { [field]: value } } };
-            assert.throws(() => decodeApiV1Configuration(input), (error: unknown) =>
+            assert.throws(() => decodeApiV1Configuration(input), (error) =>
                 error instanceof ApiV1ConfigurationError && error.issues.some((issue) =>
                     issue.path === `appInbox.retry.${field}` && issue.code === 'invalid-integer'
                 )
@@ -74,7 +74,7 @@ Deno.test('AppInbox delay bounds keep positive jitter and persisted timestamps r
     assert.equal(Temporal.Instant.from('2026-01-01T00:00:00Z').add({ milliseconds: retry.delayMs! }).toString(), '2026-02-06T00:00:00Z');
     for (const field of ['maxDelayMs', 'conflictMaxDelayMs']) {
         input.environmentSource = { group: { roomOwnedAppDataBindings: [] }, appInbox: { retry: { [field]: 2_592_000_001 } } };
-        assert.throws(() => decodeApiV1Configuration(input), (error: unknown) =>
+        assert.throws(() => decodeApiV1Configuration(input), (error) =>
             error instanceof ApiV1ConfigurationError && error.issues.some((issue) => issue.path === `appInbox.retry.${field}`)
         );
     }
