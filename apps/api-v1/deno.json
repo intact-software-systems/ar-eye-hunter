@@ -12,8 +12,7 @@
     "@electric-sql/pglite": "npm:@electric-sql/pglite@0.4.1",
     "prisma": "npm:prisma@^7.8.0",
     "postgres": "npm:postgres@^3.4.9",
-    "graphology": "npm:graphology@0.26.0",
-    "@relic-hunters/": "../../packages/relic-hunters/"
+    "graphology": "npm:graphology@0.26.0"
   },
   "tasks": {
     "dev": "deno run --watch --allow-net --allow-env --allow-read src/main.ts",

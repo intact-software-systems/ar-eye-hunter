@@ -16,11 +16,13 @@ create table app_counter (
 insert into app_counter values ('visits', 0, 0);
 ```
 
-Register on **every queue claimant**, using the same `appInbox` instance that
+Register on each process that owns this operation, using the same `appInbox` instance that
 `RallarServerApplication` exposes. Construct the database and public capability,
 register application operations, construct the server facade with that capability,
 and then start the server. `rallar.start()` seals registration, opens admission
-and starts local workers. A passive producer instead calls
+and starts local workers. Each worker claims platform topics and its locally registered
+application topics; another application’s rows remain untouched on the shared
+queue. Registration is complete before the first worker claim. A passive producer instead calls
 `rallar.start({ queueWorkers: 'disabled' })` after registration and before accepting
 requests. It admits commands and pending/completed replay for a remote claimant
 without running local workers. API process shutdown closes the same AppInbox
@@ -73,3 +75,12 @@ The registration's envelope codec owns its canonical data/authority/sender
 representation. `toLogicalCommand` excludes captured facts, while `decodeResult`
 checks the stored result against the retained winner command. Corrupt stored
 bindings fail closed rather than triggering proposal work or a direct write.
+
+Room-owned saves require an explicit complete database-wide catalog through
+`RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON` (or `group.roomOwnedAppDataBindings` in
+configuration). This counter owns no room save store, so an isolated counter-only
+deployment supplies `[]`. If it shares a database with room-owning applications,
+every process receives the same complete catalog. Retention uses the configured
+scope, namespace and store to delete saves atomically with room retirement.
+Omission fails startup; the catalog is deployment configuration, not runtime
+agreement between processes.

@@ -18,25 +18,30 @@ import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 
-import defaults from '../../resources/configuration/defaults-config.json' with { type: 'json' };
-import { createApiV1AppInbox, type CreateApiV1AppInboxInput } from '../../src/composition/create-api-v1-app-inbox.ts';
-import { createApiV1MutationRuntime, type ApiV1MutationRuntime } from '../../src/composition/create-api-v1-mutation-runtime.ts';
-import { createApiV1RelicServices } from '../../src/composition/create-api-v1-relic-services.ts';
-import { startApiProcess } from '../../src/runtime/api-process-startup.ts';
-import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
-import { withPGliteSql } from '../db/pglite-auth-test-harness.ts';
+import defaults from '@api-v1/resources/configuration/defaults-config.json' with { type: 'json' };
+import { createApiV1AppInbox, type CreateApiV1AppInboxInput } from '@api-v1/src/composition/create-api-v1-app-inbox.ts';
+import { createApiV1MutationRuntime, type ApiV1MutationRuntime } from '@api-v1/src/composition/create-api-v1-mutation-runtime.ts';
+import { startApiProcess } from '@api-v1/src/runtime/api-process-startup.ts';
+import { createApiV1TestQueueResilience } from '@api-v1/test/api-v1-test-queue-resilience.ts';
+import { withPGliteSql } from '@api-v1/test/db/pglite-auth-test-harness.ts';
+import { RELIC_ROOM_DATA_BINDING } from '@relic-hunters/server/relic-game-mutation-service.ts';
+import { createRelicGameServices } from '../src/create-relic-game-services.ts';
 
-Deno.test('a passive API producer admits new work and pending/completed replay while a cold active claimant owns execution and retention', async () => {
+Deno.test('a passive Relic producer admits new work and pending/completed replay while a cold active claimant owns execution and retention', async () => {
     await withPGliteSql(async (database) => {
         const now = Date.now();
         const producer = createMutationRuntime(database, now);
         await seedRoom(producer, now);
         const firstRuntime = createQueueRuntime(producer);
         const firstAppInbox = createApiV1AppInbox({ mutation: producer, runtime: firstRuntime, timing: () => {} });
-        const first = createApiV1RelicServices({
-            mutation: producer,
+        const first = createRelicGameServices({
+            database,
+            groups: producer.groupsRepository,
+            sessions: new AuthSessionPersistence(producer.runtimeStateRepository),
+            serviceId: producer.serviceId,
+            roomOwnedAppDataBindings: [RELIC_ROOM_DATA_BINDING],
             appInbox: firstAppInbox,
-            runtime: firstRuntime,
+            wakeQueue: () => firstRuntime.qboxEngine.wake(),
             wsRuntimeName: 'default-qbox-server',
             nowEpochMs: () => now,
             timing: () => {}
@@ -53,10 +58,14 @@ Deno.test('a passive API producer admits new work and pending/completed replay w
         const coldRuntime = createQueueRuntime(worker);
         const reader = coldRuntime.inboxQueueReader;
         const coldAppInbox = createApiV1AppInbox({ mutation: worker, runtime: coldRuntime, timing: () => {} });
-        const cold = createApiV1RelicServices({
-            mutation: worker,
+        const cold = createRelicGameServices({
+            database,
+            groups: worker.groupsRepository,
+            sessions: new AuthSessionPersistence(worker.runtimeStateRepository),
+            serviceId: worker.serviceId,
+            roomOwnedAppDataBindings: [RELIC_ROOM_DATA_BINDING],
             appInbox: coldAppInbox,
-            runtime: coldRuntime,
+            wakeQueue: () => coldRuntime.qboxEngine.wake(),
             wsRuntimeName: 'default-qbox-server',
             nowEpochMs: () => now,
             timing: () => {}
@@ -155,6 +164,7 @@ function createMutationRuntime(database: PSqlSql, now: number): ApiV1MutationRun
         appInboxNewLaneConcurrency: 1,
         appInboxNewLaneHeldRows: 4,
         disconnectedSessionRetentionMs: 86400000,
+        roomOwnedAppDataBindings: [RELIC_ROOM_DATA_BINDING],
         groupCapacity: { defaultMaxMembers: 10 },
         groupFormationRecomputeDebounceMs: 250,
         groupFormationRecomputeMaxWaitMs: 1000,

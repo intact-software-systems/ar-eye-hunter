@@ -59,6 +59,7 @@ function createProbedMutationRuntime(database: PSqlSql): ApiV1MutationRuntime {
         appInboxNewLaneHeldRows: 4,
         appInboxFinishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,
+        roomOwnedAppDataBindings: [],
         groupCapacity: { defaultMaxMembers: 10 },
         groupCurrentSnapshotCacheMaxEntries: 512,
         groupFormationRecomputeDebounceMs: 250,

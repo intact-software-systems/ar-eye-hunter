@@ -1,6 +1,6 @@
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
-import type { AppInboxType } from '../app-inbox-contracts.ts';
+import { AppInboxType } from '../app-inbox-contracts.ts';
 import type { AppInboxHandlerExecutor } from './app-inbox-handler-executor.ts';
 import type { AppInboxHandlerRegistration } from './app-inbox-handler-registration.ts';
 
@@ -28,6 +28,13 @@ export class AppInboxHandlerRegistry {
         this.inboxQueueReader = dependencies.inboxQueueReader;
         this.handlerExecutor = dependencies.handlerExecutor;
         this.serviceId = config.serviceId;
+        this.inboxQueueReader.registerTopics([
+            ...Object.values(AppInboxType),
+            'app-inbox.group-state',
+            'app-inbox.client-state',
+            'app-inbox.auth-state',
+            'app-inbox.crdt-state'
+        ]);
         this.inboxQueueReader.onRejectedInboxMessageDo({
             onRejectedMessage: async (entry, attemptTelemetry) =>
                 await this.handlerExecutor.rejectMalformedMessage({ entry, telemetry: attemptTelemetry })
@@ -46,7 +53,12 @@ export class AppInboxHandlerRegistry {
             onMessage: async (message, entry, attemptTelemetry) =>
                 await this.handlerExecutor.execute({ registration, message, entry, attemptTelemetry })
         });
+        this.inboxQueueReader.registerTopics([registration.type]);
         this.registeredTypes.add(registration.type);
+    }
+
+    sealRegistrations(): void {
+        this.inboxQueueReader.sealRegistrations();
     }
 
     assertRegistrationComplete(expectedTypes: readonly AppInboxType[]): void {

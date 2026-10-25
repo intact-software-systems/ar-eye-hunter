@@ -177,7 +177,7 @@
         },
         "body": {
           "groupId": "{betaId}",
-          "displayName": "Relic Hunters",
+          "displayName": "Inventory Team",
           "kind": "room",
           "joinMode": "open",
           "maxMembers": 2,
@@ -319,7 +319,7 @@
         },
         "body": {
           "kind": "room",
-          "q": "relic",
+          "q": "inventory",
           "includeEmpty": true
         }
       },
@@ -339,7 +339,7 @@
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "q": "relic",
+          "q": "inventory",
           "includeEmpty": true
         }
       },

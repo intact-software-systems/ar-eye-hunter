@@ -3,7 +3,9 @@ import type { GroupRef, GroupScope } from '@shared/api/group-types.ts';
 import type { PSqlSql } from '../postgres/p-sql-sql.ts';
 import {
     requireEpoch,
+    requireExactKeys,
     requirePositiveInteger,
+    requireRecord,
     requireString
 } from '../rallar-system/protocol/exact-object-decoding.ts';
 import {
@@ -55,19 +57,7 @@ export class RoomOwnedAppData {
     private readonly bindings: readonly RoomOwnedAppData.Binding[];
 
     constructor(repository: Pick<AppDataRepository, 'findEntry'>, bindings: readonly RoomOwnedAppData.Binding[]) {
-        const stores = new Set<string>();
-        this.bindings = bindings.map((binding) => {
-            requireString(binding.applicationId, 'Room-owned data application');
-            requireString(binding.workspaceId, 'Room-owned data workspace');
-            requireString(binding.namespace, 'Room-owned data namespace');
-            requireString(binding.storeName, 'Room-owned data store');
-            const store = JSON.stringify([binding.namespace, binding.storeName]);
-            if (stores.has(store)) {
-                throw new TypeError('A room-owned data store must have exactly one scope owner');
-            }
-            stores.add(store);
-            return { ...binding };
-        });
+        this.bindings = decodeRoomOwnedAppDataBindings(bindings);
         this.repository = repository;
     }
 
@@ -84,6 +74,40 @@ export class RoomOwnedAppData {
             })
         );
     }
+}
+
+export function decodeRoomOwnedAppDataBindings(value: unknown): readonly RoomOwnedAppData.Binding[] {
+    if (!Array.isArray(value)) {
+        throw new TypeError('Room-owned data requires an explicit complete binding array');
+    }
+    const stores = new Set<string>();
+    return Object.freeze(value.map((raw) => {
+        const binding = requireRecord(raw, 'Room-owned data binding');
+        requireExactKeys(
+            binding,
+            ['applicationId', 'workspaceId', 'namespace', 'storeName'],
+            'Room-owned data binding'
+        );
+        requireString(binding.applicationId, 'Room-owned data application');
+        requireString(binding.workspaceId, 'Room-owned data workspace');
+        requireString(binding.namespace, 'Room-owned data namespace');
+        requireString(binding.storeName, 'Room-owned data store');
+        const store = JSON.stringify([binding.namespace, binding.storeName]);
+        if (stores.has(store)) {
+            throw new TypeError('A room-owned data store must have exactly one scope owner');
+        }
+        stores.add(store);
+        const decoded = {
+            applicationId: binding.applicationId,
+            workspaceId: binding.workspaceId,
+            namespace: binding.namespace,
+            storeName: binding.storeName
+        };
+        if (Object.values(decoded).some((part) => part.trim() !== part)) {
+            throw new TypeError('Room-owned data identities must not have surrounding whitespace');
+        }
+        return Object.freeze(decoded);
+    }));
 }
 
 export function computeRoomOwnedAppDataSave({

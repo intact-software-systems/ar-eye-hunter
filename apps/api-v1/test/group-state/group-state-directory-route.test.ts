@@ -142,9 +142,9 @@ Deno.test('group directory keeps forming rooms discoverable and searches both ga
     const expedition = openSnapshot('expedition', ['bob']);
     const snapshots: readonly GroupSnapshot[] = [
         { ...arena, group: { ...arena.group, displayName: 'AR Eye Hunter Arena', lifecycleState: 'forming' } },
-        { ...expedition, group: { ...expedition.group, displayName: 'Relic Hunters Expedition' } }
+        { ...expedition, group: { ...expedition.group, displayName: 'Inventory Team Expedition' } }
     ];
-    for (const [query, groupId] of [['%20AR%20EYE%20%20', 'arena'], ['RELIC%20HUNTERS', 'expedition']]) {
+    for (const [query, groupId] of [['%20AR%20EYE%20%20', 'arena'], ['INVENTORY%20TEAM', 'expedition']]) {
         const page = await readPage(await readDirectory(snapshots, { path: `${DIRECTORY_PATH}?kind=room&q=${query}` }));
         assert.deepEqual(page.entries.map((entry) => entry.groupRef.groupId), [groupId]);
     }

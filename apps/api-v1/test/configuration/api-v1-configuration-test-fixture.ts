@@ -5,168 +5,171 @@ export const CONFIGURATION_SECRET_SENTINELS = {
     meteredApiKey: 'metered-secret-sentinel-2c51c947'
 } as const;
 
-export function validConfigurationDefaultsSource(): MutableApiV1ConfigurationSourceObject {
-    return {
-        http: {
-            port: 8080,
-            corsOrigins: [
-                'http://localhost:5173',
-                'http://localhost:5174',
-                'http://localhost:5175',
-                'http://localhost:5176'
-            ],
-            preflightMaxAgeSeconds: 600
+const CONFIGURATION_DEFAULTS_SOURCE = {
+    http: {
+        port: 8080,
+        corsOrigins: [
+            'http://localhost:5173',
+            'http://localhost:5174',
+            'http://localhost:5175',
+            'http://localhost:5176'
+        ],
+        preflightMaxAgeSeconds: 600
+    },
+    publicApi: {
+        apiBaseUrl: 'http://localhost:8080',
+        wsBaseUrl: 'ws://localhost:8080'
+    },
+    database: {
+        mode: 'pglite-memory',
+        dataDirectory: 'memory://',
+        schemaInitialization: 'auto',
+        pubSub: 'local',
+        applicationPool: {
+            maxConnections: 5,
+            idleTimeoutSeconds: 20
         },
-        publicApi: {
-            apiBaseUrl: 'http://localhost:8080',
-            wsBaseUrl: 'ws://localhost:8080'
-        },
-        database: {
-            mode: 'pglite-memory',
-            dataDirectory: 'memory://',
-            schemaInitialization: 'auto',
-            pubSub: 'local',
-            applicationPool: {
-                maxConnections: 5,
-                idleTimeoutSeconds: 20
-            },
-            listenerPool: {
-                maxConnections: 1,
-                idleTimeoutSeconds: 0
-            }
-        },
-        authentication: {
-            registrationMode: 'public',
-            staticClientsMode: 'demo',
-            adminClientIds: ['admin'],
-            sessionTtlMs: 2_592_000_000,
-            webSocketTicketTtlMs: 30_000,
-            agentSessionTicketTtlMs: 60_000,
-            maxConcurrentPasswordDerivations: 3,
-            rateLimits: {
-                windowMs: 60_000,
-                loginIp: 30,
-                loginUsername: 5,
-                registrationIp: 20,
-                registrationUsername: 5,
-                webSocketTicket: 30
-            }
-        },
-        clientSessions: {
-            disconnectedRetentionMs: 604_800_000
-        },
-        stateApi: {
-            strictReadAuthorization: false,
-            rateLimits: {
-                windowMs: 60_000,
-                request: 300,
-                eventList: 60
-            },
-            circuitBreaker: {
-                failureThreshold: 10,
-                openDurationMs: 10_000,
-                resetDurationMs: 10_000,
-                samplingDurationMs: 10_000
-            }
-        },
-        group: {
-            defaultMaxMembers: 256,
-            currentSnapshotCacheMaxEntries: 512,
-            admission: {
-                windowMs: 60_000,
-                joinPrincipal: 60,
-                joinGroup: 600,
-                presencePrincipal: 120,
-                presenceGroup: 1_200
-            }
-        },
-        topology: {
-            planning: {
-                topologyKind: 'auto',
-                degreeLimit: 5,
-                rttReportingDegreeLimit: 5,
-                treeMinSize: 5,
-                meshMinSize: 16,
-                meshParamK: 2,
-                meshExitWidth: 4,
-                treeExitWidth: 0,
-                rttReplanMinimumLayoutAgeMs: 15_000
-            },
-            recompute: {
-                formationDebounceMs: 500,
-                formationMaxWaitMs: 4_500
-            },
-            rttRefinement: {
-                minIntervalMs: 30_000,
-                vivaldiDeltaThresholdMs: 5
-            },
-            replay: {
-                mode: 'enabled',
-                queueWorkers: 'enabled'
-            },
-            queueResilience: {
-                failureThreshold: 10,
-                openDurationMs: 10_000,
-                resetDurationMs: 10_000,
-                samplingDurationMs: 10_000
-            },
-            delivery: {
-                publicationRetentionMs: 86_400_000,
-                heartbeatIntervalMs: 10_000,
-                leaseDurationMs: 30_000,
-                antiEntropyIntervalMs: 1_000,
-                pageSize: 100,
-                maxPagesPerTurn: 10,
-                maxEntriesPerTurn: 1_000,
-                compactionIntervalMs: 60_000,
-                compactionPageSize: 1_000,
-                reconnectBatchWindowMs: 25,
-                consumerRetentionMs: 86_400_000
-            }
-        },
-        appInbox: {
-            phaseTiming: false,
-            newLaneConcurrency: 4,
-            newLaneHeldRows: 16,
-            completionWait: {
-                maxElapsedMs: 30_000,
-                retryIntervalMs: 250,
-                maxRetryIntervalMs: 1_000,
-                jitterRatio: 0.1
-            },
-            finishedRetentionMs: 86_400_000
-        },
-        ice: {
-            mode: 'local',
-            region: 'eu',
-            cacheTtlMs: 300_000,
-            rateLimit: {
-                windowMs: 60_000,
-                requests: 20
-            }
-        },
-        crdt: {
-            documentTypePolicies: [
-                { documentType: '*', rollout: 'disabled' }
-            ]
-        },
-        blackBox: {
-            operatorToken: {
-                mode: 'disabled',
-                allowedClientIds: [],
-                ttlMs: 86_400_000
-            },
-            pgliteEvidence: {
-                mode: 'disabled',
-                pollIntervalMs: 25
-            }
-        },
-        observability: {
-            timingLogs: true,
-            heapSampleIntervalMs: 30_000,
-            startupSummary: true
+        listenerPool: {
+            maxConnections: 1,
+            idleTimeoutSeconds: 0
         }
-    };
+    },
+    authentication: {
+        registrationMode: 'public',
+        staticClientsMode: 'demo',
+        adminClientIds: ['admin'],
+        sessionTtlMs: 2_592_000_000,
+        webSocketTicketTtlMs: 30_000,
+        agentSessionTicketTtlMs: 60_000,
+        maxConcurrentPasswordDerivations: 3,
+        rateLimits: {
+            windowMs: 60_000,
+            loginIp: 30,
+            loginUsername: 5,
+            registrationIp: 20,
+            registrationUsername: 5,
+            webSocketTicket: 30
+        }
+    },
+    clientSessions: {
+        disconnectedRetentionMs: 604_800_000
+    },
+    stateApi: {
+        strictReadAuthorization: false,
+        rateLimits: {
+            windowMs: 60_000,
+            request: 300,
+            eventList: 60
+        },
+        circuitBreaker: {
+            failureThreshold: 10,
+            openDurationMs: 10_000,
+            resetDurationMs: 10_000,
+            samplingDurationMs: 10_000
+        }
+    },
+    group: {
+        roomOwnedAppDataBindings: [],
+        defaultMaxMembers: 256,
+        currentSnapshotCacheMaxEntries: 512,
+        admission: {
+            windowMs: 60_000,
+            joinPrincipal: 60,
+            joinGroup: 600,
+            presencePrincipal: 120,
+            presenceGroup: 1_200
+        }
+    },
+    topology: {
+        planning: {
+            topologyKind: 'auto',
+            degreeLimit: 5,
+            rttReportingDegreeLimit: 5,
+            treeMinSize: 5,
+            meshMinSize: 16,
+            meshParamK: 2,
+            meshExitWidth: 4,
+            treeExitWidth: 0,
+            rttReplanMinimumLayoutAgeMs: 15_000
+        },
+        recompute: {
+            formationDebounceMs: 500,
+            formationMaxWaitMs: 4_500
+        },
+        rttRefinement: {
+            minIntervalMs: 30_000,
+            vivaldiDeltaThresholdMs: 5
+        },
+        replay: {
+            mode: 'enabled',
+            queueWorkers: 'enabled'
+        },
+        queueResilience: {
+            failureThreshold: 10,
+            openDurationMs: 10_000,
+            resetDurationMs: 10_000,
+            samplingDurationMs: 10_000
+        },
+        delivery: {
+            publicationRetentionMs: 86_400_000,
+            heartbeatIntervalMs: 10_000,
+            leaseDurationMs: 30_000,
+            antiEntropyIntervalMs: 1_000,
+            pageSize: 100,
+            maxPagesPerTurn: 10,
+            maxEntriesPerTurn: 1_000,
+            compactionIntervalMs: 60_000,
+            compactionPageSize: 1_000,
+            reconnectBatchWindowMs: 25,
+            consumerRetentionMs: 86_400_000
+        }
+    },
+    appInbox: {
+        phaseTiming: false,
+        newLaneConcurrency: 4,
+        newLaneHeldRows: 16,
+        completionWait: {
+            maxElapsedMs: 30_000,
+            retryIntervalMs: 250,
+            maxRetryIntervalMs: 1_000,
+            jitterRatio: 0.1
+        },
+        finishedRetentionMs: 86_400_000
+    },
+    ice: {
+        mode: 'local',
+        region: 'eu',
+        cacheTtlMs: 300_000,
+        rateLimit: {
+            windowMs: 60_000,
+            requests: 20
+        }
+    },
+    crdt: {
+        documentTypePolicies: [
+            { documentType: '*', rollout: 'disabled' }
+        ]
+    },
+    blackBox: {
+        operatorToken: {
+            mode: 'disabled',
+            allowedClientIds: [],
+            ttlMs: 86_400_000
+        },
+        pgliteEvidence: {
+            mode: 'disabled',
+            pollIntervalMs: 25
+        }
+    },
+    observability: {
+        timingLogs: true,
+        heapSampleIntervalMs: 30_000,
+        startupSummary: true
+    }
+};
+
+export function validConfigurationDefaultsSource(): MutableApiV1ConfigurationSourceObject {
+    return structuredClone(CONFIGURATION_DEFAULTS_SOURCE);
 }
 
 export function validConfigurationProfileSource(): MutableApiV1ConfigurationSourceObject {
@@ -190,7 +193,7 @@ export function validDecodeApiV1ConfigurationInput(): MutableDecodeApiV1Configur
         profileName: 'dev',
         defaultsSource: validConfigurationDefaultsSource(),
         profileSource: validConfigurationProfileSource(),
-        environmentSource: {},
+        environmentSource: { group: { roomOwnedAppDataBindings: [] } },
         appliedEnvironmentOverrideNames: [],
         secretsSource: {
             authenticationCredentialSecret: CONFIGURATION_SECRET_SENTINELS.authenticationCredentialSecret
@@ -203,6 +206,7 @@ export function validConfigurationEnvironment(
     profile: 'dev' | 'prod' | 'prod-hardened' | 'prod-in-memory' = 'dev'
 ): Record<string, string> {
     const environment: Record<string, string> = {
+        RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON: '[]',
         RALLAR_API_CONFIGURATION_PROFILE: profile,
         RALLAR_AUTH_CREDENTIAL_SECRET: CONFIGURATION_SECRET_SENTINELS.authenticationCredentialSecret
     };

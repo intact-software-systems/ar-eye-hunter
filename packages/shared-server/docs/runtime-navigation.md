@@ -141,6 +141,38 @@ Domain entry owners are located here:
 | Topology config | `rallar-system/topology/inbox/`         | `topology/config/mutation/`                                    |
 | RTC-RTT         | `rallar-system/rtc-rtt/inbox/`          | `rtc-rtt/mutation/`                                            |
 
+## PostgreSQL queue storage
+
+Start at `queuebox/postgres/create-p-sql-resource-inbox-repository.ts`, which
+constructs the entry, reservation, finalization and result owners used by
+`p-sql-queue-box.ts`. The [common QueueBox map](../../shared/queuebox/README.md)
+connects these storage calls to reader registration, lanes and browser/memory
+adapters.
+
+| Boundary                | Concrete owner                                                                            | Result or failure path                                                                                                                                                                        |
+| ----------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Durable enqueue/read    | `p-sql-resource-inbox-entry-repository.ts`, `p-sql-resource-inbox-entry-reader.ts`        | Exact persisted tuple and decoded current row; `resource-inbox-row-codec.ts` rejects corruption. Conditional insert/replace helpers preserve observation identity.                            |
+| Work advertisement      | `read-resource-inbox-work-presences.ts`                                                   | Batched lane booleans; `p-sql-queue-box.ts` coalesces only identical type, policy and topic selections.                                                                                       |
+| Reservation             | `p-sql-resource-inbox-reservation-repository.ts`                                          | Selected supported rows and attempt observations; topic predicates apply before context heads and each claim lane. `resource-inbox-reservation-write.ts` owns the guarded reservation update. |
+| Work-page cursor        | `resolve-resource-inbox-work-position.ts`                                                 | Exact timestamp/positive bigint position or a typed decoding error before SQL. This is cursor protocol validation, not message decoding.                                                      |
+| Completion/finalization | `resource-inbox-results-repository.ts`, `p-sql-resource-inbox-finalization-repository.ts` | Durable typed result and reservation fence; lost reservation fails the existing transaction.                                                                                                  |
+| Expiry/cleanup          | `resource-inbox-maintenance.ts`                                                           | Bounded storage maintenance; independent from the supported-topic claim inventory.                                                                                                            |
+
+Application handlers register through public `RallarServerAppInbox` before
+`start()`. `AppInboxHandlerRegistry` registers platform topics plus each local
+application topic, and seals the reader inventory before its worker starts.
+`QueueMessageReader` passes the selection to every probe and claim; a worker
+with no application operation leaves that operation's rows for an owning
+worker, without consuming attempts or finalizing them. Supported malformed
+messages still reach the existing validation/failure owner.
+
+After a claim, `AppInboxTransactionWriter` remains the sole transaction owner
+for domain changes, result and reservation finalization. A retryable conflict
+returns to the existing QueueBox retry policy and a fresh read; no storage
+adapter retries domain writes locally. The native PostgreSQL selector includes
+`resource-inbox-topic-selection.test.ts`, while claim-order tests exercise the
+actual database ordering/fences.
+
 ## WebSocket registration and invocation
 
 `create-api-v1-system-installers.ts` installs features in this exact order:

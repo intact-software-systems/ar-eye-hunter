@@ -1,4 +1,12 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    computeReservedResourceEntry,
+    isInMemoryQueueEntryReservable,
+    isNewEntryDue,
+    isReservedEntryStartedBefore,
+    isRetryEntryDueBefore
+} from './in-memory-queue-entry.ts';
+import { isResourceInboxTopicSelected } from './resource-inbox/is-resource-inbox-topic-selected.ts';
 
 import { EnqueuedType } from '../api/api-config.ts';
 import type { Unsubscribe } from '../cache/RepositoryInterfaces.ts';
@@ -354,7 +362,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         { typeIds, reservationInput, timeSinceStartTs, observedEntries, excludedContextIds }:
             ResourceInboxTimeoutReservationRequest
     ): Promise<Map<Key, ResourceEntry>> {
-        const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
+        const { maxToReserve, maxAttempts, allowedTopicIds } = toResourceInboxReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
@@ -373,6 +381,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             }
 
             if (
+                isResourceInboxTopicSelected(entry.key.topicId, allowedTopicIds) &&
                 entry.dequeueAudit.attempts < maxAttempts && typeIds.has(entry.typeId) &&
                 !isExpiredResourceEntry(entry, now) &&
                 isReservedEntryStartedBefore(entry, now.subtract(timeSinceStartTs)) &&
@@ -395,7 +404,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         request: ResourceInboxReservationRequest | ResourceInboxReservationObservationRequest
     ): Promise<Map<Key, ResourceEntry> | ResourceInboxReservationObservationResult> {
         const { typeIds, statusIds, reservationInput, observedEntries, contextClaim } = request;
-        const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
+        const { maxToReserve, maxAttempts, allowedTopicIds } = toResourceInboxReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
@@ -414,6 +423,9 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                 continue;
             }
 
+            if (!isResourceInboxTopicSelected(entry.key.topicId, allowedTopicIds)) {
+                continue;
+            }
             if (!isInMemoryQueueEntryReservable({ entry, typeIds, statusIds, maxAttempts, now })) {
                 continue;
             }
@@ -441,10 +453,11 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         overdueBeforeEpochMs: number,
         reservationInput: ResourceInboxFairnessReservationInput
     ): Promise<Map<Key, ResourceInboxFairnessSelection>> {
-        const { maxToReserve, maxAttempts, excludedContextIds } = toResourceInboxFairnessReservationOptions(
-            reservationInput,
-            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
-        );
+        const { maxToReserve, maxAttempts, excludedContextIds, allowedTopicIds } =
+            toResourceInboxFairnessReservationOptions(
+                reservationInput,
+                DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
+            );
         if (typeIds.size === 0 || maxToReserve <= 0) {
             return new Map();
         }
@@ -455,6 +468,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             .filter(([, entry]) =>
                 !isExpiredResourceEntry(entry, now) &&
                 typeIds.has(entry.typeId) &&
+                isResourceInboxTopicSelected(entry.key.topicId, allowedTopicIds) &&
                 entry.status === EntityStatus.RETRY &&
                 entry.dequeueAudit.attempts < maxAttempts &&
                 entry.dequeueAudit.nextTs !== undefined &&
@@ -530,18 +544,34 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             });
 
         return {
-            FINALIZATION: this.hasRetryExhaustionFinalization(typeIds, maxAttempts, finalizationStaleAfterMs),
-            NEW: this.hasEntry(typeIds, maxAttempts, (entry) => isNewEntryDue(entry, now)),
-            RETRY: this.hasEntry(typeIds, maxAttempts, (entry) => isRetryEntryDueBefore(entry, now)),
+            FINALIZATION: this.hasRetryExhaustionFinalization(typeIds, workInput),
+            NEW: this.hasEntry(
+                typeIds,
+                maxAttempts,
+                (entry) =>
+                    isResourceInboxTopicSelected(entry.key.topicId, workInput.allowedTopicIds) &&
+                    isNewEntryDue(entry, now)
+            ),
+            RETRY: this.hasEntry(
+                typeIds,
+                maxAttempts,
+                (entry) =>
+                    isResourceInboxTopicSelected(entry.key.topicId, workInput.allowedTopicIds) &&
+                    isRetryEntryDueBefore(entry, now)
+            ),
             FAIRNESS: this.hasEntry(
                 typeIds,
                 maxAttempts,
-                (entry) => isRetryEntryDueBefore(entry, now.subtract({ milliseconds: staleDueThresholdMs }))
+                (entry) =>
+                    isResourceInboxTopicSelected(entry.key.topicId, workInput.allowedTopicIds) &&
+                    isRetryEntryDueBefore(entry, now.subtract({ milliseconds: staleDueThresholdMs }))
             ),
             TIMEOUT: this.hasEntry(
                 typeIds,
                 maxAttempts,
-                (entry) => isReservedEntryStartedBefore(entry, now.subtract({ milliseconds: reservationLeaseMs }))
+                (entry) =>
+                    isResourceInboxTopicSelected(entry.key.topicId, workInput.allowedTopicIds) &&
+                    isReservedEntryStartedBefore(entry, now.subtract({ milliseconds: reservationLeaseMs }))
             )
         };
     }
@@ -555,15 +585,18 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
 
     private hasRetryExhaustionFinalization(
         typeIds: Set<string>,
-        processingAttempts: number,
-        staleAfterMs: number
+        workInput: ResourceInboxWorkAdvertisementOptions
     ): boolean {
         if (!typeIds.has(EnqueuedType.APP_INBOX)) {
             return false;
         }
         const candidates = this.getRetryExhaustionCandidates(
             new Set([EnqueuedType.APP_INBOX]),
-            { processingAttempts, staleAfterMs },
+            {
+                processingAttempts: workInput.maxAttempts,
+                staleAfterMs: workInput.finalizationStaleAfterMs,
+                allowedTopicIds: workInput.allowedTopicIds
+            },
             this.now()
         );
         return candidates.next().done === false;
@@ -575,13 +608,17 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
      */
     private *getRetryExhaustionCandidates(
         typeIds: ReadonlySet<string>,
-        criteria: Pick<ResourceInboxFinalizationReservationOptions, 'processingAttempts' | 'staleAfterMs'>,
+        criteria: Pick<
+            ResourceInboxFinalizationReservationOptions,
+            'processingAttempts' | 'staleAfterMs' | 'allowedTopicIds'
+        >,
         now: Temporal.Instant
     ): Generator<[ResourceEntryKeyString, ResourceEntry]> {
         const staleBefore = now.subtract({ milliseconds: criteria.staleAfterMs });
         for (const [key, entry] of this.getIndexedEntries(typeIds, EntityStatus.RESERVED)) {
             if (
                 !isExpiredResourceEntry(entry, now) &&
+                isResourceInboxTopicSelected(entry.key.topicId, criteria.allowedTopicIds) &&
                 entry.dequeueAudit.attempts >= criteria.processingAttempts &&
                 entry.dequeueAudit.attempts < Number.MAX_SAFE_INTEGER &&
                 entry.dequeueAudit.startTs !== undefined &&
@@ -699,40 +736,4 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
 
         return removed;
     }
-}
-
-function computeReservedResourceEntry(entry: ResourceEntry, now: Temporal.Instant): ResourceEntry {
-    return {
-        ...entry,
-        status: EntityStatus.RESERVED,
-        dequeueAudit: {
-            startTs: now,
-            endTs: undefined,
-            nextTs: undefined,
-            attempts: entry.dequeueAudit.attempts + 1
-        }
-    };
-}
-
-function isNewEntryDue(entry: ResourceEntry, now: Temporal.Instant): boolean {
-    return entry.status === EntityStatus.NEW &&
-        (entry.dequeueAudit.nextTs === undefined || Temporal.Instant.compare(entry.dequeueAudit.nextTs, now) <= 0);
-}
-
-function isRetryEntryDueBefore(entry: ResourceEntry, dueBefore: Temporal.Instant): boolean {
-    return entry.status === EntityStatus.RETRY && entry.dequeueAudit.nextTs !== undefined &&
-        Temporal.Instant.compare(entry.dequeueAudit.nextTs, dueBefore) <= 0;
-}
-
-function isReservedEntryStartedBefore(entry: ResourceEntry, startedBefore: Temporal.Instant): boolean {
-    return entry.status === EntityStatus.RESERVED && entry.dequeueAudit.startTs !== undefined &&
-        Temporal.Instant.compare(entry.dequeueAudit.startTs, startedBefore) <= 0;
-}
-
-function isInMemoryQueueEntryReservable(read: InMemoryQueueBox.ReservationRead): boolean {
-    const { entry, now } = read;
-    return read.typeIds.has(entry.typeId) && read.statusIds.has(entry.status) &&
-        !isExpiredResourceEntry(entry, now) && entry.status !== EntityStatus.FAILED &&
-        entry.dequeueAudit.attempts < read.maxAttempts &&
-        (entry.dequeueAudit.nextTs === undefined || Temporal.Instant.compare(now, entry.dequeueAudit.nextTs) >= 0);
 }

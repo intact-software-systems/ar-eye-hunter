@@ -1,11 +1,11 @@
-import type { IceConfig } from '@shared/api/api-config.ts';
+import type { ApiConfigResponse, IceConfig } from '@shared/api/api-config.ts';
 import type { ApiJsonObject, ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 import { readApiBaseUrl } from '../api-client-config.ts';
 import { executeHttpRequest, type ApiRequestOptions } from '../api/http-request.ts';
-import { decodeApiConfigResponse, type BrowserApiConfig } from './decode-api-config-response.ts';
+import { decodeApiConfigResponse } from './decode-api-config-response.ts';
 
-export async function readApiConfig(options?: ApiRequestOptions): Promise<BrowserApiConfig> {
+export async function readApiConfig(options?: ApiRequestOptions): Promise<ApiConfigResponse> {
     const decoded = decodeApiConfigResponse(
         await executeHttpRequest<void, ApiJsonValue>(
             readApiBaseUrl(),

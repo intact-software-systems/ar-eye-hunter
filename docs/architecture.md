@@ -157,8 +157,7 @@ expired IDs keep their existing recreation behavior. Audit and idempotency/repla
 their existing lifetime; unrelated application data is untouched.
 
 Relic's server-only mutation owner in `packages/relic-hunters/server` shares that group revision
-fence. Every API worker registers the app-owned `app:relic-hunters:mutate` operation before maintenance
-starts. Relic uses the public application AppInbox registration. It owns command and
+fence. The consumer server registers `app:relic-hunters:mutate` through the public application AppInbox before worker startup. API-only workers never claim that unsupported topic. Every process sharing the database must receive the same complete `RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON` catalog; omission fails startup, and explicit `[]` asserts there are no room-owned stores. Configuration validation is local and does not establish cross-process agreement. It owns command and
 proposal-independent replay identity, schema validation and game policy. Each attempt reads
 the current issued session, room policy and save, computes and validates outside the transaction,
 then first advances the observed group revision before the save CAS, private publication provenance,

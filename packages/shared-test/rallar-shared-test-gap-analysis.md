@@ -18,9 +18,7 @@ Rallar browser/server facade.
 
 Directories intentionally out of scope for this review:
 
-- `apps/relic-hunters-v1`
-- `packages/relic-hunters`
-- `apps/relic-hunter-server-v1`
+- Application-specific game consumers and their rules packages.
 
 ## Sources Reviewed
 

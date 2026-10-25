@@ -12,6 +12,8 @@ import { RelicGameMutationRefusedError } from '@relic-hunters/server/relic-game-
 import type { ApiConfigResponse } from '@shared/api/api-config.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
+import { myServerId } from '@api-v1/src/runtime/runtime-identity.ts';
+import { createRelicGameServices } from './create-relic-game-services.ts';
 import { initRelicDocsLandingRoute } from './relic-docs-landing-route.ts';
 import { createRelicExpeditionInitialStateFactory } from './relic-expedition-ai.ts';
 import { installRelicHunterGame } from './relic-game-service.ts';
@@ -57,10 +59,22 @@ addEventListener('unload', () => {
         console.error('Failed to stop embedded API-v1 resources:', error);
     });
 });
+const relicServices = createRelicGameServices({
+    database: databaseLifecycle.database,
+    groups: rallar.runtime.groupsRepository,
+    sessions: rallar.runtime.authSessionRepository,
+    appInbox: rallar.appInbox,
+    roomOwnedAppDataBindings: configuration.apiV1.group.roomOwnedAppDataBindings,
+    serviceId: myServerId,
+    wsRuntimeName: rallar.ws.serverPeerId,
+    wakeQueue: () => rallar.runtime.qboxEngine.wake(),
+    nowEpochMs: Date.now,
+    timing: createApiTimingSink(configuration.apiV1.observability)
+});
 const relicGame = installRelicHunterGame(rallar, {
     mode: configuration.restAuthorization.mode,
-    inbox: rallar.runtime.relicGameInboxService,
-    mutations: rallar.runtime.relicGameMutations,
+    inbox: relicServices.relicGameInboxService,
+    mutations: relicServices.relicGameMutations,
     createInitialState: createRelicExpeditionInitialStateFactory({
         configuration: configuration.expeditionAi,
         onFallback: (event) => {

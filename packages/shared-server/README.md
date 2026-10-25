@@ -65,7 +65,6 @@ apps/api-v1/src/main.ts
        -> composition/create-api-v1-topology-services.ts
        -> rallar-system/middleware/create-rallar-middleware.ts
        -> composition/create-api-v1-app-inbox.ts
-       -> composition/create-api-v1-relic-services.ts
   -> composition/create-api-v1-admin-services.ts
   -> composition/create-api-v1-system-installers.ts
   -> composition/create-api-v1-route-installers.ts
@@ -152,11 +151,7 @@ paths. Expected lifecycle/idempotency failures are Left values; corrupt stored
 invariants remain distinct failures. A WS delivery handler can finish after
 admission while a REST boundary waits for completion.
 
-See [the non-game counter example](../../examples/server-app-inbox/README.md)
-and [Relic's application consumer](../relic-hunters/server/relic-game-inbox-service.ts).
-Both use the existing queue and transaction owner. Retained Relic data,
-authority and sender remain in their canonical representation; reusable product
-code contains no game policy or predecessor decoder.
+See [the counter example](../../examples/server-app-inbox/README.md). Application consumers use the existing queue and transaction owner. Workers claim platform topics and their sealed local application topics; other applications' rows remain untouched. Room retention requires an explicit complete database-wide room-owned AppData catalog shared by every process using the database.
 
 ## WebSocket entry
 

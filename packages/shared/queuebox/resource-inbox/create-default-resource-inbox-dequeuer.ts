@@ -146,6 +146,7 @@ export interface ResourceInboxDequeuerInput<V> {
 }
 
 export interface DequeueResourceEntryOptions {
+    readonly allowedTopicIds?: ReadonlySet<string>;
     readonly reservationObservation?: 'postgres-ordinary-retry-v1';
     readonly completionNotifications?: ResourceInboxCompletionNotifications;
     /** Whether a caller can wait for a released entry's completion; absent, every completion is awaitable. */
@@ -337,6 +338,7 @@ async function reserveResourceInboxAttempts(
         statusIds: new Set([selection.lane === Reservator.NEW ? EntityStatus.NEW : EntityStatus.RETRY]),
         reservationInput: {
             maxToReserve: selection.maxToReserve,
+            allowedTopicIds: dependencies.options.allowedTopicIds,
             maxAttempts: dependencies.resilience.retryPolicy.maxAttempts
         },
         contextClaim: selection.contextClaim
@@ -366,7 +368,11 @@ async function reserveResourceInboxTimeouts(
         () =>
             dependencies.repository.reserveTimeoutEntries({
                 typeIds: types,
-                reservationInput: { maxToReserve, maxAttempts: dependencies.resilience.retryPolicy.maxAttempts },
+                reservationInput: {
+                    maxToReserve,
+                    allowedTopicIds: dependencies.options.allowedTopicIds,
+                    maxAttempts: dependencies.resilience.retryPolicy.maxAttempts
+                },
                 timeSinceStartTs: Temporal.Duration.from({
                     milliseconds: dependencies.resilience.reservationLeaseMs
                 }),
@@ -396,6 +402,7 @@ async function reserveResourceInboxFairness(
         selectedAtEpochMs - policy.staleDueThresholdMs,
         {
             maxToReserve,
+            allowedTopicIds: dependencies.options.allowedTopicIds,
             maxAttempts: policy.maxAttempts,
             maxToScan: Math.max(types.size, toSaturatedResourceInboxFairnessScanBudget(maxToReserve)),
             excludedContextIds
@@ -428,6 +435,7 @@ async function reserveResourceInboxFinalizations(
         dependencies.resilience.checkFinalization.lockEntryRateLimiter,
         () =>
             dependencies.repository.reserveRetryExhaustionFinalizations(types, {
+                allowedTopicIds: dependencies.options.allowedTopicIds,
                 processingAttempts: dependencies.resilience.retryPolicy.maxAttempts,
                 maxToReserve,
                 staleAfterMs: ResourceInboxResilience.FINALIZATION_STALE_AFTER_MS

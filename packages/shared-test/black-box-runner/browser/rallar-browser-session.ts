@@ -1,4 +1,11 @@
+import type { Browser, BrowserContext, ConsoleMessage, LaunchOptions, Page, Request } from '@playwright/test';
+import type { InlineConfig, ViteDevServer } from 'vite';
+import type { ApiJsonValue } from '../../../shared/api/api-json-value.ts';
 import { Either } from '../../../shared/resilience/Either.ts';
+import type {
+    BlackBoxRallarRuntime,
+    BlackBoxRallarRuntimeInstallationTarget
+} from './rallar-browser-runtime/black-box-rallar-runtime.ts';
 
 import type {
     RallarBrowserDependencies,
@@ -12,29 +19,35 @@ import type {
 import { toRallarScopeDiagnostics } from '../recipes/recipe-rallar-scope.ts';
 import { toBrowserRuntimeConfig } from './browser-rtc-requests.ts';
 import type {
+    BlackBoxRallarConnectDiagnostics,
     BlackBoxRallarConnectionConfig,
-    BlackBoxRallarEvent
+    BlackBoxRallarCrdtCommandDiagnostics,
+    BlackBoxRallarCrdtRuntime,
+    BlackBoxRallarEvent,
+    BlackBoxRallarSendDiagnostics
 } from './rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import { toBlackBoxRallarSerializedError } from './rallar-browser-runtime/black-box-rallar-serialized-error.ts';
 
 export interface RallarBrowserProviderState {
     dependencies?: Promise<RallarBrowserDependencies>;
-    viteServer?: any;
+    viteServer?: ViteDevServer;
     harnessUrl?: string;
-    browser?: any;
+    browser?: Browser;
     sessions: Map<string, RallarBrowserSession>;
 }
 
 interface RallarBrowserCleanupOptions {
     reason?: string;
     closeContext?: boolean;
-    diagnostic?: (topic: string, data?: any) => void;
+    diagnostic?: (topic: string, data?: BlackBoxRallarEvent['data']) => void;
 }
 
 const RALLAR_BROWSER_STATE_KEY = Symbol.for('ar-eye-hunter.black-box-runner.rallar-browser-provider-state');
 const RALLAR_BROWSER_HARNESS_PATH = '/packages/shared-test/black-box-runner/browser/rallar-browser-harness.html';
 
-export function initRallarBrowserProviderState(context: any): RallarBrowserProviderState {
+export function initRallarBrowserProviderState(
+    context: { [RALLAR_BROWSER_STATE_KEY]?: RallarBrowserProviderState; }
+): RallarBrowserProviderState {
     if (!context[RALLAR_BROWSER_STATE_KEY]) {
         context[RALLAR_BROWSER_STATE_KEY] = { sessions: new Map<string, RallarBrowserSession>() };
     }
@@ -42,6 +55,24 @@ export function initRallarBrowserProviderState(context: any): RallarBrowserProvi
 }
 
 export namespace RallarBrowserSession {
+    export interface LocalDiagnostics {
+        readonly status: 'local-only';
+        readonly connection: string;
+        readonly sessionId?: never;
+    }
+
+    export interface BrowserSettings {
+        readonly headless?: boolean;
+        readonly slowMo?: number;
+        readonly launchArgs?: readonly string[];
+        readonly timeoutMs?: number;
+    }
+    export interface HarnessSettings {
+        readonly host?: string;
+        readonly port?: number;
+        readonly strictPort?: boolean;
+    }
+
     export interface Dependencies {
         readonly now: () => number;
         readonly args: RallarRtcClientArgs;
@@ -53,12 +84,12 @@ export namespace RallarBrowserSession {
 
 export class RallarBrowserSession implements RallarRtcRuntimeSession {
     private readonly dependencies: RallarBrowserSession.Dependencies;
-    private browserContext: any;
-    private page: any;
+    private browserContext: BrowserContext | undefined;
+    private page: Page | undefined;
     private closed = false;
     private setupPhase = 'dependencies';
     private harnessUrl = '';
-    connectDiagnostics: any;
+    connectDiagnostics: BlackBoxRallarConnectDiagnostics | RallarBrowserSession.LocalDiagnostics | undefined;
 
     constructor(dependencies: RallarBrowserSession.Dependencies) {
         this.dependencies = dependencies;
@@ -89,7 +120,7 @@ export class RallarBrowserSession implements RallarRtcRuntimeSession {
             this.setupPhase = 'page-load';
             await this.page.goto(this.harnessUrl, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
             await this.page.waitForFunction(
-                () => Boolean((window as any).__blackBoxRallar),
+                () => Boolean((window as Window & BlackBoxRallarRuntimeInstallationTarget).__blackBoxRallar),
                 undefined,
                 { timeout: timeoutMs }
             );
@@ -105,11 +136,15 @@ export class RallarBrowserSession implements RallarRtcRuntimeSession {
         }
     }
 
-    async send(message: any): Promise<any> {
-        let response: any;
+    async send(message: ApiJsonValue): Promise<BlackBoxRallarSendDiagnostics> {
+        let response: BlackBoxRallarSendDiagnostics | undefined;
         try {
-            response = await this.page.evaluate(
-                async (input: any) => await (window as any).__blackBoxRallar.send(input),
+            response = await this.requirePage().evaluate<
+                BlackBoxRallarSendDiagnostics,
+                Parameters<BlackBoxRallarRuntime['send']>[0]
+            >(
+                async (input) =>
+                    await (window as Window & BlackBoxRallarRuntimeInstallationTarget).__blackBoxRallar!.send(input),
                 message
             );
             this.diagnostic('rallar.browser.provider.send_completed', response);
@@ -126,12 +161,18 @@ export class RallarBrowserSession implements RallarRtcRuntimeSession {
         }
     }
 
-    async command(action: string, request: any): Promise<any> {
-        let response: any;
+    async command(action: string, request: ApiJsonValue): Promise<BlackBoxRallarCrdtCommandDiagnostics> {
+        let response: BlackBoxRallarCrdtCommandDiagnostics | undefined;
         try {
-            response = await this.page.evaluate(
-                async (input: { action: string; request: any; }) => {
-                    const command = (window as any).__blackBoxRallar?.crdt?.[input.action];
+            response = await this.requirePage().evaluate<
+                BlackBoxRallarCrdtCommandDiagnostics,
+                { action: string; request: Parameters<BlackBoxRallarCrdtRuntime['open']>[0]; }
+            >(
+                async (input) => {
+                    const runtime = (window as Window & BlackBoxRallarRuntimeInstallationTarget).__blackBoxRallar?.crdt;
+                    const command = runtime === undefined
+                        ? undefined
+                        : Object.entries(runtime).find(([name]) => name === input.action)?.[1];
                     if (typeof command !== 'function') {
                         throw new Error('Browser Rallar runtime does not support CRDT action: ' + input.action);
                     }
@@ -153,7 +194,9 @@ export class RallarBrowserSession implements RallarRtcRuntimeSession {
         try {
             if (!this.closed) {
                 try {
-                    await this.page.evaluate(async () => await (window as any).__blackBoxRallar.close());
+                    await this.requirePage().evaluate(async () =>
+                        await (window as Window & BlackBoxRallarRuntimeInstallationTarget).__blackBoxRallar!.close()
+                    );
                 }
                 catch (error) {
                     this.diagnostic('rallar.browser.provider.runtime_close_failed', {
@@ -168,15 +211,22 @@ export class RallarBrowserSession implements RallarRtcRuntimeSession {
         }
     }
 
+    private requirePage(): Page {
+        if (this.page === undefined) {
+            throw new Error('Browser session has no accepted page');
+        }
+        return this.page;
+    }
+
     private registerPageObservations(): void {
-        this.page.on('console', (message: any) => {
+        this.requirePage().on('console', (message) => {
             const diagnostic = toConsoleMessageDiagnostic(message);
             this.diagnostic(toConsoleMessageTopic(diagnostic.type), diagnostic);
         });
-        this.page.on('pageerror', (error: any) => {
+        this.requirePage().on('pageerror', (error) => {
             this.diagnostic('rallar.browser.pageerror', { error: toBrowserErrorDetails(error) });
         });
-        this.page.on('requestfailed', (request: any) => {
+        this.requirePage().on('requestfailed', (request) => {
             const diagnostic = toRequestFailedDiagnostic(request);
             this.diagnostic(
                 isRallarRequestUrl(this.dependencies.args, diagnostic.url)
@@ -185,7 +235,7 @@ export class RallarBrowserSession implements RallarRtcRuntimeSession {
                 diagnostic
             );
         });
-        this.page.on('close', this.onPageClose.bind(this));
+        this.requirePage().on('close', this.onPageClose.bind(this));
     }
 
     private async onPageClose(): Promise<void> {
@@ -206,8 +256,9 @@ export class RallarBrowserSession implements RallarRtcRuntimeSession {
     private async startRuntime(connectRuntime: boolean): Promise<void> {
         const { args } = this.dependencies;
         this.connectDiagnostics = connectRuntime
-            ? await this.page.evaluate(
-                async (input: BlackBoxRallarConnectionConfig) => await (window as any).__blackBoxRallar.connect(input),
+            ? await this.requirePage().evaluate(
+                async (input: BlackBoxRallarConnectionConfig) =>
+                    await (window as Window & BlackBoxRallarRuntimeInstallationTarget).__blackBoxRallar!.connect(input),
                 toBrowserRuntimeConfig(args)
             )
             : { status: 'local-only', connection: args.connection };
@@ -282,7 +333,7 @@ export class RallarBrowserSession implements RallarRtcRuntimeSession {
         }
     }
 
-    private diagnostic(topic: string, data: any = {}): void {
+    private diagnostic(topic: string, data: BlackBoxRallarEvent['data'] = {}): void {
         const { args, dispatcher } = this.dependencies;
         dispatcher.emitMessage({
             kind: 'diagnostic',
@@ -301,7 +352,7 @@ export class RallarBrowserSession implements RallarRtcRuntimeSession {
         });
     }
 
-    private dispatchProviderClose(data: any): void {
+    private dispatchProviderClose(data: { readonly phase?: string; readonly reason?: string; }): void {
         const { args, dispatcher } = this.dependencies;
         dispatcher.emitClose({
             phase: 'close',
@@ -325,14 +376,14 @@ export class RallarBrowserSession implements RallarRtcRuntimeSession {
 namespace RallarBrowserOperationError {
     export interface Input {
         readonly cause: Error;
-        readonly sendResult: any;
-        readonly diagnostics: any;
+        readonly sendResult: BlackBoxRallarSendDiagnostics | BlackBoxRallarCrdtCommandDiagnostics | undefined;
+        readonly diagnostics: BlackBoxRallarEvent['data'];
     }
 }
 
 class RallarBrowserOperationError extends Error {
-    readonly sendResult: any;
-    readonly diagnostics: any;
+    readonly sendResult: BlackBoxRallarSendDiagnostics | BlackBoxRallarCrdtCommandDiagnostics | undefined;
+    readonly diagnostics: BlackBoxRallarEvent['data'];
 
     constructor(failure: RallarBrowserOperationError.Input) {
         super(failure.cause.message, { cause: failure.cause });
@@ -341,17 +392,15 @@ class RallarBrowserOperationError extends Error {
     }
 }
 
-function validateBrowserSendResult(response: any): Either<Error, true> {
-    if (response?.status === 'no-peers') {
+function validateBrowserSendResult(response: BlackBoxRallarSendDiagnostics): Either<Error, true> {
+    if ('status' in response && response.status === 'no-peers') {
         return Either.ofLeft(new Error('Rallar browser RTC send resolved no target peers.'));
     }
-    const failed = Array.isArray(response?.results)
-        ? response.results.filter((entry: any) =>
-            entry?.result?.status === 'closed' || entry?.result?.status === 'dropped'
-        )
+    const failed = 'results' in response
+        ? response.results.filter((entry) => entry?.result?.status === 'closed' || entry?.result?.status === 'dropped')
         : [];
     if (failed.length > 0) {
-        const statuses = [...new Set(failed.map((entry: any) => entry?.result?.status))].filter(Boolean).join(', ');
+        const statuses = [...new Set(failed.map((entry) => entry?.result?.status))].filter(Boolean).join(', ');
         return Either.ofLeft(
             new Error('Rallar browser RTC send failed for ' + failed.length + ' peer(s). status=' + statuses)
         );
@@ -360,7 +409,7 @@ function validateBrowserSendResult(response: any): Either<Error, true> {
 }
 
 function isDenoRuntime(): boolean {
-    return typeof (globalThis as any).Deno !== 'undefined';
+    return 'Deno' in globalThis;
 }
 
 async function loadDependencies(): Promise<RallarBrowserDependencies> {
@@ -402,8 +451,8 @@ async function readBrowserDependencies(
     return await Promise.resolve(dependencies);
 }
 
-function toBrowserLaunchOptions(effectiveOptions: RallarBrowserRtcProviderOptions): any {
-    const browser = asObject(effectiveOptions.browser);
+function toBrowserLaunchOptions(effectiveOptions: RallarBrowserRtcProviderOptions): LaunchOptions {
+    const browser: RallarBrowserSession.BrowserSettings = effectiveOptions.browser ?? {};
 
     return {
         headless: browser.headless !== false,
@@ -416,7 +465,7 @@ function toBrowserTimeoutMs(
     args: RallarRtcClientArgs,
     effectiveOptions: RallarBrowserRtcProviderOptions
 ): number {
-    const browser = asObject(effectiveOptions.browser);
+    const browser: RallarBrowserSession.BrowserSettings = effectiveOptions.browser ?? {};
     return Number(
         [browser.timeoutMs, args.connectTimeoutMs, args.timeoutMs, 10_000].find((value) => value !== undefined)
     );
@@ -463,7 +512,7 @@ async function startBrowserHarness(
     }
 
     const repoRoot = toRepoRoot(dependencies);
-    const harness = asObject(effectiveOptions.harness);
+    const harness: RallarBrowserSession.HarnessSettings = effectiveOptions.harness ?? {};
     const server = await dependencies.createServer(toBrowserHarnessServerConfig(repoRoot, harness));
 
     await server.listen();
@@ -478,15 +527,14 @@ async function startBrowser(
     state: RallarBrowserProviderState,
     dependencies: RallarBrowserDependencies,
     effectiveOptions: RallarBrowserRtcProviderOptions
-): Promise<any> {
+): Promise<Browser> {
     if (state.browser) {
         return state.browser;
     }
 
-    state.browser = await dependencies.chromium.launch(
-        toBrowserLaunchOptions(effectiveOptions)
-    );
-    return state.browser;
+    const browser: Browser = await dependencies.chromium.launch(toBrowserLaunchOptions(effectiveOptions));
+    state.browser = browser;
+    return browser;
 }
 
 function isRallarRequestUrl(args: RallarRtcClientArgs, url: string | undefined): boolean {
@@ -514,11 +562,17 @@ function toRallarApiBaseUrl(args: RallarRtcClientArgs): string | undefined {
     );
 }
 
-function toConsoleMessageDiagnostic(message: any): any {
+interface ConsoleMessageDiagnostic {
+    type: string;
+    text: string;
+    location: ReturnType<ConsoleMessage['location']>;
+}
+
+function toConsoleMessageDiagnostic(message: ConsoleMessage): ConsoleMessageDiagnostic {
     return {
-        type: typeof message.type === 'function' ? message.type() : undefined,
-        text: typeof message.text === 'function' ? message.text() : undefined,
-        location: typeof message.location === 'function' ? message.location() : undefined
+        type: message.type(),
+        text: message.text(),
+        location: message.location()
     };
 }
 
@@ -534,11 +588,17 @@ function toConsoleMessageTopic(type: string | undefined): string {
     return 'rallar.browser.console';
 }
 
-function toRequestFailedDiagnostic(request: any): any {
+interface RequestFailedDiagnostic {
+    url: string;
+    method: string;
+    failure: ReturnType<Request['failure']>;
+}
+
+function toRequestFailedDiagnostic(request: Request): RequestFailedDiagnostic {
     return {
-        url: typeof request.url === 'function' ? request.url() : undefined,
-        method: typeof request.method === 'function' ? request.method() : undefined,
-        failure: typeof request.failure === 'function' ? request.failure() : undefined
+        url: request.url(),
+        method: request.method(),
+        failure: request.failure()
     };
 }
 
@@ -586,7 +646,7 @@ async function closeSharedResourcesIfIdle(
     }
 }
 
-function toBrowserHarnessServerConfig(repoRoot: string, harness: any): any {
+function toBrowserHarnessServerConfig(repoRoot: string, harness: RallarBrowserSession.HarnessSettings): InlineConfig {
     return {
         configFile: false,
         root: repoRoot,
@@ -597,8 +657,7 @@ function toBrowserHarnessServerConfig(repoRoot: string, harness: any): any {
                 '@shared-server': repoRoot + '/packages/shared-server',
                 '@shared-web': repoRoot + '/packages/shared-web',
                 '@shared-graph': repoRoot + '/packages/shared-graph',
-                '@shared': repoRoot + '/packages/shared',
-                '@relic-hunters': repoRoot + '/packages/relic-hunters'
+                '@shared': repoRoot + '/packages/shared'
             }
         },
         server: {
@@ -610,10 +669,6 @@ function toBrowserHarnessServerConfig(repoRoot: string, harness: any): any {
             }
         }
     };
-}
-
-function asObject(value: any): any {
-    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
 function toBrowserErrorDetails(error: unknown): ReturnType<typeof toBlackBoxRallarSerializedError> {

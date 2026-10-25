@@ -2,6 +2,7 @@ import {
     MAX_APP_INBOX_FINISHED_RETENTION_MS,
     MIN_APP_INBOX_FINISHED_RETENTION_MS
 } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
+import { decodeRoomOwnedAppDataBindings, type RoomOwnedAppData } from '@shared-server/app-data/room-owned-app-data.ts';
 import { MAX_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS } from '@shared-server/rallar-system/topology/planning/resolve-rtt-replan-promotion.ts';
 import { decodeRallarCrdtDocumentTypePolicies } from '@shared/crdt/mod.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -51,6 +52,45 @@ export function decodeApiV1Configuration(
         decodedSources.issues
     );
     const structuredValues = new ApiV1ConfigurationStructuredValueDecoder(decoder);
+    const secrets = readApiV1ConfigurationSecrets(input.secretsSource, decoder);
+
+    const authentication = decodeAuthentication({
+        values: decoder,
+        structuredValues,
+        secrets,
+        staticClientsSource: input.staticClientsSource,
+        hardwareConcurrency: input.hardwareConcurrency
+    });
+    const configuration: ApiV1Configuration = {
+        profile: decodeProfile(decoder, structuredValues, input),
+        http: decodeHttp(decoder, structuredValues),
+        publicApi: decodePublicApi(decoder),
+        database: decodeDatabase(decoder, secrets),
+        authentication,
+        clientSessions: decodeClientSessions(decoder, authentication),
+        stateApi: decodeStateApi(decoder),
+        group: decodeGroup(decoder),
+        topology: decodeTopology(decoder),
+        appInbox: decodeAppInbox(decoder),
+        ice: decodeIce(decoder, secrets),
+        crdt: decodeCrdt(decoder),
+        blackBox: decodeBlackBox(decoder, structuredValues, secrets),
+        observability: decodeObservability(decoder)
+    };
+    validateApiV1ConfigurationInvariants(decoder, {
+        ...configuration,
+        profileName: configuration.profile.name,
+        productionHardening: configuration.profile.productionHardening
+    });
+    decoder.throwIfIssues();
+    return configuration;
+}
+
+function decodeProfile(
+    decoder: ApiV1ConfigurationValueDecoder,
+    structuredValues: ApiV1ConfigurationStructuredValueDecoder,
+    input: DecodeApiV1ConfigurationInput
+): ApiV1Configuration['profile'] {
     const profileName = decoder.profileName(input.profileName);
     const configuredProductionHardening = decoder.boolean('profile.productionHardening');
     const productionHardening = profileName === 'prod-hardened';
@@ -66,63 +106,7 @@ export function decodeApiV1Configuration(
         input.appliedEnvironmentOverrideNames,
         'environment'
     );
-    const secrets = readApiV1ConfigurationSecrets(input.secretsSource, decoder);
-
-    const http = decodeHttp(decoder, structuredValues);
-    const publicApi = decodePublicApi(decoder);
-    const database = decodeDatabase(decoder, secrets);
-    const authentication = decodeAuthentication({
-        values: decoder,
-        structuredValues,
-        secrets,
-        staticClientsSource: input.staticClientsSource,
-        hardwareConcurrency: input.hardwareConcurrency
-    });
-    const clientSessions = decodeClientSessions(decoder, authentication);
-    const stateApi = decodeStateApi(decoder);
-    const group = decodeGroup(decoder);
-    const topology = decodeTopology(decoder);
-    const appInbox = decodeAppInbox(decoder);
-    const ice = decodeIce(decoder, secrets);
-    const crdt = decodeCrdt(decoder);
-    const blackBox = decodeBlackBox(decoder, structuredValues, secrets);
-    const observability = decodeObservability(decoder);
-
-    validateApiV1ConfigurationInvariants(decoder, {
-        profileName,
-        productionHardening,
-        publicApi,
-        database,
-        authentication,
-        stateApi,
-        topology,
-        appInbox,
-        ice,
-        blackBox,
-        http
-    });
-
-    decoder.throwIfIssues();
-    return {
-        profile: {
-            name: profileName,
-            productionHardening,
-            appliedEnvironmentOverrideNames
-        },
-        http,
-        publicApi,
-        database,
-        authentication,
-        clientSessions,
-        stateApi,
-        group,
-        topology,
-        appInbox,
-        ice,
-        crdt,
-        blackBox,
-        observability
-    };
+    return { name: profileName, productionHardening, appliedEnvironmentOverrideNames };
 }
 
 function decodeHttp(
@@ -171,38 +155,66 @@ function decodeDatabase(
     const listenerPool = decodeDatabasePool(decoder, 'database.listenerPool');
 
     if (mode === 'postgres') {
-        const url = requireApiV1DatabaseUrl(decoder, secrets.databaseUrl);
-        if (schemaInitialization !== 'disabled') {
-            decoder.invariant(
-                'database.schemaInitialization',
-                'postgres-schema-initialization',
-                'PostgreSQL requires disabled application schema initialization.'
-            );
-        }
-        if (pubSub !== 'postgres' && pubSub !== 'disabled') {
-            decoder.invariant(
-                'database.pubSub',
-                'postgres-pub-sub',
-                'PostgreSQL permits only postgres or disabled pub/sub.'
-            );
-        }
-        if (decoder.hasExplicitOverlay('database.dataDirectory')) {
-            decoder.invariant(
-                'database.dataDirectory',
-                'postgres-data-directory',
-                'PostgreSQL does not accept a PGlite data directory.'
-            );
-        }
-        return {
-            mode,
-            url,
-            schemaInitialization: 'disabled',
-            pubSub: pubSub === 'disabled' ? 'disabled' : 'postgres',
+        return decodePostgresDatabase(decoder, secrets, {
+            schemaInitialization,
+            pubSub,
             applicationPool,
             listenerPool
-        };
+        });
     }
+    return decodePGliteDatabase(decoder, { mode, schemaInitialization, pubSub, applicationPool, listenerPool });
+}
 
+interface DatabaseConfigurationSources {
+    readonly schemaInitialization: 'auto' | 'disabled';
+    readonly pubSub: 'postgres' | 'local' | 'disabled';
+    readonly applicationPool: ApiV1DatabasePoolConfiguration;
+    readonly listenerPool: ApiV1DatabasePoolConfiguration;
+}
+
+function decodePostgresDatabase(
+    decoder: ApiV1ConfigurationValueDecoder,
+    secrets: ApiV1ConfigurationSecrets,
+    sources: DatabaseConfigurationSources
+): ApiV1DatabaseConfiguration {
+    const { schemaInitialization, pubSub, applicationPool, listenerPool } = sources;
+    const url = requireApiV1DatabaseUrl(decoder, secrets.databaseUrl);
+    if (schemaInitialization !== 'disabled') {
+        decoder.invariant(
+            'database.schemaInitialization',
+            'postgres-schema-initialization',
+            'PostgreSQL requires disabled application schema initialization.'
+        );
+    }
+    if (pubSub !== 'postgres' && pubSub !== 'disabled') {
+        decoder.invariant(
+            'database.pubSub',
+            'postgres-pub-sub',
+            'PostgreSQL permits only postgres or disabled pub/sub.'
+        );
+    }
+    if (decoder.hasExplicitOverlay('database.dataDirectory')) {
+        decoder.invariant(
+            'database.dataDirectory',
+            'postgres-data-directory',
+            'PostgreSQL does not accept a PGlite data directory.'
+        );
+    }
+    return {
+        mode: 'postgres',
+        url,
+        schemaInitialization: 'disabled',
+        pubSub: pubSub === 'disabled' ? 'disabled' : 'postgres',
+        applicationPool,
+        listenerPool
+    };
+}
+
+function decodePGliteDatabase(
+    decoder: ApiV1ConfigurationValueDecoder,
+    sources: DatabaseConfigurationSources & { readonly mode: 'pglite-file' | 'pglite-memory'; }
+): ApiV1DatabaseConfiguration {
+    const { mode, schemaInitialization, pubSub, applicationPool, listenerPool } = sources;
     const dataDirectory = decoder.nonEmptyString('database.dataDirectory');
     if (pubSub !== 'local' && pubSub !== 'disabled') {
         decoder.invariant(
@@ -376,6 +388,7 @@ function decodeGroup(
     return {
         defaultMaxMembers: defaultMaxMembers === 0 ? null : defaultMaxMembers,
         currentSnapshotCacheMaxEntries: decoder.integer('group.currentSnapshotCacheMaxEntries', 1),
+        roomOwnedAppDataBindings: decodeRoomOwnedBindings(decoder),
         admission: {
             windowMs: decoder.integer('group.admission.windowMs', 1),
             joinPrincipal: decoder.integer('group.admission.joinPrincipal', 1),
@@ -390,27 +403,7 @@ function decodeTopology(
     decoder: ApiV1ConfigurationValueDecoder
 ): ApiV1TopologyConfiguration {
     return {
-        planning: {
-            topologyKind: decoder.enumeration(
-                'topology.planning.topologyKind',
-                ['auto', 'star', 'tree', 'mesh'] as const
-            ),
-            degreeLimit: decoder.integer('topology.planning.degreeLimit', 1),
-            rttReportingDegreeLimit: decoder.integer(
-                'topology.planning.rttReportingDegreeLimit',
-                1
-            ),
-            treeMinSize: decoder.integer('topology.planning.treeMinSize', 1),
-            meshMinSize: decoder.integer('topology.planning.meshMinSize', 1),
-            meshParamK: decoder.integer('topology.planning.meshParamK', 1),
-            meshExitWidth: decoder.integer('topology.planning.meshExitWidth', 0),
-            treeExitWidth: decoder.integer('topology.planning.treeExitWidth', 0),
-            rttReplanMinimumLayoutAgeMs: decoder.integer(
-                'topology.planning.rttReplanMinimumLayoutAgeMs',
-                0,
-                MAX_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS
-            )
-        },
+        planning: decodeTopologyPlanning(decoder),
         recompute: {
             formationDebounceMs: decoder.integer(
                 'topology.recompute.formationDebounceMs',
@@ -436,43 +429,71 @@ function decodeTopology(
             )
         },
         queueResilience: decodeCircuitBreaker(decoder, 'topology.queueResilience'),
-        delivery: {
-            publicationRetentionMs: decoder.integer(
-                'topology.delivery.publicationRetentionMs',
-                1
-            ),
-            heartbeatIntervalMs: decoder.integer(
-                'topology.delivery.heartbeatIntervalMs',
-                1
-            ),
-            leaseDurationMs: decoder.integer('topology.delivery.leaseDurationMs', 2),
-            antiEntropyIntervalMs: decoder.integer(
-                'topology.delivery.antiEntropyIntervalMs',
-                1
-            ),
-            pageSize: decoder.integer('topology.delivery.pageSize', 1),
-            maxPagesPerTurn: decoder.integer('topology.delivery.maxPagesPerTurn', 1),
-            maxEntriesPerTurn: decoder.integer(
-                'topology.delivery.maxEntriesPerTurn',
-                1
-            ),
-            compactionIntervalMs: decoder.integer(
-                'topology.delivery.compactionIntervalMs',
-                1
-            ),
-            compactionPageSize: decoder.integer(
-                'topology.delivery.compactionPageSize',
-                1
-            ),
-            reconnectBatchWindowMs: decoder.integer(
-                'topology.delivery.reconnectBatchWindowMs',
-                0
-            ),
-            consumerRetentionMs: decoder.integer(
-                'topology.delivery.consumerRetentionMs',
-                1
-            )
-        }
+        delivery: decodeTopologyDelivery(decoder)
+    };
+}
+
+function decodeTopologyPlanning(decoder: ApiV1ConfigurationValueDecoder): ApiV1TopologyConfiguration['planning'] {
+    return {
+        topologyKind: decoder.enumeration(
+            'topology.planning.topologyKind',
+            ['auto', 'star', 'tree', 'mesh'] as const
+        ),
+        degreeLimit: decoder.integer('topology.planning.degreeLimit', 1),
+        rttReportingDegreeLimit: decoder.integer(
+            'topology.planning.rttReportingDegreeLimit',
+            1
+        ),
+        treeMinSize: decoder.integer('topology.planning.treeMinSize', 1),
+        meshMinSize: decoder.integer('topology.planning.meshMinSize', 1),
+        meshParamK: decoder.integer('topology.planning.meshParamK', 1),
+        meshExitWidth: decoder.integer('topology.planning.meshExitWidth', 0),
+        treeExitWidth: decoder.integer('topology.planning.treeExitWidth', 0),
+        rttReplanMinimumLayoutAgeMs: decoder.integer(
+            'topology.planning.rttReplanMinimumLayoutAgeMs',
+            0,
+            MAX_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS
+        )
+    };
+}
+
+function decodeTopologyDelivery(decoder: ApiV1ConfigurationValueDecoder): ApiV1TopologyConfiguration['delivery'] {
+    return {
+        publicationRetentionMs: decoder.integer(
+            'topology.delivery.publicationRetentionMs',
+            1
+        ),
+        heartbeatIntervalMs: decoder.integer(
+            'topology.delivery.heartbeatIntervalMs',
+            1
+        ),
+        leaseDurationMs: decoder.integer('topology.delivery.leaseDurationMs', 2),
+        antiEntropyIntervalMs: decoder.integer(
+            'topology.delivery.antiEntropyIntervalMs',
+            1
+        ),
+        pageSize: decoder.integer('topology.delivery.pageSize', 1),
+        maxPagesPerTurn: decoder.integer('topology.delivery.maxPagesPerTurn', 1),
+        maxEntriesPerTurn: decoder.integer(
+            'topology.delivery.maxEntriesPerTurn',
+            1
+        ),
+        compactionIntervalMs: decoder.integer(
+            'topology.delivery.compactionIntervalMs',
+            1
+        ),
+        compactionPageSize: decoder.integer(
+            'topology.delivery.compactionPageSize',
+            1
+        ),
+        reconnectBatchWindowMs: decoder.integer(
+            'topology.delivery.reconnectBatchWindowMs',
+            0
+        ),
+        consumerRetentionMs: decoder.integer(
+            'topology.delivery.consumerRetentionMs',
+            1
+        )
     };
 }
 
@@ -665,4 +686,19 @@ function decodeObservability(
         heapSampleIntervalMs: decoder.integer('observability.heapSampleIntervalMs', 1_000, 3_600_000),
         startupSummary: decoder.boolean('observability.startupSummary')
     };
+}
+
+function decodeRoomOwnedBindings(decoder: ApiV1ConfigurationValueDecoder): readonly RoomOwnedAppData.Binding[] {
+    const path = 'group.roomOwnedAppDataBindings';
+    try {
+        return decodeRoomOwnedAppDataBindings(decoder.sourceValue(path));
+    }
+    catch {
+        decoder.sourceIssue(
+            path,
+            'invalid-room-owned-catalog',
+            'An explicit complete room-owned data binding array is required, with exact identities and unique store ownership.'
+        );
+        return [];
+    }
 }

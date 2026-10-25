@@ -93,7 +93,12 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
         this.now = now;
         this.releaseTiming = releaseTiming === undefined ? undefined : new PSqlQueueReleaseTiming(releaseTiming);
         this.workPresenceReads = new TurnBatchedReads({
-            toKeyId: (read) => JSON.stringify([[...read.typeIds].sort(), toWorkPresenceDurations(read)]),
+            toKeyId: (read) =>
+                JSON.stringify([
+                    [...read.typeIds].sort(),
+                    toWorkPresenceDurations(read),
+                    read.allowedTopicIds === undefined ? null : [...read.allowedTopicIds].sort()
+                ]),
             readBatch: (reads) => resourceInbox.reservations.readWorkPresences(reads)
         });
     }
@@ -125,6 +130,7 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
             toResourceInboxWorkAdvertisementOptions(workInput);
         const presence = await this.workPresenceReads.read({
             typeIds,
+            allowedTopicIds: workInput.allowedTopicIds,
             maxAttempts,
             reservationLeaseMs,
             finalizationStaleAfterMs,
@@ -304,6 +310,7 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                     typeIds,
                     overdueBeforeEpochMs,
                     {
+                        allowedTopicIds: options.allowedTopicIds,
                         maxToReserve: options.maxToReserve,
                         maxAttempts: options.maxAttempts,
                         excludedContextIds: options.excludedContextIds ?? new Set()
@@ -350,6 +357,7 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                 typeIds,
                 options.staleAfterMs,
                 {
+                    allowedTopicIds: options.allowedTopicIds,
                     processingAttempts: options.processingAttempts,
                     maxToReserve: options.maxToReserve
                 }

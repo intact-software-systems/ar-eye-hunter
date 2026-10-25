@@ -8,20 +8,11 @@ import {
     type StoredResourceEntry
 } from './indexed-db-queue-box-entry-codec.ts';
 import type { ResourceInboxWorkPage } from './queue-box-types.ts';
+import { isResourceInboxTopicSelected } from './resource-inbox/is-resource-inbox-topic-selected.ts';
 import { EntityStatus, type ResourceEntryKeyString } from './ResourceEntry.ts';
 
-interface ReadFairnessStoredQueueEntriesInput {
-    readonly db: IDBDatabase;
-    readonly indexName: string;
-    readonly maxToScan: number;
-    readonly overdueBeforeEpochMs: number;
-    readonly storeName: string;
-    readonly typeIds: readonly string[];
-    /** Rows of these contexts are read past without counting against the scan budget. */
-    readonly excludedContextIds: ReadonlySet<string> | undefined;
-}
-
 interface ReadStoredQueueEntriesByTypesAndStatusesInput {
+    readonly allowedTopicIds?: ReadonlySet<string>;
     readonly db: IDBDatabase;
     readonly storeName: string;
     readonly typeIds: Iterable<string>;
@@ -221,13 +212,18 @@ export async function readStoredQueueEntriesByTypesAndStatuses(
     const transaction = db.transaction(storeName, 'readonly');
     const pages = await readIndexedDbTransaction(transaction, async () => {
         const index = transaction.objectStore(storeName).index(INDEXED_DB_QUEUE_WORK_INDEX_NAME);
-        return await Promise.all(combinations.map(({ typeId, status }) =>
-            readIndexedDbRequest(
-                index.getAll(IDBKeyRange.bound([typeId, status], [typeId, status, []]), maxToReadPerCombination)
+        return await Promise.all(
+            combinations.map(({ typeId, status }) =>
+                readSelectedStoredQueueEntries(index, {
+                    typeId,
+                    status,
+                    maxToRead: maxToReadPerCombination,
+                    allowedTopicIds: input.allowedTopicIds
+                })
             )
-        ));
+        );
     });
-    return pages.flat().map(decodeStoredResourceEntryValue);
+    return pages.flat();
 }
 
 export async function readExpiredStoredQueueEntries(
@@ -339,88 +335,40 @@ export async function readDeletableCompletedStoredQueueEntries(
     return deletable;
 }
 
-export async function readFairnessStoredQueueEntries(
-    input: ReadFairnessStoredQueueEntriesInput
-): Promise<ReadonlyMap<string, readonly StoredResourceEntry[]>> {
-    const transaction = input.db.transaction(input.storeName, 'readonly');
-    return await readIndexedDbTransaction(transaction, async () => {
-        const index = transaction.objectStore(input.storeName).index(input.indexName);
-        const states = await Promise.all(input.typeIds.map(async (typeId) => ({
-            typeId,
-            entries: await readNextFairnessStoredQueueEntries({
-                index,
-                typeId,
-                overdueBeforeEpochMs: input.overdueBeforeEpochMs
-            })
-        })));
-        // An excluded context's row is read past for free, so the budget counts only rows a claim could take.
-        const isExcluded = (entry: StoredResourceEntry | undefined) =>
-            entry !== undefined && input.excludedContextIds?.has(entry.key.contextId) === true;
-        let scanned = input.typeIds.length - states.filter((state) => isExcluded(state.entries[0])).length;
-        const active = new Set(states.filter((state) => state.entries.length > 0));
-        while (scanned < input.maxToScan && active.size > 0) {
-            const selected = [...active].reduce(earlierFairnessReadState);
-            const next = await readNextFairnessStoredQueueEntries({
-                index,
-                typeId: selected.typeId,
-                overdueBeforeEpochMs: input.overdueBeforeEpochMs,
-                after: selected.entries.at(-1)
-            });
-            if (next.length === 0) {
-                scanned += 1;
-                active.delete(selected);
-                continue;
-            }
-            scanned += isExcluded(next[0]) ? 0 : 1;
-            selected.entries.push(next[0]);
-        }
-        return new Map(states.map((state) => [state.typeId, state.entries]));
-    });
-}
-
-interface FairnessReadState {
+interface SelectedStoredQueueRead {
     readonly typeId: string;
-    readonly entries: StoredResourceEntry[];
+    readonly status: EntityStatus;
+    readonly maxToRead: number;
+    readonly allowedTopicIds: ReadonlySet<string> | undefined;
 }
 
-interface ReadNextFairnessStoredQueueEntriesInput {
-    readonly index: IDBIndex;
-    readonly typeId: string;
-    readonly overdueBeforeEpochMs: number;
-    readonly after?: StoredResourceEntry;
-}
-
-async function readNextFairnessStoredQueueEntries(
-    input: ReadNextFairnessStoredQueueEntriesInput
-): Promise<StoredResourceEntry[]> {
-    const lower = input.after === undefined
-        ? [input.typeId, EntityStatus.RETRY, Number.MIN_SAFE_INTEGER, '']
-        : [
-            input.typeId,
-            EntityStatus.RETRY,
-            input.after.fairnessDueEpochMs!,
-            input.after.keyString
-        ];
-    const values = await readIndexedDbRequest(input.index.getAll(
-        IDBKeyRange.bound(
-            lower,
-            [input.typeId, EntityStatus.RETRY, input.overdueBeforeEpochMs, '\uffff'],
-            input.after !== undefined
-        ),
-        1
-    ));
-    return values.map(decodeStoredResourceEntryValue);
-}
-
-function earlierFairnessReadState(
-    left: FairnessReadState,
-    right: FairnessReadState
-): FairnessReadState {
-    const leftEntry = left.entries.at(-1)!;
-    const rightEntry = right.entries.at(-1)!;
-    const dueOrder = leftEntry.fairnessDueEpochMs! - rightEntry.fairnessDueEpochMs!;
-    if (dueOrder !== 0) {
-        return dueOrder < 0 ? left : right;
+async function readSelectedStoredQueueEntries(
+    index: IDBIndex,
+    selection: SelectedStoredQueueRead
+): Promise<readonly StoredResourceEntry[]> {
+    const { typeId, status, maxToRead, allowedTopicIds } = selection;
+    if (allowedTopicIds?.size === 0) {
+        return [];
     }
-    return indexedDB.cmp(leftEntry.keyString, rightEntry.keyString) <= 0 ? left : right;
+    const entries: StoredResourceEntry[] = [];
+    const pageSize = Math.min(maxToRead, 256);
+    let after: string | undefined;
+    do {
+        const lower = after === undefined ? [typeId, status] : [typeId, status, after];
+        const values = await readIndexedDbRequest(index.getAll(
+            IDBKeyRange.bound(lower, [typeId, status, []], after !== undefined),
+            pageSize
+        ));
+        const page = values.map(decodeStoredResourceEntryValue);
+        for (const entry of page) {
+            if (isResourceInboxTopicSelected(entry.key.topicId, allowedTopicIds)) {
+                entries.push(entry);
+            }
+        }
+        if (page.length < pageSize || entries.length >= maxToRead) {
+            return entries.slice(0, maxToRead);
+        }
+        after = page[page.length - 1].keyString;
+    }
+    while (true);
 }

@@ -209,7 +209,7 @@
         },
         "body": {
           "groupId": "{betaId}",
-          "displayName": "Relic Hunters Expedition {runId}",
+          "displayName": "Inventory Team Expedition {runId}",
           "kind": "room",
           "joinMode": "open",
           "createdByPrincipalId": "{aliceClientId}",
@@ -346,7 +346,7 @@
               "joinMode": "open",
               "maxMembers": "integer",
               "isFull": false,
-              "displayName": "Relic Hunters Expedition {runId}",
+              "displayName": "Inventory Team Expedition {runId}",
               "lifecycleState": "forming"
             },
             {
@@ -401,7 +401,7 @@
               "joinMode": "open",
               "maxMembers": "integer",
               "isFull": false,
-              "displayName": "Relic Hunters Expedition {runId}",
+              "displayName": "Inventory Team Expedition {runId}",
               "lifecycleState": "forming"
             }
           ],
@@ -443,7 +443,7 @@
               "joinMode": "open",
               "maxMembers": "integer",
               "isFull": false,
-              "displayName": "Relic Hunters Expedition {runId}",
+              "displayName": "Inventory Team Expedition {runId}",
               "lifecycleState": "forming",
               "peerRttMs": null
             }
@@ -515,7 +515,7 @@
       "connection": "primary",
       "request": {
         "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true&kind=room&q=RELIC%20HUNTERS",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true&kind=room&q=INVENTORY%20TEAM",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"

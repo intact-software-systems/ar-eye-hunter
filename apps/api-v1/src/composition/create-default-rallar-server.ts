@@ -235,6 +235,7 @@ function createConfiguredApiV1Runtime(
         appInboxNewLaneHeldRows: configuration.appInbox.newLaneHeldRows,
         appInboxFinishedRetentionMs: configuration.appInbox.finishedRetentionMs,
         disconnectedSessionRetentionMs: configuration.clientSessions.disconnectedRetentionMs,
+        roomOwnedAppDataBindings: configuration.group.roomOwnedAppDataBindings,
         groupCapacity: {
             defaultMaxMembers: configuration.group.defaultMaxMembers
         },

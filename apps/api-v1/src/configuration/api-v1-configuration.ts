@@ -1,3 +1,4 @@
+import type { RoomOwnedAppData } from '@shared-server/app-data/room-owned-app-data.ts';
 import type { LoginClientData } from '@shared-server/rallar-system/auth/login/authenticate-auth-user.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 
@@ -114,6 +115,7 @@ export interface ApiV1GroupAdmissionConfiguration {
 }
 
 export interface ApiV1GroupConfiguration {
+    readonly roomOwnedAppDataBindings: readonly RoomOwnedAppData.Binding[];
     readonly defaultMaxMembers: number | null;
     /**
      * Groups whose current snapshot each process keeps between unchanged revisions. Past it the oldest kept group

@@ -173,6 +173,11 @@ function decodeJson(raw: string): ApiV1ConfigurationSourceValue {
 
 const ENVIRONMENT_SETTINGS: readonly EnvironmentSetting[] = [
     {
+        name: 'RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON',
+        decode: decodeJson,
+        apply: (source, value) => source.group.roomOwnedAppDataBindings = value
+    },
+    {
         name: 'PORT',
         decode: decodeNumber,
         apply: (source, value) => source.http.port = value

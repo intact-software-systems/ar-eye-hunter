@@ -116,6 +116,14 @@ export class InboxQueueReader {
         });
     }
 
+    registerTopics(topics: readonly string[]): void {
+        this.reader.registerTopics(topics);
+    }
+
+    sealRegistrations(): void {
+        this.reader.sealRegistrations();
+    }
+
     onInboxMessageDo(type: string, callback: OnQueuedMessageCallback): this {
         this.reader.onMessageDo(type, callback);
         return this;

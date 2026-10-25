@@ -69,9 +69,7 @@ export function toApiV1BlackBoxEnvironment(
     baseEnv: Record<string, string | undefined>
 ): Record<string, string> {
     const env: Record<string, string> = Object.fromEntries(
-        Object.entries(baseEnv).filter(
-            (entry): entry is [string, string] => typeof entry[1] === 'string'
-        )
+        Object.entries(baseEnv).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
     );
     env.PORT = String(options.port);
     const defaultApiBaseUrl = `http://127.0.0.1:${options.port}`;
@@ -93,6 +91,7 @@ export function toApiV1BlackBoxEnvironment(
     env.RALLAR_BB_RUN_ID = options.runId;
     env.RALLAR_BB_EXECUTION_TOKEN = createApiV1BlackBoxExecutionToken();
     env.RALLAR_STATE_WRITE_EVIDENCE_OUTPUT = API_V1_STATE_WRITE_EVIDENCE_OUTPUT;
+    env.RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON = '[]';
     env.RALLAR_API_CONFIGURATION_PROFILE = MANAGED_API_CONFIGURATION_PROFILE;
     env.RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET = env.RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET ??
         'local-api-v1-black-box-operator-secret';
@@ -187,6 +186,7 @@ function toManagedApiServerEnvironment(
     port: number
 ): Record<string, string> {
     const childEnvironment: Record<string, string> = {
+        RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON: '[]',
         RALLAR_API_CONFIGURATION_PROFILE: MANAGED_API_CONFIGURATION_PROFILE,
         PORT: String(port),
         RALLAR_API_BASE_URL: `http://127.0.0.1:${port}`,

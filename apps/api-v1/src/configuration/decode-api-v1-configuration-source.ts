@@ -124,7 +124,7 @@ const CONFIGURATION_KEYS_BY_PATH: Readonly<Record<string, ReadonlySet<string>>> 
         'resetDurationMs',
         'samplingDurationMs'
     ]),
-    group: new Set(['defaultMaxMembers', 'currentSnapshotCacheMaxEntries', 'admission']),
+    group: new Set(['defaultMaxMembers', 'currentSnapshotCacheMaxEntries', 'admission', 'roomOwnedAppDataBindings']),
     'group.admission': new Set([
         'windowMs',
         'joinPrincipal',
@@ -213,6 +213,7 @@ const ENVIRONMENT_NAME_BY_PATH: Readonly<Record<string, string>> = {
     'authentication.rateLimits.registrationUsername': 'RALLAR_REGISTRATION_USER_RATE_LIMIT',
     'clientSessions.disconnectedRetentionMs': 'RALLAR_CLIENT_SESSION_DISCONNECTED_RETENTION_MS',
     'stateApi.strictReadAuthorization': 'RALLAR_STATE_STRICT_READ_AUTH',
+    'group.roomOwnedAppDataBindings': 'RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON',
     'group.defaultMaxMembers': 'RALLAR_GROUP_DEFAULT_MAX_MEMBERS',
     'group.currentSnapshotCacheMaxEntries': 'RALLAR_GROUP_CURRENT_SNAPSHOT_CACHE_MAX_ENTRIES',
     'group.admission.joinPrincipal': 'RALLAR_GROUP_JOIN_ADMISSION_PRINCIPAL_RATE_LIMIT',

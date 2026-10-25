@@ -5,8 +5,7 @@
   "http": {
     "corsOrigins": [
       "https://ar-eye-hunter.pages.dev",
-      "https://blackbox.rallar.intactss.com",
-      "https://relic-hunters-v1.intact-software-systems.workers.dev"
+      "https://blackbox.rallar.intactss.com"
     ]
   },
   "publicApi": {

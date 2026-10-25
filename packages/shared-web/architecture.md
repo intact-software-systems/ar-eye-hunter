@@ -133,10 +133,6 @@ runtime directly, with no duplicate browser-root context layer.
   `rallar.rooms.enter`; room-scoped fallback game sends still use
   `rallar.realtime.room` because the app's match helper owns most transport
   behavior.
-- `apps/relic-hunters-v1` uses the full facade through a runtime adapter for
-  auth, rooms, WS/RTC messages, realtime motion, and RTC lane readiness.
-  Its runtime adapter now maps joins through `rallar.rooms.enter` and keeps the
-  rest of the game on a small app-owned `roomId` abstraction.
 - `apps/rallar-black-box` intentionally imports the full facade dynamically as a
   conformance target. Its Rallar Server REST workbench now
   exposes only the scoped graph and topology endpoints.

@@ -8,6 +8,12 @@ const AUTHENTICATION_SECRET = 'relic-configuration-test-secret-at-least-32-chara
 describe('Relic Hunter server configuration', () => {
     it('resolves one immutable Relic and embedded API-v1 snapshot', async () => {
         const values: Record<string, string | undefined> = {
+            RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON: JSON.stringify([{
+                applicationId: 'rallar-server',
+                workspaceId: 'default',
+                namespace: 'relic-hunter-v1',
+                storeName: 'relic-hunter-games'
+            }]),
             RALLAR_API_CONFIGURATION_PROFILE: 'dev',
             RALLAR_AUTH_CREDENTIAL_SECRET: AUTHENTICATION_SECRET,
             PORT: '8090',
@@ -84,6 +90,25 @@ describe('Relic Hunter server configuration', () => {
         expect(Object.isFrozen(configuration.expeditionAi)).toBe(true);
     });
 
+    it('rejects omitted and mismatched database-wide save ownership instead of appending a local binding', async () => {
+        await expect(readConfiguration({ RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON: undefined }))
+            .rejects.toThrow('roomOwnedAppDataBindings');
+        for (const catalog of [[], [{ applicationId: 'rallar-server', workspaceId: 'other', namespace: 'relic-hunter-v1', storeName: 'relic-hunter-games' }]]) {
+            await expect(readConfiguration({ RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON: JSON.stringify(catalog) }))
+                .rejects.toThrow('exact Relic save binding');
+        }
+    });
+
+    it('uses the generic decoder for the complete catalog, including other applications', async () => {
+        const catalog = [
+            { applicationId: 'rallar-server', workspaceId: 'default', namespace: 'relic-hunter-v1', storeName: 'relic-hunter-games' },
+            { applicationId: 'inventory', workspaceId: 'primary', namespace: 'stock', storeName: 'saves' }
+        ];
+        const configuration = await readConfiguration({ RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON: JSON.stringify(catalog) });
+        expect(configuration.apiV1.group.roomOwnedAppDataBindings).toEqual(catalog);
+        expect(Object.isFrozen(configuration.apiV1.group.roomOwnedAppDataBindings)).toBe(true);
+    });
+
     it('projects only public API values into the browser configuration', async () => {
         const configuration = await readConfiguration({});
         const serializedBrowserConfiguration = JSON.stringify(configuration.browser);
@@ -132,9 +157,15 @@ describe('Relic Hunter server configuration', () => {
 });
 
 async function readConfiguration(
-    overrides: Readonly<Record<string, string>>
+    overrides: Readonly<Record<string, string | undefined>>
 ) {
-    const values: Readonly<Record<string, string>> = {
+    const values: Readonly<Record<string, string | undefined>> = {
+        RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON: JSON.stringify([{
+            applicationId: 'rallar-server',
+            workspaceId: 'default',
+            namespace: 'relic-hunter-v1',
+            storeName: 'relic-hunter-games'
+        }]),
         RALLAR_API_CONFIGURATION_PROFILE: 'dev',
         RALLAR_AUTH_CREDENTIAL_SECRET: AUTHENTICATION_SECRET,
         ...overrides
@@ -169,6 +200,12 @@ function relicResourceUrl(fileName: string): URL {
 
 function productionOverrides(profile: 'prod' | 'prod-hardened'): Readonly<Record<string, string>> {
     return {
+        RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON: JSON.stringify([{
+            applicationId: 'rallar-server',
+            workspaceId: 'default',
+            namespace: 'relic-hunter-v1',
+            storeName: 'relic-hunter-games'
+        }]),
         RALLAR_API_CONFIGURATION_PROFILE: profile,
         AUTH_ADMIN_CLIENT_IDS: 'production-operator',
         DATABASE_URL: 'postgres://configuration-test@database.example.test/rallar',

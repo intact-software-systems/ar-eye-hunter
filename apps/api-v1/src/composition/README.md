@@ -37,9 +37,7 @@ in this order:
    replay policy. A readiness failure shuts the bound server and all constructed runtime owners
    before startup returns.
 
-The Relic server starts at [`apps/relic-hunter-server-v1/src/main.ts`](../../../relic-hunter-server-v1/src/main.ts)
-and supplies the same required API-v1 configuration and database-lifecycle owners with its
-intentional WebSocket options.
+Application servers supply the same required API-v1 configuration and database lifecycle, then register their own operations through `rallar.appInbox` before `rallar.start()`. The API runtime constructs no application-specific services.
 
 ## Runtime invocation and shutdown
 

@@ -172,6 +172,7 @@ export class RallarServerAppInbox {
         if (this.state === 'stopped') {
             throw new Error('Application AppInbox is stopped');
         }
+        this.handlers.registry.sealRegistrations();
         this.state = 'running';
     }
 

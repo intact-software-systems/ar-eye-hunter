@@ -43,6 +43,8 @@ export interface ResourceInboxWorkPage {
 }
 
 export interface ResourceInboxReservationOptions {
+    /** Absent permits every topic; an empty set permits none. */
+    readonly allowedTopicIds?: ReadonlySet<string>;
     readonly maxToReserve: number;
     readonly maxAttempts: number;
 }
@@ -62,6 +64,8 @@ export type ResourceInboxFairnessReservationInput =
     | ResourceInboxFairnessReservationOptions;
 
 export interface ResourceInboxFinalizationReservationOptions {
+    /** Absent permits every topic; an empty set permits none. */
+    readonly allowedTopicIds?: ReadonlySet<string>;
     readonly processingAttempts: number;
     readonly maxToReserve: number;
     readonly staleAfterMs: number;
@@ -71,6 +75,8 @@ export interface ResourceInboxFinalizationReservationOptions {
 // their terminal deletion; recovery never revives an expired command.
 
 export interface ResourceInboxWorkAdvertisementOptions {
+    /** Absent permits every topic; an empty set permits none. */
+    readonly allowedTopicIds?: ReadonlySet<string>;
     readonly maxAttempts: number;
     readonly finalizationStaleAfterMs: number;
     readonly reservationLeaseMs: number;
@@ -316,6 +322,7 @@ export function toResourceInboxWorkAdvertisementOptions(
         throw new Error('staleDueThresholdMs must be a non-negative safe integer');
     }
     return {
+        allowedTopicIds: input.allowedTopicIds,
         maxAttempts: input.maxAttempts,
         finalizationStaleAfterMs: input.finalizationStaleAfterMs,
         reservationLeaseMs: input.reservationLeaseMs,

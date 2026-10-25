@@ -35,9 +35,7 @@ joined later is never served and a keyed server publication asks `ack: 'receiver
 one gets no ranged repair) (D43, D153). The budget is per message: the first requester spends
 `maxRepairs` and another requester of the same sequence falls back to the receipt's retries. Only
 the `outbox` fan-out mints; a keyed publish without a sequence at `live-only` or `none` is refused.
-Relic Hunters' round transitions are that track's consumer: one track per round, the game's
-incarnation (`${gameId}:${createdAtEpochMs}`, since a reset keeps the game id) as ordering key and
-the round the transition enters as epoch, the finish entering the round past the last (D151).
+Application consumers select an ordering key for each independent stream and advance its epoch when the stream restarts.
 [`isALOutboundOwnHopPeer`](./is-al-outbound-own-hop-peer.ts) is the one predicate both owners share.
 A hint names what is missing as inclusive `ALSeqRange` `{ from, to }` ranges (`missingRanges`, at
 most `AL_MESSAGE_RESOURCE_LIMITS.repairRanges` = 128, the most a 256 window can hold), as the

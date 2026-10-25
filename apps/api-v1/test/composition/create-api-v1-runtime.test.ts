@@ -115,6 +115,14 @@ Deno.test('enabled outbound composition provides captured-policy timing at the r
     assert.equal(typeof capabilities[0].createOwner('outbound').start, 'function');
 });
 
+Deno.test('runtime construction refuses an omitted room-owned catalog before any startup step', () => {
+    const events: string[] = [];
+    const input = createInput(events);
+    Reflect.deleteProperty(input, 'roomOwnedAppDataBindings');
+    assert.throws(() => constructApiV1Runtime(input, createOperations(events)), /room-owned|Room-owned/);
+    assert.deepEqual(events, []);
+});
+
 Deno.test('runtime construction preserves the owned startup sequence', () => {
     const events: string[] = [];
     const runtime = constructApiV1Runtime(
@@ -134,7 +142,6 @@ Deno.test('runtime construction preserves the owned startup sequence', () => {
         'runtime-state-expiry',
         'middleware',
         'register:app-inbox-stop',
-        'relic-services',
         'attach-replay',
         'presence-reconciliation',
         'retention-reconciliation',
@@ -309,6 +316,7 @@ function createInput(events: string[]): CreateApiV1RuntimeInput {
         appInboxNewLaneHeldRows: 4,
         appInboxFinishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,
+        roomOwnedAppDataBindings: [],
         groupCapacity: { defaultMaxMembers: 10 },
         groupCurrentSnapshotCacheMaxEntries: 512,
         groupFormationRecomputeDebounceMs: 250,
@@ -381,12 +389,6 @@ function createOperations(events: string[], failAt?: string): ApiV1RuntimeConstr
         createMiddleware: () => {
             record('middleware');
             return SHARED_RUNTIME;
-        },
-        createRelicServices: (input) => {
-            assert.equal(input.wsRuntimeName, 'ws-test');
-            assert.equal(input.appInbox, appInbox);
-            record('relic-services');
-            return { relicGameMutations: {} as never, relicGameInboxService: {} as never };
         },
         startPresenceReconciliation: () => {
             record('presence-reconciliation');

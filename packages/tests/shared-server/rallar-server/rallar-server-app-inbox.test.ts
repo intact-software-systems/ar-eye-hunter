@@ -36,6 +36,24 @@ beforeEach(async () => {
 afterEach(async () => await storage?.close());
 
 describe('public application AppInbox', () => {
+    it('leaves another application pending until a cold owning worker can replay its captured facts', async () => {
+        const admitted = createHarness(storage.sql);
+        const operation = registerStock(admitted);
+        admitted.inbox.start();
+        await operation.enqueue(COMMAND);
+        const before = await storage.sql`select ri_status, ri_attempts, ri_resource from resource_inbox where ri_type_id = 'APP_INBOX'`;
+        const platformOnly = createHarness(storage.sql);
+        platformOnly.inbox.start();
+        await platformOnly.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
+        expect(await storage.sql`select ri_status, ri_attempts, ri_resource from resource_inbox where ri_type_id = 'APP_INBOX'`).toEqual(before);
+        const owner = createHarness(storage.sql);
+        const replay = registerStock(owner);
+        owner.inbox.start();
+        expect(await drain(owner.reader, replay.readReplay(COMMAND))).toEqual(Either.ofRight({ remaining: 7, capturedAt: 101 }));
+        expect(await replay.submit(COMMAND)).toEqual(Either.ofRight({ remaining: 7, capturedAt: 101 }));
+        expect(owner.facts).toEqual([]);
+    });
+
     it('returns durable admission and wakes its owner before any worker runs or result wait begins', async () => {
         const wakeObservations: Promise<readonly { status: string; }[]>[] = [];
         const harness = createHarness(storage.sql, () => {

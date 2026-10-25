@@ -170,7 +170,8 @@ Deno.test('configuration reader applies exact leaf precedence and ignores unrela
         'AUTH_ADMIN_CLIENT_IDS',
         'CORS_ORIGINS',
         'PORT',
-        'RALLAR_BLACK_BOX_PGLITE_SNAPSHOT_DIR'
+        'RALLAR_BLACK_BOX_PGLITE_SNAPSHOT_DIR',
+        'RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON'
     ]);
 
     const invalidPortError = await captureConfigurationError(
@@ -310,8 +311,7 @@ Deno.test('configuration startup summary is useful and contains no secret-derive
         },
         corsOrigins: [
             'https://ar-eye-hunter.pages.dev',
-            'https://blackbox.rallar.intactss.com',
-            'https://relic-hunters-v1.intact-software-systems.workers.dev'
+            'https://blackbox.rallar.intactss.com'
         ],
         workerCategories: {
             apiQueue: 'enabled',
@@ -324,7 +324,8 @@ Deno.test('configuration startup summary is useful and contains no secret-derive
             'AUTH_ADMIN_CLIENT_IDS',
             'METERED_APP_NAME',
             'METERED_REGION',
-            'RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS'
+            'RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS',
+            'RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON'
         ]
     });
     const rendered = JSON.stringify(summary);

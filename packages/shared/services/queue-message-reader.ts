@@ -57,6 +57,8 @@ export namespace QueueMessageReader {
 }
 
 export class QueueMessageReader {
+    private allowedTopicIds: Set<string> | undefined;
+    private registrationsSealed = false;
     private readonly callbacks = new Map<string, OnQueuedMessageCallback>();
     private rejectedMessageCallback: OnRejectedQueuedMessageCallback | undefined;
     private dequeuePassObserver: QueueMessageReader.DequeuePassObserver | undefined;
@@ -75,11 +77,31 @@ export class QueueMessageReader {
             : decodePersistedALMessage(entry.resource);
     }
 
+    registerTopics(topics: readonly string[]): void {
+        if (this.registrationsSealed) {
+            throw new Error('Queue handler registration is sealed');
+        }
+        this.allowedTopicIds ??= new Set();
+        for (const topic of topics) {
+            this.allowedTopicIds.add(topic);
+        }
+    }
+
+    sealRegistrations(): void {
+        this.registrationsSealed = true;
+    }
+
     onMessageDo(type: string, callback: OnQueuedMessageCallback): void {
+        if (this.registrationsSealed) {
+            throw new Error('Queue handler registration is sealed');
+        }
         this.callbacks.set(type, callback);
     }
 
     removeMessageCallback(type: string): boolean {
+        if (this.registrationsSealed) {
+            throw new Error('Queue handler registration is sealed');
+        }
         return this.callbacks.delete(type);
     }
 
@@ -109,10 +131,13 @@ export class QueueMessageReader {
         typesToDequeue: Set<string>,
         resilience: ResourceInboxResilience
     ): Promise<DequeueController.WorkAdvertisement> {
+        if (this.allowedTopicIds !== undefined) {
+            this.sealRegistrations();
+        }
         this.dequeuePassObserver?.onProbeStarted();
         const advertisedLanes = await this.repository.readWorkAdvertisement(
             typesToDequeue,
-            resilience.toWorkAdvertisementOptions()
+            { ...resilience.toWorkAdvertisementOptions(), allowedTopicIds: this.allowedTopicIds }
         );
         this.dequeuePassObserver?.onProbeFinished(advertisedLanes);
         return advertisedLanes;
@@ -120,6 +145,9 @@ export class QueueMessageReader {
 
     /** Resolves with the number of entries this invocation claimed; a preceding probe limits the lanes it offers. */
     async dequeue(input: QueueMessageReader.DequeueInput): Promise<number> {
+        if (this.allowedTopicIds !== undefined) {
+            this.sealRegistrations();
+        }
         const observer = this.dequeuePassObserver;
         observer?.onPassStarted();
         try {
@@ -130,7 +158,7 @@ export class QueueMessageReader {
                     resilience: input.resilience,
                     newLaneClaimOrder: input.newLaneClaimOrder,
                     onDequeuedDo: (entry, attemptTelemetry) => this.dispatchQueuedMessage(entry, attemptTelemetry),
-                    options: this.config.dequeueOptions,
+                    options: { ...this.config.dequeueOptions, allowedTopicIds: this.allowedTopicIds },
                     readLaneBudgets: input.readLaneBudgets,
                     workAdvertisement: input.workAdvertisement,
                     handlerObserver: observer,
