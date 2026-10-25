@@ -50,7 +50,7 @@ import { timeAppInboxPhase } from './app-inbox-phase-timing.ts';
 import { AppInboxTransactionWriter } from './app-inbox-transaction-writer.ts';
 
 // Conflicts recompute from fresh state on outer delivery; they do not need the transient-failure recovery pause.
-const OPTIMISTIC_CONFLICT_RETRY_CEILING_MS = 20;
+const OPTIMISTIC_CONFLICT_RETRY_CEILING_MS = 250;
 
 interface AppInboxExecutionAttempt<Command, Result> extends AppInboxHandlerExecutor.Input<Command, Result> {
     readonly undecodedEnqueue: AppInboxEnqueueInput;

@@ -38,7 +38,7 @@ describe('AppInbox conflict redelivery', () => {
             const delayMs = Number(retry!.dequeueAudit.nextTs!.epochMilliseconds - retry!.dequeueAudit.endTs!.epochMilliseconds);
             expect(delayMs).toBeGreaterThan(0);
             if (failure === 'conflict') {
-                expect(delayMs).toBeLessThanOrEqual(20);
+                expect(delayMs).toBeLessThanOrEqual(250);
             }
             else if (attempt === 6) {
                 expect(delayMs).toBeGreaterThanOrEqual(800);
@@ -52,6 +52,35 @@ describe('AppInbox conflict redelivery', () => {
         await expect(pending).resolves.toMatchObject({ right: { value: 6 } });
         expect(observedValues).toEqual([0, 1, 2, 3, 4, 5, 6]);
         expect(await harness.readEntry()).toMatchObject({ status: EntityStatus.COMPLETED, dequeueAudit: { attempts: 7 } });
+    });
+
+    it('survives a bounded conflict window without exhausting the delivery budget', async () => {
+        const startedAt = Temporal.Instant.from('2026-07-22T12:00:00Z');
+        let now = startedAt;
+        const observedTimes: number[] = [];
+        const harness = createRegisteredHandlerHarness({ now: () => now });
+        harness.service.onStateMessage(AppInboxType.GROUP_CREATE, async (_data, context) => {
+            const elapsedMs = Number(now.epochMilliseconds - startedAt.epochMilliseconds);
+            observedTimes.push(elapsedMs);
+            return await harness.service.commit(context, { accepted: true }, async () => {
+                if (elapsedMs < 500) {
+                    throw new RuntimeStateWriteConflictError();
+                }
+            });
+        });
+        harness.service.enqueueWithoutWaiting(harness.enqueue);
+        for (let attempt = 1; attempt <= 20; attempt += 1) {
+            await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+            const entry = await harness.readEntry();
+            if (entry?.status !== EntityStatus.RETRY) {
+                break;
+            }
+            now = entry.dequeueAudit.nextTs!;
+        }
+        expect(await harness.readEntry()).toMatchObject({ status: EntityStatus.COMPLETED });
+        expect(observedTimes.at(-1)).toBeGreaterThanOrEqual(500);
+        expect(observedTimes.length).toBeLessThan(20);
+        expect(harness.results.entries.size).toBe(1);
     });
 
     it('exhausts twenty conflicting deliveries without an inner retry or another mutation attempt', async () => {
@@ -74,7 +103,7 @@ describe('AppInbox conflict redelivery', () => {
                 expect(entry?.status).toBe(EntityStatus.RETRY);
                 const delayMs = Number(entry!.dequeueAudit.nextTs!.epochMilliseconds - entry!.dequeueAudit.endTs!.epochMilliseconds);
                 expect(delayMs).toBeGreaterThan(0);
-                expect(delayMs).toBeLessThanOrEqual(20);
+                expect(delayMs).toBeLessThanOrEqual(250);
                 now = entry!.dequeueAudit.nextTs!;
             }
         }
