@@ -16,6 +16,7 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { createResourceInboxTestStorage, type ResourceInboxTestStorage } from '../queuebox/resource-inbox-test-storage.ts';
 import { createAppInboxTestResilience } from '../rallar-system/app-inbox/test-support/app-inbox-resource-fixtures.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 
 interface StockCommand {
     readonly warehouse: string;
@@ -427,7 +428,7 @@ interface Harness {
 function createHarness(database: PSqlSql, wakeOwningQueue: () => void = () => {}): Harness {
     const repositories = createPSqlResourceInboxRepository(database, () => new Date());
     const results = new ResourceInboxResultsRepository(database);
-    const finalizeRetry = createAppInboxRetryFinalizer({ database });
+    const finalizeRetry = createAppInboxRetryFinalizer({ database, finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS });
     const reader = new InboxQueueReader(new PSqlQueueBox(repositories, Temporal.Now.instant), {
         newLaneConcurrency: 1,
         onRetryExhausted: finalizeRetry,
@@ -439,7 +440,11 @@ function createHarness(database: PSqlSql, wakeOwningQueue: () => void = () => {}
         resourceInboxResultsRepository: results,
         database,
         wakeOwningQueue
-    }, { serviceId: 'inventory-worker', options: { waitMaxElapsedMsecs: 2000, waitRetryIntervalMsecs: 1, waitMaxRetryIntervalMsecs: 5, waitJitterRatio: 0 } });
+    }, {
+        serviceId: 'inventory-worker',
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+        options: { waitMaxElapsedMsecs: 2000, waitRetryIntervalMsecs: 1, waitMaxRetryIntervalMsecs: 5, waitJitterRatio: 0 }
+    });
     return {
         inbox,
         reader,

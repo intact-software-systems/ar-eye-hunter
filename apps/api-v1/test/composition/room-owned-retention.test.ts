@@ -9,6 +9,7 @@ import { createTransactionBoundGroupStateRepository } from '@shared-server/ralla
 import { requireConditionalWrite, RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
+import defaults from '../../resources/configuration/defaults-config.json' with { type: 'json' };
 import { createApiV1MutationRuntime, type ApiV1MutationRuntime } from '../../src/composition/create-api-v1-mutation-runtime.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { withPGliteSql } from '../db/pglite-auth-test-harness.ts';
@@ -135,6 +136,8 @@ function createRetentionRuntime(database: PSqlSql, now: () => number): ApiV1Muta
         appInboxOptions: { nowEpochMs: now },
         appInboxNewLaneConcurrency: 1,
         appInboxNewLaneHeldRows: 4,
+        appInboxFinishedRetentionMs: defaults.appInbox.finishedRetentionMs,
+        groupCurrentSnapshotCacheMaxEntries: defaults.group.currentSnapshotCacheMaxEntries,
         disconnectedSessionRetentionMs: SEVEN_DAYS,
         roomOwnedAppDataBindings: [BINDING],
         groupCapacity: { defaultMaxMembers: 10 },

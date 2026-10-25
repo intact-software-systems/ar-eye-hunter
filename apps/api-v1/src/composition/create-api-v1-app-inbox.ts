@@ -19,6 +19,7 @@ export function createApiV1AppInbox(input: CreateApiV1AppInboxInput): RallarServ
         wakeOwningQueue: () => input.runtime.qboxEngine.wake()
     }, {
         serviceId: input.mutation.serviceId,
+        finishedRetentionMs: input.mutation.appInboxFinishedRetentionMs,
         options: input.mutation.appInboxOptions,
         timing: input.timing
     });

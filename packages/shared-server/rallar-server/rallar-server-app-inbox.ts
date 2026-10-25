@@ -58,6 +58,7 @@ export namespace RallarServerAppInbox {
 
     export interface Config {
         readonly serviceId: string;
+        readonly finishedRetentionMs: number;
         readonly options: AppInboxOptions;
         readonly timing?: RallarTimingSink;
     }

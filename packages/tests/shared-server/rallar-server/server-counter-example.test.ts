@@ -24,7 +24,7 @@ it('runs the public counter example through admission, conditional write and exa
             resourceInboxResultsRepository: new ResourceInboxResultsRepository(storage.sql),
             database: storage.sql,
             wakeOwningQueue: () => {}
-        }, { serviceId: 'counter-example', options: {} });
+        }, { serviceId: 'counter-example', finishedRetentionMs: 3_600_000, options: {} });
         const counters = new CounterService({ appInbox, database: storage.sql, nowEpochMs: () => 101 });
         appInbox.start();
         const command = { counterId: 'visits', requestId: 'click-1', capturedAtEpochMs: null };
@@ -35,6 +35,16 @@ it('runs the public counter example through admission, conditional write and exa
         const exact = { status: 'updated', counterId: 'visits', value: 3, capturedAtEpochMs: 101 };
         expect((await admitted.right!.wait()).right).toEqual(exact);
         expect((await counters.increment.submit(command)).right).toEqual(exact);
+        expect(
+            await storage.sql`
+            select (extract(epoch from (entry.expire_ts - entry.end_ts)) * 1000)::integer as retained_ms,
+                   result.expire_ts = entry.expire_ts as result_expiry_matches
+            from resource_inbox entry join resource_inbox_results result
+              on result.ris_topic_id = entry.ri_topic_id and result.ris_resource_id = entry.ri_resource_id
+             and result.fk_ext_bank_id = entry.fk_ext_bank_id
+            where entry.ri_topic_id = 'app:counter:increment'
+        `
+        ).toEqual([{ retained_ms: 3_600_000, result_expiry_matches: true }]);
         expect(await storage.sql`select value, revision from app_counter`).toEqual([{ value: 3, revision: 1 }]);
         const missing = await counters.increment.enqueue({ ...command, counterId: 'other' });
         await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));

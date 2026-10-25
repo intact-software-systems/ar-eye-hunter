@@ -36,7 +36,12 @@ export async function createInboxFixture(options: RelicInboxFixtureOptions = {})
         resourceInboxResultsRepository: results,
         database: fixture.storage.sql,
         wakeOwningQueue: () => undefined
-    }, { serviceId: 'relic-inbox-test', timing: options.timing, options: { nowEpochMs: () => fixture.nowEpochMs } });
+    }, {
+        serviceId: 'relic-inbox-test',
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+        timing: options.timing,
+        options: { nowEpochMs: () => fixture.nowEpochMs }
+    });
     const dependencies = {
         appInbox,
         service: fixture.service,
