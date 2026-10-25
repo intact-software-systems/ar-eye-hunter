@@ -31,7 +31,6 @@ import { toALOutboundAckTimeoutEffectId, toALOutboundSendEffectId } from './to-a
 import { toALOutboundPreparedFingerprint } from './to-al-outbound-prepared-fingerprint.ts';
 import {
     isALOutboundAckTrackingWritable,
-    toALOutboundAckRetryScheduleEndTimestamp,
     toALOutboundEmptyAudienceReceipt,
     toALOutboundTrackedReceiptAlgo,
     trackALOutboundPendingAckSnapshot
@@ -448,7 +447,8 @@ function computeAckTrackingWrites<TPrepared>(
         durableEffects: [{
             effectId: toALOutboundAckTimeoutEffectId(pending),
             retryAtMs: pending.deadlineAtMs,
-            expireAtTimestamp: toALOutboundAckRetryScheduleEndTimestamp(pending, messageExpiresAtMs),
+            // Downtime spends no attempts: retain the retry until the original message deadline.
+            expireAtTimestamp: messageExpiresAtMs,
             payload: { kind: 'ack-timeout', msgId: pending.msgId }
         }]
     };

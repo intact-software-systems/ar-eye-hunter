@@ -36,10 +36,7 @@ import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-recei
 import { writeALOutboundControlAdmissionDiagnostic } from './control/write-al-outbound-control-admission-diagnostic.ts';
 import { isALOutboundOwnHopPeer } from './is-al-outbound-own-hop-peer.ts';
 import { toALOutboundAckTimeoutEffectId, toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
-import {
-    isALOutboundReceiptComplete,
-    toALOutboundAckRetryScheduleEndTimestamp
-} from './transition-al-outbound-pending-ack.ts';
+import { isALOutboundReceiptComplete } from './transition-al-outbound-pending-ack.ts';
 
 export namespace ALOutboundRepairAdmission {
     export interface Dependencies<TPrepared> {
@@ -390,7 +387,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
         return {
             effectId: toALOutboundAckTimeoutEffectId(pending),
             retryAtMs: pending.deadlineAtMs,
-            expireAtTimestamp: toALOutboundAckRetryScheduleEndTimestamp(pending, messageExpiresAtMs),
+            expireAtTimestamp: messageExpiresAtMs,
             payload: {
                 kind: 'ack-timeout',
                 msgId: pending.msgId

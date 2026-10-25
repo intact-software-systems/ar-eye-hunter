@@ -147,18 +147,6 @@ export function toALOutboundCompletedHopPeerIds(acks: readonly ALAckPayload[]): 
 }
 
 /**
- * When the last `ack-timeout` window closes, never past the message deadline: no retransmission is
- * scheduled after it. The receipt itself expires at the deadline, however early this schedule ends.
- */
-export function toALOutboundAckRetryScheduleEndTimestamp(
-    snapshot: ALOutboundPendingAckSnapshot,
-    messageExpiresAtMs: number
-): number {
-    const remainingTimeoutWindows = Math.max(1, snapshot.maxAttempts - snapshot.attempts + 1);
-    return Math.min(snapshot.deadlineAtMs + snapshot.timeoutMs * remainingTimeoutWindows, messageExpiresAtMs);
-}
-
-/**
  * The acknowledgement a receipt row states. Under `hop` and `subtree` the row counts next hops, so its
  * peers are both the hop and the recipient lists. Under `receiver` and `leader` the row counts logical recipients,
  * and the hop lists come from the hop view alone: the completed hops, and the next hops still open.

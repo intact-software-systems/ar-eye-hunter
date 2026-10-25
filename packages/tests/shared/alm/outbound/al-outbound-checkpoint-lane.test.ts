@@ -13,6 +13,7 @@ import type { ALCheckpointWriter } from '@shared/alm/checkpoint/al-checkpoint-wr
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type {
     ALCheckpointOutboundRuntimeStores,
+    ALOutboundAckTrackingPlan,
     ALOutboundMessageRuntime,
     ALOutboundSettledSendResult
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -40,7 +41,8 @@ import {
     createOutboundRuntimeWithWorkTask,
     createVolatileOutboundTestStores,
     holdOutboundClaims,
-    OUTBOUND_LEASE_RECOVERY_BOUND_MS
+    OUTBOUND_LEASE_RECOVERY_BOUND_MS,
+    runOutboundWorkTask
 } from '../outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from '../outbound-test-payload.ts';
 import { createOutboundTestSession, createSessionOutboundTestRuntime } from '../session-outbound-test-runtime.ts';
@@ -92,6 +94,40 @@ describe('the checkpoint lane of an outbound runtime', () => {
         expect(restored.storage.filter((event) => event.kind === 'recovery')).toEqual([
             { kind: 'recovery', storeId: STORE_ID, outcome: { kind: 'restored', claimed: 1, expired: 0 } }
         ]);
+    });
+
+    it('restores an unspent receipt retry after document downtime without renewing its command deadline', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
+        const nowMs = Date.now();
+        const input: CheckpointTestRuntimeInput = {
+            dbName: newDbName(),
+            owned: true,
+            ackTracking: { enabled: true, timeoutMs: 2_000, maxAttempts: 3, expectedPeerIds: ['peer-1'], nextHopPeerIds: ['peer-1'], mode: 'hop' }
+        };
+        const message = createOutboundMessage('checkpoint-receipt-reload');
+        const receipt = { originPeerId: message.id.senderId, msgId: message.id.msgId };
+        const closing = createCheckpointTestRuntime(input);
+        await closing.runtime.enqueueIfAbsent(message);
+        await vi.waitFor(() => expect(closing.sent).toEqual(['checkpoint-receipt-reload']));
+        expect(await closing.checkpointStores.admissionStore.readPendingAck(receipt)).toMatchObject({ attempts: 0, maxAttempts: 3 });
+        closing.runtime.flushCheckpoint();
+        await vi.waitFor(() => expect(closing.observer.getCounts().byKind.write).toBe(1));
+        await closing.runtime.dispose();
+        vi.setSystemTime(nowMs + 12_000);
+
+        const restored = createCheckpointTestRuntime(input);
+        await restored.runtime.ready();
+
+        expect(await restored.checkpointStores.admissionStore.readPendingAck(receipt)).toMatchObject({ attempts: 1, maxAttempts: 3 });
+        // This fixture owns an engine it never starts; drain the retry's follow-up work explicitly.
+        await runOutboundWorkTask(restored.runtime);
+        await runOutboundWorkTask(restored.runtime);
+        expect(restored.sent).toEqual(['checkpoint-receipt-reload']);
+        expect((await restored.checkpointStores.admissionStore.readSentMessage(message.id.msgId))?.msg).toEqual(message);
+        expect(restored.settlements.some((event) => event.kind === 'receipt-exhausted' || event.kind === 'expired')).toBe(false);
     });
 
     it('restores a closed owner\'s checkpointed message when the next runtime of the session takes over, and sends it once', async () => {
@@ -179,6 +215,7 @@ interface CheckpointTestRuntimeInput {
     readonly dbName: string;
     readonly owned: boolean;
     readonly settings?: ALCheckpointWriter.Settings;
+    readonly ackTracking?: ALOutboundAckTrackingPlan;
     /** Asked before each storage operation of the checkpoint store, after the counting observer. */
     readonly fault?: IndexedDbOperationObserver;
     readonly clock?: { readonly nowMs: number; };
@@ -223,6 +260,7 @@ function createCheckpointTestRuntime(input: CheckpointTestRuntimeInput): Checkpo
                 msg,
                 dropReasonCode: undefined,
                 lane: 'checkpoint',
+                ackTracking: input.ackTracking,
                 preparedMessages: [{ peer: 'receiver' }]
             }),
             sendPreparedMessage: async (_prepared, _phase, lifecycle) => {
