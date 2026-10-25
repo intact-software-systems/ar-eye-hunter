@@ -25,6 +25,7 @@ import type {
     DirectorAttemptState
 } from '../arena-connection-contracts.ts';
 import { arenaRoomEntry } from '../arena-room-entry.ts';
+import { ARENA_ROOM_NAME_THEME } from './arena-room-name-theme.ts';
 import {
     OPEN_ARENA_DIRECTORY_QUERY,
     useArenaDirectoryActions,
@@ -248,7 +249,7 @@ async function createAndSelectArenaRoom(
     arenaRoomEntry.cancel();
     const displayName = createRallarAiFunnyRoomName({
         baseName: GAME_ROOM_NAME,
-        theme: 'ar-eye-hunter',
+        theme: ARENA_ROOM_NAME_THEME,
         seed: createRallarAiRoomNameSeed('ar-eye-hunter'),
         existingNames: rooms.map((room) => room.name)
     });

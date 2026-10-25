@@ -31,7 +31,11 @@ import type {
     GroupDirectoryRequest
 } from '@shared/api/group-directory/group-directory-types.ts';
 import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
-import { createRallarAiFunnyRoomName, createRallarAiRoomNameSeed } from '@shared/rallar-ai/mod.ts';
+import {
+    createRallarAiFunnyRoomName,
+    createRallarAiRoomNameSeed,
+    type RallarAiFunnyRoomNameTheme
+} from '@shared/rallar-ai/mod.ts';
 import type { RallarGameAuthorityClientStatus } from '@shared/rallar-game/mod.ts';
 import { SingleFlight } from '@shared/resilience/single-flight.ts';
 import { startRepeating } from '@shared/resilience/start-repeating.ts';
@@ -47,7 +51,24 @@ import type { RelicHunterEventSubscription } from './subscribe-relic-hunter-even
 import type { RelicRoundTransitionSubscription } from './subscribe-relic-round-transitions.ts';
 import { toRelicCommandPhase } from './to-relic-command-phase.ts';
 
-export const RELIC_ROOM_NAME = 'Relic Hunters Expedition';
+export const RELIC_ROOM_NAME_THEME: RallarAiFunnyRoomNameTheme = {
+    id: 'relic-hunters',
+    defaultBaseName: 'Relic Hunters Expedition',
+    nouns: [
+        'Teacup',
+        'Compass',
+        'Pickle',
+        'Noodle',
+        'Lantern',
+        'Keycard',
+        'Scroll',
+        'Dojo',
+        'Kiosk',
+        'Satchel',
+        'Map',
+        'Pebble'
+    ]
+};
 export const RELIC_SNAPSHOT_TRANSPORT = 'rallar-ws+rtc';
 const SNAPSHOT_REPAIR_INTERVAL_MS = 2_000;
 const ROUND_TRANSITION_CUE_LOG_SIZE = 16;
@@ -836,8 +857,8 @@ export class RelicHuntersRuntime {
         this.publish({ error: undefined });
         this.phase('joining-room', { lastError: undefined });
         const displayName = createRallarAiFunnyRoomName({
-            baseName: RELIC_ROOM_NAME,
-            theme: 'relic-hunters',
+            baseName: RELIC_ROOM_NAME_THEME.defaultBaseName,
+            theme: RELIC_ROOM_NAME_THEME,
             seed: createRallarAiRoomNameSeed('relic-hunters'),
             existingNames: this.connection.rooms.map((room) => room.name)
         });

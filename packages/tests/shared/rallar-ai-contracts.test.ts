@@ -111,50 +111,73 @@ describe('RallarAI shared contracts', () => {
         expect(result.promptHash).toMatch(/^rallar-ai-fnv1a32:/);
     });
 
-    it('creates deterministic funny room names for game groups', () => {
+    it('creates deterministic funny room names from a consumer vocabulary', () => {
+        const theme = { id: 'workshop', defaultBaseName: 'Workshop', nouns: ['Anvil', 'Lathe'] };
         const first = createRallarAiFunnyRoomName({
-            baseName: 'AR Eye Hunter Arena',
-            theme: 'ar-eye-hunter',
-            seed: 'arena-seed-1'
+            baseName: '',
+            theme,
+            seed: 'workshop-seed-1'
         });
         const same = createRallarAiFunnyRoomName({
-            baseName: 'AR Eye Hunter Arena',
-            theme: 'ar-eye-hunter',
-            seed: 'arena-seed-1'
+            baseName: '',
+            theme,
+            seed: 'workshop-seed-1'
         });
         const different = createRallarAiFunnyRoomName({
-            baseName: 'AR Eye Hunter Arena',
-            theme: 'ar-eye-hunter',
-            seed: 'arena-seed-2'
+            baseName: '',
+            theme,
+            seed: 'workshop-seed-2'
         });
 
         expect(first).toBe(same);
         expect(first).not.toBe(different);
-        expect(first).toContain('AR Eye Hunter Arena');
-        expect(first).toMatch(/^AR Eye Hunter Arena: [A-Za-z]+ [A-Za-z]+ #[0-9A-F]{6}$/);
+        expect(first).toMatch(/^Workshop: [A-Za-z]+ (Anvil|Lathe) #[0-9A-F]{6}$/);
         expect(first.length).toBeLessThanOrEqual(72);
     });
 
     it('avoids funny room name collisions and keeps fallback names compact', () => {
+        const theme = { id: 'workshop', defaultBaseName: 'Workshop', nouns: ['Anvil', 'Lathe'] };
         const existingNames: string[] = [];
 
         for (let index = 0; index < 70; index += 1) {
             const name = createRallarAiFunnyRoomName({
-                baseName: 'Relic Hunters Expedition',
-                theme: 'relic-hunters',
-                seed: 'crowded-expedition',
+                baseName: 'Workshop',
+                theme,
+                seed: 'crowded-workshop',
                 existingNames
             });
 
             expect(existingNames.map((existing) => existing.toLowerCase()))
                 .not.toContain(name.toLowerCase());
-            expect(name).toContain('Relic Hunters Expedition');
-            expect(name).toMatch(/^Relic Hunters Expedition: .+ #[0-9A-F]{6}/);
+            expect(name).toContain('Workshop');
+            expect(name).toMatch(/^Workshop: .+ #[0-9A-F]{6}/);
             expect(name.length).toBeLessThanOrEqual(72);
             existingNames.push(name);
         }
 
         expect(new Set(existingNames).size).toBe(existingNames.length);
+    });
+
+    it('avoids normalized case-insensitive room name collisions', () => {
+        const theme = { id: 'workshop', defaultBaseName: 'Workshop', nouns: ['Anvil'] };
+        const first = createRallarAiFunnyRoomName({ baseName: '', theme, seed: 'collision' });
+        const next = createRallarAiFunnyRoomName({
+            baseName: '',
+            theme,
+            seed: 'collision',
+            existingNames: [`  ${first.toLowerCase().replace(/ /g, '   ')}  `]
+        });
+        expect(next).not.toBe(first);
+    });
+
+    it.each([
+        { id: '', defaultBaseName: 'Workshop', nouns: ['Anvil'] },
+        { id: 'workshop', defaultBaseName: '   ', nouns: ['Anvil'] },
+        { id: 'workshop', defaultBaseName: 'Workshop', nouns: [] },
+        { id: 'workshop', defaultBaseName: 'Workshop', nouns: [' '] }
+    ])('rejects incomplete room name theme configuration %#', (theme) => {
+        expect(() => createRallarAiFunnyRoomName({ baseName: '', theme, seed: 'invalid' }))
+            .toThrow('Room name theme requires a nonempty ID, default base name, and noun vocabulary');
     });
 
     it('creates room name seeds with the requested prefix', () => {
@@ -220,7 +243,7 @@ describe('RallarAI shared contracts', () => {
         const provider = createRallarAiMockProvider({
             value: { kind: 'spawn', amount: 1 }
         });
-        const result = await provider.generateJson({
+        const result = await provider.generateJson<{ kind: 'spawn'; amount: number; }>({
             requestId: 'request-approval',
             schemaId: 'game-event',
             schemaVersion: '1',
@@ -231,7 +254,7 @@ describe('RallarAI shared contracts', () => {
         const proposed = transitionRallarAiResultLifecycle(result, 'proposed');
         const accepted = transitionRallarAiResultLifecycle(proposed, 'accepted');
         const tracker = createRallarAiAcceptedResultTracker<typeof accepted.value>();
-        const applied: unknown[] = [];
+        const applied: Array<typeof accepted.value> = [];
 
         await expect(
             tracker.acceptOnce(proposed, (proposal) => {

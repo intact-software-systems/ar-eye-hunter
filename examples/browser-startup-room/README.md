@@ -31,7 +31,11 @@ const existingNames = rallar.rooms
 
 const displayName = createRallarAiFunnyRoomName({
     baseName: 'Demo Arena',
-    theme: 'ar-eye-hunter',
+    theme: {
+        id: 'demo-arena',
+        defaultBaseName: 'Demo Arena',
+        nouns: ['Beacon', 'Comet', 'Kite']
+    },
     seed: createRallarAiRoomNameSeed('demo-arena'),
     existingNames
 });
