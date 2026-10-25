@@ -76,9 +76,9 @@ The configuration reader recognizes only these operational overrides:
 
 `appInbox.retry` owns three restart-only positive integer limits: `maxAttempts` (20 by default,
 including the first delivery), `maxDelayMs` (30000 ms, the ordinary backoff base before ±20% jitter),
-and `conflictMaxDelayMs` (36000 ms, a final delay ceiling only for classified optimistic conflicts).
-The default conflict ceiling preserves the ordinary 30000 ms backoff including its positive jitter;
-operators can lower it explicitly when a workload justifies more frequent conflict retries.
+and `conflictMaxDelayMs` (1200 ms, a final delay ceiling only for classified optimistic conflicts).
+The default conflict ceiling preserves the first 1000 ms backoff step including its positive jitter,
+then bounds later conflict delays. Operators can tune either delay limit for their workload.
 Both delay settings are bounded by the maximum supported durable window, 2592000000 ms (30 days),
 so jitter and timestamp addition stay within their supported numeric range.
 The corresponding environment overrides are listed above. Early backoff steps remain in force;

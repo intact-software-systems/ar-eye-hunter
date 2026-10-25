@@ -53,7 +53,7 @@ import type { AppInboxHandlerRegistration } from './app-inbox-handler-registrati
 import { timeAppInboxPhase } from './app-inbox-phase-timing.ts';
 import { AppInboxTransactionWriter } from './app-inbox-transaction-writer.ts';
 
-const DEFAULT_APP_INBOX_CONFLICT_RETRY_MAX_DELAY_MS = 36_000;
+const DEFAULT_APP_INBOX_CONFLICT_RETRY_MAX_DELAY_MS = 1200;
 
 interface AppInboxExecutionAttempt<Command, Result> extends AppInboxHandlerExecutor.Input<Command, Result> {
     readonly undecodedEnqueue: AppInboxEnqueueInput;

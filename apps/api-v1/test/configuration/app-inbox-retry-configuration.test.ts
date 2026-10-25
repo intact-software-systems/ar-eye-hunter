@@ -37,12 +37,12 @@ Deno.test('AppInbox retry configuration controls conflict delay, ordinary backof
     }
 });
 
-Deno.test('AppInbox retry defaults preserve ordinary backoff and allow profile and environment overrides', () => {
+Deno.test('AppInbox retry defaults bound conflict backoff and allow profile and environment overrides', () => {
     const input = { ...validDecodeApiV1ConfigurationInput(), defaultsSource };
     assert.deepEqual(decodeApiV1Configuration(input).appInbox.retry, {
         maxAttempts: 20,
         maxDelayMs: 30_000,
-        conflictMaxDelayMs: 36_000
+        conflictMaxDelayMs: 1200
     });
     input.profileSource = { ...validConfigurationProfileSource(), appInbox: { retry: { maxAttempts: 30, maxDelayMs: 5000, conflictMaxDelayMs: 500 } } };
     input.environmentSource = { group: { roomOwnedAppDataBindings: [] }, appInbox: { retry: { maxAttempts: 40 } } };

@@ -153,7 +153,10 @@ describe('AppInbox conflict redelivery', () => {
                 expect(entry?.status).toBe(EntityStatus.RETRY);
                 const delayMs = Number(entry!.dequeueAudit.nextTs!.epochMilliseconds - entry!.dequeueAudit.endTs!.epochMilliseconds);
                 expect(delayMs).toBeGreaterThan(0);
-                expect(delayMs).toBeLessThanOrEqual(36_000);
+                expect(delayMs).toBeLessThanOrEqual(1200);
+                if (attempt >= 7) {
+                    expect(delayMs).toBe(1200);
+                }
                 now = entry!.dequeueAudit.nextTs!;
             }
         }
