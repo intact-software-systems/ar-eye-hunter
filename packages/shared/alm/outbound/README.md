@@ -1108,7 +1108,8 @@ Every receipt this owner tracks ends in a settlement (S3b, D63, D64):
   with the row's confirmed and unconfirmed peers (next hops under `hop`/`subtree`, logical recipients
   under `receiver` and `leader`). The handle reads `failed` and keeps who confirmed. The row is gone, so the fact is
   stated once across replays and reloads and a late ACK completes nothing. With the defaults (a 2 000 ms
-  ACK timeout, three receipt retries) the budget ends about 8 s after admission.
+  ACK timeout, three receipt retries) and uninterrupted timeout execution, the budget ends about 8 s
+  after admission. Downtime leaves unspent attempts available until the original message deadline.
 - **A hop that refuses for good.** An admitted `expired`, `unauthorized`, `membership-fenced` or `stale` NACK
   removes the row;
   the commit states the incomplete acknowledgement, then `receipt-exhausted`. `resync-required` keeps its
