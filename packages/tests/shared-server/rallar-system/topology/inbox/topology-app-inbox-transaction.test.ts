@@ -59,29 +59,31 @@ const GROUP_REF: GroupRef = {
     ...SCOPE,
     groupId: 'topology-room'
 };
-const topologyServices = new WeakMap<AuthorityHarness, TopologyInboxService>();
+interface TopologyTestRuntime {
+    readonly repository: GroupTopologyConfigRepository;
+    readonly service: TopologyInboxService;
+}
 
 describe('topology AppInbox transaction and idempotency', () => {
     it('coalesces concurrent identical commands into one durable mutation and result', async () => {
         let queueWakeCount = 0;
-        const wakeQueue = vi.fn(() => {
+        const wakeQueue = () => {
             queueWakeCount += 1;
-        });
+        };
         const harness = await createAuthorityHarness(['owner'], { wakeQueue });
+        const { repository, service } = configureTopology(harness, wakeQueue);
         await createRoom(harness, GROUP_REF.groupId, 'Topology room');
-        const repository = configureTopology(harness, wakeQueue);
-        wakeQueue.mockClear();
         queueWakeCount = 0;
         const initialOutboxCount = harness.database.outboxEntries.size;
         const command = topologyCommand('same-request', 4);
         const enqueue = topologyEnqueue(command);
 
-        const first = topologyServiceFor(harness).processAuthenticatedEntryUntilCompletion(
+        const first = service.processAuthenticatedEntryUntilCompletion(
             enqueue,
             harness.sessions.owner
         );
         await waitForQueueEntry(harness.queue);
-        const second = topologyServiceFor(harness).processAuthenticatedEntryUntilCompletion(
+        const second = service.processAuthenticatedEntryUntilCompletion(
             structuredClone(enqueue),
             harness.sessions.owner
         );
@@ -102,18 +104,18 @@ describe('topology AppInbox transaction and idempotency', () => {
 
     it('rejects concurrent reuse of one queue identity with divergent command content', async () => {
         const harness = await createAuthorityHarness(['owner']);
+        const { service } = configureTopology(harness);
         await createRoom(harness, GROUP_REF.groupId, 'Topology room');
-        configureTopology(harness);
         const firstCommand = topologyCommand('divergent-request', 4);
         const secondCommand = topologyCommand('divergent-request', 7);
-        const first = topologyServiceFor(harness).processAuthenticatedEntryUntilCompletion(
+        const first = service.processAuthenticatedEntryUntilCompletion(
             topologyEnqueue(firstCommand),
             harness.sessions.owner
         );
         await waitForQueueEntry(harness.queue);
 
         await expect(
-            topologyServiceFor(harness).processAuthenticatedEntryUntilCompletion(
+            service.processAuthenticatedEntryUntilCompletion(
                 topologyEnqueue(secondCommand),
                 harness.sessions.owner
             )
@@ -124,8 +126,8 @@ describe('topology AppInbox transaction and idempotency', () => {
 
     it('validates equal concurrent HTTP config contenders and materializes one winner', async () => {
         const harness = await createAuthorityHarness(['owner']);
+        const { service } = configureTopology(harness);
         await createRoom(harness, GROUP_REF.groupId, 'Topology room');
-        configureTopology(harness);
         const readIssuedAuthSession = harness.groupStateService.readIssuedAuthSession.bind(
             harness.groupStateService
         );
@@ -137,10 +139,10 @@ describe('topology AppInbox transaction and idempotency', () => {
             }
         );
         let firstMaterializationCount = 0;
-        const firstMaterialize = vi.fn(async () => {
+        const firstMaterialize = async () => {
             firstMaterializationCount += 1;
             return topologyCommand('reserved-config-request', 4);
-        });
+        };
         const renewed = authSession({
             clientId: 'owner',
             sessionId: 'owner-concurrent-session',
@@ -149,21 +151,19 @@ describe('topology AppInbox transaction and idempotency', () => {
         });
         await harness.authSessions.putSession(renewed);
         let secondMaterializationCount = 0;
-        const secondMaterialize = vi.fn(
-            async () => {
-                secondMaterializationCount += 1;
-                return topologyCommand('reserved-config-request', 4, {
-                    principalId: renewed.clientId,
-                    sessionId: renewed.sessionId,
-                    capturedAtEpochMs: 2_000
-                });
-            }
-        );
-        const first = topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
+        const secondMaterialize = async () => {
+            secondMaterializationCount += 1;
+            return topologyCommand('reserved-config-request', 4, {
+                principalId: renewed.clientId,
+                sessionId: renewed.sessionId,
+                capturedAtEpochMs: 2_000
+            });
+        };
+        const first = service.processAuthenticatedHttpEntryUntilCompletionResult(
             configReservation({ callerId: 'owner', requestId: 'reserved-config-request', degreeLimit: 4, materialize: firstMaterialize }),
             harness.sessions.owner
         );
-        const second = topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
+        const second = service.processAuthenticatedHttpEntryUntilCompletionResult(
             configReservation({ callerId: 'owner', requestId: 'reserved-config-request', degreeLimit: 4, materialize: secondMaterialize }),
             renewed
         );
@@ -181,14 +181,14 @@ describe('topology AppInbox transaction and idempotency', () => {
 
     it('replays strict HTTP graph config through renewed credentials', async () => {
         const harness = await createAuthorityHarness(['owner']);
+        const { service } = configureTopology(harness);
         await createRoom(harness, GROUP_REF.groupId, 'Topology room');
-        configureTopology(harness);
         let materializationCount = 0;
-        const materialize = vi.fn(async () => {
+        const materialize = async () => {
             materializationCount += 1;
             return topologyCommand('renewed-config-request', 4);
-        });
-        const first = topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
+        };
+        const first = service.processAuthenticatedHttpEntryUntilCompletionResult(
             configReservation({ callerId: 'owner', requestId: 'renewed-config-request', degreeLimit: 4, materialize: materialize }),
             harness.sessions.owner
         );
@@ -204,18 +204,16 @@ describe('topology AppInbox transaction and idempotency', () => {
         });
         await harness.authSessions.putSession(renewed);
         let replayMaterializationCount = 0;
-        const replayMaterialize = vi.fn(
-            async () => {
-                replayMaterializationCount += 1;
-                return topologyCommand('renewed-config-request', 4, {
-                    principalId: renewed.clientId,
-                    sessionId: renewed.sessionId,
-                    capturedAtEpochMs: 2_000
-                });
-            }
-        );
+        const replayMaterialize = async () => {
+            replayMaterializationCount += 1;
+            return topologyCommand('renewed-config-request', 4, {
+                principalId: renewed.clientId,
+                sessionId: renewed.sessionId,
+                capturedAtEpochMs: 2_000
+            });
+        };
         await expect(
-            topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
+            service.processAuthenticatedHttpEntryUntilCompletionResult(
                 configReservation({ callerId: 'owner', requestId: 'renewed-config-request', degreeLimit: 4, materialize: replayMaterialize }),
                 renewed
             )
@@ -226,9 +224,9 @@ describe('topology AppInbox transaction and idempotency', () => {
 
     it('isolates graph topology queue identity by stable principal', async () => {
         const harness = await createAuthorityHarness(['owner', 'other']);
+        const { service } = configureTopology(harness);
         await createRoom(harness, GROUP_REF.groupId, 'Topology room');
-        configureTopology(harness);
-        const owner = topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
+        const owner = service.processAuthenticatedHttpEntryUntilCompletionResult(
             configReservation(
                 {
                     callerId: 'owner',
@@ -239,7 +237,7 @@ describe('topology AppInbox transaction and idempotency', () => {
             ),
             harness.sessions.owner
         );
-        const other = topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
+        const other = service.processAuthenticatedHttpEntryUntilCompletionResult(
             configReservation(
                 {
                     callerId: 'other',
@@ -288,16 +286,16 @@ describe('topology AppInbox transaction and idempotency', () => {
 
     it('materializes admin recompute facts once and isolates different principals', async () => {
         const harness = await createAuthorityHarness(['owner', 'other']);
+        const { service } = configureTopology(harness);
         await createRoom(harness, GROUP_REF.groupId, 'Topology room');
-        configureTopology(harness);
         let materializationCount = 0;
-        const materialize = vi.fn(async () => {
+        const materialize = async () => {
             materializationCount += 1;
             return reconfigureCommand(
                 { requestId: 'shared-admin-request', principalId: 'owner', sessionId: 'owner-session', capturedAtEpochMs: 1_000 }
             );
-        });
-        const first = topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
+        };
+        const first = service.processAuthenticatedHttpEntryUntilCompletionResult(
             adminReconfigureReservation('owner', materialize),
             harness.sessions.owner
         );
@@ -313,16 +311,14 @@ describe('topology AppInbox transaction and idempotency', () => {
         });
         await harness.authSessions.putSession(renewed);
         let replayMaterializationCount = 0;
-        const replayMaterialize = vi.fn(
-            async () => {
-                replayMaterializationCount += 1;
-                return reconfigureCommand(
-                    { requestId: 'shared-admin-request', principalId: renewed.clientId, sessionId: renewed.sessionId, capturedAtEpochMs: 2_000 }
-                );
-            }
-        );
+        const replayMaterialize = async () => {
+            replayMaterializationCount += 1;
+            return reconfigureCommand(
+                { requestId: 'shared-admin-request', principalId: renewed.clientId, sessionId: renewed.sessionId, capturedAtEpochMs: 2_000 }
+            );
+        };
         await expect(
-            topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
+            service.processAuthenticatedHttpEntryUntilCompletionResult(
                 adminReconfigureReservation('owner', replayMaterialize),
                 renewed
             )
@@ -331,13 +327,13 @@ describe('topology AppInbox transaction and idempotency', () => {
         expect(replayMaterializationCount).toBe(0);
 
         let otherMaterializationCount = 0;
-        const otherMaterialize = vi.fn(async () => {
+        const otherMaterialize = async () => {
             otherMaterializationCount += 1;
             return reconfigureCommand(
                 { requestId: 'shared-admin-request', principalId: 'other', sessionId: 'other-session', capturedAtEpochMs: 3_000 }
             );
-        });
-        const other = topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
+        };
+        const other = service.processAuthenticatedHttpEntryUntilCompletionResult(
             adminReconfigureReservation('other', otherMaterialize),
             harness.sessions.other
         );
@@ -355,14 +351,13 @@ describe('topology AppInbox transaction and idempotency', () => {
 
     it('rolls back topology state when the RTC APP_OUTBOX write collides', async () => {
         let queueWakeCount = 0;
-        const wakeQueue = vi.fn(() => {
+        const wakeQueue = () => {
             queueWakeCount += 1;
-        });
+        };
         const harness = await createAuthorityHarness(['owner'], { wakeQueue });
         await createRoom(harness, GROUP_REF.groupId, 'Topology room');
         const repository = new GroupTopologyConfigRepository(harness.runtimeRepository);
         const management = topologyManagement(harness, repository);
-        wakeQueue.mockClear();
         queueWakeCount = 0;
         const initialOutboxCount = harness.database.outboxEntries.size;
         const command = topologyCommand('collision-request', 5);
@@ -465,36 +460,25 @@ describe('topology AppInbox transaction and idempotency', () => {
 function configureTopology(
     harness: AuthorityHarness,
     wakeQueue?: () => void
-): GroupTopologyConfigRepository {
+): TopologyTestRuntime {
     const repository = new GroupTopologyConfigRepository(harness.runtimeRepository);
     const management = topologyManagement(harness, repository);
-    topologyServices.set(
-        harness,
-        new TopologyInboxService(
-            {
-                inboxQueueReader: harness.reader,
-                resourceInboxRepository: harness.queue,
-                resourceInboxResultsRepository: harness.results,
-                database: harness.database,
-                groupStateService: harness.groupStateService,
-                mutationOwners: management.mutationOwners
-            },
-            {
-                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
-                serviceId: 'server-12345678',
-                wakeOwningQueue: wakeQueue
-            }
-        )
+    const service = new TopologyInboxService(
+        {
+            inboxQueueReader: harness.reader,
+            resourceInboxRepository: harness.queue,
+            resourceInboxResultsRepository: harness.results,
+            database: harness.database,
+            groupStateService: harness.groupStateService,
+            mutationOwners: management.mutationOwners
+        },
+        {
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+            serviceId: 'server-12345678',
+            wakeOwningQueue: wakeQueue
+        }
     );
-    return repository;
-}
-
-function topologyServiceFor(harness: AuthorityHarness): TopologyInboxService {
-    const service = topologyServices.get(harness);
-    if (!service) {
-        throw new TypeError('Topology inbox service is not configured for this harness');
-    }
-    return service;
+    return { repository, service };
 }
 
 function topologyManagement(

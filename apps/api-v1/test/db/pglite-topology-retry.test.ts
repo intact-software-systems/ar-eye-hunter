@@ -106,10 +106,10 @@ Deno.test(
                 isPlatformAdmin: () => false,
                 outboxWriter: new RtcTopologyOutboxWriter({ recordWrite: () => undefined })
             });
-            const createAppGroup = (waitMaxElapsedMsecs: number) => {
+            const createAppGroup = (reader: InboxQueueReader, waitMaxElapsedMsecs: number) => {
                 const service = new TopologyInboxService(
                     {
-                        inboxQueueReader: inboxReader,
+                        inboxQueueReader: reader,
                         resourceInboxRepository: resourceInbox.entries,
                         resourceInboxResultsRepository: resourceResults,
                         database: sql,
@@ -131,7 +131,7 @@ Deno.test(
                 );
                 return service;
             };
-            const appGroup = createAppGroup(5_000);
+            const appGroup = createAppGroup(inboxReader, 5_000);
             const createRouteApp = (service: TopologyInboxService) => {
                 const app = new Hono();
                 graphTopologyRoutes.registerGraphTopologyRoutes(app, {
@@ -241,8 +241,9 @@ Deno.test(
                 'app-inbox-idempotency-conflict'
             );
 
+            const unavailableReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), { newLaneConcurrency: 1 });
             const unavailable = await submit(
-                createRouteApp(createAppGroup(0)),
+                createRouteApp(createAppGroup(unavailableReader, 0)),
                 'route-unavailable-request-0001',
                 { topologyKind: 'mesh' }
             );

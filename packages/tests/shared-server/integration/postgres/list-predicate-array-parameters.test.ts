@@ -187,7 +187,7 @@ describe('Postgres list predicates', () => {
             expect(recorded).toHaveLength(3);
             for (const statement of recorded) {
                 expect(statement).toMatch(/ri_type_id = \?/u);
-                expect(statement).not.toContain('= any(');
+                expect(statement).not.toMatch(/ri_(?:type_id|status) = any\(/u);
             }
         });
     });

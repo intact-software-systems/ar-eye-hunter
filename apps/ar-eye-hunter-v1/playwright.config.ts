@@ -10,6 +10,7 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
                 PORT: '8080',
                 CORS_ORIGINS: 'http://127.0.0.1:5186,http://localhost:5186',
                 RALLAR_API_BASE_URL: 'http://127.0.0.1:8080',
+                RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON: '[]',
                 RALLAR_WS_BASE_URL: 'ws://127.0.0.1:8080',
                 RALLAR_AUTH_CREDENTIAL_SECRET: randomUUID(),
                 RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET: randomUUID(),

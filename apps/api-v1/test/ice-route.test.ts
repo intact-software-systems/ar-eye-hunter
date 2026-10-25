@@ -139,6 +139,7 @@ function readFixtureConfiguration(requests?: string) {
     const resource = (name: string) => new URL(`../resources/configuration/${name}-config.json`, import.meta.url);
     const environment: Record<string, string> = {
         RALLAR_API_CONFIGURATION_PROFILE: 'prod-in-memory',
+        RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON: '[]',
         RALLAR_AUTH_CREDENTIAL_SECRET: 'local-test-auth-secret-0123456789',
         RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET: 'local-test-operator-secret-0123456789'
     };

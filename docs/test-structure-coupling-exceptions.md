@@ -6686,7 +6686,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts#fails closed for an opaque registration predicate"
     },
     {
-      "id": "test-structure-coupling-aae795e94c45930d",
+      "id": "test-structure-coupling-7c0d79d76311c223",
       "path": "packages/tests/repo/package-dependency-direction.test.ts",
       "kind": "production-source-read",
       "contract": "package-dependency-direction-import-map",
