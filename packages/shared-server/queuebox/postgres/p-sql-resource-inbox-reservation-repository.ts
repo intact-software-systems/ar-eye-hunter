@@ -1,5 +1,4 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { resolveResourceInboxWorkPosition } from './resolve-resource-inbox-work-position.ts';
 
 import {
     toResourceInboxReservationOptions,
@@ -38,6 +37,7 @@ import {
     type ResourceInboxObservedReplacement
 } from './replace-observed-resource-inbox-entry.ts';
 import { requeueObservedResourceInboxDeliveryFailure } from './requeue-observed-resource-inbox-delivery-failure.ts';
+import { resolveResourceInboxWorkPosition } from './resolve-resource-inbox-work-position.ts';
 import {
     parseTemporalPlainDateTime,
     rowsToMap,
@@ -216,12 +216,13 @@ export class PSqlResourceInboxReservationRepository {
         );
         const eligibility = { typeIds: [...typeIds], statusIds: [...statusIds], maxAttempts, allowedTopicIds };
         const statement = PSqlFragment.of`
+            ${toTopicSelection(allowedTopicIds)}
             select candidate.*
-            from resource_inbox candidate
+            from resource_inbox candidate cross join topic_selection
             where candidate.ri_row_id = any(${observedRowIds}::bigint[])
               and ${toEligibleRowPredicate('candidate', eligibility)}
             order by candidate.next_ts asc nulls first, candidate.ri_row_id asc
-                for update skip locked
+                for update of candidate skip locked
             limit ${observedRowIds.length}
         `;
         const rows = await this.sql<ResourceInboxRow[]>(...statement.toStatement());
@@ -445,6 +446,7 @@ function toReservationStatement(
         ? PSqlFragment.of``
         : toContextHeadPredicate({ eligibility, order, contextClaim });
     return PSqlFragment.of`
+            ${toTopicSelection(eligibility.allowedTopicIds)}
             update resource_inbox
             set ri_status   = ${EntityStatus.RESERVED},
                 ri_attempts = ri_attempts + 1,
@@ -458,7 +460,7 @@ function toReservationStatement(
                        candidate.start_ts as selected_start_ts,
                        candidate.end_ts as selected_end_ts,
                        candidate.next_ts as selected_next_ts
-                from resource_inbox candidate
+                from resource_inbox candidate cross join topic_selection
                 where ${toEligibleRowPredicate('candidate', eligibility)}
                   ${contextHead}
                 order by ${toClaimOrderBy('candidate', order)}
@@ -486,15 +488,22 @@ function toReservationStatement(
         `;
 }
 
+/** One binding for both candidate and context-head predicates, inlined without a materialization fence. */
+function toTopicSelection(allowedTopicIds: ReadonlySet<string> | undefined): PSqlFragment {
+    const topics = allowedTopicIds === undefined ? null : [...allowedTopicIds];
+    return PSqlFragment.of`with topic_selection as not materialized (
+        select ${topics}::text[] as allowed_topic_ids
+    )`;
+}
+
 /** A row a NEW or RETRY claim may start now: its type and status, alive, attempts left, and due. */
 function toEligibleRowPredicate(alias: 'candidate' | 'head', eligibility: ResourceInboxEligibility): PSqlFragment {
     const row = PSqlFragment.identifier(alias);
     return PSqlFragment.of`(
         ${PSqlFragment.toTextListPredicate(PSqlFragment.of`${row}.ri_type_id`, eligibility.typeIds)}
         and ${PSqlFragment.toTextListPredicate(PSqlFragment.of`${row}.ri_status`, eligibility.statusIds)}
-        and (${eligibility.allowedTopicIds === undefined} or ${row}.ri_topic_id = any(${[
-        ...eligibility.allowedTopicIds ?? []
-    ]}::text[]))
+        and (topic_selection.allowed_topic_ids is null
+            or ${row}.ri_topic_id = any(topic_selection.allowed_topic_ids))
         and ${row}.ri_status <> ${EntityStatus.FAILED}
         and ${row}.expire_ts > (now() at time zone 'UTC')
         and ${row}.ri_attempts < ${eligibility.maxAttempts}
@@ -515,7 +524,7 @@ function toContextHeadPredicate({ eligibility, order, contextClaim }: ResourceIn
     return PSqlFragment.of`
         and candidate.ri_row_id in (
             select distinct on (head.fk_ext_bank_id) head.ri_row_id
-            from resource_inbox head
+            from resource_inbox head cross join topic_selection
             where ${toEligibleRowPredicate('head', eligibility)}
               and head.fk_ext_bank_id <> all(${[...contextClaim.excludedContextIds]}::varchar[])
             order by head.fk_ext_bank_id, ${toClaimOrderBy('head', order)}

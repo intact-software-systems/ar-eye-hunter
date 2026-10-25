@@ -1,11 +1,18 @@
 import 'fake-indexeddb/auto';
 import { Temporal } from '@js-temporal/polyfill';
-import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
-import { afterEach, describe, expect, it } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
 
+import type { PSqlParameter } from '@shared-server/postgres/p-sql-sql.ts';
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { PSqlResourceInboxReservationRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-reservation-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
@@ -90,6 +97,41 @@ describe.each(['memory', 'indexeddb', 'sql'] as const)('topic eligibility on %s'
         ).toBe(0);
         expect(await queue.getItem(unsupported.key)).toEqual(observed);
     });
+});
+
+// The SQL port must not serialize/transmit the same topic inventory for every lane and context probe.
+it('binds one topic inventory per SQL operation while preserving exact topic and context selection', async () => {
+    storage = await createResourceInboxTestStorage('topic_binding');
+    const topics = new Set(Array.from({ length: 65 }, (_, index) => `app:stock:${index},"\\{}'`));
+    const boundTopicCounts: number[] = [];
+    const sql = new Proxy(storage.sql, {
+        apply(target, receiver, args: PSqlParameter[]) {
+            if (Array.isArray(args[0]) && Object.hasOwn(args[0], 'raw')) {
+                boundTopicCounts.push(args.slice(1).flatMap((value) => Array.isArray(value) ? value : [value])
+                    .filter((value) => typeof value === 'string' && topics.has(value)).length);
+            }
+            return Reflect.apply(target, receiver, args);
+        }
+    });
+    const queue = new PSqlQueueBox(createPSqlResourceInboxRepository(sql, () => new Date()), Temporal.Now.instant);
+    const foreign = createEntry('app:other:reserve', 'NEW');
+    const supported = createEntry(`app:stock:64,"\\{}'`, 'NEW');
+    await queue.enqueue(foreign);
+    await queue.enqueue(supported);
+    boundTopicCounts.length = 0;
+    expect((await queue.readWorkAdvertisement(TYPES, { ...WORK, allowedTopicIds: topics })).NEW).toBe(true);
+    expect(boundTopicCounts).toEqual([65]);
+    boundTopicCounts.length = 0;
+    const reservations = new PSqlResourceInboxReservationRepository(sql);
+    const selected = await reservations.reserveEntriesSkipLocked({
+        typeIds: TYPES,
+        statusIds: new Set([EntityStatus.NEW]),
+        reservationInput: { maxToReserve: 1, maxAttempts: 20, allowedTopicIds: topics },
+        contextClaim: { excludedContextIds: new Set() }
+    });
+    expect([...selected.values()].map((entry) => entry.key.topicId)).toEqual([supported.key.topicId]);
+    expect(boundTopicCounts).toEqual([65]);
+    expect(await queue.getItem(foreign.key)).toMatchObject({ status: EntityStatus.NEW, dequeueAudit: { attempts: 0 } });
 });
 
 it('an observed IndexedDB claim does not sweep an unsupported row that expired after observation', async () => {

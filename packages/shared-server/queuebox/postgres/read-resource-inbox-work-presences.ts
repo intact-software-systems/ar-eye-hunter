@@ -72,9 +72,10 @@ export async function readResourceInboxWorkPresences(
 function toWorkPresenceSelect(read: ResourceInboxWorkPresenceRead, ordinal: number): PSqlFragment {
     const { typeIds, maxAttempts, reservationLeaseMs, finalizationStaleAfterMs, staleDueThresholdMs } = read;
     const typeIdPredicate = PSqlFragment.toTextListPredicate(PSqlFragment.identifier('ri_type_id'), [...typeIds]);
-    const topicPredicate = read.allowedTopicIds === undefined
-        ? PSqlFragment.of`true`
-        : PSqlFragment.toTextListPredicate(PSqlFragment.identifier('ri_topic_id'), [...read.allowedTopicIds]);
+    // A single derived row keeps the inventory bound once while PostgreSQL inlines it into every lane.
+    const allowedTopicIds = read.allowedTopicIds === undefined ? null : [...read.allowedTopicIds];
+    const topicPredicate = PSqlFragment.of`(topic_selection.allowed_topic_ids is null
+        or ri_topic_id = any(topic_selection.allowed_topic_ids))`;
     const finalizationTypeId = typeIds.has(EnqueuedType.APP_INBOX) ? EnqueuedType.APP_INBOX : null;
     return PSqlFragment.of`
             select
@@ -120,7 +121,8 @@ function toWorkPresenceSelect(read: ResourceInboxWorkPresenceRead, ordinal: numb
                       and ri_attempts < ${Number.MAX_SAFE_INTEGER}
                       and start_ts is not null
                       and start_ts <= (now() - (${finalizationStaleAfterMs} * interval '1 millisecond')) at time zone 'UTC'
-                ) as has_stale_exhausted_reservation`;
+                ) as has_stale_exhausted_reservation
+            from (select ${allowedTopicIds}::text[] as allowed_topic_ids) topic_selection`;
 }
 
 function toWorkPresence(row: WorkPresenceRow): ResourceInboxWorkPresence {
