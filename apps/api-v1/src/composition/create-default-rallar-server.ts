@@ -1,16 +1,17 @@
-import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
 
 import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-app-data-repository.ts';
 import type { RallarServerApplication } from '@shared-server/rallar-server/rallar-server-application.ts';
 import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
+import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { createServerPublishRoomAudienceReader } from '@shared-server/rallar-system/websocket/read-server-publish-room-audience.ts';
 import type { RallarServerWsRouterOptions } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import { resolveExposedGarbageCollector } from '@shared/runtime-health/resolve-exposed-garbage-collector.ts';
+
 import type { ApiV1Configuration } from '../configuration/api-v1-configuration.ts';
 import { toApiV1PublicConfiguration } from '../configuration/to-api-v1-public-configuration.ts';
 import { createCrdtAdminMutations, type CrdtAdminMutations } from '../crdt/create-crdt-admin-mutations.ts';
@@ -248,7 +249,7 @@ function createConfiguredApiV1Runtime(
         rtcTopologyOptions,
         rttRefinementGateConfig: configuration.topology.rttRefinement,
         crdtPolicies: configuration.crdt.documentTypePolicies,
-        resilience: createApiV1MiddlewareResilience(configuration.topology.queueResilience),
+        resilience: createApiV1MiddlewareResilience(configuration.topology.queueResilience, configuration.appInbox.retry),
         backgroundTasks
     });
 }

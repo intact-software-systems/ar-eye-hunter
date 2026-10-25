@@ -118,6 +118,11 @@
     }
   },
   "appInbox": {
+    "retry": {
+      "maxAttempts": 20,
+      "maxDelayMs": 30000,
+      "conflictMaxDelayMs": 250
+    },
     "phaseTiming": false,
     "newLaneConcurrency": 4,
     "newLaneHeldRows": 16,

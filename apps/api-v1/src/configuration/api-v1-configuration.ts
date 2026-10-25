@@ -186,7 +186,17 @@ export interface ApiV1AppInboxCompletionWaitConfiguration {
     readonly jitterRatio: number;
 }
 
+export interface ApiV1AppInboxRetryConfiguration {
+    /** Total mutation attempts, including the first delivery. Command expiry can stop work sooner. */
+    readonly maxAttempts: number;
+    /** Backoff base cap before the existing jitter is applied. */
+    readonly maxDelayMs: number;
+    /** Final delay cap for classified optimistic conflicts only. */
+    readonly conflictMaxDelayMs: number;
+}
+
 export interface ApiV1AppInboxConfiguration {
+    readonly retry: ApiV1AppInboxRetryConfiguration;
     readonly phaseTiming: boolean;
     /** Distinct-context heads one NEW round claims and runs together (1 to `InboxQueueReader.NEW_CONTEXTS_PER_PASS`). */
     readonly newLaneConcurrency: number;

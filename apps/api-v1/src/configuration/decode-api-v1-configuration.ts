@@ -506,6 +506,11 @@ function decodeAppInbox(
         InboxQueueReader.NEW_CONTEXTS_PER_PASS
     );
     return {
+        retry: {
+            maxAttempts: decoder.integer('appInbox.retry.maxAttempts', 1),
+            maxDelayMs: decoder.integer('appInbox.retry.maxDelayMs', 1, MAX_APP_INBOX_FINISHED_RETENTION_MS),
+            conflictMaxDelayMs: decoder.integer('appInbox.retry.conflictMaxDelayMs', 1, MAX_APP_INBOX_FINISHED_RETENTION_MS)
+        },
         phaseTiming: decoder.boolean('appInbox.phaseTiming'),
         newLaneConcurrency,
         newLaneHeldRows: decodeAppInboxNewLaneHeldRows(decoder, newLaneConcurrency),

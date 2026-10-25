@@ -1,3 +1,22 @@
+import type {
+    ApiV1ConfigurationSourceValue,
+    DecodeApiV1ConfigurationInput
+} from '../../src/configuration/decode-api-v1-configuration-source.ts';
+
+export interface MutableApiV1ConfigurationSourceObject {
+    [key: string]: ApiV1ConfigurationSourceValue | undefined;
+}
+
+export interface MutableDecodeApiV1ConfigurationInput extends DecodeApiV1ConfigurationInput {
+    profileName: ApiV1ConfigurationSourceValue | undefined;
+    defaultsSource: ApiV1ConfigurationSourceValue | undefined;
+    profileSource: ApiV1ConfigurationSourceValue | undefined;
+    environmentSource: ApiV1ConfigurationSourceValue | undefined;
+    appliedEnvironmentOverrideNames: ApiV1ConfigurationSourceValue | undefined;
+    secretsSource: ApiV1ConfigurationSourceValue | undefined;
+    staticClientsSource: ApiV1ConfigurationSourceValue | undefined;
+}
+
 export const CONFIGURATION_SECRET_SENTINELS = {
     authenticationCredentialSecret: 'auth-secret-sentinel-8de3f40c-at-least-32',
     blackBoxOperatorTokenSecret: 'operator-secret-sentinel-325c7e21',
@@ -125,6 +144,7 @@ const CONFIGURATION_DEFAULTS_SOURCE = {
         }
     },
     appInbox: {
+        retry: { maxAttempts: 20, maxDelayMs: 30_000, conflictMaxDelayMs: 250 },
         phaseTiming: false,
         newLaneConcurrency: 4,
         newLaneHeldRows: 16,
@@ -233,22 +253,4 @@ export function validConfigurationEnvironment(
         };
     }
     return environment;
-}
-import type {
-    ApiV1ConfigurationSourceValue,
-    DecodeApiV1ConfigurationInput
-} from '../../src/configuration/decode-api-v1-configuration-source.ts';
-
-export interface MutableApiV1ConfigurationSourceObject {
-    [key: string]: ApiV1ConfigurationSourceValue | undefined;
-}
-
-export interface MutableDecodeApiV1ConfigurationInput extends DecodeApiV1ConfigurationInput {
-    profileName: ApiV1ConfigurationSourceValue | undefined;
-    defaultsSource: ApiV1ConfigurationSourceValue | undefined;
-    profileSource: ApiV1ConfigurationSourceValue | undefined;
-    environmentSource: ApiV1ConfigurationSourceValue | undefined;
-    appliedEnvironmentOverrideNames: ApiV1ConfigurationSourceValue | undefined;
-    secretsSource: ApiV1ConfigurationSourceValue | undefined;
-    staticClientsSource: ApiV1ConfigurationSourceValue | undefined;
 }

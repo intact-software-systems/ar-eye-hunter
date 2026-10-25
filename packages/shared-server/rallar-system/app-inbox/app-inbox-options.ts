@@ -1,3 +1,5 @@
+export const DEFAULT_APP_INBOX_CONFLICT_RETRY_MAX_DELAY_MS = 250;
+
 export const DEFAULT_APP_INBOX_WAIT_MAX_ELAPSED_MSECS = 10_000;
 export const DEFAULT_APP_INBOX_WAIT_RETRY_INTERVAL_MSECS = 500;
 export const DEFAULT_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MSECS = 20_000;
@@ -27,6 +29,8 @@ export const MIN_APP_INBOX_FINISHED_RETENTION_MS = 3_600_000;
 export const MAX_APP_INBOX_FINISHED_RETENTION_MS = 2_592_000_000;
 
 export interface AppInboxOptions {
+    /** Final delay ceiling for classified optimistic conflicts; ordinary failures retain QueueBox backoff. */
+    readonly conflictRetryMaxDelayMs?: number;
     readonly phaseTiming?: boolean;
     readonly attemptDeadlineMarginMs?: number;
     readonly waitMaxElapsedMsecs?: number;
@@ -83,7 +87,16 @@ export function validateAppInboxAttemptDeadlineMargin(
         }];
 }
 
-/** The handler side's one option: how far below its reservation lease an attempt's deadline falls. */
+/** A positive integer ceiling; invalid explicit policy fails at construction instead of silently defaulting. */
+export function resolveAppInboxConflictRetryMaxDelayMs(options: AppInboxOptions): number {
+    const delayMs = options.conflictRetryMaxDelayMs ?? DEFAULT_APP_INBOX_CONFLICT_RETRY_MAX_DELAY_MS;
+    if (!Number.isSafeInteger(delayMs) || delayMs < 1 || delayMs > MAX_APP_INBOX_FINISHED_RETENTION_MS) {
+        throw new RangeError(`AppInbox conflict retry maximum delay must be a positive safe integer no greater than ${MAX_APP_INBOX_FINISHED_RETENTION_MS}`);
+    }
+    return delayMs;
+}
+
+/** How far below its reservation lease an attempt's deadline falls. */
 export function resolveAppInboxAttemptDeadlineMarginMs(options: AppInboxOptions): number {
     return toNonNegativeFiniteNumber(options.attemptDeadlineMarginMs, DEFAULT_APP_INBOX_ATTEMPT_DEADLINE_MARGIN_MS);
 }

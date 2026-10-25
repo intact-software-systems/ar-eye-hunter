@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import {
@@ -53,6 +55,56 @@ describe('AppInbox conflict redelivery', () => {
         expect(observedValues).toEqual([0, 1, 2, 3, 4, 5, 6]);
         expect(await harness.readEntry()).toMatchObject({ status: EntityStatus.COMPLETED, dequeueAudit: { attempts: 7 } });
     });
+
+    it.each(['conflict', 'transient'] as const)('applies configured delay and attempt bounds to persisted %s redelivery', async (failure) => {
+        let now = Temporal.Instant.from('2026-07-22T12:00:00Z');
+        let attempts = 0;
+        const harness = createRegisteredHandlerHarness({ now: () => now, appInboxOptions: { conflictRetryMaxDelayMs: 75 } });
+        const resilience = ResourceInboxResilience.create({
+            circuitBreakerPolicy: createResilience().circuitBreaker.policy,
+            reservationLeaseMs: 60_000,
+            retryPolicy: { ...DEFAULT_RESOURCE_INBOX_RETRY_POLICY, maxAttempts: 8, maxDelayMs: 400 }
+        });
+        harness.service.onStateMessage(AppInboxType.GROUP_CREATE, async (_data, context) => {
+            attempts += 1;
+            return await harness.service.commit(context, { accepted: true }, async () => {
+                throw failure === 'conflict'
+                    ? new RuntimeStateWriteConflictError()
+                    : Object.assign(new Error('Temporary database failure'), { code: 'app-inbox-transient' });
+            });
+        });
+        harness.service.enqueueWithoutWaiting(harness.enqueue);
+        for (let attempt = 1; attempt <= 8; attempt += 1) {
+            await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, resilience);
+            const entry = (await harness.readEntry())!;
+            expect(attempts).toBe(attempt);
+            expect(entry.dequeueAudit.attempts).toBe(attempt);
+            if (attempt < 8) {
+                expect(entry.status).toBe(EntityStatus.RETRY);
+                const delayMs = Number(entry.dequeueAudit.nextTs!.epochMilliseconds - entry.dequeueAudit.endTs!.epochMilliseconds);
+                if (attempt >= 6) {
+                    if (failure === 'conflict') {
+                        expect(delayMs).toBe(75);
+                    }
+                    else {
+                        expect(delayMs).toBeGreaterThanOrEqual(320);
+                        expect(delayMs).toBeLessThanOrEqual(480);
+                    }
+                }
+                now = entry.dequeueAudit.nextTs!;
+            }
+        }
+        expect(await harness.readEntry()).toMatchObject({ status: EntityStatus.FAILED, dequeueAudit: { attempts: 8 } });
+        await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, resilience);
+        expect(attempts).toBe(8);
+    });
+
+    it.each([0, -1, 1.5, 2_592_000_001, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1])(
+        'rejects invalid explicit conflict delay %s during construction', (conflictRetryMaxDelayMs) => {
+            expect(() => createRegisteredHandlerHarness({ appInboxOptions: { conflictRetryMaxDelayMs } }))
+                .toThrow('AppInbox conflict retry maximum delay must be a positive safe integer');
+        }
+    );
 
     it('survives a bounded conflict window without exhausting the delivery budget', async () => {
         const startedAt = Temporal.Instant.from('2026-07-22T12:00:00Z');

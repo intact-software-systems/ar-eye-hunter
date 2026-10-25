@@ -41,16 +41,17 @@ import {
     type AppInboxErrorClassification
 } from '../app-inbox-error-classification.ts';
 import { toTerminalAppInboxFailure } from '../app-inbox-failure.ts';
-import { resolveAppInboxAttemptDeadlineMarginMs, type AppInboxOptions } from '../app-inbox-options.ts';
+import {
+    resolveAppInboxAttemptDeadlineMarginMs,
+    resolveAppInboxConflictRetryMaxDelayMs,
+    type AppInboxOptions
+} from '../app-inbox-options.ts';
 import type { AppInboxResultRepository } from '../app-inbox-persistence-ports.ts';
 import { toAppInboxAttemptTimingDetails, toAppInboxTimingDetails } from './app-inbox-attempt-timing.ts';
 import { computeAppInboxCompletion, validateAppInboxCompletion } from './app-inbox-completion-computation.ts';
 import type { AppInboxHandlerRegistration } from './app-inbox-handler-registration.ts';
 import { timeAppInboxPhase } from './app-inbox-phase-timing.ts';
 import { AppInboxTransactionWriter } from './app-inbox-transaction-writer.ts';
-
-// Conflicts recompute from fresh state on outer delivery; they do not need the transient-failure recovery pause.
-const OPTIMISTIC_CONFLICT_RETRY_CEILING_MS = 250;
 
 interface AppInboxExecutionAttempt<Command, Result> extends AppInboxHandlerExecutor.Input<Command, Result> {
     readonly undecodedEnqueue: AppInboxEnqueueInput;
@@ -118,6 +119,7 @@ export class AppInboxHandlerExecutor {
     private readonly timing: RallarTimingSink | undefined;
     private readonly options: AppInboxOptions;
     private readonly attemptDeadlineMarginMs: number;
+    private readonly conflictRetryMaxDelayMs: number;
 
     constructor(
         dependencies: AppInboxHandlerExecutor.Dependencies,
@@ -133,6 +135,7 @@ export class AppInboxHandlerExecutor {
         this.timing = config.timing;
         this.options = config.options ?? {};
         this.attemptDeadlineMarginMs = resolveAppInboxAttemptDeadlineMarginMs(this.options);
+        this.conflictRetryMaxDelayMs = resolveAppInboxConflictRetryMaxDelayMs(this.options);
     }
 
     /**
@@ -335,7 +338,7 @@ export class AppInboxHandlerExecutor {
                     input.entry,
                     input.classification.code,
                     input.error,
-                    OPTIMISTIC_CONFLICT_RETRY_CEILING_MS
+                    this.conflictRetryMaxDelayMs
                 );
             }
             throw input.error;

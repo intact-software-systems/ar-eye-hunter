@@ -35,7 +35,7 @@ interface ApiV1ConfigurationEnvironmentOverlay extends MutableSourceObject {
         rttRefinement: MutableSourceObject;
         replay: MutableSourceObject;
     };
-    appInbox: MutableSourceObject & { completionWait: MutableSourceObject; };
+    appInbox: MutableSourceObject & { retry: MutableSourceObject; completionWait: MutableSourceObject; };
     ice: MutableSourceObject & { rateLimit: MutableSourceObject; };
     crdt: MutableSourceObject;
     blackBox: MutableSourceObject & {
@@ -130,7 +130,7 @@ function createEnvironmentOverlay(): ApiV1ConfigurationEnvironmentOverlay {
             rttRefinement: {},
             replay: {}
         },
-        appInbox: { completionWait: {} },
+        appInbox: { retry: {}, completionWait: {} },
         ice: { rateLimit: {} },
         crdt: {},
         blackBox: { operatorToken: {}, pgliteEvidence: {} },
@@ -366,6 +366,21 @@ const ENVIRONMENT_SETTINGS: readonly EnvironmentSetting[] = [
         name: 'RALLAR_API_QUEUE_WORKERS',
         decode: decodeString,
         apply: (source, value) => source.topology.replay.queueWorkers = value
+    },
+    {
+        name: 'RALLAR_APP_INBOX_MAX_ATTEMPTS',
+        decode: decodeNumber,
+        apply: (source, value) => source.appInbox.retry.maxAttempts = value
+    },
+    {
+        name: 'RALLAR_APP_INBOX_MAX_RETRY_DELAY_MS',
+        decode: decodeNumber,
+        apply: (source, value) => source.appInbox.retry.maxDelayMs = value
+    },
+    {
+        name: 'RALLAR_APP_INBOX_CONFLICT_MAX_RETRY_DELAY_MS',
+        decode: decodeNumber,
+        apply: (source, value) => source.appInbox.retry.conflictMaxDelayMs = value
     },
     {
         name: 'RALLAR_APP_INBOX_PHASE_TIMING',
