@@ -49,6 +49,9 @@ import type { AppInboxHandlerRegistration } from './app-inbox-handler-registrati
 import { timeAppInboxPhase } from './app-inbox-phase-timing.ts';
 import { AppInboxTransactionWriter } from './app-inbox-transaction-writer.ts';
 
+// Conflicts recompute from fresh state on outer delivery; they do not need the transient-failure recovery pause.
+const OPTIMISTIC_CONFLICT_RETRY_CEILING_MS = 20;
+
 interface AppInboxExecutionAttempt<Command, Result> extends AppInboxHandlerExecutor.Input<Command, Result> {
     readonly undecodedEnqueue: AppInboxEnqueueInput;
     readonly deadline: ClaimableDeadlineClaim;
@@ -331,7 +334,8 @@ export class AppInboxHandlerExecutor {
                 return new ResourceInboxHandlerRetryableConflict(
                     input.entry,
                     input.classification.code,
-                    input.error
+                    input.error,
+                    OPTIMISTIC_CONFLICT_RETRY_CEILING_MS
                 );
             }
             throw input.error;
