@@ -36,6 +36,8 @@ export class FakeRuntimeStateRepository
         key: string
     ) => void | Promise<void>;
     serializeTransactions = false;
+    /** The clock that decides whether a stored row has expired, as the database clock does for Postgres. */
+    nowEpochMs: () => number = Date.now;
     private activeTransactionCount = 0;
     private transactionTail: Promise<void> = Promise.resolve();
 
@@ -190,18 +192,19 @@ export class FakeRuntimeStateRepository
     ): Promise<RuntimeStateConditionalWriteResult> {
         await this.beforeConditionalWrite?.('insertIfAbsent', namespace, key);
         const compositeKey = this.toKey(namespace, key);
-        if (this.data.has(compositeKey)) {
+        const current = this.data.get(compositeKey);
+        if (current !== undefined && current.expireAtTimestamp > this.nowEpochMs()) {
             return { status: 'conflict' };
         }
-
+        const revision = current === undefined ? 0 : current.revision + 1;
         this.data.set(compositeKey, {
             key,
             value,
             expireAtTimestamp,
             updatedTimestamp: new Date().toISOString(),
-            revision: 0
+            revision
         });
-        return { status: 'applied', revision: 0 };
+        return { status: 'applied', revision };
     }
 
     async upsertIfRevision(
@@ -291,7 +294,7 @@ export class FakeRuntimeStateRepository
                 continue;
             }
 
-            if (entry.expireAtTimestamp > Date.now()) {
+            if (entry.expireAtTimestamp > this.nowEpochMs()) {
                 continue;
             }
 

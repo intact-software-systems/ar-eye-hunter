@@ -30,6 +30,7 @@ import {
     type Key,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../test-support/test-app-inbox-finished-retention.ts';
 
 interface RuntimeRow {
     readonly value: string;
@@ -82,7 +83,10 @@ describe('Postgres transaction write boundary', () => {
         'keeps rejected-message result and queue failure atomic when %s',
         async (failure) => {
             const database = createTransactionalDatabase({ failCompletion: failure === 'completion-failed' });
-            const writer = new AppInboxTransactionWriter({ database: database.sql, nowEpochMs: Date.now }, { serviceId: 'server-1' });
+            const writer = new AppInboxTransactionWriter({ database: database.sql, nowEpochMs: Date.now }, {
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+                serviceId: 'server-1'
+            });
             const entry = {
                 ...incomingEntry,
                 resource: '{"corrupt":',
@@ -96,6 +100,7 @@ describe('Postgres transaction write boundary', () => {
                 reservationLeaseMs: 60_000
             });
             const completion = computeAppInboxCompletion({
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 entry,
                 completedAtEpochMs: Date.parse('2026-01-01T00:01:00Z'),
                 status: EntityStatus.NON_RETRYABLE,
@@ -123,7 +128,7 @@ describe('Postgres transaction write boundary', () => {
         });
         const transactionWriter = new AppInboxTransactionWriter(
             { database: database.sql, nowEpochMs: Date.now },
-            { serviceId: 'server-1' }
+            { finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS, serviceId: 'server-1' }
         );
         const enqueue = {
             type: AppInboxType.GROUP_CREATE,
@@ -293,7 +298,7 @@ function createTransactionSql(
             if (options.failCompletion) {
                 throw new Error('completion-failed');
             }
-            return completeTransactionInbox(state, values);
+            return completeTransactionInbox(state, toTransactionReservationFinish(values));
         }
 
         throw new Error(`Unhandled transaction SQL: ${query}`);
@@ -324,8 +329,26 @@ function insertTransactionRuntimeState(state: TransactionState, values: readonly
     return [{ revision: 0 }];
 }
 
-function completeTransactionInbox(state: TransactionState, values: readonly PSqlParameter[]): ReturnType<PSqlSql> {
-    const [status, completedAt, topicId, resourceId, contextId, attempts] = values;
+interface TransactionReservationFinish {
+    readonly status: PSqlParameter;
+    readonly completedAt: PSqlParameter;
+    /** Null for a finish that keeps the row's own expiry. */
+    readonly expiresAt: PSqlParameter | null;
+    readonly topicId: PSqlParameter;
+    readonly resourceId: PSqlParameter;
+    readonly contextId: PSqlParameter;
+    readonly attempts: PSqlParameter;
+}
+
+function toTransactionReservationFinish(values: readonly PSqlParameter[]): TransactionReservationFinish {
+    const [status, completedAt, ...rest] = values;
+    const expiresAt = rest.shift() ?? null;
+    const [topicId, resourceId, contextId, attempts] = rest;
+    return { status, completedAt, expiresAt, topicId, resourceId, contextId, attempts };
+}
+
+function completeTransactionInbox(state: TransactionState, finish: TransactionReservationFinish): ReturnType<PSqlSql> {
+    const { status, completedAt, expiresAt, topicId, resourceId, contextId, attempts } = finish;
     const row = state.inbox.get(
         `${readString(contextId, 'context id')}::${
             readString(
@@ -343,6 +366,9 @@ function completeTransactionInbox(state: TransactionState, values: readonly PSql
     }
     row.ri_status = readString(status, 'completion status');
     row.end_ts = readDate(completedAt, 'completion time').toISOString();
+    if (expiresAt !== null) {
+        row.expire_ts = readDate(expiresAt, 'retention expiry').toISOString().replace(/Z$/u, '');
+    }
     row.next_ts = null;
     return [{ ri_row_id: row.ri_row_id }];
 }

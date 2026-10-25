@@ -13,6 +13,7 @@ import {
     type ALRuntimeStoreId,
     type ALRuntimeStoreScope
 } from '@shared/alm/ALRuntimeStoreRegistry.ts';
+import { AL_INBOUND_MAX_DELIVERED_MARKERS } from '@shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts';
 import { AL_INBOUND_MAX_ORDERING_TRACKS } from '@shared/alm/inbound/admission/evict-al-inbound-ordering-tracks-past-cap.ts';
 import type {
     ALInboundRuntimeStores,
@@ -28,6 +29,7 @@ import {
 } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { ALStorageConnectOpenings } from '@shared/alm/storage/al-storage-connect-openings.ts';
 import {
+    toALDeliveredMarkersReport,
     toALOrderingTracksReport,
     toALStorageResetSink,
     type ALStorageEventSink
@@ -63,13 +65,18 @@ interface BrowserALRuntimeOptions extends Omit<CreateDefaultALRuntimeStoresInput
     readonly dbName: string;
 }
 
-export interface ConfigureBrowserALRuntimeStoresInput
-    extends
-        Omit<
-            BrowserALRuntimeOptions,
-            'dbName' | 'observer' | 'onStorageReset' | 'storageHealth' | 'connectOpenings' | 'maxOrderingTracks'
-        >,
-        BrowserALCheckpointSettingsInput {
+export interface ConfigureBrowserALRuntimeStoresInput extends
+    Omit<
+        BrowserALRuntimeOptions,
+        | 'dbName'
+        | 'observer'
+        | 'onStorageReset'
+        | 'storageHealth'
+        | 'connectOpenings'
+        | 'maxOrderingTracks'
+        | 'maxDeliveredMarkers'
+    >,
+    BrowserALCheckpointSettingsInput {
     readonly scope: StateScope;
     readonly diagnosticsPorts: RallarDiagnosticsPorts;
 }
@@ -91,7 +98,9 @@ function toBrowserRuntimeStoreScopes(
     const inboundOptions: BrowserALRuntimeOptions = {
         ...createBrowserStoreOptions(sessionInboundId, options, reporting.storage),
         maxOrderingTracks: AL_INBOUND_MAX_ORDERING_TRACKS,
-        reportOrderingTracks: toALOrderingTracksReport(reporting.storage, sessionInboundId)
+        reportOrderingTracks: toALOrderingTracksReport(reporting.storage, sessionInboundId),
+        maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS,
+        reportDeliveredMarkers: toALDeliveredMarkersReport(reporting.storage, sessionInboundId)
     };
 
     return [
@@ -194,7 +203,8 @@ export function createBrowserALVolatileOutboundRuntimeStores(
 /**
  * Always memory: the session's inbound pair for volatile messages, created once per middleware and
  * shared by both carriers (D20). Session cleanup and a storage reset never reach it; it dies with the
- * middleware. It states its ordering snapshots as the lane of the session's store, `<store id>/volatile`.
+ * middleware. It states its ordering snapshots and delivered markers as the lane of the session's store,
+ * `<store id>/volatile`.
  */
 export function createBrowserALVolatileInboundRuntimeStores(
     name: string,
@@ -204,7 +214,9 @@ export function createBrowserALVolatileInboundRuntimeStores(
     return createVolatileALInboundRuntimeStores({
         namespace: `browser:${name}:volatile`,
         maxOrderingTracks: AL_INBOUND_MAX_ORDERING_TRACKS,
-        reportOrderingTracks: toALOrderingTracksReport(storage, `${name}/volatile`)
+        reportOrderingTracks: toALOrderingTracksReport(storage, `${name}/volatile`),
+        maxDeliveredMarkers: AL_INBOUND_MAX_DELIVERED_MARKERS,
+        reportDeliveredMarkers: toALDeliveredMarkersReport(storage, `${name}/volatile`)
     }, budget);
 }
 

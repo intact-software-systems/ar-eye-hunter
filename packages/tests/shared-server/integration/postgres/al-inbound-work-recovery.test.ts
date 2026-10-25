@@ -239,7 +239,8 @@ async function createStores(): Promise<readonly [ALInboundRuntimeStores, ALInbou
                 nowMs: Date.now,
                 ...configuration,
                 backend: firstBackend,
-                maxOrderingTracks: undefined
+                maxOrderingTracks: undefined,
+                maxDeliveredMarkers: undefined
             }),
             workQueue: firstBackend.workQueue
         },
@@ -248,7 +249,8 @@ async function createStores(): Promise<readonly [ALInboundRuntimeStores, ALInbou
                 nowMs: Date.now,
                 ...configuration,
                 backend: secondBackend,
-                maxOrderingTracks: undefined
+                maxOrderingTracks: undefined,
+                maxDeliveredMarkers: undefined
             }),
             workQueue: secondBackend.workQueue
         }

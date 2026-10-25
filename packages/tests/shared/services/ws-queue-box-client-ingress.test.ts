@@ -421,7 +421,8 @@ async function createClientIngressFixture(
         orderingTrackTtlMs: 300000,
         supersedenceTrackTtlMs: 300000,
         retention: normalizeALRuntimeStoreRetention(),
-        maxOrderingTracks: undefined
+        maxOrderingTracks: undefined,
+        maxDeliveredMarkers: undefined
     });
     const service = createDefaultWsQueueBoxClientService({
         outbox,

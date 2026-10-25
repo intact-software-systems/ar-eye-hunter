@@ -175,6 +175,11 @@ async function writeRtcTopologySnapshot(
     }
 }
 
+/**
+ * A work id names its row's creation instant and generation (`toRtcTopologyExecutionId`), so a claim key does not
+ * recur; an expired claim is still taken for absent like every expiring insert, and a live one is a conflict. A
+ * publication key names the work id and the overlay version, so it does not recur either.
+ */
 async function writeRtcTopologyPublication(
     transaction: PSqlSql,
     publication: NonNullable<RtcTopologyPersistenceComputed['publication']>
@@ -185,7 +190,12 @@ async function writeRtcTopologyPublication(
         values (${RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE},
                 ${publication.receiptKey}, ${publication.receiptValue},
                 ${publication.expireAtIsoTimestamp}, now(), 0)
-        on conflict (store_namespace, store_key) do nothing
+        on conflict (store_namespace, store_key) do update
+            set store_value = excluded.store_value,
+                expire_at_ts = excluded.expire_at_ts,
+                updated_ts = now(),
+                revision = runtime_state_store.revision + 1
+            where runtime_state_store.expire_at_ts <= now()
         returning revision
     `;
     if (!claims[0]) {

@@ -38,18 +38,18 @@ import {
 } from './compute-rtc-topology-work-write.ts';
 import { isChangeGatedGroupRevisionWork, toTopologyWorkOrigin } from './rtc-topology-coalesced-group-revision-work.ts';
 import { computeAuthorityTopologyInputFingerprint } from './rtc-topology-input-fingerprint.ts';
-import {
-    toRtcTopologyExecutionId,
-    type PersistedRtcTopologyWork,
-    type RtcTopologyWorkEnvelope
-} from './rtc-topology-work-codec.ts';
+import type { PersistedRtcTopologyWork, RtcTopologyWorkEnvelope } from './rtc-topology-work-codec.ts';
 import type { TopologyPromotionRead } from './topology-promotion-request.ts';
 
 export interface RtcTopologyWorkFacts {
     readonly workEnvelope: RtcTopologyWorkEnvelope<PersistedRtcTopologyWork>;
     readonly workId: string;
     readonly attemptCount: number;
-    readonly expireAtEpochMs: number;
+    /**
+     * The expiry of every row this attempt derives: the later of its own row's expiry and the finished-retention
+     * window from the attempt, so a row derived from a long-lived row near its expiry still lives its window.
+     */
+    readonly derivedExpireAtEpochMs: number;
 }
 
 export interface RtcTopologyWorkRead {
@@ -106,7 +106,6 @@ type UnchangedRtcTopologyWork = Extract<AcceptedRtcTopologyWork, { decision: 'sk
 type HeldRtcTopologyWork = Extract<AcceptedRtcTopologyWork, { decision: 'held-young-layout'; }>;
 
 interface ToTopologyPublicationInput {
-    readonly envelope: RtcTopologyWorkEnvelope<PersistedRtcTopologyWork>;
     readonly group: GroupSnapshot;
     readonly snapshot: RallarOverlayTopologySnapshot;
     readonly facts: RtcOverlayTopologyMessageFacts;
@@ -189,6 +188,7 @@ function toRtcTopologyWorkWriteInput(
         accepted,
         entry: input.entry,
         sourceWorkId: input.facts.workId,
+        derivedExpireAtEpochMs: input.facts.derivedExpireAtEpochMs,
         reservationFinish: input.reservationFinish,
         formationAutomationEnabled: input.formationAutomationEnabled,
         serviceId: input.serviceId,
@@ -359,7 +359,6 @@ function computeAcceptedTopologyMutation(
     const publication = publicationExpireAtTimestamp === null
         ? null
         : toTopologyPublication({
-            envelope: workEnvelope,
             group: authority.group,
             snapshot: planned.snapshot,
             facts: {
@@ -404,8 +403,8 @@ function computeAcceptedTopologyMutation(
 }
 
 function toTopologyPublication(input: ToTopologyPublicationInput): RtcTopologyPublication {
-    const { envelope, group, snapshot, facts } = input;
-    const workId = toRtcTopologyExecutionId(envelope);
+    const { group, snapshot, facts } = input;
+    const { workId } = facts;
     return {
         publicationId: toRtcTopologyPublicationId({
             workId,

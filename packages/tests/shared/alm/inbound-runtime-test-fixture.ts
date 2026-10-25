@@ -89,6 +89,10 @@ export interface CreateInboundTestStoresInput {
     readonly maxOrderingTracks?: number;
     /** Hears each count a capped store states after a new track; absent, the store states nothing. */
     readonly reportOrderingTracks?: (tracks: number) => void;
+    /** The store's delivered-marker cap; absent, the store keeps every marker until its expiry, as the server's do. */
+    readonly maxDeliveredMarkers?: number;
+    /** Hears each marker count the store states after a new marker; absent, the store states nothing. */
+    readonly reportDeliveredMarkers?: (markers: number) => void;
 }
 
 export interface InboundTestBackendStores {
@@ -119,7 +123,9 @@ export function createInboundTestBackendStores(input: CreateInboundTestStoresInp
                 supersedenceTrackTtlMs: 60_000,
                 retention: normalizeALRuntimeStoreRetention(),
                 maxOrderingTracks: input.maxOrderingTracks,
-                reportOrderingTracks: input.reportOrderingTracks
+                reportOrderingTracks: input.reportOrderingTracks,
+                maxDeliveredMarkers: input.maxDeliveredMarkers,
+                reportDeliveredMarkers: input.reportDeliveredMarkers
             }),
             workQueue: backend.workQueue
         }

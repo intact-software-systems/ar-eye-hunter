@@ -22,6 +22,7 @@ export interface GroupTopologyConfigMutationServiceDependencies {
     readonly nowEpochMs: () => number;
     readonly isPlatformAdmin: (principalId: string) => boolean;
     readonly outboxWriter: RtcTopologyOutboxWriter;
+    readonly finishedRetentionMs: number;
 }
 
 export interface GroupTopologyConfigMutationAttemptRead {
@@ -29,6 +30,7 @@ export interface GroupTopologyConfigMutationAttemptRead {
     readonly policyNowEpochMs: number;
     readonly isPlatformAdmin: boolean;
     readonly serverDefaults: GroupTopologyServerOptions;
+    readonly finishedRetentionMs: number;
 }
 
 export interface GroupTopologyConfigMutationValidation {
@@ -58,7 +60,8 @@ export class GroupTopologyConfigMutationService {
             isPlatformAdmin: this.dependencies.isPlatformAdmin(
                 command.input.updatedByPrincipalId
             ),
-            serverDefaults: { ...(this.dependencies.serverDefaults ?? {}) }
+            serverDefaults: { ...(this.dependencies.serverDefaults ?? {}) },
+            finishedRetentionMs: this.dependencies.finishedRetentionMs
         };
     }
 
@@ -131,6 +134,7 @@ function toTopologyConfigMutationFacts(
             : null,
         isPlatformAdmin: read.isPlatformAdmin,
         policyNowEpochMs: read.policyNowEpochMs,
-        attemptCount
+        attemptCount,
+        expireAtEpochMs: command.capturedAtEpochMs + read.finishedRetentionMs
     };
 }

@@ -17,6 +17,7 @@ import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { TestResourceInbox, TestResourceInboxResults } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../client-state/test-disconnected-session-retention.ts';
 
 const TEST_SERVICE_ID = 'rallar-middleware-test';
@@ -57,6 +58,7 @@ export function createRallarMiddlewareTestRuntime(
         serviceId: TEST_SERVICE_ID
     });
     const groupStateService = createGroupStateService({
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         runtimeRepository,
         groupStateEventStore: database.groupEventStore,
         serviceId: TEST_SERVICE_ID,
@@ -81,6 +83,7 @@ export function createRallarMiddlewareTestRuntime(
         topologyService: new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000 })
     });
     const topologyMutationOwners = createGroupTopologyMutationOwners({
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         groupStateRepository: groupsRepository,
         configRepository: topologyConfigRepository,
         planning: topologyRuntimeOwners.planning,
@@ -115,6 +118,7 @@ export function createRallarMiddlewareTestRuntime(
                     resultReader: groupsRepository
                 },
                 {
+                    finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                     serviceId: TEST_SERVICE_ID,
                     wakeOwningQueue: factoryInput.wakeQueueEngine
                 }
@@ -136,6 +140,7 @@ export function createRallarMiddlewareTestRuntime(
                     }
                 },
                 {
+                    finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                     serviceId: TEST_SERVICE_ID,
                     wakeOwningQueue: factoryInput.wakeQueueEngine
                 }
@@ -162,6 +167,7 @@ export function createRallarMiddlewareTestRuntime(
                     }
                 },
                 {
+                    finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                     serviceId: TEST_SERVICE_ID,
                     wakeOwningQueue: factoryInput.wakeQueueEngine
                 }
@@ -179,6 +185,7 @@ export function createRallarMiddlewareTestRuntime(
                     clientStateService
                 },
                 {
+                    finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                     serviceId: TEST_SERVICE_ID,
                     disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,
                     wakeOwningQueue: factoryInput.wakeQueueEngine

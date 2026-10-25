@@ -2337,8 +2337,11 @@ Read routes:
 - `GET /api/admin/operations/queues` returns QueueBox and app-inbox result row
   counts by type/status plus expiry pressure.
 - `GET /api/admin/operations/realtime` returns process-local WebSocket status,
-  RTC topology metrics, and group-formation metrics. Responses include a warning because these metrics
-  are process-local in multi-server deployments.
+  RTC topology metrics, group-formation metrics, the ALM receipt diagnostics (`almReceipts`), and the
+  group audience cache size (`caches.groupAudienceSnapshots`, the groups whose current snapshot that cache
+  keeps; it holds the process's only version-probed read-through cache today). Responses include a warning
+  because these metrics are process-local in multi-server deployments. `alm.deliveredMarkers` counts the unexpired
+  delivered markers in the shared Postgres store; when that read fails, the whole response fails.
 - `GET /api/admin/operations/state` and
   `GET /api/admin/operations/state/apps/:applicationId/workspaces/:workspaceId`
   return client, group, and state-event aggregates.

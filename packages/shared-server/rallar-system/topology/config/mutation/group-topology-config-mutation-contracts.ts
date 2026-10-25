@@ -71,6 +71,11 @@ export interface GroupTopologyConfigMutationFacts {
     readonly isPlatformAdmin: boolean;
     readonly policyNowEpochMs: number;
     readonly attemptCount: number;
+    /**
+     * When the command's mutation record and its recompute outbox row expire: its ingress plus `finishedRetentionMs`
+     * (the contract on `MIN_APP_INBOX_FINISHED_RETENTION_MS`).
+     */
+    readonly expireAtEpochMs: number;
 }
 
 export interface TopologyConfigMutationValidationIssue {
@@ -117,13 +122,16 @@ export interface TopologyConfigInvariantGenerationGuard {
 }
 
 export type TopologyConfigRuntimeWrite =
+    /**
+     * Applies where the key holds no row or an expired one, which every read takes for absent; the row lands at
+     * revision 0, or one past the expired row it replaces.
+     */
     | Readonly<{
         operation: 'insert';
         namespace: string;
         key: string;
         value: string;
         expireAtIsoTimestamp: string;
-        expectedResultRevision: number;
     }>
     | Readonly<{
         operation: 'update';

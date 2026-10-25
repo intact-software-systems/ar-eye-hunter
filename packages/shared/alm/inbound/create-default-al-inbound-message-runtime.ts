@@ -78,7 +78,8 @@ function createLocalALInboundRuntimeStores(nowMs: () => number): ALInboundRuntim
             orderingTrackTtlMs: DEFAULT_AL_REPOSITORY_TTL_MS,
             supersedenceTrackTtlMs: 5 * 60_000,
             retention: normalizeALRuntimeStoreRetention(),
-            maxOrderingTracks: undefined
+            maxOrderingTracks: undefined,
+            maxDeliveredMarkers: undefined
         }),
         workQueue
     };

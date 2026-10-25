@@ -106,6 +106,23 @@ Deno.test('configuration reader rejects a password derivation bound below one', 
     assert.equal(error.issues.some((issue) => issue.path === 'authentication.maxConcurrentPasswordDerivations'), true);
 });
 
+Deno.test('configuration reader keeps 512 current group snapshots unless the environment names a cap', async () => {
+    const fromDefaults = await readApiV1Configuration(readerInput(validConfigurationEnvironment()));
+    assert.equal(fromDefaults.group.currentSnapshotCacheMaxEntries, 512);
+
+    const fromEnvironment = await readApiV1Configuration(readerInput({
+        ...validConfigurationEnvironment(),
+        RALLAR_GROUP_CURRENT_SNAPSHOT_CACHE_MAX_ENTRIES: '32'
+    }));
+    assert.equal(fromEnvironment.group.currentSnapshotCacheMaxEntries, 32);
+    assert.equal(
+        fromEnvironment.profile.appliedEnvironmentOverrideNames.includes(
+            'RALLAR_GROUP_CURRENT_SNAPSHOT_CACHE_MAX_ENTRIES'
+        ),
+        true
+    );
+});
+
 Deno.test('configuration reader keeps production hardening profile-owned', async () => {
     const environment = {
         ...validConfigurationEnvironment('prod'),
@@ -445,6 +462,36 @@ Deno.test('the environment selects the RTT replan minimum layout age within its 
         }));
         assert.equal(
             error.issues.some((issue) => issue.path === 'topology.planning.rttReplanMinimumLayoutAgeMs'),
+            true,
+            outOfRange
+        );
+    }
+});
+
+Deno.test('every committed profile samples the API heap every thirty seconds while timing logs are on', async () => {
+    for (const profile of ['dev', 'prod', 'prod-hardened', 'prod-in-memory'] as const) {
+        const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));
+        assert.equal(configuration.observability.heapSampleIntervalMs, 30_000, profile);
+    }
+});
+
+Deno.test('every committed profile keeps finished AppInbox commands one day unless the environment selects another retention', async () => {
+    for (const profile of ['dev', 'prod', 'prod-hardened', 'prod-in-memory'] as const) {
+        const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));
+        assert.equal(configuration.appInbox.finishedRetentionMs, 24 * 60 * 60 * 1_000, profile);
+    }
+    const selected = await readApiV1Configuration(readerInput({
+        ...validConfigurationEnvironment('prod-in-memory'),
+        RALLAR_APP_INBOX_FINISHED_RETENTION_MS: '7200000'
+    }));
+    assert.equal(selected.appInbox.finishedRetentionMs, 7_200_000);
+    for (const outOfRange of ['3599999', '2592000001']) {
+        const error = await captureConfigurationError(readerInput({
+            ...validConfigurationEnvironment(),
+            RALLAR_APP_INBOX_FINISHED_RETENTION_MS: outOfRange
+        }));
+        assert.equal(
+            error.issues.some((issue) => issue.path === 'appInbox.finishedRetentionMs'),
             true,
             outOfRange
         );

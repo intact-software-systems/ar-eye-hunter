@@ -1,13 +1,10 @@
 import { vi } from 'vitest';
 
+import { ALInboundStoreCounts } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/al-inbound-store-counts.ts';
 import {
     createBlackBoxRallarCongestionCounters,
     type BlackBoxRallarCongestionCounters
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-congestion-counters.ts';
-import {
-    createBlackBoxRallarOrderingTracks,
-    type BlackBoxRallarOrderingTracks
-} from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-ordering-tracks.ts';
 import {
     type BlackBoxBrowserAuthDependency,
     type BlackBoxBrowserCrdtDependency,
@@ -385,7 +382,7 @@ let scriptedFaults = createScriptedTransportFaultPort();
 let countingStorage = createCountingIndexedDbOperationObserver();
 let scriptedStorageFaults = createScriptedStorageFaultPort();
 let congestionCounters = createBlackBoxRallarCongestionCounters();
-let orderingTracks = createBlackBoxRallarOrderingTracks();
+let inboundStoreCounts = new ALInboundStoreCounts();
 let deliveryRegistry = createFacadeDeliveryRegistry();
 let deliverySequence = 0;
 
@@ -421,8 +418,8 @@ const diagnostics: BlackBoxBrowserDiagnosticsDependency = {
     get congestion(): BlackBoxRallarCongestionCounters {
         return congestionCounters;
     },
-    get orderingTracks(): BlackBoxRallarOrderingTracks {
-        return orderingTracks;
+    get inboundStoreCounts(): ALInboundStoreCounts {
+        return inboundStoreCounts;
     }
 };
 
@@ -497,7 +494,7 @@ export function resetBrowserRuntimeFacadeTestDouble(): void {
     countingStorage = createCountingIndexedDbOperationObserver();
     scriptedStorageFaults = createScriptedStorageFaultPort();
     congestionCounters = createBlackBoxRallarCongestionCounters();
-    orderingTracks = createBlackBoxRallarOrderingTracks();
+    inboundStoreCounts = new ALInboundStoreCounts();
     deliveryRegistry = createFacadeDeliveryRegistry();
     facadeBehavior.login.mockResolvedValue(facadeSession);
     facadeBehavior.registerAndLogin.mockResolvedValue(facadeSession);

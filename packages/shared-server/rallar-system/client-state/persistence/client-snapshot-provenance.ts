@@ -141,7 +141,12 @@ export async function writeClientSnapshotProvenance(
         const rows = await transaction<readonly { revision: number | string; }[]>`
             insert into runtime_state_store (store_namespace, store_key, store_value, expire_at_ts, updated_ts, revision)
             values (${write.namespace}, ${write.key}, ${write.value}, ${write.expiresAt}, now(), 0)
-            on conflict (store_namespace, store_key) do nothing
+            on conflict (store_namespace, store_key) do update
+                set store_value = excluded.store_value,
+                    expire_at_ts = excluded.expire_at_ts,
+                    updated_ts = now(),
+                    revision = runtime_state_store.revision + 1
+                where runtime_state_store.expire_at_ts <= now()
             returning revision
         `;
         if (rows.length !== 1) {

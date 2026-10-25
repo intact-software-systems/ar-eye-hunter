@@ -22,6 +22,7 @@ import {
 } from '@shared/crdt/mod.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { createApiCrdtInboxService } from '../../../src/crdt/create-api-crdt-inbox-service.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestQueueResilience } from '../../api-v1-test-queue-resilience.ts';
@@ -161,6 +162,7 @@ function createCrdtInboxHarness(sql: PGliteSql, now: number): CrdtInboxHarness {
         newLaneConcurrency: 1
     });
     const service = createApiCrdtInboxService({
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         inboxQueueReader,
         resourceInboxRepository: resourceInbox.entries,
         resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),

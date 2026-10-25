@@ -31,7 +31,7 @@ export interface ControlSnapshotPersistenceInput {
     readonly flushIntervalMs: number;
     readonly controlService: Pick<
         RallarBlackBoxControlService,
-        | 'applyRunRetention'
+        | 'applyCompletedRunRetention'
         | 'restoreSnapshot'
         | 'snapshotForPersistence'
         | 'snapshotLifecycleRevision'
@@ -116,7 +116,7 @@ export class ControlSnapshotPersistence {
 }
 
 function applyAutomaticRetention(input: ControlSnapshotPersistenceInput): void {
-    const deletedRunIds = input.controlService.applyRunRetention(input.retentionMaxRuns);
+    const deletedRunIds = input.controlService.applyCompletedRunRetention(input.retentionMaxRuns);
     if (deletedRunIds.length > 0) {
         input.deleteRuns(deletedRunIds);
     }

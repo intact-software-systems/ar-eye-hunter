@@ -3,7 +3,7 @@ import {
     expect,
     it
 } from 'vitest';
-import { readHeadlessWorkerConfig } from '../../../apps/rallar-black-box/src/headless-worker-config.ts';
+import { readHeadlessWorkerConfig } from '../../../apps/rallar-black-box/src/headless-worker/headless-worker-config.ts';
 import { resolveRallarBlackBoxBootstrapConfig } from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
 
 const env = {

@@ -118,21 +118,23 @@ describe('Postgres coalesced APP_OUTBOX work conflicts', () => {
         expect(await guardInTransaction({ ...observed!, resource: '{}' })).toBe(false);
     });
 
-    // Until the purge removes it, an expired head is absent to every reader yet still holds its key; the summary that
-    // read none answers its short conflict and retries, never a corruption failure.
-    postgresIt('reports an expired head that no reader sees but the purge has not removed as present, unchanged', async () => {
+    // Until the purge removes it, an expired head is absent to every reader yet still holds its key: a group idle for
+    // its whole retention window comes back to a fresh head written over the expired one.
+    postgresIt('writes a fresh head over an expired one that no reader sees but the purge has not removed', async () => {
         const ref = toRunGroupRef('expired-head');
-        const expired = computeRevisionWork(ref, null, 'automatic');
-        await writeInTransaction(expired);
+        await writeInTransaction(computeRevisionWork(ref, null, 'automatic'));
         await expireRevisionRows(ref);
         const head = toCoalescedGroupRevisionKey(ref);
-        expect(await createPSqlResourceInboxRepository(requireSql(), () => new Date()).entries.findByKey(head)).toBeNull();
+        const entries = createPSqlResourceInboxRepository(requireSql(), () => new Date()).entries;
+        expect(await entries.findByKey(head)).toBeNull();
 
-        expect(await writeInTransaction(computeRevisionWork(ref, null, 'automatic'))).toBe('head-present');
+        const fresh = computeRevisionWork(ref, null, 'automatic');
+        expect(await writeInTransaction(fresh)).toBe('written');
 
         const rows = await readRevisionRows(ref);
         expect(rows).toHaveLength(1);
-        expect(rows[0]!.resource).toBe(expired.entryWrite.entry.resource);
+        expect(rows[0]!.resource).toBe(fresh.entryWrite.entry.resource);
+        expect((await entries.findByKey(head))?.resource).toBe(fresh.entryWrite.entry.resource);
     });
 
     postgresIt('still reports a duplicate plain outbox insert as corruption', async () => {

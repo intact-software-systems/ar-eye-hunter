@@ -19,6 +19,7 @@ import {
 import {
     EntityStatus,
     isFailed,
+    NEVER_EXPIRE_TS,
     type Key,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
@@ -197,6 +198,8 @@ function toMergedCoalescedGroupRevisionEntry(
             requestedAtEpochMs: input.requestedAtEpochMs
         }
     };
+    // The head is one row for the group's whole life, so its expiry follows the group's latest change.
+    const expiresAtEpochMs = Math.max(previous.messageIdentity.expiresAtEpochMs, input.expireAtEpochMs);
     return toCoalescedGroupRevisionEntry({
         input,
         resourceId: toRtcTopologyCoalescedGroupRevisionResourceId(incoming.overlayId),
@@ -204,8 +207,8 @@ function toMergedCoalescedGroupRevisionEntry(
         dequeueAudit: carriesPreviousLifecycle
             ? { attempts: previousEntry.dequeueAudit.attempts, nextTs: previousEntry.dequeueAudit.nextTs }
             : { attempts: 0, nextTs: undefined },
-        entryAudit: previousEntry.audit,
-        messageIdentity: previous.messageIdentity
+        entryAudit: { ...previousEntry.audit, expiryTs: Temporal.Instant.fromEpochMilliseconds(expiresAtEpochMs) },
+        messageIdentity: { ...previous.messageIdentity, expiresAtEpochMs }
     });
 }
 
@@ -380,11 +383,12 @@ interface PreviousCoalescedGroupRevisionWork {
 
 /**
  * A stored coalesced row never rewrites its created-audit columns — both the
- * pending merge and the terminal revival compare-and-set update the resource
- * and lifecycle only. Every later generation must therefore keep the original
- * message sender, creation and expiry identity, or the row stops satisfying the
- * canonical work contract that release idempotency checks. The latest request
- * and due times live in the coalesced metadata, not the message identity.
+ * pending merge and the terminal revival compare-and-set update the resource,
+ * lifecycle and expiry only. Every later generation must therefore keep the
+ * original message sender and creation identity, and carry the expiry it writes
+ * in both the message and the audit, or the row stops satisfying the canonical
+ * work contract that release idempotency checks. The latest request and due
+ * times live in the coalesced metadata, not the message identity.
  */
 function readPreviousCoalescedGroupRevisionWork(previousEntry: ResourceEntry): PreviousCoalescedGroupRevisionWork {
     try {
@@ -402,7 +406,7 @@ function readPreviousCoalescedGroupRevisionWork(previousEntry: ResourceEntry): P
             messageIdentity: {
                 senderId: message.id.senderId,
                 tsEpochMs: message.id.ts,
-                expiresAtEpochMs: message.constraints?.expiresAtMs ?? null
+                expiresAtEpochMs: message.constraints?.expiresAtMs ?? NEVER_EXPIRE_TS.epochMilliseconds
             }
         };
     }
@@ -426,7 +430,8 @@ function readPendingCoalescedMetadata(entry: ResourceEntry): CoalescedAppOutboxW
 interface CoalescedMessageIdentity {
     readonly senderId: string;
     readonly tsEpochMs: number;
-    readonly expiresAtEpochMs: number | null;
+    /** A stored message without an expiry constraint never expires. */
+    readonly expiresAtEpochMs: number;
 }
 
 interface ToCoalescedGroupRevisionEntryInput {
@@ -522,9 +527,7 @@ function toCoalescedGroupRevisionMessage(
             senderId: createdBy
         },
         route: key,
-        ...(messageExpiresAtEpochMs === null
-            ? {}
-            : { constraints: { expiresAtMs: messageExpiresAtEpochMs } }),
+        constraints: { expiresAtMs: messageExpiresAtEpochMs },
         ordering: {
             orderingKey: key.contextId,
             epoch: causalRevision.groupRevision,

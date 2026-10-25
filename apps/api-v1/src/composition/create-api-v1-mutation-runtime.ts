@@ -87,9 +87,6 @@ import {
     type ApiMutationInboxFactories
 } from '../services/create-api-mutation-inbox-factories.ts';
 
-/** Groups whose current snapshot this server keeps between unchanged revisions. */
-const GROUP_CURRENT_SNAPSHOT_CACHE_MAX_ENTRIES = 512;
-
 export interface ApiV1MutationRuntimeResilience {
     readonly inbox: ResourceInboxResilience;
     readonly outbox: ResourceInboxResilience;
@@ -109,8 +106,11 @@ export interface CreateApiV1MutationRuntimeInput {
     readonly appInboxOptions: AppInboxOptions;
     readonly appInboxNewLaneConcurrency: number;
     readonly appInboxNewLaneHeldRows: number;
+    /** How long a finished command's fact, result, derived outbox rows and idempotency record stay. */
+    readonly appInboxFinishedRetentionMs: number;
     readonly disconnectedSessionRetentionMs: number;
     readonly groupCapacity: GroupPolicyCapacityConfig;
+    readonly groupCurrentSnapshotCacheMaxEntries: number;
     readonly groupFormationRecomputeDebounceMs: number;
     readonly groupFormationRecomputeMaxWaitMs: number;
     readonly adminClientIds: readonly string[];
@@ -124,6 +124,7 @@ export interface ApiV1MutationRuntime {
     readonly database: PSqlSql;
     readonly serviceId: string;
     readonly appInboxOptions: AppInboxOptions;
+    readonly appInboxFinishedRetentionMs: number;
     readonly queueBox: PSqlQueueBox;
     readonly resourceInboxRepository: PSqlResourceInboxRepository;
     readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
@@ -154,6 +155,7 @@ interface ApiV1StateMutationDependencies {
     readonly timing: RallarTimingSink;
     readonly outboxStageTiming?: RallarTimingSink;
     readonly appInboxOptions: AppInboxOptions;
+    readonly appInboxFinishedRetentionMs: number;
     readonly resourceInboxRepository: PSqlResourceInboxRepository;
     readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
     readonly runtimeStateRepository: PSqlRuntimeStateRepository;
@@ -206,7 +208,7 @@ export function createApiV1MutationRuntime(
             : createAppInboxCompletionRelay(input.appInboxCompletionNotices)
     );
     const appInboxDequeueOptions = createAppInboxDequeueOptions(input, completionNotifications);
-    const resources = createApiV1MutationResources(input.database, input.nowEpochMs);
+    const resources = createApiV1MutationResources(input);
     const stateDependencies = createApiV1StateMutationDependencies(input, resources);
     const mutationFactories = createApiV1MutationInboxFactories(input, resources);
     const groupStateService = createMutationGroupStateService(input, resources);
@@ -218,6 +220,7 @@ export function createApiV1MutationRuntime(
         database: input.database,
         serviceId: input.serviceId,
         appInboxOptions: input.appInboxOptions,
+        appInboxFinishedRetentionMs: input.appInboxFinishedRetentionMs,
         queueBox: resources.queueBox,
         resourceInboxRepository: resources.resourceInboxRepository,
         resourceInboxResultsRepository: resources.resourceInboxResultsRepository,
@@ -274,6 +277,7 @@ function createMutationGroupStateService(
             capacity: input.groupCapacity,
             groupStateEventStore: resources.groupStateEventStore,
             serviceId: input.serviceId,
+            finishedRetentionMs: input.appInboxFinishedRetentionMs,
             timing: input.timing,
             readPlannedLayoutRow: async (ref) => {
                 const planned = await plannedSnapshotRepository.findSnapshotEntry(ref);
@@ -300,9 +304,9 @@ function createMutationGroupStateService(
 }
 
 function createApiV1MutationResources(
-    database: PSqlSql,
-    nowEpochMs: () => number
+    input: CreateApiV1MutationRuntimeInput
 ): ApiV1MutationResources {
+    const { database, nowEpochMs } = input;
     const resourceInboxRepository = createPSqlResourceInboxRepository(database, () => new Date(nowEpochMs()));
     const resourceInboxResultsRepository = new ResourceInboxResultsRepository(database);
     const runtimeStateRepository = new PSqlRuntimeStateRepository(database);
@@ -327,7 +331,7 @@ function createApiV1MutationResources(
             repository: groupsRepository,
             versionReader: runtimeStateRepository,
             nowEpochMs,
-            maxEntries: GROUP_CURRENT_SNAPSHOT_CACHE_MAX_ENTRIES
+            maxEntries: input.groupCurrentSnapshotCacheMaxEntries
         }),
         groupFormationMetrics: createGroupFormationMetricsRecorder()
     };
@@ -344,6 +348,7 @@ function createApiV1StateMutationDependencies(
         timing: input.timing,
         outboxStageTiming: input.outboxStageTiming,
         appInboxOptions: input.appInboxOptions,
+        appInboxFinishedRetentionMs: input.appInboxFinishedRetentionMs,
         resourceInboxRepository: resources.resourceInboxRepository,
         resourceInboxResultsRepository: resources.resourceInboxResultsRepository,
         runtimeStateRepository: resources.runtimeStateRepository,
@@ -376,6 +381,7 @@ function createApiV1MutationInboxFactories(
         serviceId: input.serviceId,
         timing: input.timing,
         options: input.appInboxOptions,
+        finishedRetentionMs: input.appInboxFinishedRetentionMs,
         currentAuthority,
         policies: input.crdtPolicies
     });
@@ -387,6 +393,7 @@ function createApiV1MutationInboxFactories(
         serviceId: input.serviceId,
         timing: input.timing,
         options: input.appInboxOptions,
+        finishedRetentionMs: input.appInboxFinishedRetentionMs,
         currentAuthority
     });
 }
@@ -422,6 +429,7 @@ function createGroupStateInboxServiceFactory(
             },
             {
                 serviceId: input.serviceId,
+                finishedRetentionMs: input.appInboxFinishedRetentionMs,
                 timing: input.timing,
                 options: input.appInboxOptions,
                 wakeOwningQueue: wakeQueueEngine,
@@ -457,6 +465,7 @@ function createAppClientInboxServiceFactory(
             {
                 serviceId: input.serviceId,
                 disconnectedSessionRetentionMs: input.disconnectedSessionRetentionMs,
+                finishedRetentionMs: input.appInboxFinishedRetentionMs,
                 timing: input.timing,
                 options: input.appInboxOptions,
                 wakeOwningQueue: wakeQueueEngine
@@ -487,6 +496,7 @@ function createAppAuthInboxServiceFactory(
             },
             {
                 serviceId: input.serviceId,
+                finishedRetentionMs: input.appInboxFinishedRetentionMs,
                 timing: input.timing,
                 options: input.appInboxOptions,
                 wakeOwningQueue: wakeQueueEngine,
@@ -501,6 +511,7 @@ function createAppInboxDequeueOptions(
 ): InboxQueueReader.Options {
     const finalizeAppInboxRetry = createAppInboxRetryFinalizer({
         database: input.database,
+        finishedRetentionMs: input.appInboxFinishedRetentionMs,
         timing: input.timing
     });
     return {

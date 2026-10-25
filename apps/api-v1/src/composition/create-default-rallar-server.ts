@@ -10,6 +10,7 @@ import type { RallarServerWsRouterOptions } from '@shared-server/rallar-system/w
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
+import { resolveExposedGarbageCollector } from '@shared/runtime-health/resolve-exposed-garbage-collector.ts';
 import type { ApiV1Configuration } from '../configuration/api-v1-configuration.ts';
 import { toApiV1PublicConfiguration } from '../configuration/to-api-v1-public-configuration.ts';
 import { createCrdtAdminMutations, type CrdtAdminMutations } from '../crdt/create-crdt-admin-mutations.ts';
@@ -24,6 +25,7 @@ import {
 } from '../runtime/runtime-identity.ts';
 import { createRuntimeStateExpiryLifecycle } from '../services/runtime-state-expiry-startup.ts';
 import { startEventLoopLagTiming } from '../services/start-event-loop-lag-timing.ts';
+import { startHeapSampleTiming } from '../services/start-heap-sample-timing.ts';
 import {
     createApiTimingSink,
     toApiAppInboxServiceOptions,
@@ -107,6 +109,7 @@ function constructDefaultRallarServer(
         database,
         serviceId: myServerId,
         nowEpochMs,
+        finishedRetentionMs: configuration.appInbox.finishedRetentionMs,
         topology,
         crdtLogRepository,
         crdtPolicies: configuration.crdt.documentTypePolicies,
@@ -135,19 +138,25 @@ function constructDefaultRallarServer(
     });
 }
 
-/** The process timing sink and its optional event-loop sampler share one lifecycle owner. */
+/** The process timing sink and its optional event-loop and heap samplers share one lifecycle owner. */
 function startConfiguredApiTiming(
     observability: ApiV1Configuration['observability'],
     backgroundTasks: ApiV1BackgroundTaskLifecycle
 ): RallarTimingSink {
     const timing = createApiTimingSink(observability);
+    const timers = createDefaultTimers();
     if (observability.timingLogs) {
-        backgroundTasks.register(startEventLoopLagTiming({
-            timers: createDefaultTimers(),
-            timing,
-            serviceId: myServerId
-        }));
+        backgroundTasks.register(startEventLoopLagTiming({ timers, timing, serviceId: myServerId }));
     }
+    backgroundTasks.register(startHeapSampleTiming({
+        timers,
+        timing: toTimingOnSink(observability, timing),
+        serviceId: myServerId,
+        intervalMs: observability.heapSampleIntervalMs,
+        collectGarbage: resolveExposedGarbageCollector(globalThis),
+        readMemoryUsage: Deno.memoryUsage,
+        readUptimeMs: () => performance.now()
+    }));
     return timing;
 }
 
@@ -224,10 +233,12 @@ function createConfiguredApiV1Runtime(
         appInboxOptions: toApiAppInboxServiceOptions(configuration.appInbox),
         appInboxNewLaneConcurrency: configuration.appInbox.newLaneConcurrency,
         appInboxNewLaneHeldRows: configuration.appInbox.newLaneHeldRows,
+        appInboxFinishedRetentionMs: configuration.appInbox.finishedRetentionMs,
         disconnectedSessionRetentionMs: configuration.clientSessions.disconnectedRetentionMs,
         groupCapacity: {
             defaultMaxMembers: configuration.group.defaultMaxMembers
         },
+        groupCurrentSnapshotCacheMaxEntries: configuration.group.currentSnapshotCacheMaxEntries,
         groupFormationRecomputeDebounceMs: configuration.topology.recompute.formationDebounceMs,
         groupFormationRecomputeMaxWaitMs: configuration.topology.recompute.formationMaxWaitMs,
         topologyReplay: configuration.topology.replay,
@@ -287,6 +298,8 @@ function createDefaultApiV1AdminServices(
         readGroupFormationMetrics: runtime.groupFormationMetrics.readMetrics,
         resetGroupFormationMetrics: runtime.groupFormationMetrics.resetMetrics,
         readAlmReceipts: runtime.almReceiptDiagnostics.readDiagnostics,
+        readCacheSizes: () => ({ groupAudienceSnapshots: runtime.groupCurrentSnapshotCache.size() }),
+        readAlmDeliveredMarkers: runtime.readAlmDeliveredMarkers,
         crdtAdminRepository: crdtLogRepository,
         topologyQuery: topology.topologyQuery,
         clientStateService: runtime.clientStateService,

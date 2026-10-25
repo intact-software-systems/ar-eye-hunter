@@ -85,11 +85,11 @@ describe('distributed validation risk classification', () => {
         },
         {
             family: 'distributed-protocol-controller-headless',
-            path: 'apps/rallar-black-box/src/headless-worker-config.ts'
+            path: 'apps/rallar-black-box/src/headless-worker/headless-worker-config.ts'
         },
         {
             family: 'distributed-protocol-controller-headless',
-            path: 'apps/rallar-black-box/src/headless-worker-runtime.ts'
+            path: 'apps/rallar-black-box/src/headless-worker/headless-worker-runtime.ts'
         },
         {
             family: 'distributed-protocol-controller-headless',

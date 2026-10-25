@@ -10,6 +10,7 @@ import {
 import { writeAdminPruneAggregate } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-prune-repository.ts';
 import { computeAppInboxCompletion } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-completion-computation.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 
 describe('admin prune computation', () => {
     it('computes persistence-ready domain and completion writes before the transaction', async () => {
@@ -226,6 +227,6 @@ async function createRead() {
         authority: { allowed: true, code: 'allowed' },
         nowEpochMs: 1_005,
         serviceId: 'admin-server',
-        completionFacts: { entry, completedAtEpochMs: 1_010 }
+        completionFacts: { entry, completedAtEpochMs: 1_010, finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS }
     };
 }

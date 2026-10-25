@@ -285,7 +285,8 @@ function createRetainedInboundStoreSet(
                 orderingTrackTtlMs: 5 * 60_000,
                 supersedenceTrackTtlMs: 5 * 60_000,
                 retention: normalizeALRuntimeStoreRetention(),
-                maxOrderingTracks: undefined
+                maxOrderingTracks: undefined,
+                maxDeliveredMarkers: undefined
             })
         }
     };

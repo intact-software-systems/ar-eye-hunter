@@ -57,7 +57,7 @@ describe('group topology config repository scope isolation', () => {
         for (const boundary of boundaries) {
             const runtimeRepository = new PhysicalKeyAliasingRuntimeStateRepository();
             const repository = new GroupTopologyConfigRepository(runtimeRepository);
-            await boundary.seed(repository);
+            await boundary.seed(repository, runtimeRepository);
             runtimeRepository.aliasedNamespace = boundary.namespace;
 
             await expect(boundary.read(repository), boundary.label).rejects.toBeInstanceOf(
@@ -127,7 +127,10 @@ describe('group topology config repository scope isolation', () => {
 interface CanonicalRepositoryBoundary {
     readonly label: string;
     readonly namespace: string;
-    readonly seed: (repository: GroupTopologyConfigRepository) => Promise<object | undefined>;
+    readonly seed: (
+        repository: GroupTopologyConfigRepository,
+        runtimeRepository: FakeRuntimeStateRepository
+    ) => Promise<object | undefined>;
     readonly read: (repository: GroupTopologyConfigRepository) => Promise<object | undefined>;
 }
 
@@ -189,31 +192,36 @@ function createCanonicalMutationBoundaryContract(groupRef: GroupRef): CanonicalR
     return {
         label: 'mutation record',
         namespace: GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
-        seed: (repository) =>
-            repository.insertMutationRecord({
-                groupRef,
-                requestId,
-                commandHash,
-                receipt: {
-                    commandId: requestId,
+        seed: (repository, runtimeRepository) =>
+            runtimeRepository.insertIfAbsent(
+                GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+                repository.mutationKey(groupRef, requestId),
+                JSON.stringify({
+                    groupRef,
                     requestId,
                     commandHash,
-                    operation: 'deleteConfig',
-                    outcome: 'no-op',
-                    attemptCount: 1,
-                    groupRef,
-                    target: 'config',
-                    acceptedVersion: 0,
-                    acceptedStorageRevision: null,
-                    acceptedCreatedAtEpochMs: null,
-                    acceptedUpdatedAtEpochMs: null,
-                    acceptedExpiresAtEpochMs: null,
-                    acceptedConfig: null,
-                    acceptedCausalRevision: null,
-                    eventId: null,
-                    outboxIds: []
-                }
-            }),
+                    receipt: {
+                        commandId: requestId,
+                        requestId,
+                        commandHash,
+                        operation: 'deleteConfig',
+                        outcome: 'no-op',
+                        attemptCount: 1,
+                        groupRef,
+                        target: 'config',
+                        acceptedVersion: 0,
+                        acceptedStorageRevision: null,
+                        acceptedCreatedAtEpochMs: null,
+                        acceptedUpdatedAtEpochMs: null,
+                        acceptedExpiresAtEpochMs: null,
+                        acceptedConfig: null,
+                        acceptedCausalRevision: null,
+                        eventId: null,
+                        outboxIds: []
+                    }
+                }),
+                Date.now() + 86_400_000
+            ),
         read: (repository) => repository.findMutationRecord(groupRef, requestId)
     };
 }

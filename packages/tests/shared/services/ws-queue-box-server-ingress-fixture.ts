@@ -51,7 +51,8 @@ export async function createServerIngressFixture(
         orderingTrackTtlMs: 300000,
         supersedenceTrackTtlMs: 300000,
         retention: normalizeALRuntimeStoreRetention(),
-        maxOrderingTracks: undefined
+        maxOrderingTracks: undefined,
+        maxDeliveredMarkers: undefined
     });
     const input: WsQueueBoxServerService.Input = {
         outbox: new InMemoryQueueBox(new Map()),

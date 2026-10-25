@@ -5,6 +5,7 @@ import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topolog
 import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
 import { GroupTopologyReconfigureMutation } from '@shared-server/rallar-system/topology/reconfigure/group-topology-reconfigure-mutation.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import {
     createTopologyTestAuthorityGuard,
     createTopologyTestGroupRef,
@@ -196,6 +197,7 @@ function createMutation(
     isPlatformAdmin: (principalId: string) => boolean = () => false
 ): GroupTopologyReconfigureMutation {
     return new GroupTopologyReconfigureMutation({
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         groupStateRepository: {} as never,
         readPlanningAuthority: async () => createRead().authority,
         isPlatformAdmin,
@@ -227,6 +229,7 @@ function createRead(actorIsPlatformAdmin = false) {
             nowEpochMs: 1_000
         },
         authorityGuard: createTopologyTestAuthorityGuard(),
-        actorIsPlatformAdmin
+        actorIsPlatformAdmin,
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS
     };
 }

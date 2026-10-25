@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
@@ -13,11 +14,49 @@ import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbo
 import { EntityStatus, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
 
 import { createAtomicHarness } from '../test-support/app-inbox-transaction-test-runtime.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../test-support/test-app-inbox-finished-retention.ts';
 
 describe('AppInbox successful completion computation', () => {
+    it('keeps the finished fact and its result for the retention after completion', () => {
+        const harness = createAtomicHarness();
+        const writer = new AppInboxTransactionWriter(
+            { database: harness.database.sql, nowEpochMs: () => 1_000 },
+            { serviceId: 'server-1', finishedRetentionMs: 60_000 }
+        );
+        const computed = computeAppInboxCompletion({
+            ...writer.readCompletionFacts(harness.context),
+            status: EntityStatus.COMPLETED,
+            durableResult: { status: 'accepted' }
+        });
+
+        expect(computed.reservationFinish.expiresAt).toEqual(new Date(61_000));
+        expect(computed.resultReplacement.expiresAt).toBe(Temporal.Instant.fromEpochMilliseconds(61_000).toString());
+        expect(computed.finalizedEntry.audit.expiryTs.epochMilliseconds).toBe(61_000);
+    });
+
+    it('rejects a finished retention that is not a positive window', () => {
+        const harness = createAtomicHarness();
+        const facts = new AppInboxTransactionWriter(
+            { database: harness.database.sql, nowEpochMs: () => 1_000 },
+            { serviceId: 'server-1', finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS }
+        ).readCompletionFacts(harness.context);
+
+        for (const finishedRetentionMs of [0, -1, 1.5, Number.NaN, 8.64e15]) {
+            const issues = validateAppInboxCompletionFacts({
+                ...facts,
+                finishedRetentionMs,
+                status: EntityStatus.COMPLETED
+            });
+            expect(issues.map((issue) => issue.path)).toEqual(['finishedRetentionMs']);
+        }
+    });
+
     it('rejects extra own data on an equal completion Date before transaction entry', () => {
         const harness = createAtomicHarness();
-        const writer = new AppInboxTransactionWriter({ database: harness.database.sql, nowEpochMs: () => 1_000 }, { serviceId: 'server-1' });
+        const writer = new AppInboxTransactionWriter({ database: harness.database.sql, nowEpochMs: () => 1_000 }, {
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+            serviceId: 'server-1'
+        });
         const input = {
             ...writer.readCompletionFacts(harness.context),
             status: EntityStatus.COMPLETED,
@@ -35,7 +74,10 @@ describe('AppInbox successful completion computation', () => {
 
     it('returns an issue for a forged completion Date before transaction entry', () => {
         const harness = createAtomicHarness();
-        const writer = new AppInboxTransactionWriter({ database: harness.database.sql, nowEpochMs: () => 1_000 }, { serviceId: 'server-1' });
+        const writer = new AppInboxTransactionWriter({ database: harness.database.sql, nowEpochMs: () => 1_000 }, {
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+            serviceId: 'server-1'
+        });
         const input = {
             ...writer.readCompletionFacts(harness.context),
             status: EntityStatus.COMPLETED,
@@ -55,7 +97,10 @@ describe('AppInbox successful completion computation', () => {
         const harness = createAtomicHarness();
         let propertyReads = 0;
         const facts = {
-            ...new AppInboxTransactionWriter({ database: harness.database.sql, nowEpochMs: Date.now }, { serviceId: 'server-1' })
+            ...new AppInboxTransactionWriter({ database: harness.database.sql, nowEpochMs: Date.now }, {
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+                serviceId: 'server-1'
+            })
                 .readCompletionFacts(harness.context),
             completedAtEpochMs: Number.NaN,
             status: EntityStatus.COMPLETED,
@@ -73,7 +118,10 @@ describe('AppInbox successful completion computation', () => {
 
     it('rejects completion data for a different reservation', () => {
         const harness = createAtomicHarness();
-        const writer = new AppInboxTransactionWriter({ database: harness.database.sql, nowEpochMs: Date.now }, { serviceId: 'server-1' });
+        const writer = new AppInboxTransactionWriter({ database: harness.database.sql, nowEpochMs: Date.now }, {
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+            serviceId: 'server-1'
+        });
         const durableResult = { status: 'accepted', revision: 2 } as const;
         const input = { ...writer.readCompletionFacts(harness.context), status: EntityStatus.COMPLETED, durableResult };
         const computed = computeAppInboxCompletion(input);
@@ -95,7 +143,10 @@ describe('AppInbox successful completion computation', () => {
 
     it('rejects completion projections that do not match the durable result', () => {
         const harness = createAtomicHarness();
-        const writer = new AppInboxTransactionWriter({ database: harness.database.sql, nowEpochMs: Date.now }, { serviceId: 'server-1' });
+        const writer = new AppInboxTransactionWriter({ database: harness.database.sql, nowEpochMs: Date.now }, {
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+            serviceId: 'server-1'
+        });
         const input = {
             ...writer.readCompletionFacts(harness.context),
             status: EntityStatus.COMPLETED,
@@ -127,7 +178,10 @@ describe('AppInbox successful completion computation', () => {
 
     it('rejects executable completion candidates without reading their properties', () => {
         const harness = createAtomicHarness();
-        const writer = new AppInboxTransactionWriter({ database: harness.database.sql, nowEpochMs: Date.now }, { serviceId: 'server-1' });
+        const writer = new AppInboxTransactionWriter({ database: harness.database.sql, nowEpochMs: Date.now }, {
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+            serviceId: 'server-1'
+        });
         const input = {
             ...writer.readCompletionFacts(harness.context),
             status: EntityStatus.COMPLETED,
@@ -151,7 +205,10 @@ describe('AppInbox successful completion computation', () => {
 
     it('rejects accessor-backed persistence fields without invoking the accessor', () => {
         const harness = createAtomicHarness();
-        const writer = new AppInboxTransactionWriter({ database: harness.database.sql, nowEpochMs: Date.now }, { serviceId: 'server-1' });
+        const writer = new AppInboxTransactionWriter({ database: harness.database.sql, nowEpochMs: Date.now }, {
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+            serviceId: 'server-1'
+        });
         const input = {
             ...writer.readCompletionFacts(harness.context),
             status: EntityStatus.COMPLETED,
@@ -182,7 +239,10 @@ describe('AppInbox successful completion computation', () => {
 
     it('validates reservation identity by value rather than object identity', () => {
         const harness = createAtomicHarness();
-        const writer = new AppInboxTransactionWriter({ database: harness.database.sql, nowEpochMs: Date.now }, { serviceId: 'server-1' });
+        const writer = new AppInboxTransactionWriter({ database: harness.database.sql, nowEpochMs: Date.now }, {
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+            serviceId: 'server-1'
+        });
         const input = {
             ...writer.readCompletionFacts(harness.context),
             status: EntityStatus.COMPLETED,
@@ -215,7 +275,10 @@ describe('AppInbox successful completion computation', () => {
             clockReads += 1;
             return Date.parse('2026-07-22T12:00:01.000Z');
         };
-        const writer = new AppInboxTransactionWriter({ database: harness.database.sql, nowEpochMs }, { serviceId: 'server-1' });
+        const writer = new AppInboxTransactionWriter({ database: harness.database.sql, nowEpochMs }, {
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+            serviceId: 'server-1'
+        });
         const facts = writer.readCompletionFacts(harness.context);
         const durableResult = { status: 'accepted', revision: 2 } as const;
         const input = { ...facts, status: EntityStatus.COMPLETED, durableResult };

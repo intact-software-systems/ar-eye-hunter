@@ -12,6 +12,7 @@ import {
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
 import { createAtomicHarness } from '../app-inbox/test-support/app-inbox-transaction-test-runtime.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 
 const COMMAND_HASH = `sha256:${'a'.repeat(64)}`;
 
@@ -59,7 +60,7 @@ describe('RTC RTT AppInbox computation', () => {
             requestId: 'request-1',
             completionFacts: new AppInboxTransactionWriter(
                 { database: harness.database.sql, nowEpochMs: () => 2 },
-                { serviceId: 'server-1' }
+                { finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS, serviceId: 'server-1' }
             ).readCompletionFacts(harness.context)
         } as const;
 

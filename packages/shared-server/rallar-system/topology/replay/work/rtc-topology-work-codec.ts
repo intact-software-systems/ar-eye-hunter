@@ -83,8 +83,15 @@ export function readRtcTopologyWorkEnvelope(
     return readPersistedRtcTopologyWorkEnvelope(value, persistedMessage, expectedWorkType);
 }
 
+/**
+ * A work row's execution id: its queue key, the creation instant of its message and its coalesced generation. A
+ * coalesced head keeps its creation instant through every generation, and a head written afresh after its group
+ * idled past the retention window takes a new one, so the fresh head's generations never reuse a work id that a claim
+ * or publication of the head it replaced may still hold.
+ */
 export function toRtcTopologyExecutionId(
-    envelope: RtcTopologyWorkEnvelope<PersistedRtcTopologyWork>
+    envelope: RtcTopologyWorkEnvelope<PersistedRtcTopologyWork>,
+    createdAtEpochMs: number
 ): string {
     const metadata = envelope.data.kind === 'group-revision'
         ? envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD]
@@ -93,6 +100,7 @@ export function toRtcTopologyExecutionId(
         envelope.topicId,
         envelope.contextId,
         envelope.resourceId,
+        createdAtEpochMs,
         metadata?.generation ?? 0
     ].join(':');
 }

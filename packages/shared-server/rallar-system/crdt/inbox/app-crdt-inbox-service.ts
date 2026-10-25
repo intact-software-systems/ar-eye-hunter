@@ -77,6 +77,7 @@ export namespace AppCrdtInboxService {
 
     export interface Config {
         readonly serviceId: string;
+        readonly finishedRetentionMs: number;
         readonly timing: RallarTimingSink | undefined;
         readonly appInbox: AppInboxOptions;
     }
@@ -125,6 +126,7 @@ export class AppCrdtInboxService {
             resultRepository: dependencies.resourceInboxResultsRepository,
             database: dependencies.database,
             serviceId: config.serviceId,
+            finishedRetentionMs: config.finishedRetentionMs,
             timing: config.timing,
             options: config.appInbox
         });

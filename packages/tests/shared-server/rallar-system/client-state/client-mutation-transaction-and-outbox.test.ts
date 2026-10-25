@@ -16,6 +16,7 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { TestResourceInbox, TestResourceInboxResults } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import {
     createAutoAuthorizingClientStateService,
     createResilience,
@@ -192,6 +193,7 @@ function createRetryHarness(): RetryHarness {
                 clientStateService: createRetryClientState(state, durable)
             },
             {
+                finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 serviceId: 'server-12345678',
                 disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,
                 timing: (event) => {

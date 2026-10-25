@@ -19,6 +19,7 @@ import {
 describe('RTC RTT repository convergence', () => {
     it('optimistically admits only one of two endpoint-cap races', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
+        runtimeRepository.nowEpochMs = () => 1;
         const repository = new RtcRttRepository(runtimeRepository, {
             now: () => 1
         });
@@ -163,6 +164,7 @@ describe('RTC RTT repository convergence', () => {
 
     it('reruns RTT lifecycle authority after a CAS conflict crosses group expiry', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
+        runtimeRepository.nowEpochMs = () => 1;
         const repository = new RtcRttRepository(runtimeRepository, {
             now: () => 1
         });

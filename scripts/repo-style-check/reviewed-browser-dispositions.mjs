@@ -52,7 +52,7 @@ export const reviewedBrowserDispositions = Object.freeze([
     // Distributed-run HTTP JSON is raw until decodeDistributedRunState narrows the
     // one consumed field; the response port's json() declares that boundary.
     Object.freeze({
-        path: 'apps/rallar-black-box/src/headless-worker-runtime.ts',
+        path: 'apps/rallar-black-box/src/headless-worker/headless-worker-runtime.ts',
         rule: 'boundary.unknown',
         symbol: undefined,
         maximumMagnitude: 1

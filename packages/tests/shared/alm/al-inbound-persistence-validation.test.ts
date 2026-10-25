@@ -66,7 +66,8 @@ function createFixture() {
         orderingTrackTtlMs: 60_000,
         supersedenceTrackTtlMs: 60_000,
         retention: normalizeALRuntimeStoreRetention(),
-        maxOrderingTracks: undefined
+        maxOrderingTracks: undefined,
+        maxDeliveredMarkers: undefined
     });
     const stores = { admissionStore: store, workQueue: state.workQueue };
     return {

@@ -63,6 +63,42 @@ describe('Postgres runtime-state optimistic concurrency', () => {
     );
 
     postgresIt(
+        'replaces an expired row on a single-row insert and keeps a live row as a conflict',
+        async () => {
+            const sql = await createRuntimeStatePostgresSql(requirePostgresDatabaseUrl());
+            const repository = new PSqlRuntimeStateRepository(sql);
+            const namespace = `runtime-insert-${crypto.randomUUID()}`;
+            const expiredKey = `expired-${crypto.randomUUID()}`;
+            const liveKey = `live-${crypto.randomUUID()}`;
+            try {
+                await repository.insertIfAbsent(namespace, expiredKey, 'old', Date.now() - 1_000);
+                await repository.insertIfAbsent(namespace, liveKey, 'old', NEVER_EXPIRE_AT_TIMESTAMP);
+
+                await expect(
+                    repository.insertIfAbsent(namespace, expiredKey, 'new', NEVER_EXPIRE_AT_TIMESTAMP)
+                ).resolves.toEqual({ status: 'applied', revision: 1 });
+                await expect(
+                    repository.insertIfAbsent(namespace, liveKey, 'new', NEVER_EXPIRE_AT_TIMESTAMP)
+                ).resolves.toEqual({ status: 'conflict' });
+
+                await expect(repository.findEntry(namespace, expiredKey)).resolves.toMatchObject({
+                    value: 'new',
+                    revision: 1
+                });
+                await expect(repository.findEntry(namespace, liveKey)).resolves.toMatchObject({
+                    value: 'old',
+                    revision: 0
+                });
+            }
+            finally {
+                await sql`delete from runtime_state_store where store_namespace = ${namespace}`;
+                await sql.end();
+            }
+        },
+        60_000
+    );
+
+    postgresIt(
         'allows one independent writer to update and delete each revision',
         async () => {
             const databaseUrl = requirePostgresDatabaseUrl();

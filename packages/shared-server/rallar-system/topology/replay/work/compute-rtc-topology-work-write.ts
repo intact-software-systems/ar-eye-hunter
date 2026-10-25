@@ -131,6 +131,8 @@ export interface ComputeRtcTopologyWorkWriteInput {
     readonly accepted: AcceptedRtcTopologyWork;
     readonly entry: ResourceEntry;
     readonly sourceWorkId: string;
+    /** The expiry of the promotion and connect-trigger rows the write derives. */
+    readonly derivedExpireAtEpochMs: number;
     readonly reservationFinish: ResourceInboxReservationFinish;
     readonly formationAutomationEnabled: boolean;
     readonly serviceId: string | undefined;
@@ -166,13 +168,15 @@ export function computeRtcTopologyWorkWrite(
                 serviceId: input.serviceId,
                 entry,
                 sourceWorkId: input.sourceWorkId,
-                target
+                target,
+                expireAtEpochMs: input.derivedExpireAtEpochMs
             })),
             connectWrites: computePublicationConnectTriggerRequests({
                 automationEnabled: input.formationAutomationEnabled,
                 target,
                 sourceWorkId: input.sourceWorkId,
-                entry
+                entry,
+                expireAtEpochMs: input.derivedExpireAtEpochMs
             }).map(computeAppOutboxInsert),
             fingerprint: computeFingerprintWrite(accepted),
             delivery: accepted.decision === 'accepted' && accepted.publication

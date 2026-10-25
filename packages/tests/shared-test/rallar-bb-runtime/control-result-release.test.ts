@@ -21,6 +21,8 @@ describe('control release acknowledgement', () => {
             fetch: globalThis.fetch,
             heartbeatIntervalMs: 60_000,
             statsIntervalMs: 0,
+            browserCensusIntervalMs: 0,
+            readBrowserCensus: async () => ({}),
             reconnectBaseMs: 1,
             reconnectMaxMs: 1,
             maxFrameBytes: 2_000_000

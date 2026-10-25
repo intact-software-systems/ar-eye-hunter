@@ -268,6 +268,11 @@ const ENVIRONMENT_SETTINGS: readonly EnvironmentSetting[] = [
         apply: (source, value) => source.group.defaultMaxMembers = value
     },
     {
+        name: 'RALLAR_GROUP_CURRENT_SNAPSHOT_CACHE_MAX_ENTRIES',
+        decode: decodeNumber,
+        apply: (source, value) => source.group.currentSnapshotCacheMaxEntries = value
+    },
+    {
         name: 'RALLAR_GROUP_JOIN_ADMISSION_PRINCIPAL_RATE_LIMIT',
         decode: decodeNumber,
         apply: (source, value) => source.group.admission.joinPrincipal = value
@@ -391,6 +396,11 @@ const ENVIRONMENT_SETTINGS: readonly EnvironmentSetting[] = [
         name: 'RALLAR_APP_INBOX_WAIT_JITTER_RATIO',
         decode: decodeNumber,
         apply: (source, value) => source.appInbox.completionWait.jitterRatio = value
+    },
+    {
+        name: 'RALLAR_APP_INBOX_FINISHED_RETENTION_MS',
+        decode: decodeNumber,
+        apply: (source, value) => source.appInbox.finishedRetentionMs = value
     },
     {
         name: 'RALLAR_ICE_MODE',

@@ -138,6 +138,26 @@ export function resolveRetainedControlRunIds(
     );
 }
 
+/** Which of the runs past the `maxRuns` most recently updated a sweep removes. */
+export type ControlRunRemoval = 'any' | 'completed';
+
+/**
+ * The runs a retention sweep removes past the `maxRuns` most recently updated: every one for an operator's prune
+ * (`any`); for the automatic sweep only completed runs (`completed`), so a live run (agents connected, a distributed
+ * run under way, or a plain command queue) stays however old it is.
+ */
+export function resolveRemovedControlRunIds(
+    runs: Iterable<Pick<ControlRunSnapshot, 'runId' | 'updatedAtEpochMs' | 'completion'>>,
+    maxRuns: number | undefined,
+    removal: ControlRunRemoval
+): readonly string[] {
+    const candidates = [...runs];
+    const retainedIds = resolveRetainedControlRunIds(candidates, maxRuns);
+    return retainedIds === undefined ? [] : candidates
+        .filter((run) => !retainedIds.has(run.runId) && (removal === 'any' || run.completion !== undefined))
+        .map((run) => run.runId);
+}
+
 function toCandidate(consequence: CandidateConsequence): ControlRetentionCandidate {
     return {
         runId: consequence.run.runId,
@@ -153,7 +173,7 @@ function toCandidate(consequence: CandidateConsequence): ControlRetentionCandida
     };
 }
 
-function toCanonicalConsequence(consequence: CandidateConsequence): unknown {
+function toCanonicalConsequence(consequence: CandidateConsequence): object {
     return {
         run: consequence.run,
         connectedAgentIds: [...consequence.safety.connectedAgentIds].sort(compareText),

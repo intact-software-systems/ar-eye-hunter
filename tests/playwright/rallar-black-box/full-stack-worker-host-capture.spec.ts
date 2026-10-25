@@ -21,7 +21,7 @@ import { decodeRallarBlackBoxTestResult } from '../../../packages/shared-test/ra
 import { createRallarBlackBoxEnsureGroupCommands } from '../../../packages/shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
 import type { RallarBlackBoxTestCommand } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
-import { waitForHeadlessWorkerAgentRegistration } from '../../../apps/rallar-black-box/src/headless-worker-runtime.ts';
+import { waitForHeadlessWorkerAgentRegistration } from '../../../apps/rallar-black-box/src/headless-worker/headless-worker-runtime.ts';
 import { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import {
     jsonRecord,

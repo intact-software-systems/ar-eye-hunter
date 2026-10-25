@@ -115,6 +115,11 @@ export interface ApiV1GroupAdmissionConfiguration {
 
 export interface ApiV1GroupConfiguration {
     readonly defaultMaxMembers: number | null;
+    /**
+     * Groups whose current snapshot each process keeps between unchanged revisions. Past it the oldest kept group
+     * is dropped and its next read is a full read.
+     */
+    readonly currentSnapshotCacheMaxEntries: number;
     readonly admission: ApiV1GroupAdmissionConfiguration;
 }
 
@@ -189,6 +194,13 @@ export interface ApiV1AppInboxConfiguration {
      */
     readonly newLaneHeldRows: number;
     readonly completionWait: ApiV1AppInboxCompletionWaitConfiguration;
+    /**
+     * The finished-retention window R (`MIN_APP_INBOX_FINISHED_RETENTION_MS` to `MAX_APP_INBOX_FINISHED_RETENTION_MS`):
+     * a command's idempotency record and derived rows expire at its ingress plus R, its fact and result at its
+     * completion plus R. A replay before the fact expires returns the stored result; after it the command executes
+     * again.
+     */
+    readonly finishedRetentionMs: number;
 }
 
 interface ApiV1IceCommonConfiguration {
@@ -252,6 +264,8 @@ export interface ApiV1BlackBoxConfiguration {
 
 export interface ApiV1ObservabilityConfiguration {
     readonly timingLogs: boolean;
+    /** While timing logs are on, the API logs one heap sample per interval (1 000 to 3 600 000). */
+    readonly heapSampleIntervalMs: number;
     readonly startupSummary: boolean;
 }
 

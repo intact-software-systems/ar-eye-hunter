@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { RallarBlackBoxEventHistoryPolicy } from '../../../packages/shared-test/rallar-bb-test/runtime/event-history.ts';
 
-import { readHeadlessWorkerConfig } from '../../../apps/rallar-black-box/src/headless-worker-config.ts';
+import { readHeadlessWorkerConfig } from '../../../apps/rallar-black-box/src/headless-worker/headless-worker-config.ts';
 
 const writer = path.resolve(__dirname, '../../../scripts/hosted-rallar/controller/rallar-headless-worker-env.sh');
 

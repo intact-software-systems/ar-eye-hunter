@@ -17,6 +17,8 @@ function createClient(runtime: RallarBlackBoxTestRuntime, socket: FakeControlSoc
         fetch: () => Promise.reject(new Error('No upload configured.')),
         heartbeatIntervalMs: 60_000,
         statsIntervalMs: 0,
+        browserCensusIntervalMs: 0,
+        readBrowserCensus: async () => ({}),
         reconnectBaseMs: 60_000,
         reconnectMaxMs: 60_000,
         maxFrameBytes: RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES

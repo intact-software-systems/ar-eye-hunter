@@ -15,6 +15,7 @@ import {
     type StateWriteSqlMetrics
 } from '../../../../../apps/api-v1/scripts/perf/create-instrumented-state-write-sql.ts';
 import { createAtomicHarness } from '../../rallar-system/app-inbox/test-support/app-inbox-transaction-test-runtime.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -42,7 +43,7 @@ describe('state-write SQL instrumentation', () => {
         });
         const writer = new AppInboxTransactionWriter(
             { database: sql, nowEpochMs: () => harness.context.attemptTelemetry.selectedAtEpochMs },
-            { serviceId: 'server-1', timing: (event) => events.push(event) }
+            { serviceId: 'server-1', finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS, timing: (event) => events.push(event) }
         );
         const completionInput = {
             ...writer.readCompletionFacts(harness.context),

@@ -38,6 +38,7 @@ import type {
 } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-completion-computation.ts';
 import type { AppInboxMutationTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
 import { readAuthMutationAttempt } from '@shared-server/rallar-system/auth/mutation/read-auth-mutation-attempt.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 
 const decodeOrderCase = 'decodes before queue identity validation and exits before mutation phases on mismatch';
 
@@ -284,7 +285,7 @@ class RecordingTransactionWriter implements AppInboxMutationTransactionWriter {
 
     readCompletionFacts(context: AppInboxExecutionMetadata): AppInboxCompletionFacts {
         this.actions.push('completion');
-        return { entry: context.entry, completedAtEpochMs: context.message.id.ts };
+        return { entry: context.entry, completedAtEpochMs: context.message.id.ts, finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS };
     }
 
     async writeComputedMutation<Result>(

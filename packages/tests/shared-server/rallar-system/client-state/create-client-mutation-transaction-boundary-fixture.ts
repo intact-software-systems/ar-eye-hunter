@@ -28,6 +28,7 @@ import {
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { TestResourceInboxResults } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { createAutoAuthorizingClientStateService } from './app-client-inbox-mutation-test-harness.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
@@ -71,6 +72,7 @@ export async function createClientMutationTransactionBoundaryFixture(
     });
     const durable = createAutoAuthorizingClientStateService(runtimeRepository, database);
     const handler = new ClientStateInboxHandler({
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         mutationService: observeMutationWrites(durable, {
             actions,
             computedSnapshots
@@ -91,7 +93,7 @@ export async function createClientMutationTransactionBoundaryFixture(
                 actions.push('completion');
                 return context.message.id.ts;
             }
-        }, { serviceId: 'client-inbox-service' }),
+        }, { finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS, serviceId: 'client-inbox-service' }),
         mutationTiming: {
             serviceId: 'client-inbox-service',
             sink: options.recordMutationTiming

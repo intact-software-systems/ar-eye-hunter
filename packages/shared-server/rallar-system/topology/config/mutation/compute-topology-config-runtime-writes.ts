@@ -19,6 +19,7 @@ import {
     groupTopologyOverrideStorageKey
 } from '../persistence/group-topology-source-storage-keys.ts';
 import type {
+    GroupTopologyConfigMutationFacts,
     GroupTopologyConfigMutationWriteComputed,
     TopologyConfigRuntimeWrite,
     TopologyConfigWriteGuard
@@ -35,7 +36,8 @@ type TopologyConfigRuntimeWriteSource =
     }>;
 
 export function computeTopologyConfigRuntimeWrites(
-    computed: TopologyConfigRuntimeWriteSource
+    computed: TopologyConfigRuntimeWriteSource,
+    facts: Pick<GroupTopologyConfigMutationFacts, 'expireAtEpochMs'>
 ): readonly TopologyConfigRuntimeWrite[] {
     const writes: TopologyConfigRuntimeWrite[] = [authorityFenceWrite(computed)];
     if (computed.outcome === 'write') {
@@ -70,7 +72,7 @@ export function computeTopologyConfigRuntimeWrites(
                 computed.idempotency.requestId
             ),
             value: computed.idempotency,
-            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+            expireAtTimestamp: facts.expireAtEpochMs,
             expectedRevision: null
         }));
     }
@@ -133,8 +135,7 @@ function valueWrite(
             namespace: input.namespace,
             key: input.key,
             value,
-            expireAtIsoTimestamp,
-            expectedResultRevision: 0
+            expireAtIsoTimestamp
         }
         : {
             operation: 'update',

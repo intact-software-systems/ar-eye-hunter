@@ -101,7 +101,8 @@ export function createDefaultRallarBlackBoxBrowserControlAgent(
     const controlClient = createDefaultRallarBlackBoxControlClient({
         runtime: agentRuntime.runtime,
         heartbeatIntervalMs: bootstrap.heartbeatIntervalMs,
-        statsIntervalMs: bootstrap.statsIntervalMs
+        statsIntervalMs: bootstrap.statsIntervalMs,
+        browserCensusIntervalMs: bootstrap.browserCensusIntervalMs
     });
     return createRallarBlackBoxBrowserControlAgent({ bootstrap, agentRuntime, controlClient });
 }

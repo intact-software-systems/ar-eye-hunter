@@ -96,6 +96,7 @@ describe('RTC RTT repository reads and writes', () => {
 
     it('surfaces a single-attempt RTT CAS race as a typed conflict', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
+        runtimeRepository.nowEpochMs = () => 1;
         const repository = new RtcRttRepository(runtimeRepository, { now: () => 1 });
         const competing = {
             sessionIdFrom: 'session-a',

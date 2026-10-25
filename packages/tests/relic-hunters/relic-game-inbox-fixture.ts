@@ -8,6 +8,7 @@ import { createAppInboxRetryFinalizer } from '@shared-server/rallar-system/app-i
 import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { createGameFixture } from './relic-game-database-fixture.ts';
 
 interface RelicInboxFixtureOptions {
@@ -22,7 +23,10 @@ export async function createInboxFixture(options: RelicInboxFixtureOptions = {})
     const reader = new InboxQueueReader(queue, {
         newLaneConcurrency: 1,
         nowEpochMs: () => fixture.nowEpochMs,
-        onRetryExhausted: createAppInboxRetryFinalizer({ database: fixture.storage.sql })
+        onRetryExhausted: createAppInboxRetryFinalizer({
+            database: fixture.storage.sql,
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS
+        })
     });
     const results = new ResourceInboxResultsRepository(fixture.storage.sql);
     const inbox = new RelicGameInboxService({
@@ -35,6 +39,7 @@ export async function createInboxFixture(options: RelicInboxFixtureOptions = {})
     }, {
         serviceId: 'relic-inbox-test',
         serverPeerId: 'default-qbox-server',
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         timing: options.timing,
         options: { nowEpochMs: () => fixture.nowEpochMs }
     });

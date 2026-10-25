@@ -1,3 +1,7 @@
+import {
+    MAX_APP_INBOX_FINISHED_RETENTION_MS,
+    MIN_APP_INBOX_FINISHED_RETENTION_MS
+} from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import { MAX_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS } from '@shared-server/rallar-system/topology/planning/resolve-rtt-replan-promotion.ts';
 import { decodeRallarCrdtDocumentTypePolicies } from '@shared/crdt/mod.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -371,6 +375,7 @@ function decodeGroup(
     const defaultMaxMembers = decoder.integer('group.defaultMaxMembers', 0);
     return {
         defaultMaxMembers: defaultMaxMembers === 0 ? null : defaultMaxMembers,
+        currentSnapshotCacheMaxEntries: decoder.integer('group.currentSnapshotCacheMaxEntries', 1),
         admission: {
             windowMs: decoder.integer('group.admission.windowMs', 1),
             joinPrincipal: decoder.integer('group.admission.joinPrincipal', 1),
@@ -494,7 +499,12 @@ function decodeAppInbox(
                 0
             ),
             jitterRatio: decoder.ratio('appInbox.completionWait.jitterRatio')
-        }
+        },
+        finishedRetentionMs: decoder.integer(
+            'appInbox.finishedRetentionMs',
+            MIN_APP_INBOX_FINISHED_RETENTION_MS,
+            MAX_APP_INBOX_FINISHED_RETENTION_MS
+        )
     };
 }
 
@@ -652,6 +662,7 @@ function decodeObservability(
 ): ApiV1ObservabilityConfiguration {
     return {
         timingLogs: decoder.boolean('observability.timingLogs'),
+        heapSampleIntervalMs: decoder.integer('observability.heapSampleIntervalMs', 1_000, 3_600_000),
         startupSummary: decoder.boolean('observability.startupSummary')
     };
 }

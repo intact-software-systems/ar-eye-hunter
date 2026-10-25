@@ -14,6 +14,7 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 
 import { createAtomicHarness } from '../test-support/app-inbox-transaction-test-runtime.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../test-support/test-app-inbox-finished-retention.ts';
 
 interface CountingDatabase {
     readonly sql: PSqlSql;
@@ -31,7 +32,7 @@ describe('AppInbox phase timing executor counters', () => {
         const timing: RallarTimingEvent[] = [];
         const writer = new AppInboxTransactionWriter(
             { database: database.sql, nowEpochMs: () => 1_000 },
-            { serviceId: 'server-1', timing: (event) => timing.push(event) }
+            { finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS, serviceId: 'server-1', timing: (event) => timing.push(event) }
         );
         const executor = new AppInboxHandlerExecutor(
             {
@@ -82,7 +83,7 @@ describe('AppInbox phase timing executor counters', () => {
         const timing: RallarTimingEvent[] = [];
         const writer = new AppInboxTransactionWriter(
             { database: database.sql, nowEpochMs: () => 1_000 },
-            { serviceId: 'server-1', timing: (event) => timing.push(event) }
+            { finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS, serviceId: 'server-1', timing: (event) => timing.push(event) }
         );
         const completionInput = { ...writer.readCompletionFacts(harness.context), status: EntityStatus.COMPLETED, durableResult: { accepted: true } } as const;
         const completion = computeAppInboxCompletion(completionInput);
@@ -101,7 +102,7 @@ describe('AppInbox phase timing executor counters', () => {
         const database = createCountingDatabase();
         const writer = new AppInboxTransactionWriter(
             { database: database.sql, nowEpochMs: () => 1_000 },
-            { serviceId: 'server-1', timing: undefined }
+            { finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS, serviceId: 'server-1', timing: undefined }
         );
         const clockReads = vi.spyOn(performance, 'now');
 
@@ -122,7 +123,7 @@ describe('AppInbox phase timing executor counters', () => {
         const timing: RallarTimingEvent[] = [];
         const writer = new AppInboxTransactionWriter(
             { database: uncounted, nowEpochMs: () => 1_000 },
-            { serviceId: 'server-1', timing: (event) => timing.push(event) }
+            { finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS, serviceId: 'server-1', timing: (event) => timing.push(event) }
         );
 
         await commit(writer, harness.context, { accepted: true });

@@ -14,6 +14,7 @@ import { readPersistedCommandEvidence } from '@shared-test/black-box-runner/stat
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 
 import { createAppInboxQueueMessageFixture } from '../shared-server/rallar-system/app-inbox/test-support/create-app-inbox-queue-message-fixture.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 
 const NOW_EPOCH_MS = 1_800_000_000_000;
 const SCOPE = { applicationId: 'evidence-app', workspaceId: 'evidence-workspace' };
@@ -50,7 +51,8 @@ async function createQueuedJoin(): Promise<AppInboxEnqueueInput> {
         authSessions: { findBySessionId: async () => undefined },
         now: () => NOW_EPOCH_MS,
         randomId: () => 'evidence-random-id',
-        serviceId: 'evidence-service'
+        serviceId: 'evidence-service',
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS
     };
     const authorized = await authorizeGroupMutation(
         dependencies,

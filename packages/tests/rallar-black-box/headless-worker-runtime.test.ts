@@ -12,7 +12,7 @@ import {
     waitForHeadlessWorkerAgentRegistration,
     waitForHeadlessWorkerExit,
     type HeadlessWorkerRegistrationSnapshot
-} from '../../../apps/rallar-black-box/src/headless-worker-runtime.ts';
+} from '../../../apps/rallar-black-box/src/headless-worker/headless-worker-runtime.ts';
 
 type PromiseOutcome =
     | Readonly<{ state: 'resolved'; }>

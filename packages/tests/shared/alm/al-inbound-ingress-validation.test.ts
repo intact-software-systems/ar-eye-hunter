@@ -213,7 +213,8 @@ function createFixture(carrier: ALDeliveryCarrier): InboundIngressFixture {
         orderingTrackTtlMs: 60_000,
         supersedenceTrackTtlMs: 60_000,
         retention: normalizeALRuntimeStoreRetention(),
-        maxOrderingTracks: undefined
+        maxOrderingTracks: undefined,
+        maxDeliveredMarkers: undefined
     });
     const runtime = new ALInboundMessageRuntime({
         carrier,

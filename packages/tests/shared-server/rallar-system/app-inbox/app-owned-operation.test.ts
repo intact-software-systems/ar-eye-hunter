@@ -18,6 +18,7 @@ import {
     TestResourceInboxResults
 } from './test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from './test-support/app-inbox-test-database.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from './test-support/test-app-inbox-finished-retention.ts';
 
 const COMMAND = {
     type: 'app:inventory:reserve',
@@ -41,7 +42,13 @@ describe('app-owned AppInbox operation', () => {
             serviceId: 'inventory-worker',
             defaultTopicId: COMMAND.type
         });
-        const runtime = createAppInboxHandlerRuntime({ inboxQueueReader: reader, resultRepository: results, database, serviceId: 'inventory-worker' });
+        const runtime = createAppInboxHandlerRuntime({
+            inboxQueueReader: reader,
+            resultRepository: results,
+            database,
+            serviceId: 'inventory-worker',
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS
+        });
         runtime.registry.registerHandler<JsonWireValue, JsonWireValue>({
             type: COMMAND.type,
             decodeCommand: (value) => value,

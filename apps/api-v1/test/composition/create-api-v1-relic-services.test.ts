@@ -9,6 +9,7 @@ import { toGroupMutationAttemptFacts } from '@shared-server/rallar-system/group-
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
+import defaults from '../../resources/configuration/defaults-config.json' with { type: 'json' };
 import { createApiV1MutationRuntime, type ApiV1MutationRuntime } from '../../src/composition/create-api-v1-mutation-runtime.ts';
 import { createApiV1RelicServices, type CreateApiV1RelicServicesInput } from '../../src/composition/create-api-v1-relic-services.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
@@ -94,6 +95,8 @@ function createMutationRuntime(database: PSqlSql, now: number): ApiV1MutationRun
         nowEpochMs: () => now,
         timing: () => {},
         appInboxOptions: { nowEpochMs: Date.now, waitMaxElapsedMsecs: 1000, waitRetryIntervalMsecs: 1, waitMaxRetryIntervalMsecs: 2, waitJitterRatio: 0 },
+        appInboxFinishedRetentionMs: defaults.appInbox.finishedRetentionMs,
+        groupCurrentSnapshotCacheMaxEntries: defaults.group.currentSnapshotCacheMaxEntries,
         appInboxNewLaneConcurrency: 1,
         appInboxNewLaneHeldRows: 4,
         disconnectedSessionRetentionMs: 86400000,

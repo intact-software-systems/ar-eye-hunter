@@ -124,7 +124,7 @@ const CONFIGURATION_KEYS_BY_PATH: Readonly<Record<string, ReadonlySet<string>>> 
         'resetDurationMs',
         'samplingDurationMs'
     ]),
-    group: new Set(['defaultMaxMembers', 'admission']),
+    group: new Set(['defaultMaxMembers', 'currentSnapshotCacheMaxEntries', 'admission']),
     'group.admission': new Set([
         'windowMs',
         'joinPrincipal',
@@ -173,7 +173,13 @@ const CONFIGURATION_KEYS_BY_PATH: Readonly<Record<string, ReadonlySet<string>>> 
         'reconnectBatchWindowMs',
         'consumerRetentionMs'
     ]),
-    appInbox: new Set(['phaseTiming', 'newLaneConcurrency', 'newLaneHeldRows', 'completionWait']),
+    appInbox: new Set([
+        'phaseTiming',
+        'newLaneConcurrency',
+        'newLaneHeldRows',
+        'completionWait',
+        'finishedRetentionMs'
+    ]),
     'appInbox.completionWait': new Set([
         'maxElapsedMs',
         'retryIntervalMs',
@@ -186,7 +192,7 @@ const CONFIGURATION_KEYS_BY_PATH: Readonly<Record<string, ReadonlySet<string>>> 
     blackBox: new Set(['operatorToken', 'pgliteEvidence']),
     'blackBox.operatorToken': new Set(['mode', 'allowedClientIds', 'ttlMs']),
     'blackBox.pgliteEvidence': new Set(['mode', 'directory', 'pollIntervalMs']),
-    observability: new Set(['timingLogs', 'startupSummary'])
+    observability: new Set(['timingLogs', 'heapSampleIntervalMs', 'startupSummary'])
 };
 
 const ENVIRONMENT_NAME_BY_PATH: Readonly<Record<string, string>> = {
@@ -208,6 +214,7 @@ const ENVIRONMENT_NAME_BY_PATH: Readonly<Record<string, string>> = {
     'clientSessions.disconnectedRetentionMs': 'RALLAR_CLIENT_SESSION_DISCONNECTED_RETENTION_MS',
     'stateApi.strictReadAuthorization': 'RALLAR_STATE_STRICT_READ_AUTH',
     'group.defaultMaxMembers': 'RALLAR_GROUP_DEFAULT_MAX_MEMBERS',
+    'group.currentSnapshotCacheMaxEntries': 'RALLAR_GROUP_CURRENT_SNAPSHOT_CACHE_MAX_ENTRIES',
     'group.admission.joinPrincipal': 'RALLAR_GROUP_JOIN_ADMISSION_PRINCIPAL_RATE_LIMIT',
     'group.admission.joinGroup': 'RALLAR_GROUP_JOIN_ADMISSION_GROUP_RATE_LIMIT',
     'group.admission.presencePrincipal': 'RALLAR_GROUP_PRESENCE_CONNECT_PRINCIPAL_RATE_LIMIT',
@@ -233,6 +240,7 @@ const ENVIRONMENT_NAME_BY_PATH: Readonly<Record<string, string>> = {
     'appInbox.completionWait.retryIntervalMs': 'RALLAR_APP_INBOX_WAIT_RETRY_INTERVAL_MS',
     'appInbox.completionWait.maxRetryIntervalMs': 'RALLAR_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MS',
     'appInbox.completionWait.jitterRatio': 'RALLAR_APP_INBOX_WAIT_JITTER_RATIO',
+    'appInbox.finishedRetentionMs': 'RALLAR_APP_INBOX_FINISHED_RETENTION_MS',
     'ice.mode': 'RALLAR_ICE_MODE',
     'ice.rateLimit.requests': 'RALLAR_ICE_RATE_LIMIT_REQUESTS',
     'ice.appName': 'METERED_APP_NAME',

@@ -219,7 +219,8 @@ async function createStore(storage: 'memory' | 'indexeddb' | 'pglite'): Promise<
             orderingTrackTtlMs: 60_000,
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention(),
-            maxOrderingTracks: undefined
+            maxOrderingTracks: undefined,
+            maxDeliveredMarkers: undefined
         }),
         workQueue: backend.workQueue
     };

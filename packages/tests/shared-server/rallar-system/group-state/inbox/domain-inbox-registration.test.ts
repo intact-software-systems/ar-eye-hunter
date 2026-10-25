@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { RtcRttInboxService } from '@shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-inbox-service.ts';
 import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { createAuthorityHarness } from './group-state-inbox-test-runtime.ts';
 
 describe('domain AppInbox registration', () => {
@@ -20,7 +21,7 @@ describe('domain AppInbox registration', () => {
                     reconfigureMutation: {} as never
                 }
             },
-            { serviceId: 'server-12345678' }
+            { finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS, serviceId: 'server-12345678' }
         );
         const rtcRtt = new RtcRttInboxService(
             {
@@ -31,7 +32,7 @@ describe('domain AppInbox registration', () => {
                 groupStateService: harness.groupStateService,
                 mutationDependencies: {} as never
             },
-            { serviceId: 'server-12345678' }
+            { finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS, serviceId: 'server-12345678' }
         );
 
         expect(topology).toBeInstanceOf(TopologyInboxService);

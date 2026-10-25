@@ -10,6 +10,7 @@ import {
 import { authSession } from './group-state-test-runtime.ts';
 
 const NOW_EPOCH_MS = 1_800_000_000_000;
+const FINISHED_RETENTION_MS = 60_000;
 
 describe('group mutation ingress capture', () => {
     it('captures an AppInbox ingress from the route proof without a repository read', async () => {
@@ -36,6 +37,7 @@ describe('group mutation ingress capture', () => {
 
         expect(ingress.facts).toMatchObject({
             nowEpochMs: NOW_EPOCH_MS,
+            expireAtEpochMs: NOW_EPOCH_MS + FINISHED_RETENTION_MS,
             authenticatedAuthority: { principalId: 'alice', sessionId: 'alice-session' }
         });
         expect(ingress.causalToken).toMatch(/^[0-9a-f]{64}$/);
@@ -53,6 +55,7 @@ function createReadlessDependencies(): GroupMutationAuthorityDependencies {
         },
         now: () => NOW_EPOCH_MS,
         randomId: () => 'capture-random-id',
-        serviceId: 'capture-service'
+        serviceId: 'capture-service',
+        finishedRetentionMs: FINISHED_RETENTION_MS
     };
 }

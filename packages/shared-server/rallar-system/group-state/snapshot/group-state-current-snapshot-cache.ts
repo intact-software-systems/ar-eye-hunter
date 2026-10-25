@@ -56,6 +56,11 @@ export class GroupStateCurrentSnapshotCache {
         });
     }
 
+    /** The groups kept, each absent group's null among them. */
+    public size(): number {
+        return this.cache.size();
+    }
+
     public async readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined> {
         const [snapshot] = (await this.readSnapshots([ref])).snapshots;
         return snapshot;

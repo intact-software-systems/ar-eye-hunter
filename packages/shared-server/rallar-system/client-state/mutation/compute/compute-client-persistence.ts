@@ -30,7 +30,7 @@ interface ClientRuntimeInsertInput {
 
 export function computeClientPersistence(
     computed: ClientMutationDomainWrite,
-    facts: Pick<ClientMutationFacts, 'disconnectedSessionRetentionMs'>
+    facts: Pick<ClientMutationFacts, 'disconnectedSessionRetentionMs' | 'expireAtEpochMs'>
 ): ClientMutationPersistence {
     if (computed.outcome === 'no-op') {
         return {
@@ -41,7 +41,7 @@ export function computeClientPersistence(
                     computed.idempotency.requestId
                 ),
                 value: computed.idempotency,
-                expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP
+                expireAtEpochMs: facts.expireAtEpochMs
             })],
             eventWrite: null
         };
@@ -63,7 +63,7 @@ export function computeClientPersistence(
                 computed.idempotency.requestId
             ),
             value: computed.idempotency,
-            expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP
+            expireAtEpochMs: facts.expireAtEpochMs
         }));
     }
     return {

@@ -10,6 +10,7 @@ import { GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE } from '@shared-server/rallar-
 import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
 
 import { FakeRuntimeStateRepository } from '../../../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import {
     createDefaultTopologyConfigMutationTestInput,
     deepFreezeTopologyTestValue
@@ -29,7 +30,8 @@ describe('group topology config mutation phases', () => {
             state: mutation.read,
             policyNowEpochMs: 10_000,
             isPlatformAdmin: false,
-            serverDefaults: {}
+            serverDefaults: {},
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS
         });
         const computed = service.compute(command, read, 1);
 
@@ -56,7 +58,8 @@ describe('group topology config mutation phases', () => {
             state: mutation.read,
             policyNowEpochMs: 1_000,
             isPlatformAdmin: false,
-            serverDefaults: {}
+            serverDefaults: {},
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS
         });
 
         const first = service.compute(mutation.command, read, 1);
@@ -76,7 +79,8 @@ describe('group topology config mutation phases', () => {
             state: mutation.read,
             policyNowEpochMs: 1_000,
             isPlatformAdmin: false,
-            serverDefaults: {}
+            serverDefaults: {},
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS
         };
         const computed = service.compute(mutation.command, read, 1);
         const validation = { command: mutation.command, read, attemptCount: 1, computed };
@@ -105,7 +109,8 @@ describe('group topology config mutation phases', () => {
             state: mutation.read,
             policyNowEpochMs: 1_000,
             isPlatformAdmin: false,
-            serverDefaults: {}
+            serverDefaults: {},
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS
         };
         const computed = service.compute(mutation.command, read, 1);
         const validation = { command: mutation.command, read, attemptCount: 1, computed };
@@ -183,6 +188,7 @@ function createSuccessfulTransaction(
 function createService(isPlatformAdmin: (principalId: string) => boolean = () => false): GroupTopologyConfigMutationService {
     const runtimeRepository = new FakeRuntimeStateRepository();
     return new GroupTopologyConfigMutationService({
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         configRepository: new GroupTopologyConfigRepository(runtimeRepository),
         groupStateRepository: createTestGroupStateRepository(runtimeRepository),
         nowEpochMs: () => 20_000,

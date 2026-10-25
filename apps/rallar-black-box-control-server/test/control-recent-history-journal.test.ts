@@ -25,7 +25,12 @@ Deno.test('connected recent history preserves every produced runtime event in th
         eventHistory: { mode: 'recent', maxEvents: 2 },
         idFactory: (prefix) => prefix === 'runtime-instance' ? 'owned-journal-runtime' : `${prefix}-${nextId++}`
     });
-    const client = createDefaultRallarBlackBoxControlClient({ runtime, heartbeatIntervalMs: 60_000, statsIntervalMs: 0 });
+    const client = createDefaultRallarBlackBoxControlClient({
+        runtime,
+        heartbeatIntervalMs: 60_000,
+        statsIntervalMs: 0,
+        browserCensusIntervalMs: 0
+    });
     try {
         client.connect({ url: `${server.baseUrl.replace('http:', 'ws:')}/control`, runId: 'recent-journal', agentId: 'agent', completedCommandIds: [] });
         await waitForConnected(client);

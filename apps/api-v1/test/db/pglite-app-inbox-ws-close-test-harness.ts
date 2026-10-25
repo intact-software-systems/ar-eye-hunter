@@ -30,6 +30,7 @@ import {
 } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { putAuthorisedWsTestTicket } from '../../../../packages/tests/shared-server/rallar-system/client-state/authorised-ws-test-ticket.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/client-state/test-disconnected-session-retention.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
@@ -92,6 +93,7 @@ export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql): Promis
         serviceId: 'pglite-close-test'
     });
     const groupState = createGroupStateService({
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         readPlannedLayoutRow: () => Promise.resolve(null),
         readAcceptedLayoutRow: () => Promise.resolve(null),
         runtimeRepository: runtime,
@@ -212,6 +214,7 @@ function createPGliteStateInboxConsumers(input: PGliteStateInboxConsumerInput): 
             clientStateService: input.clientState
         },
         {
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             serviceId: 'pglite-close-test',
             disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,
             timing: undefined,
@@ -228,6 +231,7 @@ function createPGliteStateInboxConsumers(input: PGliteStateInboxConsumerInput): 
             resultReader: input.groups
         },
         {
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             serviceId: 'pglite-close-test',
             timing: undefined,
             options: input.options

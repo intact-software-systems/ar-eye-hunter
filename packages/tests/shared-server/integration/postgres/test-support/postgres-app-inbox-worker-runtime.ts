@@ -11,6 +11,7 @@ import type { AppClientInboxService } from '@shared-server/rallar-system/client-
 import type { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import type { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import type { PersistedAppInboxAttempt } from './postgres-app-inbox-attempt-observation.ts';
 import { createPostgresAppInboxWorkerServices } from './postgres-app-inbox-worker-services.ts';
 import { waitForPostgresWorkerBarrier, type WorkerBarrier } from './postgres-worker-barrier.ts';
@@ -46,6 +47,8 @@ export function createPostgresAppInboxWorkerRuntime(
         sql: PSqlSql;
         serviceId: string;
         atEpochMs: number;
+        /** Absent: the committed default window, for tests that do not exercise retention. */
+        finishedRetentionMs?: number;
         /** Absent: one head per NEW round, so the in-process exclusion keys never meet. */
         newLaneConcurrency?: number;
         /** The rows a standing NEW-lane flight holds across passes; undefined drains what each pass claims. */
@@ -69,6 +72,7 @@ export function createPostgresAppInboxWorkerRuntime(
     const flightSettlements: Promise<void>[] = [];
     const services = createPostgresAppInboxWorkerServices({
         ...input,
+        finishedRetentionMs: input.finishedRetentionMs ?? TEST_APP_INBOX_FINISHED_RETENTION_MS,
         newLaneConcurrency: input.newLaneConcurrency ?? 1,
         flightEntryListener: (settlement) => flightSettlements.push(settlement),
         transactionSql: transactionGate.sql

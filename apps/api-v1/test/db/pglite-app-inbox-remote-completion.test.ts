@@ -25,6 +25,7 @@ import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import type { ApiV1DatabaseNotificationPort } from '../../src/db/api-v1-database-lifecycle.ts';
 import { createApiV1AppInboxCompletionNotices } from '../../src/db/create-postgres-app-inbox-completion-notice-transport.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
@@ -149,6 +150,7 @@ function createServerRuntime({ sql, serviceId, completionNotifications, type }: 
         defaultTopicId: CLIENT_STATE_APP_INBOX_TOPIC
     });
     const handlerRuntime = createAppInboxHandlerRuntime({
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         inboxQueueReader,
         resultRepository: new ResourceInboxResultsRepository(sql),
         database: sql,

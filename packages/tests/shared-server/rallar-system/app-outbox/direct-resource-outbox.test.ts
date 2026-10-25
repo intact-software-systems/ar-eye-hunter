@@ -1014,14 +1014,15 @@ function updateResourceInboxTestRow(
     const resource = readStringParameter(values[0], 'resource');
     const status = readStringParameter(values[1], 'status');
     const nextTimestamp = values[2];
-    const topicId = readStringParameter(values[3], 'topic id');
-    const resourceId = readStringParameter(values[4], 'resource id');
-    const contextId = readStringParameter(values[5], 'context id');
-    const typeId = readStringParameter(values[6], 'type id');
-    const expectedStatus = readStringParameter(values[7], 'expected status');
-    const expectedResource = readStringParameter(values[8], 'expected resource');
-    const expectedGeneration = readNumberParameter(values[9], 'expected generation');
-    const attempts = readBigIntParameter(values[10], 'attempts');
+    const expiresAt = readStringParameter(values[3], 'expires at');
+    const topicId = readStringParameter(values[4], 'topic id');
+    const resourceId = readStringParameter(values[5], 'resource id');
+    const contextId = readStringParameter(values[6], 'context id');
+    const typeId = readStringParameter(values[7], 'type id');
+    const expectedStatus = readStringParameter(values[8], 'expected status');
+    const expectedResource = readStringParameter(values[9], 'expected resource');
+    const expectedGeneration = readNumberParameter(values[10], 'expected generation');
+    const attempts = readBigIntParameter(values[11], 'attempts');
     const row = rows.get(`${contextId}::${topicId}::${resourceId}`);
     if (
         !row ||
@@ -1036,6 +1037,7 @@ function updateResourceInboxTestRow(
     row.ri_resource = resource;
     row.ri_status = status;
     row.next_ts = nextTimestamp === null ? null : withoutZone(String(nextTimestamp));
+    row.expire_ts = withoutZone(expiresAt);
     return [{ ...row }];
 }
 

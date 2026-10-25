@@ -201,7 +201,6 @@ export function createGroupTopologyMutationExactReadDecoders(
             validateRaw: (entry) => {
                 const trustedRequestId = requireRequestId(requestId);
                 codecs.validateMutationRaw(entry, ref, trustedRequestId);
-                codecs.assertRetained(entry, 'mutation record');
             },
             decodeLive: (stored) => {
                 const value = codecs.decodeMutationLive(

@@ -143,6 +143,21 @@ async function executeRuntimeStateWriteSql({
         const result = await repository.insertIfAbsent(namespace, key, value, expireAt.getTime());
         return result.status === 'applied' ? [{ revision: result.revision }] : [];
     }
+    const insertsAbsentOrExpiredEntry = query.includes('insert into runtime_state_store') &&
+        query.includes('where runtime_state_store.expire_at_ts <= now()') &&
+        query.includes('returning revision');
+    if (insertsAbsentOrExpiredEntry) {
+        const repository = requireTransactionRuntime(runtime);
+        const namespace = readStringParameter(values[0], 'Runtime-state namespace');
+        const key = readStringParameter(values[1], 'Runtime-state key');
+        const value = readStringParameter(values[2], 'Runtime-state value');
+        const expireAt = readDateParameter(values[3], 'Runtime-state expiry');
+        const current = await repository.findEntry(namespace, key);
+        const result = current === undefined || current.expireAtTimestamp > Date.now()
+            ? await repository.insertIfAbsent(namespace, key, value, expireAt.getTime())
+            : await repository.upsertIfRevision(namespace, key, value, expireAt.getTime(), current.revision);
+        return result.status === 'applied' ? [{ revision: result.revision }] : [];
+    }
     if (query.includes('insert into runtime_state_store') && query.includes('do update set')) {
         const repository = requireTransactionRuntime(runtime);
         const namespace = readStringParameter(values[0], 'Runtime-state namespace');
@@ -237,12 +252,15 @@ async function executeResultAndReservationSql(
         return undefined;
     }
     await input.options.onStage?.('reservation-finish');
-    const status = readEntityStatus(input.values[0], 'Reservation status');
-    const completedAt = readDateParameter(input.values[1], 'Reservation completion');
-    const topicId = readStringParameter(input.values[2], 'Reservation topic ID');
-    const resourceId = readStringParameter(input.values[3], 'Reservation resource ID');
-    const contextId = readStringParameter(input.values[4], 'Reservation context ID');
-    const attempts = readNonNegativeIntegerParameter(input.values[5], 'Reservation attempts');
+    const [statusValue, completedAtValue, ...rest] = input.values;
+    const status = readEntityStatus(statusValue, 'Reservation status');
+    const completedAt = readDateParameter(completedAtValue, 'Reservation completion');
+    const expiresAtValue = rest.shift();
+    const expiresAt = expiresAtValue === null ? null : readDateParameter(expiresAtValue, 'Reservation retention expiry');
+    const topicId = readStringParameter(rest[0], 'Reservation topic ID');
+    const resourceId = readStringParameter(rest[1], 'Reservation resource ID');
+    const contextId = readStringParameter(rest[2], 'Reservation context ID');
+    const attempts = readNonNegativeIntegerParameter(rest[3], 'Reservation attempts');
     const current = await input.repositories.inbox.getItem({ topicId, resourceId, contextId });
     if (
         !current ||
@@ -255,6 +273,9 @@ async function executeResultAndReservationSql(
     const entry: ResourceEntry = {
         ...current,
         status,
+        audit: expiresAt === null
+            ? current.audit
+            : { ...current.audit, expiryTs: Temporal.Instant.fromEpochMilliseconds(expiresAt.getTime()) },
         dequeueAudit: {
             ...current.dequeueAudit,
             endTs: Temporal.Instant.fromEpochMilliseconds(completedAt.getTime()),
@@ -288,7 +309,11 @@ function insertOutboxEntry(input: AppInboxTestSqlExecution, entry: ResourceEntry
     }
     const key = toResourceKey(entry);
     if (input.pending.outbox.has(key)) {
-        if (input.query.includes('on conflict') && input.query.includes('do nothing')) {
+        // The fake holds no expiry for pending outbox rows, so it never takes the replace-expired branch; the Postgres
+        // pins in topology-config-retention.test.ts cover writing over an expired row.
+        const leavesLiveRow = input.query.includes('do nothing') ||
+            input.query.includes('where resource_inbox.expire_ts <=');
+        if (input.query.includes('on conflict') && leavesLiveRow) {
             return [];
         }
         throw new ResourceInboxInvariantCorruptionError(

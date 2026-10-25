@@ -33,7 +33,7 @@ vi.mock(import('@shared/alm/inbound/al-inbound-admission-store.ts'), async (impo
     return { ...original, createALInboundAdmissionStore: vi.fn(original.createALInboundAdmissionStore) };
 });
 
-it('constructs the WS server\'s shared inbound store without an ordering-track cap', () => {
+it('constructs the WS server\'s shared inbound store without an ordering-track or delivered-marker cap', () => {
     // Construction issues no statement, so a store that is never read needs no database.
     const sql = {} as PSqlSql;
 
@@ -47,7 +47,7 @@ it('constructs the WS server\'s shared inbound store without an ordering-track c
     });
 
     expect(vi.mocked(createALInboundAdmissionStore)).toHaveBeenCalledWith(
-        expect.objectContaining({ maxOrderingTracks: undefined })
+        expect.objectContaining({ maxOrderingTracks: undefined, maxDeliveredMarkers: undefined })
     );
 });
 

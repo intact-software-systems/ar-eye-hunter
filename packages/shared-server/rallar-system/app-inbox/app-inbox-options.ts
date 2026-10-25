@@ -9,6 +9,22 @@ export const APP_INBOX_RESERVATION_LEASE_MS = 60_000;
  * the attempt's own commit is refused before another process can reclaim the entry.
  */
 export const DEFAULT_APP_INBOX_ATTEMPT_DEADLINE_MARGIN_MS = 5_000;
+/**
+ * The finished-retention contract, `finishedRetentionMs` (R) from this floor to `MAX_APP_INBOX_FINISHED_RETENTION_MS`.
+ * A command's idempotency record and the rows it derives expire at its ingress plus R; its AppInbox fact and result
+ * expire at its completion plus R. Until the fact expires a replay of the command's key returns the stored result,
+ * even once the idempotency record has expired; after it the same key executes again, and its writes replace any
+ * expired row still under their keys before the sweep removes it. Writers decide "expired" on the database clock,
+ * readers on the process clock: skew between the two gives a bounded conflict retry or a stored-result replay just
+ * past the window, never a second write.
+ *
+ * The floor is the shortest window a command's derived rows may live. A formation timer is due up to the longest
+ * formation deadline, stage-trigger delay or replan wait (600 000 ms each) after its ingress but expires at ingress
+ * plus this window, and every queue reader skips a row past its expiry, so a shorter window would hide a timer before
+ * it is due and stall its group in forming. One hour also outlasts every result waiter.
+ */
+export const MIN_APP_INBOX_FINISHED_RETENTION_MS = 3_600_000;
+export const MAX_APP_INBOX_FINISHED_RETENTION_MS = 2_592_000_000;
 
 export interface AppInboxOptions {
     readonly phaseTiming?: boolean;

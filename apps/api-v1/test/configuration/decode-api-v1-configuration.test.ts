@@ -261,6 +261,7 @@ Deno.test('configuration decoder validates every numeric policy boundary without
         ['stateApi.circuitBreaker.resetDurationMs', 1],
         ['stateApi.circuitBreaker.samplingDurationMs', 1],
         ['group.defaultMaxMembers', 0],
+        ['group.currentSnapshotCacheMaxEntries', 1],
         ['group.admission.windowMs', 1],
         ['group.admission.joinPrincipal', 1],
         ['group.admission.joinGroup', 1],
@@ -841,6 +842,28 @@ Deno.test('configuration decoder requires the RTT replan minimum layout age and 
     }
 });
 
+Deno.test('configuration decoder requires the heap sample interval and bounds it from one second to one hour', () => {
+    assert.equal(decodeApiV1Configuration(validDecodeApiV1ConfigurationInput()).observability.heapSampleIntervalMs, 30_000);
+    const unnamed = validDecodeApiV1ConfigurationInput();
+    const unnamedObservability = (unnamed.defaultsSource as MutableApiV1ConfigurationSourceObject).observability;
+    delete (unnamedObservability as MutableApiV1ConfigurationSourceObject).heapSampleIntervalMs;
+    assert.deepEqual(
+        captureConfigurationError(() => decodeApiV1Configuration(unnamed)).issues.map(({ path, code }) => ({ path, code })),
+        [{ path: 'observability.heapSampleIntervalMs', code: 'missing-property' }]
+    );
+
+    for (const [intervalMs, valid] of [[999, false], [1_000, true], [3_600_000, true], [3_600_001, false], [1_000.5, false]] as const) {
+        const input = validDecodeApiV1ConfigurationInput();
+        setPath(input.defaultsSource, 'observability.heapSampleIntervalMs', intervalMs);
+        if (valid) {
+            assert.equal(decodeApiV1Configuration(input).observability.heapSampleIntervalMs, intervalMs);
+            continue;
+        }
+        const error = captureConfigurationError(() => decodeApiV1Configuration(input));
+        assert.deepEqual(error.issues.map(({ path }) => path), ['observability.heapSampleIntervalMs'], `${intervalMs}`);
+    }
+});
+
 Deno.test('configuration decoder requires the disconnected client session retention and bounds it by the auth session TTL', () => {
     assert.equal(decodeApiV1Configuration(validDecodeApiV1ConfigurationInput()).clientSessions.disconnectedRetentionMs, 604_800_000);
     const unnamed = validDecodeApiV1ConfigurationInput();
@@ -878,4 +901,38 @@ Deno.test('configuration decoder requires the disconnected client session retent
             code: 'retention-exceeds-session-ttl'
         }]
     );
+});
+
+Deno.test('configuration decoder requires the finished AppInbox retention and bounds it from one hour to thirty days', () => {
+    assert.equal(decodeApiV1Configuration(validDecodeApiV1ConfigurationInput()).appInbox.finishedRetentionMs, 86_400_000);
+    const unnamed = validDecodeApiV1ConfigurationInput();
+    delete ((unnamed.defaultsSource as MutableApiV1ConfigurationSourceObject).appInbox as MutableApiV1ConfigurationSourceObject)
+        .finishedRetentionMs;
+    assert.deepEqual(
+        captureConfigurationError(() => decodeApiV1Configuration(unnamed)).issues.map(({ path, code }) => ({ path, code })),
+        [{ path: 'appInbox.finishedRetentionMs', code: 'missing-property' }]
+    );
+
+    for (
+        const [retentionMs, valid] of [
+            [3_599_999, false],
+            [3_600_000, true],
+            [2_592_000_000, true],
+            [2_592_000_001, false],
+            [3_600_000.5, false]
+        ] as const
+    ) {
+        const input = validDecodeApiV1ConfigurationInput();
+        setPath(input.environmentSource, 'appInbox.finishedRetentionMs', retentionMs);
+        if (valid) {
+            assert.equal(decodeApiV1Configuration(input).appInbox.finishedRetentionMs, retentionMs);
+            continue;
+        }
+        const error = captureConfigurationError(() => decodeApiV1Configuration(input));
+        assert.deepEqual(
+            error.issues.map(({ path, environmentName }) => ({ path, environmentName })),
+            [{ path: 'appInbox.finishedRetentionMs', environmentName: 'RALLAR_APP_INBOX_FINISHED_RETENTION_MS' }],
+            `${retentionMs}`
+        );
+    }
 });

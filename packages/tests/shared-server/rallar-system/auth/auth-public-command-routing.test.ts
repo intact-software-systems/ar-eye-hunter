@@ -17,6 +17,7 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { TestResourceInbox, TestResourceInboxResults } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import {
     createAuthInboxTestRuntime,
     runAuthInboxCommand,
@@ -324,6 +325,7 @@ it('rechecks the parent session before issuing agent credentials', async () => {
             passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 2 })
         },
         {
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             serviceId: 'auth-test-service'
         }
     );

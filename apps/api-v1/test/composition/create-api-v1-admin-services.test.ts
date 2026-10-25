@@ -6,6 +6,7 @@ import { emptyGroupFormationMetrics } from '@shared-server/rallar-system/observa
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { createRtcTopologyAdminMetrics } from '../../../../packages/tests/shared-server/rallar-system/admin-operations/test-support/create-rtc-topology-admin-metrics.ts';
 import {
     createApiV1AdminServices,
     readApiV1WebSocketStatus,
@@ -48,6 +49,11 @@ Deno.test('admin services read current websocket status after construction', asy
 
     assert.equal(realtime.websocket.connectionCount, 1);
     assert.equal(realtime.websocket.openConnectionCount, 1);
+    assert.deepEqual(realtime.caches, { groupAudienceSnapshots: 3, processLocal: true });
+    assert.deepEqual(realtime.rtcTopology, {
+        metrics: createRtcTopologyAdminMetrics({ topologyUpdateCount: 1 }),
+        processLocal: true
+    });
     assert.equal(
         support.facts.find((fact) => fact.label === 'client.websocket.openConnectionCount')?.value,
         1
@@ -113,11 +119,13 @@ function createInput(
         serviceId: 'api-test',
         timing: () => {},
         readWebSocketStatus,
-        readRtcTopologyMetrics: () => ({ rebuilds: 1 }),
+        readRtcTopologyMetrics: () => createRtcTopologyAdminMetrics({ topologyUpdateCount: 1 }),
         resetRtcTopologyMetrics: () => {},
         readGroupFormationMetrics: emptyGroupFormationMetrics,
         resetGroupFormationMetrics: () => {},
         readAlmReceipts: () => ({ capacity: 256, messages: [] }),
+        readCacheSizes: () => ({ groupAudienceSnapshots: 3 }),
+        readAlmDeliveredMarkers: () => Promise.resolve(0),
         crdtAdminRepository: new InMemoryRallarCrdtLogRepository({
             now: () => NOW_EPOCH_MS
         }),
@@ -157,10 +165,7 @@ function createInput(
 
 function createDatabase(): PSqlSql {
     return Object.assign(
-        function<T> (
-            _stringsOrValues: TemplateStringsArray | readonly unknown[],
-            ..._values: unknown[]
-        ): Promise<T> {
+        function<T> (): Promise<T> {
             return Promise.reject(new Error('query not used'));
         },
         {
@@ -190,10 +195,10 @@ class TestWebSocket extends EventTarget implements WebSocket {
     readonly url = 'ws://test.invalid';
     readonly readyState: WebSocket['readyState'];
     binaryType: BinaryType = 'blob';
-    onclose: ((this: WebSocket, event: CloseEvent) => unknown) | null = null;
-    onerror: ((this: WebSocket, event: Event) => unknown) | null = null;
-    onmessage: ((this: WebSocket, event: MessageEvent) => unknown) | null = null;
-    onopen: ((this: WebSocket, event: Event) => unknown) | null = null;
+    onclose: WebSocket['onclose'] = null;
+    onerror: WebSocket['onerror'] = null;
+    onmessage: WebSocket['onmessage'] = null;
+    onopen: WebSocket['onopen'] = null;
 
     constructor(readyState: WebSocket['readyState']) {
         super();

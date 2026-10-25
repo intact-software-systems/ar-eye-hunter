@@ -15,6 +15,7 @@ import {
 } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import type { AppInboxTestDatabase, AppInboxTestDatabaseOptions } from '../app-inbox/test-support/app-inbox-test-database-contracts.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 
 export interface AuthInboxTestHarness {
     readonly queue: TestResourceInbox;
@@ -90,6 +91,7 @@ export function createAuthInboxTestRuntime({
                 new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 2 })
         },
         {
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             serviceId: serviceId,
             authFactNowEpochMs: nowEpochMs,
             newAuthMessageId,

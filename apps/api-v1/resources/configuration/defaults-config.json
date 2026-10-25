@@ -64,6 +64,7 @@
   },
   "group": {
     "defaultMaxMembers": 256,
+    "currentSnapshotCacheMaxEntries": 512,
     "admission": {
       "windowMs": 60000,
       "joinPrincipal": 60,
@@ -125,7 +126,8 @@
       "retryIntervalMs": 250,
       "maxRetryIntervalMs": 1000,
       "jitterRatio": 0.1
-    }
+    },
+    "finishedRetentionMs": 86400000
   },
   "ice": {
     "mode": "local",
@@ -157,6 +159,7 @@
   },
   "observability": {
     "timingLogs": true,
+    "heapSampleIntervalMs": 30000,
     "startupSummary": true
   }
 }

@@ -4,12 +4,13 @@ import type { BlackBoxRallarRuntimeInstallationTarget } from '@shared-test/black
 import { toError } from '@shared/resilience/to-error.ts';
 
 import {
-    controlRunSnapshotUrlFromControlUrl,
     readHeadlessWorkerConfig,
+    toControlRunSnapshotUrl,
+    toHeadlessWorkerLaunchOptions,
     type HeadlessWorkerAgentConfig,
     type HeadlessWorkerBrowserEngine,
     type HeadlessWorkerConfig
-} from '../src/headless-worker-config.ts';
+} from '../src/headless-worker/headless-worker-config.ts';
 import {
     attachHeadlessWorkerPageLogging,
     createHeadlessWorkerLogger,
@@ -20,7 +21,7 @@ import {
     waitForHeadlessWorkerExit,
     type HeadlessWorkerLogger,
     type HeadlessWorkerRegistrationSnapshot
-} from '../src/headless-worker-runtime.ts';
+} from '../src/headless-worker/headless-worker-runtime.ts';
 
 interface RunningAgent {
     readonly agent: HeadlessWorkerAgentConfig;
@@ -80,12 +81,10 @@ try {
             `engine=${config.browserEngine} ` +
             `spa=${config.spaUrl} control=${config.controlUrl}`
     );
-    // The worker owns SIGINT and SIGTERM: Playwright's own handlers would close the browser under the pages' disconnect.
+    const launchOptions = toHeadlessWorkerLaunchOptions(config);
     const launchedBrowser = await browserTypes[config.browserEngine].launch({
-        headless: config.headless,
-        timeout: config.launchTimeoutMs,
-        handleSIGINT: false,
-        handleSIGTERM: false
+        ...launchOptions,
+        args: [...launchOptions.args]
     });
     browser = launchedBrowser;
 
@@ -268,7 +267,7 @@ async function readControlRunSnapshot(
     signal: AbortSignal
 ): Promise<HeadlessWorkerRegistrationSnapshot> {
     const response = await fetch(
-        controlRunSnapshotUrlFromControlUrl(config.controlUrl, config.runId),
+        toControlRunSnapshotUrl(config.controlUrl, config.runId),
         { headers: controlReadHeaders(config), signal }
     );
     if (!response.ok) {

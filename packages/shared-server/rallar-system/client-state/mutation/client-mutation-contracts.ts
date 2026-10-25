@@ -254,6 +254,10 @@ export type ClientMutationFacts = Readonly<{
     eventId: string;
     commandHash: string;
     attemptCount: number;
+    /**
+     * When the command's idempotency record and the outbox rows it derives expire: its ingress plus
+     * `finishedRetentionMs` (the contract on `MIN_APP_INBOX_FINISHED_RETENTION_MS`).
+     */
     expireAtEpochMs: number;
     /** How long a session that ended keeps its row before the runtime-state expiry sweep removes it. */
     disconnectedSessionRetentionMs: number;

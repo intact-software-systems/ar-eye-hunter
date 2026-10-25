@@ -9,13 +9,38 @@ export interface ResourceInboxReservationFinish {
     readonly completedAt: Date;
 }
 
+/**
+ * A finish that also sets the finished row's expiry to `expiresAt`, its completion plus the retention window: after
+ * completion that window governs, not the message's own deadline, so the expiry may move later as well as earlier.
+ */
+export interface ResourceInboxRetainedReservationFinish extends ResourceInboxReservationFinish {
+    readonly expiresAt: Date;
+}
+
+/** Finishes the reservation and keeps the row's own expiry. */
 export async function writeResourceInboxReservationFinish(
     transaction: PSqlSql,
     computed: ResourceInboxReservationFinish
 ): Promise<boolean> {
+    return await writeFinish(transaction, computed, null);
+}
+
+export async function writeResourceInboxRetainedReservationFinish(
+    transaction: PSqlSql,
+    computed: ResourceInboxRetainedReservationFinish
+): Promise<boolean> {
+    return await writeFinish(transaction, computed, computed.expiresAt);
+}
+
+async function writeFinish(
+    transaction: PSqlSql,
+    computed: ResourceInboxReservationFinish,
+    expiresAt: Date | null
+): Promise<boolean> {
     const rows = await transaction<readonly { ri_row_id: bigint; }[]>`
         update resource_inbox
-        set ri_status = ${computed.status}, end_ts = ${computed.completedAt}, next_ts = null
+        set ri_status = ${computed.status}, end_ts = ${computed.completedAt}, next_ts = null,
+            expire_ts = coalesce(${expiresAt}, expire_ts)
         where ri_topic_id = ${computed.key.topicId}
           and ri_resource_id = ${computed.key.resourceId}
           and fk_ext_bank_id = ${computed.key.contextId}

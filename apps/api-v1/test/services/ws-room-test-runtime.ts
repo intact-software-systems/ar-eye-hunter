@@ -11,6 +11,7 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { configureSharedStateRepositories } from '@shared/repository/configure-shared-state-repositories.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { FakeRuntimeStateRepository } from '../../../../packages/tests/shared-server/runtime-state/test-support/fake-runtime-state-repository.ts';
 
 interface RoomStateReadCounts {
@@ -37,6 +38,7 @@ export function createRoomStateTestRuntime(
         groupSnapshots: { ttlMs: 60_000 }
     }, manager);
     const durable = createGroupStateService({
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         runtimeRepository,
         groupStateEventStore: runtimeRepository.groupStateEventStore,
         serviceId: 'ws-room-test',

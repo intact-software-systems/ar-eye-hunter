@@ -25,7 +25,8 @@ const FIRST_REPORT: RallarBlackBoxTestAlmUsage = {
     inbound: { admissions: 1, bytes: 312 },
     limits: AL_VOLATILE_SESSION_LIMITS,
     overloaded: false,
-    orderingTracks: 3
+    orderingTracks: 3,
+    deliveredMarkers: 3
 };
 const SECOND_REPORT: RallarBlackBoxTestAlmUsage = {
     usage: { admissions: 1_500, bytes: 60_000, oldestAgeMs: 29_000, tracks: 64 },
@@ -33,7 +34,8 @@ const SECOND_REPORT: RallarBlackBoxTestAlmUsage = {
     inbound: { admissions: 1_000, bytes: 40_000 },
     limits: AL_VOLATILE_SESSION_LIMITS,
     overloaded: true,
-    orderingTracks: 256
+    orderingTracks: 256,
+    deliveredMarkers: 256
 };
 
 function createDefaultPageRuntime(
@@ -335,7 +337,8 @@ describe('the stats result rallar.alm block', () => {
             own: { admissions: 0, bytes: -2 },
             limits: AL_VOLATILE_SESSION_LIMITS,
             overloaded: 'no',
-            orderingTracks: 2.5
+            orderingTracks: 2.5,
+            deliveredMarkers: -1
         }));
 
         const result = await runtime.execute({ kind: 'stats', commandId: 'stats-1' });
@@ -344,7 +347,8 @@ describe('the stats result rallar.alm block', () => {
         expect(result.error?.message).toBe(
             'The page\'s session ledger report is not valid: usage.admissions is not a count; ' +
                 'usage.tracks is not a count; own.bytes is not a count; inbound.admissions is not a count; ' +
-                'inbound.bytes is not a count; overloaded is not a boolean; orderingTracks is not a count'
+                'inbound.bytes is not a count; overloaded is not a boolean; orderingTracks is not a count; ' +
+                'deliveredMarkers is not a count'
         );
     });
 });

@@ -92,8 +92,10 @@ export function createPSqlALInboundRuntimeStores(
             orderingTrackTtlMs: input.orderingTrackTtlMs,
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
             retention: normalizeALRuntimeStoreRetention(input.retention),
-            // Every WS client's tracks share the one store, so a cap there would evict live tracks (D191).
-            maxOrderingTracks: undefined
+            // Every WS client's tracks share the one store, so a cap there would evict live tracks (D191); the
+            // delivered markers stay bounded by their expiry alone, for the same reason.
+            maxOrderingTracks: undefined,
+            maxDeliveredMarkers: undefined
         }),
         workQueue: backend.workQueue
     };

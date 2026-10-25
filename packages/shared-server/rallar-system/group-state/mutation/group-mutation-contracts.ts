@@ -491,6 +491,10 @@ export interface GroupMutationIngressFacts {
      * presence timestamps the request defaulted, and the skew checks against them. Never for a decision at execution.
      */
     readonly nowEpochMs: number;
+    /**
+     * When the command's idempotency record and the outbox rows it derives expire: its ingress plus
+     * `finishedRetentionMs` (the contract on `MIN_APP_INBOX_FINISHED_RETENTION_MS`).
+     */
     readonly expireAtEpochMs: number;
     readonly serviceId: string;
     readonly eventId: string;

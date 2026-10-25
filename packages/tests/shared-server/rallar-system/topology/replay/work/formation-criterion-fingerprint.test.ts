@@ -255,6 +255,7 @@ function createCriterionFingerprintFixture(
     });
     const handler = createRtcTopologyWorkHandler({
         nowEpochMs: () => NOW,
+        finishedRetentionMs: 3_600_000,
         outboxQueueReader,
         database,
         topologyPlanning: planning,

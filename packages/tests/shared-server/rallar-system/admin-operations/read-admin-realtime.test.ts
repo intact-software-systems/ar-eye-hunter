@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { ReadAdminRealtime } from '@shared-server/rallar-system/admin-operations/read-admin-realtime.ts';
 import { emptyGroupFormationMetrics } from '@shared-server/rallar-system/observability/formation-metrics.ts';
+import { createRtcTopologyAdminMetrics } from './test-support/create-rtc-topology-admin-metrics.ts';
 
 const NOW_EPOCH_MS = 1_700_000_000_000;
 
@@ -11,6 +12,7 @@ describe('ReadAdminRealtime', () => {
             ...emptyGroupFormationMetrics(),
             presenceSummaryExpansionCount: 4
         };
+        const topologyMetrics = createRtcTopologyAdminMetrics({ topologyUpdateCount: 2 });
         const readRealtime = new ReadAdminRealtime({
             nowEpochMs: () => NOW_EPOCH_MS,
             serverId: 'test-server',
@@ -25,14 +27,17 @@ describe('ReadAdminRealtime', () => {
                     { connectionId: 'open-1', isOpen: true }
                 ]
             }),
-            readRtcTopologyMetrics: () => ({ recomputeCount: 2 }),
+            readRtcTopologyMetrics: () => topologyMetrics,
             readGroupFormationMetrics: () => formationMetrics,
-            readAlmReceipts: () => ({ capacity: 256, messages: [] })
+            readAlmReceipts: () => ({ capacity: 256, messages: [] }),
+            readCacheSizes: () => ({ groupAudienceSnapshots: 7 }),
+            readAlmDeliveredMarkers: () => Promise.resolve(259)
         });
 
-        await expect(readRealtime.execute({
-            adminSession: createAdminSession()
-        })).resolves.toMatchObject({
+        const realtime = await readRealtime.execute({ adminSession: createAdminSession() });
+
+        expect(realtime.caches).toEqual({ groupAudienceSnapshots: 7, processLocal: true });
+        expect(realtime).toMatchObject({
             generatedAtEpochMs: NOW_EPOCH_MS,
             serverId: 'test-server',
             websocket: {
@@ -42,14 +47,15 @@ describe('ReadAdminRealtime', () => {
                 openConnectionIds: ['open-1']
             },
             rtcTopology: {
-                metrics: { recomputeCount: 2 },
+                metrics: topologyMetrics,
                 processLocal: true
             },
             groupFormation: {
                 metrics: formationMetrics,
                 processLocal: true
             },
-            almReceipts: { diagnostics: { capacity: 256, messages: [] }, processLocal: true }
+            almReceipts: { diagnostics: { capacity: 256, messages: [] }, processLocal: true },
+            alm: { deliveredMarkers: 259, processLocal: false }
         });
     });
 });

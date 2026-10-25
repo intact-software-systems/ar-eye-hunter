@@ -40,3 +40,13 @@ Deno.test('the control server refuses a zero snapshot flush or deadline sweep in
     assertEquals(issuesFor({ RALLAR_BLACK_BOX_SNAPSHOT_FLUSH_INTERVAL_MS: '1', RALLAR_BLACK_BOX_DEADLINE_SWEEP_INTERVAL_MS: '1' }), []);
     assertEquals(issuesFor({}), []);
 });
+
+// The automatic sweep keeps the most recently updated runs; unset, it keeps the five a hosted controller deploys with.
+Deno.test('the control server keeps five runs unless told otherwise, and keeps every run only when told 0', () => {
+    const maxRunsFor = (environment: Readonly<Record<string, string>>) =>
+        readBlackBoxControlServerConfiguration({ get: (key) => environment[key] }).retentionMaxRuns;
+
+    assertEquals(maxRunsFor({}), 5);
+    assertEquals(maxRunsFor({ RALLAR_BLACK_BOX_RETENTION_MAX_RUNS: '20' }), 20);
+    assertEquals(maxRunsFor({ RALLAR_BLACK_BOX_RETENTION_MAX_RUNS: '0' }), 0);
+});

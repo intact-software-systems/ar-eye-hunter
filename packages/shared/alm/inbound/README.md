@@ -119,11 +119,13 @@ WS server and Node keep the always-owned default.
   track's snapshot for `orderingTrackTtlMs`, the repository's 1 h, the volatile pair too
   (D181): a receiver that forgot a track would read the sender's next sequence as a gap
   from 1 and stall the track on a repair. Each of the browser's inbound stores keeps at most
-  `AL_INBOUND_MAX_ORDERING_TRACKS` (256) ordering snapshots, though (D191, below); the server's
-  stores are uncapped. **Limit:** an idle track therefore holds two
-  rows for the hour after its last message, or one once its snapshot was evicted: the marker of
-  its delivered sequences stays for the hour, because ordered delivery reads it while the track's
-  buffered rows live.
+  `AL_INBOUND_MAX_ORDERING_TRACKS` (256) ordering snapshots, though (D191, below), and at most
+  `AL_INBOUND_MAX_DELIVERED_MARKERS` (256) delivered markers. The server's stores are uncapped
+  for both: every WS client's tracks share one store, so a cap there would evict live tracks of
+  other sessions, and each marker leaves at its expiry, an hour after the last admission on its
+  track; the admin realtime read counts them (`alm.deliveredMarkers`). **Limit:** an idle track
+  therefore holds two rows for the hour after its last message on the server, and in the browser
+  until a newer track pushes it past either cap.
 - **Diagnostics name the lane.** `effect-drain`, `claim-settled` and `rotation-alive`
   carry a required `lane: 'durable' | 'volatile'` (R-S3a-15).
 
@@ -515,11 +517,28 @@ best-effort: the admission has committed, so a snapshot that does not decode, a 
 throwing reporter ends the pass without a count, the commit still answers `committed`, and the next new
 track evicts. The evicted track's next arrival is read as a new track's, from sequence 1, and
 the release of a message buffered on a track evicted beyond its delivered head reads `resync-required`. Only
-the snapshot leaves: the track's `delivered` marker stays for the hour (**Limit** above). A store that
+the snapshot leaves: the track's `delivered` marker has its own cap. A store that
 names a reporter (`reportOrderingTracks`) is told the number of snapshots it holds after each such pass; the
 browser states it on the `storage` diagnostics port as `ordering-tracks`. **Limit:** a receiver holding
 more than 256 live ordered tracks in one store thrashes: each new track evicts a live one, whose next arrival
 reads as a gap from sequence 1 and goes to repair or resynchronization.
+
+**The browser's delivered-marker cap.** Each of the browser's inbound stores, the session's IndexedDB pair and
+its volatile memory pair alike, keeps at most `AL_INBOUND_MAX_DELIVERED_MARKERS` (256) delivered markers
+([`evict-al-inbound-delivered-markers-past-cap.ts`](./admission/evict-al-inbound-delivered-markers-past-cap.ts)).
+The store keeps an in-memory index of its markers in the order their expiry last moved forward
+([`al-inbound-delivered-marker-index.ts`](./admission/al-inbound-delivered-marker-index.ts)), fed by every
+committed marker write; a track's first marker past the cap evicts the index's head, the least recently admitted
+track's marker, in one guarded write that rereads it, without reading the store's other markers. The first pass
+of a store lists its markers once so the index also holds the rows written before it existed. The index drops
+markers as they expire, so a sender that stops opening tracks leaves no entry once its markers expire. **Soft
+cap:** a marker whose track still buffers a release is never evicted, an in-order message waiting for its
+delivery included (every locally delivered ordered message keeps a buffered slot until its delivery completes),
+because that delivery reads the marker as its completion evidence; the next oldest leaves instead, and a store
+whose every marker buffers stays past the cap until its releases drain or expire. A track whose marker left
+reads its next release as `resync-required`, as one whose snapshot left does. The store states the markers it
+holds after each pass to `reportDeliveredMarkers`; the browser states it on the `storage` port as
+`delivered-markers`, and the harness reads the sum as `stats.rallar.alm.deliveredMarkers`.
 
 **Room authority and the membership fence.** An RTC receiver judges a room send against the room
 snapshot it holds before planning it

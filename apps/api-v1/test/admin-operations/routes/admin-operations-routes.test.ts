@@ -10,6 +10,7 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarCrdtDocumentMetadata, RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
+import { createRtcTopologyAdminMetrics } from '../../../../../packages/tests/shared-server/rallar-system/admin-operations/test-support/create-rtc-topology-admin-metrics.ts';
 import { CompactApiAdminCrdt } from '../../../src/admin-operations/compact-api-admin-crdt.ts';
 import { EraseApiAdminCrdt } from '../../../src/admin-operations/erase-api-admin-crdt.ts';
 import { PruneApiAdminExpiredData } from '../../../src/admin-operations/prune-api-admin-expired-data.ts';
@@ -109,7 +110,7 @@ Deno.test('admin operations overview returns the service overview payload', asyn
 Deno.test(
     'admin operations scoped state route forwards application and workspace scope',
     async () => {
-        const calls: unknown[] = [];
+        const calls: AdminOperationReadRequest[] = [];
         const app = createApp({
             operations: {
                 state: {
@@ -157,7 +158,7 @@ Deno.test(
 );
 
 Deno.test('admin operations metrics reset forwards request body and admin session', async () => {
-    const calls: unknown[] = [];
+    const calls: AdminOperationWriteRequest<{ readonly requestId?: string; }>[] = [];
     const app = createApp({
         operations: {
             metricsReset: {
@@ -170,8 +171,8 @@ Deno.test('admin operations metrics reset forwards request body and admin sessio
                         operation: 'metrics.reset',
                         status: 'completed' as const,
                         changed: true,
-                        before: { rtcTopology: { recomputeCount: 2 } },
-                        after: { rtcTopology: { recomputeCount: 0 } }
+                        before: { rtcTopology: createRtcTopologyAdminMetrics({ topologyUpdateCount: 2 }) },
+                        after: { rtcTopology: createRtcTopologyAdminMetrics() }
                     });
                 }
             }
@@ -193,7 +194,10 @@ Deno.test('admin operations metrics reset forwards request body and admin sessio
     });
 
     assert.equal(response.status, 200);
-    assert.equal((await response.json()).changed, true);
+    const body = await response.json();
+    assert.equal(body.changed, true);
+    assert.deepEqual(body.before, { rtcTopology: createRtcTopologyAdminMetrics({ topologyUpdateCount: 2 }) });
+    assert.deepEqual(body.after, { rtcTopology: createRtcTopologyAdminMetrics() });
     assert.deepEqual(calls, [
         {
             request: {

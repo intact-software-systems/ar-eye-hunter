@@ -31,11 +31,13 @@ export interface CreateApiV1AdminOperationUseCasesInput {
     readonly serviceId: string;
     readonly timing: RallarTimingSink;
     readonly readWebSocketStatus: () => RallarServerWsStatus;
-    readonly readRtcTopologyMetrics: () => object;
+    readonly readRtcTopologyMetrics: ReadAdminRealtime.Options['readRtcTopologyMetrics'];
     readonly resetRtcTopologyMetrics: () => void;
     readonly readGroupFormationMetrics: RallarGroupFormationMetricsRecorder['readMetrics'];
     readonly resetGroupFormationMetrics: RallarGroupFormationMetricsRecorder['resetMetrics'];
     readonly readAlmReceipts: RallarAlmReceiptDiagnosticsRecorder['readDiagnostics'];
+    readonly readCacheSizes: ReadAdminRealtime.Options['readCacheSizes'];
+    readonly readAlmDeliveredMarkers: ReadAdminRealtime.Options['readAlmDeliveredMarkers'];
     readonly crdtAdminRepository: RallarCrdtAdminReadRepository;
     readonly appAdminInboxService: PruneApiAdminExpiredData.Options['appAdminInbox'];
     readonly crdtAdminMutations: CrdtAdminMutations;
@@ -63,7 +65,9 @@ export function createApiV1AdminOperationUseCases(
         readWebSocketStatus: input.readWebSocketStatus,
         readRtcTopologyMetrics: input.readRtcTopologyMetrics,
         readGroupFormationMetrics: input.readGroupFormationMetrics,
-        readAlmReceipts: input.readAlmReceipts
+        readAlmReceipts: input.readAlmReceipts,
+        readCacheSizes: input.readCacheSizes,
+        readAlmDeliveredMarkers: input.readAlmDeliveredMarkers
     });
     const operations: AdminOperationUseCases = {
         overview: new ReadAdminOverview({

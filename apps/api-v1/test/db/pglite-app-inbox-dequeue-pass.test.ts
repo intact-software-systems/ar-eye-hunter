@@ -24,6 +24,7 @@ import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestMiddlewareResilience } from '../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
@@ -142,7 +143,7 @@ function createDequeuePassRuntime(sql: PGliteSql): DequeuePassRuntime {
     const completionNotifications = ResourceInboxCompletionNotifications.createDefault();
     const queueInbox = createPSqlResourceInboxRepository(sql, () => new Date());
     const queueBox = new PSqlQueueBox(queueInbox, Temporal.Now.instant);
-    const finalizeAppInboxRetry = createAppInboxRetryFinalizer({ database: sql });
+    const finalizeAppInboxRetry = createAppInboxRetryFinalizer({ finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS, database: sql });
     const inboxQueueReader = new InboxQueueReader(queueBox, {
         newLaneConcurrency: 1,
         completionNotifications,
@@ -165,6 +166,7 @@ function createDequeuePassRuntime(sql: PGliteSql): DequeuePassRuntime {
         defaultTopicId: CLIENT_STATE_APP_INBOX_TOPIC
     }).queueEntryWriter;
     const handlerRuntime = createAppInboxHandlerRuntime({
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         inboxQueueReader,
         resultRepository: new ResourceInboxResultsRepository(sql),
         database: sql,

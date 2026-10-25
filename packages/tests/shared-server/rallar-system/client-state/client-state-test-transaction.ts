@@ -104,6 +104,13 @@ async function executeClientStateTestSql(input: ClientStateTestSqlInput): Promis
         input.query.includes('do nothing') &&
         input.query.includes('returning revision')
     ) {
+        return await insertAbsentRuntimeState(input);
+    }
+    if (
+        input.query.includes('insert into runtime_state_store') &&
+        input.query.includes('where runtime_state_store.expire_at_ts <= now()') &&
+        input.query.includes('returning revision')
+    ) {
         return await insertRuntimeState(input);
     }
     if (
@@ -124,12 +131,25 @@ async function executeClientStateTestSql(input: ClientStateTestSqlInput): Promis
     throw new Error(`Unexpected client test transaction SQL: ${input.query}`);
 }
 
-async function insertRuntimeState(input: ClientStateTestSqlInput): Promise<PSqlRows> {
+async function insertAbsentRuntimeState(input: ClientStateTestSqlInput): Promise<PSqlRows> {
     const namespace = requireStringParameter(input.values[0], 'runtime-state namespace');
     const key = requireStringParameter(input.values[1], 'runtime-state key');
     const value = requireStringParameter(input.values[2], 'runtime-state value');
     const expireAt = requireTimestampParameter(input.values[3], 'runtime-state expiry');
     const result = await input.runtime.insertIfAbsent(namespace, key, value, expireAt.getTime());
+    return result.status === 'applied' ? [{ revision: result.revision }] : [];
+}
+
+/** The client mutation insert: a key holding an expired row takes the new row one revision past it. */
+async function insertRuntimeState(input: ClientStateTestSqlInput): Promise<PSqlRows> {
+    const namespace = requireStringParameter(input.values[0], 'runtime-state namespace');
+    const key = requireStringParameter(input.values[1], 'runtime-state key');
+    const value = requireStringParameter(input.values[2], 'runtime-state value');
+    const expireAt = requireTimestampParameter(input.values[3], 'runtime-state expiry');
+    const current = await input.runtime.findEntry(namespace, key);
+    const result = current === undefined || current.expireAtTimestamp > Date.now()
+        ? await input.runtime.insertIfAbsent(namespace, key, value, expireAt.getTime())
+        : await input.runtime.upsertIfRevision(namespace, key, value, expireAt.getTime(), current.revision);
     return result.status === 'applied' ? [{ revision: result.revision }] : [];
 }
 

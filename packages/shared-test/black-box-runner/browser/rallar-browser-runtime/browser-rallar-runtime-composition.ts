@@ -73,6 +73,7 @@ import {
 } from '@shared/transport-faults/transport-fault-port.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
+import { ALInboundStoreCounts } from './al-inbound-store-counts.ts';
 import {
     createBlackBoxRallarCongestionCounters,
     type BlackBoxRallarCongestionCounters
@@ -81,10 +82,6 @@ import type {
     BlackBoxRallarControlSubmitInput,
     BlackBoxRallarDirectorOutputRecord
 } from './black-box-rallar-operation-contracts.ts';
-import {
-    createBlackBoxRallarOrderingTracks,
-    type BlackBoxRallarOrderingTracks
-} from './black-box-rallar-ordering-tracks.ts';
 import { computeAlmConformanceQosDefaults } from './messaging/compute-alm-conformance-qos-defaults.ts';
 import {
     replayBlackBoxCapturedMessage,
@@ -175,7 +172,7 @@ export interface BlackBoxBrowserDiagnosticsDependency {
     /** Decides each IndexedDB operation after `storage` has counted it. */
     readonly storageFaults: ScriptedStorageFaultPort;
     readonly congestion: BlackBoxRallarCongestionCounters;
-    readonly orderingTracks: BlackBoxRallarOrderingTracks;
+    readonly inboundStoreCounts: ALInboundStoreCounts;
 }
 
 export interface BlackBoxBrowserRealtimeDependency
@@ -218,7 +215,7 @@ export function createBlackBoxBrowserRallarRuntimeDependency(
     const storage = createCountingIndexedDbOperationObserver();
     const storageFaults = createScriptedStorageFaultPort();
     const congestion = createBlackBoxRallarCongestionCounters();
-    const orderingTracks = createBlackBoxRallarOrderingTracks();
+    const inboundStoreCounts = new ALInboundStoreCounts();
     const { foundation, state, session, stateEvents, messaging, realtime } = createBlackBoxBrowserTransportComposition(
         input.readVolatileSessionLimits
     );
@@ -254,7 +251,7 @@ export function createBlackBoxBrowserRallarRuntimeDependency(
         realtime,
         crdt,
         director,
-        diagnostics: { faults, storage, storageFaults, congestion, orderingTracks },
+        diagnostics: { faults, storage, storageFaults, congestion, inboundStoreCounts },
         ...toBlackBoxBrowserMessagingPorts({ session, state })
     });
 }

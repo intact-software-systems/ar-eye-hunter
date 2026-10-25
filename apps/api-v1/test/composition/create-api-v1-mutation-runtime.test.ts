@@ -13,6 +13,7 @@ import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/client-state/test-disconnected-session-retention.ts';
 import {
     createApiV1MutationRuntime,
@@ -56,8 +57,10 @@ function createProbedMutationRuntime(database: PSqlSql): ApiV1MutationRuntime {
         appInboxOptions: { nowEpochMs: () => 1_000 },
         appInboxNewLaneConcurrency: 1,
         appInboxNewLaneHeldRows: 4,
+        appInboxFinishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,
         groupCapacity: { defaultMaxMembers: 10 },
+        groupCurrentSnapshotCacheMaxEntries: 512,
         groupFormationRecomputeDebounceMs: 250,
         groupFormationRecomputeMaxWaitMs: 1_000,
         adminClientIds: ['admin-1'],
