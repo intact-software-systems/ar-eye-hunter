@@ -208,6 +208,7 @@ function productionOverrides(profile: 'prod' | 'prod-hardened'): Readonly<Record
         }]),
         RALLAR_API_CONFIGURATION_PROFILE: profile,
         AUTH_ADMIN_CLIENT_IDS: 'production-operator',
+        CORS_ORIGINS: 'https://relic.example.test',
         DATABASE_URL: 'postgres://configuration-test@database.example.test/rallar',
         METERED_APP_NAME: 'rallar-production',
         METERED_API_KEY: 'metered-configuration-test-secret',
