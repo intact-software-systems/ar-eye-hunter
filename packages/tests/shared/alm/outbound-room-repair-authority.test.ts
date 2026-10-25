@@ -64,10 +64,11 @@ describe('retained room authority through repair scheduling', () => {
                 'peer'
             );
         }
-        await expect.poll(async () => {
-            await runOutboundWorkTask(runtime);
-            return requests.length;
-        }).toBe(cause === 'nack' ? 2 : 1);
+        // Drain the timeout and its repair hint at this clock value: polling would advance fake Date
+        // through another timeout window and legitimately exhaust the receipt before its hint runs.
+        await runOutboundWorkTask(runtime);
+        await runOutboundWorkTask(runtime);
+        expect(requests).toHaveLength(cause === 'nack' ? 2 : 1);
         for (const request of requests) {
             expect(request).toMatchObject({
                 trigger: REPAIR_TRIGGER_BY_CAUSE[cause],
