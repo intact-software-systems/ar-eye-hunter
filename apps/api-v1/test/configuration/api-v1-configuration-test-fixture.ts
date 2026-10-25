@@ -210,6 +210,9 @@ export function validConfigurationEnvironment(
         RALLAR_API_CONFIGURATION_PROFILE: profile,
         RALLAR_AUTH_CREDENTIAL_SECRET: CONFIGURATION_SECRET_SENTINELS.authenticationCredentialSecret
     };
+    if (profile === 'prod-hardened') {
+        environment.CORS_ORIGINS = 'https://browser.example.test';
+    }
     if (profile === 'prod' || profile === 'prod-hardened') {
         return {
             ...environment,

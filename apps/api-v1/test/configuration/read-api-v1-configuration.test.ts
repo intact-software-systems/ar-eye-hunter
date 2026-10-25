@@ -48,6 +48,19 @@ Deno.test('configuration reader carries selected phase timing through AppInbox s
     }
 });
 
+Deno.test('production origins are deployment-owned and hardened startup requires an explicit HTTPS allowlist', async () => {
+    for (const profile of ['prod', 'prod-in-memory'] as const) {
+        const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));
+        assert.deepEqual(configuration.http.corsOrigins, []);
+    }
+    const environment = validConfigurationEnvironment('prod-hardened');
+    delete environment.CORS_ORIGINS;
+    const error = await captureConfigurationError(readerInput(environment));
+    assert.ok(error.issues.some((issue) => issue.path === 'http.corsOrigins'));
+    const configured = await readApiV1Configuration(readerInput({ ...environment, CORS_ORIGINS: 'https://browser.example.test' }));
+    assert.deepEqual(configured.http.corsOrigins, ['https://browser.example.test']);
+});
+
 Deno.test('configuration reader selects only absent or exact canonical profiles', async () => {
     const absentEnvironment = validConfigurationEnvironment();
     delete absentEnvironment.RALLAR_API_CONFIGURATION_PROFILE;
@@ -309,10 +322,7 @@ Deno.test('configuration startup summary is useful and contains no secret-derive
             apiBaseUrl: 'https://api.rallar.intactss.com',
             wsBaseUrl: 'wss://api.rallar.intactss.com'
         },
-        corsOrigins: [
-            'https://ar-eye-hunter.pages.dev',
-            'https://blackbox.rallar.intactss.com'
-        ],
+        corsOrigins: [],
         workerCategories: {
             apiQueue: 'enabled',
             rtcTopologyReplay: 'enabled'

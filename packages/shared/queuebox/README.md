@@ -48,3 +48,17 @@ Tests: `packages/tests/shared/queuebox/` covers browser/memory policy and writes
 checks all lanes and adapters. The latter also runs through the canonical
 native PostgreSQL integration selector. Reader lifecycle tests live under
 `packages/tests/shared/services/` and `packages/tests/shared/inbox-queue-reader.test.ts`.
+
+## Database identity is consumer-owned
+
+Named-open construction requires an explicit nonempty `dbName`; the other mode
+requires an injected `IndexedDbConnection` and store name. Construction rejects a
+missing name/connection before opening storage. Supplied names are used verbatim,
+including whitespace: the queue does not choose or rewrite durable identities.
+
+`IndexedDbQueueBox.DEFAULT_DB_NAME` and implicit default-name construction have
+been removed intentionally. External callers that previously omitted `dbName`
+must now pass their previously used database name explicitly. This keeps existing
+stored rows addressable; no renamed default, alias, migration or dual read exists.
+Repository production consumers already inject their connection, so their
+existing database/store identities are unchanged.

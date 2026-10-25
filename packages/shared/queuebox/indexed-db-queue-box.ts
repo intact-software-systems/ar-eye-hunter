@@ -116,7 +116,7 @@ interface IndexedDbQueueComputedWrite<Result> {
 
 export type IndexedDbQueueBoxOptions =
     | Readonly<{
-        dbName?: string;
+        dbName: string;
         storeName?: string;
         connection?: never;
         completedRetention?: QueueBoxCompletedRetention;
@@ -133,7 +133,6 @@ export type IndexedDbQueueBoxOptions =
     }>;
 
 export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
-    static readonly DEFAULT_DB_NAME = 'ar-eye-hunter-queuebox';
     static readonly DEFAULT_STORE_NAME = 'entries';
 
     readonly #connection: IndexedDbConnection;
@@ -156,9 +155,16 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             typeIds: [...options.completedRetention?.typeIds ?? []],
             topicIds: [...options.completedRetention?.topicIds ?? []]
         };
-        const dbName = options.dbName ?? IndexedDbQueueBox.DEFAULT_DB_NAME;
         this.#storeName = options.storeName ?? IndexedDbQueueBox.DEFAULT_STORE_NAME;
-        this.#connection = options.connection ?? new IndexedDbConnection(async () => {
+        if (options.connection !== undefined) {
+            this.#connection = options.connection;
+            return;
+        }
+        const dbName = options.dbName;
+        if (typeof dbName !== 'string' || dbName.length === 0) {
+            throw new TypeError('IndexedDbQueueBox requires an explicit database name or connection');
+        }
+        this.#connection = new IndexedDbConnection(async () => {
             if (!IndexedDbQueueBox.isSupported()) {
                 throw new Error('IndexedDB is not available in this runtime');
             }

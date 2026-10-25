@@ -59,3 +59,14 @@ pickup intents go over WS only, one server hop where they were RTC-first, with
 no RTC path while WS reconnects.
 The generic game envelope still identifies rooms by `roomId`; this app fallback
 repair does not claim full scope isolation for that separate shared protocol.
+
+## API deployment origins
+
+Before rolling out the generic API profiles, explicitly include
+`https://ar-eye-hunter.pages.dev` in the API deployment's comma-separated
+`CORS_ORIGINS` allowlist, together with every other verified browser origin
+sharing that API. Local browser tests use their explicit local SPA origin.
+Production API profiles no longer carry application deployment origins. An empty
+allowlist grants no cross-origin access; the hardened profile refuses startup
+until an explicit nonempty HTTPS allowlist is supplied. This is a deployment
+configuration requirement, not an instruction to change live infrastructure.

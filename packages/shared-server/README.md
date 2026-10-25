@@ -126,9 +126,11 @@ or predecessor-format fallback.
 
 Server-side applications register namespaced operations through
 `RallarServerApplication.appInbox`, exported as `RallarServerAppInbox` from
-`@shared-server/mod.ts`. Every process that can claim the queue registers the
-same operations on the same capability instance before `rallar.start(...)` seals
-registration and opens admission. `rallar.start()` keeps the default of starting
+`@shared-server/mod.ts`. Every process owning an operation registers it on the same capability instance
+before `rallar.start(...)` seals registration and opens admission. Different workers
+may own different application operation sets; claims use each worker’s local inventory.
+The complete database-wide room-owned retention catalog is a separate configuration
+contract shared by every process using that database. `rallar.start()` keeps the default of starting
 local workers; `rallar.start({ queueWorkers: 'disabled' })` opens a passive
 producer's admission without starting local workers. API background-task shutdown
 closes the same AppInbox owner in either mode. Applications do not assemble private AppInbox

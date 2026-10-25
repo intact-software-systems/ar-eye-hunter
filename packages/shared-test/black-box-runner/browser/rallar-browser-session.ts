@@ -42,7 +42,7 @@ interface RallarBrowserCleanupOptions {
     diagnostic?: (topic: string, data?: BlackBoxRallarEvent['data']) => void;
 }
 
-const RALLAR_BROWSER_STATE_KEY = Symbol.for('ar-eye-hunter.black-box-runner.rallar-browser-provider-state');
+const RALLAR_BROWSER_STATE_KEY = Symbol.for('rallar.black-box-runner.browser-provider-state');
 const RALLAR_BROWSER_HARNESS_PATH = '/packages/shared-test/black-box-runner/browser/rallar-browser-harness.html';
 
 export function initRallarBrowserProviderState(

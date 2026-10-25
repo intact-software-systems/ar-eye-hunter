@@ -83,6 +83,7 @@ Deno.test('committed profiles resolve their intended database, delivery, and ICE
         {
             profileName: 'prod-hardened',
             environmentSource: {
+                http: { corsOrigins: ['https://browser.example.test'] },
                 authentication: { adminClientIds: ['production-operator'] },
                 ice: { appName: 'rallar-production', region: 'eu' },
                 blackBox: { operatorToken: { allowedClientIds: ['production-operator'] } }

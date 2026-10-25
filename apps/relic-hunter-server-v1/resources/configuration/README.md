@@ -21,3 +21,9 @@ The production Relic browser origin is
 use `http://localhost:5175`. API-v1’s generic profile no longer includes the
 Relic production origin. Relic deployment must supply it explicitly along with
 other verified allowed origins. No live configuration was changed by this work.
+
+Upgrade every queue-claiming API and application process sharing the database to
+topic-selection-capable code before admitting application operations unsupported
+by older workers. Older unfiltered workers can still claim those rows. Local
+registration sealing and complete-catalog validation do not coordinate mixed
+versions or fence an old worker; upgrade ordering is a deployment requirement.

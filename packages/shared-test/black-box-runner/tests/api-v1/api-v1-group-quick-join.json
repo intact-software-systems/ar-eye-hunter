@@ -147,7 +147,7 @@
         },
         "body": {
           "groupId": "{alphaId}",
-          "displayName": "AR Eye Hunter",
+          "displayName": "Planning Team",
           "kind": "room",
           "joinMode": "open",
           "maxMembers": 2,
@@ -239,7 +239,7 @@
         },
         "body": {
           "kind": "room",
-          "q": " EYE HUNTER ",
+          "q": " PLANNING TEAM ",
           "includeEmpty": true
         }
       },
@@ -279,7 +279,7 @@
         },
         "body": {
           "kind": "room",
-          "q": " EYE HUNTER ",
+          "q": " PLANNING TEAM ",
           "includeEmpty": true
         }
       },
@@ -390,7 +390,7 @@
         },
         "body": {
           "kind": "room",
-          "q": " EYE HUNTER ",
+          "q": " PLANNING TEAM ",
           "includeEmpty": true
         }
       },

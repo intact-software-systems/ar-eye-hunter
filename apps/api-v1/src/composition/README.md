@@ -61,3 +61,24 @@ Application servers supply the same required API-v1 configuration and database l
 
 There is no module-global API runtime, SQL client, configuration reader, service locator, optional
 server factory, or alternate SQL translation path in this composition graph.
+
+## Browser-origin configuration before rollout
+
+Production profiles carry an empty CORS allowlist. Set `CORS_ORIGINS` explicitly
+to the complete comma-separated list of browser origins authorized for the
+deployment; application-specific values belong in each consumer’s deployment
+documentation. Empty means no cross-origin access. Hardened startup additionally
+requires a nonempty HTTPS list. This is independent of the complete room-owned
+retention catalog; configure both before rollout. No live configuration is
+changed by these source defaults.
+
+The managed generic black-box runner supplies `https://browser.example.test`
+through `RALLAR_DIRECTORY_BROWSER_ORIGIN` and passes its CORS allowlist to every
+managed API process. External recipe runs must set that recipe origin and the
+server’s `CORS_ORIGINS` consistently for their deployment.
+
+Before admitting application operations, upgrade every queue-claiming process
+sharing the database to topic-selection-capable code. Older unfiltered workers
+can still claim application rows they do not own. Local registration sealing
+and catalog validation provide no mixed-version coordination or fencing; the
+rollout must complete that upgrade before enabling those operations.
