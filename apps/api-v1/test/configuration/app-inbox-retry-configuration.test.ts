@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 import { retryAfterAttempt } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 
+import defaultsSource from '../../resources/configuration/defaults-config.json' with { type: 'json' };
+
 import { ApiV1ConfigurationError } from '../../src/configuration/api-v1-configuration-error.ts';
 import { decodeApiV1Configuration } from '../../src/configuration/decode-api-v1-configuration.ts';
 import { readApiV1ConfigurationEnvironment } from '../../src/configuration/read-api-v1-configuration-environment.ts';
@@ -35,15 +37,19 @@ Deno.test('AppInbox retry configuration controls conflict delay, ordinary backof
     }
 });
 
-Deno.test('AppInbox retry defaults are explicit and profile policy overrides defaults before environment policy', () => {
-    const input = validDecodeApiV1ConfigurationInput();
+Deno.test('AppInbox retry defaults preserve ordinary backoff and allow profile and environment overrides', () => {
+    const input = { ...validDecodeApiV1ConfigurationInput(), defaultsSource };
     assert.deepEqual(decodeApiV1Configuration(input).appInbox.retry, {
-        maxAttempts: 20, maxDelayMs: 30_000, conflictMaxDelayMs: 250
+        maxAttempts: 20,
+        maxDelayMs: 30_000,
+        conflictMaxDelayMs: 36_000
     });
     input.profileSource = { ...validConfigurationProfileSource(), appInbox: { retry: { maxAttempts: 30, maxDelayMs: 5000, conflictMaxDelayMs: 500 } } };
     input.environmentSource = { group: { roomOwnedAppDataBindings: [] }, appInbox: { retry: { maxAttempts: 40 } } };
     assert.deepEqual(decodeApiV1Configuration(input).appInbox.retry, {
-        maxAttempts: 40, maxDelayMs: 5000, conflictMaxDelayMs: 500
+        maxAttempts: 40,
+        maxDelayMs: 5000,
+        conflictMaxDelayMs: 500
     });
 });
 
@@ -52,10 +58,11 @@ Deno.test('AppInbox rejects invalid attempt and delay bounds instead of silently
         for (const value of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1]) {
             const input = validDecodeApiV1ConfigurationInput();
             input.environmentSource = { group: { roomOwnedAppDataBindings: [] }, appInbox: { retry: { [field]: value } } };
-            assert.throws(() => decodeApiV1Configuration(input), (error) =>
-                error instanceof ApiV1ConfigurationError && error.issues.some((issue) =>
-                    issue.path === `appInbox.retry.${field}` && issue.code === 'invalid-integer'
-                )
+            assert.throws(
+                () => decodeApiV1Configuration(input),
+                (error) =>
+                    error instanceof ApiV1ConfigurationError &&
+                    error.issues.some((issue) => issue.path === `appInbox.retry.${field}` && issue.code === 'invalid-integer')
             );
         }
     }
@@ -74,8 +81,9 @@ Deno.test('AppInbox delay bounds keep positive jitter and persisted timestamps r
     assert.equal(Temporal.Instant.from('2026-01-01T00:00:00Z').add({ milliseconds: retry.delayMs! }).toString(), '2026-02-06T00:00:00Z');
     for (const field of ['maxDelayMs', 'conflictMaxDelayMs']) {
         input.environmentSource = { group: { roomOwnedAppDataBindings: [] }, appInbox: { retry: { [field]: 2_592_000_001 } } };
-        assert.throws(() => decodeApiV1Configuration(input), (error) =>
-            error instanceof ApiV1ConfigurationError && error.issues.some((issue) => issue.path === `appInbox.retry.${field}`)
+        assert.throws(
+            () => decodeApiV1Configuration(input),
+            (error) => error instanceof ApiV1ConfigurationError && error.issues.some((issue) => issue.path === `appInbox.retry.${field}`)
         );
     }
 });

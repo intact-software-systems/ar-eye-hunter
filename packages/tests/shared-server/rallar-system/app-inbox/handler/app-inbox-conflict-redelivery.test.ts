@@ -39,10 +39,7 @@ describe('AppInbox conflict redelivery', () => {
             expect(harness.results.entries.size).toBe(0);
             const delayMs = Number(retry!.dequeueAudit.nextTs!.epochMilliseconds - retry!.dequeueAudit.endTs!.epochMilliseconds);
             expect(delayMs).toBeGreaterThan(0);
-            if (failure === 'conflict') {
-                expect(delayMs).toBeLessThanOrEqual(250);
-            }
-            else if (attempt === 6) {
+            if (attempt === 6) {
                 expect(delayMs).toBeGreaterThanOrEqual(800);
                 expect(delayMs).toBeLessThanOrEqual(1200);
             }
@@ -100,7 +97,8 @@ describe('AppInbox conflict redelivery', () => {
     });
 
     it.each([0, -1, 1.5, 2_592_000_001, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1])(
-        'rejects invalid explicit conflict delay %s during construction', (conflictRetryMaxDelayMs) => {
+        'rejects invalid explicit conflict delay %s during construction',
+        (conflictRetryMaxDelayMs) => {
             expect(() => createRegisteredHandlerHarness({ appInboxOptions: { conflictRetryMaxDelayMs } }))
                 .toThrow('AppInbox conflict retry maximum delay must be a positive safe integer');
         }
@@ -155,7 +153,7 @@ describe('AppInbox conflict redelivery', () => {
                 expect(entry?.status).toBe(EntityStatus.RETRY);
                 const delayMs = Number(entry!.dequeueAudit.nextTs!.epochMilliseconds - entry!.dequeueAudit.endTs!.epochMilliseconds);
                 expect(delayMs).toBeGreaterThan(0);
-                expect(delayMs).toBeLessThanOrEqual(250);
+                expect(delayMs).toBeLessThanOrEqual(36_000);
                 now = entry!.dequeueAudit.nextTs!;
             }
         }

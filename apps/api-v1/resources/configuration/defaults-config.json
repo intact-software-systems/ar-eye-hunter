@@ -121,7 +121,7 @@
     "retry": {
       "maxAttempts": 20,
       "maxDelayMs": 30000,
-      "conflictMaxDelayMs": 250
+      "conflictMaxDelayMs": 36000
     },
     "phaseTiming": false,
     "newLaneConcurrency": 4,
