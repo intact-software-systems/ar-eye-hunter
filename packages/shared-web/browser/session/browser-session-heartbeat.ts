@@ -188,6 +188,9 @@ class BrowserStateHeartbeatRuntime {
         if (this.#timers.nowMs() >= this.#groupRecoveryAtEpochMs) {
             await this.recoverGroupSnapshots();
         }
+        if (!this.isCurrent()) {
+            return;
+        }
         const wsConnectionGeneration = await this.#options.ownWsConnectionGeneration?.read();
         if (!this.isCurrent()) {
             return;

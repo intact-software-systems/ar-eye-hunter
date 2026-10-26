@@ -38,9 +38,10 @@ product code. Both games now have automatic directory freshness and account repl
 auth notification delivery and visible logout/sign-in workflows. Queued cache delivery now preserves
 awaited observer completion and entry/refresh quiescence through the shared notifier. The
 renderer repair prevents asynchronous work from outliving Relic logout while keeping replacement
-account rendering and scene controls usable. The current increment addresses the observed advertised
-WebSocket host mismatch in #683 through shared validation, server startup diagnostics, and a browser
-connection error verified through both games' visible login and recovery controls.
+account rendering and scene controls usable. Advertised WebSocket host validation now diagnoses #683
+at server startup and before browser connection, with visible login and recovery controls in both
+games. The current increment addresses delayed heartbeat callbacks in #714: recover authorized
+joined-room targets after browser snapshot expiry while the server presence lease remains live.
 
 ## Current foundation
 
@@ -135,7 +136,7 @@ all-or-none admission decisions before it becomes a platform promise.
 
 | Priority    | Outcomes                                                                                                                                                                                                             |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Current     | Diagnose the advertised WebSocket host mismatch tracked in [#683](https://github.com/intact-software-systems/ar-eye-hunter/issues/683) before connection, with visible login and recovery regressions in both games. |
+| Current     | Recover joined-group heartbeat targets after cached snapshots expire ([#714](https://github.com/intact-software-systems/ar-eye-hunter/issues/714)), with deterministic timer and visible game workflow coverage. |
 | Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them.                                                                                                                          |
 | Later       | Scheduled rooms (8) and a separate tournament capability.                                                                                                                                                            |
 
@@ -302,6 +303,15 @@ against deletion through the canonical AppInbox and optimistic revision guard; a
 completed-result replay must not recreate a deleted room or save. Reconnect grace and deletion must
 not race each other. Decide “play again” behavior with each application's activity lifecycle.
 
+Delayed heartbeat recovery uses the existing authenticated scoped group collection, then renews only
+the current principal/session's presence through existing heartbeat mutations. Cache expiry is not a
+leave or permission to rejoin. Stop/account replacement fences late reads; causal snapshot adoption
+preserves newer explicit leaves. Removed or expired server presence remains absent. There is no
+second membership registry. Synthetic delayed-callback tests prove this timer failure class, not
+actual operating-system suspension. After this repair, investigate the intermittent Relic code-room
+share-link failure in [#712](https://github.com/intact-software-systems/ar-eye-hunter/issues/712) only
+if it still reproduces; no implementation is selected without a causal diagnosis.
+
 Corrupt-row isolation belongs to operator reliability in slice 9, not this recovery feature.
 
 ## Slice 7: fresh discovery and social context
@@ -357,7 +367,7 @@ success alone does not prove successful participation.
   retaining a real compatibility boundary requires the repository's explicit approval and registry.
 - GitHub PRs own delivery state. Do not mirror it in a plan catalog or completion ledger. Delete an
   implementation plan in the PR that completes its outcomes, not in this planning PR.
-- Advertised WebSocket host validation is the current operator reliability increment in issue #683.
+- Advertised WebSocket host validation addresses the operator reliability defect in issue #683.
   Hardened server configuration rejects mismatched public authorities; other profiles warn at startup.
   The browser compares the captured API request authority with the resolved WebSocket destination,
   rather than the SPA origin, and reports the mismatch before requesting a ticket or opening a socket.

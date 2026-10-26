@@ -1,4 +1,5 @@
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
+import { BrowserOwnWsConnectionGeneration } from '@shared-web/browser/connection/browser-own-ws-connection-generation.ts';
 import { initHeartbeat, stopHeartbeat } from '@shared-web/browser/session/browser-session-heartbeat.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -171,7 +172,16 @@ describe('heartbeat recovery after delayed callbacks', () => {
         const response = Promise.withResolvers<Response>();
         server.readGroups = () => response.promise;
         server.install();
-        await initHeartbeat(client, { authSession: session, scope });
+        let connectionReads = 0;
+        const ownWsConnectionGeneration = new BrowserOwnWsConnectionGeneration({
+            socket: { ws: { readyState: WebSocket.OPEN } },
+            sessionId: session.sessionId,
+            readOwnClientSnapshot: async () => {
+                connectionReads += 1;
+                return createClientSnapshotFixture({ ...scope, principalId: 'alice' });
+            }
+        });
+        await initHeartbeat(client, { authSession: session, scope, ownWsConnectionGeneration });
         await deliverDelayedFirstHeartbeat();
         expect(server.requests).toHaveLength(1);
         if (action === 'stop') {
@@ -185,6 +195,7 @@ describe('heartbeat recovery after delayed callbacks', () => {
         }
         response.resolve(Response.json(server.groups));
         await vi.advanceTimersByTimeAsync(0);
+        expect(connectionReads).toBe(0);
         expect(groupSnapshots.getAllGroupStateSnapshots()).toEqual([]);
         expect(server.requests).toHaveLength(1);
     });
@@ -202,6 +213,40 @@ describe('heartbeat recovery after delayed callbacks', () => {
         expect(server.requests.filter((request) => request.method === 'GET')).toHaveLength(2);
         expect(groupSnapshots.findGroupStateSnapshotByRef(server.groups[0].group)?.activeSessions[0].sessionId)
             .toBe('alice');
+    });
+
+    it('bounds a stalled recovery and retries through the existing heartbeat loop', async () => {
+        vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const server = new HeartbeatServer();
+        const stalled = Promise.withResolvers<Response>();
+        server.readGroups = () => stalled.promise;
+        server.install();
+        await initHeartbeat(client, { authSession: session, scope });
+        await deliverDelayedFirstHeartbeat();
+        await vi.advanceTimersByTimeAsync(5_000);
+        server.readGroups = () => Response.json(server.groups);
+        await vi.advanceTimersByTimeAsync(5_000);
+        expect(server.requests.filter((request) => request.method === 'GET')).toHaveLength(2);
+        const recovered = groupSnapshots.findGroupStateSnapshotByRef(server.groups[0].group);
+        expect(recovered?.activeSessions[0]).toMatchObject({ lastHeartbeatAtEpochMs: START + 125_000 });
+        stalled.resolve(Response.json([]));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(groupSnapshots.findGroupStateSnapshotByRef(server.groups[0].group)).toBe(recovered);
+    });
+
+    it('does not restore presence removed between recovery and renewal', async () => {
+        const server = new HeartbeatServer();
+        const joined = server.groups[0];
+        server.readGroups = () => {
+            server.groups = [];
+            return Response.json([joined]);
+        };
+        server.install();
+        await initHeartbeat(client, { authSession: session, scope });
+        await deliverDelayedFirstHeartbeat();
+        expect(server.requests.filter((request) => request.path.includes('/groups/private-room/sessions/')))
+            .toHaveLength(1);
+        expect(groupSnapshots.findGroupStateSnapshotByRef(joined.group)).toBeUndefined();
     });
 
     it('stops and invalidates authentication on a recovery 401', async () => {
