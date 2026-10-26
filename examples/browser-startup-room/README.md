@@ -87,10 +87,10 @@ alternative to unconditional room creation above; a pending invitation takes pri
 
 ```ts
 import {
-    RallarRecentRooms,
     RallarRoomEntry,
     toRoomEntryUrl
-} from '@shared-web/browser/rallar-room-entry.ts';
+} from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
+import { RallarRecentRooms } from '@shared-web/browser/rooms/recent-rooms/rallar-recent-rooms.ts';
 
 const scope = { applicationId: 'demo-game', workspaceId: 'default' };
 rallar.configure({ apiBaseUrl: 'http://localhost:8080', ...scope });

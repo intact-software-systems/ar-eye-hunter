@@ -162,8 +162,7 @@ export class RallarRoomDirectory {
             const controller = new AbortController();
             this.controller = controller;
             const attempt = { generation: this.generation, sessionKey, request: this.request, controller };
-            // Register the flight before publishing loading; listeners may request the same refresh.
-            return Promise.resolve().then(() => this.readDirectory(attempt));
+            return this.readDirectory(attempt);
         });
     }
 

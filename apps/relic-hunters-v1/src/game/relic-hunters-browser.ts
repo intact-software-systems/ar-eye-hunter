@@ -3,9 +3,10 @@ import {
     RELIC_TYPES,
     type RelicServerEvent
 } from '@relic-hunters/mod.ts';
-import { RallarRecentRooms, RallarRoomEntry } from '@shared-web/browser/rallar-room-entry.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import { RallarRoomDirectory } from '@shared-web/browser/rooms/directory/rallar-room-directory.ts';
+import { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
+import { RallarRecentRooms } from '@shared-web/browser/rooms/recent-rooms/rallar-recent-rooms.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 
 import {

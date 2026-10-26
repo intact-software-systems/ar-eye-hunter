@@ -21,7 +21,6 @@ import {
 import { waitForSettledRead } from '@shared-web/browser/connection/wait-for-settled-read.ts';
 import { BrowserRallarSubscriptionScope } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import { createRallarDataFacade } from '@shared-web/browser/rallar-data.ts';
-import { RallarRecentRooms, RallarRoomEntry } from '@shared-web/browser/rallar-room-entry.ts';
 import type {
     RallarAuthChangeListener,
     RallarRoomPresenceWaitOptions,
@@ -30,6 +29,8 @@ import type {
     RallarStartOptions
 } from '@shared-web/browser/rallar.ts';
 import { RallarRoomDirectory } from '@shared-web/browser/rooms/directory/rallar-room-directory.ts';
+import { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
+import { RallarRecentRooms } from '@shared-web/browser/rooms/recent-rooms/rallar-recent-rooms.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type {
     GroupDirectoryEntry,
@@ -55,6 +56,31 @@ afterEach(async () => {
 });
 
 describe('RelicHuntersRuntime', () => {
+    it('keeps startup and later observers working when a state listener fails', async () => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = createRuntime(backend);
+        const reported = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const observed: string[] = [];
+        const unsubscribe = runtime.subscribe(() => {
+            throw new Error('view failed');
+        });
+        runtime.subscribe(() => {
+            observed.push(runtime.getState().connectionState);
+        });
+        try {
+            await runtime.start();
+            expect(runtime.getState().connectionState).toBe('ready');
+            expect(observed.at(-1)).toBe('ready');
+            unsubscribe();
+            backend.signOut();
+            expect(observed.at(-1)).toBe('signed-out');
+        }
+        finally {
+            unsubscribe();
+            reported.mockRestore();
+        }
+    });
+
     it('clears a private rule refusal when authoritative gameplay advances and ignores late refusals after the finale', async () => {
         const backend = new RelicRuntimeBackend();
         const runtime = createRuntime(backend);
@@ -381,7 +407,6 @@ describe('RelicHuntersRuntime', () => {
             return admitted;
         };
         const pending = runtime.getState().createRoom('code');
-        await new Promise((resolve) => setTimeout(resolve, 0));
         expect(runtime.getState().connectionState).toBe('joining-room');
         backend.setRooms(stateFor('created-room'));
         await expect(pending).resolves.toEqual(admitted);

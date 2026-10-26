@@ -45,13 +45,9 @@ const esbuildBin = path.join(
     process.platform === 'win32' ? 'esbuild.cmd' : 'esbuild'
 );
 
-const budgetsKiB = decodeBrotliBudgetsKiB(
+const budgetsKiB: Readonly<Record<string, number>> = JSON.parse(
     readFileSync(path.join(repoRoot, 'packages/shared-web/bundle-budgets.json'), 'utf8')
 );
-
-function decodeBrotliBudgetsKiB(text: string): Readonly<Record<string, number>> {
-    return JSON.parse(text);
-}
 
 function budgetFor(label: string): number {
     const budget = budgetsKiB[label];
@@ -105,10 +101,16 @@ const budgetedEntries: readonly BundleBoundary[] = [
         brotliBudgetKiB: budgetFor('browser/rooms/directory/rallar-room-directory.ts')
     },
     {
-        label: 'browser/rallar-room-entry.ts',
-        entry: 'packages/shared-web/browser/rallar-room-entry.ts',
+        label: 'browser/rooms/entry/rallar-room-entry.ts',
+        entry: 'packages/shared-web/browser/rooms/entry/rallar-room-entry.ts',
         output: 'rallar-room-entry.boundary.min.js',
-        brotliBudgetKiB: budgetFor('browser/rallar-room-entry.ts')
+        brotliBudgetKiB: budgetFor('browser/rooms/entry/rallar-room-entry.ts')
+    },
+    {
+        label: 'browser/rooms/recent-rooms/rallar-recent-rooms.ts',
+        entry: 'packages/shared-web/browser/rooms/recent-rooms/rallar-recent-rooms.ts',
+        output: 'rallar-recent-rooms.boundary.min.js',
+        brotliBudgetKiB: budgetFor('browser/rooms/recent-rooms/rallar-recent-rooms.ts')
     },
     {
         // This public entry point contains types only.
@@ -175,7 +177,11 @@ describe('shared-web browser bundle boundaries', () => {
         }
     });
 
-    it.each(['browser/rallar-room-entry.ts', 'browser/rooms/directory/rallar-room-directory.ts'])(
+    it.each([
+        'browser/rooms/entry/rallar-room-entry.ts',
+        'browser/rooms/recent-rooms/rallar-recent-rooms.ts',
+        'browser/rooms/directory/rallar-room-directory.ts'
+    ])(
         'keeps %s independent of the facade and storage engines',
         (label) => {
             const entry = budgetedEntries.find((boundary) => boundary.label === label);

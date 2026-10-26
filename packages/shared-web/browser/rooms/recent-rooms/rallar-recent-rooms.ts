@@ -1,8 +1,10 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import { BoundedConcurrencyAdmission } from '@shared/resilience/bounded-concurrency-admission.ts';
-import { BrowserRallarSubscriptionScope, notifyListener } from '../../messages/rallar-listener-delivery.ts';
+
+import { BrowserRallarSubscriptionScope } from '../../messages/rallar-listener-delivery.ts';
 import type { RallarDataFacade, RallarDataStore } from '../../rallar-data.ts';
 import type { RallarStateListener, RallarUnsubscribe } from '../../rallar-shared-contracts.ts';
 import type { RallarAuthFacade } from '../../session/rallar-auth-facade.ts';
@@ -55,7 +57,9 @@ export class RallarRecentRooms {
     private state: RallarRecentRooms.State = { principalId: null, rooms: [], status: 'signed-out', failure: null };
     private readonly dependencies: RallarRecentRooms.Dependencies;
     private readonly scope: StateScope;
-    private readonly listeners = new Set<RallarStateListener<RallarRecentRooms.State>>();
+    private readonly notifications = new SynchronousNotifications<RallarRecentRooms.State>((error) => {
+        console.error('Error notifying recent rooms listener', error);
+    });
     private subscriptions: BrowserRallarSubscriptionScope | null = null;
     private store: RallarDataStore<RallarRecentRooms.History> | null = null;
     private storeSubscription: RallarUnsubscribe | null = null;
@@ -91,11 +95,7 @@ export class RallarRecentRooms {
     }
 
     public onChange(listener: RallarStateListener<RallarRecentRooms.State>): RallarUnsubscribe {
-        this.listeners.add(listener);
-        notifyListener(listener, this.state);
-        return () => {
-            this.listeners.delete(listener);
-        };
+        return this.notifications.subscribeAndNotify(listener, this.state).unsubscribe;
     }
 
     public start(): Promise<void> {
@@ -291,11 +291,6 @@ export class RallarRecentRooms {
 
     private publish(state: RallarRecentRooms.State): void {
         this.state = state;
-        for (const listener of this.listeners) {
-            if (this.state !== state) {
-                break;
-            }
-            notifyListener(listener, state);
-        }
+        this.notifications.publishLatest(state);
     }
 }

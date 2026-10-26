@@ -1,4 +1,15 @@
 // @vitest-environment happy-dom
+import { act, createElement } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import {
     createRelicGame,
     RELIC_PROTOCOL_VERSION,
@@ -12,7 +23,6 @@ import {
     type RelicServerEvent
 } from '@relic-hunters/mod.ts';
 import { BrowserRallarSubscriptionScope } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
-import { toRoomEntryUrl } from '@shared-web/browser/rallar-room-entry.ts';
 import type {
     RallarAuthState,
     RallarMessage,
@@ -20,14 +30,17 @@ import type {
     RallarRoomState,
     RallarTypedPayloadHandler
 } from '@shared-web/browser/rallar.ts';
+import { toRoomEntryUrl } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
 import { toRallarRoomState } from '@shared-web/browser/rooms/room-group-state-translation.ts';
-import { newALBroadcastMessage, newALPrincipalBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALBroadcastMessage,
+    newALPrincipalBroadcastMessage,
+    newALRoute
+} from '@shared/al-contracts/al-contract.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
-import { act, createElement } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
 import { fetchRelicSnapshot } from '../../../apps/relic-hunters-v1/src/game/api.ts';
 import type { RelicHuntersRuntime } from '../../../apps/relic-hunters-v1/src/game/relic-hunters-runtime.ts';
 import { useRelicHunters } from '../../../apps/relic-hunters-v1/src/game/use-relic-hunters.ts';
@@ -505,26 +518,17 @@ describe('useRelicHunters auth lifecycle', () => {
     }
 
     async function waitForState(predicate: () => boolean): Promise<void> {
-        for (let i = 0; i < 10; i += 1) {
-            if (predicate()) {
-                return;
-            }
-            await act(async () => {
-                await Promise.resolve();
-            });
-        }
-        expect(
-            predicate(),
-            JSON.stringify(
-                {
+        await vi.waitFor(async () => {
+            await act(async () => {});
+            expect(
+                predicate(),
+                JSON.stringify({
                     connectionState: current?.connectionState,
                     error: current?.error,
                     diagnostics: current?.diagnostics
-                },
-                null,
-                2
-            )
-        ).toBe(true);
+                })
+            ).toBe(true);
+        });
     }
 });
 

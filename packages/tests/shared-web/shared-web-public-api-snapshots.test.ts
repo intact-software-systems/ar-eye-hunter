@@ -18,13 +18,17 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
         expected: { values: ['RallarRoomDirectory'], types: [], starExports: [], namespaceExports: [] }
     },
     {
-        filePath: 'packages/shared-web/browser/rallar-room-entry.ts',
+        filePath: 'packages/shared-web/browser/rooms/entry/rallar-room-entry.ts',
         expected: {
-            values: ['RallarRecentRooms', 'RallarRoomEntry', 'readRoomEntryDestination', 'toRoomEntryUrl'],
+            values: ['RallarRoomEntry', 'readRoomEntryDestination', 'toRoomEntryUrl'],
             types: [],
             starExports: [],
             namespaceExports: []
         }
+    },
+    {
+        filePath: 'packages/shared-web/browser/rooms/recent-rooms/rallar-recent-rooms.ts',
+        expected: { values: ['RallarRecentRooms'], types: [], starExports: [], namespaceExports: [] }
     },
     {
         filePath: 'packages/shared-web/browser/rallar.ts',

@@ -97,8 +97,12 @@ it('delivers current state once to new registrations and protects them from stal
     notifications.publishLatest('ready');
     notifications.publishLatest('idle');
     expect(delivered).toEqual([
-        'first:ready', 'replaced:ready', 'added:ready',
-        'first:idle', 'replaced:idle', 'added:idle'
+        'first:ready',
+        'replaced:ready',
+        'added:ready',
+        'first:idle',
+        'replaced:idle',
+        'added:idle'
     ]);
 });
 

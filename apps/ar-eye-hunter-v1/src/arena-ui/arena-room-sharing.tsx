@@ -1,11 +1,13 @@
-import { toRoomEntryUrl } from '@shared-web/browser/rallar-room-entry.ts';
+import { useState } from 'react';
+
 import { rallar } from '@shared-web/browser/rallar.ts';
+import { toRoomEntryUrl } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { toGroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { GroupJoinCodeResponse } from '@shared/api/state-types.ts';
-import { useState } from 'react';
+
 import { ArenaRoomInvitations } from './arena-room-invitations.tsx';
 
 interface ArenaRoomSharingProps {

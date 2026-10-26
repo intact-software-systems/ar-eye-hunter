@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { SingleFlight } from '@shared/resilience/single-flight.ts';
 
@@ -94,6 +98,65 @@ describe('single flight', () => {
         expect(flights.isInFlight('k')).toBe(true);
         replacement.resolve('new');
         expect(await second).toBe('new');
+        expect(flights.isInFlight('k')).toBe(false);
+    });
+
+    it('registers before synchronous start so a reentrant call joins the same result', async () => {
+        const flights = new SingleFlight<string, string>();
+        const held = Promise.withResolvers<string>();
+        const joined: Promise<string>[] = [];
+        const started: string[] = [];
+        const result = flights.run('k', () => {
+            started.push('outer');
+            expect(flights.isInFlight('k')).toBe(true);
+            expect(flights.completions()).toHaveLength(1);
+            joined.push(flights.run('k', () => {
+                started.push('nested');
+                return Promise.resolve('unexpected');
+            }));
+            return held.promise;
+        });
+        expect(started).toEqual(['outer']);
+        expect(joined[0]).toBe(result);
+        held.resolve('done');
+        expect(await Promise.all([result, ...joined])).toEqual(['done', 'done']);
+        expect(flights.isInFlight('k')).toBe(false);
+    });
+
+    it('rethrows a synchronous start failure, rejects reentrant waiters, and immediately frees the key', async () => {
+        const flights = new SingleFlight<string, string>();
+        const failure = new Error('start failed');
+        const joined: Promise<string>[] = [];
+        let completions: readonly Promise<void>[] = [];
+        expect(() =>
+            flights.run('k', () => {
+                joined.push(flights.run('k', () => Promise.resolve('unexpected')));
+                completions = flights.completions();
+                throw failure;
+            })
+        ).toThrow(failure);
+        expect(flights.isInFlight('k')).toBe(false);
+        await expect(Promise.all(joined)).rejects.toBe(failure);
+        await expect(Promise.all(completions)).resolves.toEqual([undefined]);
+        await expect(flights.run('k', () => Promise.resolve('retry'))).resolves.toBe('retry');
+    });
+
+    it('keeps a replacement registered when start clears and replaces its own key', async () => {
+        const flights = new SingleFlight<string, string>();
+        const old = Promise.withResolvers<string>();
+        const replacement = Promise.withResolvers<string>();
+        const nested: Promise<string>[] = [];
+        const first = flights.run('k', () => {
+            flights.clear();
+            nested.push(flights.run('k', () => replacement.promise));
+            return old.promise;
+        });
+        expect(flights.run('k', () => Promise.resolve('unexpected'))).toBe(nested[0]);
+        old.resolve('old');
+        expect(await first).toBe('old');
+        expect(flights.isInFlight('k')).toBe(true);
+        replacement.resolve('new');
+        expect(await nested[0]).toBe('new');
         expect(flights.isInFlight('k')).toBe(false);
     });
 });

@@ -81,8 +81,8 @@ refused alternative is using one word for both sides, or translating inside
 each call site. One boundary keeps the protocol identity stable and the browser
 API readable.
 
-`RallarRoomEntry`, exposed through the narrow `rallar-room-entry.ts` browser
-entry, owns the pending destination through authentication and tab reload.
+`RallarRoomEntry`, imported directly from `browser/rooms/entry/rallar-room-entry.ts`,
+owns the pending destination through authentication and tab reload.
 It captures incoming links before startup, gives a newer invitation priority,
 removes the code after admission, and fences obsolete account, destination,
 and cancellation results. Tab storage records intent; existing server admission
@@ -93,8 +93,8 @@ can replace an invitation with stale or incorrectly scoped state. Both games
 consume the shared entry owner and retain their own participation rules.
 `examples/browser-startup-room/README.md` shows the browser sequence.
 
-`RallarRecentRooms`, exposed from the same narrow entry, owns device-local history through Rallar
-Data. Its store is scoped to the captured principal, application, and workspace. It records only
+`RallarRecentRooms`, imported from `browser/rooms/recent-rooms/rallar-recent-rooms.ts`, owns
+device-local history through Rallar Data. Its store is scoped to the captured principal, application, and workspace. It records only
 the ten latest distinct scoped references and visit timestamps after successful entry, with no
 credentials or cached claims about access. The owner serializes store lifecycle and local edits;
 its pure codec validates persisted history and computes visit/forget changes. Cross-tab history
@@ -256,7 +256,14 @@ to and invites one adapter to write another feature's tables.
 app that uses several Rallar surfaces. Apps that need a smaller bundle use a
 narrow entry: `rallar-core.ts`, `rallar-realtime.ts`, `rallar-messages.ts`,
 `rallar-data.ts`, `rallar-crdt.ts`, `rallar-media-calls.ts`,
-`rallar-room-entry.ts`, or the `rooms/directory/rallar-room-directory.ts` owner directly.
+or the room owners directly: `rooms/entry/rallar-room-entry.ts`,
+`rooms/recent-rooms/rallar-recent-rooms.ts`, and `rooms/directory/rallar-room-directory.ts`.
+
+TypeScript packages and applications use ES2024 as their language and library baseline.
+Browser code can use native `Promise.withResolvers()` (Chrome/Edge 119+, Firefox 121+,
+Safari/iOS 17.4+; see the [browser compatibility data](https://web-platform-dx.github.io/web-features-explorer/features/promise-withresolvers/)).
+Bundler syntax targets are configured separately and do not polyfill runtime APIs; check
+individual API support when introducing another ES2024 feature.
 
 The refused alternatives are a second aggregate facade, or making feature
 controllers import the aggregate entry. Controllers depend inward. Room-scoped

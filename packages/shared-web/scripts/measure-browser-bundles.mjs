@@ -36,10 +36,16 @@ const entries = [
         brotliBudgetKiB: budgetsKiB['browser/rooms/directory/rallar-room-directory.ts']
     },
     {
-        label: 'browser/rallar-room-entry.ts',
-        entry: 'packages/shared-web/browser/rallar-room-entry.ts',
+        label: 'browser/rooms/entry/rallar-room-entry.ts',
+        entry: 'packages/shared-web/browser/rooms/entry/rallar-room-entry.ts',
         output: 'rallar-room-entry.min.js',
-        brotliBudgetKiB: budgetsKiB['browser/rallar-room-entry.ts']
+        brotliBudgetKiB: budgetsKiB['browser/rooms/entry/rallar-room-entry.ts']
+    },
+    {
+        label: 'browser/rooms/recent-rooms/rallar-recent-rooms.ts',
+        entry: 'packages/shared-web/browser/rooms/recent-rooms/rallar-recent-rooms.ts',
+        output: 'rallar-recent-rooms.min.js',
+        brotliBudgetKiB: budgetsKiB['browser/rooms/recent-rooms/rallar-recent-rooms.ts']
     },
     {
         label: 'browser/rallar.ts',

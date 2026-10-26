@@ -9,7 +9,6 @@ import {
     type RelicRoundTransitionEvent,
     type RelicServerEvent
 } from '@relic-hunters/mod.ts';
-import type { RallarRecentRooms, RallarRoomEntry } from '@shared-web/browser/rallar-room-entry.ts';
 import type {
     ALDeliveryState,
     RallarAuthChangeListener,
@@ -24,9 +23,12 @@ import type {
     RallarUnsubscribe
 } from '@shared-web/browser/rallar.ts';
 import type { RallarRoomDirectory } from '@shared-web/browser/rooms/directory/rallar-room-directory.ts';
+import type { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
+import type { RallarRecentRooms } from '@shared-web/browser/rooms/recent-rooms/rallar-recent-rooms.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
 import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
+import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import {
     createRallarAiFunnyRoomName,
     createRallarAiRoomNameSeed,
@@ -223,7 +225,9 @@ export namespace RelicHuntersRuntime {
 export class RelicHuntersRuntime {
     private readonly deps: RelicHuntersRuntime.Dependencies;
     private connection: RelicHuntersRuntime.Connection;
-    private readonly listeners = new Set<() => void>();
+    private readonly notifications = new SynchronousNotifications<void>((error) => {
+        console.error('Error notifying Relic runtime listener', error);
+    });
     private active = false;
     private generation = 0;
     private readonly connectionStarts = new SingleFlight<string, void>();
@@ -260,10 +264,7 @@ export class RelicHuntersRuntime {
 
     public readonly getState = (): RelicHuntersRuntime.Connection => this.connection;
     public readonly subscribe = (listener: () => void): RallarUnsubscribe => {
-        this.listeners.add(listener);
-        return () => {
-            this.listeners.delete(listener);
-        };
+        return this.notifications.subscribe(listener).unsubscribe;
     };
 
     public async start(): Promise<void> {
@@ -328,9 +329,7 @@ export class RelicHuntersRuntime {
 
     private publish(patch: Partial<RelicHuntersRuntime.Connection>): void {
         this.connection = { ...this.connection, ...patch };
-        for (const listener of this.listeners) {
-            listener();
-        }
+        this.notifications.publishLatest(undefined);
     }
 
     private diagnose(patch: Partial<RelicRuntimeDiagnostics>): void {

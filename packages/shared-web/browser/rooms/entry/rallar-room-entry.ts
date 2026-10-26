@@ -1,16 +1,22 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import { Either, Try } from '@shared/resilience/Either.ts';
 import { SingleFlight } from '@shared/resilience/single-flight.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+
 import { ApiHttpError } from '../../api/http-error.ts';
 import { toAuthSessionKey } from '../../auth/to-auth-session-key.ts';
-import { BrowserRallarSubscriptionScope, notifyListener } from '../../messages/rallar-listener-delivery.ts';
+import { BrowserRallarSubscriptionScope } from '../../messages/rallar-listener-delivery.ts';
 import type { RallarStateListener, RallarUnsubscribe } from '../../rallar-shared-contracts.ts';
 import type { RallarAuthFacade, RallarAuthState } from '../../session/rallar-auth-facade.ts';
 import type { BrowserRallarRooms } from '../browser-rallar-rooms.ts';
 import type { RallarJoinRoomOptions, RallarRoomState } from '../rallar-room-contracts.ts';
-import type { GroupRef, GroupSnapshot, StateScope } from '../room-group-state-translation.ts';
+import type {
+    GroupRef,
+    GroupSnapshot,
+    StateScope
+} from '../room-group-state-translation.ts';
 import {
     decodeRoomEntryDestination,
     decodeScopedDestination,
@@ -88,7 +94,9 @@ export class RallarRoomEntry {
     private readonly dependencies: RallarRoomEntry.Dependencies;
     private readonly config: RallarRoomEntry.Config;
     private readonly storageKey: string;
-    private readonly listeners = new Set<RallarStateListener<RallarRoomEntry.State>>();
+    private readonly notifications = new SynchronousNotifications<RallarRoomEntry.State>((error) => {
+        console.error('Error notifying room entry listener', error);
+    });
     private readonly flights = new SingleFlight<string, RallarRoomEntry.State>();
     private subscriptions: BrowserRallarSubscriptionScope | null = null;
     private attempt: RallarRoomEntry.Attempt | null = null;
@@ -216,13 +224,9 @@ export class RallarRoomEntry {
             return Promise.resolve(this.publish(saved));
         }
         const generation = this.generation;
-        // Defer notifications until SingleFlight has registered this attempt, including reentrant resume calls.
         return this.flights.run(
             `${generation}:${toAuthSessionKey(session)}`,
-            () =>
-                Promise.resolve().then(() =>
-                    this.joinDestination({ generation, destination, session, controller: new AbortController() })
-                )
+            () => this.joinDestination({ generation, destination, session, controller: new AbortController() })
         );
     }
 
@@ -234,11 +238,7 @@ export class RallarRoomEntry {
     }
 
     public onChange(listener: RallarStateListener<RallarRoomEntry.State>): RallarUnsubscribe {
-        this.listeners.add(listener);
-        notifyListener(listener, this.state);
-        return () => {
-            this.listeners.delete(listener);
-        };
+        return this.notifications.subscribeAndNotify(listener, this.state).unsubscribe;
     }
 
     public stop(): void {
@@ -246,7 +246,7 @@ export class RallarRoomEntry {
         this.subscriptions?.unsubscribe();
         this.subscriptions = null;
         if (this.state.status === 'joining') {
-            this.state = { ...this.state, status: 'pending', failure: null };
+            this.publish({ ...this.state, status: 'pending', failure: null });
         }
     }
 
@@ -423,12 +423,7 @@ export class RallarRoomEntry {
 
     private publish(state: RallarRoomEntry.State): RallarRoomEntry.State {
         this.state = state;
-        for (const listener of this.listeners) {
-            if (this.state !== state) {
-                break;
-            }
-            notifyListener(listener, state);
-        }
+        this.notifications.publishLatest(state);
         return this.state;
     }
 }

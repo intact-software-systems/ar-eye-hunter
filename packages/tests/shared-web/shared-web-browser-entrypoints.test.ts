@@ -27,9 +27,15 @@ const BROWSER_ENTRYPOINTS: readonly BrowserEntrypoint[] = [
         forbiddenRuntimeExports: ['rallar', 'createRallarFacade', 'createRallarDataFacade']
     },
     {
-        moduleId: '@shared-web/browser/rallar-room-entry.ts',
-        sourcePath: 'packages/shared-web/browser/rallar-room-entry.ts',
-        expectedRuntimeExports: ['RallarRoomEntry', 'RallarRecentRooms', 'readRoomEntryDestination', 'toRoomEntryUrl'],
+        moduleId: '@shared-web/browser/rooms/entry/rallar-room-entry.ts',
+        sourcePath: 'packages/shared-web/browser/rooms/entry/rallar-room-entry.ts',
+        expectedRuntimeExports: ['RallarRoomEntry', 'readRoomEntryDestination', 'toRoomEntryUrl'],
+        forbiddenRuntimeExports: ['rallar', 'createRallarFacade', 'createRallarDataFacade']
+    },
+    {
+        moduleId: '@shared-web/browser/rooms/recent-rooms/rallar-recent-rooms.ts',
+        sourcePath: 'packages/shared-web/browser/rooms/recent-rooms/rallar-recent-rooms.ts',
+        expectedRuntimeExports: ['RallarRecentRooms'],
         forbiddenRuntimeExports: ['rallar', 'createRallarFacade', 'createRallarDataFacade']
     },
     {
