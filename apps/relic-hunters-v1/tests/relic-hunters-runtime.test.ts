@@ -56,6 +56,27 @@ afterEach(async () => {
 });
 
 describe('RelicHuntersRuntime', () => {
+    it('cleans up every auth subscription after a listener stops and restarts startup', async () => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = createRuntime(backend);
+        let restarted: Promise<void> | undefined;
+        let restartRequested = false;
+        runtime.subscribe(() => {
+            if (!restartRequested) {
+                restartRequested = true;
+                runtime.stop();
+                restarted = runtime.start();
+            }
+        });
+        await runtime.start();
+        await restarted;
+        expect(runtime.getState().connectionState).toBe('ready');
+        runtime.stop();
+        await backend.recentRooms.whenIdle();
+        expect(backend.authSubscriptionCount).toBe(0);
+        expect(backend.timers.pendingCount()).toBe(0);
+    });
+
     it('keeps entry observation when startup discovers a restored session', async () => {
         const backend = new RelicRuntimeBackend();
         const session = backend.session;
@@ -768,6 +789,10 @@ class RelicRuntimeBackend implements RelicHuntersRuntime.Dependencies {
             data: { open: (input, options) => data.open(input, { ...options, dbName, sync: false }) },
             now: () => this.timers.nowMs()
         }, { scope: { applicationId: 'rallar-server', workspaceId: 'default' } });
+    }
+
+    public get authSubscriptionCount(): number {
+        return this.authListeners.size;
     }
 
     public restoreSession() {

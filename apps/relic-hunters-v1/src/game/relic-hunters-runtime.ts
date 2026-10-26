@@ -273,29 +273,33 @@ export class RelicHuntersRuntime {
         }
         this.active = true;
         const generation = this.generation;
+        // Reserve ownership before publication: a listener can stop and restart synchronously.
+        const lifecycle = this.deps.subscriptions();
+        this.lifecycle = lifecycle;
         this.diagnose({ middlewareConnected: false });
-        if (!this.active) {
+        if (this.lifecycle !== lifecycle) {
             return;
         }
         this.deps.roomEntry.start();
-        if (!this.active) {
+        if (this.lifecycle !== lifecycle) {
             return;
         }
         void this.deps.recentRooms.start();
-        if (!this.active) {
+        if (this.lifecycle !== lifecycle) {
             return;
         }
-        const lifecycle = this.deps.subscriptions();
-        this.lifecycle = lifecycle;
         lifecycle.add(this.deps.onAuthChange((state) => this.authChanged(state)));
-        if (!this.active || this.lifecycle !== lifecycle) {
+        if (this.lifecycle !== lifecycle) {
             return;
         }
         lifecycle.add(this.deps.roomEntry.onChange((state) => this.entryChanged(state)));
-        if (this.active && this.generation === generation) {
+        if (this.lifecycle !== lifecycle) {
+            return;
+        }
+        if (this.generation === generation) {
             await this.connect();
         }
-        else if (this.active && this.lifecycle === lifecycle) {
+        else {
             // Auth replay may already have started a connection for the restored session.
             await Promise.all(this.connectionStarts.completions());
         }
