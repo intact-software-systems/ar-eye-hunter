@@ -5,6 +5,7 @@ import {
 } from '@playwright/test';
 
 import { roomBrowserTest } from '../room-browser-fixture.ts';
+import { readSceneCanvasMetrics } from './relic-scene-observations.ts';
 
 // Includes review animation, automatic continuation, and delivery of the next authoritative state.
 const automaticReviewTransitionTimeoutMs = 30_000;
@@ -44,6 +45,13 @@ test(
             !['1', 'true'].includes(process.env.RELIC_HUNTERS_FULL_STACK ?? ''),
             'Requires the paired Relic server.'
         );
+        const browserErrors: string[] = [];
+        page.on('pageerror', (error) => browserErrors.push(error.message));
+        page.on('console', (message) => {
+            if (message.type() === 'error') {
+                browserErrors.push(message.text());
+            }
+        });
         await page.goto('/');
         const previousUsername = await registerPrivateHunter(page, 'previous');
         await expect(page.locator('.profile-row strong')).toHaveText(previousUsername);
@@ -70,8 +78,19 @@ test(
         await expect(page.locator('.profile-row strong')).toHaveText(replacementUsername);
         await expect(roomLink).toHaveValue(replacementRoomLink);
         await expect(page.getByRole('button', { name: /Join as/ })).toBeVisible();
+        await expect(page.locator('canvas.relic-scene')).toBeVisible();
+        await expect.poll(() => readSceneCanvasMetrics(page)).toMatchObject({ ready: true, hasRenderedFrame: true });
+        await page.getByRole('button', { name: /Join as/ }).click();
+        await expect(page.locator('.lobby-party-row')).toHaveCount(1);
+        await page.locator('.lobby-begin-btn').click();
+        await expect(page.getByRole('button', { name: 'Submit Plan' })).toBeEnabled();
+        await page.getByRole('button', { name: 'First-person view', exact: true }).click();
+        await expect.poll(async () => (await readSceneCanvasMetrics(page)).cameraMode).toBe('first-person');
+        await page.getByRole('button', { name: 'Overview view', exact: true }).click();
+        await expect.poll(async () => (await readSceneCanvasMetrics(page)).cameraMode).toBe('overview');
         await page.locator('.profile-row strong').scrollIntoViewIfNeeded();
         await page.screenshot({ path: testInfo.outputPath('replacement-account-expedition.png'), fullPage: true });
+        expect(browserErrors).toEqual([]);
     }
 );
 

@@ -35,8 +35,10 @@ and database latency, repaired in merged [PR #707](https://github.com/intact-sof
 Seven-day deletion, including Relic expedition saves, and the match/feedback repairs are present in
 main. The reusable server AppInbox now owns registered application mutations without game-specific
 product code. Both games now have automatic directory freshness and account replacement through shared
-auth notification delivery and visible logout/sign-in workflows. The current increment consolidates
-queued cache delivery while preserving awaited observer completion and entry/refresh quiescence.
+auth notification delivery and visible logout/sign-in workflows. Queued cache delivery now preserves
+awaited observer completion and entry/refresh quiescence through the shared notifier. The current
+increment fixes asynchronous renderer work that outlives Relic logout, while keeping replacement
+account rendering and scene controls usable.
 
 ## Current foundation
 
@@ -108,6 +110,9 @@ login supersedes obsolete signed-out publication, including login during delayed
 expiry, transport teardown, and cleanup failures remain owned by the auth lifecycle. Registration
 renewal and callback failures cannot remove a newer subscription or fail a completed transition.
 Both games verify Logout, replacement authentication, room creation, and reload through visible controls.
+Relic also checks browser errors across that journey and starts the replacement expedition to exercise
+its scene controls. Both games use the same Babylon release containing the upstream disposed-scene
+RGBD fix; renderer lifecycle repair remains outside shared auth and room policy.
 
 Observable caches share a queued notifier separately from synchronous room/auth state publication.
 Each event captures its audience, awaits observers and reporting, and precedes the next event. The
@@ -128,8 +133,7 @@ all-or-none admission decisions before it becomes a platform promise.
 
 | Priority    | Outcomes                                                                                                                                                                                   |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Current     | Share queued cache notifications, preserve awaited completion, and close refresh/deletion idle gaps.                                                                                       |
-| Next        | Fix the observed Relic logout renderer disposal failure tracked in [#716](https://github.com/intact-software-systems/ar-eye-hunter/issues/716), with a visible logout/re-login regression. |
+| Current     | Fix the observed Relic logout renderer disposal failure tracked in [#716](https://github.com/intact-software-systems/ar-eye-hunter/issues/716), with a visible logout/re-login regression. |
 | Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them.                                                                                                |
 | Later       | Scheduled rooms (8) and a separate tournament capability.                                                                                                                                  |
 

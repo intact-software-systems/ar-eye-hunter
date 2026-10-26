@@ -46,7 +46,7 @@
       },
       "npm:ar-eye-hunter-v1@0.1.0": {
         "dependencies": [
-          "npm:@babylonjs/core@9.17.0",
+          "npm:@babylonjs/core@9.18.1",
           "npm:@js-temporal/polyfill@~0.5.1",
           "npm:@mlc-ai/web-llm@~0.2.84",
           "npm:graphology@0.26",
@@ -67,8 +67,8 @@
       },
       "npm:relic-hunters-v1@0.1.0": {
         "dependencies": [
-          "npm:@babylonjs/core@9.17.0",
-          "npm:@babylonjs/loaders@9.17.0",
+          "npm:@babylonjs/core@9.18.1",
+          "npm:@babylonjs/loaders@9.18.1",
           "npm:@js-temporal/polyfill@~0.5.1",
           "npm:graphology@0.26",
           "npm:react-dom@^19.2.7",
