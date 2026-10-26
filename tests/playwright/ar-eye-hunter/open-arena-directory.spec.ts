@@ -72,7 +72,6 @@ test(
     'automatically discovers additions and removals while preserving the current arena selection',
     async ({ page }, testInfo) => {
         test.skip(process.env.RALLAR_ARENA_FULL_STACK !== '1', 'Requires the local API-v1 memory fixture.');
-        await page.clock.install();
         let entries: GroupDirectoryEntry[] = [];
         await page.route(`${API_URL}${DIRECTORY_PATH}?*`, async (route) => {
             await route.fulfill({ json: { entries, nextCursor: null } });
@@ -90,14 +89,15 @@ test(
         await expect(startMatch).toBeEnabled({ timeout: 20_000 });
         await expect(operations.getByText('Loading open arenas…')).toHaveCount(0);
         entries = [directoryArena('Arriving arena', false)];
-        await page.clock.fastForward(30_000);
-        await expect(operations.getByRole('button', { name: /Arriving arena.*Request to join/ })).toBeEnabled();
+        // Keep real time for the live API and presence heartbeat while the 30-second directory timer runs.
+        await expect(operations.getByRole('button', { name: /Arriving arena.*Request to join/ })).toBeEnabled({
+            timeout: 45_000
+        });
         await expect(roomLink).toHaveValue(selectedRoomLink);
         await expect(startMatch).toBeEnabled();
         await page.screenshot({ path: testInfo.outputPath('automatic-arena-discovery.png'), fullPage: true });
         entries = [];
-        await page.clock.fastForward(30_000);
-        await expect(operations.getByRole('button', { name: /Arriving arena/ })).toHaveCount(0);
+        await expect(operations.getByRole('button', { name: /Arriving arena/ })).toHaveCount(0, { timeout: 45_000 });
         await expect(operations.getByText('Loading open arenas…')).toHaveCount(0);
         await expect(roomLink).toHaveValue(selectedRoomLink);
         await expect(startMatch).toBeEnabled();
