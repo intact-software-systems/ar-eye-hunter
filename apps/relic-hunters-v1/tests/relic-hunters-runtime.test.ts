@@ -532,6 +532,23 @@ describe('RelicHuntersRuntime', () => {
         expect(backend.commands).toEqual([]);
     });
 
+    it('uses the supplied seed to make room naming reproducible', async () => {
+        const firstBackend = new RelicRuntimeBackend();
+        const secondBackend = new RelicRuntimeBackend();
+        const first = createRuntime(firstBackend);
+        const second = createRuntime(secondBackend);
+        await first.start();
+        await second.start();
+        const firstRoom = await first.getState().createRoom('code');
+        const secondRoom = await second.getState().createRoom('code');
+        expect(firstRoom?.group.displayName).toMatch(/^Relic Hunters Expedition: .+ #[0-9A-F]{6}/);
+        expect(secondRoom?.group.displayName).toBe(firstRoom?.group.displayName);
+        secondBackend.createRoomNameSeed = () => 'another-controlled-seed';
+        const anotherRoom = await second.getState().createRoom('code');
+        expect(anotherRoom?.group.displayName).toMatch(/^Relic Hunters Expedition: /);
+        expect(anotherRoom?.group.displayName).not.toBe(firstRoom?.group.displayName);
+    });
+
     it('keeps the new private room shareable when leaving the previous room is denied', async () => {
         const backend = new RelicRuntimeBackend();
         backend.rejectPreviousLeave = true;
@@ -812,6 +829,43 @@ describe('RelicHuntersRuntime', () => {
         expect(runtime.getState().diagnostics.lastSnapshotSource).toBe('rest-reset');
     });
 
+    it('discards an old creation when another account takes over during presence recovery', async () => {
+        const backend = new RelicRuntimeBackend();
+        backend.rejectPreviousLeave = true;
+        const runtime = createRuntime(backend);
+        await runtime.start();
+        const waiting = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const waitForPresence = backend.waitForPresence.bind(backend);
+        backend.waitForPresence = async (roomId, options) => {
+            const result = await waitForPresence(roomId, options);
+            waiting.resolve();
+            await release.promise;
+            return result;
+        };
+        const pending = runtime.getState().createRoom('code');
+        await waiting.promise;
+        backend.signIn({
+            clientId: 'client-2',
+            accessToken: 'token-2',
+            username: 'Bob',
+            sessionId: 'bob-session',
+            expiresAtEpochMs: 4_000_000_000_000
+        });
+        await vi.waitFor(() =>
+            expect(runtime.getState()).toMatchObject({
+                connectionState: 'connected',
+                session: { clientId: 'client-2', sessionId: 'bob-session' },
+                roomId: undefined,
+                snapshot: undefined
+            })
+        );
+        const replacement = runtime.getState();
+        release.resolve();
+        await expect(pending).resolves.toBeUndefined();
+        expect(runtime.getState()).toBe(replacement);
+    });
+
     it.each([false, true])(
         'does not expose an obsolete creation when the account changes before hydration finishes (cleanup failed: %s)',
         async (cleanupFailed) => {
@@ -1014,6 +1068,10 @@ class RelicRuntimeBackend implements RelicHuntersRuntime.Dependencies {
     }
     public async resetGame(roomId: string) {
         return relicSnapshot(roomId, 30);
+    }
+
+    public createRoomNameSeed(): string {
+        return 'controlled-room-name-seed';
     }
 
     public async createRoom(displayName: string, joinMode: GroupJoinMode): Promise<GroupSnapshot> {

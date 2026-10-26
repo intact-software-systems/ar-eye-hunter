@@ -32,7 +32,6 @@ import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import {
     createRallarAiFunnyRoomName,
-    createRallarAiRoomNameSeed,
     type RallarAiFunnyRoomNameTheme
 } from '@shared/rallar-ai/mod.ts';
 import type { RallarGameAuthorityClientStatus } from '@shared/rallar-game/mod.ts';
@@ -171,6 +170,7 @@ export namespace RelicHuntersRuntime {
         onHunterEventMessage(roomId: string, subscription: RelicHunterEventSubscription): RallarUnsubscribe;
         authorityStatus(): RallarGameAuthorityClientStatus | undefined;
         publishRtcSnapshot(snapshot: RelicPublicSnapshot): Promise<boolean>;
+        createRoomNameSeed(): string;
         createRoom(
             displayName: string,
             joinMode: GroupJoinMode,
@@ -948,7 +948,7 @@ export class RelicHuntersRuntime {
         const displayName = createRallarAiFunnyRoomName({
             baseName: RELIC_ROOM_NAME_THEME.defaultBaseName,
             theme: RELIC_ROOM_NAME_THEME,
-            seed: createRallarAiRoomNameSeed('relic-hunters'),
+            seed: this.deps.createRoomNameSeed(),
             existingNames: this.connection.rooms.map((room) => room.name)
         });
         let snapshot: GroupSnapshot;

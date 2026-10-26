@@ -7,6 +7,7 @@ import { rallar } from '@shared-web/browser/rallar.ts';
 import { RallarRoomDirectory } from '@shared-web/browser/rooms/directory/rallar-room-directory.ts';
 import { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
 import { RallarRecentRooms } from '@shared-web/browser/rooms/recent-rooms/rallar-recent-rooms.ts';
+import { createRallarAiRoomNameSeed } from '@shared/rallar-ai/rallar-ai-room-names.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 
 import {
@@ -62,6 +63,7 @@ export function browserRelicRuntimeDeps(): RelicHuntersRuntime.Dependencies {
         onHunterEventMessage: (roomId, subscription) => subscribeRelicHunterEvents(rallar, roomId, subscription),
         authorityStatus: () => authority.status(),
         publishRtcSnapshot: (snapshot) => authority.publishSnapshotRepair(snapshot),
+        createRoomNameSeed: () => createRallarAiRoomNameSeed('relic-hunters'),
         createRoom: (displayName, joinMode, directoryListing) =>
             rallar.rooms.createAndSwitch({
                 displayName,
