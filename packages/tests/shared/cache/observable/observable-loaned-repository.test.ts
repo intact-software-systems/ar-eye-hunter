@@ -1,7 +1,17 @@
-import { ObservableLoanedRepository } from '@shared/cache/ObservableLoanedRepository.ts';
-import { ObservableLoanedValue } from '@shared/cache/ObservableLoanedValue.ts';
-import { ObservableValueEventType, type ObservableKeyedValueEvent, type ObservableValueEvent } from '@shared/cache/RepositoryInterfaces.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ObservableLoanedRepository } from '@shared/cache/observable/observable-loaned-repository.ts';
+import { ObservableLoanedValue } from '@shared/cache/observable/observable-loaned-value.ts';
+import {
+    ObservableValueEventType,
+    type ObservableKeyedValueEvent,
+    type ObservableValueEvent
+} from '@shared/cache/RepositoryInterfaces.ts';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 describe('ObservableLoanedValue', () => {
     afterEach(() => {
@@ -54,7 +64,7 @@ describe('ObservableLoanedValue', () => {
     });
 
     it('coalesces concurrent refresh observation into one event', async () => {
-        const deferred = createDeferred<number>();
+        const deferred = Promise.withResolvers<number>();
         const events: ObservableValueEventType[] = [];
         let calls = 0;
         const value = new ObservableLoanedValue<number>(async () => {
@@ -80,6 +90,20 @@ describe('ObservableLoanedValue', () => {
 
         expect(calls).toBe(1);
         expect(events).toEqual([ObservableValueEventType.Created]);
+    });
+
+    it('reports a requested refresh as pending before its refresher starts', async () => {
+        const nextValue = Promise.withResolvers<number>();
+        const value = new ObservableLoanedValue<number>(() => nextValue.promise);
+        const refresh = value.refresh();
+        const pendingAtRequest = value.refreshing();
+        nextValue.resolve(7);
+        await refresh;
+        await value.whenIdle();
+
+        expect(pendingAtRequest).toBe(true);
+        expect(value.refreshing()).toBe(false);
+        expect(value.read()).toBe(7);
     });
 
     it('emits deleted from takeIfExpired only when the loan has expired', async () => {
@@ -139,6 +163,105 @@ describe('ObservableLoanedRepository', () => {
         ]);
     });
 
+    it.each(['source', 'new-entry'])('waits for an observer to start and finish a delayed refresh of %s', async (destination) => {
+        const allowFollowup = Promise.withResolvers<void>();
+        const observerStarted = Promise.withResolvers<void>();
+        const refreshStarted = Promise.withResolvers<void>();
+        const nextValue = Promise.withResolvers<number>();
+        const repository = new ObservableLoanedRepository<string, number>(() => 1);
+        await repository.get('source');
+        await repository.whenIdle();
+        const events: Array<[string, number | undefined]> = [];
+        repository.onChangeDo(async (event) => {
+            events.push([event.key, event.value]);
+            if (event.key === 'source' && event.value === 2) {
+                observerStarted.resolve();
+                await allowFollowup.promise;
+                void repository.refreshWith(destination, () => {
+                    refreshStarted.resolve();
+                    return nextValue.promise;
+                });
+            }
+        });
+
+        await repository.refreshWith('source', () => 2);
+        await observerStarted.promise;
+        let idleFinished = false;
+        const idle = repository.whenIdle().then(() => {
+            idleFinished = true;
+            return { value: repository.read(destination), events: [...events] };
+        });
+        // Allow the initial entry queues to settle while the repository observer waits.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        allowFollowup.resolve();
+        await refreshStarted.promise;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const finishedBeforeRefresh = idleFinished;
+        nextValue.resolve(3);
+        const completed = await idle;
+        await repository.whenIdle();
+
+        expect(finishedBeforeRefresh).toBe(false);
+        expect(completed).toEqual({ value: 3, events: [['source', 2], [destination, 3]] });
+    });
+
+    it.each(
+        [
+            ['destination', 'repository'],
+            ['new-entry', 'repository'],
+            ['destination', 'returned entry'],
+            ['new-entry', 'returned entry']
+        ] as const
+    )('includes a direct entry observer starting %s through the %s', async (destination, refreshPort) => {
+        const repository = new ObservableLoanedRepository<string, number>(() => 1);
+        await repository.get('destination');
+        const source = repository.loaned('source');
+        await source.get();
+        await repository.whenIdle();
+        const allowFollowup = Promise.withResolvers<void>();
+        const observerStarted = Promise.withResolvers<void>();
+        const refreshStarted = Promise.withResolvers<void>();
+        const nextValue = Promise.withResolvers<number>();
+        const events: Array<[string, number | undefined]> = [];
+        repository.onChangeDo((event) => {
+            events.push([event.key, event.value]);
+        });
+        source.onChangeDo(async () => {
+            observerStarted.resolve();
+            await allowFollowup.promise;
+            const refresh = () => {
+                refreshStarted.resolve();
+                return nextValue.promise;
+            };
+            if (refreshPort === 'repository') {
+                void repository.refreshWith(destination, refresh);
+            }
+            else {
+                void repository.loaned(destination).refreshWith(refresh);
+            }
+        });
+
+        await source.refreshWith(() => 2);
+        await observerStarted.promise;
+        let idleFinished = false;
+        const idle = repository.whenIdle().then(() => {
+            idleFinished = true;
+            return { value: repository.read(destination), events: [...events] };
+        });
+        // The destination's initial idle check can finish while the source observer waits.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        allowFollowup.resolve();
+        await refreshStarted.promise;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const finishedBeforeRefresh = idleFinished;
+        nextValue.resolve(3);
+        const completed = await idle;
+        await repository.whenIdle();
+
+        expect(finishedBeforeRefresh).toBe(false);
+        expect(completed).toEqual({ value: 3, events: [['source', 2], [destination, 3]] });
+    });
+
     it('supports override refreshers with key and current value', async () => {
         const defaultCalls: Array<[string, number | undefined]> = [];
         const overrideCalls: Array<[string, number | undefined]> = [];
@@ -165,7 +288,7 @@ describe('ObservableLoanedRepository', () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
-        const deferred = createDeferred<number>();
+        const deferred = Promise.withResolvers<number>();
         let mode: 'initial' | 'refresh' = 'initial';
         const repository = new ObservableLoanedRepository<string, number>(
             async (_key, current) => {
@@ -210,9 +333,9 @@ describe('ObservableLoanedRepository', () => {
         expect(repository.has('job')).toBe(false);
     });
 
-    it('does not forward late refresh events from a deleted entry', async () => {
-        const firstRefresh = createDeferred<number>();
-        const secondRefresh = createDeferred<number>();
+    it.each(['removed-first', 'replacement-first'] as const)('keeps replacement state when deleted-entry refreshes finish %s', async (order) => {
+        const firstRefresh = Promise.withResolvers<number>();
+        const secondRefresh = Promise.withResolvers<number>();
         const refreshes = [firstRefresh, secondRefresh];
         const repository = new ObservableLoanedRepository<string, number>(
             async () => {
@@ -237,11 +360,20 @@ describe('ObservableLoanedRepository', () => {
         const second = repository.get('room-a');
         await Promise.resolve();
 
-        firstRefresh.resolve(1);
-        await expect(first).resolves.toBe(1);
-
-        secondRefresh.resolve(2);
-        await expect(second).resolves.toBe(2);
+        if (order === 'removed-first') {
+            firstRefresh.resolve(1);
+            await expect(first).resolves.toBe(1);
+            secondRefresh.resolve(2);
+            await expect(second).resolves.toBe(2);
+        }
+        else {
+            secondRefresh.resolve(2);
+            await expect(second).resolves.toBe(2);
+            await repository.whenIdle();
+            expect(repository.read('room-a')).toBe(2);
+            firstRefresh.resolve(1);
+            await expect(first).resolves.toBe(1);
+        }
         await repository.whenIdle();
 
         expect(repository.read('room-a')).toBe(2);
@@ -254,60 +386,44 @@ describe('ObservableLoanedRepository', () => {
     });
 
     it('deletes only the exact observed loaned value', async () => {
-        type Snapshot = Readonly<{ revision: number; }>;
-        type ConditionallyDeletable = Readonly<{
-            compareAndDelete?: (key: string, expected: Snapshot) => boolean;
-        }>;
+        interface Snapshot {
+            readonly revision: number;
+        }
         let current: Snapshot = { revision: 1 };
         const repository = new ObservableLoanedRepository<string, Snapshot>(
             async () => current
         );
-        const deleted = vi.fn();
-        const conditionallyDeletable = repository as ConditionallyDeletable;
+        const deleted: Array<ObservableKeyedValueEvent<string, Snapshot>> = [];
         const first = await repository.get('room');
 
-        repository.onDeletedDo(deleted);
+        repository.onDeletedDo((event) => {
+            deleted.push(event);
+        });
         expect(
-            conditionallyDeletable.compareAndDelete?.(
+            repository.compareAndDelete(
                 'room',
                 { revision: first.revision }
-            ) ?? false
+            )
         ).toBe(false);
         expect(repository.peek('room')).toBe(first);
 
         current = { revision: 2 };
         const newer = await repository.refresh('room');
         expect(
-            conditionallyDeletable.compareAndDelete?.('room', first) ?? false
+            repository.compareAndDelete('room', first)
         ).toBe(false);
         expect(repository.peek('room')).toBe(newer);
 
         expect(
-            conditionallyDeletable.compareAndDelete?.('room', newer) ?? false
+            repository.compareAndDelete('room', newer)
         ).toBe(true);
         await repository.whenIdle();
 
         expect(repository.peek('room')).toBeUndefined();
-        expect(deleted).toHaveBeenCalledTimes(1);
-        expect(deleted.mock.calls[0]?.[0]).toMatchObject({
+        expect(deleted).toMatchObject([{
             key: 'room',
+            type: ObservableValueEventType.Deleted,
             previous: newer
-        });
+        }]);
     });
 });
-
-function createDeferred<T>() {
-    let resolve!: (value: T) => void;
-    let reject!: (error?: unknown) => void;
-
-    const promise = new Promise<T>((innerResolve, innerReject) => {
-        resolve = innerResolve;
-        reject = innerReject;
-    });
-
-    return {
-        promise,
-        resolve,
-        reject
-    };
-}

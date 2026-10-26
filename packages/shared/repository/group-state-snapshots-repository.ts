@@ -6,11 +6,11 @@ import {
     readAllObservableLatestRepository,
     readObservableLatestRepositoryValue,
     requireObservableLatestRepository
-} from '@shared/cache/LatestRepositoryHelpers.ts';
+} from '@shared/cache/configure-latest-repository.ts';
 import {
     ObservableLatestRepository,
     type ObservableLatestRepositoryOptions
-} from '@shared/cache/ObservableLatestRepository.ts';
+} from '@shared/cache/observable/observable-latest-repository.ts';
 import {
     ObservableValueEventType,
     type ObservableKeyedValueEvent,

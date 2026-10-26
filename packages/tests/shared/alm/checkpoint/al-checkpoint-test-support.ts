@@ -1,6 +1,6 @@
 import type { ALCheckpointWriter } from '@shared/alm/checkpoint/al-checkpoint-writer.ts';
 import type { ALDurableWorkOwnership } from '@shared/alm/work/al-durable-work-ownership.ts';
-import { ObservableLatestValue } from '@shared/cache/ObservableLatestValue.ts';
+import { ObservableLatestValue } from '@shared/cache/observable/observable-latest-value.ts';
 import { createDefaultTimers, type Timers } from '@shared/resilience/timers.ts';
 
 export const TEST_CHECKPOINT_SETTINGS: ALCheckpointWriter.Settings = { intervalMs: 1_000, lagBoundMs: 10_000 };

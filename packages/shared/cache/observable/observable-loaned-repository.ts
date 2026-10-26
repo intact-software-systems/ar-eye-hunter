@@ -1,6 +1,4 @@
-import type { LoanedValueValidityChecker } from './LoanedValue.ts';
-import type { ValueEqualityChecker } from './ObservableLatestValue.ts';
-import { ObservableLoanedValue, type ObservableLoanedValueOptions } from './ObservableLoanedValue.ts';
+import type { LoanedValueValidityChecker } from '../LoanedValue.ts';
 import {
     ObservableValueEventType,
     type LoanedRepositoryRefresh,
@@ -11,22 +9,22 @@ import {
     type PullKeyedValues,
     type ReadableKeyedValues,
     type Unsubscribe
-} from './RepositoryInterfaces.ts';
+} from '../RepositoryInterfaces.ts';
+import type { ValueEqualityChecker } from './observable-latest-value.ts';
+import { ObservableLoanedValue, type ObservableLoanedValueOptions } from './observable-loaned-value.ts';
+import { QueuedNotifications } from './queued-notifications.ts';
 
-export type ObservableLoanedRepositoryOptions<K, V> = Readonly<{
-    ttlMs?: number;
-    isValid?: LoanedValueValidityChecker<V>;
-    equals?: ValueEqualityChecker<V>;
-    onObserverError?: ObservableKeyedValueErrorHandler<K, V>;
-}>;
+export interface ObservableLoanedRepositoryOptions<K, V> {
+    readonly ttlMs?: number;
+    readonly isValid?: LoanedValueValidityChecker<V>;
+    readonly equals?: ValueEqualityChecker<V>;
+    readonly onObserverError?: ObservableKeyedValueErrorHandler<K, V>;
+}
 
 export class ObservableLoanedRepository<K, V> implements PullKeyedValues<K, V>, ObservableKeyedValues<K, V> {
     private readonly entries = new Map<K, ObservableLoanedValue<V>>();
     private readonly defaultValueOptions: ObservableLoanedValueOptions<V>;
-    private readonly onObserverError?: ObservableKeyedValueErrorHandler<K, V>;
-    private readonly listenersByType = new Map<ObservableValueEventType, Set<ObservableKeyedValueListener<K, V>>>();
-    private readonly changeListeners = new Set<ObservableKeyedValueListener<K, V>>();
-    private observerQueue: Promise<void> = Promise.resolve();
+    private readonly notifications: QueuedNotifications<ObservableKeyedValueEvent<K, V>>;
 
     private readonly refresher: LoanedRepositoryRefresh<K, V>;
 
@@ -44,7 +42,7 @@ export class ObservableLoanedRepository<K, V> implements PullKeyedValues<K, V>, 
             isValid: options.isValid,
             equals: options.equals
         };
-        this.onObserverError = options.onObserverError;
+        this.notifications = new QueuedNotifications(options.onObserverError);
     }
 
     public loaned(key: K): ObservableLoanedValue<V> {
@@ -218,40 +216,34 @@ export class ObservableLoanedRepository<K, V> implements PullKeyedValues<K, V>, 
     }
 
     public onCreatedDo(listener: ObservableKeyedValueListener<K, V>): Unsubscribe {
-        return this.onTypeDo(ObservableValueEventType.Created, listener);
+        return this.notifications.subscribeType(ObservableValueEventType.Created, listener);
     }
 
     public onUpdatedDo(listener: ObservableKeyedValueListener<K, V>): Unsubscribe {
-        return this.onTypeDo(ObservableValueEventType.Updated, listener);
+        return this.notifications.subscribeType(ObservableValueEventType.Updated, listener);
     }
 
     public onRefreshedDo(listener: ObservableKeyedValueListener<K, V>): Unsubscribe {
-        return this.onTypeDo(ObservableValueEventType.Refreshed, listener);
+        return this.notifications.subscribeType(ObservableValueEventType.Refreshed, listener);
     }
 
     public onDeletedDo(listener: ObservableKeyedValueListener<K, V>): Unsubscribe {
-        return this.onTypeDo(ObservableValueEventType.Deleted, listener);
+        return this.notifications.subscribeType(ObservableValueEventType.Deleted, listener);
     }
 
     public onChangeDo(listener: ObservableKeyedValueListener<K, V>): Unsubscribe {
-        this.changeListeners.add(listener);
-        return toUnsubscribe(() => {
-            this.changeListeners.delete(listener);
-        });
+        return this.notifications.subscribe(listener);
     }
 
     public async whenIdle(): Promise<void> {
         while (true) {
-            const valueQueues = [...this.entries.values()].map(
-                async (entry) => await entry.whenIdle()
-            );
-            await Promise.all(valueQueues);
-
-            const pending = this.observerQueue;
+            const pending = this.notifications.completion;
             await pending;
-            await Promise.resolve();
-
-            if (pending === this.observerQueue) {
+            // Repository observers may start entry work without publishing its result yet.
+            await Promise.all([...this.entries.values()].map((entry) => entry.whenIdle()));
+            // An entry observer may start a refresh after another entry's idle check finished.
+            const hasPendingRefresh = [...this.entries.values()].some((entry) => entry.refreshing());
+            if (pending === this.notifications.completion && !hasPendingRefresh) {
                 return;
             }
         }
@@ -274,7 +266,7 @@ export class ObservableLoanedRepository<K, V> implements PullKeyedValues<K, V>, 
                     return;
                 }
 
-                this.emit({
+                this.notifications.publish({
                     ...event,
                     key
                 });
@@ -294,100 +286,11 @@ export class ObservableLoanedRepository<K, V> implements PullKeyedValues<K, V>, 
             return;
         }
 
-        this.emit({
+        this.notifications.publish({
             key,
             type: ObservableValueEventType.Deleted,
             previous,
             atEpochMs: Date.now()
         });
     }
-
-    private onTypeDo(
-        type: ObservableValueEventType,
-        listener: ObservableKeyedValueListener<K, V>
-    ): Unsubscribe {
-        let listeners = this.listenersByType.get(type);
-        if (!listeners) {
-            listeners = new Set<ObservableKeyedValueListener<K, V>>();
-            this.listenersByType.set(type, listeners);
-        }
-
-        listeners.add(listener);
-        return toUnsubscribe(() => {
-            listeners?.delete(listener);
-            if (listeners?.size === 0) {
-                this.listenersByType.delete(type);
-            }
-        });
-    }
-
-    private emit(event: ObservableKeyedValueEvent<K, V>): void {
-        const listeners = [
-            ...(this.listenersByType.get(event.type) ?? []),
-            ...this.changeListeners
-        ];
-
-        if (listeners.length === 0) {
-            return;
-        }
-
-        this.observerQueue = this.observerQueue.then(
-            async () => {
-                await Promise.all(
-                    listeners.map(async (listener) => {
-                        await this.notifyListener(listener, event);
-                    })
-                );
-            },
-            async () => {
-                await Promise.all(
-                    listeners.map(async (listener) => {
-                        await this.notifyListener(listener, event);
-                    })
-                );
-            }
-        );
-    }
-
-    private async notifyListener(
-        listener: ObservableKeyedValueListener<K, V>,
-        event: ObservableKeyedValueEvent<K, V>
-    ): Promise<void> {
-        try {
-            await listener(event);
-        }
-        catch (error) {
-            await this.handleObserverError(error, event);
-        }
-    }
-
-    private async handleObserverError(
-        error: unknown,
-        event: ObservableKeyedValueEvent<K, V>
-    ): Promise<void> {
-        if (this.onObserverError) {
-            try {
-                await this.onObserverError(error, event);
-            }
-            catch (handlerError) {
-                console.error('Error handling observable loaned keyed value observer failure', handlerError);
-            }
-            return;
-        }
-
-        console.error('Error notifying observable loaned keyed value listener', error);
-    }
-}
-
-function toUnsubscribe(unsubscribe: () => void): Unsubscribe {
-    let active = true;
-    return {
-        unsubscribe: () => {
-            if (!active) {
-                return;
-            }
-            active = false;
-            unsubscribe();
-        }
-    };
 }

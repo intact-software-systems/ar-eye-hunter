@@ -20,16 +20,8 @@ export function observeRtt(
         return false;
     }
 
-    const fromNode = vivaldiRepository.getOrCreateNode(
-        rtt.sessionIdFrom,
-        dimensions,
-        initialError
-    );
-    const toNode = vivaldiRepository.getOrCreateNode(
-        rtt.sessionIdTo,
-        dimensions,
-        initialError
-    );
+    const fromNode = vivaldiRepository.getOrCreateNode({ nodeId: rtt.sessionIdFrom, dimensions, initialError });
+    const toNode = vivaldiRepository.getOrCreateNode({ nodeId: rtt.sessionIdTo, dimensions, initialError });
 
     fromNode.update(toNode.toNodeData(rtt.sessionIdTo, rtt.rttMs));
     toNode.update(fromNode.toNodeData(rtt.sessionIdFrom, rtt.rttMs));
@@ -43,24 +35,24 @@ export function readablePredictedNodeData(): ReadonlyMap<string, VivaldiNodeData
 
 export function toPredictedGraphSnapshot(
     graphProp: GraphProp,
-    cfg?: Partial<VivaldiConfig>
+    config?: Partial<VivaldiConfig>
 ) {
     return createPredictedGraph(
         vivaldiRepository.getAllNodeData(),
         graphProp,
-        cfg
+        config
     );
 }
 
 export function toPredictedGraphFromIds(
     ids: readonly string[],
     graphProp: GraphProp,
-    cfg?: Partial<VivaldiConfig>
+    config?: Partial<VivaldiConfig>
 ) {
     return createPredictedGraph(
         vivaldiRepository.getNodeDataById(ids),
         graphProp,
-        cfg
+        config
     );
 }
 

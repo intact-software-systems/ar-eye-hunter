@@ -1,11 +1,11 @@
 import { VivaldiNode, type VivaldiNodeData } from '@shared-graph/graph/vivaldi-core.ts';
-import { LatestRepository, type LatestRepositoryOptions } from '@shared/cache/LatestRepository.ts';
 import {
     configureLatestRepository,
     newLatestRepositoryToken,
     readLatestRepositoryValue,
     requireLatestRepository
-} from '@shared/cache/LatestRepositoryHelpers.ts';
+} from '@shared/cache/configure-latest-repository.ts';
+import { LatestRepository, type LatestRepositoryOptions } from '@shared/cache/LatestRepository.ts';
 import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 
 export type VivaldiRepositoryOptions =
@@ -44,15 +44,17 @@ export function getNodeById(
     return readLatestRepositoryValue(vivaldiRepositoryToken, nodeId, manager);
 }
 
-export function getOrCreateNode(
-    nodeId: string,
-    dimensions = 4,
-    initialError = 1.0,
-    manager?: RepositoryManager
-): VivaldiNode {
-    return requireVivaldiRepository(manager).setIfAbsent(
-        nodeId,
-        () => new VivaldiNode({ dimensions, initialError })
+export interface GetOrCreateVivaldiNodeInput {
+    readonly nodeId: string;
+    readonly dimensions?: number;
+    readonly initialError?: number;
+    readonly manager?: RepositoryManager;
+}
+
+export function getOrCreateNode(input: GetOrCreateVivaldiNodeInput): VivaldiNode {
+    return requireVivaldiRepository(input.manager).setIfAbsent(
+        input.nodeId,
+        () => new VivaldiNode({ dimensions: input.dimensions ?? 4, initialError: input.initialError ?? 1.0 })
     );
 }
 

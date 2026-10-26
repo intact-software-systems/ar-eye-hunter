@@ -1,6 +1,9 @@
-import { LoanedValue, type LoanedValueOptions, type LoanedValueRefresh } from './LoanedValue.ts';
-import type { ValueEqualityChecker } from './ObservableLatestValue.ts';
-import type { ReadableValue } from './ReadableValue.ts';
+import {
+    LoanedValue,
+    type LoanedValueOptions,
+    type LoanedValueRefresh
+} from '../LoanedValue.ts';
+import type { ReadableValue } from '../ReadableValue.ts';
 import {
     ObservableValueEventType,
     type ObservableValue,
@@ -8,16 +11,9 @@ import {
     type ObservableValueEvent,
     type ObservableValueListener,
     type Unsubscribe
-} from './RepositoryInterfaces.ts';
-
-export { ObservableValueEventType } from './RepositoryInterfaces.ts';
-export type {
-    ObservableValue,
-    ObservableValueErrorHandler,
-    ObservableValueEvent,
-    ObservableValueListener,
-    Unsubscribe
-} from './RepositoryInterfaces.ts';
+} from '../RepositoryInterfaces.ts';
+import type { ValueEqualityChecker } from './observable-latest-value.ts';
+import { QueuedNotifications } from './queued-notifications.ts';
 
 export type ObservableLoanedValueOptions<T> =
     & LoanedValueOptions<T>
@@ -26,15 +22,10 @@ export type ObservableLoanedValueOptions<T> =
         onObserverError?: ObservableValueErrorHandler<T>;
     }>;
 
-const defaultEquals = <T>(left: T, right: T): boolean => Object.is(left, right);
-
 export class ObservableLoanedValue<T> implements ReadableValue<T>, ObservableValue<T> {
     private readonly loaned: LoanedValue<T>;
     private readonly equals: ValueEqualityChecker<T>;
-    private readonly onObserverError?: ObservableValueErrorHandler<T>;
-    private readonly listenersByType = new Map<ObservableValueEventType, Set<ObservableValueListener<T>>>();
-    private readonly changeListeners = new Set<ObservableValueListener<T>>();
-    private observerQueue: Promise<void> = Promise.resolve();
+    private readonly notifications: QueuedNotifications<ObservableValueEvent<T>>;
     private observedRefresh: Promise<T> | undefined;
 
     public constructor(
@@ -42,8 +33,8 @@ export class ObservableLoanedValue<T> implements ReadableValue<T>, ObservableVal
         options: ObservableLoanedValueOptions<T> = {}
     ) {
         this.loaned = new LoanedValue<T>(refresher, options);
-        this.equals = options.equals ?? defaultEquals;
-        this.onObserverError = options.onObserverError;
+        this.equals = options.equals ?? Object.is;
+        this.notifications = new QueuedNotifications(options.onObserverError);
     }
 
     public read(): T | undefined {
@@ -84,7 +75,7 @@ export class ObservableLoanedValue<T> implements ReadableValue<T>, ObservableVal
         const value = this.loaned.take();
 
         if (hadValue) {
-            this.emit({
+            this.notifications.publish({
                 type: ObservableValueEventType.Deleted,
                 previous,
                 atEpochMs: Date.now()
@@ -101,7 +92,7 @@ export class ObservableLoanedValue<T> implements ReadableValue<T>, ObservableVal
         const value = this.loaned.takeIfExpired();
 
         if (hadValue && wasExpired) {
-            this.emit({
+            this.notifications.publish({
                 type: ObservableValueEventType.Deleted,
                 previous,
                 atEpochMs: Date.now()
@@ -120,7 +111,7 @@ export class ObservableLoanedValue<T> implements ReadableValue<T>, ObservableVal
     }
 
     public refreshing(): boolean {
-        return this.loaned.refreshing();
+        return this.observedRefresh !== undefined;
     }
 
     public clear(): void {
@@ -130,7 +121,7 @@ export class ObservableLoanedValue<T> implements ReadableValue<T>, ObservableVal
         this.loaned.clear();
 
         if (hadValue) {
-            this.emit({
+            this.notifications.publish({
                 type: ObservableValueEventType.Deleted,
                 previous,
                 atEpochMs: Date.now()
@@ -139,26 +130,23 @@ export class ObservableLoanedValue<T> implements ReadableValue<T>, ObservableVal
     }
 
     public onCreatedDo(listener: ObservableValueListener<T>): Unsubscribe {
-        return this.onTypeDo(ObservableValueEventType.Created, listener);
+        return this.notifications.subscribeType(ObservableValueEventType.Created, listener);
     }
 
     public onUpdatedDo(listener: ObservableValueListener<T>): Unsubscribe {
-        return this.onTypeDo(ObservableValueEventType.Updated, listener);
+        return this.notifications.subscribeType(ObservableValueEventType.Updated, listener);
     }
 
     public onRefreshedDo(listener: ObservableValueListener<T>): Unsubscribe {
-        return this.onTypeDo(ObservableValueEventType.Refreshed, listener);
+        return this.notifications.subscribeType(ObservableValueEventType.Refreshed, listener);
     }
 
     public onDeletedDo(listener: ObservableValueListener<T>): Unsubscribe {
-        return this.onTypeDo(ObservableValueEventType.Deleted, listener);
+        return this.notifications.subscribeType(ObservableValueEventType.Deleted, listener);
     }
 
     public onChangeDo(listener: ObservableValueListener<T>): Unsubscribe {
-        this.changeListeners.add(listener);
-        return toUnsubscribe(() => {
-            this.changeListeners.delete(listener);
-        });
+        return this.notifications.subscribe(listener);
     }
 
     public async whenIdle(): Promise<void> {
@@ -168,11 +156,11 @@ export class ObservableLoanedValue<T> implements ReadableValue<T>, ObservableVal
                 await refresh.catch(() => undefined);
             }
 
-            const pending = this.observerQueue;
+            const pending = this.notifications.completion;
             await pending;
             await Promise.resolve();
 
-            if (refresh === this.observedRefresh && pending === this.observerQueue) {
+            if (refresh === this.observedRefresh && pending === this.notifications.completion) {
                 return;
             }
         }
@@ -188,7 +176,7 @@ export class ObservableLoanedValue<T> implements ReadableValue<T>, ObservableVal
         const refresh = Promise.resolve()
             .then(operation)
             .then((value) => {
-                this.emit(this.toWriteEvent(hadValue, previous, value));
+                this.notifications.publish(this.toWriteEvent(hadValue, previous, value));
                 return value;
             })
             .finally(() => {
@@ -199,25 +187,6 @@ export class ObservableLoanedValue<T> implements ReadableValue<T>, ObservableVal
 
         this.observedRefresh = refresh;
         return refresh;
-    }
-
-    private onTypeDo(
-        type: ObservableValueEventType,
-        listener: ObservableValueListener<T>
-    ): Unsubscribe {
-        let listeners = this.listenersByType.get(type);
-        if (!listeners) {
-            listeners = new Set<ObservableValueListener<T>>();
-            this.listenersByType.set(type, listeners);
-        }
-
-        listeners.add(listener);
-        return toUnsubscribe(() => {
-            listeners?.delete(listener);
-            if (listeners?.size === 0) {
-                this.listenersByType.delete(type);
-            }
-        });
     }
 
     private toWriteEvent(
@@ -242,75 +211,4 @@ export class ObservableLoanedValue<T> implements ReadableValue<T>, ObservableVal
             atEpochMs: Date.now()
         };
     }
-
-    private emit(event: ObservableValueEvent<T>): void {
-        const listeners = [
-            ...(this.listenersByType.get(event.type) ?? []),
-            ...this.changeListeners
-        ];
-
-        if (listeners.length === 0) {
-            return;
-        }
-
-        this.observerQueue = this.observerQueue.then(
-            async () => {
-                await Promise.all(
-                    listeners.map(async (listener) => {
-                        await this.notifyListener(listener, event);
-                    })
-                );
-            },
-            async () => {
-                await Promise.all(
-                    listeners.map(async (listener) => {
-                        await this.notifyListener(listener, event);
-                    })
-                );
-            }
-        );
-    }
-
-    private async notifyListener(
-        listener: ObservableValueListener<T>,
-        event: ObservableValueEvent<T>
-    ): Promise<void> {
-        try {
-            await listener(event);
-        }
-        catch (error) {
-            await this.handleObserverError(error, event);
-        }
-    }
-
-    private async handleObserverError(
-        error: unknown,
-        event: ObservableValueEvent<T>
-    ): Promise<void> {
-        if (this.onObserverError) {
-            try {
-                await this.onObserverError(error, event);
-            }
-            catch (handlerError) {
-                console.error('Error handling observable loaned value observer failure', handlerError);
-            }
-            return;
-        }
-
-        console.error('Error notifying observable loaned value listener', error);
-    }
-}
-
-function toUnsubscribe(unsubscribe: () => void): Unsubscribe {
-    let active = true;
-    return {
-        unsubscribe: () => {
-            if (!active) {
-                return;
-            }
-
-            active = false;
-            unsubscribe();
-        }
-    };
 }

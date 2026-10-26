@@ -6,11 +6,11 @@ import {
     readAllObservableLatestRepository,
     readObservableLatestRepositoryValue,
     requireObservableLatestRepository
-} from '@shared/cache/LatestRepositoryHelpers.ts';
+} from '@shared/cache/configure-latest-repository.ts';
 import {
     ObservableLatestRepository,
     type ObservableLatestRepositoryOptions
-} from '@shared/cache/ObservableLatestRepository.ts';
+} from '@shared/cache/observable/observable-latest-repository.ts';
 import {
     ObservableValueEventType,
     type ObservableKeyedValueEvent,
@@ -36,17 +36,15 @@ export type ClientStateSnapshotRepositoryOptions =
     & Omit<ObservableLatestRepositoryOptions<string, ClientSnapshot>, 'ttlMs' | 'equals'>
     & { ttlMs: number; };
 
-export type ClientStateSnapshotWriteKind = ObservableValueEventType;
-
-export type ClientStateSnapshotChange = Readonly<{
-    kind: ClientStateSnapshotWriteKind;
-    principalId: string;
-    snapshot?: ClientSnapshot;
-    previous?: ClientSnapshot;
-    version: number;
-    previousVersion?: number;
-    manager?: RepositoryManager;
-}>;
+export interface ClientStateSnapshotChange {
+    readonly kind: ObservableValueEventType;
+    readonly principalId: string;
+    readonly snapshot?: ClientSnapshot;
+    readonly previous?: ClientSnapshot;
+    readonly version: number;
+    readonly previousVersion?: number;
+    readonly manager?: RepositoryManager;
+}
 
 export type ClientStateSnapshotChangeListener = (
     change: ClientStateSnapshotChange
@@ -200,10 +198,6 @@ export function getAllClientStateSnapshots(
     return readAllObservableLatestRepository(clientStateSnapshotRepositoryToken, manager);
 }
 
-function toClientSnapshotVersion(snapshot: ClientSnapshot): number {
-    return readClientVersion(snapshot);
-}
-
 function toClientStateSnapshotChange(
     event: ObservableKeyedValueEvent<string, ClientSnapshot>,
     manager?: RepositoryManager
@@ -216,12 +210,12 @@ function toClientStateSnapshotChange(
         snapshot: event.value,
         previous: event.previous,
         version: event.value
-            ? toClientSnapshotVersion(event.value)
+            ? readClientVersion(event.value)
             : event.previous
-            ? toClientSnapshotVersion(event.previous)
+            ? readClientVersion(event.previous)
             : 0,
         previousVersion: event.previous
-            ? toClientSnapshotVersion(event.previous)
+            ? readClientVersion(event.previous)
             : undefined,
         manager
     };

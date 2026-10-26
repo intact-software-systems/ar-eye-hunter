@@ -1,8 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { BrowserPageLifecycleFlush } from '@shared-web/browser/al-runtime/browser-page-lifecycle-flush.ts';
 import { ALWAYS_OWNED_AL_DURABLE_WORK, type ALDurableWorkOwnership } from '@shared/alm/work/al-durable-work-ownership.ts';
-import { ObservableLatestValue } from '@shared/cache/ObservableLatestValue.ts';
+import { ObservableLatestValue } from '@shared/cache/observable/observable-latest-value.ts';
 
 import { FakePageLifecycle } from './fake-page-lifecycle.ts';
 

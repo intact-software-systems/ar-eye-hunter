@@ -1,6 +1,12 @@
-import { ObservableLatestRepository } from '@shared/cache/ObservableLatestRepository.ts';
+import { ObservableLatestRepository } from '@shared/cache/observable/observable-latest-repository.ts';
 import { ObservableValueEventType, type ObservableKeyedValueEvent } from '@shared/cache/RepositoryInterfaces.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 describe('ObservableLatestRepository', () => {
     afterEach(() => {
@@ -123,11 +129,15 @@ describe('ObservableLatestRepository', () => {
 
     it('supports type-specific observers and idempotent unsubscribe', async () => {
         const repository = new ObservableLatestRepository<string, number>();
-        const created = vi.fn();
-        const updated = vi.fn();
-        const subscription = repository.onCreatedDo(created);
+        const created: Array<ObservableKeyedValueEvent<string, number>> = [];
+        const updated: Array<ObservableKeyedValueEvent<string, number>> = [];
+        const subscription = repository.onCreatedDo((event) => {
+            created.push(event);
+        });
 
-        repository.onUpdatedDo(updated);
+        repository.onUpdatedDo((event) => {
+            updated.push(event);
+        });
         repository.set('a', 1);
         await repository.whenIdle();
         subscription.unsubscribe();
@@ -136,14 +146,13 @@ describe('ObservableLatestRepository', () => {
         repository.set('a', 2);
         await repository.whenIdle();
 
-        expect(created).toHaveBeenCalledTimes(1);
-        expect(updated).toHaveBeenCalledTimes(1);
-        expect(updated.mock.calls[0]?.[0]).toMatchObject({
+        expect(created).toMatchObject([{ type: 'created', value: 1 }]);
+        expect(updated).toMatchObject([{
             key: 'a',
             type: ObservableValueEventType.Updated,
             value: 2,
             previous: 1
-        });
+        }]);
     });
 
     it('readAllValues returns present values and filters expired entries', () => {
@@ -164,7 +173,10 @@ describe('ObservableLatestRepository', () => {
     });
 
     it('updateIfNewer creates, applies newer versions, and emits the matching events', async () => {
-        type Versioned = Readonly<{ version: number; payload: string; }>;
+        interface Versioned {
+            readonly version: number;
+            readonly payload: string;
+        }
         const repository = new ObservableLatestRepository<string, Versioned>({
             equals: (left, right) => left.version === right.version
         });
@@ -174,8 +186,14 @@ describe('ObservableLatestRepository', () => {
         });
 
         const versionOf = (value: Versioned) => value.version;
-        const onNewer = vi.fn();
-        const onStale = vi.fn();
+        const newerVersions: Array<[number, number]> = [];
+        const staleVersions: Array<[number, number]> = [];
+        const onNewer = (next: Versioned, current: Versioned) => {
+            newerVersions.push([next.version, current.version]);
+        };
+        const onStale = (next: Versioned, current: Versioned) => {
+            staleVersions.push([next.version, current.version]);
+        };
 
         expect(
             repository.updateIfNewer('k', { version: 1, payload: 'a' }, {
@@ -209,8 +227,8 @@ describe('ObservableLatestRepository', () => {
         await repository.whenIdle();
 
         expect(repository.read('k')).toEqual({ version: 2, payload: 'b' });
-        expect(onNewer).toHaveBeenCalledTimes(1);
-        expect(onStale).toHaveBeenCalledTimes(2);
+        expect(newerVersions).toEqual([[2, 1]]);
+        expect(staleVersions).toEqual([[1, 2], [2, 2]]);
         expect(events).toEqual([
             ObservableValueEventType.Created,
             ObservableValueEventType.Updated,
@@ -219,66 +237,102 @@ describe('ObservableLatestRepository', () => {
         ]);
     });
 
-    it('waits for events enqueued by repository observers before becoming idle', async () => {
+    it('waits for another entry write and source deletion started by a repository observer', async () => {
         const repository = new ObservableLatestRepository<string, number>();
         const events: Array<[string, ObservableValueEventType]> = [];
-
-        repository.onCreatedDo((event) => {
+        repository.onChangeDo((event) => {
             events.push([event.key, event.type]);
-            repository.set('b', 2);
-        });
-        repository.onUpdatedDo((event) => {
-            events.push([event.key, event.type]);
+            if (event.key === 'source' && event.type === ObservableValueEventType.Created) {
+                repository.set('destination', 2);
+                repository.delete('source');
+            }
         });
 
-        repository.set('b', 1);
+        repository.set('source', 1);
         await repository.whenIdle();
 
-        expect(events).toEqual([
-            ['b', ObservableValueEventType.Created],
-            ['b', ObservableValueEventType.Updated]
+        expect(events.filter(([key]) => key === 'source')).toEqual([
+            ['source', ObservableValueEventType.Created],
+            ['source', ObservableValueEventType.Deleted]
         ]);
-        expect(repository.read('b')).toBe(2);
+        expect(events.filter(([key]) => key === 'destination')).toEqual([
+            ['destination', ObservableValueEventType.Created]
+        ]);
+        expect(repository.read('source')).toBeUndefined();
+        expect(repository.read('destination')).toBe(2);
+    });
+
+    it('waits for committed deletion delivery after a slow entry observer is removed', async () => {
+        const repository = new ObservableLatestRepository<string, number>();
+        const releaseObserver = Promise.withResolvers<void>();
+        const observerStarted = Promise.withResolvers<void>();
+        const entry = repository.latest('room');
+        entry.onCreatedDo(async () => {
+            observerStarted.resolve();
+            await releaseObserver.promise;
+        });
+        const events: ObservableValueEventType[] = [];
+        repository.onChangeDo((event) => {
+            events.push(event.type);
+        });
+        repository.set('room', 1);
+        await observerStarted.promise;
+        repository.delete('room');
+
+        let idleFinished = false;
+        const idle = repository.whenIdle().then(() => {
+            idleFinished = true;
+            return [...events];
+        });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const finishedBeforeDelivery = idleFinished;
+        releaseObserver.resolve();
+        const delivered = await idle;
+        await entry.whenIdle();
+        await repository.whenIdle();
+
+        expect(finishedBeforeDelivery).toBe(false);
+        expect(delivered).toEqual([ObservableValueEventType.Created, ObservableValueEventType.Deleted]);
+        expect(repository.has('room')).toBe(false);
     });
 
     it('deletes only the exact observed value', async () => {
-        type Snapshot = Readonly<{ revision: number; }>;
-        type ConditionallyDeletable = Readonly<{
-            compareAndDelete?: (key: string, expected: Snapshot) => boolean;
-        }>;
+        interface Snapshot {
+            readonly revision: number;
+        }
         const repository = new ObservableLatestRepository<string, Snapshot>();
-        const deleted = vi.fn();
+        const deleted: Array<ObservableKeyedValueEvent<string, Snapshot>> = [];
         const first = { revision: 1 };
         const equalButDifferent = { revision: 1 };
         const newer = { revision: 2 };
-        const conditionallyDeletable = repository as ConditionallyDeletable;
 
-        repository.onDeletedDo(deleted);
+        repository.onDeletedDo((event) => {
+            deleted.push(event);
+        });
         repository.set('room', first);
 
         expect(
-            conditionallyDeletable.compareAndDelete?.('room', equalButDifferent) ??
-                false
+            repository.compareAndDelete('room', equalButDifferent)
         ).toBe(false);
         expect(repository.peek('room')).toBe(first);
 
         repository.set('room', newer);
         await repository.whenIdle();
         expect(
-            conditionallyDeletable.compareAndDelete?.('room', first) ?? false
+            repository.compareAndDelete('room', first)
         ).toBe(false);
         expect(repository.peek('room')).toBe(newer);
 
         expect(
-            conditionallyDeletable.compareAndDelete?.('room', newer) ?? false
+            repository.compareAndDelete('room', newer)
         ).toBe(true);
         await repository.whenIdle();
 
         expect(repository.peek('room')).toBeUndefined();
-        expect(deleted).toHaveBeenCalledTimes(1);
-        expect(deleted.mock.calls[0]?.[0]).toMatchObject({
+        expect(deleted).toMatchObject([{
             key: 'room',
+            type: ObservableValueEventType.Deleted,
             previous: newer
-        });
+        }]);
     });
 });

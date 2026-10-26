@@ -38,9 +38,9 @@ describe('shared-graph vivaldi and predicted graph behavior', () => {
     });
 
     it('stores vivaldi nodes once and exposes filtered node data', () => {
-        const first = getOrCreateNode('peer-a', 3, 0.4);
-        const second = getOrCreateNode('peer-a', 5, 0.9);
-        const other = getOrCreateNode('peer-b', 3, 0.2);
+        const first = getOrCreateNode({ nodeId: 'peer-a', dimensions: 3, initialError: 0.4 });
+        const second = getOrCreateNode({ nodeId: 'peer-a', dimensions: 5, initialError: 0.9 });
+        const other = getOrCreateNode({ nodeId: 'peer-b', dimensions: 3, initialError: 0.2 });
 
         expect(first).toBe(second);
         expect(first).not.toBe(other);

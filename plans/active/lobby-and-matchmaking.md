@@ -34,8 +34,9 @@ retention and guarded archival. Production Quick Join verification exposed a dep
 and database latency, repaired in merged [PR #707](https://github.com/intact-software-systems/ar-eye-hunter/pull/707).
 Seven-day deletion, including Relic expedition saves, and the match/feedback repairs are present in
 main. The reusable server AppInbox now owns registered application mutations without game-specific
-product code. Both games now have automatic directory freshness. The current increment strengthens
-account replacement through shared auth notification delivery and visible logout/sign-in workflows.
+product code. Both games now have automatic directory freshness and account replacement through shared
+auth notification delivery and visible logout/sign-in workflows. The current increment consolidates
+queued cache delivery while preserving awaited observer completion and entry/refresh quiescence.
 
 ## Current foundation
 
@@ -108,6 +109,12 @@ expiry, transport teardown, and cleanup failures remain owned by the auth lifecy
 renewal and callback failures cannot remove a newer subscription or fail a completed transition.
 Both games verify Logout, replacement authentication, room creation, and reload through visible controls.
 
+Observable caches share a queued notifier separately from synchronous room/auth state publication.
+Each event captures its audience, awaits observers and reporting, and precedes the next event. The
+cache owner keeps refresh and entry lifetime policy: idle includes observer-started work and committed
+deletions; removed loaned entries cannot publish stale refreshes into a replacement. No compatibility
+aliases, migration paths, or application-specific cache behavior are retained.
+
 Temporary activities and persistent social or collaborative rooms need different retention policies.
 Define reconnect grace, hiding from discovery, archival, and permanent deletion separately. Do not
 purge every empty room under one platform-wide rule. Existing absolute expiry/purge fields do not
@@ -119,12 +126,12 @@ all-or-none admission decisions before it becomes a platform promise.
 
 ## Delivery priorities
 
-| Priority    | Outcomes                                                                                       |
-| ----------- | ---------------------------------------------------------------------------------------------- |
-| Current     | Preserve the current account through reentrant auth notifications and delayed session cleanup. |
-| Next        | Evaluate queued cache notification reuse while preserving awaited completion and `whenIdle`.   |
-| Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them.    |
-| Later       | Scheduled rooms (8) and a separate tournament capability.                                      |
+| Priority    | Outcomes                                                                                                                                                                                   |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Current     | Share queued cache notifications, preserve awaited completion, and close refresh/deletion idle gaps.                                                                                       |
+| Next        | Fix the observed Relic logout renderer disposal failure tracked in [#716](https://github.com/intact-software-systems/ar-eye-hunter/issues/716), with a visible logout/re-login regression. |
+| Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them.                                                                                                |
+| Later       | Scheduled rooms (8) and a separate tournament capability.                                                                                                                                  |
 
 Relic validation is a constraint throughout, not a dependency postponed to slice 9. Operator
 reliability work may ship independently where a concrete operational need warrants it. Freshness and

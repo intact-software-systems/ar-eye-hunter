@@ -1,5 +1,5 @@
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
-import { ObservableLatestRepository } from '@shared/cache/ObservableLatestRepository.ts';
+import { ObservableLatestRepository } from '@shared/cache/observable/observable-latest-repository.ts';
 import {
     ObservableValueEventType,
     type ObservableKeyedValueEvent
@@ -13,7 +13,14 @@ import {
     type WriteThroughObservableLatestRepositoryOptions
 } from '@shared/cache/store-backed/write-through-observable-latest-repository.ts';
 import { InMemoryPersistenceProvider } from '@shared/persistence/PersistenceProvider.ts';
-import { describe, expect, expectTypeOf, it, onTestFinished, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    expectTypeOf,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 /** The write paths both repositories share, each adding `key` when it is absent. */
 interface CappedRepository {

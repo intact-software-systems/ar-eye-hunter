@@ -1,5 +1,9 @@
-import { ObservableLatestValue } from '../../cache/ObservableLatestValue.ts';
-import type { ALStorageEventSink, ALStorageHealthState, ALStorageRecoveryOutcome } from './al-storage-event.ts';
+import { ObservableLatestValue } from '../../cache/observable/observable-latest-value.ts';
+import type {
+    ALStorageEventSink,
+    ALStorageHealthState,
+    ALStorageRecoveryOutcome
+} from './al-storage-event.ts';
 import type { ALStorageUnavailable } from './al-storage-unavailable.ts';
 
 export namespace ALStorageHealth {

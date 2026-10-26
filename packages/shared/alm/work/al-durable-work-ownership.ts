@@ -1,4 +1,4 @@
-import { ObservableLatestValue } from '../../cache/ObservableLatestValue.ts';
+import { ObservableLatestValue } from '../../cache/observable/observable-latest-value.ts';
 import type { ObservableValue } from '../../cache/RepositoryInterfaces.ts';
 import type { ALWorkCommittedRows } from './al-work-readiness-memory.ts';
 

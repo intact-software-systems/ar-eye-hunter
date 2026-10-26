@@ -27,7 +27,7 @@ import { toGroupMemberPolicy } from '@shared/api/group-lifecycle/to-normalized-g
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { computeStateSnapshotPages } from '@shared/api/state-snapshot-page.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
-import { ObservableLatestRepository } from '@shared/cache/ObservableLatestRepository.ts';
+import { ObservableLatestRepository } from '@shared/cache/observable/observable-latest-repository.ts';
 import { RateLimiterPolicy } from '@shared/resilience/rate-limiter.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
@@ -700,6 +700,7 @@ function makeGroupSnapshot(input: MakeGroupSnapshotInput): GroupSnapshot {
             principalId: `principal-${Math.floor(index / sessionsPerClient)}`,
             generationId: `generation-${index}`,
             generationVersion: 1,
+            connectionGenerationId: `generation-${Math.floor(index / sessionsPerClient)}-${index % sessionsPerClient}`,
             status: 'active',
             disconnectedAtEpochMs: null,
             disconnectReason: null,

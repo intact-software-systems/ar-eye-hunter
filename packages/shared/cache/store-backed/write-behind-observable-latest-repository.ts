@@ -1,7 +1,10 @@
 import { NEVER_EXPIRE_AT_TIMESTAMP, type PersistenceProvider } from '../../persistence/PersistenceProvider.ts';
 import { toError } from '../../resilience/to-error.ts';
-import { ObservableLatestRepository, type ObservableLatestRepositoryOptions } from '../ObservableLatestRepository.ts';
-import type { ObservableLatestValue } from '../ObservableLatestValue.ts';
+import {
+    ObservableLatestRepository,
+    type ObservableLatestRepositoryOptions
+} from '../observable/observable-latest-repository.ts';
+import type { ObservableLatestValue } from '../observable/observable-latest-value.ts';
 import {
     ObservableValueEventType,
     type ObservableKeyedValueEvent,
