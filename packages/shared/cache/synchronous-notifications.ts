@@ -50,17 +50,18 @@ export class SynchronousNotifications<T> {
         return subscription;
     }
 
-    /** Publishes to current registrations, stopping when a nested publication supersedes this one. */
-    publishLatest(event: T): void {
+    /** Returns false when nested publication or clear supersedes this value, so owners can stop related delivery. */
+    publishLatest(event: T): boolean {
         const publication = ++this.publicationGeneration;
         for (const [listener, registration] of [...this.listeners]) {
             if (this.publicationGeneration !== publication) {
-                return;
+                return false;
             }
             if (this.listeners.get(listener) === registration) {
                 this.notify(listener, event);
             }
         }
+        return this.publicationGeneration === publication;
     }
 
     capture(events: readonly T[]): SynchronousNotifications.Publication {

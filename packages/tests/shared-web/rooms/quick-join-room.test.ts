@@ -162,7 +162,7 @@ describe('Quick Join through the browser facade and HTTP workflow', () => {
 
     it.each(['initial-connect', 'connect', 'disconnect', 'member'] as const)('fences auth replacement during %s', async (stage) => {
         const { quickJoinRoom } = await import('@shared-web/browser/rooms/join-room.ts');
-        const { createRoomStateStore } = await import('@shared-web/browser/rooms/room-state-store.ts');
+        const { RoomStateStore } = await import('@shared-web/browser/rooms/room-state-store.ts');
         const { createRallarStateCacheReadPort } = await import('@shared-web/browser/state-cache/rallar-state-store.ts');
         const actual = await vi.importActual<typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts')>(
             '@shared-web/browser/rooms/room-group-state-workflows.ts'
@@ -197,7 +197,7 @@ describe('Quick Join through the browser facade and HTTP workflow', () => {
             }
             return json(isSelection(call) ? { status: 'joined', snapshot: connected } : connected);
         });
-        const stateStore = createRoomStateStore({
+        const stateStore = new RoomStateStore({
             runtime: {
                 currentRoomRef: () => current?.group,
                 setCurrentRoom: (snapshot) => {

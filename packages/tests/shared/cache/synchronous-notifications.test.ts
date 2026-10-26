@@ -192,3 +192,22 @@ it('preserves committed captured events when live registrations are cleared', ()
     committed.publish();
     expect(delivered).toEqual(['committed']);
 });
+
+it('reports supersession by the final listener so an owner can stop related publication', () => {
+    const notifications = new SynchronousNotifications<string>(() => {});
+    const results: boolean[] = [];
+    notifications.subscribe((state) => {
+        if (state === 'old') {
+            results.push(notifications.publishLatest('new'));
+        }
+    });
+    results.push(notifications.publishLatest('old'));
+    expect(results).toEqual([true, false]);
+});
+
+it('reports clearing by the final listener as supersession', () => {
+    const notifications = new SynchronousNotifications<string>(() => {});
+    notifications.subscribe(() => notifications.clear());
+    expect(notifications.publishLatest('obsolete')).toBe(false);
+    expect(notifications.publishLatest('no observers')).toBe(true);
+});

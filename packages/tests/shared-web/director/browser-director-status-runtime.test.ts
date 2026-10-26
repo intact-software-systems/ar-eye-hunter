@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { BrowserDirectorStatusRuntime } from '@shared-web/browser/director/browser-director-status-runtime.ts';
 import type { RallarDirectorStatus } from '@shared-web/browser/director/rallar-director-facade.ts';
-import { createRoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
+import { RoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
 import type { RallarStateCacheReadPort } from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -184,7 +184,7 @@ describe('director status observation before connection', () => {
 });
 
 function createStatusRuntime(cache: DirectorStatusCache, restoredSession: AuthSession | undefined): BrowserDirectorStatusRuntime {
-    const roomStateStore = createRoomStateStore({
+    const roomStateStore = new RoomStateStore({
         runtime: {
             currentRoomRef: () => undefined,
             setCurrentRoom: () => {},
