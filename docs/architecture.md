@@ -119,8 +119,16 @@ Directory and Quick Join share one listing reader. Hiding invalidates the next c
 read and prevents a stale Quick Join candidate from committing. It does not revoke membership or
 presence. A scoped link still enters through ordinary admission. Both games discover public rooms
 through scoped safe directory summaries and keep those summaries separate from member snapshots.
-Relic paginates and deduplicates directory results, retains visibly stale results after failure, and
-fences obsolete request and session responses. Listing is not access control.
+The optional `browser/rallar-room-directory.ts` entry exposes `RallarRoomDirectory`, which both games
+use for complete paginated reads and scoped deduplication. It composes shared `SingleFlight`,
+`startRepeating`, and injected timers. Authenticated foreground/online observers read immediately,
+then wait 30 seconds after completion; manual refresh resets that interval. Hidden/offline transitions
+abort automatic work, and returning refreshes immediately. Session/query changes and disposal abort
+and fence obsolete reads. A failure retains the complete previous list with visible error state.
+
+Automatic directory reads call only `rooms.directory`. Explicit full room refresh remains an app
+action and owns its separate current-room guard. Existing HTTP private revalidation is reused without
+an app-owned ETag cache; 304 does not promise less database work. Listing is not access control.
 
 ## Temporary retention is a separate group-state capability
 
@@ -246,8 +254,8 @@ to and invites one adapter to write another feature's tables.
 `packages/shared-web/browser/rallar.ts` is the canonical browser object for an
 app that uses several Rallar surfaces. Apps that need a smaller bundle use a
 narrow entry: `rallar-core.ts`, `rallar-realtime.ts`, `rallar-messages.ts`,
-`rallar-data.ts`, `rallar-crdt.ts`, `rallar-media-calls.ts`, or
-`rallar-room-entry.ts`.
+`rallar-data.ts`, `rallar-crdt.ts`, `rallar-media-calls.ts`,
+`rallar-room-entry.ts`, or `rallar-room-directory.ts`.
 
 The refused alternatives are a second aggregate facade, or making feature
 controllers import the aggregate entry. Controllers depend inward. Room-scoped

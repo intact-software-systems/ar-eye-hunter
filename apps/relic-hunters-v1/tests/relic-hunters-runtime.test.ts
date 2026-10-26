@@ -13,6 +13,7 @@ import {
 import { waitForSettledRead } from '@shared-web/browser/connection/wait-for-settled-read.ts';
 import { BrowserRallarSubscriptionScope } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import { createRallarDataFacade } from '@shared-web/browser/rallar-data.ts';
+import { RallarRoomDirectory } from '@shared-web/browser/rallar-room-directory.ts';
 import { RallarRecentRooms, RallarRoomEntry } from '@shared-web/browser/rallar-room-entry.ts';
 import type {
     RallarAuthChangeListener,
@@ -192,12 +193,28 @@ describe('RelicHuntersRuntime', () => {
         await runtime.start();
         expect(runtime.getState().directory).toEqual({ status: 'ready', entries: [first, second], error: undefined });
         expect(requests).toEqual([
-            { kind: 'room', q: 'relic hunters', limit: 50 },
-            { kind: 'room', q: 'relic hunters', limit: 50, cursor: 'next-page' }
+            { kind: 'room', q: 'relic hunters', limit: 50, includeEmpty: false, order: 'online-members' },
+            { kind: 'room', q: 'relic hunters', limit: 50, includeEmpty: false, order: 'online-members', cursor: 'next-page' }
         ]);
         expect(runtime.getState().rooms).toEqual([]);
         expect(runtime.getState().snapshot).toBeUndefined();
         expect(backend.reads).toEqual([]);
+    });
+
+    it('refreshes public discovery automatically without adopting a room or changing the expedition', async () => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = startRuntime(backend);
+        await runtime.start();
+        const snapshot = runtime.getState().snapshot;
+        backend.listDirectory = async () => ({ entries: [directoryEntry('new-room')], nextCursor: null });
+        backend.refreshRooms = async () => stateFor('must-not-adopt');
+        await backend.timers.advance(30_000);
+        expect(runtime.getState().directory.entries.map((entry) => entry.groupRef.groupId)).toEqual(['new-room']);
+        expect(runtime.getState().roomId).toBe('room-1');
+        expect(runtime.getState().snapshot).toBe(snapshot);
+        backend.listDirectory = async () => ({ entries: [], nextCursor: null });
+        await backend.timers.advance(30_000);
+        expect(runtime.getState().directory.entries).toEqual([]);
     });
 
     it('retains directory entries on failure and recovers to a successfully empty directory', async () => {
@@ -217,30 +234,30 @@ describe('RelicHuntersRuntime', () => {
         expect(runtime.getState().directory).toEqual({ status: 'ready', entries: [], error: undefined });
     });
 
-    it.each(['success', 'failure'] as const)('ignores an older directory %s after a newer refresh completes', async (outcome) => {
+    it('coalesces overlapping reads and admits a fresh directory refresh after completion', async () => {
         const backend = new RelicRuntimeBackend();
         const runtime = startRuntime(backend);
         await runtime.start();
-        expect(runtime.getState().directory.status).toBe('ready');
         const readStarted = Promise.withResolvers<void>();
-        const oldRead = Promise.withResolvers<GroupDirectoryPage>();
+        const read = Promise.withResolvers<GroupDirectoryPage>();
+        let requests = 0;
         backend.listDirectory = () => {
+            requests += 1;
             readStarted.resolve();
-            return oldRead.promise;
+            return read.promise;
         };
-        const older = runtime.getState().refreshRooms();
+        const first = runtime.getState().refreshRooms();
         await readStarted.promise;
-        const latest = directoryEntry('latest');
-        backend.listDirectory = async () => ({ entries: [latest], nextCursor: null });
+        const second = runtime.getState().refreshRooms();
+        await Promise.resolve();
+        expect(requests).toBe(1);
+        const listed = directoryEntry('listed');
+        read.resolve({ entries: [listed], nextCursor: null });
+        await Promise.all([first, second]);
+        expect(runtime.getState().directory.entries).toEqual([listed]);
+        backend.listDirectory = async () => ({ entries: [], nextCursor: null });
         await runtime.getState().refreshRooms();
-        if (outcome === 'success') {
-            oldRead.resolve({ entries: [directoryEntry('obsolete')], nextCursor: null });
-        }
-        else {
-            oldRead.reject(new Error('The old directory request failed'));
-        }
-        await older;
-        expect(runtime.getState().directory).toEqual({ status: 'ready', entries: [latest], error: undefined });
+        expect(runtime.getState().directory).toEqual({ status: 'ready', entries: [], error: undefined });
     });
 
     it('discards a pending directory response when the account signs out', async () => {
@@ -556,8 +573,21 @@ class RelicRuntimeBackend implements RelicHuntersRuntime.Dependencies {
     private readonly snapshotListeners = new Set<(event: RelicServerEvent) => void>();
     public readonly roomEntry: RallarRoomEntry;
     public readonly recentRooms: RallarRecentRooms;
+    public readonly directory: RallarRoomDirectory;
 
     public constructor() {
+        this.directory = new RallarRoomDirectory({
+            auth: { session: () => this.session, onChange: (listener) => this.onAuthChange(listener) },
+            rooms: { directory: (request) => this.listDirectory(request) },
+            timers: this.timers,
+            activity: { isActive: () => true, onChange: () => () => undefined }
+        }, {
+            scope: { applicationId: 'rallar-server', workspaceId: 'default' },
+            request: { kind: 'room', q: 'relic hunters', limit: 50, includeEmpty: false, order: 'online-members' },
+            refreshIntervalMs: 30_000,
+            timeoutMs: 10_000,
+            maxAttempts: 1
+        });
         const storage = new Map<string, string>();
         this.roomEntry = new RallarRoomEntry({
             auth: { session: () => this.session, onChange: (listener) => this.onAuthChange(listener) },

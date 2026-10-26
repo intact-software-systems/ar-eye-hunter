@@ -32,8 +32,9 @@ Recovery and recent-room navigation were delivered in
 [PR #706](https://github.com/intact-software-systems/ar-eye-hunter/pull/706) delivered temporary-room
 retention and guarded archival. Production Quick Join verification exposed a deployment mismatch
 and database latency, repaired in merged [PR #707](https://github.com/intact-software-systems/ar-eye-hunter/pull/707).
-The current increment implements seven-day deletion including Relic expedition saves as selected by
-the maintainer, and fixes the match/feedback defects exposed by two-player production click testing.
+Seven-day deletion, including Relic expedition saves, and the match/feedback repairs are present in
+main. The reusable server AppInbox now owns registered application mutations without game-specific
+product code. The current increment delivers automatic directory freshness in both games.
 
 ## Current foundation
 
@@ -113,8 +114,8 @@ all-or-none admission decisions before it becomes a platform promise.
 
 | Priority    | Outcomes                                                                                    |
 | ----------- | ------------------------------------------------------------------------------------------- |
-| Current     | Seven-day deletion with Relic save fencing and verified two-player gameplay (6).            |
-| Next        | Automatic directory freshness (7), introducing push when the experience needs it.           |
+| Current     | Automatic foreground directory freshness in both games (7).                                 |
+| Next        | Evaluate freshness and participation evidence before selecting further social capabilities. |
 | Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them. |
 | Later       | Scheduled rooms (8) and a separate tournament capability.                                   |
 
@@ -271,7 +272,7 @@ increment: explicit temporary creation with a default ten-minute reconnect grace
 and archival after guarded inactivity observations.
 Existing rooms and omitted creation intent stay persistent. The maintainer selected this temporary
 default for both games and seven days of archived retention before deletion. Archival preserves
-records. The next increment deletes temporary rooms exactly seven days after archival, including
+records. Maintenance now deletes temporary rooms once seven archived days have elapsed, including
 platform memberships, presence, room-owned lifecycle records, and the exact Relic expedition save.
 Audit and idempotency/replay evidence keep their existing retention. Persistent rooms and unrelated
 application data remain outside this policy. Fence every Relic save writer and room recreation
@@ -283,9 +284,17 @@ Corrupt-row isolation belongs to operator reliability in slice 9, not this recov
 
 ## Slice 7: fresh discovery and social context
 
-Start with deliberate automatic refresh and measured freshness needs. If push is justified, send safe
-workspace-scoped directory updates over existing state sync, including removals when visibility
-changes, and recover missed updates with conditional pull. Do not hydrate full group snapshots.
+Both games now consume one shared browser directory lifecycle. An authenticated foreground/online
+observer refreshes immediately and 30 seconds after a completed refresh. Manual Refresh coalesces
+with pending work and resets the interval. Hidden/offline observers pause, then refresh on return.
+Complete paginated results replace the list atomically; failures retain visibly stale entries.
+Account/query replacement and disposal cancel and fence old work. These reads never adopt a room,
+hydrate membership snapshots, or change application participation.
+
+The pull interval is an operational default, not a production freshness guarantee. Measure request
+cost, visibility transitions, discovery-to-participation time, and user needs before adding push.
+If justified, send safe workspace-scoped directory updates over existing state sync, including
+visibility removals, and recover missed updates with conditional pull.
 
 `rallar.people` provides known people and presence. Define friendship, consent, and room-location
 visibility before showing “friends here”; presence alone does not establish a friend relationship.

@@ -39,6 +39,12 @@ admins can list them again without changing membership. Listing does not bypass 
 or lifecycle admission rules. Private rooms stay outside the open directory regardless of listing. A link identifies its application,
 workspace, and room; an invite-only link still requires an account invitation.
 
+Both games refresh public room discovery automatically while signed in, visible, and online.
+They refresh on returning to the foreground and then wait 30 seconds after each completed refresh.
+Manual Refresh remains available; a failed refresh labels the last complete list as stale. Discovery
+never changes the selected room or joins an activity. Browser suspension, slow requests, and network
+failures can delay fresh results.
+
 Guests keep the intended destination through sign-in and tab reload. They can
 correct a rejected code, retry, cancel, or open a newer invitation. Successful
 entry discards the saved code and associates the return destination with that

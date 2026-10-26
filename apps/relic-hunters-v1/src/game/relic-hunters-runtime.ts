@@ -9,6 +9,7 @@ import {
     type RelicRoundTransitionEvent,
     type RelicServerEvent
 } from '@relic-hunters/mod.ts';
+import type { RallarRoomDirectory } from '@shared-web/browser/rallar-room-directory.ts';
 import type { RallarRecentRooms, RallarRoomEntry } from '@shared-web/browser/rallar-room-entry.ts';
 import type {
     ALDeliveryState,
@@ -25,11 +26,6 @@ import type {
 } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
-import type {
-    GroupDirectoryEntry,
-    GroupDirectoryPage,
-    GroupDirectoryRequest
-} from '@shared/api/group-directory/group-directory-types.ts';
 import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
     createRallarAiFunnyRoomName,
@@ -151,6 +147,7 @@ export namespace RelicHuntersRuntime {
     export interface Dependencies {
         readonly roomEntry: RallarRoomEntry;
         readonly recentRooms: RallarRecentRooms;
+        readonly directory: RallarRoomDirectory;
         readonly timers: Timers;
         restoreSession(): AuthSession | undefined;
         start(options: RallarStartOptions): Promise<Pick<RallarStartResult, 'session' | 'connected' | 'roomState'>>;
@@ -161,7 +158,6 @@ export namespace RelicHuntersRuntime {
         onAuthChange(listener: RallarAuthChangeListener): RallarUnsubscribe;
         roomState(): RallarRoomState;
         refreshRooms(): Promise<RallarRoomState>;
-        listDirectory(request: GroupDirectoryRequest): Promise<GroupDirectoryPage>;
         waitForPresence(roomId: string, options: RallarRoomPresenceWaitOptions): Promise<RallarRoomPresenceWaitResult>;
         onRoomsChange(handler: (state: RallarRoomState) => void): RallarUnsubscribe;
         onSnapshotMessage(handler: (event: RelicServerEvent) => void): RallarUnsubscribe;
@@ -183,12 +179,6 @@ export namespace RelicHuntersRuntime {
         resetGame(roomId: string): Promise<RelicPublicSnapshot | undefined>;
     }
 
-    export interface Directory {
-        readonly status: 'idle' | 'loading' | 'ready' | 'error';
-        readonly entries: readonly GroupDirectoryEntry[];
-        readonly error: string | undefined;
-    }
-
     export interface Connection {
         readonly roomEntry: RallarRoomEntry;
         readonly recentRooms: RallarRecentRooms;
@@ -198,7 +188,7 @@ export namespace RelicHuntersRuntime {
         readonly error: string | undefined;
         readonly roomId: string | undefined;
         readonly rooms: readonly RallarRoomSummary[];
-        readonly directory: Directory;
+        readonly directory: RallarRoomDirectory.State;
         readonly snapshot: RelicPublicSnapshot | undefined;
         readonly roundTransition: RelicRoundTransitionEvent | undefined;
         readonly lastHunterEvent: RelicHunterEvent | undefined;
@@ -241,7 +231,7 @@ export class RelicHuntersRuntime {
     private transport: RallarSubscriptionScope | undefined;
     private roomListeners: RallarSubscriptionScope | undefined;
     private snapshotRequest = 0;
-    private directoryRequest = 0;
+    private roomRefreshRequest = 0;
     private stopSnapshotRepair: (() => void) | undefined;
     private cancelRoundRepair: (() => void) | undefined;
     private stopRoundRepair: (() => void) | undefined;
@@ -401,12 +391,13 @@ export class RelicHuntersRuntime {
     private invalidateConnection(): void {
         this.generation++;
         this.snapshotRequest++;
-        this.directoryRequest++;
+        this.roomRefreshRequest++;
         this.bootstrap?.abort();
         this.bootstrap = undefined;
         this.connectionStarts.clear();
         this.transport?.unsubscribe();
         this.transport = undefined;
+        this.deps.directory.stop();
         this.roomListeners?.unsubscribe();
         this.roomListeners = undefined;
         this.stopSnapshotRepair?.();
@@ -477,7 +468,7 @@ export class RelicHuntersRuntime {
             this.adoptRoom(roomState, false);
             await this.completeBootstrap(attempt);
             if (this.current(attempt)) {
-                await this.refreshRooms(this.deps.roomState());
+                await this.deps.directory.start();
             }
         }
         catch (error) {
@@ -493,6 +484,11 @@ export class RelicHuntersRuntime {
     private installTransport(attempt: RelicHuntersRuntime.Attempt): void {
         this.transport = this.deps.subscriptions();
         this.transport
+            .add(this.deps.directory.onChange((directory) => {
+                if (this.current(attempt)) {
+                    this.publish({ directory });
+                }
+            }))
             .add(this.deps.onSnapshotMessage((event) => this.receiveSnapshot(attempt, event, 'rallar-ws')))
             .add(this.deps.onRtcSnapshotMessage((event) => this.receiveSnapshot(attempt, event, 'rallar-rtc')))
             .add(this.deps.onAuthoritySnapshotMessage((event) => this.receiveSnapshot(attempt, event, 'rallar-rtc')))
@@ -720,12 +716,14 @@ export class RelicHuntersRuntime {
         if (!attempt?.roomId || !snapshot || snapshot.roomId !== attempt.roomId) {
             return;
         }
-        void this.deps.publishRtcSnapshot(snapshot).catch((error) => this.snapshotRepairFailed(attempt, error));
+        void this.deps.publishRtcSnapshot(snapshot).catch((error) =>
+            this.snapshotRepairFailed(attempt, toError(error))
+        );
     }
 
-    private snapshotRepairFailed(attempt: RelicHuntersRuntime.Attempt, error: unknown): void {
+    private snapshotRepairFailed(attempt: RelicHuntersRuntime.Attempt, error: Error): void {
         if (this.current(attempt, true)) {
-            this.diagnose({ lastError: `RTC snapshot sync failed: ${toError(error).message}` });
+            this.diagnose({ lastError: `RTC snapshot sync failed: ${error.message}` });
         }
     }
 
@@ -799,41 +797,23 @@ export class RelicHuntersRuntime {
         }
     }
 
-    private async refreshRooms(knownRoomState?: RallarRoomState): Promise<void> {
+    private async refreshRooms(): Promise<void> {
         const attempt = this.attempt();
         if (!attempt) {
             return;
         }
-        const request = ++this.directoryRequest;
+        const request = ++this.roomRefreshRequest;
         this.publish({ directory: { ...this.connection.directory, status: 'loading', error: undefined } });
         try {
-            const state = knownRoomState ?? await this.deps.refreshRooms();
-            if (!this.current(attempt) || request !== this.directoryRequest) {
+            const state = await this.deps.refreshRooms();
+            if (!this.current(attempt) || request !== this.roomRefreshRequest) {
                 return;
             }
             this.adoptRoom(state, true);
-            const entries = new Map<string, GroupDirectoryEntry>();
-            let cursor: string | null = null;
-            do {
-                const page = await this.deps.listDirectory({
-                    kind: 'room',
-                    q: 'relic hunters',
-                    limit: 50,
-                    ...(cursor === null ? {} : { cursor })
-                });
-                if (!this.current(attempt) || request !== this.directoryRequest) {
-                    return;
-                }
-                for (const entry of page.entries) {
-                    entries.set(entry.groupRef.groupId, entry);
-                }
-                cursor = page.nextCursor;
-            }
-            while (cursor !== null);
-            this.publish({ directory: { status: 'ready', entries: [...entries.values()], error: undefined } });
+            await this.deps.directory.refresh();
         }
         catch (error) {
-            if (this.current(attempt) && request === this.directoryRequest) {
+            if (this.current(attempt) && request === this.roomRefreshRequest) {
                 this.publish({
                     directory: {
                         ...this.connection.directory,
@@ -871,8 +851,8 @@ export class RelicHuntersRuntime {
                 return undefined;
             }
             const admitted = this.deps.roomState().currentRoom;
-            if (!admitted || !isCreatedRoomCleanupFailure(error)) {
-                this.operationFailed(error);
+            if (!admitted || !isCreatedRoomCleanupFailure(toError(error))) {
+                this.operationFailed(toError(error));
                 throw error;
             }
             snapshot = admitted;
@@ -904,7 +884,7 @@ export class RelicHuntersRuntime {
         }
         catch (error) {
             if (this.current(attempt)) {
-                this.operationFailed(error);
+                this.operationFailed(toError(error));
             }
         }
     }
@@ -941,8 +921,8 @@ export class RelicHuntersRuntime {
         return true;
     }
 
-    private operationFailed(error: unknown): void {
-        const message = toError(error).message;
+    private operationFailed(error: Error): void {
+        const message = error.message;
         this.publish({ error: message });
         this.phase('error', { lastError: message });
     }
@@ -992,7 +972,7 @@ export class RelicHuntersRuntime {
             this.phase(result.phase, { ...result.patch, lastHydratedAtEpochMs: this.deps.timers.nowMs() });
         }
         catch (error) {
-            this.commandFailed(attempt, input, error);
+            this.commandFailed(attempt, input, toError(error));
         }
         finally {
             if (this.current(attempt, true) && this.connection.diagnostics.commandInFlight === key) {
@@ -1001,7 +981,7 @@ export class RelicHuntersRuntime {
         }
     }
 
-    private commandFailed(attempt: RelicHuntersRuntime.Attempt, input: RelicCommandDraft, error: unknown): void {
+    private commandFailed(attempt: RelicHuntersRuntime.Attempt, input: RelicCommandDraft, error: Error): void {
         if (!this.current(attempt, true)) {
             return;
         }
@@ -1052,8 +1032,8 @@ function sameSession(left: AuthSession | undefined, right: AuthSession): boolean
     return left?.sessionId === right.sessionId && left?.clientId === right.clientId;
 }
 
-function isCreatedRoomCleanupFailure(error: unknown): boolean {
-    return error instanceof Error && error.name === 'RallarRoomSwitchPartialFailureError' &&
+function isCreatedRoomCleanupFailure(error: Error): boolean {
+    return error.name === 'RallarRoomSwitchPartialFailureError' &&
         'operation' in error && error.operation === 'create-and-switch';
 }
 

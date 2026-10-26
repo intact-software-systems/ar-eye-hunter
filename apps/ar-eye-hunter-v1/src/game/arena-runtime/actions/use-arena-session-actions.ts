@@ -36,7 +36,6 @@ interface ArenaSessionActionsInput extends ArenaDirectoryActionsInput {
     readonly attemptDirectorAppointment: (source: DirectorAttemptSource) => Promise<void>;
     readonly clearRoomScopedArenaState: () => void;
     readonly connect: () => Promise<void>;
-    readonly connectionState: ArenaConnectionState;
     readonly directorAttemptRef: RefObject<DirectorAttemptState>;
     readonly directorStatusRef: RefObject<RallarDirectorStatus>;
     readonly isNetworkEnabled: () => boolean;

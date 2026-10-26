@@ -138,25 +138,17 @@ function useArenaDirectoryState() {
     const [openRooms, setOpenRooms] = useState<readonly GroupDirectoryEntry[]>([]);
     const [openRoomsStatus, setOpenRoomsStatus] = useState<ArenaConnection['openRoomsStatus']>('idle');
     const [openRoomsError, setOpenRoomsError] = useState<string | undefined>();
-    const directoryGenerationRef = useRef(0);
     const [directoryOrder, setDirectoryOrder] = useState<GroupDirectoryOrder>('online-members');
-    const directoryOrderRef = useRef<GroupDirectoryOrder>('online-members');
     const resetOpenRooms = useCallback(() => {
-        directoryGenerationRef.current += 1;
         setOpenRooms([]);
         setOpenRoomsStatus('idle');
         setOpenRoomsError(undefined);
-    }, []);
-    useEffect(() => () => {
-        directoryGenerationRef.current += 1;
     }, []);
     return {
         openRooms,
         openRoomsStatus,
         openRoomsError,
-        directoryGenerationRef,
         directoryOrder,
-        directoryOrderRef,
         setDirectoryOrder,
         setOpenRooms,
         setOpenRoomsStatus,

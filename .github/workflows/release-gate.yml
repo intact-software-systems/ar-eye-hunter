@@ -236,11 +236,12 @@ jobs:
             tests/playwright/relic-hunters/full-stack-private-room-entry.spec.ts \
             tests/playwright/relic-hunters/full-stack-http.spec.ts --trace=retain-on-failure
 
-      - name: Run Relic private feedback click regression
+      - name: Run Relic feedback and discovery click regressions
         if: ${{ matrix.game == 'relic' }}
         run: |
           npx playwright test --config apps/relic-hunters-v1/playwright.config.ts \
-            tests/playwright/relic-hunters/private-feedback.spec.ts --trace=retain-on-failure
+            tests/playwright/relic-hunters/private-feedback.spec.ts \
+            tests/playwright/relic-hunters/directory-freshness.spec.ts --trace=retain-on-failure
 
       - name: Upload game room failure evidence
         if: failure()

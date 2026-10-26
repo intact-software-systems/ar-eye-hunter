@@ -83,7 +83,7 @@ export function useRallarArena(): ArenaConnection {
     );
     const gameActions = useArenaGameActions(state, transport, publishMatchLifecycleOutput);
 
-    return readArenaConnectionView({ state, matchDelivery, presence, connectionActions, gameActions });
+    return toArenaConnectionView({ state, matchDelivery, presence, connectionActions, gameActions });
 }
 
 function useArenaPresence(state: ReturnType<typeof useArenaRuntimeState>) {
@@ -268,8 +268,6 @@ function useArenaConnectionActions(
         setOpenRooms: state.setOpenRooms,
         setOpenRoomsError: state.setOpenRoomsError,
         setOpenRoomsStatus: state.setOpenRoomsStatus,
-        directoryGenerationRef: state.directoryGenerationRef,
-        directoryOrderRef: state.directoryOrderRef,
         setDirectoryOrder: state.setDirectoryOrder,
         setRoomId: state.setRoomId,
         setRooms: state.setRooms,
@@ -338,7 +336,7 @@ function useArenaGameActions(
     return { presenceActions, combatActions, worldActions };
 }
 
-function readArenaConnectionView(input: ArenaConnectionViewInput): ArenaConnection {
+function toArenaConnectionView(input: ArenaConnectionViewInput): ArenaConnection {
     const { state, matchDelivery, presence, connectionActions, gameActions } = input;
     return {
         session: state.session,

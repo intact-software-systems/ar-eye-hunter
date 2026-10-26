@@ -127,7 +127,7 @@ export class RallarRoomDirectory {
             return this.flights.isInFlight(this.generation) ? this.refresh() : Promise.resolve();
         }
         this.subscriptions = new BrowserRallarSubscriptionScope();
-        this.sessionKey = this.readSessionKey();
+        this.sessionKey = this.resolveSessionKey();
         this.pageActive = this.dependencies.activity.isActive();
         this.subscriptions.add(
             this.dependencies.auth.onChange(() => this.authenticationChanged(), { emitCurrent: false })
@@ -145,8 +145,16 @@ export class RallarRoomDirectory {
         this.publish(this.settledState);
     }
 
-    public refresh(): Promise<void> {
-        const sessionKey = this.readSessionKey();
+    public async refresh(): Promise<void> {
+        this.stopRepeating?.();
+        this.stopRepeating = undefined;
+        const generation = this.generation;
+        await this.readCurrentDirectory();
+        this.scheduleAutomatic(generation);
+    }
+
+    private readCurrentDirectory(): Promise<void> {
+        const sessionKey = this.resolveSessionKey();
         if (!this.subscriptions || sessionKey === undefined || sessionKey !== this.sessionKey) {
             return Promise.resolve();
         }
@@ -159,7 +167,7 @@ export class RallarRoomDirectory {
         });
     }
 
-    public setRequest(request: RallarRoomDirectory.Request): Promise<void> {
+    public changeRequest(request: RallarRoomDirectory.Request): Promise<void> {
         if (sameDirectoryRequest(this.request, request)) {
             return Promise.resolve();
         }
@@ -168,7 +176,7 @@ export class RallarRoomDirectory {
     }
 
     private authenticationChanged(): void {
-        const sessionKey = this.readSessionKey();
+        const sessionKey = this.resolveSessionKey();
         if (sessionKey !== this.sessionKey) {
             this.sessionKey = sessionKey;
             void this.restart(true);
@@ -201,20 +209,24 @@ export class RallarRoomDirectory {
         this.controller = undefined;
     }
 
-    private async startAutomatic(): Promise<void> {
-        if (!this.subscriptions || !this.pageActive || this.sessionKey === undefined) {
-            return;
-        }
-        const generation = this.generation;
-        await this.refresh();
-        if (generation !== this.generation || !this.subscriptions || this.stopRepeating) {
+    private startAutomatic(): Promise<void> {
+        return this.subscriptions && this.pageActive && this.sessionKey !== undefined
+            ? this.refresh()
+            : Promise.resolve();
+    }
+
+    private scheduleAutomatic(generation: number): void {
+        if (
+            generation !== this.generation || !this.subscriptions || !this.pageActive ||
+            this.sessionKey === undefined || this.stopRepeating
+        ) {
             return;
         }
         this.stopRepeating = startRepeating({
             timers: this.dependencies.timers,
             intervalMs: this.config.refreshIntervalMs,
             firstRun: 'after-interval',
-            run: () => this.refresh()
+            run: () => this.readCurrentDirectory()
         });
     }
 
@@ -276,10 +288,10 @@ export class RallarRoomDirectory {
 
     private current(attempt: RallarRoomDirectory.Attempt): boolean {
         return this.subscriptions !== undefined && attempt.generation === this.generation &&
-            !attempt.controller.signal.aborted && this.readSessionKey() === attempt.sessionKey;
+            !attempt.controller.signal.aborted && this.resolveSessionKey() === attempt.sessionKey;
     }
 
-    private readSessionKey(): string | undefined {
+    private resolveSessionKey(): string | undefined {
         const session = this.dependencies.auth.session();
         return session ? toAuthSessionKey(session) : undefined;
     }

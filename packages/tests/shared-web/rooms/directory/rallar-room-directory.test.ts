@@ -101,6 +101,18 @@ describe('room directory freshness', () => {
         expect(browser.authListeners.size + browser.activityListeners.size).toBe(0);
     });
 
+    it('waits a full interval after manual completion before polling again', async () => {
+        const browser = new DirectoryBrowser();
+        await browser.directory.start();
+        await browser.timers.advance(25_000);
+        await browser.directory.refresh();
+        await browser.timers.advance(29_999);
+        expect(browser.requests).toHaveLength(2);
+        await browser.timers.advance(1);
+        expect(browser.requests).toHaveLength(3);
+        browser.directory.stop();
+    });
+
     it('deduplicates all pages and retains the complete result when a later page fails', async () => {
         const browser = new DirectoryBrowser();
         browser.readPage = async (request) =>
@@ -159,7 +171,7 @@ describe('room directory freshness', () => {
         await Promise.resolve();
         expect(browser.requests).toHaveLength(1);
         browser.readPage = async () => ({ entries: [room('measured')], nextCursor: null });
-        await browser.directory.setRequest({ ...QUERY, order: 'peer-rtt' });
+        await browser.directory.changeRequest({ ...QUERY, order: 'peer-rtt' });
         older.resolve({ entries: [room('obsolete')], nextCursor: 'old-next' });
         await Promise.all([starting, manual]);
         expect(browser.directory.getState().entries).toEqual([room('measured')]);
