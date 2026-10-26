@@ -70,6 +70,7 @@ test(
         await expect(page.locator('.profile-row strong')).toHaveText(replacementUsername);
         await expect(roomLink).toHaveValue(replacementRoomLink);
         await expect(page.getByRole('button', { name: /Join as/ })).toBeVisible();
+        await page.locator('.profile-row strong').scrollIntoViewIfNeeded();
         await page.screenshot({ path: testInfo.outputPath('replacement-account-expedition.png'), fullPage: true });
     }
 );

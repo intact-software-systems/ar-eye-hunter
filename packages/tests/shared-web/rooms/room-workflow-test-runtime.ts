@@ -2,6 +2,7 @@ import { vi } from 'vitest';
 
 import type { BrowserConnectedMiddleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { StateCacheChangeListener } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import {
@@ -16,8 +17,6 @@ import {
 
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
-const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
-
 type RoomGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');
 type RoomGroupStateMutationWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts');
 type RoomMembershipGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-membership-group-state-workflows.ts');
@@ -27,6 +26,8 @@ interface RoomSnapshotScopeFixture {
     readonly applicationId?: string;
     readonly workspaceId?: string;
 }
+
+const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
 
 const roomWorkflowMocks = await vi.hoisted(async () => {
     const { createDefaultApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
@@ -54,7 +55,7 @@ const roomWorkflowMocks = await vi.hoisted(async () => {
         transferStateGroupOwnership: vi.fn<RoomMembershipGroupStateWorkflowsModule['transferStateGroupOwnership']>(),
         hydrateStateCache: vi.fn<StateCacheLifecycleModule['browserStateCacheLifecycle']['hydrate']>(),
         onCacheChange: vi.fn<StateCacheLifecycleModule['browserStateCacheLifecycle']['onChange']>(),
-        readSession: vi.fn(() => context.session)
+        readSession: vi.fn<() => AuthSession | undefined>(() => context.session)
     };
 });
 
@@ -101,10 +102,14 @@ vi.mock(import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts
 }));
 
 vi.mock(import('@shared/api/auth.ts'), () => ({
-    clearSession: vi.fn(),
-    isLoggedIn: vi.fn(() => true),
+    clearSession: vi.fn(() => {
+        roomWorkflowMocks.readSession.mockReturnValue(undefined);
+    }),
+    isLoggedIn: vi.fn(() => roomWorkflowMocks.readSession() !== undefined),
     readSession: roomWorkflowMocks.readSession,
-    writeSession: vi.fn()
+    writeSession: vi.fn((session: AuthSession) => {
+        roomWorkflowMocks.readSession.mockReturnValue(session);
+    })
 }));
 
 vi.mock(import('@shared/repository/client-state-snapshots-repository.ts'), () => ({
@@ -152,75 +157,6 @@ export function resetRoomWorkflowTestRuntime(): void {
     resetRoomWorkflowEntryMocks();
     resetRoomWorkflowMutationMocks();
     resetRoomWorkflowCacheMocks();
-}
-
-function resetRoomWorkflowEntryMocks(): void {
-    roomWorkflowMocks.createAndJoinStateGroup.mockImplementation(async (input) => {
-        roomWorkflowMocks.operationLog.push(`create:${input.displayName}`);
-        throw new Error('create not mocked');
-    });
-    roomWorkflowMocks.joinStateGroup.mockImplementation(async (input) => {
-        roomWorkflowMocks.operationLog.push(`join:${input.groupId}`);
-        throw new Error('join not mocked');
-    });
-    roomWorkflowMocks.leaveStateGroup.mockImplementation(async (input) => {
-        roomWorkflowMocks.operationLog.push(`leave:${input.groupId}`);
-        throw new Error('leave not mocked');
-    });
-}
-
-function resetRoomWorkflowMutationMocks(): void {
-    roomWorkflowMocks.updateStateGroupDetails.mockImplementation(async () => {
-        throw new Error('update not mocked');
-    });
-    roomWorkflowMocks.updateStateGroupMetadata.mockImplementation(async () => {
-        throw new Error('metadata update not mocked');
-    });
-    roomWorkflowMocks.archiveStateGroup.mockImplementation(async () => {
-        throw new Error('archive not mocked');
-    });
-    roomWorkflowMocks.deleteStateGroup.mockImplementation(async () => {
-        throw new Error('delete not mocked');
-    });
-    roomWorkflowMocks.createStateGroupInvite.mockImplementation(async () => {
-        throw new Error('invite not mocked');
-    });
-    roomWorkflowMocks.acceptStateGroupInvite.mockImplementation(async () => {
-        throw new Error('accept invite not mocked');
-    });
-    roomWorkflowMocks.removeStateGroupMember.mockImplementation(async () => {
-        throw new Error('remove member not mocked');
-    });
-    roomWorkflowMocks.banStateGroupMember.mockImplementation(async () => {
-        throw new Error('ban member not mocked');
-    });
-    roomWorkflowMocks.unbanStateGroupMember.mockImplementation(async () => {
-        throw new Error('unban member not mocked');
-    });
-    roomWorkflowMocks.setStateGroupMemberRole.mockImplementation(async () => {
-        throw new Error('set role not mocked');
-    });
-    roomWorkflowMocks.transferStateGroupOwnership.mockImplementation(async () => {
-        throw new Error('transfer ownership not mocked');
-    });
-}
-
-function resetRoomWorkflowCacheMocks(): void {
-    roomWorkflowMocks.hydrateStateCache.mockImplementation(
-        async (input) => {
-            roomWorkflowMocks.operationLog.push(
-                `hydrate:${input.groupSnapshots.map((snapshot) => snapshot.group.groupId).join(',')}`
-            );
-            setGroupStateSnapshots(input.groupSnapshots);
-            await notifyCacheListeners(input.groupSnapshots);
-        }
-    );
-    roomWorkflowMocks.onCacheChange.mockImplementation((listener) => {
-        roomWorkflowMocks.cacheListeners.add(listener);
-        return () => {
-            roomWorkflowMocks.cacheListeners.delete(listener);
-        };
-    });
 }
 
 export function createRoomSnapshot(
@@ -299,6 +235,75 @@ export function rejectLeaveWith(error: Error): void {
 export async function publishRoomSnapshots(snapshots: readonly GroupSnapshot[]): Promise<void> {
     seedRoomSnapshots(snapshots);
     await notifyCacheListeners(snapshots);
+}
+
+function resetRoomWorkflowEntryMocks(): void {
+    roomWorkflowMocks.createAndJoinStateGroup.mockImplementation(async (input) => {
+        roomWorkflowMocks.operationLog.push(`create:${input.displayName}`);
+        throw new Error('create not mocked');
+    });
+    roomWorkflowMocks.joinStateGroup.mockImplementation(async (input) => {
+        roomWorkflowMocks.operationLog.push(`join:${input.groupId}`);
+        throw new Error('join not mocked');
+    });
+    roomWorkflowMocks.leaveStateGroup.mockImplementation(async (input) => {
+        roomWorkflowMocks.operationLog.push(`leave:${input.groupId}`);
+        throw new Error('leave not mocked');
+    });
+}
+
+function resetRoomWorkflowMutationMocks(): void {
+    roomWorkflowMocks.updateStateGroupDetails.mockImplementation(async () => {
+        throw new Error('update not mocked');
+    });
+    roomWorkflowMocks.updateStateGroupMetadata.mockImplementation(async () => {
+        throw new Error('metadata update not mocked');
+    });
+    roomWorkflowMocks.archiveStateGroup.mockImplementation(async () => {
+        throw new Error('archive not mocked');
+    });
+    roomWorkflowMocks.deleteStateGroup.mockImplementation(async () => {
+        throw new Error('delete not mocked');
+    });
+    roomWorkflowMocks.createStateGroupInvite.mockImplementation(async () => {
+        throw new Error('invite not mocked');
+    });
+    roomWorkflowMocks.acceptStateGroupInvite.mockImplementation(async () => {
+        throw new Error('accept invite not mocked');
+    });
+    roomWorkflowMocks.removeStateGroupMember.mockImplementation(async () => {
+        throw new Error('remove member not mocked');
+    });
+    roomWorkflowMocks.banStateGroupMember.mockImplementation(async () => {
+        throw new Error('ban member not mocked');
+    });
+    roomWorkflowMocks.unbanStateGroupMember.mockImplementation(async () => {
+        throw new Error('unban member not mocked');
+    });
+    roomWorkflowMocks.setStateGroupMemberRole.mockImplementation(async () => {
+        throw new Error('set role not mocked');
+    });
+    roomWorkflowMocks.transferStateGroupOwnership.mockImplementation(async () => {
+        throw new Error('transfer ownership not mocked');
+    });
+}
+
+function resetRoomWorkflowCacheMocks(): void {
+    roomWorkflowMocks.hydrateStateCache.mockImplementation(
+        async (input) => {
+            roomWorkflowMocks.operationLog.push(
+                `hydrate:${input.groupSnapshots.map((snapshot) => snapshot.group.groupId).join(',')}`
+            );
+            setGroupStateSnapshots(input.groupSnapshots);
+            await notifyCacheListeners(input.groupSnapshots);
+        }
+    );
+    roomWorkflowMocks.onCacheChange.mockImplementation((listener) => {
+        roomWorkflowMocks.cacheListeners.add(listener);
+        return () => {
+            roomWorkflowMocks.cacheListeners.delete(listener);
+        };
+    });
 }
 
 async function notifyCacheListeners(groups: readonly GroupSnapshot[]): Promise<void> {

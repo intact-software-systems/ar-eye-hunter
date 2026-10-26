@@ -71,6 +71,7 @@ test('switches accounts through Logout and keeps the replacement arena after rel
     await expect(operations.getByLabel('Account reference', { exact: true })).toHaveValue('bob');
     await expect(roomLink).toHaveValue(replacementRoomLink);
     await expect(operations.getByRole('button', { name: 'Logout', exact: true })).toBeVisible();
+    await operations.getByLabel('Account reference', { exact: true }).scrollIntoViewIfNeeded();
     await page.screenshot({ path: testInfo.outputPath('replacement-account-arena.png'), fullPage: true });
 });
 
