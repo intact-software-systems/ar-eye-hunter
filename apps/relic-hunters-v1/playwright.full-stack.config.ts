@@ -12,11 +12,10 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
     ...(fullStackEnabled
         ? [
             {
-                // The served /api/config names the public URLs the browser connects to; without them it names the
-                // API-v1 defaults on 8080, where nothing listens.
+                // The browser reaches both transports through Vite; 8090 is the internal server listen port.
                 command:
                     'cd ../relic-hunter-server-v1 && CORS_ORIGINS=http://localhost:5175,http://127.0.0.1:5175 PORT=8090 ' +
-                    'RALLAR_API_BASE_URL=http://127.0.0.1:8090 RALLAR_WS_BASE_URL=ws://127.0.0.1:8090 deno task start',
+                    'RALLAR_API_BASE_URL=http://127.0.0.1:5175 RALLAR_WS_BASE_URL=ws://127.0.0.1:5175 deno task start',
                 url: 'http://127.0.0.1:8090/api/config',
                 env: {
                     RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON: JSON.stringify([{
@@ -35,8 +34,7 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
         ]
         : []),
     {
-        command:
-            'cd ../.. && API_BASE_URL=http://127.0.0.1:8090 npm --workspace relic-hunters-v1 run dev -- --host 127.0.0.1',
+        command: 'cd ../.. && API_BASE_URL= npm --workspace relic-hunters-v1 run dev -- --host 127.0.0.1',
         url: 'http://127.0.0.1:5175',
         reuseExistingServer: false,
         timeout: 60_000

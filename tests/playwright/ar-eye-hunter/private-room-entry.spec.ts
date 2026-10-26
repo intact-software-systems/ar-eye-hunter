@@ -6,6 +6,52 @@ import {
 
 import { roomBrowserTest } from '../room-browser-fixture.ts';
 
+test(
+    'diagnoses a mismatched WebSocket host at login and recovers after configuration repair',
+    async ({ page }, testInfo) => {
+        test.skip(process.env.RALLAR_ARENA_FULL_STACK !== '1', 'Requires the local full-stack server.');
+        const transportAttempts: string[] = [];
+        page.on('request', (request) => {
+            if (request.url().includes('/api/auth/ws-ticket/requests/')) {
+                transportAttempts.push('ticket');
+            }
+        });
+        page.on('websocket', (socket) => {
+            if (new URL(socket.url()).pathname.startsWith('/api/ws/')) {
+                transportAttempts.push('socket');
+            }
+        });
+        await page.route('**/api/config', async (route) => {
+            const response = await route.fetch();
+            await route.fulfill({
+                response,
+                json: { ...await response.json(), wsBaseUrl: 'ws://unrelated.example.test' }
+            });
+        });
+        const operations = await openOperations(page, '/');
+        await signIn(page, 'alice');
+        const diagnostic = page.getByText(
+            'WebSocket host "unrelated.example.test" does not match API host "127.0.0.1:8080". ' +
+                'Check RALLAR_API_BASE_URL and RALLAR_WS_BASE_URL.',
+            { exact: true }
+        ).first();
+        await expect(diagnostic).toBeVisible();
+        expect(transportAttempts).toEqual([]);
+        await page.screenshot({ path: testInfo.outputPath('websocket-host-mismatch.png'), fullPage: true });
+
+        await page.unroute('**/api/config');
+        await page.reload();
+        await openOperationsPanel(page);
+        await expect(operations.getByRole('button', { name: 'New Arena', exact: true })).toBeEnabled();
+        await operations.getByRole('button', { name: 'New Arena', exact: true }).click();
+        await expect(operations.getByLabel('Room link', { exact: true })).toHaveValue(/#rallar-room\?/);
+        await expect(diagnostic).toHaveCount(0);
+        expect(transportAttempts).toContain('ticket');
+        expect(transportAttempts).toContain('socket');
+        await page.screenshot({ path: testInfo.outputPath('websocket-host-recovered.png'), fullPage: true });
+    }
+);
+
 test('keeps manual private-room entry through signed-out reload and allows cancellation', async ({ page }) => {
     const operations = await openOperations(page, '/');
     await operations.getByLabel('Room reference', { exact: true }).fill('friends-arena');

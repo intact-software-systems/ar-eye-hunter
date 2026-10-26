@@ -6,14 +6,20 @@ import { executeHttpRequest, type ApiRequestOptions } from '../api/http-request.
 import { decodeApiConfigResponse } from './decode-api-config-response.ts';
 
 export async function readApiConfig(options?: ApiRequestOptions): Promise<ApiConfigResponse> {
+    const apiBaseUrl = readApiBaseUrl();
+    const apiUrl = URL.parse(`${apiBaseUrl}/api/config`, globalThis.document?.baseURI ?? globalThis.location?.href);
+    if (apiUrl === null || (apiUrl.protocol !== 'http:' && apiUrl.protocol !== 'https:')) {
+        throw new Error('The configured Rallar API base URL is invalid.');
+    }
     const decoded = decodeApiConfigResponse(
         await executeHttpRequest<void, ApiJsonValue>(
-            readApiBaseUrl(),
+            apiBaseUrl,
             '/api/config',
             'GET',
             undefined,
             options
-        )
+        ),
+        apiUrl
     );
     if (decoded.left !== undefined) {
         throw new Error(decoded.left);
