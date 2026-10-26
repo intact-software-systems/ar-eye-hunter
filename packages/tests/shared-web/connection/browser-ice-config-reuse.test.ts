@@ -15,8 +15,16 @@ import * as stateSnapshots from '@shared-web/browser/state-read/refresh-state-sn
 import { clearSession, writeSession } from '@shared/api/auth.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
+import type { ApiConfigResponse } from '@shared/api/api-config.ts';
+
 import '../../setup-browser-indexeddb.ts';
 
+const apiConfiguration: ApiConfigResponse = {
+    apiBaseUrl: 'https://first.test',
+    wsBaseUrl: 'wss://first.test',
+    endpoints: { createWs: '/ws' },
+    serverPeerId: 'ice-fixture-server'
+};
 const session = { clientId: 'ice-client', sessionId: 'ice-session', username: 'test', accessToken: 'initial', expiresAtEpochMs: 1_000_000 };
 const options = {
     rtcCaptureConfiguration: { mode: 'off', origin: 'product-default' } as const,
@@ -45,7 +53,7 @@ beforeEach(() => {
     runtime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
     requests.length = 0;
     iceResponse = async () => Response.json({ iceServers: [], expiresAtEpochMs: 20_000 });
-    configResponse = async () => Response.json({ apiBaseUrl: 'https://first.test', wsBaseUrl: 'wss://first.test', endpoints: { createWs: '/ws' } });
+    configResponse = async () => Response.json(apiConfiguration);
     vi.stubGlobal('fetch', readResponse);
     vi.spyOn(JsonWebSocketClient.prototype, 'connect').mockResolvedValue();
     vi.spyOn(stateSnapshots, 'refreshStateSnapshots').mockResolvedValue({ clients: [], groups: [] });
@@ -201,7 +209,7 @@ describe('browser ICE configuration reuse', () => {
         const first = runtime.init(options);
         await entered.promise;
         configureApiClient({ apiBaseUrl: 'https://second.test' });
-        pending.resolve(Response.json({ apiBaseUrl: 'https://first.test', wsBaseUrl: 'wss://first.test', endpoints: { createWs: '/ws' } }));
+        pending.resolve(Response.json(apiConfiguration));
         await first;
         expect(requests.filter((request) => request.url.endsWith('/api/webrtc/ice')).map((request) => request.url)).toEqual([
             'https://first.test/api/webrtc/ice'

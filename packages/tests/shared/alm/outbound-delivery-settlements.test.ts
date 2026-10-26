@@ -49,8 +49,8 @@ const PREPARED: OutboundTestPayload = { kind: 'send' };
 const BACKEND_KINDS = ['memory', 'indexeddb'] as const;
 /** Short enough that the acknowledgement row falls due inside the test, long enough to stay valid. */
 const ACK_TIMEOUT_WINDOW_MS = 50;
-/** Past the row's own retention budget (`deadlineAtMs + timeoutMs * 101`), inside the message TTL. */
-const ACK_TIMEOUT_BUDGET_OVERSHOOT_MS = 8_000;
+/** Longer than 100 nominal retry windows, still inside the message's original deadline. */
+const ACK_TIMEOUT_DOWNTIME_MS = 8_000;
 
 afterEach(() => {
     vi.restoreAllMocks();
@@ -604,11 +604,10 @@ it.each(BACKEND_KINDS)('ends the attempt it started when the carrier throws over
 });
 
 /**
- * An `ack-timeout` row expires on the receipt's own retry budget, never on the message deadline, so
- * reaching that budget says nothing about the message. The owner's clock passes the row's budget
- * while the queue, on its own clock, still serves the row.
+ * A delayed timeout spends one actual retry, not every nominal window elapsed during downtime.
+ * The queue serves the due row on its own clock; the owner's advanced clock schedules the next one.
  */
-it('states no expiry when a row that expires on its own budget reaches it', async () => {
+it('retries an overdue receipt without expiring the message while attempts remain', async () => {
     const settlements: ALDeliverySettlement[] = [];
     const stores = createStores('memory');
     let ownerNowMs = Date.now();
@@ -629,15 +628,21 @@ it('states no expiry when a row that expires on its own budget reaches it', asyn
         sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
     });
 
-    await enqueueOutboundOrThrow(runtime, createOutboundMessage('msg-ack-timeout-budget'));
+    const message = createOutboundMessage('msg-ack-timeout-budget');
+    await enqueueOutboundOrThrow(runtime, message);
     expect(settlements.map((settlement) => settlement.kind)).toEqual(['attempt-started', 'attempt-settled']);
 
-    // The acknowledgement row falls due on the queue's clock; the owner's clock is past its budget.
+    // The timeout falls due on the queue's clock while the owner resumes after several windows.
     await new Promise((resolve) => setTimeout(resolve, ACK_TIMEOUT_WINDOW_MS + 30));
-    ownerNowMs = Date.now() + ACK_TIMEOUT_BUDGET_OVERSHOOT_MS;
+    ownerNowMs = Date.now() + ACK_TIMEOUT_DOWNTIME_MS;
     await runOutboundWorkTask(runtime);
 
-    expect(await peekOutboundWorkReadyAt(stores.workQueue, stores.admissionStore.namespace)).toBeUndefined();
+    expect(
+        await stores.admissionStore.readPendingAck({
+            originPeerId: message.id.senderId,
+            msgId: message.id.msgId
+        })
+    ).toMatchObject({ attempts: 1, maxAttempts: 100 });
     expect(settlements.map((settlement) => settlement.kind)).toEqual(['attempt-started', 'attempt-settled']);
 });
 

@@ -167,6 +167,37 @@ Deno.test(
                 }
             );
 
+            const rttGroup = topologyGroupSnapshotWithSessions({
+                groupRef,
+                ownerSessionId: authority.sessionId,
+                peerSessionId: 'peer-session',
+                nowEpochMs
+            });
+            const rtcRttInbox = new RtcRttInboxService(
+                {
+                    inboxQueueReader: inboxReader,
+                    resourceInboxRepository: resourceInbox.entries,
+                    resourceInboxResultsRepository: resourceResults,
+                    database: sql,
+                    groupStateService: groupState,
+                    mutationDependencies: {
+                        repository: new RtcRttRepository(runtime, { now: () => nowEpochMs }),
+                        outboxWriter: topologyOutboxWriter,
+                        readPolicyInputs: () =>
+                            Promise.resolve({
+                                candidateGroups: [rttGroup],
+                                overlaySnapshotsByGroupKey: new Map(),
+                                degreeLimit: 5
+                            })
+                    }
+                },
+                {
+                    finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+                    serviceId: 'pglite-app-inbox-topology',
+                    options: { nowEpochMs: Date.now }
+                }
+            );
+
             const first = toTopologyAppInboxCommand({
                 actor: { principalId: authority.clientId, sessionId: authority.sessionId },
                 groupRef,
@@ -481,36 +512,6 @@ Deno.test(
                     'code' in error && error.code === 'app-inbox-idempotency-conflict'
             );
 
-            const rttGroup = topologyGroupSnapshotWithSessions({
-                groupRef,
-                ownerSessionId: authority.sessionId,
-                peerSessionId: 'peer-session',
-                nowEpochMs
-            });
-            const rtcRttInbox = new RtcRttInboxService(
-                {
-                    inboxQueueReader: inboxReader,
-                    resourceInboxRepository: resourceInbox.entries,
-                    resourceInboxResultsRepository: resourceResults,
-                    database: sql,
-                    groupStateService: groupState,
-                    mutationDependencies: {
-                        repository: new RtcRttRepository(runtime, { now: () => nowEpochMs }),
-                        outboxWriter: topologyOutboxWriter,
-                        readPolicyInputs: () =>
-                            Promise.resolve({
-                                candidateGroups: [rttGroup],
-                                overlaySnapshotsByGroupKey: new Map(),
-                                degreeLimit: 5
-                            })
-                    }
-                },
-                {
-                    finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
-                    serviceId: 'pglite-app-inbox-topology',
-                    options: { nowEpochMs: Date.now }
-                }
-            );
             configureRttRepository({ ttlMs: 60_000 });
             configureSharedGraphRepositories({
                 graphs: { ttlMs: 60_000 },

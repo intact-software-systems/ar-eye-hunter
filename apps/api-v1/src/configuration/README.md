@@ -47,7 +47,7 @@ The configuration reader recognizes only these operational overrides:
   overrides that.
 - State API: `RALLAR_STATE_STRICT_READ_AUTH`.
 - Client sessions: `RALLAR_CLIENT_SESSION_DISCONNECTED_RETENTION_MS`.
-- Group: `RALLAR_GROUP_DEFAULT_MAX_MEMBERS`,
+- Group: `RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON`, `RALLAR_GROUP_DEFAULT_MAX_MEMBERS`,
   `RALLAR_GROUP_CURRENT_SNAPSHOT_CACHE_MAX_ENTRIES`,
   `RALLAR_GROUP_JOIN_ADMISSION_PRINCIPAL_RATE_LIMIT`,
   `RALLAR_GROUP_JOIN_ADMISSION_GROUP_RATE_LIMIT`,
@@ -62,7 +62,8 @@ The configuration reader recognizes only these operational overrides:
   `RALLAR_RTC_TOPOLOGY_RTT_REFINEMENT_MIN_INTERVAL_MS`,
   `RALLAR_RTC_TOPOLOGY_RTT_VIVALDI_DELTA_MS`, `RALLAR_RTC_TOPOLOGY_REPLAY`,
   `RALLAR_API_QUEUE_WORKERS`.
-- AppInbox and observability: `RALLAR_APP_INBOX_PHASE_TIMING`, `RALLAR_APP_INBOX_NEW_LANE_CONCURRENCY`,
+- AppInbox and observability: `RALLAR_APP_INBOX_MAX_ATTEMPTS`, `RALLAR_APP_INBOX_MAX_RETRY_DELAY_MS`,
+  `RALLAR_APP_INBOX_CONFLICT_MAX_RETRY_DELAY_MS`, `RALLAR_APP_INBOX_PHASE_TIMING`, `RALLAR_APP_INBOX_NEW_LANE_CONCURRENCY`,
   `RALLAR_APP_INBOX_NEW_LANE_HELD_ROWS`, `RALLAR_APP_INBOX_WAIT_MAX_ELAPSED_MS`,
   `RALLAR_APP_INBOX_WAIT_RETRY_INTERVAL_MS`, `RALLAR_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MS`,
   `RALLAR_APP_INBOX_WAIT_JITTER_RATIO`, `RALLAR_APP_INBOX_FINISHED_RETENTION_MS`, `RALLAR_TIMING_LOGS`.
@@ -72,6 +73,19 @@ The configuration reader recognizes only these operational overrides:
 - CRDT: `RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON`.
 - Black-box token issue: `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS`,
   `RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS`.
+
+`appInbox.retry` owns three restart-only positive integer limits: `maxAttempts` (20 by default,
+including the first delivery), `maxDelayMs` (30000 ms, the ordinary backoff base before ±20% jitter),
+and `conflictMaxDelayMs` (1200 ms, a final delay ceiling only for classified optimistic conflicts).
+The default conflict ceiling preserves the first 1000 ms backoff step including its positive jitter,
+then bounds later conflict delays. Operators can tune either delay limit for their workload.
+Both delay settings are bounded by the maximum supported durable window, 2592000000 ms (30 days),
+so jitter and timestamp addition stay within their supported numeric range.
+The corresponding environment overrides are listed above. Early backoff steps remain in force;
+ordinary failures use the configured base cap, and conflicts additionally cap the resulting delay.
+The attempt limit also governs work advertisement, claims and exhaustion recovery through the
+same QueueBox policy. Command expiry can stop work before the attempt limit. Outbox policies are
+independent and unchanged. Processes consuming the same AppInbox should use the same retry policy.
 
 These secrets are read separately and never belong in committed JSON:
 

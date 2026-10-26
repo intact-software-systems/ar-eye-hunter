@@ -1,17 +1,18 @@
 import assert from 'node:assert/strict';
 
 import type { PSqlQueueReleaseTiming } from '@shared-server/queuebox/postgres/p-sql-queue-release-timing.ts';
-import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
-import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
-import type { ALOutboundCapturedPolicyTiming } from '@shared/alm/outbound/admission/al-outbound-captured-policy-timing.ts';
-
 import type { ClientRestSnapshotReadSelector } from '@shared-server/rallar-system/client-state/snapshot/client-rest-snapshot-read-selector.ts';
 import type { GroupRestSnapshotReadSelector } from '@shared-server/rallar-system/group-state/snapshot/group-rest-snapshot-read-selector.ts';
 import { GroupStateCurrentSnapshotCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-current-snapshot-cache.ts';
 import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/rallar-middleware-runtime.ts';
 import type { RallarAlmReceiptDiagnosticsRecorder } from '@shared-server/rallar-system/observability/alm-receipt-diagnostics.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import type { AppInboxCompletionNoticeChannel } from '@shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.ts';
+import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 
+import type { ALOutboundCapturedPolicyTiming } from '@shared/alm/outbound/admission/al-outbound-captured-policy-timing.ts';
+
+import { createTestServerAppInbox } from '../../../../packages/tests/shared-server/rallar-server/create-test-server-app-inbox.ts';
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/client-state/test-disconnected-session-retention.ts';
 import type { ApiV1Runtime } from '../../src/composition/api-v1-runtime.ts';
@@ -114,6 +115,14 @@ Deno.test('enabled outbound composition provides captured-policy timing at the r
     assert.equal(typeof capabilities[0].createOwner('outbound').start, 'function');
 });
 
+Deno.test('runtime construction refuses an omitted room-owned catalog before any startup step', () => {
+    const events: string[] = [];
+    const input = createInput(events);
+    Reflect.deleteProperty(input, 'roomOwnedAppDataBindings');
+    assert.throws(() => constructApiV1Runtime(input, createOperations(events)), /room-owned|Room-owned/);
+    assert.deepEqual(events, []);
+});
+
 Deno.test('runtime construction preserves the owned startup sequence', () => {
     const events: string[] = [];
     const runtime = constructApiV1Runtime(
@@ -132,7 +141,7 @@ Deno.test('runtime construction preserves the owned startup sequence', () => {
         'resource-expiry',
         'runtime-state-expiry',
         'middleware',
-        'relic-services',
+        'register:app-inbox-stop',
         'attach-replay',
         'presence-reconciliation',
         'retention-reconciliation',
@@ -307,6 +316,7 @@ function createInput(events: string[]): CreateApiV1RuntimeInput {
         appInboxNewLaneHeldRows: 4,
         appInboxFinishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,
+        roomOwnedAppDataBindings: [],
         groupCapacity: { defaultMaxMembers: 10 },
         groupCurrentSnapshotCacheMaxEntries: 512,
         groupFormationRecomputeDebounceMs: 250,
@@ -350,10 +360,8 @@ const TEST_TOPOLOGY_DELIVERY: CreateApiV1RuntimeInput['topologyDelivery'] = {
 const RTC_STOP = () => Promise.resolve();
 const RETENTION_STOP = () => Promise.resolve();
 
-function createOperations(
-    events: string[],
-    failAt?: string
-): ApiV1RuntimeConstructionOperations {
+function createOperations(events: string[], failAt?: string): ApiV1RuntimeConstructionOperations {
+    const appInbox = createTestServerAppInbox();
     const record = (name: string): void => {
         events.push(name);
         if (name === failAt) {
@@ -361,6 +369,7 @@ function createOperations(
         }
     };
     return {
+        createAppInbox: () => appInbox,
         createMutationRuntime: () => {
             record('mutation');
             return MUTATION_RUNTIME;
@@ -380,11 +389,6 @@ function createOperations(
         createMiddleware: () => {
             record('middleware');
             return SHARED_RUNTIME;
-        },
-        createRelicServices: (input) => {
-            assert.equal(input.wsRuntimeName, 'ws-test');
-            record('relic-services');
-            return { relicGameMutations: {} as never, relicGameInboxService: {} as never };
         },
         startPresenceReconciliation: () => {
             record('presence-reconciliation');
@@ -421,8 +425,7 @@ function createBackgroundTasks(events: string[]): CreateApiV1RuntimeInput['backg
             };
         },
         register: (stop) => {
-            events.push(stop === RTC_STOP ? 'register:rtc-stop' : 'register:retention-stop');
-            assert.ok(stop === RTC_STOP || stop === RETENTION_STOP);
+            events.push(stop === RTC_STOP ? 'register:rtc-stop' : stop === RETENTION_STOP ? 'register:retention-stop' : 'register:app-inbox-stop');
             return () => {};
         },
         stop: () => Promise.resolve()

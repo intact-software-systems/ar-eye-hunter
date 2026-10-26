@@ -30,8 +30,10 @@ surfaces. They are documentation examples, not standalone apps.
 
 - [Server Middleware](./server-middleware/README.md): compose
   `createRallarMiddleware` and the server facade.
+- [Server application AppInbox](./server-app-inbox/README.md): register a non-game
+  mutation through the public server API, admit durable work and replay exact results.
 - [Server App Data](./server-app-data/README.md): persist app-owned server
-  state with fresh reads and optimistic update helpers.
+  state with typed fresh reads; incoming writes use AppInbox.
 - [Server Room Topics](./server-room-topics/README.md): validate, authorize,
   observe, transform, and fan out custom room-scoped WS topics.
 - [Server Authoritative Game](./server-authoritative-game/README.md): keep

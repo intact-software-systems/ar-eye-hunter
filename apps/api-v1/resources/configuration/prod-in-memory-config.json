@@ -3,11 +3,7 @@
     "productionHardening": false
   },
   "http": {
-    "corsOrigins": [
-      "https://ar-eye-hunter.pages.dev",
-      "https://blackbox.rallar.intactss.com",
-      "https://relic-hunters-v1.intact-software-systems.workers.dev"
-    ]
+    "corsOrigins": []
   },
   "publicApi": {
     "apiBaseUrl": "https://rallar-server-in-memory.intact-software-systems.deno.net",

@@ -1,7 +1,8 @@
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
-import { validateAppInboxCommandIdentity } from '../app-inbox-command-identity.ts';
-import { AppInboxIdempotencyConflictError, type AppInboxEnqueueInput } from '../app-inbox-contracts.ts';
+import { AppInboxCommandIdentityError, validateAppInboxCommandIdentity } from '../app-inbox-command-identity.ts';
+import type { AppInboxEnqueueInput } from '../app-inbox-contracts.ts';
 import type { AppInboxEntryRepository } from '../app-inbox-persistence-ports.ts';
 import {
     createAppInboxResourceEntry,
@@ -11,6 +12,10 @@ import {
 import type { AppInboxResultWaiter } from './app-inbox-result-waiter.ts';
 
 export namespace AppInboxReservationClient {
+    export interface Reservation extends AppInboxResultWaiter.Wait {
+        readonly entry: ResourceEntry;
+    }
+
     export interface Repository extends Pick<AppInboxEntryRepository, 'writeMaterializedIfAbsentOrReplaceExpired'> {}
 
     export interface Dependencies {
@@ -41,7 +46,7 @@ export class AppInboxReservationClient {
     async reserveMaterializedEntry(
         placeholder: AppInboxEnqueueInput,
         materialize: () => Promise<AppInboxEnqueueInput>
-    ): Promise<AppInboxResultWaiter.Wait> {
+    ): Promise<AppInboxReservationClient.Reservation> {
         let winner = false;
         const entry = await this.repository.writeMaterializedIfAbsentOrReplaceExpired(
             createAppInboxResourceEntry(placeholder, `${this.serviceId}:fact-reservation`, this.entryCreation),
@@ -52,13 +57,10 @@ export class AppInboxReservationClient {
         );
         const validation = validateAppInboxCommandIdentity(entry);
         if (!validation.valid) {
-            throw new AppInboxIdempotencyConflictError(
-                entry.key.resourceId,
-                'invalid-existing-command',
-                'invalid-received-command'
-            );
+            throw new AppInboxCommandIdentityError('corrupt');
         }
         return {
+            entry,
             enqueue: validation.command,
             key: entry.key,
             winner

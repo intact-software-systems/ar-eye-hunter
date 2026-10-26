@@ -19,6 +19,12 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
                     'RALLAR_API_BASE_URL=http://127.0.0.1:8090 RALLAR_WS_BASE_URL=ws://127.0.0.1:8090 deno task start',
                 url: 'http://127.0.0.1:8090/api/config',
                 env: {
+                    RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON: JSON.stringify([{
+                        applicationId: 'rallar-server',
+                        workspaceId: 'default',
+                        namespace: 'relic-hunter-v1',
+                        storeName: 'relic-hunter-games'
+                    }]),
                     RALLAR_AUTH_CREDENTIAL_SECRET: randomUUID(),
                     RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET: randomUUID(),
                     RALLAR_LOGIN_USER_RATE_LIMIT: '100'

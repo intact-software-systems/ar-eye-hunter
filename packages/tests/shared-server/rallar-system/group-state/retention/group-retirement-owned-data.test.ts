@@ -49,7 +49,12 @@ describe('transactional deletion of room-owned rows', () => {
         const foreignLatch = await seedLatch(fixture, foreignRef);
         const retention = new GroupRetentionService({
             repository: fixture.repository,
-            groupOwnedAppData: new RoomOwnedAppData(appData, [{ ...RETENTION_REF, ...own }])
+            groupOwnedAppData: new RoomOwnedAppData(appData, [{
+                applicationId: RETENTION_REF.applicationId,
+                workspaceId: RETENTION_REF.workspaceId,
+                namespace: own.namespace,
+                storeName: own.storeName
+            }])
         }, { serviceId: 'test', now: () => fixture!.nowEpochMs });
         const ingress = retention.capture({ groupRef: RETENTION_REF, requestId: 'delete-owned', observedAtEpochMs: fixture.nowEpochMs });
         const read = await retention.read(ingress, 1);
@@ -69,7 +74,12 @@ describe('transactional deletion of room-owned rows', () => {
         const appData = new PSqlAppDataRepository(fixture.storage.sql);
         const key = { namespace: 'room-game', storeName: 'saves', key: RETENTION_REF.groupId };
         await appData.insertIfAbsent({ ...key, value: { turn: 1 }, schemaVersion: 1, expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
-        const owned = new RoomOwnedAppData(appData, [{ ...RETENTION_REF, ...key }]);
+        const owned = new RoomOwnedAppData(appData, [{
+            applicationId: RETENTION_REF.applicationId,
+            workspaceId: RETENTION_REF.workspaceId,
+            namespace: key.namespace,
+            storeName: key.storeName
+        }]);
         const retention = new GroupRetentionService({ repository: fixture.repository, groupOwnedAppData: owned }, {
             serviceId: 'test',
             now: () => fixture!.nowEpochMs

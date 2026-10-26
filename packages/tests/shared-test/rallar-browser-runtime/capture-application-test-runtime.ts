@@ -36,18 +36,20 @@ import * as connectionHttp from '@shared-web/browser/connection/connection-http-
 
 import * as heartbeat from '@shared-web/browser/session/browser-session-heartbeat.ts';
 import * as snapshots from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
+import type { ApiConfigResponse } from '@shared/api/api-config.ts';
 import * as auth from '@shared/api/auth.ts';
 
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
-import { createRallarBlackBoxControlService } from '../../../../apps/rallar-black-box-control-server/src/control-service.ts';
+import { createRallarBlackBoxControlService, type RallarBlackBoxControlService } from '../../../../apps/rallar-black-box-control-server/src/control-service.ts';
 import { toDistributedRunRollup } from '../../../../apps/rallar-black-box-control-server/src/distributed/distributed-run-evaluation.ts';
 import '../../setup-browser-indexeddb.ts';
 
 import { installFakeBroadcastChannelPerTest } from '../../shared-web/data/rallar-data-test-runtime.ts';
 import { SimulatedWebSocket } from '../../shared/native-websocket-fixture.ts';
 
-export const CAPTURE_APPLICATION_API_CONFIG = {
+export const CAPTURE_APPLICATION_API_CONFIG: ApiConfigResponse = {
+    serverPeerId: 'server',
     apiBaseUrl: 'https://test.invalid',
     wsBaseUrl: 'wss://test.invalid',
     endpoints: { createWs: '/ws' }
@@ -115,7 +117,7 @@ export function createCaptureApplicationRuntime(
     return { events, facade, page, targetWindow, runtime: createDefaultRallarBlackBoxBrowserTestRuntime({ rallarRuntime: createSpaBrowserRallarRuntime() }) };
 }
 
-export function createCaptureController() {
+export function createCaptureController(): RallarBlackBoxControlService {
     return createRallarBlackBoxControlService({
         dependencies: {
             now: () => 1_000,

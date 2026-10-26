@@ -16,7 +16,7 @@ test('Relic HTTP commands preserve identity, replay, round progression and room 
         '-A',
         'packages/shared-test/black-box-runner/scenario-black-box.ts',
         '-c',
-        'packages/shared-test/black-box-runner/tests/relic/relic-game-idempotency.json',
+        'apps/relic-hunter-server-v1/test/recipes/relic-game-idempotency.json',
         '--artifact-dir',
         artifacts
     ], {

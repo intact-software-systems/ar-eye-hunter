@@ -37,6 +37,7 @@ import {
     type ResourceInboxObservedReplacement
 } from './replace-observed-resource-inbox-entry.ts';
 import { requeueObservedResourceInboxDeliveryFailure } from './requeue-observed-resource-inbox-delivery-failure.ts';
+import { resolveResourceInboxWorkPosition } from './resolve-resource-inbox-work-position.ts';
 import {
     parseTemporalPlainDateTime,
     rowsToMap,
@@ -63,6 +64,11 @@ interface ClaimedResourceInboxRow extends ResourceInboxRow {
 }
 
 export namespace PSqlResourceInboxReservationRepository {
+    export interface WorkPosition {
+        readonly createdAt: string;
+        readonly rowId: bigint;
+    }
+
     export interface ReservationSelection {
         readonly typeIds: ReadonlySet<string>;
         readonly statusIds: ReadonlySet<EntityStatus>;
@@ -93,11 +99,6 @@ export namespace PSqlResourceInboxReservationRepository {
         readonly observedRowIds?: readonly string[];
         /** Lapsed reservations of these contexts are not reclaimed. */
         readonly excludedContextIds: ReadonlySet<string>;
-    }
-
-    export interface WorkPosition {
-        readonly createdAt: string;
-        readonly rowId: bigint;
     }
 }
 
@@ -170,14 +171,14 @@ export class PSqlResourceInboxReservationRepository {
     ): Promise<Map<string, ResourceEntry> | PSqlResourceInboxReservationRepository.ReservationObservationResult> {
         const { typeIds, statusIds, reservationInput, contextClaim } = claim;
         const capture = 'reservationObservation' in claim;
-        const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
+        const { maxToReserve, maxAttempts, allowedTopicIds } = toResourceInboxReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
         if (typeIds.size === 0 || statusIds.size === 0 || maxToReserve === 0) {
             return capture ? { entries: new Map(), observations: [] } : new Map();
         }
-        const eligibility = { typeIds: [...typeIds], statusIds: [...statusIds], maxAttempts };
+        const eligibility = { typeIds: [...typeIds], statusIds: [...statusIds], maxAttempts, allowedTopicIds };
         const order = resolveResourceInboxClaimOrder(statusIds);
         const statement = toReservationStatement({ eligibility, order, contextClaim, maxToReserve, capture });
         const rows = await this.sql<ClaimedResourceInboxRow[]>(...statement.toStatement());
@@ -209,18 +210,19 @@ export class PSqlResourceInboxReservationRepository {
             return new Map();
         }
 
-        const { maxAttempts } = toResourceInboxReservationOptions(
+        const { maxAttempts, allowedTopicIds } = toResourceInboxReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
-        const eligibility = { typeIds: [...typeIds], statusIds: [...statusIds], maxAttempts };
+        const eligibility = { typeIds: [...typeIds], statusIds: [...statusIds], maxAttempts, allowedTopicIds };
         const statement = PSqlFragment.of`
+            ${toTopicSelection(allowedTopicIds)}
             select candidate.*
-            from resource_inbox candidate
+            from resource_inbox candidate cross join topic_selection
             where candidate.ri_row_id = any(${observedRowIds}::bigint[])
               and ${toEligibleRowPredicate('candidate', eligibility)}
             order by candidate.next_ts asc nulls first, candidate.ri_row_id asc
-                for update skip locked
+                for update of candidate skip locked
             limit ${observedRowIds.length}
         `;
         const rows = await this.sql<ResourceInboxRow[]>(...statement.toStatement());
@@ -233,7 +235,7 @@ export class PSqlResourceInboxReservationRepository {
         overdueBeforeEpochMs: number,
         reservation: PSqlResourceInboxReservationRepository.OverdueRetryReservation
     ): Promise<Map<string, ResourceEntry>> {
-        const { maxToReserve, maxAttempts, excludedContextIds } = reservation;
+        const { maxToReserve, maxAttempts, excludedContextIds, allowedTopicIds } = reservation;
         if (typeIds.size === 0 || maxToReserve <= 0) {
             return new Map();
         }
@@ -243,6 +245,7 @@ export class PSqlResourceInboxReservationRepository {
             select *
             from resource_inbox
             where ${PSqlFragment.toTextListPredicate(PSqlFragment.identifier('ri_type_id'), [...typeIds])}
+              and (${allowedTopicIds === undefined} or ri_topic_id = any(${[...allowedTopicIds ?? []]}::text[]))
               and ri_status = ${EntityStatus.RETRY}
               and expire_ts > (now() at time zone 'UTC')
               and next_ts <= ${overdueBefore}
@@ -270,7 +273,7 @@ export class PSqlResourceInboxReservationRepository {
             return new Map();
         }
 
-        const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
+        const { maxToReserve, maxAttempts, allowedTopicIds } = toResourceInboxReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
@@ -280,6 +283,7 @@ export class PSqlResourceInboxReservationRepository {
             select *
             from resource_inbox
             where ri_type_id = any(${[...typeIds]}::text[])
+              and (${allowedTopicIds === undefined} or ri_topic_id = any(${[...allowedTopicIds ?? []]}::text[]))
               and ri_status = ${EntityStatus.RESERVED}
               and expire_ts > (now() at time zone 'UTC')
               and ri_attempts < ${maxAttempts}
@@ -294,6 +298,7 @@ export class PSqlResourceInboxReservationRepository {
             select *
             from resource_inbox
             where ri_type_id = any(${[...typeIds]}::text[])
+              and (${allowedTopicIds === undefined} or ri_topic_id = any(${[...allowedTopicIds ?? []]}::text[]))
               and ri_status = ${EntityStatus.RESERVED}
               and ri_row_id = any(${observedRowIds}::bigint[])
               and expire_ts > (now() at time zone 'UTC')
@@ -413,44 +418,8 @@ function toSelectedDueRank(row: ClaimedResourceInboxRow): bigint {
     return row.selected_next_ts === null ? -1n : toInstant(row.selected_next_ts).epochNanoseconds;
 }
 
-function resolveResourceInboxWorkPosition(
-    position: string | null
-): Either<TypeError, PSqlResourceInboxReservationRepository.WorkPosition | null> {
-    if (position === null) {
-        return Either.ofRight(null);
-    }
-    if (position.length > 128) {
-        return Either.ofLeft(
-            new TypeError('PostgreSQL queue work cursor exceeds its timestamp and row identity bound')
-        );
-    }
-    const value = position.split('/');
-    if (value.length !== 2) {
-        return Either.ofLeft(
-            new TypeError('PostgreSQL queue work cursor requires a timestamp and positive row identity')
-        );
-    }
-    const issues: string[] = [];
-    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?$/u.test(value[0])) {
-        issues.push('PostgreSQL queue work cursor timestamp is invalid');
-    }
-    else {
-        try {
-            Temporal.PlainDateTime.from(value[0]);
-        }
-        catch {
-            issues.push('PostgreSQL queue work cursor timestamp is invalid');
-        }
-    }
-    if (!/^[1-9]\d{0,18}$/u.test(value[1]) || BigInt(value[1]) > 9_223_372_036_854_775_807n) {
-        issues.push('PostgreSQL queue work cursor requires a positive row identity within bigint range');
-    }
-    return issues.length > 0
-        ? Either.ofLeft(new TypeError(issues.join('; ')))
-        : Either.ofRight({ createdAt: value[0], rowId: BigInt(value[1]) });
-}
-
 interface ResourceInboxEligibility {
+    readonly allowedTopicIds: ReadonlySet<string> | undefined;
     readonly typeIds: readonly string[];
     readonly statusIds: readonly EntityStatus[];
     readonly maxAttempts: number;
@@ -477,6 +446,7 @@ function toReservationStatement(
         ? PSqlFragment.of``
         : toContextHeadPredicate({ eligibility, order, contextClaim });
     return PSqlFragment.of`
+            ${toTopicSelection(eligibility.allowedTopicIds)}
             update resource_inbox
             set ri_status   = ${EntityStatus.RESERVED},
                 ri_attempts = ri_attempts + 1,
@@ -490,7 +460,7 @@ function toReservationStatement(
                        candidate.start_ts as selected_start_ts,
                        candidate.end_ts as selected_end_ts,
                        candidate.next_ts as selected_next_ts
-                from resource_inbox candidate
+                from resource_inbox candidate cross join topic_selection
                 where ${toEligibleRowPredicate('candidate', eligibility)}
                   ${contextHead}
                 order by ${toClaimOrderBy('candidate', order)}
@@ -518,12 +488,22 @@ function toReservationStatement(
         `;
 }
 
+/** One binding for both candidate and context-head predicates, inlined without a materialization fence. */
+function toTopicSelection(allowedTopicIds: ReadonlySet<string> | undefined): PSqlFragment {
+    const topics = allowedTopicIds === undefined ? null : [...allowedTopicIds];
+    return PSqlFragment.of`with topic_selection as not materialized (
+        select ${topics}::text[] as allowed_topic_ids
+    )`;
+}
+
 /** A row a NEW or RETRY claim may start now: its type and status, alive, attempts left, and due. */
 function toEligibleRowPredicate(alias: 'candidate' | 'head', eligibility: ResourceInboxEligibility): PSqlFragment {
     const row = PSqlFragment.identifier(alias);
     return PSqlFragment.of`(
         ${PSqlFragment.toTextListPredicate(PSqlFragment.of`${row}.ri_type_id`, eligibility.typeIds)}
         and ${PSqlFragment.toTextListPredicate(PSqlFragment.of`${row}.ri_status`, eligibility.statusIds)}
+        and (topic_selection.allowed_topic_ids is null
+            or ${row}.ri_topic_id = any(topic_selection.allowed_topic_ids))
         and ${row}.ri_status <> ${EntityStatus.FAILED}
         and ${row}.expire_ts > (now() at time zone 'UTC')
         and ${row}.ri_attempts < ${eligibility.maxAttempts}
@@ -544,7 +524,7 @@ function toContextHeadPredicate({ eligibility, order, contextClaim }: ResourceIn
     return PSqlFragment.of`
         and candidate.ri_row_id in (
             select distinct on (head.fk_ext_bank_id) head.ri_row_id
-            from resource_inbox head
+            from resource_inbox head cross join topic_selection
             where ${toEligibleRowPredicate('head', eligibility)}
               and head.fk_ext_bank_id <> all(${[...contextClaim.excludedContextIds]}::varchar[])
             order by head.fk_ext_bank_id, ${toClaimOrderBy('head', order)}

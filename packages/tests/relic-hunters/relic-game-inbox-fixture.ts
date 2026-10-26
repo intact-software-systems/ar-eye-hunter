@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 
 import { RelicGameInboxService } from '@relic-hunters/server/relic-game-inbox-service.ts';
+import { RallarServerAppInbox } from '@shared-server/mod.ts';
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
@@ -29,19 +30,33 @@ export async function createInboxFixture(options: RelicInboxFixtureOptions = {})
         })
     });
     const results = new ResourceInboxResultsRepository(fixture.storage.sql);
-    const inbox = new RelicGameInboxService({
-        service: fixture.service,
+    const appInbox = new RallarServerAppInbox({
         inboxQueueReader: reader,
         resourceInboxRepository: resources.entries,
         resourceInboxResultsRepository: results,
         database: fixture.storage.sql,
-        wakeQueue: () => undefined
+        wakeOwningQueue: () => undefined
     }, {
         serviceId: 'relic-inbox-test',
-        serverPeerId: 'default-qbox-server',
         finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         timing: options.timing,
         options: { nowEpochMs: () => fixture.nowEpochMs }
     });
-    return Object.assign(fixture, { inbox, reader, results, resources });
+    const dependencies = {
+        appInbox,
+        service: fixture.service,
+        wakeQueue: () => undefined
+    };
+    const inbox = new RelicGameInboxService(dependencies, {
+        serviceId: 'relic-inbox-test',
+        serverPeerId: 'default-qbox-server',
+        nowEpochMs: () => fixture.nowEpochMs,
+        timing: options.timing
+    });
+    appInbox.start();
+    return Object.assign(fixture, { appInbox, inbox, reader, results, resources });
+}
+
+export function toRelicInboxTestKey(fixture: Awaited<ReturnType<typeof createInboxFixture>>, requestId = fixture.command.requestId) {
+    return { topicId: 'app:relic-hunters:mutate', contextId: fixture.ref.groupId, resourceId: requestId };
 }

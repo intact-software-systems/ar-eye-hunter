@@ -970,14 +970,50 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'prefix:state',
         maximumMagnitude: 4
     }),
-    // The browser IndexedDB queue box is one backend of the queue box contract: the box, its store, its entry and
-    // codec, its write-conflict error and its pure release, fairness and write computations sit beside the
-    // in-memory backend they mirror. The cluster predates this cap; it approves no eighth file.
+    // Independent whole-owner review retains PostgreSQL admission, reservation,
+    // finalization, presence and index policy beside their backend. The queuebox
+    // README maps entry, result and failure owners; prefixes name those owners.
+    Object.freeze({
+        path: 'packages/shared-server/queuebox/postgres',
+        rule: 'layout.directory-density',
+        symbol: 'postgres',
+        maximumMagnitude: 21
+    }),
+    Object.freeze({
+        path: 'packages/shared-server/queuebox/postgres',
+        rule: 'layout.feature-prefix-cluster',
+        symbol: 'prefix:p',
+        maximumMagnitude: 8
+    }),
+    Object.freeze({
+        path: 'packages/shared-server/queuebox/postgres',
+        rule: 'layout.feature-prefix-cluster',
+        symbol: 'prefix:resource',
+        maximumMagnitude: 10
+    }),
+    // In-memory and IndexedDB implement the same queue contract. Their README
+    // maps admission, selection, release and failure paths without forwarding
+    // folders. Shared resource policy and codecs remain directly beside stores.
+    Object.freeze({
+        path: 'packages/shared/queuebox',
+        rule: 'layout.directory-density',
+        symbol: 'queuebox',
+        maximumMagnitude: 22
+    }),
+    // The eighth IndexedDB owner performs fair eligible traversal; the store,
+    // codec, entry, conflict and pure release/write owners keep their boundaries.
+    // These exact reviewed counts approve neither new prefixes nor future growth.
     Object.freeze({
         path: 'packages/shared/queuebox',
         rule: 'layout.feature-prefix-cluster',
         symbol: 'prefix:indexed',
-        maximumMagnitude: 7
+        maximumMagnitude: 8
+    }),
+    Object.freeze({
+        path: 'packages/shared/queuebox',
+        rule: 'layout.feature-prefix-cluster',
+        symbol: 'prefix:resource',
+        maximumMagnitude: 4
     }),
     // The inbound ALM directory is one feature: admission, ordered and admitted
     // delivery, the durable effect store, the work entries and the resynchronization

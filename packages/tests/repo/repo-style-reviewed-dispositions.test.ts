@@ -502,6 +502,59 @@ describe('reviewed repository style dispositions', () => {
         expect(isReviewedDisposition(repoRoot, grown[0])).toBe(false);
     });
 
+    it.each([
+        { directory: 'packages/shared-server/queuebox/postgres', prefixCounts: { p: 8, resource: 10 }, density: 21 },
+        { directory: 'packages/shared/queuebox', prefixCounts: { indexed: 8, resource: 4 }, density: 22 }
+    ])('bounds the reviewed queue ownership map at $directory', ({ directory, prefixCounts, density }) => {
+        const names = Object.entries(prefixCounts).flatMap(([prefix, count]) => Array.from({ length: count }, (_, index) => `${prefix}-owner-${index}.ts`));
+        const sources = [
+            ...names,
+            ...Array.from({ length: density - names.length }, (_, index) => `standalone${index}.ts`)
+        ].map((file) => ({ file: path.join(repoRoot, directory, file), raw: '' }));
+        const findings = scanProductionSources({ repoRoot, sources, options: { layoutOnly: true } }).findings;
+        expect(findings.map(({ ruleId, symbol }) => ({ ruleId, symbol }))).toEqual(expect.arrayContaining([
+            { ruleId: 'layout.directory-density', symbol: path.basename(directory) },
+            ...Object.keys(prefixCounts).map((prefix) => ({ ruleId: 'layout.feature-prefix-cluster', symbol: `prefix:${prefix}` }))
+        ]));
+        expect(findings).toHaveLength(3);
+        for (const finding of findings) {
+            expect(isReviewedDisposition(repoRoot, finding)).toBe(true);
+            expect(isReviewedDisposition(repoRoot, { ...finding, file: `${finding.file}-neighbor` })).toBe(false);
+            expect(isReviewedDisposition(repoRoot, { ...finding, ruleId: 'file.cognitive-load' })).toBe(false);
+            expect(isReviewedDisposition(repoRoot, { ...finding, symbol: 'prefix:unreviewed' })).toBe(false);
+        }
+        for (const prefix of Object.keys(prefixCounts)) {
+            const grown = scanProductionSources({
+                repoRoot,
+                sources: [...sources, { file: path.join(repoRoot, directory, `${prefix}-added.ts`), raw: '' }],
+                options: { layoutOnly: true }
+            }).findings.filter(({ ruleId, symbol }) => ruleId === 'layout.directory-density' || symbol === `prefix:${prefix}`);
+            expect(grown).toHaveLength(2);
+            expect(grown.every((finding) => !isReviewedDisposition(repoRoot, finding))).toBe(true);
+        }
+        const neighborSources = sources.map((source) => ({ ...source, file: source.file.replace(/(?:p|indexed|resource)-owner/u, 'unreviewed-owner') }));
+        const neighbor = scanProductionSources({ repoRoot, sources: neighborSources, options: { layoutOnly: true } }).findings
+            .find(({ symbol }) => symbol === 'prefix:unreviewed');
+        expect(neighbor).toBeDefined();
+        expect(isReviewedDisposition(repoRoot, neighbor)).toBe(false);
+
+        const fixture = createReviewedFixture();
+        for (const source of sources) {
+            writeFixture(fixture, path.relative(repoRoot, source.file), source.raw);
+        }
+        const accepted = runChangedChecker(fixture);
+        expect(accepted.status, accepted.stdout).toBe(0);
+        appendFixture(
+            fixture,
+            path.relative(repoRoot, sources[0].file),
+            unknownSource('unreviewedQueueDomain', 0)
+        );
+        const rejected = runChangedChecker(fixture);
+        expect(rejected.status, rejected.stdout).toBe(1);
+        expect(rejected.stdout).toContain('FAIL: 1 new or worsened repository style finding');
+        expect(rejected.stdout).toContain('boundary.unknown');
+    });
+
     it('bounds directory review and distinguishes checker-owned prefixes at the same path', () => {
         const directory = 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime';
         const sources = [

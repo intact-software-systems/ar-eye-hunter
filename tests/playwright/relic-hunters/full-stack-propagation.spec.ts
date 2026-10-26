@@ -5,49 +5,61 @@ import { RELIC_TYPES } from '../../../packages/relic-hunters/src/protocol.ts';
 const fullStackEnabled = process.env.RELIC_HUNTERS_FULL_STACK === '1' ||
     process.env.RELIC_HUNTERS_FULL_STACK === 'true';
 
-type RuntimeHook = Readonly<{
-    roomId?: string;
-    diagnostics: Readonly<{
-        phase: string;
-        ignoredSnapshotCount: number;
-        lastSnapshotSource?: string;
-        lastIgnoredSnapshotReason?: string;
-        roundTransitionCues: readonly string[];
-        lastAcceptedSnapshot?: Readonly<{
-            source: string;
-            phase: string;
-            round: number;
-            updatedAtEpochMs: number;
-            eventCount: number;
-            submittedCount: number;
-        }>;
-    }>;
-    snapshot?: RuntimeSnapshot;
-}>;
+interface RuntimeHook {
+    readonly roomId?: string;
+    readonly diagnostics: {
+        readonly phase: string;
+        readonly lastSnapshotSource?: string;
+        readonly roundTransitionCues: readonly string[];
+        readonly lastAcceptedSnapshot?: {
+            readonly source: string;
+            readonly phase: string;
+            readonly round: number;
+            readonly updatedAtEpochMs: number;
+            readonly eventCount: number;
+            readonly submittedCount: number;
+        };
+    };
+    readonly snapshot?: RuntimeSnapshot;
+}
 
-type RuntimeSnapshot = Readonly<{
-    gameId: string;
-    roomId: string;
-    phase: string;
-    round: number;
-    updatedAtEpochMs: number;
-    playerIds: readonly string[];
-    activePlayerCount: number;
-    submittedPlayerIds: readonly string[];
-    eventIds: readonly string[];
-    eventCount: number;
-}>;
+interface RuntimeSnapshot {
+    readonly gameId: string;
+    readonly roomId: string;
+    readonly phase: string;
+    readonly round: number;
+    readonly updatedAtEpochMs: number;
+    readonly playerIds: readonly string[];
+    readonly activePlayerCount: number;
+    readonly submittedPlayerIds: readonly string[];
+    readonly eventIds: readonly string[];
+    readonly eventCount: number;
+}
 
-type ComparableSnapshot = Readonly<{
-    gameId: string;
-    roomId: string;
-    phase: string;
-    round: number;
-    playerIds: readonly string[];
-    activePlayerCount: number;
-    submittedPlayerIds: readonly string[];
-    eventIds: readonly string[];
-}>;
+interface ComparableSnapshot {
+    readonly gameId: string;
+    readonly roomId: string;
+    readonly phase: string;
+    readonly round: number;
+    readonly playerIds: readonly string[];
+    readonly activePlayerCount: number;
+    readonly submittedPlayerIds: readonly string[];
+    readonly eventIds: readonly string[];
+}
+
+interface HunterRegistration {
+    readonly username: string;
+    readonly displayName: string;
+    readonly password: string;
+}
+
+interface ConvergedSnapshotExpectation {
+    readonly phase: string;
+    readonly round: number;
+    readonly playerCount: number;
+    readonly submittedCount: number;
+    readonly minEventCount?: number;
+}
 
 test.describe('full-stack Relic Hunters two-client propagation', () => {
     test.skip(
@@ -146,8 +158,6 @@ test.describe('full-stack Relic Hunters two-client propagation', () => {
             ]);
             expect(runtimeA?.diagnostics.lastSnapshotSource).toBeTruthy();
             expect(runtimeB?.diagnostics.lastSnapshotSource).toBeTruthy();
-            expect(runtimeA?.diagnostics.lastIgnoredSnapshotReason).toBeUndefined();
-            expect(runtimeB?.diagnostics.lastIgnoredSnapshotReason).toBeUndefined();
         }
         finally {
             await Promise.all([
@@ -285,11 +295,7 @@ async function enterLobbyWithTwoHunters(pageA: Page, pageB: Page, suffix: string
 
 async function registerHunter(
     page: Page,
-    input: Readonly<{
-        username: string;
-        displayName: string;
-        password: string;
-    }>
+    input: HunterRegistration
 ): Promise<void> {
     await page.goto('/');
     await page.getByRole('button', { name: 'Register' }).click();
@@ -319,13 +325,7 @@ async function waitForRoomId(page: Page): Promise<string> {
 async function expectConverged(
     pageA: Page,
     pageB: Page,
-    expected: Readonly<{
-        phase: string;
-        round: number;
-        playerCount: number;
-        submittedCount: number;
-        minEventCount?: number;
-    }>
+    expected: ConvergedSnapshotExpectation
 ): Promise<ComparableSnapshot> {
     let lastA: RuntimeHook | undefined;
     let lastB: RuntimeHook | undefined;

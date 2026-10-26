@@ -9,7 +9,7 @@ export function createApiV1TestMiddlewareResilience(): RallarMiddlewareResilienc
         openDurationMs: 10_000,
         resetDurationMs: 10_000,
         samplingDurationMs: 10_000
-    });
+    }, { maxAttempts: 20, maxDelayMs: 30_000, conflictMaxDelayMs: 250 });
 }
 
 export function createApiV1TestQueueResilience(): ResourceInboxResilience {

@@ -9,6 +9,7 @@ import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import {
     createInMemoryALAdmissionState,
     InMemoryAdmissionBackend,
+    type ALAdmissionMemoryState,
     type ALAdmissionWriteContext
 } from '@shared/alm/al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
@@ -16,12 +17,14 @@ import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.t
 import {
     createALInboundAdmissionStore,
     type ALInboundAdmissionObservations,
+    type ALInboundAdmissionStore,
     type ALInboundCommitBundle,
     type ALInboundControlOwnerIndex,
     type ALInboundDurableEffect
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
-import { readALInboundStoredMessage } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
+import { readALInboundStoredMessage, type ALInboundMessageReference } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALStoredInboundBufferedSnapshot } from '@shared/alm/inbound/al-inbound-ordering-validation.ts';
 import { toALInboundPendingControlId } from '@shared/alm/inbound/al-inbound-pending-admission.ts';
 import {
     computeALInboundWorkEntry,
@@ -31,7 +34,9 @@ import {
     validateALInboundWorkWrites,
     type ALPersistedInboundEffect
 } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import type { ALInboundControlAdmission } from '@shared/alm/inbound/control/al-inbound-control-admission.ts';
 import type { ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
+import type { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import {
     describe,
@@ -56,7 +61,16 @@ function planMessage(candidate: ALMessage) {
     return planALMessageHandling(candidate, { selfPeerId: 'receiver', nowMs: Date.now() });
 }
 
-function createFixture() {
+interface InboundPersistenceFixture {
+    readonly state: ALAdmissionMemoryState;
+    readonly backend: InMemoryAdmissionBackend;
+    readonly store: ALInboundAdmissionStore;
+    readonly workQueue: InMemoryQueueBox;
+    readonly port: ALWorkQueuePort;
+    readonly control: ALInboundControlAdmission;
+}
+
+function createFixture(): InboundPersistenceFixture {
     const state = createInMemoryALAdmissionState();
     const backend = new InMemoryAdmissionBackend(state, Date.now);
     const store = createALInboundAdmissionStore({
@@ -87,7 +101,7 @@ function createFixture() {
 
 /** The provenance row the store wrote, read back under its own key and decoder. */
 function readOwner(
-    backend: ReturnType<typeof createFixture>['backend'],
+    backend: InMemoryAdmissionBackend,
     namespace: string,
     candidate: ALMessage = message
 ) {
@@ -99,7 +113,7 @@ function readOwner(
     });
 }
 
-function readIncoming(store: ReturnType<typeof createFixture>['store'], candidate: ALMessage) {
+function readIncoming(store: ALInboundAdmissionStore, candidate: ALMessage) {
     const source = { kind: 'ws-client' as const, peerId: candidate.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } };
     const nowMs = Date.now();
     return store.readIncomingMessage({
@@ -110,7 +124,7 @@ function readIncoming(store: ReturnType<typeof createFixture>['store'], candidat
     });
 }
 
-function createBufferedSnapshot() {
+function createBufferedSnapshot(): ALStoredInboundBufferedSnapshot {
     return {
         trackKey: toALOrderingTrackKey(message)!,
         seq: 2,
@@ -120,7 +134,7 @@ function createBufferedSnapshot() {
     };
 }
 
-function toMessageReference(candidate: ALMessage) {
+function toMessageReference(candidate: ALMessage): ALInboundMessageReference {
     return { senderId: candidate.id.senderId, msgId: candidate.id.msgId };
 }
 
@@ -396,7 +410,7 @@ describe('inbound admission persisted values', () => {
         { lastContiguousSeq: 1, bufferedSeqs: [1], updatedAtMs: 1 },
         { lastContiguousSeq: 1, bufferedSeqs: [2], updatedAtMs: Number.NaN }
     ])('rejects malformed ordering snapshots instead of treating them as expired', async (value) => {
-        const { state, backend, store } = createFixture();
+        const { backend, store } = createFixture();
         await backend.write(async (transaction) => {
             await transaction.set(`inbound:ordering:${toALOrderingTrackKey(message)}`, value);
         });
@@ -405,7 +419,7 @@ describe('inbound admission persisted values', () => {
     });
 
     it('rejects malformed pending acknowledgement state', async () => {
-        const { backend, store, control } = createFixture();
+        const { backend, store } = createFixture();
         await backend.write(async (transaction) => {
             await transaction.set('inbound:control:pending:message:sender%3Awith%3Adelimiter', {
                 kind: 'pending',
@@ -463,7 +477,7 @@ describe('inbound admission persisted values', () => {
     });
 
     it.each([
-        // A plan stored before the congestion cause existed reads back without migration.
+        // A plan without congestion retains its absent cause.
         { label: 'no cause', congestion: { overloaded: false, action: 'none', priority: 0 } },
         { label: 'the backpressured cause', congestion: { overloaded: false, action: 'drop-low', priority: 0, cause: 'backpressured' } }
     ])('reads back a stored congestion plan with $label before buffered release', async ({ congestion }) => {
@@ -561,7 +575,7 @@ describe('inbound admission persisted values', () => {
         { effectId: 'owner', inboxKey: { topicId: 'chat', resourceId: 'resource', contextId: 1 } },
         { effectId: 1 }
     ])('rejects malformed buffered delivery ownership before resolving predecessors', async (delivery) => {
-        const { backend, store, control } = createFixture();
+        const { backend, store } = createFixture();
         const snapshot = createBufferedSnapshot();
         await backend.write(async (transaction) => {
             await writeCanonicalMessage(transaction);
@@ -626,7 +640,7 @@ describe('inbound admission persisted values', () => {
     );
 
     it('requires durable delivery progress before a cleaned-up work owner can be skipped', async () => {
-        const { backend, store, workQueue, port, control } = createFixture();
+        const { backend, store, workQueue, port } = createFixture();
         const snapshot = createBufferedSnapshot();
         await backend.write(async (transaction) => {
             await writeCanonicalMessage(transaction);
@@ -647,7 +661,7 @@ describe('inbound admission persisted values', () => {
     });
 
     it('rejects control history whose message ID differs from the trusted requested slot', async () => {
-        const { backend, store, control } = createFixture();
+        const { backend, store } = createFixture();
         await backend.write(async (transaction) => {
             await transaction.set('inbound:control:acks:message:sender%3Awith%3Adelimiter', {
                 kind: 'acks',
@@ -765,9 +779,9 @@ describe('inbound admission persisted values', () => {
                     source: { kind: 'ws-client', peerId: message.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
                     supersedenceKey: null
                 },
-                expireAtTimestamp: Date.now() + 60_000
+                expireAtTimestamp: work.expireAtTimestamp
             }],
-            durableEffects: [createWork()]
+            durableEffects: [work]
         })).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         expect([...state.data.keys()]).toEqual([]);
         expect((await workQueue.getItem(work.entry.key))?.resource).toBe('{invalid-json');
@@ -1003,7 +1017,7 @@ describe('inbound admission persisted values', () => {
     });
 
     it('round-trips the local-delivery reference and retains the message once', async () => {
-        const { backend, state, store, port, control } = createFixture();
+        const { backend, state, store, port } = createFixture();
         const retainUntilMs = Date.now() + 120_000;
         const work = createWork('dispatch', { kind: 'dispatch-local', message: toMessageReference(message) });
         await store.commitBundle({
@@ -1033,7 +1047,7 @@ describe('inbound admission persisted values', () => {
 });
 
 async function seedPendingAcknowledgement(
-    store: ReturnType<typeof createFixture>['store'],
+    store: ALInboundAdmissionStore,
     expectedFromPeerIds: readonly string[],
     ackedFromPeerIds: readonly string[] = []
 ): Promise<void> {

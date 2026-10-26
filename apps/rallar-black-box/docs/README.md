@@ -27,6 +27,8 @@ configured.
 
 ## Documents
 
+- [Deployment](./deployment.md): explicit API CORS configuration for the browser console.
+
 - [Current State](./current-state.md): implemented components, known
   limitations, and verification status.
 - [UI User Manual](./ui-user-manual.md): how to use each panel in the visible

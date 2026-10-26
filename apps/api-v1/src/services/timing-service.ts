@@ -3,6 +3,7 @@ import {
     createConsoleRallarTimingSink,
     type RallarTimingSink
 } from '@shared-server/rallar-system/observability/timing.ts';
+
 import type {
     ApiV1AppInboxConfiguration,
     ApiV1ObservabilityConfiguration
@@ -28,6 +29,7 @@ export function toApiAppInboxServiceOptions(
     configuration: ApiV1AppInboxConfiguration
 ): AppInboxOptions {
     return {
+        conflictRetryMaxDelayMs: configuration.retry.conflictMaxDelayMs,
         phaseTiming: configuration.phaseTiming,
         waitMaxElapsedMsecs: configuration.completionWait.maxElapsedMs,
         waitRetryIntervalMsecs: configuration.completionWait.retryIntervalMs,

@@ -95,7 +95,8 @@ roomBrowserTest(
 roomBrowserTest(
     'plays a two-hunter expedition through visible move, escape, and matching finale controls',
     async ({ page: host, guest }, testInfo) => {
-        roomBrowserTest.setTimeout(180_000);
+        // Six transitions retain their 30 s limits; setup and two rendered clients' actions have two more minutes.
+        roomBrowserTest.setTimeout(6 * automaticReviewTransitionTimeoutMs + 120_000);
         roomBrowserTest.skip(
             !['1', 'true'].includes(process.env.RELIC_HUNTERS_FULL_STACK ?? ''),
             'Requires the paired Relic server.'

@@ -185,10 +185,14 @@ jobs:
         run: npm run test:full-stack:memory
 
   e2e-game-rooms:
-    name: Browser tests (game rooms)
+    name: Browser tests (game rooms ${{ matrix.game }})
     runs-on: ubuntu-latest
-    # Allow slow browser setup plus the observed 16 minutes for both game suites.
+    # Each game keeps its own setup and test budget; the combined suites exceeded 30 minutes.
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        game: ['ar-eye', 'relic']
     env:
       DATABASE_URL: postgresql://app:app@localhost:5432/appdb
       RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
@@ -207,6 +211,7 @@ jobs:
           playwright: 'true'
 
       - name: Run AR Eye room entry browser tests
+        if: ${{ matrix.game == 'ar-eye' }}
         env:
           RALLAR_ARENA_FULL_STACK: '1'
         run: |
@@ -216,12 +221,14 @@ jobs:
             tests/playwright/ar-eye-hunter/quick-join.spec.ts --project=desktop-delivery
 
       - name: Run AR Eye real-canvas reconciliation regression
+        if: ${{ matrix.game == 'ar-eye' }}
         run: |
           npx playwright test --config apps/ar-eye-hunter-v1/playwright.config.ts \
             tests/playwright/ar-eye-hunter/quick-join.spec.ts --project=desktop-delivery \
             --grep 'director canvas shot'
 
       - name: Run Relic private room entry browser tests
+        if: ${{ matrix.game == 'relic' }}
         env:
           RELIC_HUNTERS_FULL_STACK: '1'
         run: |
@@ -230,6 +237,7 @@ jobs:
             tests/playwright/relic-hunters/full-stack-http.spec.ts --trace=retain-on-failure
 
       - name: Run Relic private feedback click regression
+        if: ${{ matrix.game == 'relic' }}
         run: |
           npx playwright test --config apps/relic-hunters-v1/playwright.config.ts \
             tests/playwright/relic-hunters/private-feedback.spec.ts --trace=retain-on-failure
@@ -238,7 +246,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: game-room-browser-failures
+          name: game-room-browser-failures-${{ matrix.game }}
           path: |
             apps/ar-eye-hunter-v1/test-results
             apps/relic-hunters-v1/test-results

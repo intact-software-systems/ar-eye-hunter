@@ -9,15 +9,15 @@ const SERVED = {
     serverPeerId: 'default-qbox-server'
 };
 
-describe('the /api/config boundary decoder (D57 as applied, C5, R-S3c-i-6)', () => {
+describe('the /api/config boundary decoder', () => {
     it('reads the configuration and the WS server peer id', () => {
         expect(decodeApiConfigResponse({ ...SERVED, build: 'b-1' }).right).toEqual(SERVED);
     });
 
-    it('reads a server that names no peer id as one that predates S3c-i: the server stays unknown', () => {
+    it('rejects a response missing the required WS server identity', () => {
         const { serverPeerId: _serverPeerId, ...unknownServer } = SERVED;
 
-        expect(decodeApiConfigResponse(unknownServer).right).toEqual(unknownServer);
+        expect(decodeApiConfigResponse(unknownServer).left).toBe('The /api/config response names an empty or non-string WS server peer id.');
     });
 
     it.each([

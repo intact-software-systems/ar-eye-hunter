@@ -9,10 +9,11 @@ import { createApiTimingSink } from '@api-v1/src/services/timing-service.ts';
 import { RelicGameInboxFailureError } from '@relic-hunters/server/relic-game-inbox-service.ts';
 import { isRelicGameMoveInput } from '@relic-hunters/server/relic-game-move.ts';
 import { RelicGameMutationRefusedError } from '@relic-hunters/server/relic-game-mutation-service.ts';
-import { AppInboxIdempotencyConflictError } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { ApiConfigResponse } from '@shared/api/api-config.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
+import { myServerId } from '@api-v1/src/runtime/runtime-identity.ts';
+import { createRelicGameServices } from './create-relic-game-services.ts';
 import { initRelicDocsLandingRoute } from './relic-docs-landing-route.ts';
 import { createRelicExpeditionInitialStateFactory } from './relic-expedition-ai.ts';
 import { installRelicHunterGame } from './relic-game-service.ts';
@@ -58,10 +59,22 @@ addEventListener('unload', () => {
         console.error('Failed to stop embedded API-v1 resources:', error);
     });
 });
+const relicServices = createRelicGameServices({
+    database: databaseLifecycle.database,
+    groups: rallar.runtime.groupsRepository,
+    sessions: rallar.runtime.authSessionRepository,
+    appInbox: rallar.appInbox,
+    roomOwnedAppDataBindings: configuration.apiV1.group.roomOwnedAppDataBindings,
+    serviceId: myServerId,
+    wsRuntimeName: rallar.ws.serverPeerId,
+    wakeQueue: () => rallar.runtime.qboxEngine.wake(),
+    nowEpochMs: Date.now,
+    timing: createApiTimingSink(configuration.apiV1.observability)
+});
 const relicGame = installRelicHunterGame(rallar, {
     mode: configuration.restAuthorization.mode,
-    inbox: rallar.runtime.relicGameInboxService,
-    mutations: rallar.runtime.relicGameMutations,
+    inbox: relicServices.relicGameInboxService,
+    mutations: relicServices.relicGameMutations,
     createInitialState: createRelicExpeditionInitialStateFactory({
         configuration: configuration.expeditionAi,
         onFallback: (event) => {
@@ -152,9 +165,7 @@ rallar.installSystemTopics();
 rallar.installWebSocketLifecycle();
 rallar.mountWebSocket(app);
 rallar.mountRest(app);
-if (configuration.apiV1.topology.replay.queueWorkers === 'enabled') {
-    rallar.start();
-}
+rallar.start({ queueWorkers: configuration.apiV1.topology.replay.queueWorkers });
 
 Deno.serve({ port: configuration.http.port }, app.fetch);
 console.log(`Relic Hunter server started on port ${configuration.http.port}.`);
@@ -165,9 +176,6 @@ function relicRestErrorResponse(c: Context, error: Error): Response {
     }
     if (error instanceof RelicGameInboxFailureError) {
         return Response.json({ error: error.message, code: error.failure.code }, { status: error.failure.status });
-    }
-    if (error instanceof AppInboxIdempotencyConflictError) {
-        return c.json({ error: error.message, code: error.code }, error.status);
     }
     return toAuthErrorResponse(c, error);
 }

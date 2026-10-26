@@ -266,6 +266,7 @@ class RegisteredHandlerResults {
 }
 
 interface RegisteredHandlerOptions {
+    readonly appInboxOptions?: AppInboxOptions;
     readonly failResultWriteAfter?: number;
     readonly now?: () => Temporal.Instant;
     readonly timing?: RallarTimingSink;
@@ -299,7 +300,8 @@ export function createRegisteredHandlerHarness(
                 waitMaxElapsedMsecs: 5_000,
                 waitRetryIntervalMsecs: 1,
                 waitMaxRetryIntervalMsecs: 1,
-                waitJitterRatio: 0
+                waitJitterRatio: 0,
+                ...options.appInboxOptions
             },
             timers: options.timers
         }

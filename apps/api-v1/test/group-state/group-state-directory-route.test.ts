@@ -137,14 +137,14 @@ Deno.test('group directory omits invite-only and deleted groups', async () => {
     assert.deepEqual((await readPage(response)).entries, []);
 });
 
-Deno.test('group directory keeps forming rooms discoverable and searches both game names generically', async () => {
+Deno.test('group directory keeps forming rooms discoverable and searches both workspace names generically', async () => {
     const arena = openSnapshot('arena', ['bob']);
     const expedition = openSnapshot('expedition', ['bob']);
     const snapshots: readonly GroupSnapshot[] = [
-        { ...arena, group: { ...arena.group, displayName: 'AR Eye Hunter Arena', lifecycleState: 'forming' } },
-        { ...expedition, group: { ...expedition.group, displayName: 'Relic Hunters Expedition' } }
+        { ...arena, group: { ...arena.group, displayName: 'Planning Team Arena', lifecycleState: 'forming' } },
+        { ...expedition, group: { ...expedition.group, displayName: 'Inventory Team Expedition' } }
     ];
-    for (const [query, groupId] of [['%20AR%20EYE%20%20', 'arena'], ['RELIC%20HUNTERS', 'expedition']]) {
+    for (const [query, groupId] of [['%20PLANNING%20TEAM%20%20', 'arena'], ['INVENTORY%20TEAM', 'expedition']]) {
         const page = await readPage(await readDirectory(snapshots, { path: `${DIRECTORY_PATH}?kind=room&q=${query}` }));
         assert.deepEqual(page.entries.map((entry) => entry.groupRef.groupId), [groupId]);
     }
@@ -164,13 +164,13 @@ Deno.test('group directory hides rooms with nobody online unless includeEmpty is
 
 Deno.test('group directory filters by name and orders by online count then id', async () => {
     const snapshots = [
-        { ...openSnapshot('b', ['bob'], 2), group: { ...openSnapshot('b', ['bob']).group, displayName: 'Eye Hunter B' } },
-        { ...openSnapshot('a', ['bob'], 2), group: { ...openSnapshot('a', ['bob']).group, displayName: 'Eye Hunter A' } },
-        { ...openSnapshot('c', ['bob'], 5), group: { ...openSnapshot('c', ['bob']).group, displayName: 'Eye Hunter C' } },
+        { ...openSnapshot('b', ['bob'], 2), group: { ...openSnapshot('b', ['bob']).group, displayName: 'Planning Team B' } },
+        { ...openSnapshot('a', ['bob'], 2), group: { ...openSnapshot('a', ['bob']).group, displayName: 'Planning Team A' } },
+        { ...openSnapshot('c', ['bob'], 5), group: { ...openSnapshot('c', ['bob']).group, displayName: 'Planning Team C' } },
         { ...openSnapshot('x', ['bob'], 9), group: { ...openSnapshot('x', ['bob']).group, displayName: 'Other' } }
     ];
 
-    const page = await readPage(await readDirectory(snapshots, { path: `${DIRECTORY_PATH}?q=eye%20hunter` }));
+    const page = await readPage(await readDirectory(snapshots, { path: `${DIRECTORY_PATH}?q=planning%20team` }));
 
     assert.deepEqual(page.entries.map((entry) => entry.groupRef.groupId), ['c', 'a', 'b']);
 });
@@ -452,9 +452,9 @@ Deno.test('unlisted and corrupt rooms expose neither directory data nor latency 
     const response = await readDirectory(snapshots, {
         path: `${DIRECTORY_PATH}?includeEmpty=true&order=peer-rtt`,
         rtcRttRepository: {
-            listMeasurementEntriesForEndpoints: async () => {
+            listMeasurementEntriesForEndpoints: () => {
                 rttReads += 1;
-                return [];
+                return Promise.resolve([]);
             }
         }
     });

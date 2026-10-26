@@ -27,6 +27,8 @@ export const MIN_APP_INBOX_FINISHED_RETENTION_MS = 3_600_000;
 export const MAX_APP_INBOX_FINISHED_RETENTION_MS = 2_592_000_000;
 
 export interface AppInboxOptions {
+    /** Final delay ceiling for classified optimistic conflicts; ordinary failures retain QueueBox backoff. */
+    readonly conflictRetryMaxDelayMs?: number;
     readonly phaseTiming?: boolean;
     readonly attemptDeadlineMarginMs?: number;
     readonly waitMaxElapsedMsecs?: number;
@@ -83,7 +85,7 @@ export function validateAppInboxAttemptDeadlineMargin(
         }];
 }
 
-/** The handler side's one option: how far below its reservation lease an attempt's deadline falls. */
+/** How far below its reservation lease an attempt's deadline falls. */
 export function resolveAppInboxAttemptDeadlineMarginMs(options: AppInboxOptions): number {
     return toNonNegativeFiniteNumber(options.attemptDeadlineMarginMs, DEFAULT_APP_INBOX_ATTEMPT_DEADLINE_MARGIN_MS);
 }

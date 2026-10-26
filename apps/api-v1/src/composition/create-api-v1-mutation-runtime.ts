@@ -1,7 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { RELIC_ROOM_DATA_BINDING } from '@relic-hunters/server/relic-game-mutation-service.ts';
 import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-app-data-repository.ts';
-import { RoomOwnedAppData } from '@shared-server/app-data/room-owned-app-data.ts';
+import { decodeRoomOwnedAppDataBindings, RoomOwnedAppData } from '@shared-server/app-data/room-owned-app-data.ts';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import {
@@ -94,6 +93,7 @@ export interface ApiV1MutationRuntimeResilience {
 }
 
 export interface CreateApiV1MutationRuntimeInput {
+    readonly roomOwnedAppDataBindings: readonly RoomOwnedAppData.Binding[];
     readonly database: PSqlSql;
     readonly serviceId: string;
     readonly authCredentialSecret: string;
@@ -202,6 +202,7 @@ interface CreateAppAuthInboxServiceFactoryInput extends ApiV1StateMutationDepend
 export function createApiV1MutationRuntime(
     input: CreateApiV1MutationRuntimeInput
 ): ApiV1MutationRuntime {
+    decodeRoomOwnedAppDataBindings(input.roomOwnedAppDataBindings);
     const completionNotifications = ResourceInboxCompletionNotifications.createDefault(
         input.appInboxCompletionNotices === undefined
             ? undefined
@@ -270,9 +271,11 @@ function createMutationGroupStateService(
     );
     return createCachedGroupStateService({
         durable: createGroupStateService({
-            groupOwnedAppData: new RoomOwnedAppData(new PSqlAppDataRepository(input.database), [
-                RELIC_ROOM_DATA_BINDING
-            ]),
+            now: input.nowEpochMs,
+            groupOwnedAppData: new RoomOwnedAppData(
+                new PSqlAppDataRepository(input.database),
+                input.roomOwnedAppDataBindings
+            ),
             runtimeRepository: resources.runtimeStateRepository,
             capacity: input.groupCapacity,
             groupStateEventStore: resources.groupStateEventStore,

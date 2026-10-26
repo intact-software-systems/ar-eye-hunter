@@ -4,6 +4,7 @@ import {
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -21,6 +22,11 @@ import {
 } from '@shared/queuebox/ResourceEntry.ts';
 
 import {
+    createResourceInboxTestStorage,
+    seedResourceInboxRow
+} from '../shared-server/queuebox/resource-inbox-test-storage.ts';
+
+import {
     createResourceInboxQueryCapture,
     createResourceInboxSqlHarness,
     findStoredResourceInboxRow,
@@ -32,115 +38,87 @@ afterEach(() => {
 });
 
 describe('PostgreSQL resource inbox persistence', () => {
-    it('claims ordinary retries only when due and never claims failed or expired rows', async () => {
-        vi.useFakeTimers();
-        vi.setSystemTime(new Date('2026-01-01T00:00:30.000Z'));
-        const capture = createResourceInboxQueryCapture();
-        const repo = createPSqlResourceInboxRepository(capture.sql, () => new Date());
+    it('claims only due retries within the configured budget, even when FAILED is requested', async () => {
+        const storage = await createResourceInboxTestStorage('retry_eligibility');
+        onTestFinished(() => storage.close());
+        const repo = createPSqlResourceInboxRepository(storage.sql, () => new Date('1900-01-01'));
+        const rows = [
+            { resourceId: 'due', status: EntityStatus.RETRY, attempts: 1, nextInSeconds: -1 },
+            { resourceId: 'future', status: EntityStatus.RETRY, attempts: 1, nextInSeconds: 60 },
+            { resourceId: 'expired', status: EntityStatus.RETRY, attempts: 1, nextInSeconds: -1, expired: true },
+            { resourceId: 'exhausted', status: EntityStatus.RETRY, attempts: 2, nextInSeconds: -1 },
+            { resourceId: 'failed', status: EntityStatus.FAILED, attempts: 1, nextInSeconds: -1 }
+        ];
+        const keys = [];
+        for (const row of rows) {
+            keys.push(await seedResourceInboxRow(storage.sql, { ...row, startedAgoSeconds: 5, endedAgoSeconds: 4 }));
+        }
+        const before = await Promise.all(keys.slice(1).map((key) => repo.entries.findAnyByKey(key)));
 
-        await repo.reservations.reserveEntriesSkipLocked({
+        const claimed = await repo.reservations.reserveEntriesSkipLocked({
             typeIds: new Set(['APP_INBOX']),
             statusIds: new Set([EntityStatus.RETRY, EntityStatus.FAILED]),
-            reservationInput: 7,
+            reservationInput: { maxToReserve: 7, maxAttempts: 2 },
             contextClaim: undefined
         });
 
-        expect(capture.queries).toHaveLength(1);
-        expect(capture.queries[0]?.query).toMatch(/^update resource_inbox set ri_status =/u);
-        expect(capture.queries[0]?.query).toContain('ri_status <>');
-        expect(capture.queries[0]?.query).toContain('expire_ts > (now() at time zone \'utc\')');
-        expect(capture.queries[0]?.query).toContain('next_ts <=');
-        expect(capture.queries[0]?.query).toContain('ri_attempts <');
-        expect(capture.queries[0]?.query).toContain('for update of candidate skip locked');
-        expect(capture.queries[0]?.query).not.toContain('start_ts is null or next_ts');
+        expect([...claimed.values()].map((entry) => [entry.key.resourceId, entry.status, entry.dequeueAudit.attempts]))
+            .toEqual([['due', EntityStatus.RESERVED, 2]]);
+        expect(await Promise.all(keys.slice(1).map((key) => repo.entries.findAnyByKey(key)))).toEqual(before);
     });
 
-    it('claims only retry rows at least thirty seconds overdue, of no excluded context, through the fairness selector', async () => {
-        const capture = createResourceInboxQueryCapture();
-        const repo = createPSqlResourceInboxRepository(capture.sql, () => new Date());
-        const overdueBeforeEpochMs = Date.parse('2026-01-01T00:00:00.000Z');
-
-        await repo.reservations.findOverdueRetryEntriesSkipLocked(
-            new Set(['APP_INBOX']),
-            overdueBeforeEpochMs,
-            { maxToReserve: 3, maxAttempts: 20, excludedContextIds: new Set(['context-in-flight']) }
+    it('selects overdue retries in due order while excluding active contexts and exhausted rows', async () => {
+        const storage = await createResourceInboxTestStorage('retry_fairness');
+        onTestFinished(() => storage.close());
+        const repo = createPSqlResourceInboxRepository(storage.sql, () => new Date('1900-01-01'));
+        for (const row of [
+            { resourceId: 'recent', nextInSeconds: -10, attempts: 1 },
+            { resourceId: 'older', nextInSeconds: -60, attempts: 1 },
+            { resourceId: 'oldest', nextInSeconds: -90, attempts: 1 },
+            { resourceId: 'exhausted', nextInSeconds: -120, attempts: 2 },
+            { resourceId: 'excluded', nextInSeconds: -120, attempts: 1 }
+        ]) {
+            await seedResourceInboxRow(storage.sql, { ...row, status: EntityStatus.RETRY, startedAgoSeconds: 180, endedAgoSeconds: 150 });
+        }
+        await storage.sql`update resource_inbox set fk_ext_bank_id = 'active-context' where ri_resource_id = 'excluded'`;
+        const selected = await repo.reservations.findOverdueRetryEntriesSkipLocked(
+            new Set(['APP_INBOX']), Date.now() - 30_000,
+            { maxToReserve: 3, maxAttempts: 2, excludedContextIds: new Set(['active-context']) }
         );
-
-        expect(capture.queries).toHaveLength(1);
-        expect(capture.queries[0]?.query).toContain('ri_status =');
-        expect(capture.queries[0]?.query).toContain('expire_ts > (now() at time zone \'utc\')');
-        expect(capture.queries[0]?.query).toContain('next_ts <=');
-        expect(capture.queries[0]?.query).toContain('ri_attempts <');
-        expect(capture.queries[0]?.query).toContain('fk_ext_bank_id <> all(');
-        expect(capture.queries[0]?.query).toContain('order by next_ts asc, ri_row_id asc');
-        expect(capture.queries[0]?.query).toContain('for update skip locked');
-        expect(capture.queries[0]?.values).toContain(EntityStatus.RETRY);
-        expect(capture.queries[0]?.values).not.toContain(EntityStatus.FAILED);
-        expect(capture.queries[0]?.values).toContainEqual(new Date(overdueBeforeEpochMs));
+        expect([...selected.values()].map((entry) => entry.key.resourceId)).toEqual(['oldest', 'older']);
     });
 
-    it('uses a configured two-attempt budget in PostgreSQL reservation selectors', async () => {
-        const capture = createResourceInboxQueryCapture();
-        const repo = createPSqlResourceInboxRepository(capture.sql, () => new Date());
+    it('advertises lanes on database time using each requested attempt budget', async () => {
+        const storage = await createResourceInboxTestStorage('work_budgets');
+        onTestFinished(() => storage.close());
+        const repo = createPSqlResourceInboxRepository(storage.sql, () => new Date('1900-01-01'));
+        await seedResourceInboxRow(storage.sql, { resourceId: 'retry', status: EntityStatus.RETRY, attempts: 2, startedAgoSeconds: 60, endedAgoSeconds: 50, nextInSeconds: -40 });
+        await seedResourceInboxRow(storage.sql, { resourceId: 'reservation', status: EntityStatus.RESERVED, attempts: 2, startedAgoSeconds: 400 });
+        const options = { typeIds: new Set(['APP_INBOX']), reservationLeaseMs: 30_000, finalizationStaleAfterMs: 300_000, staleDueThresholdMs: 30_000 };
+        expect(await repo.reservations.readWorkPresences([{ ...options, maxAttempts: 2 }, { ...options, maxAttempts: 3 }]))
+            .toEqual([
+                { newRow: false, dueRetry: false, overdueRetry: false, timedOutReservation: false, staleExhaustedReservation: true },
+                { newRow: false, dueRetry: true, overdueRetry: true, timedOutReservation: true, staleExhaustedReservation: false }
+            ]);
+    });
 
-        await repo.reservations.reserveEntriesSkipLocked({
-            typeIds: new Set(['APP_INBOX']),
-            statusIds: new Set([EntityStatus.RETRY]),
-            reservationInput: { maxToReserve: 1, maxAttempts: 2 },
-            contextClaim: undefined
+    it('selects only reservations past the database lease and below the attempt budget', async () => {
+        const storage = await createResourceInboxTestStorage('timeout_eligibility');
+        onTestFinished(() => storage.close());
+        const repo = createPSqlResourceInboxRepository(storage.sql, () => new Date('1900-01-01'));
+        for (const row of [
+            { resourceId: 'recent', attempts: 1, startedAgoSeconds: 5 },
+            { resourceId: 'timed-out', attempts: 1, startedAgoSeconds: 60 },
+            { resourceId: 'exhausted', attempts: 2, startedAgoSeconds: 60 },
+            { resourceId: 'expired', attempts: 1, startedAgoSeconds: 60, expired: true }
+        ]) {
+            await seedResourceInboxRow(storage.sql, { ...row, status: EntityStatus.RESERVED });
+        }
+        const selected = await repo.reservations.findTimedOutReservedEntriesSkipLocked({
+            typeIds: new Set(['APP_INBOX']), timeSinceStartMs: 30_000,
+            reservationInput: { maxToReserve: 3, maxAttempts: 2 }, excludedContextIds: new Set()
         });
-
-        expect(capture.queries).toHaveLength(1);
-        expect(capture.queries[0]?.values).toContain(2);
-        expect(capture.queries[0]?.values).not.toContain(20);
-    });
-
-    it('advertises every lane from one statement on database time with the configured budgets', async () => {
-        const capture = createResourceInboxQueryCapture();
-        const repo = createPSqlResourceInboxRepository(capture.sql, () => new Date());
-
-        await expect(repo.reservations.readWorkPresences([{
-            typeIds: new Set(['APP_INBOX']),
-            maxAttempts: 2,
-            reservationLeaseMs: 30_000,
-            finalizationStaleAfterMs: 300_000,
-            staleDueThresholdMs: 30_000
-        }])).rejects.toThrow('Resource inbox work presence statement returned no row');
-
-        expect(capture.queries).toHaveLength(1);
-        const query = capture.queries[0]!;
-        expect(query.query).toContain('expire_ts > (now() at time zone \'utc\')');
-        expect(query.query).toContain('next_ts <= (now() at time zone \'utc\')');
-        expect(query.query).toContain('start_ts < (now() -');
-        expect(query.query).toContain('start_ts <= (now() -');
-        expect(query.query).toContain('interval \'1 millisecond\'');
-        expect(query.query).toContain('ri_attempts >=');
-        expect(query.values).toContain(2);
-        expect(query.values).toContain(30_000);
-        expect(query.values).toContain(300_000);
-        expect(query.values).toContain('APP_INBOX');
-        expect(query.values.some((value) => value instanceof Date)).toBe(false);
-    });
-
-    it('uses a safely bound database interval for timeout claiming', async () => {
-        const capture = createResourceInboxQueryCapture();
-        const repo = createPSqlResourceInboxRepository(capture.sql, () => new Date());
-
-        await repo.reservations.findTimedOutReservedEntriesSkipLocked({
-            typeIds: new Set(['APP_INBOX']),
-            timeSinceStartMs: 30_000,
-            reservationInput: { maxToReserve: 3, maxAttempts: 2 },
-            excludedContextIds: new Set()
-        });
-
-        expect(capture.queries).toHaveLength(1);
-        expect(capture.queries[0]?.query).toContain('expire_ts > (now() at time zone \'utc\')');
-        expect(capture.queries[0]?.query).toContain('start_ts < (now() -');
-        expect(capture.queries[0]?.query).toContain('interval \'1 millisecond\'');
-        expect(capture.queries[0]?.query).toContain('fk_ext_bank_id <> all(');
-        expect(capture.queries[0]?.values).toContain(30_000);
-        expect(capture.queries[0]?.values).toContain(2);
-        expect(capture.queries[0]?.values.some((value) => value instanceof Date)).toBe(false);
+        expect([...selected.values()].map((entry) => entry.key.resourceId)).toEqual(['timed-out']);
     });
 
     it.each([-1, 1.5, Number.MAX_SAFE_INTEGER + 1, Number.NaN])(
@@ -161,51 +139,43 @@ describe('PostgreSQL resource inbox persistence', () => {
         }
     );
 
-    it('uses database time for the persisted reservation start timestamp', async () => {
-        const capture = createResourceInboxQueryCapture();
-        const repo = createPSqlResourceInboxRepository(capture.sql, () => new Date());
-        const entry = createEntry(createKey('db-clock-start'), {
-            text: 'db clock',
-            expiryTs: Temporal.Instant.from('9999-01-01T00:00:00Z')
+    it('persists the transaction database clock even after the application clock advances', async () => {
+        const storage = await createResourceInboxTestStorage('reservation_clock');
+        onTestFinished(() => storage.close());
+        const key = await seedResourceInboxRow(storage.sql, { resourceId: 'clock', status: EntityStatus.NEW });
+        await storage.sql.begin(async (transaction) => {
+            const [clock] = await transaction<readonly { started_at: string; }[]>`select (now() at time zone 'UTC')::text as started_at`;
+            const repo = createPSqlResourceInboxRepository(transaction, () => new Date());
+            const entry = (await repo.entries.findByKey(key))!;
+            await new Promise((resolve) => setTimeout(resolve, 25));
+            const result = await repo.reservations.startProcessingEntity(entry, 2);
+            const persisted = (await repo.entries.findByKey(key))!;
+            const expectedStart = Temporal.PlainDateTime.from(clock!.started_at).toZonedDateTime('UTC').toInstant();
+            expect(result.right?.dequeueAudit.startTs).toEqual(expectedStart);
+            expect(persisted.dequeueAudit.startTs).toEqual(expectedStart);
+            expect(persisted.dequeueAudit.attempts).toBe(1);
         });
-
-        await repo.reservations.startProcessingEntity(entry, 2);
-
-        expect(capture.queries).toHaveLength(1);
-        expect(capture.queries[0]?.query).toContain('start_ts = now()');
-        expect(capture.queries[0]?.values.some((value) => value instanceof Date)).toBe(false);
     });
 
-    it('advances finalization generation with exact attempt and live reservation fences', async () => {
-        const capture = createResourceInboxQueryCapture();
-        const repo = createPSqlResourceInboxRepository(capture.sql, () => new Date());
-        const entry = {
-            ...createEntry(createKey('finalization-generation'), {
-                text: 'recover',
-                expiryTs: Temporal.Instant.from('9999-01-01T00:00:00Z')
-            }),
-            typeId: 'APP_INBOX',
-            status: EntityStatus.RESERVED,
-            dequeueAudit: {
-                attempts: 21,
-                startTs: Temporal.Instant.from('2026-01-01T00:00:00Z')
-            }
-        };
-
-        await repo.finalization.startFinalizationRecovery(entry, 20);
-
-        const query = capture.queries[0]!;
-        expect(query.query).toContain('ri_attempts = ri_attempts + 1');
-        expect(query.query).toContain('start_ts = now()');
-        expect(query.query).toContain('expire_ts > (now() at time zone \'utc\')');
-        expect(query.query).toContain('ri_attempts =');
-        expect(query.query).toContain('ri_attempts >=');
-        expect(query.query).toContain('ri_type_id =');
-        expect(query.query).toContain('ri_status =');
-        expect(query.values).toContain(21);
-        expect(query.values).toContain(20);
-        expect(query.values).toContain('APP_INBOX');
-        expect(query.values.some((value) => value instanceof Date)).toBe(false);
+    it('advances only the exact live exhausted finalization generation', async () => {
+        const storage = await createResourceInboxTestStorage('finalization_generation');
+        onTestFinished(() => storage.close());
+        const repo = createPSqlResourceInboxRepository(storage.sql, () => new Date('1900-01-01'));
+        const key = await seedResourceInboxRow(storage.sql, { resourceId: 'recover', status: EntityStatus.RESERVED, attempts: 21, startedAgoSeconds: 400 });
+        const completedKey = await seedResourceInboxRow(storage.sql, { resourceId: 'completed', status: EntityStatus.COMPLETED, attempts: 21, startedAgoSeconds: 400, endedAgoSeconds: 300 });
+        const completed = (await repo.entries.findByKey(completedKey))!;
+        expect((await repo.finalization.startFinalizationRecovery(completed, 20)).left).toBeDefined();
+        expect(await repo.entries.findByKey(completedKey)).toEqual(completed);
+        const observed = (await repo.entries.findByKey(key))!;
+        expect((await repo.finalization.startFinalizationRecovery(observed, 22)).left).toBeDefined();
+        expect((await repo.finalization.startFinalizationRecovery({ ...observed, typeId: 'wrong-type' }, 20)).left).toBeDefined();
+        const recovered = (await repo.finalization.startFinalizationRecovery(observed, 20)).right!;
+        expect(recovered.dequeueAudit.attempts).toBe(22);
+        expect(Temporal.Instant.compare(recovered.dequeueAudit.startTs!, observed.dequeueAudit.startTs!)).toBe(1);
+        expect((await repo.finalization.startFinalizationRecovery(observed, 20)).left).toBeDefined();
+        expect(await repo.entries.findByKey(key)).toEqual(recovered);
+        await storage.sql`update resource_inbox set expire_ts = (now() at time zone 'UTC') - interval '1 second' where ri_resource_id = 'recover'`;
+        expect((await repo.finalization.startFinalizationRecovery(recovered, 20)).left).toBeDefined();
     });
 
     it('inserts immutable outbox content once and matches an operationally advanced replay', async () => {
@@ -708,7 +678,7 @@ describe('PostgreSQL resource inbox persistence', () => {
             reserved.map((entry, index) => ({ entry, disposition: dispositions[index % 3]! }))
         );
 
-        expect(harness.sqlCalls.filter((query) => query.startsWith('update resource_inbox'))).toHaveLength(1);
+        expect(harness.sqlCalls).toHaveLength(1);
         expect(reserved.map((entry) => {
             const row = findStoredResourceInboxRow(harness.rows, entry.key)!;
             return [row.ri_status, row.ri_attempts, row.next_ts];
@@ -1067,15 +1037,14 @@ function createKey(resourceId: string): Key {
     };
 }
 
-function createEntry(
-    key: Key,
-    options: Readonly<{
-        text: string;
-        createdBy?: string;
-        createdTs?: Temporal.PlainDateTime;
-        expiryTs: Temporal.Instant;
-    }>
-): ResourceEntry {
+interface EntryOptions {
+    readonly text: string;
+    readonly createdBy?: string;
+    readonly createdTs?: Temporal.PlainDateTime;
+    readonly expiryTs: Temporal.Instant;
+}
+
+function createEntry(key: Key, options: EntryOptions): ResourceEntry {
     return {
         key,
         resource: JSON.stringify({ text: options.text }),

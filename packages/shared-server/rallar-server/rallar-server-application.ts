@@ -4,6 +4,7 @@ import type { AppDataRepository } from '../app-data/app-data-repository.ts';
 import { RallarServerAppData } from '../app-data/rallar-server-app-data.ts';
 import type { RallarServerWsRouterOptions } from '../rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import { RallarServerWsRouter } from '../rallar-system/websocket/router/rallar-server-ws-router.ts';
+import type { RallarServerAppInbox } from './rallar-server-app-inbox.ts';
 
 export interface RallarServerQueueEngine {
     start(): void;
@@ -33,7 +34,12 @@ export interface RallarServerApplicationRouteInstallers<TApp> {
     readonly rest: readonly RallarServerRouteInstaller<TApp>[];
 }
 
+export interface RallarServerApplicationStartConfig {
+    readonly queueWorkers: 'enabled' | 'disabled';
+}
+
 export interface CreateRallarServerApplicationInput<TRuntime extends RallarServerRuntime, TApp> {
+    readonly appInbox: RallarServerAppInbox;
     readonly runtime: TRuntime;
     readonly repositories: RepositoryManager;
     readonly appDataRepository: AppDataRepository;
@@ -44,6 +50,7 @@ export interface CreateRallarServerApplicationInput<TRuntime extends RallarServe
 }
 
 export class RallarServerApplication<TRuntime extends RallarServerRuntime, TApp> {
+    readonly appInbox: RallarServerAppInbox;
     readonly runtime: TRuntime;
     readonly repositories: RepositoryManager;
     readonly ws: RallarServerWsRouter;
@@ -57,6 +64,7 @@ export class RallarServerApplication<TRuntime extends RallarServerRuntime, TApp>
     private restMounted = false;
 
     constructor(input: CreateRallarServerApplicationInput<TRuntime, TApp>) {
+        this.appInbox = input.appInbox;
         this.runtime = input.runtime;
         this.repositories = input.repositories;
         this.systemInstallers = input.systemInstallers;
@@ -106,8 +114,18 @@ export class RallarServerApplication<TRuntime extends RallarServerRuntime, TApp>
         return this;
     }
 
-    start(): void {
-        this.runtime.qboxEngine.start();
+    start(config: RallarServerApplicationStartConfig = { queueWorkers: 'enabled' }): void {
+        this.appInbox.start();
+        if (config.queueWorkers === 'disabled') {
+            return;
+        }
+        try {
+            this.runtime.qboxEngine.start();
+        }
+        catch (error) {
+            this.appInbox.stop();
+            throw error;
+        }
     }
 }
 

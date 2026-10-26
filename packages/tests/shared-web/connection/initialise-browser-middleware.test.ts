@@ -26,7 +26,7 @@ import * as heartbeat from '@shared-web/browser/session/browser-session-heartbea
 import { browserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import * as stateSnapshots from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 import * as websocketFactory from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
-import { newALEventRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALEventRoute, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -110,7 +110,12 @@ describe('native observation handoff cleanup', () => {
             middleware: { rtcRxStreamer: { onRttMeasurementDo: () => {}, setRttReportingPeerIds: () => {} } }
         });
         const failure = new Error('handoff-failure');
-        vi.spyOn(connectionHttp, 'readApiConfig').mockResolvedValue({ apiBaseUrl: 'http://test', wsBaseUrl: 'ws://test', endpoints: { createWs: '/ws' } });
+        vi.spyOn(connectionHttp, 'readApiConfig').mockResolvedValue({
+            serverPeerId: 'server',
+            apiBaseUrl: 'http://test',
+            wsBaseUrl: 'ws://test',
+            endpoints: { createWs: '/ws' }
+        });
         vi.spyOn(connectionHttp, 'readIceCandidates').mockResolvedValue({ iceServers: [], expiresAtEpochMs: 1000 });
         vi.spyOn(websocketFactory, 'createBrowserWebSocketQueueBox').mockResolvedValue(middleware.middleware.webSocketQueueBox);
         vi.spyOn(rtcEngine, 'initialiseRtcConnectionService').mockResolvedValue({ webRtcConnectionService: service, rtcCaptureReceipt: capture.receipt });
@@ -153,7 +158,12 @@ describe('browser RTC layout adoption composition', () => {
         const doubles = createDefaultApiMiddlewareTestDouble({
             middleware: { rtcRxStreamer: { onRttMeasurementDo: () => {}, setRttReportingPeerIds: () => {} } }
         }).middleware;
-        vi.spyOn(connectionHttp, 'readApiConfig').mockResolvedValue({ apiBaseUrl: 'http://test', wsBaseUrl: 'ws://test', endpoints: { createWs: '/ws' } });
+        vi.spyOn(connectionHttp, 'readApiConfig').mockResolvedValue({
+            serverPeerId: 'server',
+            apiBaseUrl: 'http://test',
+            wsBaseUrl: 'ws://test',
+            endpoints: { createWs: '/ws' }
+        });
         vi.spyOn(connectionHttp, 'readIceCandidates').mockResolvedValue({ iceServers: [], expiresAtEpochMs: Date.now() + 600_000 });
         vi.spyOn(JsonWebSocketClient.prototype, 'connect').mockResolvedValue();
         vi.spyOn(websocketFactory, 'createBrowserWebSocketQueueBox').mockImplementation(async (input) => {
@@ -333,7 +343,7 @@ describe('the checkpoint stores a connect hands its carriers', () => {
     });
 });
 
-function toHeldOfferEnvelope(senderId: string) {
+function toHeldOfferEnvelope(senderId: string): ALMessage {
     const message = newALUnicastMessage(senderId, newALEventRoute('rtc', SESSION.sessionId), SESSION.sessionId, 'rtc', {
         channel: 'RtcSignal',
         type: 'Signal',
@@ -408,7 +418,12 @@ describe('failed browser startup owns acquired transport completion', () => {
         vi.spyOn(console, 'error').mockImplementation(() => {
             throw sinkFailure;
         });
-        vi.spyOn(connectionHttp, 'readApiConfig').mockResolvedValue({ apiBaseUrl: 'http://test', wsBaseUrl: 'ws://test', endpoints: { createWs: '/ws' } });
+        vi.spyOn(connectionHttp, 'readApiConfig').mockResolvedValue({
+            serverPeerId: 'server',
+            apiBaseUrl: 'http://test',
+            wsBaseUrl: 'ws://test',
+            endpoints: { createWs: '/ws' }
+        });
         const original = wsClientFactory.createDefaultWsQueueBoxClientService;
         vi.spyOn(wsClientFactory, 'createDefaultWsQueueBoxClientService').mockImplementation((input) => {
             if (!input.queueEngine) {
@@ -542,7 +557,12 @@ function configureFailedStartup(
         failed();
         throw failure;
     };
-    vi.spyOn(connectionHttp, 'readApiConfig').mockResolvedValue({ apiBaseUrl: 'http://test', wsBaseUrl: 'ws://test', endpoints: { createWs: '/ws' } });
+    vi.spyOn(connectionHttp, 'readApiConfig').mockResolvedValue({
+        serverPeerId: 'server',
+        apiBaseUrl: 'http://test',
+        wsBaseUrl: 'ws://test',
+        endpoints: { createWs: '/ws' }
+    });
     const ice = vi.spyOn(connectionHttp, 'readIceCandidates');
     if (boundary === 'rtc-request') {
         ice.mockImplementation(reject);

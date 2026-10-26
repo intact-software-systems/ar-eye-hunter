@@ -1,4 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { readIndexedDbFairnessEntries } from './read-indexed-db-fairness-entries.ts';
+import { isResourceInboxTopicSelected } from './resource-inbox/is-resource-inbox-topic-selected.ts';
 
 import { EnqueuedType } from '../api/api-config.ts';
 import { LatestRepository } from '../cache/LatestRepository.ts';
@@ -30,7 +32,6 @@ import {
     INDEXED_DB_QUEUE_FAIRNESS_INDEX_NAME,
     readDeletableCompletedStoredQueueEntries,
     readExpiredStoredQueueEntries,
-    readFairnessStoredQueueEntries,
     readStoredQueueEntries,
     readStoredQueueEntriesByTypesAndStatuses,
     readStoredQueueEntry,
@@ -58,6 +59,7 @@ import {
     type ResourceInboxReservationRequest,
     type ResourceInboxTimeoutReservationRequest
 } from './queue-box-types.ts';
+import type { ResourceInboxContextClaim } from './queue-box-types.ts';
 import {
     captureResourceEntryObservations,
     hasSameResourceEntryValue,
@@ -68,6 +70,7 @@ import {
     resolveResourceInboxClaimOrder,
     toCreationOrderedEntries
 } from './resource-inbox/resource-inbox-claim-order.ts';
+import { ResourceInboxClaimedContexts } from './resource-inbox/resource-inbox-claimed-contexts.ts';
 import { toUnavailableReservationObservation } from './resource-inbox/resource-inbox-reservation-observation.ts';
 import { ResourceInboxResilience } from './resource-inbox/resource-inbox-resilience.ts';
 import {
@@ -84,6 +87,7 @@ import { writeComputedIndexedDbQueueMutations } from './write-computed-indexed-d
 export { IndexedDbQueueWriteConflictError } from './indexed-db-queue-write-conflict-error.ts';
 
 interface IndexedDbReservationCandidateRead {
+    readonly allowedTopicIds?: ReadonlySet<string>;
     readonly db: IDBDatabase;
     readonly observations: ReadonlyMap<string, ResourceEntry> | undefined;
     readonly typeIds: Iterable<string>;
@@ -112,7 +116,7 @@ interface IndexedDbQueueComputedWrite<Result> {
 
 export type IndexedDbQueueBoxOptions =
     | Readonly<{
-        dbName?: string;
+        dbName: string;
         storeName?: string;
         connection?: never;
         completedRetention?: QueueBoxCompletedRetention;
@@ -129,7 +133,6 @@ export type IndexedDbQueueBoxOptions =
     }>;
 
 export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
-    static readonly DEFAULT_DB_NAME = 'ar-eye-hunter-queuebox';
     static readonly DEFAULT_STORE_NAME = 'entries';
 
     readonly #connection: IndexedDbConnection;
@@ -152,9 +155,16 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             typeIds: [...options.completedRetention?.typeIds ?? []],
             topicIds: [...options.completedRetention?.topicIds ?? []]
         };
-        const dbName = options.dbName ?? IndexedDbQueueBox.DEFAULT_DB_NAME;
         this.#storeName = options.storeName ?? IndexedDbQueueBox.DEFAULT_STORE_NAME;
-        this.#connection = options.connection ?? new IndexedDbConnection(async () => {
+        if (options.connection !== undefined) {
+            this.#connection = options.connection;
+            return;
+        }
+        const dbName = options.dbName;
+        if (typeof dbName !== 'string' || dbName.length === 0) {
+            throw new TypeError('IndexedDbQueueBox requires an explicit database name or connection');
+        }
+        this.#connection = new IndexedDbConnection(async () => {
             if (!IndexedDbQueueBox.isSupported()) {
                 throw new Error('IndexedDB is not available in this runtime');
             }
@@ -380,6 +390,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 storeName: this.#storeName,
                 typeIds: input.typeIds,
                 statusIds: input.statusIds,
+                allowedTopicIds: input.allowedTopicIds,
                 maxToReadPerCombination: input.maxToReadPerCombination
             });
         }
@@ -388,7 +399,9 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             this.#storeName,
             [...input.observations.values()].map((entry) => toKeyAsString(entry.key))
         );
-        return [...observed.values()];
+        return [...observed.values()].filter((entry) =>
+            isResourceInboxTopicSelected(entry.key.topicId, input.allowedTopicIds)
+        );
     }
 
     async reserveTimeoutEntries(
@@ -397,7 +410,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     ): Promise<Map<Key, ResourceEntry>> {
         const operation = this.#connection.beginOperation();
         try {
-            const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
+            const { maxToReserve, maxAttempts, allowedTopicIds } = toResourceInboxReservationOptions(
                 reservationInput,
                 DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
             );
@@ -410,6 +423,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             const candidates = await this.#readReservationCandidates({
                 db,
                 observations,
+                allowedTopicIds,
                 typeIds,
                 statusIds: [EntityStatus.RESERVED],
                 // Look ahead like the probe: a live RESERVED row sorting first must not hide older timed-out rows.
@@ -421,6 +435,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 maxToReserve,
                 now,
                 isReservable: (stored) =>
+                    isResourceInboxTopicSelected(stored.key.topicId, allowedTopicIds) &&
                     stored.dequeueAudit.attempts < maxAttempts &&
                     isStoredQueueEntryTimedOut({ stored, typeIds, duration: timeSinceStartTs, now }) &&
                     excludedContextIds?.has(stored.key.contextId) !== true
@@ -444,12 +459,9 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         request: ResourceInboxReservationRequest | ResourceInboxReservationObservationRequest
     ): Promise<Map<Key, ResourceEntry> | ResourceInboxReservationObservationResult> {
         const { typeIds, statusIds, reservationInput, observedEntries, contextClaim } = request;
-        if (contextClaim !== undefined) {
-            throw new TypeError('An IndexedDB queue box claims in queue order only.');
-        }
         const operation = this.#connection.beginOperation();
         try {
-            const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
+            const { maxToReserve, maxAttempts, allowedTopicIds } = toResourceInboxReservationOptions(
                 reservationInput,
                 DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
             );
@@ -464,16 +476,20 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             const read = await this.#readReservationCandidates({
                 db,
                 observations,
+                allowedTopicIds,
                 typeIds,
                 statusIds,
-                maxToReadPerCombination: maxToReserve
+                maxToReadPerCombination: contextClaim === undefined ? maxToReserve : Number.MAX_SAFE_INTEGER
             });
             const selection = computeIndexedDbReservation({
                 candidates: observations === undefined ? toIndexedDbClaimOrder(read, statusIds) : read,
+                contextClaim,
                 observations,
                 maxToReserve,
                 now,
-                isReservable: (stored) => isStoredQueueEntryReservable({ stored, typeIds, statusIds, now, maxAttempts })
+                isReservable: (stored) =>
+                    isResourceInboxTopicSelected(stored.key.topicId, allowedTopicIds) &&
+                    isStoredQueueEntryReservable({ stored, typeIds, statusIds, now, maxAttempts })
             });
             // An unreservable row that is also expired is swept by the write this claim already owes.
             const expired = selection.ineligible.filter((stored) => isStoredQueueEntryExpired(stored, now));
@@ -537,13 +553,14 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             const db = await operation.open();
             const now = this.#now();
             const requestedTypes = [...typeIds];
-            const entriesByType = await readFairnessStoredQueueEntries({
+            const entriesByType = await readIndexedDbFairnessEntries({
                 db,
                 storeName: this.#storeName,
                 indexName: INDEXED_DB_QUEUE_FAIRNESS_INDEX_NAME,
                 typeIds: requestedTypes,
                 overdueBeforeEpochMs,
                 maxToScan,
+                allowedTopicIds: options.allowedTopicIds,
                 excludedContextIds: options.excludedContextIds
             });
             const computed = computeIndexedDbFairnessReservation({
@@ -585,6 +602,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 storeName: this.#storeName,
                 typeIds,
                 statusIds: [EntityStatus.RESERVED],
+                allowedTopicIds: options.allowedTopicIds,
                 maxToReadPerCombination: perTypeMaxToRead
             });
             const computed = computeIndexedDbFinalizationReservation({ candidates, typeIds, options, now });
@@ -613,9 +631,18 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             const db = await operation.open();
             const now = this.#now();
             const advertisement = computeIndexedDbWorkAdvertisement({
-                newCandidates: await this.#readNewProbeEntries(db, typeIds),
-                dueRetryCandidates: await this.#readDueRetryProbeEntries(db, typeIds, now),
-                reservedCandidates: await this.#readReservedProbeEntries(db, typeIds),
+                newCandidates: await this.#readNewProbeEntries(db, {
+                    typeIds,
+                    allowedTopicIds: options.allowedTopicIds
+                }),
+                dueRetryCandidates: await this.#readDueRetryProbeEntries(db, {
+                    typeIds,
+                    allowedTopicIds: options.allowedTopicIds
+                }, now),
+                reservedCandidates: await this.#readReservedProbeEntries(db, {
+                    typeIds,
+                    allowedTopicIds: options.allowedTopicIds
+                }),
                 options,
                 typeIds,
                 now
@@ -639,12 +666,12 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
 
     async #readNewProbeEntries(
         db: IDBDatabase,
-        typeIds: ReadonlySet<string>
+        selection: { readonly typeIds: ReadonlySet<string>; readonly allowedTopicIds: ReadonlySet<string> | undefined; }
     ): Promise<readonly StoredResourceEntry[]> {
         return await readStoredQueueEntriesByTypesAndStatuses({
             db,
             storeName: this.#storeName,
-            typeIds,
+            ...selection,
             statusIds: [EntityStatus.NEW],
             maxToReadPerCombination: 1
         });
@@ -652,18 +679,22 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
 
     async #readDueRetryProbeEntries(
         db: IDBDatabase,
-        typeIds: ReadonlySet<string>,
+        selection: {
+            readonly typeIds: ReadonlySet<string>;
+            readonly allowedTopicIds: ReadonlySet<string> | undefined;
+        },
         now: Temporal.Instant
     ): Promise<readonly StoredResourceEntry[]> {
         // maxToScan = typeIds.size reads exactly the earliest due RETRY row per type, with no
         // cursor continuation: the fairness range's upper bound is the probe's due check.
-        const dueByType = await readFairnessStoredQueueEntries({
+        const dueByType = await readIndexedDbFairnessEntries({
             db,
             storeName: this.#storeName,
             indexName: INDEXED_DB_QUEUE_FAIRNESS_INDEX_NAME,
-            typeIds: [...typeIds],
+            typeIds: [...selection.typeIds],
+            allowedTopicIds: selection.allowedTopicIds,
             overdueBeforeEpochMs: Number(now.epochMilliseconds),
-            maxToScan: typeIds.size,
+            maxToScan: selection.typeIds.size,
             excludedContextIds: undefined
         });
         return [...dueByType.values()].flat();
@@ -671,12 +702,12 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
 
     async #readReservedProbeEntries(
         db: IDBDatabase,
-        typeIds: ReadonlySet<string>
+        selection: { readonly typeIds: ReadonlySet<string>; readonly allowedTopicIds: ReadonlySet<string> | undefined; }
     ): Promise<readonly StoredResourceEntry[]> {
         return await readStoredQueueEntriesByTypesAndStatuses({
             db,
             storeName: this.#storeName,
-            typeIds,
+            ...selection,
             statusIds: [EntityStatus.RESERVED],
             maxToReadPerCombination: INDEXED_DB_QUEUE_PROBE_MAX_TO_READ
         });
@@ -893,6 +924,7 @@ interface IndexedDbReservationSelection {
 }
 
 interface ComputeIndexedDbReservationInput {
+    readonly contextClaim?: ResourceInboxContextClaim;
     readonly candidates: readonly StoredResourceEntry[];
     readonly observations: ReadonlyMap<string, ResourceEntry> | undefined;
     readonly maxToReserve: number;
@@ -918,6 +950,9 @@ function computeIndexedDbReservation(input: ComputeIndexedDbReservationInput): I
     const reserved = new Map<Key, ResourceEntry>();
     const mutations: ComputedIndexedDbQueueMutation[] = [];
     const ineligible: StoredResourceEntry[] = [];
+    const contexts = input.contextClaim === undefined
+        ? undefined
+        : new ResourceInboxClaimedContexts(input.contextClaim);
     for (const stored of input.candidates) {
         if (reserved.size >= input.maxToReserve) {
             break;
@@ -932,6 +967,10 @@ function computeIndexedDbReservation(input: ComputeIndexedDbReservationInput): I
             ineligible.push(stored);
             continue;
         }
+        if (contexts?.admits(stored.key) === false) {
+            continue;
+        }
+        contexts?.record(stored.key);
         const updated = computeReservedQueueEntry(decodeStoredResourceEntry(stored), input.now);
         reserved.set(updated.key, updated);
         mutations.push(computeIndexedDbQueuePut(stored, updated));
@@ -1022,6 +1061,9 @@ function computeIndexedDbFinalizationReservation(
     for (const stored of input.candidates) {
         if (reserved.size >= input.options.maxToReserve) {
             break;
+        }
+        if (input.options.allowedTopicIds !== undefined && !input.options.allowedTopicIds.has(stored.key.topicId)) {
+            continue;
         }
         const selectedDueTs = resolveRetryExhaustionDueTimestamp({
             typeIds: input.typeIds,

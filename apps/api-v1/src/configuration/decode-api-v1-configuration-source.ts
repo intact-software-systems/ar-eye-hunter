@@ -124,7 +124,7 @@ const CONFIGURATION_KEYS_BY_PATH: Readonly<Record<string, ReadonlySet<string>>> 
         'resetDurationMs',
         'samplingDurationMs'
     ]),
-    group: new Set(['defaultMaxMembers', 'currentSnapshotCacheMaxEntries', 'admission']),
+    group: new Set(['defaultMaxMembers', 'currentSnapshotCacheMaxEntries', 'admission', 'roomOwnedAppDataBindings']),
     'group.admission': new Set([
         'windowMs',
         'joinPrincipal',
@@ -174,12 +174,14 @@ const CONFIGURATION_KEYS_BY_PATH: Readonly<Record<string, ReadonlySet<string>>> 
         'consumerRetentionMs'
     ]),
     appInbox: new Set([
+        'retry',
         'phaseTiming',
         'newLaneConcurrency',
         'newLaneHeldRows',
         'completionWait',
         'finishedRetentionMs'
     ]),
+    'appInbox.retry': new Set(['maxAttempts', 'maxDelayMs', 'conflictMaxDelayMs']),
     'appInbox.completionWait': new Set([
         'maxElapsedMs',
         'retryIntervalMs',
@@ -213,6 +215,7 @@ const ENVIRONMENT_NAME_BY_PATH: Readonly<Record<string, string>> = {
     'authentication.rateLimits.registrationUsername': 'RALLAR_REGISTRATION_USER_RATE_LIMIT',
     'clientSessions.disconnectedRetentionMs': 'RALLAR_CLIENT_SESSION_DISCONNECTED_RETENTION_MS',
     'stateApi.strictReadAuthorization': 'RALLAR_STATE_STRICT_READ_AUTH',
+    'group.roomOwnedAppDataBindings': 'RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON',
     'group.defaultMaxMembers': 'RALLAR_GROUP_DEFAULT_MAX_MEMBERS',
     'group.currentSnapshotCacheMaxEntries': 'RALLAR_GROUP_CURRENT_SNAPSHOT_CACHE_MAX_ENTRIES',
     'group.admission.joinPrincipal': 'RALLAR_GROUP_JOIN_ADMISSION_PRINCIPAL_RATE_LIMIT',
@@ -233,6 +236,9 @@ const ENVIRONMENT_NAME_BY_PATH: Readonly<Record<string, string>> = {
     'topology.rttRefinement.vivaldiDeltaThresholdMs': 'RALLAR_RTC_TOPOLOGY_RTT_VIVALDI_DELTA_MS',
     'topology.replay.mode': 'RALLAR_RTC_TOPOLOGY_REPLAY',
     'topology.replay.queueWorkers': 'RALLAR_API_QUEUE_WORKERS',
+    'appInbox.retry.maxAttempts': 'RALLAR_APP_INBOX_MAX_ATTEMPTS',
+    'appInbox.retry.maxDelayMs': 'RALLAR_APP_INBOX_MAX_RETRY_DELAY_MS',
+    'appInbox.retry.conflictMaxDelayMs': 'RALLAR_APP_INBOX_CONFLICT_MAX_RETRY_DELAY_MS',
     'appInbox.phaseTiming': 'RALLAR_APP_INBOX_PHASE_TIMING',
     'appInbox.newLaneConcurrency': 'RALLAR_APP_INBOX_NEW_LANE_CONCURRENCY',
     'appInbox.newLaneHeldRows': 'RALLAR_APP_INBOX_NEW_LANE_HELD_ROWS',

@@ -102,6 +102,7 @@ export {
 export type {
     CreateRallarServerApplicationInput,
     RallarServerApplicationRouteInstallers,
+    RallarServerApplicationStartConfig,
     RallarServerApplicationSystemInstallers,
     RallarServerQueueEngine,
     RallarServerRouteInstaller,
@@ -244,3 +245,9 @@ export {
     RuntimeStateWriteConflictError,
     waitForRuntimeStateWriteRetry
 } from './runtime-state/optimistic-runtime-state-write.ts';
+
+export type { PSqlSql, PSqlTransactionWrite } from './postgres/p-sql-sql.ts';
+export { RallarServerAppInbox } from './rallar-server/rallar-server-app-inbox.ts';
+export type { AppInboxMessageContext } from './rallar-system/app-inbox/app-inbox-contracts.ts';
+export type { AppInboxFailure } from './rallar-system/app-inbox/app-inbox-failure.ts';
+export type { JsonWireValue } from './rallar-system/protocol/json-wire-identity.ts';

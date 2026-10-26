@@ -75,7 +75,7 @@ describe('app-owned AppInbox operation', () => {
         });
         await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
         expect(await results.findByKey(unsupported.entry.key)).toBeUndefined();
-        expect((await queue.getItem(unsupported.entry.key))?.status).toBe('RETRY');
+        expect(await queue.getItem(unsupported.entry.key)).toMatchObject({ status: 'NEW', dequeueAudit: { attempts: 0 } });
     });
 
     it.each([

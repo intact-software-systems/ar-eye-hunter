@@ -252,6 +252,7 @@ export async function evaluateFullStackConfiguredServiceEvidence(
 export function createFullStackApiProfileEnvBlock(): string {
     return [
         'RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory',
+        'RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON=[]',
         'RALLAR_LOGIN_USER_RATE_LIMIT=100',
         `RALLAR_REGISTRATION_IP_RATE_LIMIT=${CO_LOCATED_AUTH_IP_RATE_LIMIT}`,
         `RALLAR_LOGIN_IP_RATE_LIMIT=${CO_LOCATED_AUTH_IP_RATE_LIMIT}`,

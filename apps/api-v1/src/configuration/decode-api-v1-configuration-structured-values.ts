@@ -1,3 +1,5 @@
+import type { LoginClientData } from '@shared-server/rallar-system/auth/login/authenticate-auth-user.ts';
+
 import type { ApiV1ConfigurationIssue, ApiV1ConfigurationIssueSource } from './api-v1-configuration-error.ts';
 import type { ApiV1AuthenticationConfiguration } from './api-v1-configuration.ts';
 import type {
@@ -34,12 +36,12 @@ export class ApiV1ConfigurationStructuredValueDecoder {
             this.#values.reportMissingValue(path);
             return [];
         }
-        if (!Array.isArray(sourceValue.value) || sourceValue.value.length === 0) {
+        if (!Array.isArray(sourceValue.value)) {
             this.#values.reportInvalidSourceValue(
                 sourceValue,
                 path,
                 'invalid-origin-set',
-                'Value must be a non-empty array of exact HTTP origins.'
+                'Value must be an array of exact HTTP origins.'
             );
             return [];
         }
@@ -140,7 +142,7 @@ export class ApiV1ConfigurationStructuredValueDecoder {
             });
             return [];
         }
-        const clients: Array<{ clientId: string; username: string; password: string; }> = [];
+        const clients: LoginClientData[] = [];
         for (const [index, value] of source.entries()) {
             const path = `authentication.staticClients.${index}`;
             if (!isSourceRecord(value)) {
@@ -200,11 +202,7 @@ export class ApiV1ConfigurationStructuredValueDecoder {
     }
 
     #rejectDuplicateClientField(
-        clients: readonly Readonly<{
-            clientId: string;
-            username: string;
-            password: string;
-        }>[],
+        clients: readonly LoginClientData[],
         field: 'clientId' | 'username'
     ): void {
         const values = clients.map((client) => client[field]);

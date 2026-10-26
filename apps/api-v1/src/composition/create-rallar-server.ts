@@ -27,6 +27,7 @@ export function createRallarServer(
 ): RallarServerApplication<ApiV1Runtime, Hono> {
     return createRallarServerApplication({
         runtime: input.runtime,
+        appInbox: input.runtime.appInbox,
         repositories: input.repositories,
         appDataRepository: input.appDataRepository,
         nowEpochMs: input.nowEpochMs,

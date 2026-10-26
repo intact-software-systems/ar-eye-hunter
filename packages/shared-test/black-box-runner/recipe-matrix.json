@@ -3,30 +3,6 @@
   "description": "Runnable variants for black-box runner examples. Profiles let local smoke, live service, remote-browser, and intentional failure diagnostics use the same catalog.",
   "entries": [
     {
-      "id": "relic-game-idempotency",
-      "recipe": "tests/relic/relic-game-idempotency.json",
-      "category": "relic-hunters",
-      "mode": "run",
-      "profiles": [
-        "relic-hunters-http"
-      ],
-      "expectedExitCode": 0,
-      "artifactName": "relic-game-idempotency",
-      "requires": {
-        "httpServices": [
-          {
-            "name": "Relic Hunters server",
-            "env": "RALLAR_API_BASE_URL",
-            "default": "http://127.0.0.1:8090"
-          }
-        ],
-        "livePreflight": {
-          "timeoutMs": 10000
-        }
-      },
-      "description": "Requires an externally managed Relic Hunters server with seeded Alice and Bob accounts. Verifies issued identity, replay, round progression, reset and archived-room fencing through HTTP commands."
-    },
-    {
       "id": "control-result-release",
       "recipe": "examples/control-result-release.json",
       "category": "control-server",

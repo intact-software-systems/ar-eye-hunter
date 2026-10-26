@@ -49,6 +49,7 @@ export const API_V1_STATE_WRITE_EVIDENCE_OUTPUT = 'stateWriteEvidence';
 const DEFAULT_DATABASE_URL = 'postgres://app:app@localhost:5432/appdb';
 const MANAGED_API_CONFIGURATION_PROFILE = 'prod-in-memory';
 const MANAGED_API_PASSTHROUGH_NAMES = [
+    'CORS_ORIGINS',
     'RALLAR_AUTH_CREDENTIAL_SECRET',
     'RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET',
     'RALLAR_LOGIN_IP_RATE_LIMIT',
@@ -69,9 +70,7 @@ export function toApiV1BlackBoxEnvironment(
     baseEnv: Record<string, string | undefined>
 ): Record<string, string> {
     const env: Record<string, string> = Object.fromEntries(
-        Object.entries(baseEnv).filter(
-            (entry): entry is [string, string] => typeof entry[1] === 'string'
-        )
+        Object.entries(baseEnv).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
     );
     env.PORT = String(options.port);
     const defaultApiBaseUrl = `http://127.0.0.1:${options.port}`;
@@ -90,9 +89,12 @@ export function toApiV1BlackBoxEnvironment(
         env.RALLAR_API_BASE_URL_TERTIARY = `http://127.0.0.1:${options.tertiaryPort}`;
         env.RALLAR_WS_BASE_URL_TERTIARY = `ws://127.0.0.1:${options.tertiaryPort}`;
     }
+    env.RALLAR_DIRECTORY_BROWSER_ORIGIN = env.RALLAR_DIRECTORY_BROWSER_ORIGIN ?? 'https://browser.example.test';
+    env.CORS_ORIGINS = env.CORS_ORIGINS ?? env.RALLAR_DIRECTORY_BROWSER_ORIGIN;
     env.RALLAR_BB_RUN_ID = options.runId;
     env.RALLAR_BB_EXECUTION_TOKEN = createApiV1BlackBoxExecutionToken();
     env.RALLAR_STATE_WRITE_EVIDENCE_OUTPUT = API_V1_STATE_WRITE_EVIDENCE_OUTPUT;
+    env.RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON = '[]';
     env.RALLAR_API_CONFIGURATION_PROFILE = MANAGED_API_CONFIGURATION_PROFILE;
     env.RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET = env.RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET ??
         'local-api-v1-black-box-operator-secret';
@@ -187,6 +189,7 @@ function toManagedApiServerEnvironment(
     port: number
 ): Record<string, string> {
     const childEnvironment: Record<string, string> = {
+        RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON: '[]',
         RALLAR_API_CONFIGURATION_PROFILE: MANAGED_API_CONFIGURATION_PROFILE,
         PORT: String(port),
         RALLAR_API_BASE_URL: `http://127.0.0.1:${port}`,

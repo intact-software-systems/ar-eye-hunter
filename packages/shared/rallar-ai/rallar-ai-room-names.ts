@@ -1,89 +1,34 @@
 import { hashRallarAiJson } from './rallar-ai-hashing.ts';
 
-export type RallarAiFunnyRoomNameTheme = 'ar-eye-hunter' | 'relic-hunters';
+export interface RallarAiFunnyRoomNameTheme {
+    readonly id: string;
+    readonly defaultBaseName: string;
+    readonly nouns: readonly string[];
+}
 
-export type CreateRallarAiFunnyRoomNameOptions = Readonly<{
-    baseName: string;
-    theme: RallarAiFunnyRoomNameTheme;
-    seed: string;
-    existingNames?: readonly string[];
-}>;
+export interface CreateRallarAiFunnyRoomNameOptions {
+    readonly baseName: string;
+    readonly theme: RallarAiFunnyRoomNameTheme;
+    readonly seed: string;
+    readonly existingNames?: readonly string[];
+}
 
 const ROOM_NAME_MAX_LENGTH = 72;
 const MAX_NAME_ATTEMPTS = 64;
-const DEFAULT_BASE_NAMES: Record<RallarAiFunnyRoomNameTheme, string> = {
-    'ar-eye-hunter': 'AR Eye Hunter Arena',
-    'relic-hunters': 'Relic Hunters Expedition'
-};
-
-const THEME_WORDS: Record<
-    RallarAiFunnyRoomNameTheme,
-    Readonly<{
-        adjectives: readonly string[];
-        nouns: readonly string[];
-    }>
-> = {
-    'ar-eye-hunter': {
-        adjectives: [
-            'Quantum',
-            'Neon',
-            'Turbo',
-            'Glitchy',
-            'Pixel',
-            'Wobbly',
-            'Hyper',
-            'Vector',
-            'Recursive',
-            'Laser',
-            'Cosmic',
-            'Hologram'
-        ],
-        nouns: [
-            'Crosshair',
-            'Reticle',
-            'Beacon',
-            'Bullseye',
-            'Snapshot',
-            'Prism',
-            'Spark',
-            'Dart',
-            'Lens',
-            'Ping',
-            'Circuit',
-            'Target'
-        ]
-    },
-    'relic-hunters': {
-        adjectives: [
-            'Quantum',
-            'Neon',
-            'Turbo',
-            'Glitchy',
-            'Pixel',
-            'Wobbly',
-            'Hyper',
-            'Vector',
-            'Recursive',
-            'Laser',
-            'Cosmic',
-            'Hologram'
-        ],
-        nouns: [
-            'Teacup',
-            'Compass',
-            'Pickle',
-            'Noodle',
-            'Lantern',
-            'Keycard',
-            'Scroll',
-            'Dojo',
-            'Kiosk',
-            'Satchel',
-            'Map',
-            'Pebble'
-        ]
-    }
-};
+const ADJECTIVES = [
+    'Quantum',
+    'Neon',
+    'Turbo',
+    'Glitchy',
+    'Pixel',
+    'Wobbly',
+    'Hyper',
+    'Vector',
+    'Recursive',
+    'Laser',
+    'Cosmic',
+    'Hologram'
+];
 
 export function createRallarAiRoomNameSeed(prefix = 'rallar-ai-room'): string {
     const randomPart = typeof globalThis.crypto?.randomUUID === 'function'
@@ -96,45 +41,48 @@ export function createRallarAiRoomNameSeed(prefix = 'rallar-ai-room'): string {
 export function createRallarAiFunnyRoomName(
     options: CreateRallarAiFunnyRoomNameOptions
 ): string {
+    if (
+        !options.theme.id.trim() || !options.theme.defaultBaseName.trim() ||
+        options.theme.nouns.length === 0 || options.theme.nouns.some((noun) => !noun.trim())
+    ) {
+        throw new Error('Room name theme requires a nonempty ID, default base name, and noun vocabulary');
+    }
     const baseName = normalizeRoomName(options.baseName) ||
-        DEFAULT_BASE_NAMES[options.theme];
+        normalizeRoomName(options.theme.defaultBaseName);
     const existingNames = new Set(
         (options.existingNames ?? []).map(normalizeComparableName)
     );
 
     for (let attempt = 0; attempt < MAX_NAME_ATTEMPTS; attempt += 1) {
-        const candidate = createCandidateName(options.theme, baseName, options.seed, attempt);
+        const candidate = createCandidateName(options, baseName, attempt);
         if (!existingNames.has(normalizeComparableName(candidate))) {
             return candidate;
         }
     }
 
-    return createFallbackName(options.theme, baseName, options.seed, existingNames);
+    return createFallbackName(options, baseName, existingNames);
 }
 
 function createCandidateName(
-    theme: RallarAiFunnyRoomNameTheme,
+    options: CreateRallarAiFunnyRoomNameOptions,
     baseName: string,
-    seed: string,
     attempt: number
 ): string {
-    const words = THEME_WORDS[theme];
-    const saltedSeed = `${theme}:${baseName}:${seed}:${attempt}`;
-    const adjective = words.adjectives[indexFor(`${saltedSeed}:adjective`, words.adjectives.length)];
-    const noun = words.nouns[indexFor(`${saltedSeed}:noun`, words.nouns.length)];
+    const saltedSeed = `${options.theme.id}:${baseName}:${options.seed}:${attempt}`;
+    const adjective = ADJECTIVES[indexFor(`${saltedSeed}:adjective`, ADJECTIVES.length)];
+    const noun = options.theme.nouns[indexFor(`${saltedSeed}:noun`, options.theme.nouns.length)];
     const code = shortCode(`${saltedSeed}:code`);
     return compactRoomName(baseName, `${adjective} ${noun}`, code);
 }
 
 function createFallbackName(
-    theme: RallarAiFunnyRoomNameTheme,
+    options: CreateRallarAiFunnyRoomNameOptions,
     baseName: string,
-    seed: string,
     existingNames: ReadonlySet<string>
 ): string {
     let sequence = existingNames.size;
     while (true) {
-        const code = shortCode(`${theme}:${baseName}:${seed}:fallback:${sequence}`);
+        const code = shortCode(`${options.theme.id}:${baseName}:${options.seed}:fallback:${sequence}`);
         const candidate = compactRoomName(baseName, 'RallarAI Session', `${code}-${sequence}`);
         if (!existingNames.has(normalizeComparableName(candidate))) {
             return candidate;

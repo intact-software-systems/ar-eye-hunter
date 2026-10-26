@@ -1,5 +1,6 @@
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
+import { createTestServerAppInbox } from '../../../../packages/tests/shared-server/rallar-server/create-test-server-app-inbox.ts';
 
 import type { AppDataRepository } from '@shared-server/app-data/app-data-repository.ts';
 import { installRallarGameAuthorityServer } from '@shared-server/game/install-rallar-game-authority-server.ts';
@@ -122,6 +123,7 @@ function createRuntime(state: TestState): ApiV1Runtime {
     };
     return Object.assign({} as ApiV1Runtime, {
         wsQBoxServerService,
+        appInbox: createTestServerAppInbox(),
         qboxEngine: {
             start: () => {
                 state.events.push('start');

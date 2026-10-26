@@ -591,11 +591,10 @@ export class ALOutboundStoreLane<TPrepared> {
     }
 
     /**
-     * Only a row whose own deadline *is* the message deadline may call the message expired. A
-     * `send-prepared` or `admit-message` row carries the message's `expiresAtMs` as its queue
-     * expiry, and a foreign dequeue row is stamped from the same deadline; every other kind expires
-     * on a budget of its own -- an `ack-timeout` on the receipt's retry windows, a `nack-retry` on
-     * its schedule -- and says nothing about the message.
+     * Message admission and transmission work may state message expiry: `send-prepared`,
+     * `admit-message` and foreign dequeue rows carry the message's original deadline. Receipt and
+     * repair work do not themselves state message expiry, including `ack-timeout` work retained
+     * until that same deadline so unspent retries survive downtime.
      */
     private emitWorkExpiry(effect: ALOutboundEffectSnapshot<TPrepared>): void {
         const msgId = effect.canonicalMessage?.id.msgId;
@@ -787,7 +786,7 @@ function commitsALOutboundWorkOutsideLane<TPrepared>(kind: ALOutboundDurableEffe
     return kind !== 'send-prepared' && kind !== 'dequeue-message';
 }
 
-/** The effect kinds whose queue row expires exactly when the message it carries does. */
+/** The message admission and transmission kinds that may state message expiry. */
 function statesMessageDeadline<TPrepared>(kind: ALOutboundDurableEffect<TPrepared>['kind']): boolean {
     return kind === 'send-prepared' || kind === 'admit-message' || kind === 'dequeue-message';
 }

@@ -83,6 +83,7 @@ Deno.test('committed profiles resolve their intended database, delivery, and ICE
         {
             profileName: 'prod-hardened',
             environmentSource: {
+                http: { corsOrigins: ['https://browser.example.test'] },
                 authentication: { adminClientIds: ['production-operator'] },
                 ice: { appName: 'rallar-production', region: 'eu' },
                 blackBox: { operatorToken: { allowedClientIds: ['production-operator'] } }
@@ -112,7 +113,7 @@ Deno.test('committed profiles resolve their intended database, delivery, and ICE
             profileName: testCase.profileName,
             defaultsSource,
             profileSource: await readJsonResource(`${testCase.profileName}-config.json`),
-            environmentSource: testCase.environmentSource,
+            environmentSource: { ...testCase.environmentSource, group: { roomOwnedAppDataBindings: [] } },
             appliedEnvironmentOverrideNames: [],
             secretsSource: testCase.secretsSource,
             staticClientsSource: []
@@ -706,7 +707,7 @@ Deno.test('configuration decoder bounds password derivations by the host cores m
         ...validDecodeApiV1ConfigurationInput(),
         defaultsSource,
         hardwareConcurrency: 4,
-        environmentSource: { authentication: { maxConcurrentPasswordDerivations: 7 } }
+        environmentSource: { authentication: { maxConcurrentPasswordDerivations: 7 }, group: { roomOwnedAppDataBindings: [] } }
     });
     assert.equal(fromEnvironment.authentication.maxConcurrentPasswordDerivations, 7);
 });

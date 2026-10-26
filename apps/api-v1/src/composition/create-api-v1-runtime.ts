@@ -4,9 +4,11 @@ import {
     resolveServerWsQBoxALOutboundRuntimeStores,
     toServerWsQBoxALRuntimeStoreId
 } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
+import { decodeRoomOwnedAppDataBindings, type RoomOwnedAppData } from '@shared-server/app-data/room-owned-app-data.ts';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { PSqlQueueReleaseTiming } from '@shared-server/queuebox/postgres/p-sql-queue-release-timing.ts';
 import { initResourceInboxExpiryEviction } from '@shared-server/queuebox/postgres/resource-inbox-maintenance.ts';
+import type { RallarServerAppInbox } from '@shared-server/rallar-server/rallar-server-app-inbox.ts';
 import {
     normalizeAppInboxOptions,
     validateAppInboxAttemptDeadlineMargin,
@@ -94,16 +96,12 @@ import {
 } from '../services/runtime-state-expiry-startup.ts';
 import type { ApiV1BackgroundTaskLifecycle } from './api-v1-background-task-lifecycle.ts';
 import { requireApiV1Runtime, type ApiV1Runtime } from './api-v1-runtime.ts';
+import { createApiV1AppInbox, type CreateApiV1AppInboxInput } from './create-api-v1-app-inbox.ts';
 import {
     createApiV1MutationRuntime,
     type ApiV1MutationRuntime,
     type CreateApiV1MutationRuntimeInput
 } from './create-api-v1-mutation-runtime.ts';
-import {
-    createApiV1RelicServices,
-    type ApiV1RelicServices,
-    type CreateApiV1RelicServicesInput
-} from './create-api-v1-relic-services.ts';
 import {
     createApiV1TopologyServices,
     type ApiV1TopologyServices,
@@ -111,6 +109,7 @@ import {
 } from './create-api-v1-topology-services.ts';
 
 export interface CreateApiV1RuntimeInput {
+    readonly roomOwnedAppDataBindings: readonly RoomOwnedAppData.Binding[];
     readonly database: PSqlSql;
     readonly serviceId: string;
     readonly publisherStreamId: string;
@@ -186,7 +185,7 @@ interface ApiV1RuntimeTopology {
 }
 
 export interface ApiV1RuntimeConstructionOperations {
-    createRelicServices(input: CreateApiV1RelicServicesInput): ApiV1RelicServices;
+    createAppInbox(input: CreateApiV1AppInboxInput): RallarServerAppInbox;
     createMutationRuntime(input: CreateApiV1MutationRuntimeInput): ApiV1MutationRuntime;
     createRtcTopologyRuntime(input: CreateApiRtcTopologyRuntimeInput): ApiRtcTopologyRuntime;
     createTopologyServices(input: CreateApiV1TopologyServicesInput): ApiV1TopologyServices;
@@ -223,10 +222,12 @@ export function constructApiV1Runtime(
     input: CreateApiV1RuntimeInput,
     operations: ApiV1RuntimeConstructionOperations
 ): ApiV1Runtime {
+    decodeRoomOwnedAppDataBindings(input.roomOwnedAppDataBindings);
     requireRuntimeAppInboxDeadline(input);
+    const { wsRuntimeName, nowEpochMs, timing } = input;
     const startupGeneration = input.backgroundTasks.beginStartupGeneration();
     const almReceiptDiagnostics = createRallarAlmReceiptDiagnosticsRecorder({
-        nowEpochMs: input.nowEpochMs,
+        nowEpochMs,
         capacity: RALLAR_ALM_RECEIPT_DIAGNOSTICS_CAPACITY
     });
     const appInboxCompletionNotices = createApiV1AppInboxCompletionNotices({
@@ -244,32 +245,27 @@ export function constructApiV1Runtime(
         appInboxCompletionNotices,
         rtcTopology,
         topology,
-        wsRuntimeName: input.wsRuntimeName,
+        wsRuntimeName,
         queuePubSubChannel: input.queuePubSubChannel,
         queuePubSubPublisherId: input.queuePubSubPublisherId,
         queuePubSubLocalBus: input.queuePubSubLocalBus,
         databasePubSubMode: input.databasePubSubMode,
         databaseNotification: input.databaseNotification,
-        timing: input.timing,
+        timing,
         outboxStageTiming: input.outboxStageTiming,
         wsReceiptObserver: input.wsReceiptObserver,
         almReceiptDiagnostics,
         inboundStores,
-        nowEpochMs: input.nowEpochMs
+        nowEpochMs
     });
-    const relic = operations.createRelicServices({
-        mutation,
-        runtime,
-        wsRuntimeName: input.wsRuntimeName,
-        nowEpochMs: input.nowEpochMs,
-        timing: input.timing
-    });
+    const appInbox = operations.createAppInbox({ mutation, runtime, timing });
+    input.backgroundTasks.register(() => appInbox.stop());
     rtcTopology.topologyReplay.attach({ wsQueueBoxServerService: runtime.wsQBoxServerService });
     startGroupMaintenance({ runtime, mutation, input, operations });
     const selectors = operations.createSnapshotSelectors(mutation, input.timing);
     return operations.requireRuntime({
         runtime,
-        ...relic,
+        appInbox,
         authSessionRepository: mutation.authSessionRepository,
         passwordDerivationAdmission: mutation.passwordDerivationAdmission,
         ...selectors,
@@ -413,6 +409,7 @@ function toMutationRuntimeInput(
         disconnectedSessionRetentionMs: input.disconnectedSessionRetentionMs,
         groupCapacity: input.groupCapacity,
         groupCurrentSnapshotCacheMaxEntries: input.groupCurrentSnapshotCacheMaxEntries,
+        roomOwnedAppDataBindings: input.roomOwnedAppDataBindings,
         groupFormationRecomputeDebounceMs: input.groupFormationRecomputeDebounceMs,
         groupFormationRecomputeMaxWaitMs: input.groupFormationRecomputeMaxWaitMs,
         adminClientIds: input.adminClientIds,
@@ -422,7 +419,7 @@ function toMutationRuntimeInput(
 }
 
 const PRODUCTION_OPERATIONS: ApiV1RuntimeConstructionOperations = {
-    createRelicServices: createApiV1RelicServices,
+    createAppInbox: createApiV1AppInbox,
     createMutationRuntime: createApiV1MutationRuntime,
     createRtcTopologyRuntime: createApiRtcTopologyRuntime,
     createTopologyServices: createApiV1TopologyServices,

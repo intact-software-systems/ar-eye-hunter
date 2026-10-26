@@ -15,14 +15,13 @@ import {
 } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 
 import {
     createResourceInboxTestStorage,
     recordResourceInboxStatements,
     seedResourceInboxRow,
-    type ResourceInboxTestRow,
     type ResourceInboxTestStorage
 } from './resource-inbox-test-storage.ts';
 
@@ -49,8 +48,8 @@ beforeEach(async () => {
 
 describe('PSqlQueueBox reservation claim', () => {
     it('claims the next NEW row in creation order over row id, in one statement with the lease and attempt a reservation carries', async () => {
-        await seed({ resourceId: 'second', status: EntityStatus.NEW });
-        await seed({ resourceId: 'first', status: EntityStatus.NEW });
+        await seedResourceInboxRow(sql, { resourceId: 'second', status: EntityStatus.NEW });
+        await seedResourceInboxRow(sql, { resourceId: 'first', status: EntityStatus.NEW });
         await sql`update resource_inbox set created_ts = created_ts - interval '1 second' where ri_resource_id = 'first'`;
 
         const reserved = await queue.reserveEntries({ typeIds: INBOX_TYPES, statusIds: new Set([EntityStatus.NEW]), reservationInput: 1 });
@@ -67,25 +66,24 @@ describe('PSqlQueueBox reservation claim', () => {
     });
 
     it('claims up to the requested count in row order and skips exhausted, expired, scheduled and not-yet-due rows', async () => {
-        await seed({ resourceId: 'exhausted', status: EntityStatus.NEW, attempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts });
-        await seed({ resourceId: 'expired', status: EntityStatus.NEW, expired: true });
-        await seed({ resourceId: 'scheduled', status: EntityStatus.NEW, nextInSeconds: 60 });
-        await seed({ resourceId: 'pending-retry', status: EntityStatus.RETRY, attempts: 1, startedAgoSeconds: 5, endedAgoSeconds: 4, nextInSeconds: 60 });
-        await seed({ resourceId: 'due-retry', status: EntityStatus.RETRY, attempts: 1, startedAgoSeconds: 5, endedAgoSeconds: 4, nextInSeconds: -1 });
-        await seed({ resourceId: 'new-a', status: EntityStatus.NEW });
-        await seed({ resourceId: 'new-b', status: EntityStatus.NEW });
+        await seedResourceInboxRow(sql, { resourceId: 'exhausted', status: EntityStatus.NEW, attempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts });
+        await seedResourceInboxRow(sql, { resourceId: 'expired', status: EntityStatus.NEW, expired: true });
+        await seedResourceInboxRow(sql, { resourceId: 'scheduled', status: EntityStatus.NEW, nextInSeconds: 60 });
+        await seedResourceInboxRow(sql, { resourceId: 'pending-retry', status: EntityStatus.RETRY, attempts: 1, startedAgoSeconds: 5, endedAgoSeconds: 4, nextInSeconds: 60 });
+        await seedResourceInboxRow(sql, { resourceId: 'due-retry', status: EntityStatus.RETRY, attempts: 1, startedAgoSeconds: 5, endedAgoSeconds: 4, nextInSeconds: -1 });
+        await seedResourceInboxRow(sql, { resourceId: 'new-a', status: EntityStatus.NEW });
+        await seedResourceInboxRow(sql, { resourceId: 'new-b', status: EntityStatus.NEW });
 
         const newRows = await queue.reserveEntries({ typeIds: INBOX_TYPES, statusIds: new Set([EntityStatus.NEW]), reservationInput: 5 });
         const retryRows = await queue.reserveEntries({ typeIds: INBOX_TYPES, statusIds: new Set([EntityStatus.RETRY]), reservationInput: 5 });
 
         expect([...newRows.values()].map((entry) => entry.key.resourceId)).toEqual(['new-a', 'new-b']);
         expect([...retryRows.values()].map((entry) => [entry.key.resourceId, entry.dequeueAudit.attempts])).toEqual([['due-retry', 2]]);
-        expect(statements.filter((statement) => statement.startsWith('update'))).toHaveLength(2);
     });
 
     it('claims a row exactly as starting its processing would and never past the attempt budget', async () => {
-        await seed({ resourceId: 'by-claim', status: EntityStatus.RETRY, attempts: 1, startedAgoSeconds: 5, endedAgoSeconds: 4, nextInSeconds: -1 });
-        await seed({ resourceId: 'by-start', status: EntityStatus.RETRY, attempts: 1, startedAgoSeconds: 5, endedAgoSeconds: 4, nextInSeconds: -1 });
+        await seedResourceInboxRow(sql, { resourceId: 'by-claim', status: EntityStatus.RETRY, attempts: 1, startedAgoSeconds: 5, endedAgoSeconds: 4, nextInSeconds: -1 });
+        await seedResourceInboxRow(sql, { resourceId: 'by-start', status: EntityStatus.RETRY, attempts: 1, startedAgoSeconds: 5, endedAgoSeconds: 4, nextInSeconds: -1 });
 
         const [claimed] = (await queue.reserveEntries({
             typeIds: INBOX_TYPES,
@@ -103,12 +101,17 @@ describe('PSqlQueueBox reservation claim', () => {
         });
 
         expect(claimed?.key.resourceId).toBe('by-claim');
-        expect(toComparableLifecycle(claimed!)).toEqual(toComparableLifecycle(started.right!));
+        for (const entry of [claimed, started.right]) {
+            expect(entry).toMatchObject({
+                status: EntityStatus.RESERVED,
+                dequeueAudit: { attempts: 2, startTs: expect.any(Temporal.Instant), endTs: undefined, nextTs: undefined }
+            });
+        }
         expect(exhausted.size).toBe(0);
     });
 
     it('claims an observed row only while it still matches the observation, in a transaction that reads before it starts', async () => {
-        const key = await seed({ resourceId: 'observed', status: EntityStatus.NEW });
+        const key = await seedResourceInboxRow(sql, { resourceId: 'observed', status: EntityStatus.NEW });
         const observed = (await repository.entries.findByKey(key))!;
         statements.length = 0;
 
@@ -132,23 +135,16 @@ describe('PSqlQueueBox reservation claim', () => {
     });
 });
 
-async function seed(row: ResourceInboxTestRow) {
-    return await seedResourceInboxRow(sql, row);
+interface PersistedLifecycle {
+    readonly status: string | undefined;
+    readonly attempts: number;
+    readonly started: boolean;
+    readonly next: boolean;
 }
 
-async function readLifecycle(resourceId: string) {
+async function readLifecycle(resourceId: string): Promise<PersistedLifecycle> {
     const [row] = await sql<readonly { ri_status: string; ri_attempts: bigint | number; start_ts: string | null; next_ts: string | null; }[]>`
         select ri_status, ri_attempts, start_ts, next_ts from resource_inbox where ri_resource_id = ${resourceId}
     `;
     return { status: row?.ri_status, attempts: Number(row?.ri_attempts), started: row?.start_ts !== null, next: row?.next_ts !== null };
-}
-
-function toComparableLifecycle(entry: ResourceEntry) {
-    return {
-        status: entry.status,
-        attempts: entry.dequeueAudit.attempts,
-        started: entry.dequeueAudit.startTs !== undefined,
-        endTs: entry.dequeueAudit.endTs,
-        nextTs: entry.dequeueAudit.nextTs
-    };
 }

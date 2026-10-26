@@ -1,5 +1,5 @@
 {
-  "description": "Group directory contract: safe discoverable entries for both game names, generic filters and best-effort keyset paging, forming approval-based rooms, caller-specific conditional reads through CORS, and uncached typed failures.",
+  "description": "Group directory contract: safe discoverable entries for both workspace names, generic filters and best-effort keyset paging, forming approval-based rooms, caller-specific conditional reads through CORS, and uncached typed failures.",
   "variables": {
     "apiPrimary": {
       "env": "RALLAR_API_BASE_URL",
@@ -39,7 +39,7 @@
     "privateId": "dir-private-{runId}",
     "browserOrigin": {
       "env": "RALLAR_DIRECTORY_BROWSER_ORIGIN",
-      "default": "https://ar-eye-hunter.pages.dev"
+      "default": "https://browser.example.test"
     }
   },
   "execution": {
@@ -180,7 +180,7 @@
         },
         "body": {
           "groupId": "{alphaId}",
-          "displayName": "AR Eye Hunter Arena {runId}",
+          "displayName": "Planning Team Arena {runId}",
           "kind": "room",
           "joinMode": "open",
           "createdByPrincipalId": "{aliceClientId}"
@@ -209,7 +209,7 @@
         },
         "body": {
           "groupId": "{betaId}",
-          "displayName": "Relic Hunters Expedition {runId}",
+          "displayName": "Inventory Team Expedition {runId}",
           "kind": "room",
           "joinMode": "open",
           "createdByPrincipalId": "{aliceClientId}",
@@ -337,7 +337,7 @@
               "joinMode": "open",
               "maxMembers": "integer",
               "isFull": false,
-              "displayName": "AR Eye Hunter Arena {runId}"
+              "displayName": "Planning Team Arena {runId}"
             },
             {
               "groupRef": {
@@ -346,7 +346,7 @@
               "joinMode": "open",
               "maxMembers": "integer",
               "isFull": false,
-              "displayName": "Relic Hunters Expedition {runId}",
+              "displayName": "Inventory Team Expedition {runId}",
               "lifecycleState": "forming"
             },
             {
@@ -392,7 +392,7 @@
               "joinMode": "open",
               "maxMembers": "integer",
               "isFull": false,
-              "displayName": "AR Eye Hunter Arena {runId}"
+              "displayName": "Planning Team Arena {runId}"
             },
             {
               "groupRef": {
@@ -401,7 +401,7 @@
               "joinMode": "open",
               "maxMembers": "integer",
               "isFull": false,
-              "displayName": "Relic Hunters Expedition {runId}",
+              "displayName": "Inventory Team Expedition {runId}",
               "lifecycleState": "forming"
             }
           ],
@@ -433,7 +433,7 @@
               "joinMode": "open",
               "maxMembers": "integer",
               "isFull": false,
-              "displayName": "AR Eye Hunter Arena {runId}",
+              "displayName": "Planning Team Arena {runId}",
               "peerRttMs": null
             },
             {
@@ -443,7 +443,7 @@
               "joinMode": "open",
               "maxMembers": "integer",
               "isFull": false,
-              "displayName": "Relic Hunters Expedition {runId}",
+              "displayName": "Inventory Team Expedition {runId}",
               "lifecycleState": "forming",
               "peerRttMs": null
             }
@@ -488,7 +488,7 @@
       "connection": "primary",
       "request": {
         "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true&kind=room&q=AR%20EYE",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true&kind=room&q=PLANNING%20TEAM",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
@@ -515,7 +515,7 @@
       "connection": "primary",
       "request": {
         "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true&kind=room&q=RELIC%20HUNTERS",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true&kind=room&q=INVENTORY%20TEAM",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"

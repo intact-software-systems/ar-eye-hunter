@@ -26,7 +26,7 @@ export class PSqlResourceInboxFinalizationRepository {
     async findRetryExhaustionFinalizationsSkipLocked(
         typeIds: ReadonlySet<string>,
         staleAfterMs: number,
-        options: Readonly<{ processingAttempts: number; maxToReserve: number; }>
+        options: Readonly<{ processingAttempts: number; maxToReserve: number; allowedTopicIds?: ReadonlySet<string>; }>
     ): Promise<Map<string, ResourceEntry>> {
         if (!Number.isSafeInteger(staleAfterMs) || staleAfterMs < 0) {
             throw new Error('Finalization stale duration must be a non-negative safe integer');
@@ -45,6 +45,9 @@ export class PSqlResourceInboxFinalizationRepository {
             select *
             from resource_inbox
             where ri_type_id = any(${[...typeIds]})
+              and (${options.allowedTopicIds === undefined} or ri_topic_id = any(${[
+            ...options.allowedTopicIds ?? []
+        ]}::text[]))
               and ri_status = ${EntityStatus.RESERVED}
               and expire_ts > (now() at time zone 'UTC')
               and ri_attempts >= ${options.processingAttempts}

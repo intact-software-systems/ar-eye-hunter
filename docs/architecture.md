@@ -35,6 +35,27 @@ The canonical contract is
 `docs/rallar-convergent-state-and-rtc-topology.md` describes how several API
 processes converge group state, client state, and RTC topology on one database.
 
+Server-side applications use the public `RallarServerApplication.appInbox`
+capability. A trusted registration owns its canonical envelope, logical command
+projection, winner-only immutable capture, result binding and domain attempt.
+Every claimant registers before workers start, using the same capability
+instance exposed by the server facade. All producer processes call
+`rallar.start({ queueWorkers })` after registration: startup seals registration
+and opens admission even when local workers are disabled. `rallar.start()`
+retains its default worker startup. API background-task shutdown closes the same
+owner in either mode. Application code does not construct internal clients,
+handlers or reservations.
+
+`enqueue` returns a bound durable admission; its `wait()` returns the exact
+stored result. `readAdmission` validates and returns pending or completed
+admission without waiting. Only a validated miss permits an external proposal;
+concurrent misses may generate proposals but only the reservation winner's
+immutable facts are retained. `submit` and `readReplay` wait through the same
+admission/result path. This preserves WS delivery-track release after admission
+while REST can wait for completion. Application effects run after commit.
+[The counter example](../examples/server-app-inbox/README.md) demonstrates this
+without game policy.
+
 ## Convergence uses causal revisions, not a single writer
 
 Once a record is well formed, convergence is optimistic: read without locking,
@@ -136,14 +157,15 @@ expired IDs keep their existing recreation behavior. Audit and idempotency/repla
 their existing lifetime; unrelated application data is untouched.
 
 Relic's server-only mutation owner in `packages/relic-hunters/server` shares that group revision
-fence. Every API worker registers the app-owned `app:relic-hunters:mutate` operation before maintenance
-starts. Shared AppInbox accepts generic namespaced application operations; Relic owns command and
+fence. The consumer server registers `app:relic-hunters:mutate` through the public application AppInbox before worker startup. API-only workers never claim that unsupported topic. Every process sharing the database must receive the same complete `RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON` catalog; omission fails startup, and explicit `[]` asserts there are no room-owned stores. Configuration validation is local and does not establish cross-process agreement. It owns command and
 proposal-independent replay identity, schema validation and game policy. Each attempt reads
 the current issued session, room policy and save, computes and validates outside the transaction,
 then first advances the observed group revision before the save CAS, private publication provenance,
 final WS outbox and durable acknowledgement commit together. Expected rule refusals are values;
-unexpected failures reach the existing QueueBox retry owner. AI setup proposals are captured before
-queue processing. REST commands and resets carry request IDs; replay returns the durable outcome
+unexpected failures reach the existing QueueBox retry owner. AI setup proposals run after a validated admission miss and before reservation;
+only the reservation winner captures their immutable ingress. The durable
+envelope remains logical command in `data`, captured ingress in `authority` and
+actor session in `senderId`, decoded and result-bound without conversion. REST commands and resets carry request IDs; replay returns the durable outcome
 followed by a fresh authorized snapshot read, so a prior response cannot resurrect a reset or deletion.
 
 ## Data, CRDT, Motion, and Game stay separate

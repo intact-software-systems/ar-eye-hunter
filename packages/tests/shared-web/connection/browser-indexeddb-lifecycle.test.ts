@@ -39,6 +39,7 @@ describe('browser IndexedDB terminal ownership', () => {
         const session = { clientId: 'client', sessionId: 'session', username: 'test', accessToken: 'test', expiresAtEpochMs: 60_000 };
         vi.spyOn(auth, 'readSession').mockReturnValue(session);
         vi.spyOn(connectionHttp, 'readApiConfig').mockResolvedValue({
+            serverPeerId: 'server',
             apiBaseUrl: 'http://test',
             wsBaseUrl: 'ws://test',
             endpoints: { createWs: '/ws' }
@@ -105,6 +106,7 @@ describe('browser IndexedDB terminal ownership', () => {
         const failure = new Error('socket unavailable');
         vi.spyOn(console, 'error').mockImplementation(() => {});
         vi.spyOn(connectionHttp, 'readApiConfig').mockResolvedValue({
+            serverPeerId: 'server',
             apiBaseUrl: 'http://test',
             wsBaseUrl: 'ws://test',
             endpoints: { createWs: '/ws' }

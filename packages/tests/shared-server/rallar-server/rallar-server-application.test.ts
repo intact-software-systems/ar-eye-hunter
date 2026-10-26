@@ -22,6 +22,8 @@ import {
     onTestFinished
 } from 'vitest';
 
+import { createTestServerAppInbox } from './create-test-server-app-inbox.ts';
+
 interface App {
     webSocketMounted: number;
     restMounted: number;
@@ -45,6 +47,28 @@ describe('RallarServerApplication', () => {
                 wake: () => events.push('wake')
             }
         };
+        const appInbox = createTestServerAppInbox();
+        const operation = appInbox.register({
+            type: 'app:settings:set',
+            decodeEnvelope: (value) => {
+                if (value.data !== null) {
+                    throw new TypeError('Settings lifecycle command must be null');
+                }
+                return value.data;
+            },
+            encodeEnvelope: (value) => ({ data: value }),
+            toBinding: () => ({ contextId: 'settings', resourceId: 'request' }),
+            toLogicalCommand: (value) => value,
+            materialize: (value) => value,
+            encodeResult: (value) => value,
+            decodeResult: (value) => {
+                if (value !== null) {
+                    throw new TypeError('Settings lifecycle result must be null');
+                }
+                return value;
+            },
+            handle: async () => null
+        });
         const repositories = new RepositoryManager();
         const appDataRepository = new RecordingAppDataRepository();
         const app: App = {
@@ -53,6 +77,7 @@ describe('RallarServerApplication', () => {
         };
         const server = createRallarServerApplication<typeof runtime, App>({
             runtime,
+            appInbox,
             repositories,
             appDataRepository,
             nowEpochMs: () => 1_000,
@@ -66,7 +91,7 @@ describe('RallarServerApplication', () => {
                     target.webSocketMounted += 1;
                     events.push('websocket-route');
                 },
-                rest: [(target) => {
+                rest: [function installTestRestRoutes (target) {
                     target.restMounted += 1;
                     events.push('rest-route');
                 }]
@@ -77,7 +102,26 @@ describe('RallarServerApplication', () => {
         server.installWebSocketLifecycle().installWebSocketLifecycle();
         server.mountWebSocket(app).mountWebSocket(app);
         server.mountRest(app).mountRest(app);
+        expect((await operation.readReplay(null))?.left).toMatchObject({ code: 'app-inbox-lifecycle-rejected' });
+        server.start({ queueWorkers: 'disabled' });
+        expect(events).not.toContain('start');
+        expect(await operation.readAdmission(null)).toBeUndefined();
+        expect(() =>
+            appInbox.register({
+                type: 'app:settings:late',
+                decodeEnvelope: () => null,
+                encodeEnvelope: () => ({ data: null }),
+                toBinding: () => ({ contextId: 'settings', resourceId: 'late' }),
+                toLogicalCommand: () => null,
+                materialize: () => null,
+                encodeResult: () => null,
+                decodeResult: () => null,
+                handle: async () => null
+            })
+        ).toThrow('registration is sealed');
         server.start();
+        expect(await operation.readReplay(null)).toBeUndefined();
+        expect(server.appInbox).toBe(appInbox);
 
         const settings = await server.appData.open('settings', {
             codec: {
@@ -113,6 +157,11 @@ describe('RallarServerApplication', () => {
                 key: 'theme'
             })
         ).toMatchObject({ value: 'dark' });
+        runtime.qboxEngine.start = () => {
+            throw new Error('Worker startup failed');
+        };
+        expect(() => server.start()).toThrow('Worker startup failed');
+        expect((await operation.readReplay(null))?.left).toMatchObject({ code: 'app-inbox-lifecycle-rejected' });
     });
 });
 
@@ -192,6 +241,6 @@ class RecordingAppDataRepository implements AppDataRepository {
     }
 
     private toKey(input: AppDataKey): string {
-        return `${input.namespace}:${input.storeName}:${input.key}`;
+        return JSON.stringify([input.namespace, input.storeName, input.key]);
     }
 }

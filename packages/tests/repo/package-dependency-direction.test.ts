@@ -1,3 +1,5 @@
+import type { ApiJsonObject, ApiJsonValue } from '@shared/api/api-json-value.ts';
+import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -33,10 +35,6 @@ const ALIAS_BY_PACKAGE: Readonly<Record<string, string>> = {
     'shared-test': '@shared-test',
     'relic-hunters': '@relic-hunters'
 };
-
-interface TypeScriptConfig {
-    compilerOptions?: { paths?: Record<string, string[]>; };
-}
 
 function readSourceFiles(directory: string): string[] {
     const entries = readdirSync(path.join(repoRoot, directory), { withFileTypes: true });
@@ -94,14 +92,14 @@ describe('package dependency direction', () => {
     it.each(Object.keys(PACKAGE_DEPENDENCIES))(
         'declares no %s tsconfig path outside its dependency closure',
         (packageName) => {
-            const config = JSON.parse(
-                readFileSync(path.join(repoRoot, `packages/${packageName}/tsconfig.json`), 'utf8')
-            ) as TypeScriptConfig;
+            const config = readJsonObject(`packages/${packageName}/tsconfig.json`);
+            const compilerOptions = requireObject(config.compilerOptions);
+            const paths = requireObject(compilerOptions.paths);
             const permitted = new Set([
                 ALIAS_BY_PACKAGE[packageName],
                 ...[...toClosure(packageName)].map((name) => ALIAS_BY_PACKAGE[name])
             ]);
-            const declared = Object.keys(config.compilerOptions?.paths ?? {}).map((mapping) => mapping.replace(/\/\*$/u, ''));
+            const declared = Object.keys(paths).map((mapping) => mapping.replace(/\/\*$/u, ''));
 
             expect(declared.filter((alias) => !permitted.has(alias)).toSorted()).toEqual([]);
         }
@@ -132,16 +130,35 @@ describe('package dependency direction', () => {
     );
 
     it('keeps the api-v1 Deno import map free of browser and test-only packages', () => {
-        const imports = (
-            JSON.parse(readFileSync(path.join(repoRoot, 'apps/api-v1/deno.json'), 'utf8')) as {
-                imports?: Record<string, string>;
-            }
-        ).imports;
-        const declared = Object.keys(imports ?? {});
+        const imports = requireObject(readJsonObject('apps/api-v1/deno.json').imports);
+        const declared = Object.keys(imports);
 
         expect(declared).not.toContain('@shared-web/');
         expect(declared).not.toContain('@shared-test/');
+        expect(declared).not.toContain('@relic-hunters/');
     });
+
+    it('resolves the actual API entrypoint without consumer game modules', () => {
+        const graph = requireObject(JSON.parse(execFileSync('deno', [
+            'info',
+            '--json',
+            '--config',
+            'apps/api-v1/deno.json',
+            'apps/api-v1/src/main.ts'
+        ], { cwd: repoRoot, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })));
+        if (!Array.isArray(graph.modules)) {
+            throw new TypeError('Deno module graph must contain its resolved module inventory');
+        }
+        const modules = graph.modules.map((entry) => {
+            const specifier = requireObject(entry).specifier;
+            if (typeof specifier !== 'string') {
+                throw new TypeError('Deno module graph entry must name its resolved specifier');
+            }
+            return specifier;
+        });
+        expect(modules.some((specifier) => specifier.endsWith('/apps/api-v1/src/main.ts'))).toBe(true);
+        expect(modules.filter((specifier) => /\/(?:packages|apps)\/relic[^/]*\//u.test(specifier))).toEqual([]);
+    }, 30_000);
 
     // packages/shared-test ships products (the black-box runner); packages/tests is test code only.
     // A test may use either, but application source may reach neither.
@@ -156,3 +173,14 @@ describe('package dependency direction', () => {
         expect(offenders).toEqual([]);
     });
 });
+
+function readJsonObject(filePath: string): ApiJsonObject {
+    return requireObject(JSON.parse(readFileSync(path.join(repoRoot, filePath), 'utf8')));
+}
+
+function requireObject(value: ApiJsonValue): ApiJsonObject {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        throw new TypeError('Expected a configuration or module graph object');
+    }
+    return value as ApiJsonObject;
+}

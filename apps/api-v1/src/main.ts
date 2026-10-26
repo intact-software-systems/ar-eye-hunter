@@ -64,11 +64,7 @@ const port = configuration.http.port;
 const apiProcess = await startApiProcess({
     runtimeReadiness: rallar.runtime.readiness,
     listen: () => Deno.serve({ port }, app.fetch),
-    startQueueWorkers: () => {
-        if (configuration.topology.replay.queueWorkers === 'enabled') {
-            rallar.start();
-        }
-    },
+    startApplication: () => rallar.start({ queueWorkers: configuration.topology.replay.queueWorkers }),
     stopAfterStartupFailure: async (boundHttpServer) => {
         const failures: Error[] = [];
         try {

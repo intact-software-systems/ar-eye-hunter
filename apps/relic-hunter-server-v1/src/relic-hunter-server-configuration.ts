@@ -9,6 +9,7 @@ import {
 } from '@api-v1/src/configuration/read-api-v1-configuration.ts';
 import { toApiV1PublicConfiguration } from '@api-v1/src/configuration/to-api-v1-public-configuration.ts';
 import type { ApiConfig } from '@shared/api/api-config.ts';
+import { requireRelicRoomOwnedAppDataBindings } from './create-relic-game-services.ts';
 
 export type RelicRestAuthorizationMode = 'authenticated' | 'group-policy';
 
@@ -65,6 +66,7 @@ export async function readRelicHunterServerConfiguration(
     input: ReadRelicHunterServerConfigurationInput
 ): Promise<RelicHunterServerConfiguration> {
     const apiV1 = await readApiV1Configuration(input);
+    requireRelicRoomOwnedAppDataBindings(apiV1.group.roomOwnedAppDataBindings);
     const source = readRelicHunterServerEnvironmentSource(input.environment);
     const restAuthorization = await readRelicRestAuthorization(input, apiV1.profile.name, source);
     const expeditionAi = decodeRelicAiExpeditionConfiguration(source);

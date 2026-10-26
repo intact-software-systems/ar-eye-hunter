@@ -1,7 +1,7 @@
 interface ApiProcessStartupOptions<THttpServer> {
     readonly runtimeReadiness: Promise<void>;
     readonly listen: () => THttpServer;
-    readonly startQueueWorkers: () => void;
+    readonly startApplication: () => void;
     readonly stopAfterStartupFailure: (httpServer: THttpServer | undefined) => Promise<void>;
 }
 
@@ -16,7 +16,7 @@ export async function startApiProcess<THttpServer>(
     try {
         httpServer = options.listen();
         await options.runtimeReadiness;
-        options.startQueueWorkers();
+        options.startApplication();
 
         return { httpServer };
     }

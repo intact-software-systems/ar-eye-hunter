@@ -50,7 +50,7 @@ Shared server owns:
 - `createRallarMiddleware(...)`, including complete inbox-handler construction
   and exact queue-task registration;
 - `createRallarServerApplication(...)`, which exposes the real WebSocket router
-  and app-data owner;
+  app-data owner and application AppInbox;
 - domain read/compute/validate/write services;
 - QueueBox, AppInbox, runtime-state, state-event, topology replay, and
   feature-owned persistence behavior.
@@ -64,6 +64,7 @@ apps/api-v1/src/main.ts
        -> composition/create-api-v1-mutation-runtime.ts
        -> composition/create-api-v1-topology-services.ts
        -> rallar-system/middleware/create-rallar-middleware.ts
+       -> composition/create-api-v1-app-inbox.ts
   -> composition/create-api-v1-admin-services.ts
   -> composition/create-api-v1-system-installers.ts
   -> composition/create-api-v1-route-installers.ts
@@ -72,8 +73,10 @@ apps/api-v1/src/main.ts
 ```
 
 `main.ts` installs system topics and WebSocket lifecycle, mounts WebSocket and
-REST routes, binds the HTTP server, awaits runtime readiness, and only then
-starts QueueBox workers when the configured runtime permits them. All configured
+REST routes, binds the HTTP server, awaits runtime readiness, and then calls
+`rallar.start({ queueWorkers })`. Startup always seals registration and opens
+application admission. Local QueueBox workers start only when enabled; a passive
+producer still admits durable work for another claimant. All configured
 AppInbox handlers and all four queue task families are registered before a
 queue engine can be returned or started.
 
@@ -118,6 +121,39 @@ successful response fields are mandatory fields by default. Current writers
 define the accepted stored shape. A malformed value or schema mismatch fails at
 its owning typed corruption boundary; there is no runtime dual-read, backfill,
 or predecessor-format fallback.
+
+## Application operations
+
+Server-side applications register namespaced operations through
+`RallarServerApplication.appInbox`, exported as `RallarServerAppInbox` from
+`@shared-server/mod.ts`. Every process owning an operation registers it on the same capability instance
+before `rallar.start(...)` seals registration and opens admission. Different workers
+may own different application operation sets; claims use each worker’s local inventory.
+The complete database-wide room-owned retention catalog is a separate configuration
+contract shared by every process using that database. `rallar.start()` keeps the default of starting
+local workers; `rallar.start({ queueWorkers: 'disabled' })` opens a passive
+producer's admission without starting local workers. API background-task shutdown
+closes the same AppInbox owner in either mode. Applications do not assemble private AppInbox
+clients, handlers, reservation or completion owners.
+
+A registration supplies its canonical envelope codec, logical identity,
+winner-only immutable fact capture, command-bound result decoder and one
+read/compute/validate/write handler. The generic product owns admission,
+identity validation, reservation, transaction completion and QueueBox retries;
+the application owns authorization, proposals and mutation/publication policy.
+`commit` receives the exact result and a transaction-bound write and resolves
+after state, final outbox and completion commit together.
+
+`enqueue` returns `Either<failure, Admission<Result>>` after durable admission;
+its bound `wait()` decodes the exact retained winner's result. `readAdmission`
+returns retained pending or completed admission immediately, or `undefined` only
+for a validated miss. Only that miss permits an external proposal call.
+`submit` and `readReplay` are completion-waiting conveniences over those same
+paths. Expected lifecycle/idempotency failures are Left values; corrupt stored
+invariants remain distinct failures. A WS delivery handler can finish after
+admission while a REST boundary waits for completion.
+
+See [the counter example](../../examples/server-app-inbox/README.md). Application consumers use the existing queue and transaction owner. Workers claim platform topics and their sealed local application topics; other applications' rows remain untouched. Room retention requires an explicit complete database-wide room-owned AppData catalog shared by every process using the database.
 
 ## WebSocket entry
 

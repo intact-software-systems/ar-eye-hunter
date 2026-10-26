@@ -11,7 +11,7 @@ it does not redefine transaction, retry, convergence, or locking policy.
 ## Common Focused Commands
 
 ```bash
-npx vitest run packages/tests/shared/rallar-ai-contracts.test.ts
+npx vitest run packages/tests/shared/rallar-ai
 npx vitest run packages/tests/shared-web/rooms/rallar-room-realtime-channel.test.ts packages/tests/shared-web/rallar-message-channel-compat.test.ts
 npx vitest run packages/tests/shared-web/rooms/rallar-rooms-facade.test.ts packages/tests/shared-web/rallar-readiness.test.ts packages/tests/shared-web/rallar-rtc-wait-compat.test.ts packages/tests/shared-web/rallar-workflow-options-compat.test.ts
 npx vitest run packages/tests/shared/webrtc-connection-service.test.ts packages/tests/shared/al-outbound-message-runtime.test.ts
