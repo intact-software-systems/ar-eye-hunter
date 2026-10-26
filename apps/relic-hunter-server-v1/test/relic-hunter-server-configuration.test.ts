@@ -92,7 +92,7 @@ describe('Relic Hunter server configuration', () => {
 
     it('rejects omitted and mismatched database-wide save ownership instead of appending a local binding', async () => {
         await expect(readConfiguration({ RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON: undefined }))
-            .rejects.toThrow('roomOwnedAppDataBindings');
+            .rejects.toThrow('exact Relic save binding');
         for (const catalog of [[], [{ applicationId: 'rallar-server', workspaceId: 'other', namespace: 'relic-hunter-v1', storeName: 'relic-hunter-games' }]]) {
             await expect(readConfiguration({ RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON: JSON.stringify(catalog) }))
                 .rejects.toThrow('exact Relic save binding');
