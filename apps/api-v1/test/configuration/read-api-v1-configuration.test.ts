@@ -136,6 +136,21 @@ Deno.test('configuration reader keeps 512 current group snapshots unless the env
     );
 });
 
+Deno.test('configuration reader defaults room-owned data bindings to an explicit empty catalog', async () => {
+    const environment = validConfigurationEnvironment('prod-in-memory');
+    delete environment.RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON;
+
+    const configuration = await readApiV1Configuration(readerInput(environment));
+
+    assert.deepEqual(configuration.group.roomOwnedAppDataBindings, []);
+    assert.equal(
+        configuration.profile.appliedEnvironmentOverrideNames.includes(
+            'RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON'
+        ),
+        false
+    );
+});
+
 Deno.test('configuration reader keeps production hardening profile-owned', async () => {
     const environment = {
         ...validConfigurationEnvironment('prod'),
