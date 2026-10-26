@@ -150,7 +150,7 @@ moved or changed test.
       "domain": "ALM outbound sender admission lifetime",
       "owner": "Rallar shared maintainers",
       "summary": "A late dispatch from the same sender cannot enter its decision-read storage port while an earlier group still owns its admission slot, including after all but one group member have finished reading.",
-      "semanticCoverage": "packages/tests/shared/alm/outbound/al-outbound-dispatch-admission.test.ts#makes bounded independent read progress through a burst before committing in input order and admitting a late send",
+      "semanticCoverage": "packages/tests/shared/alm/outbound/al-outbound-dispatch-admission.test.ts#reads every member of a burst at once before committing in input order and admitting a late send",
       "coverageRelation": "The test holds real group admission reads, queues a late send from the same sender, observes its decision-read port before and after the independent members finish, then releases the final read and verifies ordered committed results, original messages, durable readback and late-send completion.",
       "interactionRequirement": {
         "interactionKind": "absence",
@@ -618,9 +618,9 @@ moved or changed test.
       "id": "ar-arena-create-and-switch-boundary",
       "domain": "AR Eye Hunter arena room switching",
       "owner": "AR Eye Hunter maintainers",
-      "summary": "Creating an arena uses atomic create-and-switch rather than create-only. Executable assertion: “creates a new arena by switching rooms and clearing stale remote players”.",
-      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#creates a new arena by switching rooms and clearing stale remote players",
-      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "summary": "Creating a temporary arena uses the create-and-switch workflow, selects the new room and clears stale remote players without a separate create-only call.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#creates a temporary arena by switching rooms and clearing stale remote players",
+      "coverageRelation": "The test executes the visible arena action through its hook, checks temporary retention on the create-and-switch request, observes the selected room and cleared peers, and proves that the independent create-only port remains unused.",
       "interactionRequirement": {
         "interactionKind": "absence",
         "ownedPort": "Rallar room create-only port",
@@ -1256,33 +1256,33 @@ moved or changed test.
       "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
     },
     {
-      "id": "headless-worker-abandoned-response-body-disposal",
+      "id": "headless-worker-late-response-disposal-after-shutdown",
       "domain": "Rallar black-box headless worker polling",
       "owner": "Rallar Black Box maintainers",
-      "summary": "A polling wait that abandons an HTTP response cancels that response body exactly once and never reads or awaits it. Executable assertion: \"observes late response disposal failures after an aborted fetch\".",
+      "summary": "A response arriving after shutdown is cancelled once, and a rejection from that cancellation remains observed.",
       "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#observes late response disposal failures after an aborted fetch",
-      "coverageRelation": "The wait returns or rejects identically whether or not it disposes of the body, so the disposal call is the only observable witness. The behavioural assertions in the same file cover what the wait returns; these pin what it leaves behind on the socket.",
+      "coverageRelation": "The test aborts a terminal wait before its fetch resolves, then supplies a response whose cancellation rejects; it checks one cancellation and no unhandled rejection.",
       "interactionRequirement": {
         "interactionKind": "count",
-        "ownedPort": "Control server HTTP polling response bodies",
-        "observableEffect": "Exactly one cancel() per abandoned response body, and no json() read of a body the wait has already rejected.",
-        "requiredConstraint": "Every abandoned response is cancelled exactly once; a rejected response is never read, and a cancellation is never awaited.",
-        "failureRationale": "A body left uncancelled holds the connection open for the life of the worker, and a second cancel or an awaited one blocks the wait behind a response that never settles."
+        "ownedPort": "HTTP polling Response.body.cancel",
+        "observableEffect": "A late response is disposed even after its polling wait has already rejected.",
+        "requiredConstraint": "Cancel the late response body exactly once after shutdown.",
+        "failureRationale": "The shutdown rejection and absence of an unhandled error do not prove that the late body was released; the cancellation count observes that resource cleanup."
       }
     },
     {
-      "id": "headless-worker-no-polling-after-deadline-or-shutdown",
+      "id": "headless-worker-registration-deadline-no-sleep",
       "domain": "Rallar black-box headless worker polling",
       "owner": "Rallar Black Box maintainers",
-      "summary": "Once a polling wait's deadline or its shutdown signal has won, the wait neither sleeps nor fetches again. Executable assertion: \"hard-times out a never-settling registration fetch with detailed state\".",
+      "summary": "The registration deadline aborts a never-settling fetch and ends the polling loop without a retry sleep.",
       "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#hard-times out a never-settling registration fetch with detailed state",
-      "coverageRelation": "The rejection the caller sees is the same whether or not the wait sleeps once more first, so the sleep and fetch counts are the only witness that the deadline actually stopped the loop rather than merely naming the failure.",
+      "coverageRelation": "The test advances its clock to the registration deadline while the fetch never settles, then checks the detailed timeout, aborted fetch signal, unused sleep port and cleared timer.",
       "interactionRequirement": {
-        "interactionKind": "count",
-        "ownedPort": "Control server snapshot polling loop",
-        "observableEffect": "No sleep and no further snapshot fetch after the deadline or shutdown has won.",
-        "requiredConstraint": "A wait that has timed out or been shut down performs zero further sleeps and issues no further fetch.",
-        "failureRationale": "A sleep or fetch after the deadline pushes the worker past the run budget the deadline exists to hold, and keeps polling a control server the run has abandoned."
+        "interactionKind": "absence",
+        "ownedPort": "waitForHeadlessWorkerAgentRegistration injected sleep port",
+        "observableEffect": "A stalled fetch cannot extend polling beyond the registration deadline.",
+        "requiredConstraint": "No retry sleep starts after the registration deadline wins.",
+        "failureRationale": "An eventual timeout and aborted fetch can coexist with an unwanted polling delay; the unused sleep port proves the deadline stops the loop."
       }
     },
     {
@@ -1719,21 +1719,6 @@ moved or changed test.
       }
     },
     {
-      "id": "queue-pubsub-corrupt-identity-no-effects",
-      "domain": "Server canonical queue and replay admission",
-      "owner": "Rallar server maintainers",
-      "summary": "Missing or corrupt live provenance rejects with ALAdmissionCorruptionError and produces no topology wake or delivery. Executable assertion: “rejects a %s live identity fact before topology wake or delivery”.",
-      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#rejects a %s live identity fact before topology wake or delivery",
-      "coverageRelation": "The parameterized test supplies three distinct corrupt identity cases at real canonical storage and checks the wake port after the actual callback rejects. The exception alone would permit an effect emitted before rejection.",
-      "interactionRequirement": {
-        "interactionKind": "absence",
-        "ownedPort": "Validated outbox-key wake callback and QueueBoxPubSubWsService.sendToTargetsWithResult",
-        "observableEffect": "Missing or corrupt live provenance rejects with ALAdmissionCorruptionError and produces no topology wake or delivery.",
-        "requiredConstraint": "Both outward ports remain unused for each missing, malformed-JSON or malformed-provenance identity variant.",
-        "failureRationale": "Sending or waking before authoritative identity validation allows advisory data to cause effects despite corruption."
-      }
-    },
-    {
       "id": "queue-pubsub-empty-captured-audience-no-wake",
       "domain": "QueueBox pub/sub captured outbound admission",
       "owner": "Rallar server maintainers",
@@ -1986,9 +1971,9 @@ moved or changed test.
       "id": "repo-style-checker-interface",
       "domain": "Repository style checker interface",
       "owner": "Rallar repository maintainers",
-      "summary": "Every governed Deno configuration inherits the canonical TypeScript formatter settings. Executable assertion: “keeps TypeScript formatter settings aligned with the canonical baseline”.",
-      "semanticCoverage": "packages/tests/repo/repo-code-style-checker-integrity.test.ts#keeps TypeScript formatter settings aligned with the canonical baseline",
-      "coverageRelation": "The assertion reads each governed Deno config and compares its formatter object with the canonical baseline. Formatting one sample file cannot prove that every repository formatter entrypoint uses the same settings."
+      "summary": "Dprint remains the sole formatter for repository TypeScript, including Deno-owned applications.",
+      "semanticCoverage": "packages/tests/repo/repo-code-style-checker-integrity.test.ts#leaves dprint as the only formatter, including over Deno-owned TypeScript",
+      "coverageRelation": "The executable test reads the actual Deno configurations and excludes fmt settings/tasks, then reads dprint exclusions to ensure those application trees remain covered."
     },
     {
       "id": "resource-inbox-reservation-bounded-indexed-read",
@@ -4614,6 +4599,248 @@ moved or changed test.
         "requiredConstraint": "leaveCurrent false must issue no previous-room leave mutation.",
         "failureRationale": "A correct current-room snapshot does not prove that the old membership was retained."
       }
+    },
+    {
+      "id": "ar-arena-directory-initial-read-isolation",
+      "domain": "AR Eye Hunter automatic room directory lifecycle",
+      "owner": "AR Eye Hunter maintainers",
+      "summary": "Connecting starts public discovery without issuing an authoritative membership refresh.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-directory-freshness.test.ts#discovers public arenas after connecting without refreshing or replacing the current room",
+      "coverageRelation": "The real arena hook connects, publishes a directory result, and retains its current arena and membership list; the owned membership-refresh port remains unused.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "rallar.rooms.refresh authoritative membership read",
+        "observableEffect": "Public discovery appears while the selected arena and owned-room list remain unchanged.",
+        "requiredConstraint": "Initial automatic discovery must issue no full membership refresh.",
+        "failureRationale": "A full refresh can publish authoritative membership snapshots or adopt a different room even when a particular response leaves the visible selection unchanged."
+      }
+    },
+    {
+      "id": "ar-arena-directory-activity-read-isolation",
+      "domain": "AR Eye Hunter automatic room directory lifecycle",
+      "owner": "AR Eye Hunter maintainers",
+      "summary": "Browser visibility and connectivity changes resume public discovery without refreshing authoritative membership.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-directory-freshness.test.ts#pauses browser discovery while hidden or offline and refreshes when foreground connectivity returns",
+      "coverageRelation": "The real hook receives visibility and online/offline events, publishes fresh public entries after resuming, and retains its selected arena while the membership-refresh port remains unused.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "rallar.rooms.refresh authoritative membership read",
+        "observableEffect": "Resuming foreground connectivity updates discovery without replacing the current room or hydrating membership snapshots.",
+        "requiredConstraint": "Automatic visibility and connectivity recovery must issue no full membership refresh.",
+        "failureRationale": "A resume handler that invokes the full refresh can change room authority or generate unnecessary membership traffic even if the test response happens to preserve the current room."
+      }
+    },
+    {
+      "id": "ar-arena-directory-overlapping-read-coalescing",
+      "domain": "AR Eye Hunter automatic room directory lifecycle",
+      "owner": "AR Eye Hunter maintainers",
+      "summary": "Overlapping Refresh actions share the pending public-directory read and permit a new read after it settles.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#coalesces overlapping directory reads and allows a fresh read after completion",
+      "coverageRelation": "The real hook receives two Refresh actions while the directory port is held, then publishes the shared result and a later independent result after completion.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "rallar.rooms.directory public directory read",
+        "observableEffect": "Concurrent callers receive the same directory result without multiplying pending network reads.",
+        "requiredConstraint": "Exactly one directory read may be active for the same session and query during the overlapping actions.",
+        "failureRationale": "Duplicate reads can return identical UI data while increasing server load and introducing competing completion order, so final entries alone cannot prove coalescing."
+      }
+    },
+    {
+      "id": "hetzner-scale-sign-in-workspace-and-unknown-path-refusal",
+      "domain": "Materializer validation refusal filesystem effects",
+      "owner": "Rallar operations maintainers",
+      "summary": "The scale sign-in client read uses the materialized workspace, while an unknown state API path is refused before materialization.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#rewrites the scale sign-in read to the effective workspace and still refuses unknown state paths",
+      "coverageRelation": "The real materializer CLI rewrites the authored scale sign-in reads into the selected scope; the test then changes an actual source request to an unknown path and requires its refusal."
+    },
+    {
+      "id": "headless-worker-404-body-disposal-before-retry",
+      "domain": "Rallar black-box headless worker polling",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "A 404 response body is cancelled once without delaying the next polling request.",
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#does not await a never-settling 404 response body cancellation",
+      "coverageRelation": "The real terminal wait receives a 404 whose cancel never settles, then a successful response; it must finish with two fetches and one cancellation.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "HTTP polling Response.body.cancel",
+        "observableEffect": "The abandoned response releases its body while polling can continue.",
+        "requiredConstraint": "One 404 body causes exactly one cancel invocation, and polling never waits for that invocation to settle.",
+        "failureRationale": "Successful polling alone does not prove the 404 body was released; waiting for cancellation would strand the next request."
+      }
+    },
+    {
+      "id": "headless-worker-active-json-abort-disposal",
+      "domain": "Rallar black-box headless worker polling",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Aborting an active JSON read cancels that response once and contains cancellation failure without an unhandled rejection.",
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#cancels an active response body when JSON is aborted",
+      "coverageRelation": "The test waits until exactly one JSON read has entered, aborts the supplied signal, and checks the exact abort error, one cancellation, and absence of unhandled rejection.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "HTTP polling Response.json and Response.body.cancel",
+        "observableEffect": "The already-active body read is abandoned and its response is released.",
+        "requiredConstraint": "Enter one JSON read before abort, then invoke its cancellation exactly once.",
+        "failureRationale": "The abort error and handled Promise outcome alone do not prove the active body was disposed; the pre-abort read count proves this is the active-read cleanup branch."
+      }
+    },
+    {
+      "id": "headless-worker-registration-shutdown-no-sleep",
+      "domain": "Rallar black-box headless worker polling",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "External shutdown aborts the in-flight registration fetch and does not start a retry sleep.",
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#propagates external shutdown during registration without retrying",
+      "coverageRelation": "The test holds the registration fetch, aborts the external signal, checks the exact shutdown reason and aborted fetch signal, and observes that the sleep port remains unused.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "waitForHeadlessWorkerAgentRegistration injected sleep port",
+        "observableEffect": "Shutdown performs no further polling delay.",
+        "requiredConstraint": "The registration loop invokes no sleep after shutdown wins.",
+        "failureRationale": "The same shutdown error can arrive after an unnecessary sleep; the port absence proves prompt loop termination."
+      }
+    },
+    {
+      "id": "headless-worker-registration-late-rejection-single-fetch",
+      "domain": "Rallar black-box headless worker polling",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "A registration fetch rejected after shutdown remains observed and does not start another request.",
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#observes a late registration fetch rejection after shutdown",
+      "coverageRelation": "The test holds a real wait at its injected fetch port, aborts, rejects the late fetch, checks no unhandled rejection, and observes exactly one fetch.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "waitForHeadlessWorkerAgentRegistration injected fetchSnapshot port",
+        "observableEffect": "Only the already-entered request exists when shutdown wins.",
+        "requiredConstraint": "Exactly one fetch occurs across shutdown and the late rejection.",
+        "failureRationale": "A correct shutdown error and handled late rejection do not exclude an unwanted second polling request."
+      }
+    },
+    {
+      "id": "headless-worker-late-503-disposal-without-retry",
+      "domain": "Rallar black-box headless worker polling",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "A retryable 503 received at the deadline is cancelled once without starting another polling sleep.",
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#does not log or retry a 503 response that arrives after the logical deadline",
+      "coverageRelation": "The fetch advances the clock to the deadline before returning a 503; the real wait times out, records one cancellation, leaves sleep unused, and emits no retry log.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "HTTP polling Response.body.cancel and terminal-wait injected sleep port",
+        "observableEffect": "The late response is released without extending the polling lifetime.",
+        "requiredConstraint": "One late 503 causes exactly one body cancellation and zero retry sleeps.",
+        "failureRationale": "The timeout and empty logs alone do not exclude a leaked body or an extra polling delay."
+      }
+    },
+    {
+      "id": "headless-worker-401-body-disposal-preserves-refusal",
+      "domain": "Rallar black-box headless worker polling",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "A 401 response is cancelled once and its authorization failure reaches the caller without waiting for cancellation.",
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#does not let a never-settling body cancellation mask a 401",
+      "coverageRelation": "The real terminal wait receives a 401 with a never-settling cancel, returns the HTTP 401 error within the observation bound, and records one cancellation.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "HTTP polling Response.body.cancel",
+        "observableEffect": "The rejected response body is disposed while its original HTTP refusal remains observable.",
+        "requiredConstraint": "One rejected 401 response invokes cancel exactly once without awaiting it.",
+        "failureRationale": "The HTTP failure alone does not show body release, while awaiting an uncooperative cancel would hide that failure."
+      }
+    },
+    {
+      "id": "headless-worker-registration-late-connected-no-sleep",
+      "domain": "Rallar black-box headless worker polling",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "A connected registration snapshot arriving at the deadline is rejected without another polling sleep.",
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#lets the registration deadline win over a late connected snapshot",
+      "coverageRelation": "The injected fetch advances the clock to the deadline and returns a connected agent; the real wait must time out and leave its sleep port unused.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "waitForHeadlessWorkerAgentRegistration injected sleep port",
+        "observableEffect": "The deadline ends polling even when the late response otherwise reports ready.",
+        "requiredConstraint": "No sleep starts after the late connected response reaches the deadline.",
+        "failureRationale": "The same eventual timeout could follow a needless polling delay; the absent sleep proves the deadline ends this attempt."
+      }
+    },
+    {
+      "id": "headless-worker-late-terminal-response-disposal",
+      "domain": "Rallar black-box headless worker polling",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "A terminal 200 response arriving at the deadline is cancelled exactly once without JSON decoding.",
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#rejects a terminal 200 response that arrives after the logical deadline",
+      "coverageRelation": "The injected fetch advances the clock to the deadline and returns a success body; the real terminal wait must time out, cancel the body once, never decode it, and emit no log.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "HTTP polling Response.body.cancel and Response.json",
+        "observableEffect": "The expired response releases its body without consuming its success payload.",
+        "requiredConstraint": "One late terminal response causes one cancellation and zero JSON reads.",
+        "failureRationale": "The timeout can be reported after a JSON read or without disposal; the two port assertions prove both resource and deadline admission."
+      }
+    },
+    {
+      "id": "headless-worker-retryable-body-disposal-before-retry",
+      "domain": "Rallar black-box headless worker polling",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "A retryable response is cancelled once without delaying the next polling request.",
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#does not await a never-settling retryable response body cancellation",
+      "coverageRelation": "The real terminal wait receives a 503 with never-settling cancellation, then success; it must complete after two fetches and one cancellation.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "HTTP polling Response.body.cancel",
+        "observableEffect": "The rejected retryable body is released while polling remains usable.",
+        "requiredConstraint": "A retryable response body is cancelled exactly once and its cancellation is not awaited.",
+        "failureRationale": "A successful second response can coexist with a leaked first body; awaiting cancellation would prevent the second request."
+      }
+    },
+    {
+      "id": "headless-worker-late-401-response-disposal",
+      "domain": "Rallar black-box headless worker polling",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "A 401 response arriving at the logical deadline is cancelled once while timeout remains the caller-visible result.",
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#rejects a 401 response that arrives after the logical deadline",
+      "coverageRelation": "The fetch advances the clock to the deadline and returns a 401; the real terminal wait must return timeout and record one body cancellation.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "HTTP polling Response.body.cancel",
+        "observableEffect": "The late response body is released after the deadline has won.",
+        "requiredConstraint": "Cancel the late 401 response body exactly once.",
+        "failureRationale": "A timeout alone cannot show that the late HTTP response was disposed."
+      }
+    },
+    {
+      "id": "group-mutation-construction-renamed-import-binding",
+      "domain": "Group mutation construction boundary",
+      "owner": "Rallar server maintainers",
+      "summary": "The route ownership analyzer accepts an equivalent imported family binding renamed at its root call site.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#follows an imported family binding renamed locally at the root",
+      "coverageRelation": "The test reads the actual route root, changes both the imported local alias and its call, verifies the input changed, and runs the real inventory validator expecting acceptance."
+    },
+    {
+      "id": "group-mutation-construction-renamed-private-owner",
+      "domain": "Group mutation construction boundary",
+      "owner": "Rallar server maintainers",
+      "summary": "The route ownership analyzer accepts equivalent private owner names and independently renamed owner parameters.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#follows renamed private owners and independently renamed owner parameters",
+      "coverageRelation": "The test reads the real presence registrar, renames the private owner and its app parameter while preserving references, and requires the real inventory validator to retain ownership."
+    },
+    {
+      "id": "queue-pubsub-expired-notice-before-storage-and-send",
+      "domain": "Server canonical queue and replay admission",
+      "owner": "Rallar server maintainers",
+      "summary": "An expired advisory notice performs no canonical storage read and sends nothing, even when the same physical key now holds a later live incarnation.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#does not dispatch an expired notice for a later incarnation at the same physical key",
+      "coverageRelation": "The test builds a notice with an expired original deadline, persists a current message at that key, invokes the real subscription callback, and separately observes storage-read and live-send absence.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "QueueBoxResourceEntryRepository.getItem and QueueBoxPubSubWsService.sendToTargetsWithResult",
+        "observableEffect": "The expired notice cannot cause storage work or publish the later incarnation found at the same key.",
+        "requiredConstraint": "An expired notice reaches neither canonical storage nor the live sender.",
+        "failureRationale": "A void result can follow a storage read or send; only the two port absences prove that the original deadline fences both effects."
+      }
+    },
+    {
+      "id": "recipe-matrix-strict-expectation-debt-admission",
+      "domain": "Supported recipe matrix",
+      "owner": "Shared Test maintainers",
+      "summary": "The strict recipe gate refuses any increase in ignored or vacuous expectation findings beyond the recorded per-recipe allowance.",
+      "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#adds no expectation the runner would silently ignore",
+      "coverageRelation": "The test reads the actual strict-expectation allowance, executes each API-v1 recipe through strict preflight, and compares independent findings with its recorded allowance."
     }
   ],
   "entries": [
@@ -4702,8 +4929,8 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar shared maintainers",
-      "rationale": "While the first two group reads occupy their slots, the absent late-send decision read proves a newly queued same-sender dispatch cannot bypass the active group admission.",
-      "semanticCoverage": "packages/tests/shared/alm/outbound/al-outbound-dispatch-admission.test.ts#makes bounded independent read progress through a burst before committing in input order and admitting a late send"
+      "rationale": "While every burst read is held, the absent late-send decision read proves a queued same-sender dispatch cannot enter storage before the active group releases its admission ownership.",
+      "semanticCoverage": "packages/tests/shared/alm/outbound/al-outbound-dispatch-admission.test.ts#reads every member of a burst at once before committing in input order and admitting a late send"
     },
     {
       "id": "test-structure-coupling-bf7ca7c0fe673aa2",
@@ -4713,8 +4940,8 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar shared maintainers",
-      "rationale": "After the independent members finish and only the first held group read remains, the absent late-send decision read proves partial group completion cannot release the sender slot early.",
-      "semanticCoverage": "packages/tests/shared/alm/outbound/al-outbound-dispatch-admission.test.ts#makes bounded independent read progress through a burst before committing in input order and admitting a late send"
+      "rationale": "After all but one burst read settle, the absent late-send decision read proves partial group completion cannot release sender ownership early.",
+      "semanticCoverage": "packages/tests/shared/alm/outbound/al-outbound-dispatch-admission.test.ts#reads every member of a burst at once before committing in input order and admitting a late send"
     },
     {
       "id": "test-structure-coupling-96e1d9a2fd5d577f",
@@ -4786,23 +5013,23 @@ moved or changed test.
       "id": "test-structure-coupling-feb9d2bd497981ef",
       "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
       "kind": "production-source-read",
-      "contract": "hetzner-materializer-rename-refusal-preserves-input",
+      "contract": "hetzner-materializer-null-refusal-preserves-input",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "Reads the test-owned valid input after actual CLI rename refusal and compares it with independently written source text, proving input preservation alongside destination preservation and temporary cleanup.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#removes its atomic temporary after rename refusal while preserving the existing destination"
+      "rationale": "Reads the test-owned null input after the actual CLI refuses it and compares its unchanged bytes, separately from the error and absent output files.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#refuses null source as validation before materialization effects"
     },
     {
       "id": "test-structure-coupling-98f26fa7bd7adf53",
       "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
       "kind": "production-source-read",
-      "contract": "hetzner-distributed-workflow--materializes-a-deterministic-isolated-group-throughout-executabl",
+      "contract": "hetzner-materializer-rename-refusal-preserves-input",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "Acquires the authored 05a manifest bytes before two actual CLI executions; the independently captured input supplies the later exact source-preservation comparison.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#materializes a deterministic isolated group throughout executable manifest data"
+      "rationale": "Reads the test-owned valid source after an actual rename refusal and compares its original bytes, alongside destination preservation and temporary cleanup.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#removes its atomic temporary after rename refusal while preserving the existing destination"
     },
     {
       "id": "test-structure-coupling-4777071ecb48b051",
@@ -5285,8 +5512,8 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "AR Eye Hunter maintainers",
-      "rationale": "The create-only port absence assertion directly proves that create-only remains unused during create-and-switch.",
-      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#creates a new arena by switching rooms and clearing stale remote players"
+      "rationale": "The create-only port remains unused while creating and switching to the temporary arena; selected-room state alone cannot exclude a separate creation side effect.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#creates a temporary arena by switching rooms and clearing stale remote players"
     },
     {
       "id": "test-structure-coupling-826d23c83753ba6a",
@@ -5545,12 +5772,12 @@ moved or changed test.
       "id": "test-structure-coupling-911706494df90df1",
       "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
       "kind": "production-source-read",
-      "contract": "hetzner-materializer-null-refusal-preserves-input",
+      "contract": "hetzner-scale-sign-in-workspace-and-unknown-path-refusal",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "Reads the test-owned null input after actual CLI validation refusal and compares it with literal null bytes, proving refusal preserves input independently of the diagnostic and absent output artifacts.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#refuses null source as validation before materialization effects"
+      "rationale": "Reads the actual scale source before independently replacing one state request with an unknown path; the real materializer must reject that path after separately proving effective-workspace rewriting.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#rewrites the scale sign-in read to the effective workspace and still refuses unknown state paths"
     },
     {
       "id": "test-structure-coupling-49b2eb646cbcf30e",
@@ -5644,166 +5871,166 @@ moved or changed test.
       "id": "test-structure-coupling-0c9a2607af0d65b9",
       "path": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "headless-worker-abandoned-response-body-disposal",
+      "contract": "headless-worker-404-body-disposal-before-retry",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "The one cancel proves the 404 body was disposed of exactly once, and the assertion sits beside the proof that the wait did not await that cancellation.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#observes late response disposal failures after an aborted fetch"
+      "rationale": "One cancellation proves the 404 body is disposed while the test independently observes polling complete despite cancellation never settling.",
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#does not await a never-settling 404 response body cancellation"
     },
     {
       "id": "test-structure-coupling-0d24c8cc95a7addd",
       "path": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "headless-worker-no-polling-after-deadline-or-shutdown",
+      "contract": "headless-worker-active-json-abort-disposal",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "The absent sleep proves the retryable status did not restart the poll loop after the deadline had won.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#hard-times out a never-settling registration fetch with detailed state"
+      "rationale": "One JSON invocation before abort establishes that the read is already active; the later cancellation and error checks then exercise active-body cleanup.",
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#cancels an active response body when JSON is aborted"
     },
     {
       "id": "test-structure-coupling-12a33fb22185bf7f",
       "path": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "headless-worker-no-polling-after-deadline-or-shutdown",
+      "contract": "headless-worker-registration-shutdown-no-sleep",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "The absent sleep proves shutdown ended the loop immediately instead of costing the worker another poll interval.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#hard-times out a never-settling registration fetch with detailed state"
+      "rationale": "No sleep after external shutdown proves the registration loop stops rather than delaying another poll; the exact error separately proves shutdown propagation.",
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#propagates external shutdown during registration without retrying"
     },
     {
       "id": "test-structure-coupling-1d61181008c02174",
       "path": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "headless-worker-no-polling-after-deadline-or-shutdown",
+      "contract": "headless-worker-registration-late-rejection-single-fetch",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "The single fetch proves the shutdown stopped further polling, so the late rejection belongs to the one request already in flight.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#hard-times out a never-settling registration fetch with detailed state"
+      "rationale": "One fetch across shutdown and its late rejection proves no additional registration request was admitted; absence of unhandled rejection separately proves late failure ownership.",
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#observes a late registration fetch rejection after shutdown"
     },
     {
       "id": "test-structure-coupling-243cac8e8238a3fa",
       "path": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "headless-worker-abandoned-response-body-disposal",
+      "contract": "headless-worker-late-503-disposal-without-retry",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "The single json read proves the wait read the body once before the abort, so the cancel that follows is disposal rather than a second read.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#observes late response disposal failures after an aborted fetch"
+      "rationale": "One cancellation proves a retryable 503 arriving at the deadline releases its response body even though timeout wins.",
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#does not log or retry a 503 response that arrives after the logical deadline"
     },
     {
       "id": "test-structure-coupling-32b5b21ab3a55a05",
       "path": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "headless-worker-abandoned-response-body-disposal",
+      "contract": "headless-worker-late-503-disposal-without-retry",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "The one cancel is the only witness that an aborted JSON read still disposes of the response body it opened.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#observes late response disposal failures after an aborted fetch"
+      "rationale": "No sleep proves a retryable 503 arriving at the deadline starts no retry delay after timeout wins.",
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#does not log or retry a 503 response that arrives after the logical deadline"
     },
     {
       "id": "test-structure-coupling-3d8da3b9501414c2",
       "path": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "headless-worker-abandoned-response-body-disposal",
+      "contract": "headless-worker-401-body-disposal-preserves-refusal",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "The one cancel proves the rejected 401 body was disposed of while the 401 still reached the caller.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#observes late response disposal failures after an aborted fetch"
+      "rationale": "One cancellation proves the 401 response is disposed; bounded observation separately proves an uncooperative cancel cannot hide the HTTP refusal.",
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#does not let a never-settling body cancellation mask a 401"
     },
     {
       "id": "test-structure-coupling-3f737d5b0125cee4",
       "path": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "headless-worker-abandoned-response-body-disposal",
+      "contract": "headless-worker-registration-late-connected-no-sleep",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "The one cancel proves the late 200 body was disposed of rather than left open once the deadline had won.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#observes late response disposal failures after an aborted fetch"
+      "rationale": "No sleep after a late connected snapshot proves the registration deadline ends the loop immediately, rather than accepting readiness or scheduling another poll.",
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#lets the registration deadline win over a late connected snapshot"
     },
     {
       "id": "test-structure-coupling-410ed2379e883103",
       "path": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "headless-worker-abandoned-response-body-disposal",
+      "contract": "headless-worker-late-terminal-response-disposal",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "The one cancel proves the late 401 body was disposed of once the deadline had won.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#observes late response disposal failures after an aborted fetch"
+      "rationale": "No JSON read proves the terminal 200 body is not decoded after its logical deadline; cancellation separately proves resource release.",
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#rejects a terminal 200 response that arrives after the logical deadline"
     },
     {
       "id": "test-structure-coupling-44d1f427a9662bd8",
       "path": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "headless-worker-abandoned-response-body-disposal",
+      "contract": "headless-worker-late-response-disposal-after-shutdown",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "The single cancel is the only witness that the aborted fetch disposed of the body it abandoned; the rejection the caller sees is identical without it.",
+      "rationale": "One cancellation proves the response arriving after shutdown is disposed; the separate unhandled-rejection assertion proves its cancellation failure remains observed.",
       "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#observes late response disposal failures after an aborted fetch"
     },
     {
       "id": "test-structure-coupling-62c5d3d72bdcf2e4",
       "path": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "headless-worker-abandoned-response-body-disposal",
+      "contract": "headless-worker-late-terminal-response-disposal",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "The absent json read proves the wait rejected the late response instead of reading a body it had already given up on.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#observes late response disposal failures after an aborted fetch"
+      "rationale": "One cancellation proves the terminal 200 response arriving at the deadline is disposed; the adjacent JSON absence independently proves it is not consumed.",
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#rejects a terminal 200 response that arrives after the logical deadline"
     },
     {
       "id": "test-structure-coupling-707b0044e59f7b2a",
       "path": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "headless-worker-abandoned-response-body-disposal",
+      "contract": "headless-worker-retryable-body-disposal-before-retry",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "The one cancel proves the retryable response body was disposed of before the retry, without the retry waiting on it.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#observes late response disposal failures after an aborted fetch"
+      "rationale": "One cancellation proves the retryable response is disposed while the completed second fetch proves polling does not await its never-settling cancellation.",
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#does not await a never-settling retryable response body cancellation"
     },
     {
       "id": "test-structure-coupling-904dfdf8ebc63b7a",
       "path": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "headless-worker-abandoned-response-body-disposal",
+      "contract": "headless-worker-late-401-response-disposal",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "The one cancel proves the late 503 body was disposed of rather than left open for a retry that will not happen.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#observes late response disposal failures after an aborted fetch"
+      "rationale": "One cancellation proves the 401 response arriving at the deadline is disposed while timeout remains the reported cause.",
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#rejects a 401 response that arrives after the logical deadline"
     },
     {
       "id": "test-structure-coupling-a0d2ab559e00440f",
       "path": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "headless-worker-no-polling-after-deadline-or-shutdown",
+      "contract": "headless-worker-registration-deadline-no-sleep",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "The absent sleep proves the hard timeout stopped the loop rather than letting it wait out one more poll interval past the deadline.",
+      "rationale": "The absent retry sleep proves a registration fetch that never settles cannot prolong polling after the deadline; the timeout and aborted signal independently prove cancellation.",
       "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#hard-times out a never-settling registration fetch with detailed state"
     },
     {
       "id": "test-structure-coupling-c291b22b7ec6d07e",
       "path": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "headless-worker-no-polling-after-deadline-or-shutdown",
+      "contract": "headless-worker-active-json-abort-disposal",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "The absent sleep proves the deadline, not a further poll, decided the outcome once a connected snapshot arrived too late.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#hard-times out a never-settling registration fetch with detailed state"
+      "rationale": "One cancellation after abort proves the active JSON response is disposed, separately from the exact abort error and handled cancellation failure.",
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#cancels an active response body when JSON is aborted"
     },
     {
       "id": "test-structure-coupling-8657bc752452053f",
@@ -6150,23 +6377,23 @@ moved or changed test.
       "id": "test-structure-coupling-0b58d02400285f7d",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
-      "contract": "group-mutation-construction--rejects-an-extra-family-to-private-owner-argument",
+      "contract": "group-mutation-construction--rejects-reordered-family-to-private-owner-arguments",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "Adds an unapproved argument at the family/private-owner handoff, catching widened construction that could conceal a second dependency source.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects an extra family-to-private-owner argument"
+      "rationale": "Reads the presence registrar before swapping the private-owner app and dependencies arguments; the real ownership analyzer must reject the changed dependency provenance.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects reordered family-to-private-owner arguments"
     },
     {
       "id": "test-structure-coupling-227bc4333000c0c6",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
-      "contract": "group-mutation-construction--rejects-an-extra-root-to-family-argument",
+      "contract": "group-mutation-construction--rejects-wrong-root-to-family-arguments",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "Adds a root-owned value to a family invocation beyond its approved signature, testing the public composition tuple exactly.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects an extra root-to-family argument"
+      "rationale": "Reads the route root before replacing the family app argument with undefined; the real analyzer must reject the disconnected construction input.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects wrong root-to-family arguments"
     },
     {
       "id": "test-structure-coupling-29142dfe723974a7",
@@ -6183,45 +6410,45 @@ moved or changed test.
       "id": "test-structure-coupling-503ee8c186f47263",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
-      "contract": "group-mutation-construction--rejects-a-family-call-after-an-exported-root-return",
+      "contract": "group-mutation-construction--rejects-a-conditional-family-call-in-the-exported-root",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "Moves a required family call below the root return; the occurrence proves syntactic presence is insufficient when the handoff is unreachable.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a family call after an exported-root return"
+      "rationale": "Reads the root before guarding its family call with literal false; the real analyzer must reject the now-unreachable registration.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a conditional family call in the exported root"
     },
     {
       "id": "test-structure-coupling-56c975daa7221e46",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
-      "contract": "group-mutation-construction--rejects-wrong-root-to-family-arguments",
+      "contract": "group-mutation-construction--rejects-a-duplicate-family-call-in-the-exported-root",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "Substitutes a different resolved dependency at the root/family edge, testing provenance rather than just argument count.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects wrong root-to-family arguments"
+      "rationale": "Reads the root before duplicating its family call; the analyzer must reject ambiguous duplicate registration ownership.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a duplicate family call in the exported root"
     },
     {
       "id": "test-structure-coupling-755638c9349907da",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
-      "contract": "group-mutation-construction--rejects-a-canonical-family-name-rebound-to-a-different-imported-",
+      "contract": "group-mutation-construction-renamed-import-binding",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "Reads the exported root before rebinding a canonical family identifier to another imported registrar, testing binding identity rather than call spelling.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a canonical family name rebound to a different imported family"
+      "rationale": "The actual root source is input to a positive rename-equivalence test: changing both the imported alias and its call must preserve the real analyzer result.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#follows an imported family binding renamed locally at the root"
     },
     {
       "id": "test-structure-coupling-8a5a2d44c9bdcb60",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
-      "contract": "group-mutation-construction--rejects-an-uninventoryed-live-private-owner-and-route-in-a-famil",
+      "contract": "group-mutation-construction-renamed-private-owner",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "Introduces a working private owner and route that are absent from the canonical inventory, ensuring live but unnamed mutation paths remain rejected.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects an uninventoryed live private owner and route in a family"
+      "rationale": "The actual presence source is input to a positive rename-equivalence test: private owner and parameter names may change while their ownership references remain valid.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#follows renamed private owners and independently renamed owner parameters"
     },
     {
       "id": "test-structure-coupling-8e81af49be0bf713",
@@ -6238,89 +6465,89 @@ moved or changed test.
       "id": "test-structure-coupling-a953d677a6a4e37d",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
-      "contract": "group-mutation-construction--rejects-a-conditional-family-call-in-the-exported-root",
+      "contract": "group-mutation-construction--rejects-an-uninventoryed-live-private-owner-and-route-in-a-famil",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "Wraps one root family call in conditional control flow so construction is no longer guaranteed for every server startup.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a conditional family call in the exported root"
+      "rationale": "Reads the family source before adding a reachable private owner and route outside the inventory; the analyzer must report the unowned live route.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects an uninventoryed live private owner and route in a family"
     },
     {
       "id": "test-structure-coupling-c7927fc092bac2c7",
-      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
-      "kind": "production-source-read",
-      "contract": "group-mutation-construction--rejects-a-duplicate-family-call-in-the-exported-root",
-      "disposition": "durable-boundary",
-      "boundary": "security",
-      "owner": "Rallar server maintainers",
-      "rationale": "Duplicates one family registration in the exported root, exercising exactly-once construction rather than simple presence.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a duplicate family call in the exported root"
-    },
-    {
-      "id": "test-structure-coupling-c91e07c5b311b838",
-      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
-      "kind": "production-source-read",
-      "contract": "group-mutation-construction--rejects-reordered-root-to-family-arguments",
-      "disposition": "durable-boundary",
-      "boundary": "security",
-      "owner": "Rallar server maintainers",
-      "rationale": "Reorders the root arguments passed into one family registrar, preserving arity while violating ownership position.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects reordered root-to-family arguments"
-    },
-    {
-      "id": "test-structure-coupling-cc694049a6a7199b",
-      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
-      "kind": "production-source-read",
-      "contract": "group-mutation-construction--rejects-a-missing-family-to-private-owner-argument",
-      "disposition": "durable-boundary",
-      "boundary": "security",
-      "owner": "Rallar server maintainers",
-      "rationale": "Removes one private-owner argument from a family call, proving the boundary tracks the complete dependency tuple.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a missing family-to-private-owner argument"
-    },
-    {
-      "id": "test-structure-coupling-ce59f3bf64ba0cda",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-a-family-removed-from-the-exported-root",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "Deletes one canonical family invocation from the root fixture so the analyzer must report the missing owner family.",
+      "rationale": "Reads the root before deleting its membership family call; the analyzer must report missing registration ownership.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a family removed from the exported root"
     },
     {
-      "id": "test-structure-coupling-e0660606ecfc700b",
+      "id": "test-structure-coupling-c91e07c5b311b838",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
-      "contract": "group-mutation-construction--rejects-reordered-family-to-private-owner-arguments",
+      "contract": "group-mutation-construction--rejects-a-family-call-after-an-exported-root-return",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "Swaps two same-surface arguments at the private-owner call, a defect runtime smoke coverage may not distinguish until values diverge.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects reordered family-to-private-owner arguments"
+      "rationale": "Reads the root before placing the family call after a return; the analyzer must reject syntactically present but unreachable registration.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a family call after an exported-root return"
     },
     {
-      "id": "test-structure-coupling-ee9090eba9fc708c",
-      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
-      "kind": "production-source-read",
-      "contract": "group-mutation-construction--rejects-a-family-call-before-authorization-exists",
-      "disposition": "durable-boundary",
-      "boundary": "security",
-      "owner": "Rallar server maintainers",
-      "rationale": "Moves family construction ahead of authorization resolution, testing lifecycle order at the root composition boundary.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a family call before authorization exists"
-    },
-    {
-      "id": "test-structure-coupling-f2014ef62de286a9",
+      "id": "test-structure-coupling-cc694049a6a7199b",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-a-different-app-passed-from-a-family-to-its-private-owne",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "Mutates the family-to-owner call to pass a different app object, isolating instance continuity across the private ownership boundary.",
+      "rationale": "Reads the presence family before substituting undefined for the private owner app; the analyzer must reject loss of the owning app instance.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a different app passed from a family to its private owner"
+    },
+    {
+      "id": "test-structure-coupling-ce59f3bf64ba0cda",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-mutation-construction--rejects-a-canonical-family-name-rebound-to-a-different-imported-",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Reads the root before rebinding the membership name to the presence registrar; the analyzer must follow the resolved imported binding rather than accept its local spelling.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a canonical family name rebound to a different imported family"
+    },
+    {
+      "id": "test-structure-coupling-e0660606ecfc700b",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-mutation-construction--rejects-a-family-call-before-authorization-exists",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Reads the root before moving family construction ahead of authorization creation; the analyzer must reject an unavailable authorization dependency.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a family call before authorization exists"
+    },
+    {
+      "id": "test-structure-coupling-ee9090eba9fc708c",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-mutation-construction--rejects-reordered-root-to-family-arguments",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Reads the root before swapping app and dependencies at the family handoff; the analyzer must reject their changed semantic positions.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects reordered root-to-family arguments"
+    },
+    {
+      "id": "test-structure-coupling-f2014ef62de286a9",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-mutation-construction--rejects-an-extra-root-to-family-argument",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Reads the root before adding an undeclared family argument; the analyzer must reject the widened composition signature.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects an extra root-to-family argument"
     },
     {
       "id": "test-structure-coupling-1345f6386ce086d7",
@@ -6704,8 +6931,8 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar repository maintainers",
-      "rationale": "Reads each enumerated Deno configuration and compares its fmt object with the canonical formatter object consumed by repository automation.",
-      "semanticCoverage": "packages/tests/repo/repo-code-style-checker-integrity.test.ts#keeps TypeScript formatter settings aligned with the canonical baseline"
+      "rationale": "Reads the actual Deno configurations to prove they declare no competing fmt settings or task; the same test verifies dprint includes the Deno application trees.",
+      "semanticCoverage": "packages/tests/repo/repo-code-style-checker-integrity.test.ts#leaves dprint as the only formatter, including over Deno-owned TypeScript"
     },
     {
       "id": "test-structure-coupling-3b86bebc02da01e1",
@@ -6744,12 +6971,12 @@ moved or changed test.
       "id": "test-structure-coupling-009dd8ebc09f2356",
       "path": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "queue-pubsub-corrupt-identity-no-effects",
+      "contract": "queue-pubsub-expired-notice-before-storage-and-send",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar server maintainers",
-      "rationale": "The parameterized test supplies three distinct corrupt identity cases at real canonical storage and checks the send port after the actual callback rejects. The exception alone would permit an effect emitted before rejection.",
-      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#rejects a %s live identity fact before topology wake or delivery"
+      "rationale": "The sender absence proves an expired notice cannot deliver the current message now stored at the same physical key, independently of its void callback result.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#does not dispatch an expired notice for a later incarnation at the same physical key"
     },
     {
       "id": "test-structure-coupling-033b239694d0119f",
@@ -6865,12 +7092,12 @@ moved or changed test.
       "id": "test-structure-coupling-ec46155ae3144e61",
       "path": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "queue-pubsub-corrupt-identity-no-effects",
+      "contract": "queue-pubsub-expired-notice-before-storage-and-send",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar server maintainers",
-      "rationale": "The parameterized test supplies three distinct corrupt identity cases at real canonical storage and checks the wake port after the actual callback rejects. The exception alone would permit an effect emitted before rejection.",
-      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#rejects a %s live identity fact before topology wake or delivery"
+      "rationale": "The canonical repository read absence proves the expired notice is refused before storage lookup, even though a live later incarnation exists at that physical key.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#does not dispatch an expired notice for a later incarnation at the same physical key"
     },
     {
       "id": "test-structure-coupling-3eb669e36287726d",
@@ -7096,23 +7323,23 @@ moved or changed test.
       "id": "test-structure-coupling-0f68df9519a8ce12",
       "path": "packages/tests/shared-test/recipe-matrix.test.ts",
       "kind": "production-source-read",
-      "contract": "recipe-matrix-public-interface--points-every-entry-at-a-catalog-recipe-file",
+      "contract": "recipe-matrix-strict-expectation-debt-admission",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "Opens the recipe file referenced by each matrix entry, proving catalog paths resolve to shipped executable fixtures.",
-      "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#points every entry at a catalog recipe file"
+      "rationale": "Reads the actual per-recipe strict-expectation allowance used by executable preflight; independently measured ignored or vacuous expectations must not exceed it.",
+      "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#adds no expectation the runner would silently ignore"
     },
     {
       "id": "test-structure-coupling-9b899f9dd65c29c0",
       "path": "packages/tests/shared-test/recipe-matrix.test.ts",
       "kind": "production-source-read",
-      "contract": "recipe-matrix-public-interface--labels-every-api-v1-entry-with-an-honest-evidence-tier",
+      "contract": "recipe-matrix-public-interface--points-every-entry-at-a-catalog-recipe-file",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "Reads each catalogued API-v1 recipe as shipped so its declared evidence tier is checked against the evidence source the runner will actually execute.",
-      "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#labels every api-v1 entry with an honest evidence tier"
+      "rationale": "Reads each catalogued recipe path and requires it to resolve to an actual shipped file, directly testing the catalog file reference.",
+      "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#points every entry at a catalog recipe file"
     },
     {
       "id": "test-structure-coupling-b31fa92c6a3d7af1",
@@ -7151,12 +7378,12 @@ moved or changed test.
       "id": "test-structure-coupling-fb9c9389cdd8634a",
       "path": "packages/tests/shared-test/recipe-matrix.test.ts",
       "kind": "production-source-read",
-      "contract": "recipe-matrix-public-interface--advertises-the-api-v1-profile-in-recipe-matrix-cli-usage",
+      "contract": "recipe-matrix-public-interface--labels-every-api-v1-entry-with-an-honest-evidence-tier",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "Reads the executable recipe-matrix CLI module whose help text is the published command-line interface under review.",
-      "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#advertises the API-v1 profile in recipe-matrix CLI usage"
+      "rationale": "Reads each API-v1 recipe and compares its actual SQL-evidence operator with the catalogued tier; runtime success alone cannot identify the evidence source.",
+      "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#labels every api-v1 entry with an honest evidence tier"
     },
     {
       "id": "test-structure-coupling-d21ee0508d100156",
@@ -7624,34 +7851,34 @@ moved or changed test.
       "id": "test-structure-coupling-1b3d4d2848352f1b",
       "path": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "shared-web-state-delta-coalesced-batch-stale-floor",
+      "contract": "shared-web-state-delta-missing-session-recovery",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Shared Web maintainers",
-      "rationale": "The exactly-one recovery fetch assertion directly proves that a stale cache pulls once at the batch's resulting floor and then takes the sibling deltas as applied.",
-      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#pulls at the floor for a coalesced batch when the cache is behind its predecessor"
+      "rationale": "The one HTTP read proves missing active-session material triggers one canonical snapshot recovery at the resulting floor.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#pulls at the floor when an active session record is missing from the delta and the cache"
     },
     {
       "id": "test-structure-coupling-46eb6ae3b5c09fa2",
       "path": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "shared-web-state-delta-coalesced-batch-apply",
+      "contract": "shared-web-state-delta-out-of-order-noop",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Shared Web maintainers",
-      "rationale": "The recovery-fetch absence assertion directly proves that a coalesced batch applies through its first delta without a snapshot refresh for the sibling deltas.",
-      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#applies a coalesced batch through its first delta and takes the sibling deltas as applied"
+      "rationale": "The absent HTTP read proves an out-of-order delta already dominated by cache performs no authority lookup.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#resolves an out-of-order envelope after a newer snapshot as a no-op"
     },
     {
       "id": "test-structure-coupling-505ac7ff6ccdc8a1",
       "path": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "shared-web-state-delta-missing-session-recovery",
+      "contract": "shared-web-state-delta-resulting-floor",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Shared Web maintainers",
-      "rationale": "The exactly-one recovery fetch assertion directly proves that exactly one missing-session recovery fetch occurs.",
-      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#pulls at the floor when an active session record is missing from the delta and the cache"
+      "rationale": "The one HTTP read proves a dominated cache that does not match the predecessor recovers once at the resulting floor.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#pulls at the resulting floor when the cached snapshot is dominated but not the predecessor"
     },
     {
       "id": "test-structure-coupling-8339924aecbb8ee7",
@@ -7668,12 +7895,12 @@ moved or changed test.
       "id": "test-structure-coupling-ad89c9ae9a021e02",
       "path": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "shared-web-state-delta-resulting-floor",
+      "contract": "shared-web-state-delta-coalesced-batch-stale-floor",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Shared Web maintainers",
-      "rationale": "The exactly-one recovery fetch assertion directly proves that exactly one resulting-floor fetch occurs.",
-      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#pulls at the resulting floor when the cached snapshot is dominated but not the predecessor"
+      "rationale": "The one HTTP read covers the whole coalesced batch when cache is behind its predecessor; sibling deltas add no recovery reads.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#pulls at the floor for a coalesced batch when the cache is behind its predecessor"
     },
     {
       "id": "test-structure-coupling-b2dd16cf6147955c",
@@ -7690,12 +7917,12 @@ moved or changed test.
       "id": "test-structure-coupling-e73fb539a6935723",
       "path": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "shared-web-state-delta-out-of-order-noop",
+      "contract": "shared-web-state-delta-coalesced-batch-apply",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Shared Web maintainers",
-      "rationale": "The recovery-fetch absence assertion directly proves that recovery fetch remains unused for stale input.",
-      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#resolves an out-of-order envelope after a newer snapshot as a no-op"
+      "rationale": "The absent HTTP read proves a batch whose first delta applies locally needs no authority lookup for that delta or its already-applied siblings.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#applies a coalesced batch through its first delta and takes the sibling deltas as applied"
     },
     {
       "id": "test-structure-coupling-189d9f62c9fbd148",
@@ -9962,6 +10189,39 @@ moved or changed test.
       "owner": "Shared Web maintainers",
       "rationale": "A correct current-room snapshot does not prove that the old membership was retained.",
       "semanticCoverage": "packages/tests/shared-web/rooms/quick-join-room.test.ts#respects leaveCurrent false"
+    },
+    {
+      "id": "test-structure-coupling-c580e420dd4e7b2c",
+      "path": "packages/tests/ar-eye-hunter-v1/arena-directory-freshness.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-directory-initial-read-isolation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The absence assertion detects an unauthorized membership-refresh side effect that matching final UI state alone cannot exclude.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-directory-freshness.test.ts#discovers public arenas after connecting without refreshing or replacing the current room"
+    },
+    {
+      "id": "test-structure-coupling-085cb2c132f5ac25",
+      "path": "packages/tests/ar-eye-hunter-v1/arena-directory-freshness.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-directory-activity-read-isolation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The absence assertion covers the distinct activity-resume trigger and excludes full membership I/O in addition to checking the resulting public state.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-directory-freshness.test.ts#pauses browser discovery while hidden or offline and refreshes when foreground connectivity returns"
+    },
+    {
+      "id": "test-structure-coupling-2a0cdcb245fef20e",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-directory-overlapping-read-coalescing",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The one-call assertion observes the pending external read directly and proves the load-suppression contract; the remaining assertions prove completion and later recovery.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#coalesces overlapping directory reads and allows a fresh read after completion"
     }
   ]
 }

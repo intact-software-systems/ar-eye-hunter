@@ -241,7 +241,7 @@ jobs:
         run: |
           npx playwright test --config apps/relic-hunters-v1/playwright.config.ts \
             tests/playwright/relic-hunters/private-feedback.spec.ts \
-            tests/playwright/relic-hunters/directory-freshness.spec.ts --trace=retain-on-failure
+            tests/playwright/relic-hunters/directory-freshness.spec.ts --trace=retain-on-failure --workers=1
 
       - name: Upload game room failure evidence
         if: failure()

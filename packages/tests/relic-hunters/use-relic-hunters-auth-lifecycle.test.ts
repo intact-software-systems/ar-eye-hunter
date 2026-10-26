@@ -165,8 +165,12 @@ describe('useRelicHunters auth lifecycle', () => {
         expect(current?.diagnostics.middlewareConnected).toBe(true);
         expect(current?.directory).toEqual({ status: 'ready', entries: [], error: undefined });
         expect(mockRallar.rooms.directory).toHaveBeenCalledWith(
-            { kind: 'room', q: 'relic hunters', limit: 50 },
-            { scope: { applicationId: DEFAULT_STATE_APPLICATION_ID, workspaceId: DEFAULT_STATE_WORKSPACE_ID } }
+            { kind: 'room', q: 'relic hunters', limit: 50, includeEmpty: false, order: 'online-members' },
+            expect.objectContaining({
+                scope: { applicationId: DEFAULT_STATE_APPLICATION_ID, workspaceId: DEFAULT_STATE_WORKSPACE_ID },
+                timeoutMs: 10_000,
+                maxAttempts: 1
+            })
         );
 
         await emitAuthState({

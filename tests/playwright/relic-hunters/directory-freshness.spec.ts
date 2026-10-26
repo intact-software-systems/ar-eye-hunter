@@ -12,7 +12,7 @@ const DIRECTORY_URL = '**/api/state/apps/rallar-server/workspaces/default/group-
 
 test(
     'discovers and removes public rooms automatically, retries failures, and preserves the selected expedition',
-    async ({ page }, testInfo) => {
+    async ({ page }) => {
         await page.clock.install();
         await initBrowserTestTransport(page);
         await startRelicBrowserBackend(page, {
@@ -49,7 +49,6 @@ test(
         await page.clock.fastForward(30_000);
         await expect(page.getByRole('alert')).toContainText('Previous results are shown.');
         await expect(page.getByRole('button', { name: /New public expedition/ })).toBeVisible();
-        await page.screenshot({ path: testInfo.outputPath('stale-public-expeditions.png'), fullPage: true });
 
         unavailable = false;
         await page.getByRole('button', { name: 'Refresh', exact: true }).click();
@@ -61,7 +60,6 @@ test(
         await expect(page.getByRole('region', { name: 'Expedition hosting' }).getByText('room-1', { exact: true }))
             .toBeVisible();
         await expect(page.getByRole('button', { name: '✓ Ready', exact: true })).toBeDisabled();
-        await page.screenshot({ path: testInfo.outputPath('automatic-directory-recovered.png'), fullPage: true });
     }
 );
 
