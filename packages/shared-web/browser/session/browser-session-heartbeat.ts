@@ -185,13 +185,13 @@ class BrowserStateHeartbeatRuntime {
     }
 
     private async refreshHeartbeat(): Promise<void> {
-        if (this.#timers.nowMs() >= this.#groupRecoveryAtEpochMs) {
-            await this.recoverGroupSnapshots();
-        }
+        const wsConnectionGeneration = await this.#options.ownWsConnectionGeneration?.read();
         if (!this.isCurrent()) {
             return;
         }
-        const wsConnectionGeneration = await this.#options.ownWsConnectionGeneration?.read();
+        if (this.#timers.nowMs() >= this.#groupRecoveryAtEpochMs) {
+            await this.recoverGroupSnapshots();
+        }
         if (!this.isCurrent()) {
             return;
         }
@@ -210,8 +210,12 @@ class BrowserStateHeartbeatRuntime {
             return;
         }
 
+        const writtenAtEpochMs = this.#timers.nowMs();
         await writeHeartbeatResult(this.#clientData, joinedGroups, refreshed);
-        this.#groupRecoveryAtEpochMs = this.readGroupCacheDeadline();
+        this.#groupRecoveryAtEpochMs = Math.min(
+            writtenAtEpochMs + BROWSER_STATE_CACHE_TTL_MS,
+            this.readGroupCacheDeadline()
+        );
     }
 
     /** Cache expiry loses renewal targets, not membership. Re-read authority without admitting any room. */

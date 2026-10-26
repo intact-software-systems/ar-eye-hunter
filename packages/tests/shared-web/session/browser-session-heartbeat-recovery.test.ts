@@ -109,6 +109,54 @@ describe('heartbeat recovery after delayed callbacks', () => {
         expect(server.requests.filter((request) => request.method === 'GET')).toHaveLength(1);
     });
 
+    it('recovers when awaited cache observers delay completion past the renewed snapshot TTL', async () => {
+        const server = new HeartbeatServer();
+        server.install();
+        groupSnapshots.setGroupStateSnapshots(server.groups);
+        await groupSnapshots.waitForGroupStateSnapshotChangesIdle();
+        const observer = Promise.withResolvers<void>();
+        const unsubscribe = groupSnapshots.onGroupStateSnapshotChange(async (change) => {
+            if (change.snapshot?.activeSessions[0]?.lastHeartbeatAtEpochMs === START + 50_000) {
+                await observer.promise;
+            }
+        });
+        try {
+            await initHeartbeat(client, { authSession: session, scope });
+            await vi.advanceTimersByTimeAsync(50_000);
+            vi.setSystemTime(START + 115_000);
+            observer.resolve();
+            await vi.advanceTimersByTimeAsync(0);
+            await vi.advanceTimersByTimeAsync(20_000);
+            expect(server.requests.filter((request) => request.method === 'GET')).toHaveLength(1);
+            expect(groupSnapshots.findGroupStateSnapshotByRef(server.groups[0].group)?.activeSessions[0])
+                .toMatchObject({ lastHeartbeatAtEpochMs: START + 135_000 });
+        }
+        finally {
+            observer.resolve();
+            unsubscribe();
+        }
+    });
+
+    it('rechecks cache expiry after an in-flight socket-generation read', async () => {
+        const server = new HeartbeatServer();
+        server.install();
+        groupSnapshots.setGroupStateSnapshots(server.groups);
+        const connection = Promise.withResolvers<ReturnType<typeof createClientSnapshotFixture>>();
+        const ownWsConnectionGeneration = new BrowserOwnWsConnectionGeneration({
+            socket: { ws: { readyState: WebSocket.OPEN } },
+            sessionId: session.sessionId,
+            readOwnClientSnapshot: () => connection.promise
+        });
+        await initHeartbeat(client, { authSession: session, scope, ownWsConnectionGeneration });
+        await vi.advanceTimersByTimeAsync(50_000);
+        vi.setSystemTime(START + 115_000);
+        connection.resolve(createClientSnapshotFixture({ ...scope, principalId: 'alice' }));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(server.requests.filter((request) => request.method === 'GET')).toHaveLength(1);
+        expect(groupSnapshots.findGroupStateSnapshotByRef(server.groups[0].group)?.activeSessions[0])
+            .toMatchObject({ lastHeartbeatAtEpochMs: START + 115_000 });
+    });
+
     it.each(['removed', 'lease-expired'] as const)('does not rejoin a room whose server presence is %s', async (reason) => {
         const server = new HeartbeatServer();
         server.install();
@@ -195,7 +243,8 @@ describe('heartbeat recovery after delayed callbacks', () => {
         }
         response.resolve(Response.json(server.groups));
         await vi.advanceTimersByTimeAsync(0);
-        expect(connectionReads).toBe(0);
+        // The connection read ran before recovery, while this generation was still current.
+        expect(connectionReads).toBe(1);
         expect(groupSnapshots.getAllGroupStateSnapshots()).toEqual([]);
         expect(server.requests).toHaveLength(1);
     });
