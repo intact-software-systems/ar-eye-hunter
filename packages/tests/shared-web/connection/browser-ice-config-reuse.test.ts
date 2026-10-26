@@ -12,10 +12,9 @@ import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import * as heartbeat from '@shared-web/browser/session/browser-session-heartbeat.ts';
 import * as stateSnapshots from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
+import type { ApiConfigResponse } from '@shared/api/api-config.ts';
 import { clearSession, writeSession } from '@shared/api/auth.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
-
-import type { ApiConfigResponse } from '@shared/api/api-config.ts';
 
 import '../../setup-browser-indexeddb.ts';
 
@@ -37,7 +36,7 @@ const options = {
 };
 let runtime: BrowserTransportRuntime;
 let iceResponse: () => Promise<Response>;
-let configResponse: () => Promise<Response>;
+let configResponse: (apiUrl: URL) => Promise<Response>;
 const requests: Array<{ readonly url: string; readonly authorization: string | null; }> = [];
 
 beforeEach(() => {
@@ -53,7 +52,12 @@ beforeEach(() => {
     runtime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
     requests.length = 0;
     iceResponse = async () => Response.json({ iceServers: [], expiresAtEpochMs: 20_000 });
-    configResponse = async () => Response.json(apiConfiguration);
+    configResponse = async (apiUrl) =>
+        Response.json({
+            ...apiConfiguration,
+            apiBaseUrl: apiUrl.origin,
+            wsBaseUrl: `wss://${apiUrl.host}`
+        });
     vi.stubGlobal('fetch', readResponse);
     vi.spyOn(JsonWebSocketClient.prototype, 'connect').mockResolvedValue();
     vi.spyOn(stateSnapshots, 'refreshStateSnapshots').mockResolvedValue({ clients: [], groups: [] });
@@ -245,7 +249,7 @@ describe('browser ICE configuration reuse', () => {
 async function readResponse(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
     requests.push({ url: String(url), authorization: new Headers(init?.headers).get('authorization') });
     if (String(url).endsWith('/api/config')) {
-        return configResponse();
+        return configResponse(new URL(String(url)));
     }
     if (String(url).endsWith('/api/webrtc/ice')) {
         return iceResponse();

@@ -10,6 +10,56 @@ import { readSceneCanvasMetrics } from './relic-scene-observations.ts';
 // Includes review animation, automatic continuation, and delivery of the next authoritative state.
 const automaticReviewTransitionTimeoutMs = 30_000;
 
+test(
+    'diagnoses a mismatched WebSocket host at login and recovers after configuration repair',
+    async ({ page }, testInfo) => {
+        test.skip(process.env.RELIC_HUNTERS_FULL_STACK !== '1', 'Requires the local full-stack server.');
+        const transportAttempts: string[] = [];
+        page.on('request', (request) => {
+            if (request.url().includes('/api/auth/ws-ticket/requests/')) {
+                transportAttempts.push('ticket');
+            }
+        });
+        page.on('websocket', (socket) => {
+            if (new URL(socket.url()).pathname.startsWith('/api/ws/')) {
+                transportAttempts.push('socket');
+            }
+        });
+        await page.route('**/api/config', async (route) => {
+            const response = await route.fetch();
+            await route.fulfill({
+                response,
+                json: { ...await response.json(), wsBaseUrl: 'ws://unrelated.example.test' }
+            });
+        });
+        await page.goto('/');
+        await page.getByLabel('Username', { exact: true }).fill('alice');
+        await page.getByLabel('Password', { exact: true }).fill('secret');
+        await page.getByRole('button', { name: 'Enter', exact: true }).click();
+        const diagnostic = page.getByText(
+            'WebSocket host "unrelated.example.test" does not match API host "127.0.0.1:5175". ' +
+                'Check RALLAR_API_BASE_URL and RALLAR_WS_BASE_URL.',
+            { exact: true }
+        ).first();
+        await expect(diagnostic).toBeVisible();
+        await diagnostic.scrollIntoViewIfNeeded();
+        await expect(diagnostic).toBeInViewport();
+        expect(transportAttempts).toEqual([]);
+        await page.screenshot({ path: testInfo.outputPath('websocket-host-mismatch.png'), fullPage: true });
+
+        await page.unroute('**/api/config');
+        await page.reload();
+        await expect(page.getByRole('button', { name: 'New Room', exact: true })).toBeEnabled();
+        await page.getByRole('button', { name: 'New Room', exact: true }).click();
+        await expect(page.getByLabel('Room link', { exact: true })).toHaveValue(/#rallar-room\?/);
+        await expect(diagnostic).toHaveCount(0);
+        expect(transportAttempts).toContain('ticket');
+        expect(transportAttempts).toContain('socket');
+        await page.getByLabel('Room link', { exact: true }).scrollIntoViewIfNeeded();
+        await page.screenshot({ path: testInfo.outputPath('websocket-host-recovered.png'), fullPage: true });
+    }
+);
+
 test('retains a manual private destination through signed-out reload and cancellation', async ({ page }) => {
     await page.goto('/');
     await page.getByLabel('Room reference', { exact: true }).fill('private-expedition');

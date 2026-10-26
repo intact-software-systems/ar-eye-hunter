@@ -11,7 +11,6 @@ import type { BrowserTransportRuntime } from '@shared-web/browser/connection/bro
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { RallarFacade } from '@shared-web/browser/rallar-facade-contract.ts';
 import type { RallarRtcFacade } from '@shared-web/browser/rallar-realtime.ts';
-
 import type { ApiConfigResponse } from '@shared/api/api-config.ts';
 
 import '../../setup-browser-indexeddb.ts';
@@ -35,7 +34,7 @@ const options = {
 let rallar: RallarFacade;
 let runtime: BrowserTransportRuntime;
 let iceResponse: () => Promise<Response>;
-let configResponse: () => Promise<Response>;
+let configResponse: (apiUrl: URL) => Promise<Response>;
 const requests: Array<{ readonly url: string; readonly authorization: string | null; }> = [];
 
 beforeEach(async () => {
@@ -55,7 +54,12 @@ beforeEach(async () => {
     rallar = (await import('@shared-web/browser/rallar.ts')).rallar;
     requests.length = 0;
     iceResponse = async () => Response.json({ iceServers: [], expiresAtEpochMs: 20_000 });
-    configResponse = async () => Response.json(apiConfiguration);
+    configResponse = async (apiUrl) =>
+        Response.json({
+            ...apiConfiguration,
+            apiBaseUrl: apiUrl.origin,
+            wsBaseUrl: `wss://${apiUrl.host}`
+        });
     vi.stubGlobal('fetch', readResponse);
     const websocket = await import('@shared/websocket/json-web-socket-client.ts');
     vi.spyOn(websocket.JsonWebSocketClient.prototype, 'connect').mockResolvedValue();
@@ -283,7 +287,7 @@ describe('browser ICE configuration refresh', () => {
 async function readResponse(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
     requests.push({ url: String(url), authorization: new Headers(init?.headers).get('authorization') });
     if (String(url).endsWith('/api/config')) {
-        return configResponse();
+        return configResponse(new URL(String(url)));
     }
     if (String(url).endsWith('/api/webrtc/ice')) {
         return iceResponse();

@@ -136,6 +136,12 @@ readers. The Deno Deploy preflight rejects `ENVIRONMENT` and
 | `RALLAR_WS_BASE_URL`               | No       | Profile/defaults | Canonical public WebSocket URL.                                                                                                                                              |
 | `RALLAR_STATE_STRICT_READ_AUTH`    | No       | Profile/defaults | Applies full-state read authorization to client/group list, snapshot, and event reads. SPA statistics retain independent route-local authentication and group-policy checks. |
 
+The two public URL settings must have the same normalized host, including non-default ports.
+`prod-hardened` rejects a mismatch at startup; other profiles log a warning. The browser also
+checks the resolved WebSocket destination against the API request host before acquiring a ticket.
+For reverse proxies, advertise the public proxy authority rather than an internal listen address.
+The SPA may use a separate origin when its API base URL points directly to the public API.
+
 ### Database
 
 | Variable                    | Required                                                                                                           | Default                                                                                | Usage                                                                                                                                                                                                    |
@@ -288,7 +294,11 @@ variables to the client bundle.
 When `RELIC_HUNTERS_FULL_STACK` is enabled, the Playwright config starts:
 
 - `apps/relic-hunter-server-v1` with `CORS_ORIGINS=http://localhost:5175,http://127.0.0.1:5175` and `PORT=8090`.
-- `apps/relic-hunters-v1` with `API_BASE_URL=http://127.0.0.1:8090`.
+- `apps/relic-hunters-v1` with an empty `API_BASE_URL` to use its same-origin `/api` proxy.
+
+The server advertises `RALLAR_API_BASE_URL=http://127.0.0.1:5175` and
+`RALLAR_WS_BASE_URL=ws://127.0.0.1:5175`: both public transports pass through Vite to
+the internal server on port 8090.
 
 ## apps/relic-hunter-server-v1
 
