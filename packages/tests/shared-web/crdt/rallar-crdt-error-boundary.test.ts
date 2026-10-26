@@ -114,6 +114,74 @@ describe('Rallar CRDT public caught-error boundaries', () => {
         }
     });
 
+    it('isolates synchronous replay failure and returns a usable unsubscribe handle', async () => {
+        const document = await createRallarFacade().crdt.open<AuthoredTitle>(
+            'synchronous-replay-failure',
+            {
+                applicationId: 'rallar-test',
+                workspaceId: 'main',
+                persist: false,
+                tabSync: false,
+                initialValue: { title: 'initial' }
+            }
+        );
+        const logged: Error[] = [];
+        const logger = vi.spyOn(console, 'error').mockImplementation((_message, error: Error) => {
+            logged.push(error);
+        });
+        try {
+            const unsubscribe = document.subscribe(() => {
+                throw new Error('synchronous replay failed');
+            });
+            unsubscribe();
+            await document.applyLocal(rallarCrdtBatch([
+                { kind: 'register.set', path: ['title'], policy: 'lww', value: 'updated' }
+            ]));
+            expect(document.read()).toEqual({ title: 'updated' });
+            expect(logged.map((error) => error.message)).toEqual(['synchronous replay failed']);
+        }
+        finally {
+            await document.close();
+            logger.mockRestore();
+        }
+    });
+
+    it('keeps an applied update successful when a synchronous observer fails', async () => {
+        const document = await createRallarFacade().crdt.open<AuthoredTitle>(
+            'synchronous-publication-failure',
+            {
+                applicationId: 'rallar-test',
+                workspaceId: 'main',
+                persist: false,
+                tabSync: false,
+                initialValue: { title: 'initial' }
+            }
+        );
+        const logger = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const observed: string[] = [];
+        document.subscribe((snapshot) => {
+            if (snapshot.value.title === 'updated') {
+                throw new Error('publication observer failed');
+            }
+        });
+        document.subscribe((snapshot) => {
+            observed.push(snapshot.value.title);
+        });
+        try {
+            const payload = rallarCrdtBatch([
+                { kind: 'register.set', path: ['title'], policy: 'lww', value: 'updated' }
+            ]);
+            await expect(document.applyLocal(payload)).resolves.toMatchObject({ payload });
+            expect(document.read()).toEqual({ title: 'updated' });
+            expect(document.failedPendingUpdates()).toEqual([]);
+            expect(observed).toEqual(['initial', 'updated']);
+        }
+        finally {
+            await document.close();
+            logger.mockRestore();
+        }
+    });
+
     it('preserves ordinary local application and read success', async () => {
         const document = await createRallarFacade().crdt.open<AuthoredTitle>(
             'ordinary-error-boundary-control',

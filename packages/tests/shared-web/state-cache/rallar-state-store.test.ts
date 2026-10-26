@@ -1,18 +1,22 @@
 import { BrowserFacadeRuntimeState } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
-import { createRoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
+import { RoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
 import {
     createRallarStateCacheReadPort,
     RallarStateStore,
     type RallarStateCacheReadPort
 } from '@shared-web/browser/state-cache/rallar-state-store.ts';
+import { setClientStateSnapshots } from '@shared/repository/client-state-snapshots-repository.ts';
+import { setGroupStateSnapshots } from '@shared/repository/group-state-snapshots-repository.ts';
 import {
     beforeEach,
     describe,
     expect,
-    it
+    it,
+    vi
 } from 'vitest';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
+import { createClientSnapshotFixture, createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
 describe('Rallar state store', () => {
     beforeEach(() => {
@@ -35,12 +39,186 @@ describe('Rallar state store', () => {
         expect(events).toEqual(['rooms', 'people', 'derived']);
     });
 
-    it('exposes cache observation through the cache port', () => {
-        const { stateCache } = createStateStoreFixture();
+    it.each([
+        {
+            phase: 'rooms',
+            expected: ['rooms:1', 'rooms:2', 'people:2', 'derived:2', 'late:2']
+        },
+        {
+            phase: 'people',
+            expected: ['rooms:1', 'people:1', 'rooms:2', 'people:2', 'derived:2', 'late:2']
+        },
+        {
+            phase: 'derived',
+            expected: ['rooms:1', 'people:1', 'derived:1', 'rooms:2', 'people:2', 'derived:2', 'late:2']
+        }
+    ])('stops superseded delivery after a nested $phase update', ({ phase, expected }) => {
+        const events: string[] = [];
+        const { roomStateStore, stateStore } = createStateStoreFixture();
+        writeStateRevision(1);
+        const publishNewerState = (from: string, revision: string | undefined): void => {
+            events.push(`${from}:${revision}`);
+            if (from === phase && revision === '1') {
+                writeStateRevision(2);
+                stateStore.emit();
+            }
+        };
+        roomStateStore.onChange((state) => {
+            publishNewerState('rooms', state.rooms[0]?.name);
+        }, { emitCurrent: false });
+        stateStore.onPeopleChange((state) => {
+            publishNewerState('people', state.people[0]?.displayName);
+        }, { emitCurrent: false });
+        stateStore.onAfterEmit(() => {
+            publishNewerState('derived', stateStore.peopleState().people[0]?.displayName);
+        });
+        stateStore.onAfterEmit(() => {
+            events.push(`late:${stateStore.peopleState().people[0]?.displayName}`);
+        });
 
-        const unsubscribe = stateCache.onCacheChange(() => undefined);
-        expect(unsubscribe).toBeTypeOf('function');
-        unsubscribe();
+        stateStore.emit();
+
+        expect(events).toEqual(expected);
+    });
+
+    it.each(['rooms', 'people'] as const)('renews %s replay without duplicate delivery or stale teardown', (channel) => {
+        const events: string[] = [];
+        const { roomStateStore, stateStore } = createStateStoreFixture();
+        const subscribe = channel === 'rooms'
+            ? roomStateStore.onChange.bind(roomStateStore)
+            : stateStore.onPeopleChange.bind(stateStore);
+        const listener = (): void => {
+            events.push('renewed');
+        };
+        let renew = true;
+        subscribe(() => {
+            if (renew) {
+                renew = false;
+                subscribe(listener);
+                stale();
+            }
+        }, { emitCurrent: false });
+        const stale = subscribe(listener, { emitCurrent: false });
+
+        stateStore.emit();
+        stateStore.emit();
+
+        expect(events).toEqual(['renewed', 'renewed']);
+    });
+
+    it.each(['rooms', 'people'] as const)('defers %s subscriptions added without replay until the next publication', (channel) => {
+        const events: string[] = [];
+        const { roomStateStore, stateStore } = createStateStoreFixture();
+        const subscribe = channel === 'rooms'
+            ? roomStateStore.onChange.bind(roomStateStore)
+            : stateStore.onPeopleChange.bind(stateStore);
+        const listener = (): void => {
+            events.push('new observer');
+        };
+        subscribe(() => {
+            subscribe(listener, { emitCurrent: false });
+        }, { emitCurrent: false });
+
+        stateStore.emit();
+        expect(events).toEqual([]);
+        stateStore.emit();
+        expect(events).toEqual(['new observer']);
+    });
+
+    it('isolates failing observers and reporting from every publication phase', () => {
+        const { roomStateStore, stateStore } = createStateStoreFixture();
+        const events: string[] = [];
+        const reporting = vi.spyOn(console, 'error').mockImplementation(() => {
+            throw new Error('reporting failed');
+        });
+        const fail = (): never => {
+            throw new Error('observer failed');
+        };
+        try {
+            roomStateStore.onChange(fail, { emitCurrent: false });
+            roomStateStore.onChange(() => {
+                events.push('rooms');
+            }, { emitCurrent: false });
+            stateStore.onPeopleChange(fail, { emitCurrent: false });
+            stateStore.onPeopleChange(() => {
+                events.push('people');
+            }, { emitCurrent: false });
+            stateStore.onAfterEmit(fail);
+            stateStore.onAfterEmit(() => {
+                events.push('derived');
+            });
+
+            expect(() => stateStore.emit()).not.toThrow();
+            expect(events).toEqual(['rooms', 'people', 'derived']);
+        }
+        finally {
+            reporting.mockRestore();
+        }
+    });
+
+    it.each(['rooms', 'people'] as const)('does not retain a %s subscription when reading replay fails', (channel) => {
+        let fault: Error | undefined = new Error('cache corrupted');
+        const { roomStateStore, stateStore } = createStateStoreFixture({
+            readGroupSnapshots: () => {
+                if (fault) {
+                    throw fault;
+                }
+                return [];
+            },
+            readClientSnapshots: () => {
+                if (fault) {
+                    throw fault;
+                }
+                return [];
+            }
+        });
+        const subscribe = channel === 'rooms'
+            ? roomStateStore.onChange.bind(roomStateStore)
+            : stateStore.onPeopleChange.bind(stateStore);
+        const events: string[] = [];
+        expect(() =>
+            subscribe(() => {
+                events.push('leaked');
+            })
+        ).toThrow('cache corrupted');
+        fault = undefined;
+        stateStore.emit();
+        expect(events).toEqual([]);
+    });
+
+    it('keeps subscriptions registered before caches become readable', () => {
+        let configured = false;
+        const stateCache = createRallarStateCacheReadPort();
+        const { roomStateStore, stateStore } = createStateStoreFixture({
+            readGroupSnapshots: () => {
+                if (!configured) {
+                    throw new Error('Repository not found: shared.repository.group-state-snapshots');
+                }
+                return stateCache.readGroupSnapshots();
+            },
+            readClientSnapshots: () => {
+                if (!configured) {
+                    throw new Error('Repository not found: shared.repository.client-state-snapshots');
+                }
+                return stateCache.readClientSnapshots();
+            }
+        });
+        const events: string[] = [];
+        const stopRooms = roomStateStore.onChange(() => {
+            events.push('rooms');
+        });
+        const stopPeople = stateStore.onPeopleChange(() => {
+            events.push('people');
+        });
+        expect(events).toEqual([]);
+
+        configured = true;
+        stateStore.emit();
+        expect(events).toEqual(['rooms', 'people']);
+        stopRooms();
+        stopPeople();
+        stateStore.emit();
+        expect(events).toEqual(['rooms', 'people']);
     });
 
     it('skips emitting while the snapshot repositories are unconfigured', () => {
@@ -69,7 +247,7 @@ describe('Rallar state store', () => {
 });
 
 interface StateStoreFixture {
-    readonly roomStateStore: ReturnType<typeof createRoomStateStore>;
+    readonly roomStateStore: RoomStateStore;
     readonly stateCache: RallarStateCacheReadPort;
     readonly stateStore: RallarStateStore;
 }
@@ -82,7 +260,7 @@ function createStateStoreFixture(
         ...createRallarStateCacheReadPort(),
         ...cacheOverrides
     };
-    const roomStateStore = createRoomStateStore({
+    const roomStateStore = new RoomStateStore({
         runtime,
         readSession: () => undefined,
         stateCache
@@ -90,7 +268,6 @@ function createStateStoreFixture(
     const stateStore = new RallarStateStore({
         runtime,
         roomStateStore,
-        readSession: () => undefined,
         stateCache
     });
     return { roomStateStore, stateCache, stateStore };
@@ -108,4 +285,28 @@ function createFailingCacheReads(message: string): Partial<RallarStateCacheReadP
         readClientSnapshots: fail,
         findClientSnapshot: fail
     };
+}
+
+function writeStateRevision(revision: number): void {
+    const group = createGroupSnapshotFixture({
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId: 'room-1',
+        sessionIds: []
+    });
+    setGroupStateSnapshots([{
+        ...group,
+        causalRevision: { ...group.causalRevision, groupRevision: revision },
+        group: { ...group.group, displayName: String(revision), snapshotVersion: revision, metadataVersion: revision }
+    }]);
+    const client = createClientSnapshotFixture({
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        principalId: 'alice'
+    });
+    setClientStateSnapshots([{
+        ...client,
+        stateRevision: revision,
+        principal: { ...client.principal, displayName: String(revision), snapshotVersion: revision, profileVersion: revision }
+    }]);
 }

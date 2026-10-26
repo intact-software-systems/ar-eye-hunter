@@ -27,7 +27,6 @@ test('shows loading, a first-load failure, and an empty result after Refresh rec
     });
     const operations = await signIn(page);
     await expect(operations.getByText(EMPTY_GUIDANCE)).toHaveCount(0);
-    await operations.getByRole('button', { name: 'Refresh', exact: true }).click();
     await expect(operations.getByText('Loading open arenas…')).toBeVisible();
     release.resolve();
     await expect(operations.getByText('Could not load open arenas', { exact: false })).toBeVisible();
@@ -69,6 +68,42 @@ test('retains labelled rows after failure and refreshes capacity and admission c
     await page.screenshot({ path: testInfo.outputPath('recovered-directory.png'), fullPage: true });
 });
 
+test(
+    'automatically discovers additions and removals while preserving the current arena selection',
+    async ({ page }, testInfo) => {
+        test.skip(process.env.RALLAR_ARENA_FULL_STACK !== '1', 'Requires the local API-v1 memory fixture.');
+        let entries: GroupDirectoryEntry[] = [];
+        await page.route(`${API_URL}${DIRECTORY_PATH}?*`, async (route) => {
+            await route.fulfill({ json: { entries, nextCursor: null } });
+        });
+        const operations = await signIn(page);
+        await operations.getByRole('button', { name: 'New unlisted arena', exact: true }).click();
+        const roomLink = operations.getByLabel('Room link', { exact: true });
+        await expect(roomLink).toHaveValue(/#rallar-room\?/);
+        const selectedRoomLink = await roomLink.inputValue();
+        const appoint = operations.getByRole('button', { name: 'Appoint this SPA', exact: true });
+        if (await appoint.isEnabled()) {
+            await appoint.click();
+        }
+        const startMatch = operations.getByRole('button', { name: '1m', exact: true });
+        await expect(startMatch).toBeEnabled({ timeout: 20_000 });
+        await expect(operations.getByText('Loading open arenas…')).toHaveCount(0);
+        entries = [directoryArena('Arriving arena', false)];
+        // Keep real time for the live API and presence heartbeat while the 30-second directory timer runs.
+        await expect(operations.getByRole('button', { name: /Arriving arena.*Request to join/ })).toBeEnabled({
+            timeout: 45_000
+        });
+        await expect(roomLink).toHaveValue(selectedRoomLink);
+        await expect(startMatch).toBeEnabled();
+        await page.screenshot({ path: testInfo.outputPath('automatic-arena-discovery.png'), fullPage: true });
+        entries = [];
+        await expect(operations.getByRole('button', { name: /Arriving arena/ })).toHaveCount(0, { timeout: 45_000 });
+        await expect(operations.getByText('Loading open arenas…')).toHaveCount(0);
+        await expect(roomLink).toHaveValue(selectedRoomLink);
+        await expect(startMatch).toBeEnabled();
+    }
+);
+
 test('live sign-in exposes ETag, accepts a conditional read, and keeps normal Refresh usable', async ({ page }) => {
     test.skip(process.env.RALLAR_ARENA_FULL_STACK !== '1', 'Requires the local API-v1 memory fixture on port 8080.');
     const loginResponse = page.waitForResponse((response) => response.url().includes('/api/auth/login/requests/'));
@@ -94,7 +129,7 @@ test('live sign-in exposes ETag, accepts a conditional read, and keeps normal Re
         const refreshed = page.waitForResponse((response) => response.url().includes(DIRECTORY_PATH));
         await operations.getByRole('button', { name: 'Refresh', exact: true }).click();
         expect((await refreshed).ok()).toBe(true);
-        await expect(operations.getByText(EMPTY_GUIDANCE)).toBeVisible();
+        await expect(operations.getByText('Loading open arenas…')).toHaveCount(0);
         await expect(operations.getByText('Could not load open arenas', { exact: false })).toHaveCount(0);
     }
 });
@@ -134,7 +169,7 @@ test(
         await preference.uncheck();
         await expect(operations.locator('.room-row')).toHaveText([/A slow/, /B unknown/, /Z fast/]);
         await expect(operations.getByText('Peer latency unknown', { exact: false })).toHaveCount(0);
-        expect(orders.at(-1)).toBeNull();
+        expect(orders.at(-1)).toBe('online-members');
     }
 );
 
@@ -159,7 +194,7 @@ async function installDirectoryFixture(page: Page, directory: (route: Route) => 
         clientId: 'alice',
         sessionId: 'directory-browser-session',
         accessToken: 'directory-browser-token',
-        expiresAtEpochMs: Date.now() + 60_000
+        expiresAtEpochMs: Date.now() + 3_600_000
     };
     const client = createClientSnapshotFixture({
         applicationId: 'ar-eye-hunter',

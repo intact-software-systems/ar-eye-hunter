@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { BrowserFacadeRuntimeState } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
-import { createRoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
+import { RoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
 import { createRallarStateCacheReadPort } from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupMember, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -66,8 +66,6 @@ vi.mock('@shared/repository/group-state-snapshots-repository.ts', () => ({
 }));
 
 describe('room state store current-room projection', () => {
-    void createRoomStateStore;
-
     beforeEach(() => {
         stateMocks.groups.length = 0;
         stateMocks.clients.length = 0;
@@ -146,7 +144,7 @@ describe('room state store current-room projection', () => {
             lowerRevisionOtherScopeBob
         );
         stateMocks.repositoriesConfigured = true;
-        const store = createRoomStateStore({
+        const store = new RoomStateStore({
             runtime,
             readSession: () => stateMocks.session,
             stateCache: createRallarStateCacheReadPort()
@@ -187,7 +185,7 @@ describe('room state store current-room projection', () => {
         });
         stateMocks.groups.push(current, visible);
         stateMocks.repositoriesConfigured = true;
-        const store = createRoomStateStore({
+        const store = new RoomStateStore({
             runtime,
             readSession: () => stateMocks.session,
             stateCache: createRallarStateCacheReadPort()
@@ -213,7 +211,7 @@ describe('room state store current-room projection', () => {
         const sessionRoom = createRoomSnapshot({ groupId: 'session-room', displayName: 'Session Room' });
         stateMocks.groups.push(sessionRoom);
         stateMocks.repositoriesConfigured = true;
-        const store = createRoomStateStore({
+        const store = new RoomStateStore({
             runtime: {
                 currentRoomRef: () => undefined,
                 setCurrentRoom: runtime.setCurrentRoom,

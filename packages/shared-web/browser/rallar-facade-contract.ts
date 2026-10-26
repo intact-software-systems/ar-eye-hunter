@@ -1,3 +1,4 @@
+import type { RallarCrdtFacade } from '@shared-web/browser/crdt/rallar-crdt-contracts.ts';
 import type { RallarDirectorFacade } from '@shared-web/browser/director/rallar-director-facade.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { RallarPeopleOperations } from '@shared-web/browser/people/rallar-people-contracts.ts';
@@ -8,7 +9,6 @@ import type {
     RallarSetupInput,
     RallarStartResult
 } from '@shared-web/browser/rallar-connection-facade.ts';
-import type { RallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
 import type { RallarDataFacade } from '@shared-web/browser/rallar-data.ts';
 import type { RallarMediaFacade } from '@shared-web/browser/rallar-media-facade.ts';
 import type {

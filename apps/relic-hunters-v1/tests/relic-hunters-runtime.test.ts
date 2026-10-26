@@ -1,6 +1,14 @@
 import '../../../packages/tests/setup-browser-indexeddb.ts';
 
 import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
+import {
     applyRelicCommand,
     createRelicGame,
     RELIC_PROTOCOL_VERSION,
@@ -13,7 +21,6 @@ import {
 import { waitForSettledRead } from '@shared-web/browser/connection/wait-for-settled-read.ts';
 import { BrowserRallarSubscriptionScope } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import { createRallarDataFacade } from '@shared-web/browser/rallar-data.ts';
-import { RallarRecentRooms, RallarRoomEntry } from '@shared-web/browser/rallar-room-entry.ts';
 import type {
     RallarAuthChangeListener,
     RallarRoomPresenceWaitOptions,
@@ -21,6 +28,9 @@ import type {
     RallarRoomState,
     RallarStartOptions
 } from '@shared-web/browser/rallar.ts';
+import { RallarRoomDirectory } from '@shared-web/browser/rooms/directory/rallar-room-directory.ts';
+import { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
+import { RallarRecentRooms } from '@shared-web/browser/rooms/recent-rooms/rallar-recent-rooms.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type {
     GroupDirectoryEntry,
@@ -29,13 +39,7 @@ import type {
 } from '@shared/api/group-directory/group-directory-types.ts';
 import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
-import {
-    afterEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+
 import { requireRelicCommandApplied } from '../../../packages/tests/relic-hunters/require-relic-command-applied.ts';
 import { createGroupSnapshotFixture } from '../../../packages/tests/shared-web/authoritative-group-fixtures.ts';
 import { createManualTimers } from '../../../packages/tests/shared/resilience/manual-timers.ts';
@@ -52,9 +56,185 @@ afterEach(async () => {
 });
 
 describe('RelicHuntersRuntime', () => {
+    it('cleans up every auth subscription after a listener stops and restarts startup', async () => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = createRuntime(backend);
+        let restarted: Promise<void> | undefined;
+        let restartRequested = false;
+        runtime.subscribe(() => {
+            if (!restartRequested) {
+                restartRequested = true;
+                runtime.stop();
+                restarted = runtime.start();
+            }
+        });
+        await runtime.start();
+        await restarted;
+        expect(runtime.getState().connectionState).toBe('ready');
+        runtime.stop();
+        await backend.recentRooms.whenIdle();
+        expect(backend.authSubscriptionCount).toBe(0);
+        expect(backend.timers.pendingCount()).toBe(0);
+    });
+
+    it('keeps entry observation when startup discovers a restored session', async () => {
+        const backend = new RelicRuntimeBackend();
+        const session = backend.session;
+        backend.session = undefined;
+        const runtime = createRuntime(backend);
+        backend.session = session;
+        const subscribeAuth = backend.onAuthChange.bind(backend);
+        backend.onAuthChange = (listener) => {
+            const unsubscribe = subscribeAuth(listener);
+            void listener({ authenticated: !!backend.session, session: backend.session, reason: 'current' });
+            return unsubscribe;
+        };
+        await runtime.start();
+        expect(runtime.getState().connectionState).toBe('ready');
+        backend.roomEntry.returnTo({ applicationId: 'rallar-server', workspaceId: 'default', groupId: 'invited-room' }, 'client-1');
+        await vi.waitFor(() => expect(runtime.getState().roomId).toBe('invited-room'));
+    });
+
+    it.each(['login', 'command', 'reset'])('keeps logout authoritative when a %s failure listener signs out', async (operation) => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = createRuntime(backend);
+        await runtime.start();
+        backend.login = async () => {
+            throw new Error('operation refused');
+        };
+        backend.sendWsCommand = async () => {
+            throw new Error('operation refused');
+        };
+        backend.resetGame = async () => {
+            throw new Error('operation refused');
+        };
+        let logout: Promise<void> | undefined;
+        let loggingOut = false;
+        const observed: RelicHuntersRuntime.Connection[] = [];
+        runtime.subscribe(() => {
+            if (!loggingOut && runtime.getState().error === 'operation refused') {
+                loggingOut = true;
+                logout = runtime.getState().logout();
+            }
+        });
+        runtime.subscribe(() => {
+            if (loggingOut) {
+                observed.push(runtime.getState());
+            }
+        });
+        if (operation === 'login') {
+            await runtime.getState().login('Alice', 'password');
+        }
+        else if (operation === 'command') {
+            await runtime.getState().startExpedition();
+        }
+        else {
+            await runtime.getState().resetExpedition();
+        }
+        await logout;
+        expect(observed.length).toBeGreaterThan(0);
+        for (const state of observed) {
+            expect(state).toMatchObject({ connectionState: 'signed-out', error: undefined });
+            expect(state.diagnostics.phase).toBe('signed-out');
+        }
+    });
+
+    it('does not install repair timers after a connected listener stops the runtime', async () => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = createRuntime(backend);
+        runtime.subscribe(() => {
+            if (runtime.getState().connectionState === 'connected') {
+                runtime.stop();
+            }
+        });
+        await runtime.start();
+        expect(backend.timers.pendingCount()).toBe(0);
+        await backend.timers.advance(10_000);
+        expect(backend.reads).toEqual([]);
+    });
+
+    it('does not send a command after its pending notification stops the runtime', async () => {
+        const backend = new RelicRuntimeBackend();
+        backend.wsDelivery = { state: 'acknowledged', reason: undefined };
+        const runtime = createRuntime(backend);
+        await runtime.start();
+        runtime.subscribe(() => {
+            if (runtime.getState().diagnostics.commandInFlight) {
+                runtime.stop();
+            }
+        });
+        await runtime.getState().startExpedition();
+        expect(backend.commands).toEqual([]);
+        expect(backend.timers.pendingCount()).toBe(0);
+    });
+
+    it('does not admit a room after its joining notification logs out', async () => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = createRuntime(backend);
+        await runtime.start();
+        let logout: Promise<void> | undefined;
+        runtime.subscribe(() => {
+            if (runtime.getState().connectionState === 'joining-room') {
+                logout = runtime.getState().logout();
+            }
+        });
+        await runtime.getState().joinRoom('obsolete-room');
+        await logout;
+        expect(backend.roomState().currentRoomId).toBe('room-1');
+        expect(runtime.getState()).toMatchObject({ connectionState: 'signed-out', roomId: undefined });
+    });
+
+    it('does not restore snapshot diagnostics after its notification logs out', async () => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = createRuntime(backend);
+        await runtime.start();
+        let logout: Promise<void> | undefined;
+        runtime.subscribe(() => {
+            if (runtime.getState().snapshot?.updatedAtEpochMs === 21) {
+                logout = runtime.getState().logout();
+            }
+        });
+        const observed: RelicHuntersRuntime.Connection[] = [];
+        runtime.subscribe(() => {
+            observed.push(runtime.getState());
+        });
+        backend.deliverSnapshot(relicSnapshot('room-1', 21));
+        await logout;
+        expect(observed.length).toBeGreaterThan(0);
+        for (const state of observed) {
+            expect(state).toMatchObject({ connectionState: 'signed-out', snapshot: undefined });
+            expect(state.diagnostics.lastAcceptedSnapshot).toBeUndefined();
+        }
+    });
+
+    it('keeps startup and later observers working when a state listener fails', async () => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = createRuntime(backend);
+        const reported = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const observed: string[] = [];
+        const unsubscribe = runtime.subscribe(() => {
+            throw new Error('view failed');
+        });
+        runtime.subscribe(() => {
+            observed.push(runtime.getState().connectionState);
+        });
+        try {
+            await runtime.start();
+            expect(runtime.getState().connectionState).toBe('ready');
+            expect(observed.at(-1)).toBe('ready');
+            unsubscribe();
+            backend.signOut();
+            expect(observed.at(-1)).toBe('signed-out');
+        }
+        finally {
+            unsubscribe();
+            reported.mockRestore();
+        }
+    });
+
     it('clears a private rule refusal when authoritative gameplay advances and ignores late refusals after the finale', async () => {
         const backend = new RelicRuntimeBackend();
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         const refusal = refusedPlan();
         backend.deliverHunterEvent(refusal);
@@ -69,7 +249,7 @@ describe('RelicHuntersRuntime', () => {
 
     it('clears obsolete rule feedback when another live tab records a plan before the finale', async () => {
         const backend = new RelicRuntimeBackend();
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         backend.deliverHunterEvent(refusedPlan());
         backend.deliverHunterEvent({
@@ -88,7 +268,7 @@ describe('RelicHuntersRuntime', () => {
 
     it('preserves a transport failure when a newer snapshot expires earlier rule feedback', async () => {
         const backend = new RelicRuntimeBackend();
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         backend.deliverHunterEvent(refusedPlan());
         backend.sendWsCommand = async () => {
@@ -102,7 +282,7 @@ describe('RelicHuntersRuntime', () => {
 
     it('timestamps hydration, commands, and resets using its injected clock', async () => {
         const backend = new RelicRuntimeBackend();
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         expect(runtime.getState().diagnostics.lastHydratedAtEpochMs).toBe(1_000);
         await backend.timers.advance(17);
@@ -134,7 +314,7 @@ describe('RelicHuntersRuntime', () => {
             backend.reads.push(roomId);
             return snapshot;
         };
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         const initialReads = backend.reads.length;
         await backend.timers.advance(snapshot.roundTimeLimitMs - 1);
@@ -153,7 +333,7 @@ describe('RelicHuntersRuntime', () => {
 
     it('records and returns to recent rooms without joining or resetting the expedition, then stops history', async () => {
         const backend = new RelicRuntimeBackend();
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         expect(runtime.getState().recentRooms).toBe(backend.recentRooms);
         await runtime.getState().joinRoom('recent-a');
@@ -188,23 +368,39 @@ describe('RelicHuntersRuntime', () => {
                 ? { entries: [first, second], nextCursor: null }
                 : { entries: [first], nextCursor: 'next-page' };
         };
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         expect(runtime.getState().directory).toEqual({ status: 'ready', entries: [first, second], error: undefined });
         expect(requests).toEqual([
-            { kind: 'room', q: 'relic hunters', limit: 50 },
-            { kind: 'room', q: 'relic hunters', limit: 50, cursor: 'next-page' }
+            { kind: 'room', q: 'relic hunters', limit: 50, includeEmpty: false, order: 'online-members' },
+            { kind: 'room', q: 'relic hunters', limit: 50, includeEmpty: false, order: 'online-members', cursor: 'next-page' }
         ]);
         expect(runtime.getState().rooms).toEqual([]);
         expect(runtime.getState().snapshot).toBeUndefined();
         expect(backend.reads).toEqual([]);
     });
 
+    it('refreshes public discovery automatically without adopting a room or changing the expedition', async () => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = createRuntime(backend);
+        await runtime.start();
+        const snapshot = runtime.getState().snapshot;
+        backend.listDirectory = async () => ({ entries: [directoryEntry('new-room')], nextCursor: null });
+        backend.refreshRooms = async () => stateFor('must-not-adopt');
+        await backend.timers.advance(30_000);
+        expect(runtime.getState().directory.entries.map((entry) => entry.groupRef.groupId)).toEqual(['new-room']);
+        expect(runtime.getState().roomId).toBe('room-1');
+        expect(runtime.getState().snapshot).toBe(snapshot);
+        backend.listDirectory = async () => ({ entries: [], nextCursor: null });
+        await backend.timers.advance(30_000);
+        expect(runtime.getState().directory.entries).toEqual([]);
+    });
+
     it('retains directory entries on failure and recovers to a successfully empty directory', async () => {
         const backend = new RelicRuntimeBackend();
         const listed = directoryEntry('listed');
         backend.listDirectory = async () => ({ entries: [listed], nextCursor: null });
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         expect(runtime.getState().directory.entries).toEqual([listed]);
         backend.listDirectory = async () => {
@@ -217,35 +413,35 @@ describe('RelicHuntersRuntime', () => {
         expect(runtime.getState().directory).toEqual({ status: 'ready', entries: [], error: undefined });
     });
 
-    it.each(['success', 'failure'] as const)('ignores an older directory %s after a newer refresh completes', async (outcome) => {
+    it('coalesces overlapping reads and admits a fresh directory refresh after completion', async () => {
         const backend = new RelicRuntimeBackend();
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
-        expect(runtime.getState().directory.status).toBe('ready');
         const readStarted = Promise.withResolvers<void>();
-        const oldRead = Promise.withResolvers<GroupDirectoryPage>();
+        const read = Promise.withResolvers<GroupDirectoryPage>();
+        let requests = 0;
         backend.listDirectory = () => {
+            requests += 1;
             readStarted.resolve();
-            return oldRead.promise;
+            return read.promise;
         };
-        const older = runtime.getState().refreshRooms();
+        const first = runtime.getState().refreshRooms();
         await readStarted.promise;
-        const latest = directoryEntry('latest');
-        backend.listDirectory = async () => ({ entries: [latest], nextCursor: null });
+        const second = runtime.getState().refreshRooms();
+        await Promise.resolve();
+        expect(requests).toBe(1);
+        const listed = directoryEntry('listed');
+        read.resolve({ entries: [listed], nextCursor: null });
+        await Promise.all([first, second]);
+        expect(runtime.getState().directory.entries).toEqual([listed]);
+        backend.listDirectory = async () => ({ entries: [], nextCursor: null });
         await runtime.getState().refreshRooms();
-        if (outcome === 'success') {
-            oldRead.resolve({ entries: [directoryEntry('obsolete')], nextCursor: null });
-        }
-        else {
-            oldRead.reject(new Error('The old directory request failed'));
-        }
-        await older;
-        expect(runtime.getState().directory).toEqual({ status: 'ready', entries: [latest], error: undefined });
+        expect(runtime.getState().directory).toEqual({ status: 'ready', entries: [], error: undefined });
     });
 
     it('discards a pending directory response when the account signs out', async () => {
         const backend = new RelicRuntimeBackend();
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         expect(runtime.getState().directory.status).toBe('ready');
         const readStarted = Promise.withResolvers<void>();
@@ -264,7 +460,7 @@ describe('RelicHuntersRuntime', () => {
 
     it('hydrates the current expedition, accepts newer events, and stops delivery on cleanup', async () => {
         const backend = new RelicRuntimeBackend();
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         expect(runtime.getState()).toMatchObject({ connectionState: 'ready', roomId: 'room-1', snapshot: { updatedAtEpochMs: 20 } });
 
@@ -281,7 +477,7 @@ describe('RelicHuntersRuntime', () => {
         backend.fetchSnapshot = async () => {
             throw new Error('snapshot unavailable');
         };
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         expect(runtime.getState()).toMatchObject({ connectionState: 'degraded', roomId: 'room-1', error: 'snapshot unavailable' });
         expect(runtime.getState().diagnostics).toMatchObject({ middlewareConnected: true, roomListenerReady: true, wsListenerReady: true });
@@ -300,7 +496,7 @@ describe('RelicHuntersRuntime', () => {
             }
             return relicSnapshot(roomId, 25);
         };
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         const started = runtime.start();
         await reading.promise;
         backend.roomEntry.enter({
@@ -327,7 +523,7 @@ describe('RelicHuntersRuntime', () => {
 
     it.each(['open', 'code', 'invite-only'] as const)('creates a %s room without joining the expedition automatically', async (joinMode) => {
         const backend = new RelicRuntimeBackend();
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         const created = await runtime.getState().createRoom(joinMode);
         expect(created?.group).toMatchObject({ groupId: 'created-room', joinMode });
@@ -339,7 +535,7 @@ describe('RelicHuntersRuntime', () => {
     it('keeps the new private room shareable when leaving the previous room is denied', async () => {
         const backend = new RelicRuntimeBackend();
         backend.rejectPreviousLeave = true;
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         const created = await runtime.getState().createRoom('code');
         expect(created?.group.groupId).toBe('created-room');
@@ -349,7 +545,7 @@ describe('RelicHuntersRuntime', () => {
 
     it('keeps creation pending until presence makes the admitted room current', async () => {
         const backend = new RelicRuntimeBackend();
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         const admitted = createGroupSnapshotFixture({
             applicationId: 'rallar-server',
@@ -362,7 +558,6 @@ describe('RelicHuntersRuntime', () => {
             return admitted;
         };
         const pending = runtime.getState().createRoom('code');
-        await new Promise((resolve) => setTimeout(resolve, 0));
         expect(runtime.getState().connectionState).toBe('joining-room');
         backend.setRooms(stateFor('created-room'));
         await expect(pending).resolves.toEqual(admitted);
@@ -378,7 +573,7 @@ describe('RelicHuntersRuntime', () => {
         const ready = await backend.start();
         const startup = Promise.withResolvers<typeof ready>();
         backend.start = () => startup.promise;
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         const started = runtime.start();
         const premature = await runtime.getState().createRoom('code');
         expect(premature).toBeUndefined();
@@ -396,7 +591,7 @@ describe('RelicHuntersRuntime', () => {
             throw new Error('The fixture needs a signed-in hunter');
         }
         backend.session = undefined;
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         const started = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
@@ -429,7 +624,7 @@ describe('RelicHuntersRuntime', () => {
             throw new Error('The fixture needs a signed-in hunter');
         }
         backend.session = undefined;
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         const oldLogin = Promise.withResolvers<AuthSession>();
         backend.login = () => oldLogin.promise;
@@ -444,7 +639,7 @@ describe('RelicHuntersRuntime', () => {
     it('sends gameplay over WS and records the receipt without a second REST attempt', async () => {
         const backend = new RelicRuntimeBackend();
         backend.wsDelivery = { state: 'acknowledged', reason: undefined };
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         await runtime.getState().startExpedition();
         expect(backend.commands).toEqual([{
@@ -462,7 +657,7 @@ describe('RelicHuntersRuntime', () => {
 
     it('uses REST only while no WS server is known', async () => {
         const backend = new RelicRuntimeBackend();
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         await runtime.getState().forceResolveRound();
         expect(backend.commands).toEqual([{
@@ -481,7 +676,7 @@ describe('RelicHuntersRuntime', () => {
     it('does not resend a rejected WS command through REST', async () => {
         const backend = new RelicRuntimeBackend();
         backend.wsDelivery = { state: 'failed', reason: 'denied' };
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         await runtime.getState().startExpedition();
         expect(backend.commands.map((entry) => entry.transport)).toEqual(['ws']);
@@ -491,7 +686,7 @@ describe('RelicHuntersRuntime', () => {
     it('keeps signed-out startup free of game reads and commands', async () => {
         const backend = new RelicRuntimeBackend();
         backend.session = undefined;
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         expect(runtime.getState().connectionState).toBe('signed-out');
         expect(backend.reads).toEqual([]);
@@ -500,7 +695,7 @@ describe('RelicHuntersRuntime', () => {
 
     it('adopts a chosen room and applies its reset snapshot', async () => {
         const backend = new RelicRuntimeBackend();
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         await runtime.getState().joinRoom('chosen-room');
         await runtime.getState().resetExpedition();
@@ -510,7 +705,7 @@ describe('RelicHuntersRuntime', () => {
 
     it('does not expose an obsolete creation when the account changes before hydration finishes', async () => {
         const backend = new RelicRuntimeBackend();
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         const late = Promise.withResolvers<RelicPublicSnapshot | undefined>();
         backend.fetchSnapshot = async () => late.promise;
@@ -523,7 +718,7 @@ describe('RelicHuntersRuntime', () => {
     });
 });
 
-function startRuntime(backend: RelicRuntimeBackend): RelicHuntersRuntime {
+function createRuntime(backend: RelicRuntimeBackend): RelicHuntersRuntime {
     const runtime = new RelicHuntersRuntime(backend);
     runtimes.push(runtime);
     return runtime;
@@ -556,8 +751,21 @@ class RelicRuntimeBackend implements RelicHuntersRuntime.Dependencies {
     private readonly snapshotListeners = new Set<(event: RelicServerEvent) => void>();
     public readonly roomEntry: RallarRoomEntry;
     public readonly recentRooms: RallarRecentRooms;
+    public readonly directory: RallarRoomDirectory;
 
     public constructor() {
+        this.directory = new RallarRoomDirectory({
+            auth: { session: () => this.session, onChange: (listener) => this.onAuthChange(listener) },
+            rooms: { directory: (request) => this.listDirectory(request) },
+            timers: this.timers,
+            activity: { isActive: () => true, onChange: () => () => undefined }
+        }, {
+            scope: { applicationId: 'rallar-server', workspaceId: 'default' },
+            request: { kind: 'room', q: 'relic hunters', limit: 50, includeEmpty: false, order: 'online-members' },
+            refreshIntervalMs: 30_000,
+            timeoutMs: 10_000,
+            maxAttempts: 1
+        });
         const storage = new Map<string, string>();
         this.roomEntry = new RallarRoomEntry({
             auth: { session: () => this.session, onChange: (listener) => this.onAuthChange(listener) },
@@ -581,6 +789,10 @@ class RelicRuntimeBackend implements RelicHuntersRuntime.Dependencies {
             data: { open: (input, options) => data.open(input, { ...options, dbName, sync: false }) },
             now: () => this.timers.nowMs()
         }, { scope: { applicationId: 'rallar-server', workspaceId: 'default' } });
+    }
+
+    public get authSubscriptionCount(): number {
+        return this.authListeners.size;
     }
 
     public restoreSession() {

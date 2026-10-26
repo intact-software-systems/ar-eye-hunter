@@ -20,13 +20,13 @@
   "compilerOptions": {
     "erasableSyntaxOnly": true,
     "noEmit": true,
-    "target": "ES2023",
+    "target": "ES2024",
     "module": "ESNext",
     "strict": true,
     "moduleResolution": "Bundler",
     "allowImportingTsExtensions": true,
     "types": [],
-    "lib": ["ES2023", "DOM", "WebWorker"],
+    "lib": ["ES2024", "DOM", "WebWorker"],
     "paths": {
       "@shared-web/*": ["./packages/shared-web/*"],
       "@shared-server/*": ["./packages/shared-server/*"],

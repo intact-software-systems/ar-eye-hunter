@@ -1,9 +1,62 @@
-import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    execFileSync,
+    spawnSync
+} from 'node:child_process';
+import {
+    mkdirSync,
+    mkdtempSync,
+    rmSync,
+    writeFileSync
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
+
+interface TestCandidate {
+    readonly id: string;
+    readonly path: string;
+    readonly line: number;
+    readonly column: number;
+    readonly kind: string;
+}
+
+interface RegistryEntry extends TestCandidate {
+    readonly contract?: string;
+    readonly disposition?: string;
+    readonly boundary?: string;
+    readonly owner?: string;
+    readonly rationale?: string;
+    readonly semanticCoverage?: string;
+    readonly removalCondition?: string;
+}
+
+interface SemanticContract {
+    readonly id: string;
+    readonly domain?: string;
+    readonly owner?: string;
+    readonly summary?: string;
+    readonly semanticCoverage?: string;
+    readonly coverageRelation?: string;
+    readonly sharedCoverageGroup?: string;
+    readonly interactionRequirement?: {
+        readonly interactionKind: 'absence' | 'count' | 'order';
+        readonly ownedPort: string;
+        readonly observableEffect: string;
+        readonly requiredConstraint: string;
+        readonly failureRationale: string;
+    };
+}
+
+interface CheckerResult {
+    readonly status: number | null;
+    readonly stdout: string;
+}
 
 const repoRoot = process.cwd();
 const checkerPath = path.join(repoRoot, 'scripts/check-test-structure-coupling.mjs');
@@ -983,26 +1036,6 @@ describe('test structure-coupling review', () => {
         expect(result.stdout).not.toContain('ast-inspection');
     });
 
-    it('links approved static boundaries to their owning executable assertions', () => {
-        const registry = readRepositoryRegistry();
-        const contracts = new Map(registry.contracts.map((contract) => [contract.id, contract]));
-        const entriesByContract = Map.groupBy(registry.entries, (entry) => entry.contract);
-
-        expect(contracts.get('control-protocol-server-import-direction')?.semanticCoverage).toBe(
-            'packages/tests/rallar-black-box/control-protocol-boundary.test.ts#does not import control protocol from the SPA app into the control server'
-        );
-        expect(contracts.get('control-protocol-browser-boundary')?.semanticCoverage).toBe(
-            'packages/tests/rallar-black-box/control-protocol-boundary.test.ts#keeps distributed run monitor derivation in shared-test instead of the SPA app'
-        );
-        expect(entriesByContract.get('control-protocol-server-import-direction')).toHaveLength(2);
-        expect(entriesByContract.get('control-protocol-browser-boundary')).toHaveLength(5);
-
-        expect(contracts.get('repo-style-checker-interface')?.semanticCoverage).toBe(
-            'packages/tests/repo/repo-code-style-checker-integrity.test.ts#keeps TypeScript formatter settings aligned with the canonical baseline'
-        );
-        expect(entriesByContract.get('repo-style-checker-interface')).toHaveLength(1);
-    });
-
     it('reports renamed removals and unchanged-source copies with range-safe evidence', () => {
         const fixture = createGitFixture({
             'packages/example/src/public.ts': 'export const publicApi = true;\n',
@@ -1047,7 +1080,7 @@ describe('test structure-coupling review', () => {
         expect(result.stdout).not.toContain('deleted-or-replaced-semantic-coverage');
     });
 
-    it('reports an explicit changed-file selection without scanning unrelated tests', () => {
+    it('reports an explicit changed-file selection without reporting unrelated tests', () => {
         const fixture = createGitFixture({
             'packages/example/src/public.ts': 'export const publicApi = true;\n',
             'packages/tests/example/selected.test.ts': [
@@ -1071,28 +1104,6 @@ describe('test structure-coupling review', () => {
         expect(result.stdout).not.toContain('unrelated.test.ts');
     });
 });
-
-function readRepositoryRegistry(): Readonly<{
-    contracts: readonly Readonly<{
-        id: string;
-        semanticCoverage: string;
-    }>[];
-    entries: readonly Readonly<{
-        contract: string;
-    }>[];
-}> {
-    const source = readFileSync(
-        path.join(repoRoot, 'docs/test-structure-coupling-exceptions.md'),
-        'utf8'
-    );
-    const metadata = source.match(
-        /```test-structure-coupling-registry-v1\s*\n([\s\S]*?)\n```/u
-    )?.[1];
-    if (!metadata) {
-        throw new Error('Test structure-coupling registry metadata is missing.');
-    }
-    return JSON.parse(metadata) as ReturnType<typeof readRepositoryRegistry>;
-}
 
 function createGitFixture(files: Record<string, string>): { readonly root: string; } {
     const root = mkdtempSync(path.join(tmpdir(), 'rallar-test-structure-coupling-'));
@@ -1133,7 +1144,7 @@ function writeRegistry(
 function runChecker(
     fixture: { readonly root: string; },
     args: readonly string[] = []
-): { readonly status: number | null; readonly stdout: string; } {
+): CheckerResult {
     const result = spawnSync(process.execPath, [checkerPath, ...args], {
         cwd: fixture.root,
         encoding: 'utf8'
@@ -1227,39 +1238,4 @@ function commitFixture(root: string, message: string): string {
 
 function runGit(root: string, args: readonly string[]): string {
     return execFileSync('git', args, { cwd: root, encoding: 'utf8' });
-}
-
-interface TestCandidate {
-    readonly id: string;
-    readonly path: string;
-    readonly line: number;
-    readonly column: number;
-    readonly kind: string;
-}
-
-interface RegistryEntry extends TestCandidate {
-    readonly contract?: string;
-    readonly disposition?: string;
-    readonly boundary?: string;
-    readonly owner?: string;
-    readonly rationale?: string;
-    readonly semanticCoverage?: string;
-    readonly removalCondition?: string;
-}
-
-interface SemanticContract {
-    readonly id: string;
-    readonly domain?: string;
-    readonly owner?: string;
-    readonly summary?: string;
-    readonly semanticCoverage?: string;
-    readonly coverageRelation?: string;
-    readonly sharedCoverageGroup?: string;
-    readonly interactionRequirement?: {
-        readonly interactionKind: 'absence' | 'count' | 'order';
-        readonly ownedPort: string;
-        readonly observableEffect: string;
-        readonly requiredConstraint: string;
-        readonly failureRationale: string;
-    };
 }

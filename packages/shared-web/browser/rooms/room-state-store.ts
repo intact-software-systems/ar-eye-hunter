@@ -1,15 +1,14 @@
-import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type {
     RallarOnChangeOptions,
     RallarStateListener,
     RallarUnsubscribe
 } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import { toGroupRefFromScope } from '@shared/api/api-type-utils.ts';
+import { isSameGroupScope, toGroupRefFromScope } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { isGroupActive, isSessionInGroup, readGroupVersion } from '@shared/api/group-client-views.ts';
-import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { readConfiguredValue } from '@shared/cache/RepositoryManager.ts';
+import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 
 import type { StateCacheChangeListener } from '../state-cache/browser-state-cache-lifecycle.ts';
 import type { RallarStateCacheReadPort } from '../state-cache/rallar-state-store.ts';
@@ -32,7 +31,8 @@ export interface RoomSendFence {
 
 export interface RallarRoomStateStorePort {
     state(): RallarRoomState;
-    emit(state: RallarRoomState): void;
+    /** False means a nested publication superseded this state; stop its dependent notifications. */
+    emit(state: RallarRoomState): boolean;
     onChange(
         listener: RallarStateListener<RallarRoomState>,
         options?: RallarOnChangeOptions
@@ -59,26 +59,27 @@ export interface RallarRoomStateRuntimePort {
     resolveOperationScope(scope?: StateScope): StateScope | undefined;
 }
 
-export interface CreateRoomStateStoreInput {
-    readonly runtime: RallarRoomStateRuntimePort;
-    readonly readSession: () => AuthSession | undefined;
-    readonly stateCache: RallarStateCacheReadPort;
+export namespace RoomStateStore {
+    export interface Input {
+        readonly runtime: RallarRoomStateRuntimePort;
+        readonly readSession: () => AuthSession | undefined;
+        readonly stateCache: RallarStateCacheReadPort;
+    }
 }
 
-export function createRoomStateStore(input: CreateRoomStateStoreInput): RallarRoomStateStorePort {
-    return new RoomStateStore(input);
-}
+/** Owns room projection and live subscriptions for one browser facade. */
+export class RoomStateStore implements RallarRoomStateStorePort {
+    private readonly notifications = new SynchronousNotifications<RallarRoomState>((error) => {
+        console.error('Error notifying Rallar room state listener', error);
+    });
+    private readonly input: RoomStateStore.Input;
 
-class RoomStateStore implements RallarRoomStateStorePort {
-    readonly #listeners = new Set<RallarStateListener<RallarRoomState>>();
-    readonly #input: CreateRoomStateStoreInput;
-
-    constructor(input: CreateRoomStateStoreInput) {
-        this.#input = input;
+    constructor(input: RoomStateStore.Input) {
+        this.input = input;
     }
 
     state(): RallarRoomState {
-        const sessionId = this.#input.readSession()?.sessionId;
+        const sessionId = this.input.readSession()?.sessionId;
         const currentRoomRef = this.resolveCurrentRoomRef();
         const currentRoom = this.findGroupSnapshot(currentRoomRef);
         return toRallarRoomState({
@@ -90,30 +91,27 @@ class RoomStateStore implements RallarRoomStateStorePort {
         });
     }
 
-    emit(state: RallarRoomState): void {
-        for (const listener of this.#listeners) {
-            notifyListener(listener, state);
-        }
+    emit(state: RallarRoomState): boolean {
+        return this.notifications.publishLatest(state);
     }
 
     onChange(
         listener: RallarStateListener<RallarRoomState>,
         options: RallarOnChangeOptions = {}
     ): RallarUnsubscribe {
-        this.#listeners.add(listener);
         // Subscribing before a first connect is ordinary; the caches it would
         // read do not exist yet, and this delivery is a notification.
         const current = (options.emitCurrent ?? true)
             ? readConfiguredValue(() => this.state())
             : undefined;
-        if (current) {
-            notifyListener(listener, current);
-        }
-        return () => this.#listeners.delete(listener);
+        const subscription = current
+            ? this.notifications.subscribeAndNotify(listener, current)
+            : this.notifications.subscribe(listener);
+        return () => subscription.unsubscribe();
     }
 
     onCacheChange(listener: StateCacheChangeListener): RallarUnsubscribe {
-        return this.#input.stateCache.onCacheChange(listener);
+        return this.input.stateCache.onCacheChange(listener);
     }
 
     wasGroupSnapshotObserved(room: string | GroupRef | undefined): boolean {
@@ -121,16 +119,16 @@ class RoomStateStore implements RallarRoomStateStorePort {
         if (!roomRef) {
             return false;
         }
-        return readConfiguredValue(() => this.#input.stateCache.wasGroupSnapshotObserved(roomRef)) ?? false;
+        return readConfiguredValue(() => this.input.stateCache.wasGroupSnapshotObserved(roomRef)) ?? false;
     }
 
     resolveCurrentRoomRef(): GroupRef | undefined {
-        const session = this.#input.readSession();
+        const session = this.input.readSession();
         if (!session) {
             return undefined;
         }
 
-        const currentRoomRef = this.#input.runtime.currentRoomRef();
+        const currentRoomRef = this.input.runtime.currentRoomRef();
         const currentRoomSnapshot = this.findGroupSnapshot(currentRoomRef);
         if (
             currentRoomSnapshot &&
@@ -144,7 +142,7 @@ class RoomStateStore implements RallarRoomStateStorePort {
     }
 
     readGroupSnapshots(): GroupSnapshot[] {
-        return [...this.#input.stateCache.readGroupSnapshots()].filter((snapshot) =>
+        return [...this.input.stateCache.readGroupSnapshots()].filter((snapshot) =>
             this.isInDefaultScope(snapshot.group)
         );
     }
@@ -160,12 +158,12 @@ class RoomStateStore implements RallarRoomStateStorePort {
 
     private findCachedGroupSnapshot(room: string | GroupRef): GroupSnapshot | undefined {
         if (typeof room !== 'string') {
-            return this.#input.stateCache.findGroupSnapshotByRef(room);
+            return this.input.stateCache.findGroupSnapshotByRef(room);
         }
 
         const scopedRef = this.resolveGroupRefFromRoomId(room);
         const scopedSnapshot = scopedRef
-            ? this.#input.stateCache.findGroupSnapshotByRef(scopedRef)
+            ? this.input.stateCache.findGroupSnapshotByRef(scopedRef)
             : undefined;
         if (scopedSnapshot) {
             return scopedSnapshot;
@@ -189,11 +187,11 @@ class RoomStateStore implements RallarRoomStateStorePort {
     }
 
     setCurrentRoom(snapshot: GroupSnapshot): void {
-        this.#input.runtime.setCurrentRoom(snapshot);
+        this.input.runtime.setCurrentRoom(snapshot);
     }
 
     clearCurrentRoomIfMatches(room: string | GroupRef, clearCurrent: boolean): void {
-        this.#input.runtime.clearCurrentRoomIfMatches(room, clearCurrent);
+        this.input.runtime.clearCurrentRoomIfMatches(room, clearCurrent);
     }
 
     toRoomId(room: string | GroupRef | undefined): string | undefined {
@@ -211,7 +209,7 @@ class RoomStateStore implements RallarRoomStateStorePort {
     }
 
     resolveGroupRefFromRoomId(roomId: string, scope?: StateScope): GroupRef | undefined {
-        return toGroupRefFromScope(roomId, this.#input.runtime.resolveOperationScope(scope));
+        return toGroupRefFromScope(roomId, this.input.runtime.resolveOperationScope(scope));
     }
 
     private readCurrentRoomClientSnapshots(currentRoom: GroupSnapshot | undefined): ClientSnapshot[] {
@@ -219,13 +217,13 @@ class RoomStateStore implements RallarRoomStateStorePort {
             return [];
         }
         return currentRoom.members.flatMap((member) => {
-            const snapshot = this.#input.stateCache.findClientSnapshot(member.principalId);
+            const snapshot = this.input.stateCache.findClientSnapshot(member.principalId);
             return snapshot && this.isInDefaultScope(snapshot.principal) ? [snapshot] : [];
         });
     }
 
     private findFirstGroupSnapshotRefForSession(sessionId: string): GroupRef | undefined {
-        const fromRepository = this.#input.stateCache.findFirstGroupRefForSession(sessionId);
+        const fromRepository = this.input.stateCache.findFirstGroupRefForSession(sessionId);
         if (fromRepository && this.isInDefaultScope(fromRepository)) {
             return fromRepository;
         }
@@ -234,26 +232,8 @@ class RoomStateStore implements RallarRoomStateStorePort {
         )?.group;
     }
 
-    private isInDefaultScope(
-        value: Pick<StateScope, 'applicationId'> & { workspaceId?: string; }
-    ): boolean {
-        return isSameStateScopeValue(value, this.#input.runtime.readDefaultScope());
+    private isInDefaultScope(value: StateScope): boolean {
+        const scope = this.input.runtime.readDefaultScope();
+        return !scope || isSameGroupScope(value, scope);
     }
-}
-
-function isSameStateScopeValue(
-    value: Pick<StateScope, 'applicationId'> & { workspaceId?: string; },
-    scope?: StateScope
-): boolean {
-    if (!scope) {
-        return true;
-    }
-    return (
-        value.applicationId === scope.applicationId &&
-        normalizeStateWorkspaceId(value.workspaceId) === normalizeStateWorkspaceId(scope.workspaceId)
-    );
-}
-
-function normalizeStateWorkspaceId(workspaceId?: string): string {
-    return workspaceId ?? DEFAULT_STATE_WORKSPACE_ID;
 }

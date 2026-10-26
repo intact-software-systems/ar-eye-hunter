@@ -2,10 +2,10 @@
   "compilerOptions": {
     "erasableSyntaxOnly": true,
     "noEmit": true,
-    "target": "ES2023",
+    "target": "ES2024",
     "module": "ESNext",
     "lib": [
-      "ES2023",
+      "ES2024",
       "DOM"
     ],
     "strict": true,

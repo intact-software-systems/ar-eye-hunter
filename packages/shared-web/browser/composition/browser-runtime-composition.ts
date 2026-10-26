@@ -28,7 +28,7 @@ import {
     type BrowserRoomTransportTarget
 } from '@shared-web/browser/rooms/room-group-state-translation.ts';
 import {
-    createRoomStateStore,
+    RoomStateStore,
     type RallarRoomStateStorePort
 } from '@shared-web/browser/rooms/room-state-store.ts';
 import { subscribeRoomTransportTarget } from '@shared-web/browser/rooms/room-transport-target-observation.ts';
@@ -137,7 +137,7 @@ export function createBrowserStateComposition(
 ): BrowserStateComposition {
     const stateCache = createRallarStateCacheReadPort();
     const roomLayoutSlots = createRoomLayoutSlots();
-    const roomStateStore = createRoomStateStore({
+    const roomStateStore = new RoomStateStore({
         runtime: input.stateRuntime,
         readSession,
         stateCache
@@ -145,7 +145,6 @@ export function createBrowserStateComposition(
     const stateStore = new RallarStateStore({
         runtime: input.stateRuntime,
         roomStateStore,
-        readSession,
         stateCache
     });
     const readDefaults = input.runtime.readDefaults;

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { BrowserFacadeRuntimeState } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
-import { createRoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
+import { RoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
 import { createRallarStateCacheReadPort } from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -79,8 +79,6 @@ vi.mock('@shared/repository/group-state-snapshots-repository.ts', () => ({
 }));
 
 describe('room state store summaries', () => {
-    void createRoomStateStore;
-
     beforeEach(() => {
         stateMocks.groups.length = 0;
         stateMocks.clients.length = 0;
@@ -244,7 +242,7 @@ describe('room send fence', () => {
     });
 
     it('lets a floor the send states stand alone, with no roster, when no room snapshot is cached', () => {
-        const store = createRoomStateStore({
+        const store = new RoomStateStore({
             runtime: new BrowserFacadeRuntimeState(new BrowserTransportRuntime({ openSessionChannelPort: () => undefined })),
             readSession: () => stateMocks.session,
             stateCache: createRallarStateCacheReadPort()

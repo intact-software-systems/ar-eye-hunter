@@ -1,6 +1,7 @@
+import { createRallarCrdtFacade } from '@shared-web/browser/crdt/create-rallar-crdt-facade.ts';
+import type { RallarCrdtFacade } from '@shared-web/browser/crdt/rallar-crdt-contracts.ts';
 import type { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import type { RallarConnectionOperations } from '@shared-web/browser/rallar-connection-facade.ts';
-import { createRallarCrdtFacade, type RallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
 import { createRallarDataFacade, type RallarDataFacade } from '@shared-web/browser/rallar-data.ts';
 import type { RallarAuthFacade } from '@shared-web/browser/session/rallar-auth-facade.ts';
 import {

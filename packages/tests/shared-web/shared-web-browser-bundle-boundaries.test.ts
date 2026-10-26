@@ -45,13 +45,9 @@ const esbuildBin = path.join(
     process.platform === 'win32' ? 'esbuild.cmd' : 'esbuild'
 );
 
-const budgetsKiB = decodeBrotliBudgetsKiB(
+const budgetsKiB: Readonly<Record<string, number>> = JSON.parse(
     readFileSync(path.join(repoRoot, 'packages/shared-web/bundle-budgets.json'), 'utf8')
 );
-
-function decodeBrotliBudgetsKiB(text: string): Readonly<Record<string, number>> {
-    return JSON.parse(text);
-}
 
 function budgetFor(label: string): number {
     const budget = budgetsKiB[label];
@@ -99,10 +95,22 @@ const budgetedEntries: readonly BundleBoundary[] = [
         brotliBudgetKiB: budgetFor('browser/rallar-media-calls.ts')
     },
     {
-        label: 'browser/rallar-room-entry.ts',
-        entry: 'packages/shared-web/browser/rallar-room-entry.ts',
+        label: 'browser/rooms/directory/rallar-room-directory.ts',
+        entry: 'packages/shared-web/browser/rooms/directory/rallar-room-directory.ts',
+        output: 'rallar-room-directory.boundary.min.js',
+        brotliBudgetKiB: budgetFor('browser/rooms/directory/rallar-room-directory.ts')
+    },
+    {
+        label: 'browser/rooms/entry/rallar-room-entry.ts',
+        entry: 'packages/shared-web/browser/rooms/entry/rallar-room-entry.ts',
         output: 'rallar-room-entry.boundary.min.js',
-        brotliBudgetKiB: budgetFor('browser/rallar-room-entry.ts')
+        brotliBudgetKiB: budgetFor('browser/rooms/entry/rallar-room-entry.ts')
+    },
+    {
+        label: 'browser/rooms/recent-rooms/rallar-recent-rooms.ts',
+        entry: 'packages/shared-web/browser/rooms/recent-rooms/rallar-recent-rooms.ts',
+        output: 'rallar-recent-rooms.boundary.min.js',
+        brotliBudgetKiB: budgetFor('browser/rooms/recent-rooms/rallar-recent-rooms.ts')
     },
     {
         // This public entry point contains types only.
@@ -169,16 +177,23 @@ describe('shared-web browser bundle boundaries', () => {
         }
     });
 
-    it('keeps optional room entry independent of the facade and storage engines', () => {
-        const entry = budgetedEntries.find((boundary) => boundary.label === 'browser/rallar-room-entry.ts');
-        if (!entry) {
-            throw new Error('Missing room-entry bundle boundary');
+    it.each([
+        'browser/rooms/entry/rallar-room-entry.ts',
+        'browser/rooms/recent-rooms/rallar-recent-rooms.ts',
+        'browser/rooms/directory/rallar-room-directory.ts'
+    ])(
+        'keeps %s independent of the facade and storage engines',
+        (label) => {
+            const entry = budgetedEntries.find((boundary) => boundary.label === label);
+            if (!entry) {
+                throw new Error('Missing room-entry bundle boundary');
+            }
+            const inputs = Object.keys(bundleForBoundary(entry).metafile.inputs);
+            expect(inputs).not.toContain('packages/shared-web/browser/rallar.ts');
+            expect(inputs).not.toContainEqual(expect.stringContaining('node_modules/@js-temporal/polyfill'));
+            expect(inputs).not.toContainEqual(expect.stringContaining('indexed-db'));
         }
-        const inputs = Object.keys(bundleForBoundary(entry).metafile.inputs);
-        expect(inputs).not.toContain('packages/shared-web/browser/rallar.ts');
-        expect(inputs).not.toContainEqual(expect.stringContaining('node_modules/@js-temporal/polyfill'));
-        expect(inputs).not.toContainEqual(expect.stringContaining('indexed-db'));
-    });
+    );
 
     it('keeps measured browser entry points under their Brotli budgets', () => {
         for (const entry of budgetedEntries) {

@@ -3,6 +3,7 @@ import {
     expect,
     it
 } from 'vitest';
+
 import { collectExportSnapshot, type ExportSnapshot } from './public-api-snapshot-collector.ts';
 
 interface PublicSurfaceSnapshot {
@@ -13,13 +14,21 @@ interface PublicSurfaceSnapshot {
 
 const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
     {
-        filePath: 'packages/shared-web/browser/rallar-room-entry.ts',
+        filePath: 'packages/shared-web/browser/rooms/directory/rallar-room-directory.ts',
+        expected: { values: ['RallarRoomDirectory'], types: [], starExports: [], namespaceExports: [] }
+    },
+    {
+        filePath: 'packages/shared-web/browser/rooms/entry/rallar-room-entry.ts',
         expected: {
-            values: ['RallarRecentRooms', 'RallarRoomEntry', 'readRoomEntryDestination', 'toRoomEntryUrl'],
+            values: ['RallarRoomEntry', 'readRoomEntryDestination', 'toRoomEntryUrl'],
             types: [],
             starExports: [],
             namespaceExports: []
         }
+    },
+    {
+        filePath: 'packages/shared-web/browser/rooms/recent-rooms/rallar-recent-rooms.ts',
+        expected: { values: ['RallarRecentRooms'], types: [], starExports: [], namespaceExports: [] }
     },
     {
         filePath: 'packages/shared-web/browser/rallar.ts',

@@ -1,18 +1,22 @@
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import type { RallarStateListener } from '@shared-web/browser/rallar-shared-contracts.ts';
-import type { RallarJoinRoomOptions, RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
-import type { RallarAuthChangeListener } from '@shared-web/browser/session/rallar-auth-facade.ts';
-import type { AuthSession } from '@shared/api/api-config.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { createGroupSnapshotFixture } from '../../authoritative-group-fixtures.ts';
-
-import { describe, expect, it } from 'vitest';
-
 import {
     RallarRoomEntry,
     readRoomEntryDestination,
     toRoomEntryUrl
 } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
+import type { RallarJoinRoomOptions, RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
+import type { RallarAuthChangeListener } from '@shared-web/browser/session/rallar-auth-facade.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+
+import { createGroupSnapshotFixture } from '../../authoritative-group-fixtures.ts';
 
 const SCOPE = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
 const DESTINATION: RallarRoomEntry.Destination = {
@@ -519,6 +523,45 @@ describe('pending room entry lifecycle', () => {
         expect(browser.requests).toEqual([]);
         expect(observed.map((state) => state.status)).toEqual(['pending', 'idle']);
         expect(observed.at(-1)).toBe(entry.getState());
+    });
+
+    it('publishes the pending state when stopped from a joining notification', async () => {
+        const browser = new EntryBrowser();
+        browser.authenticate();
+        const entry = browser.createEntry();
+        entry.start();
+        entry.enter(DESTINATION);
+        entry.onChange((state) => {
+            if (state.status === 'joining') {
+                entry.stop();
+            }
+        });
+        const observed: RallarRoomEntry.State[] = [];
+        entry.onChange((state) => {
+            observed.push(state);
+        });
+        expect((await entry.resume()).status).toBe('pending');
+        expect(browser.requests).toEqual([]);
+        expect(observed.map((state) => state.status)).toEqual(['pending', 'pending']);
+        expect(observed.at(-1)).toBe(entry.getState());
+    });
+
+    it('joins the same admission when a joining listener resumes synchronously', async () => {
+        const browser = new EntryBrowser();
+        browser.authenticate();
+        const entry = browser.createEntry();
+        entry.start();
+        entry.enter(DESTINATION);
+        const joined: Promise<RallarRoomEntry.State>[] = [];
+        entry.onChange((state) => {
+            if (state.status === 'joining') {
+                joined.push(entry.resume());
+            }
+        });
+        const result = entry.resume();
+        expect((await result).status).toBe('entered');
+        expect(joined[0]).toBe(result);
+        expect(browser.requests).toHaveLength(1);
     });
 
     it('reports previous-room cleanup separately from reconnecting the admitted room', async () => {

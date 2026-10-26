@@ -87,10 +87,10 @@ alternative to unconditional room creation above; a pending invitation takes pri
 
 ```ts
 import {
-    RallarRecentRooms,
     RallarRoomEntry,
     toRoomEntryUrl
-} from '@shared-web/browser/rallar-room-entry.ts';
+} from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
+import { RallarRecentRooms } from '@shared-web/browser/rooms/recent-rooms/rallar-recent-rooms.ts';
 
 const scope = { applicationId: 'demo-game', workspaceId: 'default' };
 rallar.configure({ apiBaseUrl: 'http://localhost:8080', ...scope });
@@ -160,3 +160,38 @@ await rallar.rooms.update({ roomRef: hidden.group, directoryListing: 'unlisted' 
 Anyone with the link can request entry to an unlisted open room. Hiding removes it from the next
 directory read and Quick Join selection, while existing members and application participants remain.
 Use code-protected or invite-only admission when a link alone should not be sufficient.
+
+To keep public discovery fresh without switching the current room, use the optional directory owner:
+
+```ts
+import { RallarRoomDirectory } from '@shared-web/browser/rooms/directory/rallar-room-directory.ts';
+
+const directory = RallarRoomDirectory.createBrowser(rallar, {
+    scope: { applicationId: 'demo-game', workspaceId: 'default' },
+    request: {
+        kind: 'room',
+        q: 'demo arena',
+        limit: 50,
+        includeEmpty: false,
+        order: 'online-members'
+    },
+    refreshIntervalMs: 30_000,
+    timeoutMs: 10_000,
+    maxAttempts: 1
+});
+const unsubscribeDirectory = directory.onChange(renderPublicRooms);
+await directory.start();
+
+// An explicit Refresh action also resets the automatic interval.
+await directory.refresh();
+
+// Component cleanup.
+unsubscribeDirectory();
+directory.stop();
+```
+
+The owner reads all pages, deduplicates scoped references, and publishes complete results. Render
+`loading`, `ready`, and `error` distinctly; an error retains the last complete entries. Automatic
+reads pause when hidden or offline and resume immediately on return. Authentication and query
+changes fence late results; use `changeRequest` to replace the complete query. Discovery never joins
+or adopts a room. Scope, cadence, and per-request bounds are explicit application policy.

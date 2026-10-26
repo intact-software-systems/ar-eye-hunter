@@ -1,8 +1,19 @@
-import { RELIC_TOPICS, RELIC_TYPES, type RelicServerEvent } from '@relic-hunters/mod.ts';
-import { RallarRecentRooms, RallarRoomEntry } from '@shared-web/browser/rallar-room-entry.ts';
+import {
+    RELIC_TOPICS,
+    RELIC_TYPES,
+    type RelicServerEvent
+} from '@relic-hunters/mod.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
+import { RallarRoomDirectory } from '@shared-web/browser/rooms/directory/rallar-room-directory.ts';
+import { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
+import { RallarRecentRooms } from '@shared-web/browser/rooms/recent-rooms/rallar-recent-rooms.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
-import { fetchRelicSnapshot, resetRelicGame, sendRelicCommand } from './api.ts';
+
+import {
+    fetchRelicSnapshot,
+    resetRelicGame,
+    sendRelicCommand
+} from './api.ts';
 import { createRelicAuthorityClientBridge } from './rallar-game-authority-adapter.ts';
 import type { RelicHuntersRuntime } from './relic-hunters-runtime.ts';
 import { sendRelicWsCommand } from './send-relic-ws-command.ts';
@@ -20,6 +31,13 @@ export function browserRelicRuntimeDeps(): RelicHuntersRuntime.Dependencies {
     return {
         roomEntry,
         recentRooms,
+        directory: RallarRoomDirectory.createBrowser(rallar, {
+            scope: RELIC_ROOM_SCOPE,
+            request: { kind: 'room', q: 'relic hunters', limit: 50, includeEmpty: false, order: 'online-members' },
+            refreshIntervalMs: 30_000,
+            timeoutMs: 10_000,
+            maxAttempts: 1
+        }),
         timers: createDefaultTimers(),
         restoreSession: () => rallar.auth.restore(),
         login: (username, password) => rallar.auth.login({ username, password }),
@@ -31,7 +49,6 @@ export function browserRelicRuntimeDeps(): RelicHuntersRuntime.Dependencies {
         subscriptions: () => rallar.subscriptions(),
         roomState: () => rallar.rooms.state(),
         refreshRooms: () => rallar.rooms.refresh(),
-        listDirectory: (request) => rallar.rooms.directory(request, { scope: RELIC_ROOM_SCOPE }),
         waitForPresence: (roomId, options) => rallar.rooms.waitForPresence(roomId, options),
         onRoomsChange: (handler) => rallar.rooms.onChange(handler),
         onSnapshotMessage: (handler) =>

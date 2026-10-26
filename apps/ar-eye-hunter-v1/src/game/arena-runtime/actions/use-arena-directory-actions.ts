@@ -1,20 +1,24 @@
 import {
     useCallback,
+    useEffect,
+    useRef,
+    useState,
     type Dispatch,
     type RefObject,
     type SetStateAction
 } from 'react';
 
 import { rallar, type RallarRoomSummary } from '@shared-web/browser/rallar.ts';
+import { RallarRoomDirectory } from '@shared-web/browser/rooms/directory/rallar-room-directory.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupDirectoryEntry, GroupDirectoryOrder } from '@shared/api/group-directory/group-directory-types.ts';
 
-import type { ArenaConnection } from '../arena-connection-contracts.ts';
+import type { ArenaConnection, ArenaConnectionState } from '../arena-connection-contracts.ts';
+import { ARENA_ROOM_SCOPE } from '../arena-room-entry.ts';
 
 export interface ArenaDirectoryActionsInput {
+    readonly connectionState: ArenaConnectionState;
     readonly sessionRef: RefObject<AuthSession | undefined>;
-    readonly directoryGenerationRef: RefObject<number>;
-    readonly directoryOrderRef: RefObject<GroupDirectoryOrder>;
     readonly setDirectoryOrder: Dispatch<SetStateAction<GroupDirectoryOrder>>;
     readonly setRoomId: Dispatch<SetStateAction<string | undefined>>;
     readonly setOpenRooms: Dispatch<SetStateAction<readonly GroupDirectoryEntry[]>>;
@@ -24,97 +28,96 @@ export interface ArenaDirectoryActionsInput {
 }
 
 export const OPEN_ARENA_DIRECTORY_QUERY = 'eye hunter';
-const OPEN_ARENA_DIRECTORY_PAGE_SIZE = 50;
+const OPEN_ARENA_DIRECTORY_REQUEST: RallarRoomDirectory.Request = {
+    kind: 'room',
+    q: OPEN_ARENA_DIRECTORY_QUERY,
+    limit: 50,
+    includeEmpty: false,
+    order: 'online-members'
+};
 
 export function useArenaDirectoryActions(
     input: ArenaDirectoryActionsInput
 ): Pick<ArenaConnection, 'refreshRooms' | 'changeDirectoryOrder'> {
-    const refreshRooms = useCallback(() => refreshArenaRooms(input), [
+    const [directory] = useState(() =>
+        RallarRoomDirectory.createBrowser(rallar, {
+            scope: ARENA_ROOM_SCOPE,
+            request: OPEN_ARENA_DIRECTORY_REQUEST,
+            refreshIntervalMs: 30_000,
+            timeoutMs: 10_000,
+            maxAttempts: 1
+        })
+    );
+    const roomRefreshGeneration = useRef(0);
+    useArenaDirectoryLifecycle(input, directory, roomRefreshGeneration);
+    const refreshRooms = useCallback(() => refreshArenaRooms(input, directory, roomRefreshGeneration), [
+        directory,
         input.sessionRef,
-        input.directoryGenerationRef,
-        input.directoryOrderRef,
         input.setRooms,
         input.setRoomId,
-        input.setOpenRooms,
         input.setOpenRoomsError,
         input.setOpenRoomsStatus
     ]);
     const changeDirectoryOrder = useCallback(async (order: GroupDirectoryOrder) => {
-        if (input.directoryOrderRef.current === order) {
-            return;
-        }
-        input.directoryOrderRef.current = order;
         input.setDirectoryOrder(order);
-        input.setOpenRooms([]);
-        await refreshRooms();
-    }, [input.directoryOrderRef, input.setDirectoryOrder, input.setOpenRooms, refreshRooms]);
+        await directory.changeRequest({ ...OPEN_ARENA_DIRECTORY_REQUEST, order });
+    }, [directory, input.setDirectoryOrder]);
     return { refreshRooms, changeDirectoryOrder };
 }
 
-async function readOpenArenaDirectory(
-    order: GroupDirectoryOrder,
-    isCurrent: () => boolean
-): Promise<readonly GroupDirectoryEntry[] | undefined> {
-    const entries = new Map<string, GroupDirectoryEntry>();
-    let cursor: string | null = null;
-    do {
-        const page = await rallar.rooms.directory({
-            kind: 'room',
-            q: OPEN_ARENA_DIRECTORY_QUERY,
-            limit: OPEN_ARENA_DIRECTORY_PAGE_SIZE,
-            ...(order === 'online-members' ? {} : { order }),
-            ...(cursor === null ? {} : { cursor })
-        });
-        if (!isCurrent()) {
-            return undefined;
+function useArenaDirectoryLifecycle(
+    input: ArenaDirectoryActionsInput,
+    directory: RallarRoomDirectory,
+    roomRefreshGeneration: RefObject<number>
+): void {
+    const { connectionState, setOpenRooms, setOpenRoomsStatus, setOpenRoomsError } = input;
+    useEffect(() => {
+        if (connectionState !== 'connected') {
+            return;
         }
-        page.entries.forEach((entry) => entries.set(entry.groupRef.groupId, entry));
-        cursor = page.nextCursor;
-    }
-    while (cursor !== null);
-    return [...entries.values()];
+        const unsubscribe = directory.onChange((state) => {
+            setOpenRooms(state.entries);
+            setOpenRoomsStatus(state.status);
+            setOpenRoomsError(state.error);
+        });
+        void directory.start();
+        return () => {
+            roomRefreshGeneration.current += 1;
+            unsubscribe();
+            directory.stop();
+        };
+    }, [connectionState, directory, roomRefreshGeneration, setOpenRooms, setOpenRoomsStatus, setOpenRoomsError]);
 }
 
-async function refreshArenaRooms(input: ArenaDirectoryActionsInput): Promise<void> {
-    const {
-        sessionRef,
-        directoryGenerationRef,
-        setRooms,
-        setRoomId,
-        setOpenRooms,
-        setOpenRoomsError,
-        setOpenRoomsStatus
-    } = input;
-    const session = sessionRef.current;
+async function refreshArenaRooms(
+    input: ArenaDirectoryActionsInput,
+    directory: RallarRoomDirectory,
+    roomRefreshGeneration: RefObject<number>
+): Promise<void> {
+    const session = input.sessionRef.current;
     if (!session) {
         return;
     }
-    const generation = ++directoryGenerationRef.current;
-    const order = input.directoryOrderRef.current;
+    const generation = ++roomRefreshGeneration.current;
     const isCurrent = () =>
-        directoryGenerationRef.current === generation &&
-        sessionRef.current?.sessionId === session.sessionId && sessionRef.current?.clientId === session.clientId;
-    setOpenRoomsStatus('loading');
-    setOpenRoomsError(undefined);
+        roomRefreshGeneration.current === generation &&
+        input.sessionRef.current?.sessionId === session.sessionId &&
+        input.sessionRef.current?.clientId === session.clientId;
+    input.setOpenRoomsStatus('loading');
+    input.setOpenRoomsError(undefined);
     try {
         const state = await rallar.rooms.refresh();
         if (!isCurrent()) {
             return;
         }
-        setRooms(state.rooms);
-        setRoomId(state.currentRoomId);
-        const openRooms = await readOpenArenaDirectory(order, isCurrent);
-        if (!isCurrent() || !openRooms) {
-            return;
-        }
-        setOpenRooms(openRooms);
-        setOpenRoomsStatus('ready');
+        input.setRooms(state.rooms);
+        input.setRoomId(state.currentRoomId);
+        await directory.refresh();
     }
     catch (error) {
-        if (!isCurrent()) {
-            return;
+        if (isCurrent()) {
+            input.setOpenRoomsError(error instanceof Error ? error.message : String(error));
+            input.setOpenRoomsStatus('error');
         }
-        setOpenRoomsError(error instanceof Error ? error.message : String(error));
-        setOpenRoomsStatus('error');
     }
 }

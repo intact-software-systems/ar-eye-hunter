@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { BrowserDirectorStatusRuntime } from '@shared-web/browser/director/browser-director-status-runtime.ts';
 import type { RallarDirectorStatus } from '@shared-web/browser/director/rallar-director-facade.ts';
-import { createRoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
+import { RoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
 import type { RallarStateCacheReadPort } from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -93,10 +93,48 @@ describe('director status observation before connection', () => {
         expect(observations.map((current) => current.appointment?.sessionId)).toEqual([undefined, 'hunter']);
     });
 
+    it('does not deliver an obsolete appointment after a listener publishes its removal', () => {
+        const cache = new DirectorStatusCache();
+        const status = createStatusRuntime(cache, session);
+        status.onStatus((current) => {
+            if (current.appointment) {
+                cache.repositories.set(snapshotsToken, []);
+                status.emit();
+            }
+        });
+        const observed: string[] = [];
+        status.onStatus((current) => {
+            observed.push(current.state);
+        });
+        cache.repositories.set(snapshotsToken, [createAppointmentSnapshot()]);
+        status.emit();
+        expect(observed).toEqual(['none', 'none']);
+        expect(status.read().state).toBe('none');
+    });
+
+    it('keeps a renewed status subscription active after its old handle unsubscribes', () => {
+        const cache = new DirectorStatusCache();
+        const status = createStatusRuntime(cache, session);
+        const observed: string[] = [];
+        const listener = (current: RallarDirectorStatus): void => {
+            observed.push(current.state);
+        };
+        const previous = status.onStatus(listener);
+        const current = status.onStatus(listener);
+        previous();
+        cache.repositories.set(snapshotsToken, [createAppointmentSnapshot()]);
+        status.emit();
+        current();
+        cache.repositories.set(snapshotsToken, []);
+        status.emit();
+        expect(observed).toEqual(['none', 'none', 'fresh']);
+    });
+
     it('propagates unexpected cache faults without retaining a failed subscription', () => {
         const cache = new DirectorStatusCache();
         cache.fault = new Error('cache corrupted');
         const status = createStatusRuntime(cache, session);
+        expect(() => status.emit()).not.toThrow();
         const observations: RallarDirectorStatus[] = [];
         expect(() => status.read()).toThrow(cache.fault);
         expect(() =>
@@ -146,7 +184,7 @@ describe('director status observation before connection', () => {
 });
 
 function createStatusRuntime(cache: DirectorStatusCache, restoredSession: AuthSession | undefined): BrowserDirectorStatusRuntime {
-    const roomStateStore = createRoomStateStore({
+    const roomStateStore = new RoomStateStore({
         runtime: {
             currentRoomRef: () => undefined,
             setCurrentRoom: () => {},

@@ -13,16 +13,15 @@
     ],
     "owner": "Knut-Helge Vik",
     "command": "npm run test:playwright:relic:full-stack",
-    "reason": "Runs the separate two-browser propagation workload. The Relic full-stack CI command selects only the private-entry suite, so this scenario remains manual."
+    "reason": "Runs the separate two-browser propagation workload. Relic CI covers private room entry, HTTP, feedback and discovery; this propagation scenario remains manual."
   },
   {
     "paths": [
-      "tests/playwright/ar-eye-hunter/director-capability-delivery.spec.ts",
       "tests/playwright/ar-eye-hunter/mobile-controls.spec.ts"
     ],
     "owner": "Knut-Helge Vik",
     "command": "npm run test:playwright:ar-eye",
-    "reason": "Passes locally (4 passed, 4 skipped) but on the Linux runner three specs hit the 45 s timeout waiting for canvas effects (mobile-controls.spec.ts:33, director-capability-delivery.spec.ts:55), so wiring it into e2e-app turned the gate red. Fix the headless rendering dependency before wiring a lane."
+    "reason": "Mobile canvas-effects checks remain a separate manual workload after Linux-runner timeouts. Establish reliable headless rendering before adding them to a release lane."
   },
   {
     "paths": [

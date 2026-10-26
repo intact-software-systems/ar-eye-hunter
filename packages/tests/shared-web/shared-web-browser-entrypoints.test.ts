@@ -1,7 +1,16 @@
 import { readdirSync } from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
-import { analyzeSourceFile, type SourceAnalysis, type SourceImport } from '../helpers/source-analysis';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
+import {
+    analyzeSourceFile,
+    type SourceAnalysis,
+    type SourceImport
+} from '../helpers/source-analysis';
 
 interface BrowserEntrypoint {
     readonly moduleId: string;
@@ -12,9 +21,21 @@ interface BrowserEntrypoint {
 
 const BROWSER_ENTRYPOINTS: readonly BrowserEntrypoint[] = [
     {
-        moduleId: '@shared-web/browser/rallar-room-entry.ts',
-        sourcePath: 'packages/shared-web/browser/rallar-room-entry.ts',
-        expectedRuntimeExports: ['RallarRoomEntry', 'RallarRecentRooms', 'readRoomEntryDestination', 'toRoomEntryUrl'],
+        moduleId: '@shared-web/browser/rooms/directory/rallar-room-directory.ts',
+        sourcePath: 'packages/shared-web/browser/rooms/directory/rallar-room-directory.ts',
+        expectedRuntimeExports: ['RallarRoomDirectory'],
+        forbiddenRuntimeExports: ['rallar', 'createRallarFacade', 'createRallarDataFacade']
+    },
+    {
+        moduleId: '@shared-web/browser/rooms/entry/rallar-room-entry.ts',
+        sourcePath: 'packages/shared-web/browser/rooms/entry/rallar-room-entry.ts',
+        expectedRuntimeExports: ['RallarRoomEntry', 'readRoomEntryDestination', 'toRoomEntryUrl'],
+        forbiddenRuntimeExports: ['rallar', 'createRallarFacade', 'createRallarDataFacade']
+    },
+    {
+        moduleId: '@shared-web/browser/rooms/recent-rooms/rallar-recent-rooms.ts',
+        sourcePath: 'packages/shared-web/browser/rooms/recent-rooms/rallar-recent-rooms.ts',
+        expectedRuntimeExports: ['RallarRecentRooms'],
         forbiddenRuntimeExports: ['rallar', 'createRallarFacade', 'createRallarDataFacade']
     },
     {

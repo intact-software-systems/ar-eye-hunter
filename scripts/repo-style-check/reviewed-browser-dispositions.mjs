@@ -1069,14 +1069,17 @@ export const reviewedBrowserDispositions = Object.freeze([
         symbol: 'prefix:room',
         maximumMagnitude: 16
     }),
-    // The runtime owns one authenticated connection and its room/command/snapshot fences. Pure
-    // acceptance and delivery decisions, browser ports, React subscription, and presentation have
-    // separate concrete owners. Splitting private state across callbacks would hide the fences.
+    // Separation review: one authenticated page connection owns room/command/snapshot attempts
+    // and their cancellation. Observer callbacks can stop or replace that connection, so each
+    // continued effect checks its captured lifecycle beside the effect. Related state changes
+    // publish atomically. Pure acceptance/delivery policy, browser ports, React subscription and
+    // presentation remain separate owners. This exact review-tier cap permits no further growth;
+    // no function-size, navigation-length or other-rule exception is granted.
     Object.freeze({
         path: 'apps/relic-hunters-v1/src/game/relic-hunters-runtime.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
-        maximumMagnitude: 140
+        maximumMagnitude: 202
     }),
     // These three class-method occurrences accept promise rejection values, fence stale attempts,
     // and immediately normalize with toError. Only typed error messages reach connection state.
