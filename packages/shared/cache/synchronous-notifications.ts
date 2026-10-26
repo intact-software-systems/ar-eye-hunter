@@ -33,8 +33,9 @@ export class SynchronousNotifications<T> {
         };
     }
 
-    /** Registers before replay so a listener can receive a reentrant publication. */
+    /** Renews registration before replay so an in-progress publication cannot deliver the same state again. */
     subscribeAndNotify(listener: SynchronousNotifications.Listener<T>, current: T): Unsubscribe {
+        this.listeners.delete(listener);
         const subscription = this.subscribe(listener);
         this.notify(listener, current);
         return subscription;

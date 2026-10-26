@@ -272,13 +272,33 @@ export class RelicHuntersRuntime {
             return;
         }
         this.active = true;
+        const generation = this.generation;
         this.diagnose({ middlewareConnected: false });
+        if (!this.active) {
+            return;
+        }
         this.deps.roomEntry.start();
+        if (!this.active) {
+            return;
+        }
         void this.deps.recentRooms.start();
-        this.lifecycle = this.deps.subscriptions();
-        this.lifecycle.add(this.deps.onAuthChange((state) => this.authChanged(state)));
-        this.lifecycle.add(this.deps.roomEntry.onChange((state) => this.entryChanged(state)));
-        await this.connect();
+        if (!this.active) {
+            return;
+        }
+        const lifecycle = this.deps.subscriptions();
+        this.lifecycle = lifecycle;
+        lifecycle.add(this.deps.onAuthChange((state) => this.authChanged(state)));
+        if (!this.active || this.lifecycle !== lifecycle) {
+            return;
+        }
+        lifecycle.add(this.deps.roomEntry.onChange((state) => this.entryChanged(state)));
+        if (this.active && this.generation === generation) {
+            await this.connect();
+        }
+        else if (this.active && this.lifecycle === lifecycle) {
+            // Auth replay may already have started a connection for the restored session.
+            await Promise.all(this.connectionStarts.completions());
+        }
     }
 
     public stop(): void {
@@ -336,8 +356,16 @@ export class RelicHuntersRuntime {
         this.publish({ diagnostics: { ...this.connection.diagnostics, ...patch } });
     }
 
-    private phase(phase: RelicHuntersRuntimePhase, patch: Partial<RelicRuntimeDiagnostics> = {}): void {
-        this.publish({ connectionState: phase, diagnostics: { ...this.connection.diagnostics, ...patch, phase } });
+    private phase(
+        phase: RelicHuntersRuntimePhase,
+        diagnostics: Partial<RelicRuntimeDiagnostics> = {},
+        state: Partial<RelicHuntersRuntime.Connection> = {}
+    ): void {
+        this.publish({
+            ...state,
+            connectionState: phase,
+            diagnostics: { ...this.connection.diagnostics, ...diagnostics, phase }
+        });
     }
 
     private authChanged(state: RallarAuthState): void {
@@ -352,6 +380,7 @@ export class RelicHuntersRuntime {
             return;
         }
         this.invalidateConnection();
+        const generation = this.generation;
         this.publish({
             session: state.session,
             connectionState: 'connecting',
@@ -363,7 +392,9 @@ export class RelicHuntersRuntime {
             roundTransition: undefined,
             lastHunterEvent: undefined
         });
-        void this.connect();
+        if (this.active && this.generation === generation) {
+            void this.connect();
+        }
     }
 
     private entryChanged(state: RallarRoomEntry.State): void {
@@ -419,6 +450,9 @@ export class RelicHuntersRuntime {
     }
 
     private connect(): Promise<void> {
+        if (!this.active) {
+            return Promise.resolve();
+        }
         const session = this.deps.restoreSession();
         if (!session) {
             this.signedOut();
@@ -432,10 +466,9 @@ export class RelicHuntersRuntime {
     }
 
     private async connectSession(session: AuthSession): Promise<void> {
-        this.publish({ session, error: undefined, diagnostics: initialRelicDiagnostics(session) });
-        this.phase('connecting');
-        const attempt = this.attempt();
-        if (!attempt) {
+        const attempt = { generation: this.generation, session, roomId: this.connection.roomId };
+        this.phase('connecting', initialRelicDiagnostics(session), { session, error: undefined });
+        if (!this.current(attempt)) {
             return;
         }
         this.bootstrap = new AbortController();
@@ -452,6 +485,9 @@ export class RelicHuntersRuntime {
                 return;
             }
             this.installTransport(attempt);
+            if (!this.current(attempt)) {
+                return;
+            }
             await this.deps.roomEntry.resume();
             if (!this.current(attempt)) {
                 return;
@@ -476,8 +512,7 @@ export class RelicHuntersRuntime {
                 return;
             }
             const message = toError(error).message;
-            this.publish({ error: message });
-            this.phase('error', { lastError: message });
+            this.phase('error', { lastError: message }, { error: message });
         }
     }
 
@@ -509,9 +544,15 @@ export class RelicHuntersRuntime {
             wsListenerReady: true,
             roomListenerReady: true,
             lastError: undefined,
-            ...this.roomDiagnostics(true)
+            ...this.roomDiagnostics(this.connection, true)
         });
+        if (!this.current(attempt)) {
+            return;
+        }
         this.installRoomListeners();
+        if (!this.current(attempt)) {
+            return;
+        }
         this.stopSnapshotRepair = startRepeating({
             timers: this.deps.timers,
             intervalMs: SNAPSHOT_REPAIR_INTERVAL_MS,
@@ -527,14 +568,15 @@ export class RelicHuntersRuntime {
     }
 
     private roomDiagnostics(
-        connected = this.connection.diagnostics.middlewareConnected
+        state: RelicHuntersRuntime.Connection = this.connection,
+        connected = state.diagnostics.middlewareConnected
     ): Partial<RelicRuntimeDiagnostics> {
         const authority = this.deps.authorityStatus();
-        const roomReady = !!this.connection.roomId;
+        const roomReady = !!state.roomId;
         return {
-            roomId: this.connection.roomId,
+            roomId: state.roomId,
             roomReady,
-            snapshotReady: !!this.connection.snapshot,
+            snapshotReady: !!state.snapshot,
             rtcReady: connected && roomReady,
             authorityReady: connected && roomReady && !!authority?.started,
             authorityPhase: authority?.phase,
@@ -543,20 +585,39 @@ export class RelicHuntersRuntime {
     }
 
     private adoptRoom(state: RallarRoomState, hydrate: boolean): void {
+        const attempt = this.attempt();
+        if (!attempt) {
+            return;
+        }
         const changed = state.currentRoomId !== this.connection.roomId;
-        this.publish({ rooms: state.rooms, roomId: state.currentRoomId });
         if (changed) {
             this.snapshotRequest++;
-            this.publish({ snapshot: undefined, roundTransition: undefined, lastHunterEvent: undefined });
-            this.diagnose({ lastSnapshotSource: undefined });
             this.clearRoundRepair();
         }
-        this.diagnose(this.roomDiagnostics());
-        if (!changed || !this.connection.diagnostics.middlewareConnected) {
+        const next = {
+            ...this.connection,
+            rooms: state.rooms,
+            roomId: state.currentRoomId,
+            snapshot: changed ? undefined : this.connection.snapshot,
+            roundTransition: changed ? undefined : this.connection.roundTransition,
+            lastHunterEvent: changed ? undefined : this.connection.lastHunterEvent
+        };
+        this.publish({
+            ...next,
+            diagnostics: {
+                ...next.diagnostics,
+                ...this.roomDiagnostics(next),
+                lastSnapshotSource: changed ? undefined : next.diagnostics.lastSnapshotSource
+            }
+        });
+        if (
+            !this.current(attempt) || this.connection.roomId !== state.currentRoomId ||
+            !changed || !this.connection.diagnostics.middlewareConnected
+        ) {
             return;
         }
         this.installRoomListeners();
-        if (hydrate && state.currentRoomId) {
+        if (hydrate && state.currentRoomId && this.current(attempt) && this.connection.roomId === state.currentRoomId) {
             void this.hydrateRoom('room-hydration');
         }
     }
@@ -567,8 +628,9 @@ export class RelicHuntersRuntime {
         if (!attempt?.roomId) {
             return;
         }
-        this.roomListeners = this.deps.subscriptions();
-        this.roomListeners.add(this.deps.onRoundTransitionMessage(attempt.roomId, {
+        const listeners = this.deps.subscriptions();
+        this.roomListeners = listeners;
+        listeners.add(this.deps.onRoundTransitionMessage(attempt.roomId, {
             onTransition: (event) => this.acceptRoundTransition(attempt, event),
             onResyncRequired: () => {
                 if (this.current(attempt, true)) {
@@ -576,7 +638,10 @@ export class RelicHuntersRuntime {
                 }
             }
         }));
-        this.roomListeners.add(this.deps.onHunterEventMessage(attempt.roomId, {
+        if (!this.current(attempt, true)) {
+            return;
+        }
+        listeners.add(this.deps.onHunterEventMessage(attempt.roomId, {
             principalId: attempt.session.clientId,
             playerId: attempt.session.sessionId,
             onEvent: (event) => this.acceptHunterEvent(attempt, event)
@@ -591,12 +656,15 @@ export class RelicHuntersRuntime {
         if (snapshot && snapshot.createdAtEpochMs !== event.createdAtEpochMs) {
             return;
         }
-        this.publish({ roundTransition: event });
-        this.diagnose({
-            roundTransitionCues: [
-                ...this.connection.diagnostics.roundTransitionCues,
-                `${event.round}:${event.transition}`
-            ].slice(-ROUND_TRANSITION_CUE_LOG_SIZE)
+        this.publish({
+            roundTransition: event,
+            diagnostics: {
+                ...this.connection.diagnostics,
+                roundTransitionCues: [
+                    ...this.connection.diagnostics.roundTransitionCues,
+                    `${event.round}:${event.transition}`
+                ].slice(-ROUND_TRANSITION_CUE_LOG_SIZE)
+            }
         });
     }
 
@@ -634,6 +702,10 @@ export class RelicHuntersRuntime {
     }
 
     private acceptSnapshot(snapshot: RelicPublicSnapshot, source: RelicSnapshotSource, roomId: string): boolean {
+        const attempt = this.attempt();
+        if (!attempt || attempt.roomId !== roomId) {
+            return false;
+        }
         const acceptance = classifyRelicSnapshotAcceptance({
             current: this.connection.snapshot,
             candidate: snapshot,
@@ -657,16 +729,21 @@ export class RelicHuntersRuntime {
         this.publish({
             snapshot,
             lastHunterEvent: refusalExpired ? undefined : feedback,
-            error: refusalExpired && this.connection.error === feedback?.text ? undefined : this.connection.error
+            error: refusalExpired && this.connection.error === feedback?.text ? undefined : this.connection.error,
+            diagnostics: {
+                ...this.connection.diagnostics,
+                ...this.roomDiagnostics(),
+                snapshotReady: true,
+                lastSnapshotSource: source,
+                lastAcceptedSnapshot: summarizeRuntimeSnapshot(snapshot, source),
+                lastIgnoredSnapshotReason: undefined,
+                lastIgnoredSnapshot: undefined,
+                lastHydratedAtEpochMs: this.deps.timers.nowMs()
+            }
         });
-        this.diagnose({
-            ...this.roomDiagnostics(),
-            lastSnapshotSource: source,
-            lastAcceptedSnapshot: summarizeRuntimeSnapshot(snapshot, source),
-            lastIgnoredSnapshotReason: undefined,
-            lastIgnoredSnapshot: undefined,
-            lastHydratedAtEpochMs: this.deps.timers.nowMs()
-        });
+        if (!this.current(attempt, true) || this.connection.snapshot !== snapshot) {
+            return false;
+        }
         if (source !== 'rallar-rtc') {
             this.publishSnapshotRepair();
         }
@@ -692,9 +769,17 @@ export class RelicHuntersRuntime {
             else if (source === 'room-hydration') {
                 this.publish({ snapshot: undefined });
             }
-            this.diagnose({ lastError: undefined });
+            if (!this.current(attempt, true) || request !== this.snapshotRequest) {
+                return;
+            }
             if (refreshesConnection) {
-                this.phase(this.connection.snapshot ? 'ready' : 'connected', this.roomDiagnostics());
+                this.phase(this.connection.snapshot ? 'ready' : 'connected', {
+                    ...this.roomDiagnostics(),
+                    lastError: undefined
+                });
+            }
+            else {
+                this.diagnose({ lastError: undefined });
             }
         }
         catch (error) {
@@ -702,10 +787,13 @@ export class RelicHuntersRuntime {
                 return;
             }
             const message = toError(error).message;
-            this.diagnose({ lastError: message });
             if (refreshesConnection) {
-                this.publish({ error: message });
-                this.phase('degraded', { snapshotReady: !!this.connection.snapshot });
+                this.phase('degraded', { snapshotReady: !!this.connection.snapshot, lastError: message }, {
+                    error: message
+                });
+            }
+            else {
+                this.diagnose({ lastError: message });
             }
         }
     }
@@ -763,8 +851,12 @@ export class RelicHuntersRuntime {
     private async authenticate(input: RelicAuthentication): Promise<void> {
         this.invalidateConnection();
         const generation = this.generation;
-        this.publish({ error: undefined });
-        this.phase('authenticating', { authenticated: false, middlewareConnected: false, lastError: undefined });
+        this.phase('authenticating', { authenticated: false, middlewareConnected: false, lastError: undefined }, {
+            error: undefined
+        });
+        if (!this.active || this.generation !== generation) {
+            return;
+        }
         try {
             const session = input.mode === 'login'
                 ? await this.deps.login(input.username, input.password)
@@ -772,16 +864,18 @@ export class RelicHuntersRuntime {
             if (!this.active || !sameSession(this.deps.restoreSession(), session)) {
                 return;
             }
+            const authenticated = { generation: this.generation, session, roomId: this.connection.roomId };
             this.publish({ session });
-            await this.connect();
+            if (this.current(authenticated)) {
+                await this.connect();
+            }
         }
         catch (error) {
             if (!this.active || this.generation !== generation) {
                 return;
             }
             const message = toError(error).message;
-            this.publish({ error: message });
-            this.phase('error', { lastError: message });
+            this.phase('error', { lastError: message }, { error: message });
         }
     }
 
@@ -804,13 +898,18 @@ export class RelicHuntersRuntime {
         }
         const request = ++this.roomRefreshRequest;
         this.publish({ directory: { ...this.connection.directory, status: 'loading', error: undefined } });
+        if (!this.current(attempt) || request !== this.roomRefreshRequest) {
+            return;
+        }
         try {
             const state = await this.deps.refreshRooms();
             if (!this.current(attempt) || request !== this.roomRefreshRequest) {
                 return;
             }
             this.adoptRoom(state, true);
-            await this.deps.directory.refresh();
+            if (this.current(attempt) && request === this.roomRefreshRequest) {
+                await this.deps.directory.refresh();
+            }
         }
         catch (error) {
             if (this.current(attempt) && request === this.roomRefreshRequest) {
@@ -834,8 +933,13 @@ export class RelicHuntersRuntime {
             return undefined;
         }
         this.deps.roomEntry.cancel();
-        this.publish({ error: undefined });
-        this.phase('joining-room', { lastError: undefined });
+        if (!this.current(attempt)) {
+            return;
+        }
+        this.phase('joining-room', { lastError: undefined }, { error: undefined });
+        if (!this.current(attempt)) {
+            return;
+        }
         const displayName = createRallarAiFunnyRoomName({
             baseName: RELIC_ROOM_NAME_THEME.defaultBaseName,
             theme: RELIC_ROOM_NAME_THEME,
@@ -874,8 +978,13 @@ export class RelicHuntersRuntime {
             return;
         }
         this.deps.roomEntry.cancel();
-        this.publish({ error: undefined });
-        this.phase('joining-room', { lastError: undefined });
+        if (!this.current(attempt)) {
+            return;
+        }
+        this.phase('joining-room', { lastError: undefined }, { error: undefined });
+        if (!this.current(attempt)) {
+            return;
+        }
         try {
             await this.deps.joinRoom(roomId);
             if (this.current(attempt)) {
@@ -890,6 +999,9 @@ export class RelicHuntersRuntime {
     }
 
     private async finishRoomChange(attempt: RelicHuntersRuntime.Attempt, roomId: string): Promise<boolean> {
+        if (!this.current(attempt)) {
+            return false;
+        }
         const presence = await this.deps.waitForPresence(roomId, {
             expect: { sessionIds: [attempt.session.sessionId] },
             signal: this.bootstrap?.signal,
@@ -918,13 +1030,12 @@ export class RelicHuntersRuntime {
             lastHydratedAtEpochMs: this.deps.timers.nowMs(),
             lastError: this.connection.snapshot ? undefined : 'No current relic snapshot accepted for room.'
         });
-        return true;
+        return this.current(joined, true);
     }
 
     private operationFailed(error: Error): void {
         const message = error.message;
-        this.publish({ error: message });
-        this.phase('error', { lastError: message });
+        this.phase('error', { lastError: message }, { error: message });
     }
 
     private async continueReview(): Promise<void> {
@@ -942,8 +1053,13 @@ export class RelicHuntersRuntime {
         if (this.connection.diagnostics.commandInFlight === key) {
             return;
         }
-        this.publish({ error: undefined });
-        this.diagnose({ commandInFlight: key, lastError: undefined });
+        this.publish({
+            error: undefined,
+            diagnostics: { ...this.connection.diagnostics, commandInFlight: key, lastError: undefined }
+        });
+        if (!this.current(attempt, true)) {
+            return;
+        }
         try {
             const command: RelicCommand = {
                 protocolVersion: RELIC_PROTOCOL_VERSION,
@@ -965,11 +1081,15 @@ export class RelicHuntersRuntime {
             if (outcome.transport === 'rest' && outcome.snapshot) {
                 this.acceptSnapshot(outcome.snapshot, 'rest-command', attempt.roomId);
             }
-            const result = toRelicCommandPhase(outcome, !!this.connection.snapshot);
-            if (result.error) {
-                this.publish({ error: result.error });
+            if (!this.current(attempt, true)) {
+                return;
             }
-            this.phase(result.phase, { ...result.patch, lastHydratedAtEpochMs: this.deps.timers.nowMs() });
+            const result = toRelicCommandPhase(outcome, !!this.connection.snapshot);
+            this.phase(
+                result.phase,
+                { ...result.patch, lastHydratedAtEpochMs: this.deps.timers.nowMs() },
+                { error: result.error || this.connection.error }
+            );
         }
         catch (error) {
             this.commandFailed(attempt, input, toError(error));
@@ -993,8 +1113,7 @@ export class RelicHuntersRuntime {
             this.phase('ready', { snapshotReady: !!this.connection.snapshot, lastError: undefined });
             return;
         }
-        this.publish({ error: message });
-        this.phase('degraded', { lastError: message });
+        this.phase('degraded', { lastError: message }, { error: message });
     }
 
     private async resetExpedition(): Promise<void> {
@@ -1003,6 +1122,9 @@ export class RelicHuntersRuntime {
             return;
         }
         this.publish({ error: undefined });
+        if (!this.current(attempt, true)) {
+            return;
+        }
         try {
             const snapshot = await this.deps.resetGame(attempt.roomId);
             if (!this.current(attempt, true)) {
@@ -1010,6 +1132,9 @@ export class RelicHuntersRuntime {
             }
             if (snapshot) {
                 this.acceptSnapshot(snapshot, 'rest-reset', attempt.roomId);
+            }
+            if (!this.current(attempt, true)) {
+                return;
             }
             this.phase(this.connection.snapshot ? 'ready' : 'degraded', {
                 snapshotReady: !!this.connection.snapshot,
@@ -1022,8 +1147,7 @@ export class RelicHuntersRuntime {
                 return;
             }
             const message = toError(error).message;
-            this.publish({ error: message });
-            this.phase('degraded', { lastError: message });
+            this.phase('degraded', { lastError: message }, { error: message });
         }
     }
 }

@@ -56,6 +56,136 @@ afterEach(async () => {
 });
 
 describe('RelicHuntersRuntime', () => {
+    it('keeps entry observation when startup discovers a restored session', async () => {
+        const backend = new RelicRuntimeBackend();
+        const session = backend.session;
+        backend.session = undefined;
+        const runtime = createRuntime(backend);
+        backend.session = session;
+        const subscribeAuth = backend.onAuthChange.bind(backend);
+        backend.onAuthChange = (listener) => {
+            const unsubscribe = subscribeAuth(listener);
+            void listener({ authenticated: !!backend.session, session: backend.session, reason: 'current' });
+            return unsubscribe;
+        };
+        await runtime.start();
+        expect(runtime.getState().connectionState).toBe('ready');
+        backend.roomEntry.returnTo({ applicationId: 'rallar-server', workspaceId: 'default', groupId: 'invited-room' }, 'client-1');
+        await vi.waitFor(() => expect(runtime.getState().roomId).toBe('invited-room'));
+    });
+
+    it.each(['login', 'command', 'reset'])('keeps logout authoritative when a %s failure listener signs out', async (operation) => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = createRuntime(backend);
+        await runtime.start();
+        backend.login = async () => {
+            throw new Error('operation refused');
+        };
+        backend.sendWsCommand = async () => {
+            throw new Error('operation refused');
+        };
+        backend.resetGame = async () => {
+            throw new Error('operation refused');
+        };
+        let logout: Promise<void> | undefined;
+        let loggingOut = false;
+        const observed: RelicHuntersRuntime.Connection[] = [];
+        runtime.subscribe(() => {
+            if (!loggingOut && runtime.getState().error === 'operation refused') {
+                loggingOut = true;
+                logout = runtime.getState().logout();
+            }
+        });
+        runtime.subscribe(() => {
+            if (loggingOut) {
+                observed.push(runtime.getState());
+            }
+        });
+        if (operation === 'login') {
+            await runtime.getState().login('Alice', 'password');
+        }
+        else if (operation === 'command') {
+            await runtime.getState().startExpedition();
+        }
+        else {
+            await runtime.getState().resetExpedition();
+        }
+        await logout;
+        expect(observed.length).toBeGreaterThan(0);
+        for (const state of observed) {
+            expect(state).toMatchObject({ connectionState: 'signed-out', error: undefined });
+            expect(state.diagnostics.phase).toBe('signed-out');
+        }
+    });
+
+    it('does not install repair timers after a connected listener stops the runtime', async () => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = createRuntime(backend);
+        runtime.subscribe(() => {
+            if (runtime.getState().connectionState === 'connected') {
+                runtime.stop();
+            }
+        });
+        await runtime.start();
+        expect(backend.timers.pendingCount()).toBe(0);
+        await backend.timers.advance(10_000);
+        expect(backend.reads).toEqual([]);
+    });
+
+    it('does not send a command after its pending notification stops the runtime', async () => {
+        const backend = new RelicRuntimeBackend();
+        backend.wsDelivery = { state: 'acknowledged', reason: undefined };
+        const runtime = createRuntime(backend);
+        await runtime.start();
+        runtime.subscribe(() => {
+            if (runtime.getState().diagnostics.commandInFlight) {
+                runtime.stop();
+            }
+        });
+        await runtime.getState().startExpedition();
+        expect(backend.commands).toEqual([]);
+        expect(backend.timers.pendingCount()).toBe(0);
+    });
+
+    it('does not admit a room after its joining notification logs out', async () => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = createRuntime(backend);
+        await runtime.start();
+        let logout: Promise<void> | undefined;
+        runtime.subscribe(() => {
+            if (runtime.getState().connectionState === 'joining-room') {
+                logout = runtime.getState().logout();
+            }
+        });
+        await runtime.getState().joinRoom('obsolete-room');
+        await logout;
+        expect(backend.roomState().currentRoomId).toBe('room-1');
+        expect(runtime.getState()).toMatchObject({ connectionState: 'signed-out', roomId: undefined });
+    });
+
+    it('does not restore snapshot diagnostics after its notification logs out', async () => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = createRuntime(backend);
+        await runtime.start();
+        let logout: Promise<void> | undefined;
+        runtime.subscribe(() => {
+            if (runtime.getState().snapshot?.updatedAtEpochMs === 21) {
+                logout = runtime.getState().logout();
+            }
+        });
+        const observed: RelicHuntersRuntime.Connection[] = [];
+        runtime.subscribe(() => {
+            observed.push(runtime.getState());
+        });
+        backend.deliverSnapshot(relicSnapshot('room-1', 21));
+        await logout;
+        expect(observed.length).toBeGreaterThan(0);
+        for (const state of observed) {
+            expect(state).toMatchObject({ connectionState: 'signed-out', snapshot: undefined });
+            expect(state.diagnostics.lastAcceptedSnapshot).toBeUndefined();
+        }
+    });
+
     it('keeps startup and later observers working when a state listener fails', async () => {
         const backend = new RelicRuntimeBackend();
         const runtime = createRuntime(backend);

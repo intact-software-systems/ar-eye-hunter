@@ -123,3 +123,37 @@ it('isolates listener and reporter failures during replay and latest-state publi
     expect(errors).toEqual(['listener failed:idle', 'listener failed:ready']);
     expect(delivered).toEqual(['ready']);
 });
+
+it('renews replay during a publication without delivering that publication twice', () => {
+    const delivered: string[] = [];
+    const notifications = new SynchronousNotifications<string>(() => {});
+    const listener = (state: string): void => {
+        delivered.push(state);
+    };
+    notifications.subscribe((state) => {
+        if (state === 'ready') {
+            notifications.subscribeAndNotify(listener, state);
+        }
+    });
+    const previous = notifications.subscribe(listener);
+    notifications.publishLatest('ready');
+    expect(delivered).toEqual(['ready']);
+    previous.unsubscribe();
+    notifications.publishLatest('idle');
+    expect(delivered).toEqual(['ready', 'idle']);
+});
+
+it('keeps plain subscription deduplication and captured batches independent of replay renewal', () => {
+    const delivered: string[] = [];
+    const notifications = new SynchronousNotifications<string>(() => {});
+    const listener = (state: string): void => {
+        delivered.push(state);
+    };
+    const first = notifications.subscribe(listener);
+    notifications.subscribe(listener);
+    const captured = notifications.capture(['committed']);
+    first.unsubscribe();
+    notifications.publishLatest('not subscribed');
+    captured.publish();
+    expect(delivered).toEqual(['committed']);
+});
