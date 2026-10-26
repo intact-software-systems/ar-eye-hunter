@@ -2,10 +2,8 @@ import 'jsr:@std/dotenv@0.225.6/load';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 
 import { createDefaultRallarServer } from './composition/create-default-rallar-server.ts';
-import {
-    readApiV1Configuration,
-    toApiV1ConfigurationStartupSummary
-} from './configuration/read-api-v1-configuration.ts';
+import { readApiV1Configuration } from './configuration/read-api-v1-configuration.ts';
+import { reportApiV1Configuration } from './configuration/report-api-v1-configuration.ts';
 import { createDefaultApiV1DatabaseLifecycle } from './db/api-v1-database-lifecycle.ts';
 import { startApiProcess } from './runtime/api-process-startup.ts';
 import {
@@ -28,10 +26,7 @@ const configuration = await readApiV1Configuration({
     },
     staticClientsUrl: new URL('../resources/authorised-clients.json', import.meta.url)
 });
-console.log(JSON.stringify({
-    event: 'api-v1.configuration',
-    ...toApiV1ConfigurationStartupSummary(configuration)
-}));
+reportApiV1Configuration(configuration, console);
 const timing = createApiTimingSink(configuration.observability);
 const databaseLifecycle = await createDefaultApiV1DatabaseLifecycle({
     database: configuration.database,

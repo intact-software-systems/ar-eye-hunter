@@ -36,9 +36,11 @@ Seven-day deletion, including Relic expedition saves, and the match/feedback rep
 main. The reusable server AppInbox now owns registered application mutations without game-specific
 product code. Both games now have automatic directory freshness and account replacement through shared
 auth notification delivery and visible logout/sign-in workflows. Queued cache delivery now preserves
-awaited observer completion and entry/refresh quiescence through the shared notifier. The current
-increment fixes asynchronous renderer work that outlives Relic logout, while keeping replacement
-account rendering and scene controls usable.
+awaited observer completion and entry/refresh quiescence through the shared notifier. The
+renderer repair prevents asynchronous work from outliving Relic logout while keeping replacement
+account rendering and scene controls usable. The current increment addresses the observed advertised
+WebSocket host mismatch in #683 through shared validation, server startup diagnostics, and a browser
+connection error verified through both games' visible login and recovery controls.
 
 ## Current foundation
 
@@ -131,11 +133,11 @@ all-or-none admission decisions before it becomes a platform promise.
 
 ## Delivery priorities
 
-| Priority    | Outcomes                                                                                                                                                                                   |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Current     | Fix the observed Relic logout renderer disposal failure tracked in [#716](https://github.com/intact-software-systems/ar-eye-hunter/issues/716), with a visible logout/re-login regression. |
-| Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them.                                                                                                |
-| Later       | Scheduled rooms (8) and a separate tournament capability.                                                                                                                                  |
+| Priority    | Outcomes                                                                                                                                                                                                             |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Current     | Diagnose the advertised WebSocket host mismatch tracked in [#683](https://github.com/intact-software-systems/ar-eye-hunter/issues/683) before connection, with visible login and recovery regressions in both games. |
+| Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them.                                                                                                                          |
+| Later       | Scheduled rooms (8) and a separate tournament capability.                                                                                                                                                            |
 
 Relic validation is a constraint throughout, not a dependency postponed to slice 9. Operator
 reliability work may ship independently where a concrete operational need warrants it. Freshness and
@@ -355,4 +357,8 @@ success alone does not prove successful participation.
   retaining a real compatibility boundary requires the repository's explicit approval and registry.
 - GitHub PRs own delivery state. Do not mirror it in a plan catalog or completion ledger. Delete an
   implementation plan in the PR that completes its outcomes, not in this planning PR.
-- Advertised WebSocket host validation remains separately tracked in issue #683.
+- Advertised WebSocket host validation is the current operator reliability increment in issue #683.
+  Hardened server configuration rejects mismatched public authorities; other profiles warn at startup.
+  The browser compares the captured API request authority with the resolved WebSocket destination,
+  rather than the SPA origin, and reports the mismatch before requesting a ticket or opening a socket.
+  No endpoint rewriting, alternate transport, legacy path, or migration is introduced.

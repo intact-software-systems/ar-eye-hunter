@@ -1,3 +1,5 @@
+import { validateWebSocketHost } from '@shared/websocket/validate-web-socket-host.ts';
+
 import type {
     ApiV1AppInboxConfiguration,
     ApiV1AuthenticationConfiguration,
@@ -244,6 +246,15 @@ function validateTransportHardening(
             'hardening-wss-api',
             'Production hardening requires a WSS base URL.'
         );
+    }
+    if (collector.isValid('publicApi.apiBaseUrl', 'publicApi.wsBaseUrl')) {
+        const hostMismatch = validateWebSocketHost(
+            new URL(configuration.publicApi.apiBaseUrl),
+            new URL(configuration.publicApi.wsBaseUrl)
+        );
+        if (hostMismatch !== null) {
+            collector.invariant('publicApi.wsBaseUrl', 'websocket-host-mismatch', hostMismatch);
+        }
     }
     if (
         configuration.http.corsOrigins.length === 0 ||

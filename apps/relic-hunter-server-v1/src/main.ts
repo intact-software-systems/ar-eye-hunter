@@ -2,6 +2,7 @@ import { loadSync } from '@std/dotenv';
 import { Hono, type Context } from 'hono';
 
 import { createDefaultRallarServer } from '@api-v1/src/composition/create-default-rallar-server.ts';
+import { reportApiV1Configuration } from '@api-v1/src/configuration/report-api-v1-configuration.ts';
 import { createDefaultApiV1DatabaseLifecycle } from '@api-v1/src/db/api-v1-database-lifecycle.ts';
 import { installApiHttpMiddleware } from '@api-v1/src/services/install-api-http-middleware.ts';
 import { requireApiAuthSession, toAuthErrorResponse } from '@api-v1/src/services/request-auth-service.ts';
@@ -41,6 +42,7 @@ const configuration = await readRelicHunterServerConfiguration({
         'prod-hardened': new URL('../resources/configuration/prod-hardened-config.json', import.meta.url)
     }
 });
+reportApiV1Configuration(configuration.apiV1, console);
 const databaseLifecycle = await createDefaultApiV1DatabaseLifecycle({
     database: configuration.apiV1.database,
     pgliteEvidence: configuration.apiV1.blackBox.pgliteEvidence,

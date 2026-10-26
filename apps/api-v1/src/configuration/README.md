@@ -24,6 +24,19 @@ uses production infrastructure with public registration and bundled ordinary use
 `prod-hardened` always enables production hardening, admin-only registration, and disabled static
 clients. Hardening is owned only by the selected profile.
 
+## Public WebSocket authority
+
+`RALLAR_API_BASE_URL` and `RALLAR_WS_BASE_URL` name the same public host, including any
+non-default port. URL parsing normalizes hostname case and default ports; paths may differ.
+The `prod-hardened` profile rejects a mismatch during configuration decoding. Other profiles
+emit an `api-v1.configuration-warning` naming both hosts before runtime startup. Both the API-v1
+and Relic server entrypoints use the same reporter. The comparison does not resolve aliases or
+rewrite either address.
+
+A separate SPA origin is expected and remains governed by CORS. Do not substitute the browser's
+`Origin` header or an untrusted proxy header for the configured API authority. A reverse proxy's
+public addresses belong in the two configuration settings, independently of the internal listen port.
+
 ## Environment allowlist
 
 The configuration reader recognizes only these operational overrides:
