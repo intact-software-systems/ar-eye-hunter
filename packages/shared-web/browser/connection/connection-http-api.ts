@@ -10,7 +10,7 @@ export async function readApiConfig(options?: ApiRequestOptions): Promise<ApiCon
     const apiUrl = URL.parse(`${apiBaseUrl}/api/config`, globalThis.document?.baseURI ?? globalThis.location?.href);
     if (
         apiUrl === null || (apiUrl.protocol !== 'http:' && apiUrl.protocol !== 'https:') ||
-        apiUrl.username !== '' || apiUrl.password !== ''
+        apiUrl.username || apiUrl.password
     ) {
         throw new Error('The configured Rallar API base URL is invalid.');
     }
