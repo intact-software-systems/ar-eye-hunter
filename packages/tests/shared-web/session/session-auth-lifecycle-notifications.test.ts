@@ -1,11 +1,11 @@
-import type { Mock } from 'vitest';
 import {
     beforeEach,
     describe,
     expect,
     it,
     onTestFinished,
-    vi
+    vi,
+    type Mock
 } from 'vitest';
 
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
@@ -38,7 +38,7 @@ interface AuthFixture {
     readonly runtime: BrowserFacadeRuntimeState;
 }
 
-describe('Rallar auth session teardown notification', () => {
+describe('Rallar auth state notifications', () => {
     beforeEach(() => {
         vi.resetAllMocks();
         configureTestCacheRepositories();
@@ -50,6 +50,7 @@ describe('Rallar auth session teardown notification', () => {
         });
         resetAuthSessionStorage();
         onTestFinished(() => {
+            vi.restoreAllMocks();
             vi.unstubAllGlobals();
         });
     });
@@ -146,9 +147,170 @@ describe('Rallar auth session teardown notification', () => {
 
         expect(states.at(-1)).toMatchObject({ authenticated: false, reason: 'logout' });
     });
+
+    it('keeps later observers on a replacement login started by a logout observer', async () => {
+        const fixture = createDefaultAuthFixture(() => {});
+        const initialSession = fixture.middleware.session;
+        const replacement = { ...initialSession, sessionId: 'replacement-login' };
+        writeSession(initialSession);
+        const replacementLogin = Promise.withResolvers<void>();
+        const states: RallarAuthState[] = [];
+        fixture.lifecycle.onAuthChange((state) => {
+            if (state.reason === 'logout') {
+                return fixture.lifecycle.activateLoginSession(replacement)
+                    .then(replacementLogin.resolve, replacementLogin.reject);
+            }
+        }, { emitCurrent: false });
+        fixture.lifecycle.onAuthChange((state) => {
+            states.push(state);
+        }, { emitCurrent: false });
+
+        await fixture.lifecycle.endAuthSession('logout', { revoke: false });
+        await replacementLogin.promise;
+
+        expect(readSession()).toEqual(replacement);
+        expect(states).toEqual([{ authenticated: true, reason: 'login', session: replacement }]);
+    });
+
+    it('keeps a replay-renewed subscription when its old handle unsubscribes', async () => {
+        const fixture = createDefaultAuthFixture(() => {});
+        const states: RallarAuthState[] = [];
+        const listener = (state: RallarAuthState) => {
+            states.push(state);
+        };
+        const old = fixture.lifecycle.onAuthChange(listener, { emitCurrent: false });
+        const renewed = fixture.lifecycle.onAuthChange(listener);
+        old();
+
+        await fixture.lifecycle.activateLoginSession(fixture.middleware.session);
+        renewed();
+        await fixture.lifecycle.endAuthSession('logout', { revoke: false });
+
+        expect(states).toEqual([
+            { authenticated: false, reason: 'current', session: undefined },
+            { authenticated: true, reason: 'login', session: fixture.middleware.session }
+        ]);
+    });
+
+    it('defers a subscription added without replay until the next auth change', async () => {
+        const fixture = createDefaultAuthFixture(() => {});
+        const states: RallarAuthState[] = [];
+        const listener = (state: RallarAuthState) => {
+            states.push(state);
+        };
+        fixture.lifecycle.onAuthChange((state) => {
+            if (state.reason === 'login') {
+                fixture.lifecycle.onAuthChange(listener, { emitCurrent: false });
+            }
+        }, { emitCurrent: false });
+
+        await fixture.lifecycle.activateLoginSession(fixture.middleware.session);
+        expect(states).toEqual([]);
+        await fixture.lifecycle.endAuthSession('logout', { revoke: false });
+        expect(states).toEqual([{ authenticated: false, reason: 'logout', session: undefined }]);
+    });
+
+    it('does not retain a subscriber when reading its current auth state fails', async () => {
+        const fixture = createDefaultAuthFixture(() => {});
+        const states: RallarAuthState[] = [];
+        vi.spyOn(localStorage, 'getItem').mockImplementationOnce(() => {
+            throw new Error('auth storage unavailable');
+        });
+
+        expect(() =>
+            fixture.lifecycle.onAuthChange((state) => {
+                states.push(state);
+            })
+        ).toThrow('auth storage unavailable');
+        await fixture.lifecycle.activateLoginSession(fixture.middleware.session);
+
+        expect(states).toEqual([]);
+        expect(readSession()).toEqual(fixture.middleware.session);
+    });
+
+    it('preserves login and later observers when callbacks and their error reporter fail', async () => {
+        const fixture = createDefaultAuthFixture(() => {});
+        const states: RallarAuthState[] = [];
+        vi.spyOn(console, 'error').mockImplementation(() => {
+            throw new Error('reporter unavailable');
+        });
+        fixture.lifecycle.onAuthChange(() => {
+            throw new Error('sync observer failed');
+        }, { emitCurrent: false });
+        fixture.lifecycle.onAuthChange(async () => {
+            throw new Error('async observer failed');
+        }, { emitCurrent: false });
+        fixture.lifecycle.onAuthChange((state) => {
+            states.push(state);
+        }, { emitCurrent: false });
+
+        await expect(fixture.lifecycle.activateLoginSession(fixture.middleware.session)).resolves.toBeUndefined();
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+        expect(readSession()).toEqual(fixture.middleware.session);
+        expect(states).toEqual([{ authenticated: true, reason: 'login', session: fixture.middleware.session }]);
+    });
+
+    it('preserves replacement login while old cleanup finishes with an error', async () => {
+        const cleanupStarted = Promise.withResolvers<void>();
+        const cleanupFinished = Promise.withResolvers<void>();
+        const cleanupFailure = new Error('old data scope cleanup failed');
+        const closedSessionIds: string[] = [];
+        const fixture = createDefaultAuthFixture(() => {}, (session) => {
+            closedSessionIds.push(session.sessionId);
+            cleanupStarted.resolve();
+            return cleanupFinished.promise;
+        });
+        const initialSession = fixture.middleware.session;
+        const replacement = { ...initialSession, sessionId: 'login-during-cleanup' };
+        writeSession(initialSession);
+        const states: RallarAuthState[] = [];
+        fixture.lifecycle.onAuthChange((state) => {
+            states.push(state);
+        }, { emitCurrent: false });
+
+        const ending = expect(fixture.lifecycle.endAuthSession('logout', { revoke: false }))
+            .rejects.toBe(cleanupFailure);
+        await cleanupStarted.promise;
+        await fixture.lifecycle.activateLoginSession(replacement);
+        cleanupFinished.reject(cleanupFailure);
+        await ending;
+
+        expect(readSession()).toEqual(replacement);
+        expect(closedSessionIds).toEqual([initialSession.sessionId]);
+        expect(states).toEqual([{ authenticated: true, reason: 'login', session: replacement }]);
+    });
+
+    it('rechecks current auth after state emission starts a replacement login', async () => {
+        const stateEvents = new EventTarget();
+        const fixture = createDefaultAuthFixture(() => {
+            stateEvents.dispatchEvent(new Event('change'));
+        });
+        const initialSession = fixture.middleware.session;
+        const replacement = { ...initialSession, sessionId: 'login-during-state-emission' };
+        writeSession(initialSession);
+        const replacementLogin = Promise.withResolvers<void>();
+        stateEvents.addEventListener('change', () => {
+            void fixture.lifecycle.activateLoginSession(replacement)
+                .then(replacementLogin.resolve, replacementLogin.reject);
+        });
+        const states: RallarAuthState[] = [];
+        fixture.lifecycle.onAuthChange((state) => {
+            states.push(state);
+        }, { emitCurrent: false });
+
+        await fixture.lifecycle.endAuthSession('logout', { revoke: false });
+        await replacementLogin.promise;
+
+        expect(readSession()).toEqual(replacement);
+        expect(states).toEqual([{ authenticated: true, reason: 'login', session: replacement }]);
+    });
 });
 
-function createDefaultAuthFixture(emitState: () => void): AuthFixture {
+function createDefaultAuthFixture(
+    emitState: () => void,
+    closeDataScopes: BrowserSessionAuthLifecycle.Input['closeDataScopes'] = () => Promise.resolve()
+): AuthFixture {
     const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
     const runtime = new BrowserFacadeRuntimeState(transportRuntime);
     onTestFinished(() => runtime.clearAuthExpiryTimer());
@@ -173,7 +335,7 @@ function createDefaultAuthFixture(emitState: () => void): AuthFixture {
         authRuntime: runtime,
         connectionLifecycle: { connect, disconnect, readRtcCaptureConfiguration: () => transportRuntime.readRtcCaptureConfiguration() },
         emitState,
-        closeDataScopes: () => Promise.resolve()
+        closeDataScopes
     });
     return { lifecycle, middleware, transportRuntime, deliveries, sessionDeliveries, connect, runtime };
 }

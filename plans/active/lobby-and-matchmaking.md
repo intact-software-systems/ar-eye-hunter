@@ -34,7 +34,8 @@ retention and guarded archival. Production Quick Join verification exposed a dep
 and database latency, repaired in merged [PR #707](https://github.com/intact-software-systems/ar-eye-hunter/pull/707).
 Seven-day deletion, including Relic expedition saves, and the match/feedback repairs are present in
 main. The reusable server AppInbox now owns registered application mutations without game-specific
-product code. The current increment delivers automatic directory freshness in both games.
+product code. Both games now have automatic directory freshness. The current increment strengthens
+account replacement through shared auth notification delivery and visible logout/sign-in workflows.
 
 ## Current foundation
 
@@ -101,6 +102,12 @@ Reconnect to the current activity and return to a recent room are different expe
 invitation takes precedence over restoring an old room. Recovery rechecks current authorization and
 activity state; it must not resurrect an expired, deleted, or no-longer-authorized session.
 
+Auth observers share the synchronous latest-state notifier used by room lifecycles. A replacement
+login supersedes obsolete signed-out publication, including login during delayed cleanup. Session
+expiry, transport teardown, and cleanup failures remain owned by the auth lifecycle. Registration
+renewal and callback failures cannot remove a newer subscription or fail a completed transition.
+Both games verify Logout, replacement authentication, room creation, and reload through visible controls.
+
 Temporary activities and persistent social or collaborative rooms need different retention policies.
 Define reconnect grace, hiding from discovery, archival, and permanent deletion separately. Do not
 purge every empty room under one platform-wide rule. Existing absolute expiry/purge fields do not
@@ -112,15 +119,17 @@ all-or-none admission decisions before it becomes a platform promise.
 
 ## Delivery priorities
 
-| Priority    | Outcomes                                                                                    |
-| ----------- | ------------------------------------------------------------------------------------------- |
-| Current     | Automatic foreground directory freshness in both games (7).                                 |
-| Next        | Evaluate freshness and participation evidence before selecting further social capabilities. |
-| Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them. |
-| Later       | Scheduled rooms (8) and a separate tournament capability.                                   |
+| Priority    | Outcomes                                                                                       |
+| ----------- | ---------------------------------------------------------------------------------------------- |
+| Current     | Preserve the current account through reentrant auth notifications and delayed session cleanup. |
+| Next        | Evaluate queued cache notification reuse while preserving awaited completion and `whenIdle`.   |
+| Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them.    |
+| Later       | Scheduled rooms (8) and a separate tournament capability.                                      |
 
 Relic validation is a constraint throughout, not a dependency postponed to slice 9. Operator
-reliability work may ship independently where a concrete operational need warrants it.
+reliability work may ship independently where a concrete operational need warrants it. Freshness and
+participation evidence still govern the choice of further social capabilities; notification reuse
+does not establish product demand for them.
 
 ## Slice 0: finish directory hardening
 

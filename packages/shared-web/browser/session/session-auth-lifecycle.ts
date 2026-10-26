@@ -16,7 +16,6 @@ import {
     type RallarDiagnosticsPorts
 } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
-import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type { ApiMiddleware, RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import {
     toRallarCommandOptions,
@@ -37,12 +36,11 @@ import {
 } from '@shared/api/auth.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command } from '@shared/cache/Command.ts';
+import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import { resolveRtcCaptureConfiguration } from '@shared/webrtc/rtc-capture-configuration.ts';
 
 import { deleteEndedSessionALRuntimeEntries } from './delete-ended-session-al-runtime-entries.ts';
 import type { RallarSessionConnectionLifecycle } from './session-connection-lifecycle.ts';
-
-const MAX_AUTH_EXPIRY_TIMEOUT_MS = 2_147_483_647;
 
 export interface RallarAuthSessionEndOptions {
     readonly revoke: boolean;
@@ -71,6 +69,8 @@ export interface RallarSessionAuthLifecycle {
     ): RallarUnsubscribe;
 }
 
+const MAX_AUTH_EXPIRY_TIMEOUT_MS = 2_147_483_647;
+
 export namespace BrowserSessionAuthLifecycle {
     export interface Input {
         readonly sessionDeliveries: BrowserSessionDeliveries;
@@ -86,7 +86,9 @@ export namespace BrowserSessionAuthLifecycle {
 }
 
 export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
-    private readonly authStateListeners = new Set<RallarAuthChangeListener>();
+    private readonly authNotifications = new SynchronousNotifications<RallarAuthState>((error) =>
+        console.error('Error notifying Rallar state listener', error)
+    );
     private readonly input: BrowserSessionAuthLifecycle.Input;
 
     public constructor(input: BrowserSessionAuthLifecycle.Input) {
@@ -203,7 +205,7 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         reason: Exclude<RallarAuthChangeReason, 'current' | 'login'>,
         options: RallarAuthSessionEndOptions
     ): Promise<void> {
-        const session = this.resolveSession(options.session);
+        const session = this.readSessionForEnd(options.session);
         const sessionKey = session ? toAuthSessionKey(session) : undefined;
         const currentSession = readSession();
         if (session && currentSession && sessionKey !== toAuthSessionKey(currentSession)) {
@@ -269,13 +271,12 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         listener: RallarAuthChangeListener,
         options: RallarOnChangeOptions = {}
     ): RallarUnsubscribe {
-        this.authStateListeners.add(listener);
         if (options.emitCurrent ?? true) {
             const session = readSession();
             this.scheduleAuthExpiry(session);
-            notifyListener(listener, toAuthState('current', session));
+            return this.authNotifications.subscribeAndNotify(listener, toAuthState('current', session)).unsubscribe;
         }
-        return () => this.authStateListeners.delete(listener);
+        return this.authNotifications.subscribe(listener).unsubscribe;
     }
 
     private async reconcileActiveMiddleware(session: AuthSession | undefined): Promise<void> {
@@ -347,10 +348,12 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         const dataCleanupError = session
             ? await this.cleanupEndedSession(session, this.readDiagnosticsPorts())
             : undefined;
-        // Listeners learn the session ended only from emitAuthState, so a failing
-        // state emit must not stand between them and that notification.
+        // A failed state emit must not hide sign-out; replacement login during
+        // cleanup or state emission must not be overwritten by old teardown.
         const stateEmitError = captureSyncError(() => this.input.emitState());
-        this.emitAuthState(reason, undefined);
+        if (!readSession()) {
+            this.emitAuthState(reason, undefined);
+        }
 
         const failure = disconnectError ?? revokeError ?? dataCleanupError ?? stateEmitError;
         if (failure) {
@@ -392,7 +395,7 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         return this.input.connectionRuntime.resolveOperationScope() ?? defaultStateScope();
     }
 
-    private resolveSession(session?: AuthSession): AuthSession | undefined {
+    private readSessionForEnd(session?: AuthSession): AuthSession | undefined {
         return session ??
             this.input.connectionRuntime.readMiddleware()?.session ??
             readSession();
@@ -402,11 +405,15 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         reason: RallarAuthChangeReason,
         session: AuthSession | undefined
     ): void {
-        const state = toAuthState(reason, session);
-        for (const listener of this.authStateListeners) {
-            notifyListener(listener, state);
-        }
+        this.authNotifications.publishLatest(toAuthState(reason, session));
     }
+}
+
+function toAuthState(
+    reason: RallarAuthChangeReason,
+    session: AuthSession | undefined
+): RallarAuthState {
+    return { authenticated: session !== undefined, reason, session };
 }
 
 async function revokeAuthSession(
@@ -442,11 +449,4 @@ async function captureError(operation: () => Promise<void>): Promise<Error | und
             ? error
             : new Error('Rallar session operation failed.');
     }
-}
-
-function toAuthState(
-    reason: RallarAuthChangeReason,
-    session: AuthSession | undefined
-): RallarAuthState {
-    return { authenticated: session !== undefined, reason, session };
 }

@@ -44,6 +44,36 @@ test('shows a wrong-scope invitation without sending an admission request', asyn
         .toHaveCount(0);
 });
 
+test('switches accounts through Logout and keeps the replacement arena after reload', async ({ page }, testInfo) => {
+    test.skip(process.env.RALLAR_ARENA_FULL_STACK !== '1', 'Requires the local API-v1 memory fixture.');
+    const operations = await openOperations(page, '/');
+    await signIn(page, 'alice');
+    await expect(operations.getByLabel('Account reference', { exact: true })).toHaveValue('alice');
+    await operations.getByRole('button', { name: 'New unlisted arena', exact: true }).click();
+    const roomLink = operations.getByLabel('Room link', { exact: true });
+    await expect(roomLink).toHaveValue(/#rallar-room\?/);
+    const previousRoomLink = await roomLink.inputValue();
+
+    await operations.getByRole('button', { name: 'Logout', exact: true }).click();
+    await expect(operations.getByRole('button', { name: 'Enter Arena', exact: true })).toBeVisible();
+    await expect(operations.getByRole('button', { name: 'New Arena', exact: true })).toHaveCount(0);
+    await expect(roomLink).toHaveCount(0);
+    expect(await page.evaluate(() => sessionStorage.getItem('auth.session') === null)).toBe(true);
+
+    await signIn(page, 'bob');
+    await expect(operations.getByLabel('Account reference', { exact: true })).toHaveValue('bob');
+    await operations.getByRole('button', { name: 'New Arena', exact: true }).click();
+    await expect(roomLink).toHaveValue(/#rallar-room\?/);
+    await expect(roomLink).not.toHaveValue(previousRoomLink);
+    const replacementRoomLink = await roomLink.inputValue();
+    await page.reload();
+    await openOperationsPanel(page);
+    await expect(operations.getByLabel('Account reference', { exact: true })).toHaveValue('bob');
+    await expect(roomLink).toHaveValue(replacementRoomLink);
+    await expect(operations.getByRole('button', { name: 'Logout', exact: true })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('replacement-account-arena.png'), fullPage: true });
+});
+
 roomBrowserTest(
     'shares a code arena through sign-in, participation, rotation, and member reload',
     async ({ page: host, guest }, testInfo) => {
