@@ -68,6 +68,19 @@ describe('connection configuration request authority', () => {
         await rejected;
     });
 
+    it.each([
+        'https://user@api.example.test',
+        'https://:hidden@api.example.test',
+        'https://user:hidden@api.example.test'
+    ])('rejects credential-bearing API URLs before HTTP (%#)', async (apiBaseUrl) => {
+        configureApiClient({ apiBaseUrl });
+        const fetch = vi.fn(async () => Response.json(SERVED));
+        vi.stubGlobal('fetch', fetch);
+
+        await expect(readApiConfig({ authSession: null })).rejects.toEqual(new Error('The configured Rallar API base URL is invalid.'));
+        expect(fetch).not.toHaveBeenCalled();
+    });
+
     it('rejects invalid API configuration without exposing embedded secrets', async () => {
         configureApiClient({ apiBaseUrl: 'https://user:hidden@[invalid' });
         vi.stubGlobal('fetch', async () => Response.json(SERVED));
