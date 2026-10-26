@@ -99,6 +99,12 @@ const budgetedEntries: readonly BundleBoundary[] = [
         brotliBudgetKiB: budgetFor('browser/rallar-media-calls.ts')
     },
     {
+        label: 'browser/rallar-room-directory.ts',
+        entry: 'packages/shared-web/browser/rallar-room-directory.ts',
+        output: 'rallar-room-directory.boundary.min.js',
+        brotliBudgetKiB: budgetFor('browser/rallar-room-directory.ts')
+    },
+    {
         label: 'browser/rallar-room-entry.ts',
         entry: 'packages/shared-web/browser/rallar-room-entry.ts',
         output: 'rallar-room-entry.boundary.min.js',
@@ -169,8 +175,8 @@ describe('shared-web browser bundle boundaries', () => {
         }
     });
 
-    it('keeps optional room entry independent of the facade and storage engines', () => {
-        const entry = budgetedEntries.find((boundary) => boundary.label === 'browser/rallar-room-entry.ts');
+    it.each(['browser/rallar-room-entry.ts', 'browser/rallar-room-directory.ts'])('keeps %s independent of the facade and storage engines', (label) => {
+        const entry = budgetedEntries.find((boundary) => boundary.label === label);
         if (!entry) {
             throw new Error('Missing room-entry bundle boundary');
         }

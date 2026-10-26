@@ -12,6 +12,12 @@ interface BrowserEntrypoint {
 
 const BROWSER_ENTRYPOINTS: readonly BrowserEntrypoint[] = [
     {
+        moduleId: '@shared-web/browser/rallar-room-directory.ts',
+        sourcePath: 'packages/shared-web/browser/rallar-room-directory.ts',
+        expectedRuntimeExports: ['RallarRoomDirectory'],
+        forbiddenRuntimeExports: ['rallar', 'createRallarFacade', 'createRallarDataFacade']
+    },
+    {
         moduleId: '@shared-web/browser/rallar-room-entry.ts',
         sourcePath: 'packages/shared-web/browser/rallar-room-entry.ts',
         expectedRuntimeExports: ['RallarRoomEntry', 'RallarRecentRooms', 'readRoomEntryDestination', 'toRoomEntryUrl'],
