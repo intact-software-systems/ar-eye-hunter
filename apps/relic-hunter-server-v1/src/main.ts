@@ -4,6 +4,7 @@ import { Hono, type Context } from 'hono';
 import { createDefaultRallarServer } from '@api-v1/src/composition/create-default-rallar-server.ts';
 import { reportApiV1Configuration } from '@api-v1/src/configuration/report-api-v1-configuration.ts';
 import { createDefaultApiV1DatabaseLifecycle } from '@api-v1/src/db/api-v1-database-lifecycle.ts';
+import { myServerId } from '@api-v1/src/runtime/runtime-identity.ts';
 import { installApiHttpMiddleware } from '@api-v1/src/services/install-api-http-middleware.ts';
 import { requireApiAuthSession, toAuthErrorResponse } from '@api-v1/src/services/request-auth-service.ts';
 import { createApiTimingSink } from '@api-v1/src/services/timing-service.ts';
@@ -13,7 +14,6 @@ import { RelicGameMutationRefusedError } from '@relic-hunters/server/relic-game-
 import type { ApiConfigResponse } from '@shared/api/api-config.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
-import { myServerId } from '@api-v1/src/runtime/runtime-identity.ts';
 import { createRelicGameServices } from './create-relic-game-services.ts';
 import { initRelicDocsLandingRoute } from './relic-docs-landing-route.ts';
 import { createRelicExpeditionInitialStateFactory } from './relic-expedition-ai.ts';
