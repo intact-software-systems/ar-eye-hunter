@@ -1,11 +1,11 @@
 import type {
-    RallarDataChangeListener,
     RallarDataDurability,
     RallarDataScope,
     RallarDataStorageEstimate,
     RallarDataStore,
     RallarUnsubscribe
 } from '@shared-web/browser/rallar-data.ts';
+import type { ObservableKeyedValueListener } from '@shared/cache/RepositoryInterfaces.ts';
 import type { WriteBehindObservableLatestRepository } from '@shared/cache/store-backed/write-behind-observable-latest-repository.ts';
 import type { WriteThroughObservableLatestRepository } from '@shared/cache/store-backed/write-through-observable-latest-repository.ts';
 import type { PersistenceProvider } from '@shared/persistence/PersistenceProvider.ts';
@@ -37,14 +37,14 @@ export namespace RepositoryBackedRallarDataStore {
         dispose(): Promise<void>;
     }
 
-    export type BroadcastMessage<V> = Readonly<{
-        version: 1;
-        repositoryId: string;
-        instanceId: string;
-        type: 'set' | 'delete' | 'clear';
-        key?: string;
-        value?: V;
-    }>;
+    export interface BroadcastMessage<V> {
+        readonly version: 1;
+        readonly repositoryId: string;
+        readonly instanceId: string;
+        readonly type: 'set' | 'delete' | 'clear';
+        readonly key?: string;
+        readonly value?: V;
+    }
 }
 
 export class RepositoryBackedRallarDataStore<V> implements RallarDataStore<V> {
@@ -269,7 +269,7 @@ export class RepositoryBackedRallarDataStore<V> implements RallarDataStore<V> {
         return estimateBrowserStorage();
     }
 
-    public onChange(listener: RallarDataChangeListener<V>): RallarUnsubscribe {
+    public onChange(listener: ObservableKeyedValueListener<string, V>): RallarUnsubscribe {
         const unsubscribe = this.managed.repository.onChangeDo(listener);
         return () => {
             unsubscribe.unsubscribe();

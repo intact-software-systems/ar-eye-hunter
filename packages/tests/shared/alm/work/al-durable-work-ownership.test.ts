@@ -24,7 +24,7 @@ import {
     type ALWorkReadinessProbeDiagnostics
 } from '@shared/alm/work/al-work-handler.ts';
 import type { ALWorkCommittedRows } from '@shared/alm/work/al-work-readiness-memory.ts';
-import { ObservableLatestValue } from '@shared/cache/ObservableLatestValue.ts';
+import { ObservableLatestValue } from '@shared/cache/observable/observable-latest-value.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import {

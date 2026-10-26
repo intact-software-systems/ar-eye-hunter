@@ -1,15 +1,9 @@
-import { toError } from '../resilience/to-error.ts';
-import { startExpiredEntryEviction, type ExpiredEntryEvictionOptions } from './ExpiredEntryEviction.ts';
+import { startExpiredEntryEviction, type ExpiredEntryEvictionOptions } from '../ExpiredEntryEviction.ts';
 import {
     assertMaxEntries,
     deleteOldestEntriesPastMax,
     type MaxEntriesOptions
-} from './LatestRepository.ts';
-import {
-    ObservableLatestValue,
-    type ObservableLatestValueOptions,
-    type ValueEqualityChecker
-} from './ObservableLatestValue.ts';
+} from '../LatestRepository.ts';
 import {
     ObservableValueEventType,
     type ObservableKeyedValueErrorHandler,
@@ -20,7 +14,13 @@ import {
     type ReadableKeyedValues,
     type Unsubscribe,
     type UpdateIfNewerOptions
-} from './RepositoryInterfaces.ts';
+} from '../RepositoryInterfaces.ts';
+import {
+    ObservableLatestValue,
+    type ObservableLatestValueOptions,
+    type ValueEqualityChecker
+} from './observable-latest-value.ts';
+import { QueuedNotifications } from './queued-notifications.ts';
 
 export type ObservableLatestRepositoryOptions<K, V> = Readonly<
     & ExpiredEntryEvictionOptions
@@ -36,12 +36,9 @@ export type ObservableLatestRepositoryOptions<K, V> = Readonly<
 export class ObservableLatestRepository<K, V> implements PushKeyedValues<K, V>, ObservableKeyedValues<K, V> {
     private readonly entries = new Map<K, ObservableLatestValue<V>>();
     private readonly defaultValueOptions: ObservableLatestValueOptions<V>;
-    private readonly onObserverError?: ObservableKeyedValueErrorHandler<K, V>;
+    private readonly notifications: QueuedNotifications<ObservableKeyedValueEvent<K, V>>;
     private readonly stopExpiredEntryEviction: (() => void) | undefined;
     private readonly maxEntries: number | undefined;
-    private readonly listenersByType = new Map<ObservableValueEventType, Set<ObservableKeyedValueListener<K, V>>>();
-    private readonly changeListeners = new Set<ObservableKeyedValueListener<K, V>>();
-    private observerQueue: Promise<void> = Promise.resolve();
 
     public constructor(options: ObservableLatestRepositoryOptions<K, V> = {}) {
         this.defaultValueOptions = {
@@ -49,7 +46,7 @@ export class ObservableLatestRepository<K, V> implements PushKeyedValues<K, V>, 
             isValid: options.isValid,
             equals: options.equals
         };
-        this.onObserverError = options.onObserverError;
+        this.notifications = new QueuedNotifications(options.onObserverError);
         assertMaxEntries(options.maxEntries);
         this.maxEntries = options.maxEntries;
         this.stopExpiredEntryEviction = startExpiredEntryEviction(
@@ -317,26 +314,23 @@ export class ObservableLatestRepository<K, V> implements PushKeyedValues<K, V>, 
     }
 
     public onCreatedDo(listener: ObservableKeyedValueListener<K, V>): Unsubscribe {
-        return this.onTypeDo(ObservableValueEventType.Created, listener);
+        return this.notifications.subscribeType(ObservableValueEventType.Created, listener);
     }
 
     public onUpdatedDo(listener: ObservableKeyedValueListener<K, V>): Unsubscribe {
-        return this.onTypeDo(ObservableValueEventType.Updated, listener);
+        return this.notifications.subscribeType(ObservableValueEventType.Updated, listener);
     }
 
     public onRefreshedDo(listener: ObservableKeyedValueListener<K, V>): Unsubscribe {
-        return this.onTypeDo(ObservableValueEventType.Refreshed, listener);
+        return this.notifications.subscribeType(ObservableValueEventType.Refreshed, listener);
     }
 
     public onDeletedDo(listener: ObservableKeyedValueListener<K, V>): Unsubscribe {
-        return this.onTypeDo(ObservableValueEventType.Deleted, listener);
+        return this.notifications.subscribeType(ObservableValueEventType.Deleted, listener);
     }
 
     public onChangeDo(listener: ObservableKeyedValueListener<K, V>): Unsubscribe {
-        this.changeListeners.add(listener);
-        return toUnsubscribe(() => {
-            this.changeListeners.delete(listener);
-        });
+        return this.notifications.subscribe(listener);
     }
 
     public async whenIdle(): Promise<void> {
@@ -346,11 +340,11 @@ export class ObservableLatestRepository<K, V> implements PushKeyedValues<K, V>, 
             );
             await Promise.all(valueQueues);
 
-            const pending = this.observerQueue;
+            const pending = this.notifications.completion;
             await pending;
             await Promise.resolve();
 
-            if (pending === this.observerQueue) {
+            if (pending === this.notifications.completion) {
                 return;
             }
         }
@@ -366,7 +360,7 @@ export class ObservableLatestRepository<K, V> implements PushKeyedValues<K, V>, 
         if (!entry) {
             entry = new ObservableLatestValue<V>(this.defaultValueOptions);
             entry.onChangeDo((event) => {
-                this.emit({
+                this.notifications.publish({
                     ...event,
                     key
                 });
@@ -377,93 +371,4 @@ export class ObservableLatestRepository<K, V> implements PushKeyedValues<K, V>, 
 
         return entry;
     }
-
-    private onTypeDo(
-        type: ObservableValueEventType,
-        listener: ObservableKeyedValueListener<K, V>
-    ): Unsubscribe {
-        let listeners = this.listenersByType.get(type);
-        if (!listeners) {
-            listeners = new Set<ObservableKeyedValueListener<K, V>>();
-            this.listenersByType.set(type, listeners);
-        }
-
-        listeners.add(listener);
-        return toUnsubscribe(() => {
-            listeners?.delete(listener);
-            if (listeners?.size === 0) {
-                this.listenersByType.delete(type);
-            }
-        });
-    }
-
-    private emit(event: ObservableKeyedValueEvent<K, V>): void {
-        const listeners = [
-            ...(this.listenersByType.get(event.type) ?? []),
-            ...this.changeListeners
-        ];
-
-        if (listeners.length === 0) {
-            return;
-        }
-
-        this.observerQueue = this.observerQueue.then(
-            async () => {
-                await Promise.all(
-                    listeners.map(async (listener) => {
-                        await this.notifyListener(listener, event);
-                    })
-                );
-            },
-            async () => {
-                await Promise.all(
-                    listeners.map(async (listener) => {
-                        await this.notifyListener(listener, event);
-                    })
-                );
-            }
-        );
-    }
-
-    private async notifyListener(
-        listener: ObservableKeyedValueListener<K, V>,
-        event: ObservableKeyedValueEvent<K, V>
-    ): Promise<void> {
-        try {
-            await listener(event);
-        }
-        catch (error) {
-            await this.handleObserverError(toError(error), event);
-        }
-    }
-
-    private async handleObserverError(
-        error: Error,
-        event: ObservableKeyedValueEvent<K, V>
-    ): Promise<void> {
-        if (this.onObserverError) {
-            try {
-                await this.onObserverError(error, event);
-            }
-            catch (handlerError) {
-                console.error('Error handling observable keyed value observer failure', handlerError);
-            }
-            return;
-        }
-
-        console.error('Error notifying observable keyed value listener', error);
-    }
-}
-
-function toUnsubscribe(unsubscribe: () => void): Unsubscribe {
-    let active = true;
-    return {
-        unsubscribe: () => {
-            if (!active) {
-                return;
-            }
-            active = false;
-            unsubscribe();
-        }
-    };
 }

@@ -1,7 +1,17 @@
-import { ObservableLoanedRepository } from '@shared/cache/ObservableLoanedRepository.ts';
-import { ObservableLoanedValue } from '@shared/cache/ObservableLoanedValue.ts';
-import { ObservableValueEventType, type ObservableKeyedValueEvent, type ObservableValueEvent } from '@shared/cache/RepositoryInterfaces.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ObservableLoanedRepository } from '@shared/cache/observable/observable-loaned-repository.ts';
+import { ObservableLoanedValue } from '@shared/cache/observable/observable-loaned-value.ts';
+import {
+    ObservableValueEventType,
+    type ObservableKeyedValueEvent,
+    type ObservableValueEvent
+} from '@shared/cache/RepositoryInterfaces.ts';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 describe('ObservableLoanedValue', () => {
     afterEach(() => {
@@ -54,7 +64,7 @@ describe('ObservableLoanedValue', () => {
     });
 
     it('coalesces concurrent refresh observation into one event', async () => {
-        const deferred = createDeferred<number>();
+        const deferred = Promise.withResolvers<number>();
         const events: ObservableValueEventType[] = [];
         let calls = 0;
         const value = new ObservableLoanedValue<number>(async () => {
@@ -165,7 +175,7 @@ describe('ObservableLoanedRepository', () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
-        const deferred = createDeferred<number>();
+        const deferred = Promise.withResolvers<number>();
         let mode: 'initial' | 'refresh' = 'initial';
         const repository = new ObservableLoanedRepository<string, number>(
             async (_key, current) => {
@@ -211,8 +221,8 @@ describe('ObservableLoanedRepository', () => {
     });
 
     it('does not forward late refresh events from a deleted entry', async () => {
-        const firstRefresh = createDeferred<number>();
-        const secondRefresh = createDeferred<number>();
+        const firstRefresh = Promise.withResolvers<number>();
+        const secondRefresh = Promise.withResolvers<number>();
         const refreshes = [firstRefresh, secondRefresh];
         const repository = new ObservableLoanedRepository<string, number>(
             async () => {
@@ -255,35 +265,31 @@ describe('ObservableLoanedRepository', () => {
 
     it('deletes only the exact observed loaned value', async () => {
         type Snapshot = Readonly<{ revision: number; }>;
-        type ConditionallyDeletable = Readonly<{
-            compareAndDelete?: (key: string, expected: Snapshot) => boolean;
-        }>;
         let current: Snapshot = { revision: 1 };
         const repository = new ObservableLoanedRepository<string, Snapshot>(
             async () => current
         );
         const deleted = vi.fn();
-        const conditionallyDeletable = repository as ConditionallyDeletable;
         const first = await repository.get('room');
 
         repository.onDeletedDo(deleted);
         expect(
-            conditionallyDeletable.compareAndDelete?.(
+            repository.compareAndDelete(
                 'room',
                 { revision: first.revision }
-            ) ?? false
+            )
         ).toBe(false);
         expect(repository.peek('room')).toBe(first);
 
         current = { revision: 2 };
         const newer = await repository.refresh('room');
         expect(
-            conditionallyDeletable.compareAndDelete?.('room', first) ?? false
+            repository.compareAndDelete('room', first)
         ).toBe(false);
         expect(repository.peek('room')).toBe(newer);
 
         expect(
-            conditionallyDeletable.compareAndDelete?.('room', newer) ?? false
+            repository.compareAndDelete('room', newer)
         ).toBe(true);
         await repository.whenIdle();
 
@@ -295,19 +301,3 @@ describe('ObservableLoanedRepository', () => {
         });
     });
 });
-
-function createDeferred<T>() {
-    let resolve!: (value: T) => void;
-    let reject!: (error?: unknown) => void;
-
-    const promise = new Promise<T>((innerResolve, innerReject) => {
-        resolve = innerResolve;
-        reject = innerReject;
-    });
-
-    return {
-        promise,
-        resolve,
-        reject
-    };
-}

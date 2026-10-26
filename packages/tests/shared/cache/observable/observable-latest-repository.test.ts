@@ -1,6 +1,12 @@
-import { ObservableLatestRepository } from '@shared/cache/ObservableLatestRepository.ts';
+import { ObservableLatestRepository } from '@shared/cache/observable/observable-latest-repository.ts';
 import { ObservableValueEventType, type ObservableKeyedValueEvent } from '@shared/cache/RepositoryInterfaces.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 describe('ObservableLatestRepository', () => {
     afterEach(() => {
@@ -243,34 +249,29 @@ describe('ObservableLatestRepository', () => {
 
     it('deletes only the exact observed value', async () => {
         type Snapshot = Readonly<{ revision: number; }>;
-        type ConditionallyDeletable = Readonly<{
-            compareAndDelete?: (key: string, expected: Snapshot) => boolean;
-        }>;
         const repository = new ObservableLatestRepository<string, Snapshot>();
         const deleted = vi.fn();
         const first = { revision: 1 };
         const equalButDifferent = { revision: 1 };
         const newer = { revision: 2 };
-        const conditionallyDeletable = repository as ConditionallyDeletable;
 
         repository.onDeletedDo(deleted);
         repository.set('room', first);
 
         expect(
-            conditionallyDeletable.compareAndDelete?.('room', equalButDifferent) ??
-                false
+            repository.compareAndDelete('room', equalButDifferent)
         ).toBe(false);
         expect(repository.peek('room')).toBe(first);
 
         repository.set('room', newer);
         await repository.whenIdle();
         expect(
-            conditionallyDeletable.compareAndDelete?.('room', first) ?? false
+            repository.compareAndDelete('room', first)
         ).toBe(false);
         expect(repository.peek('room')).toBe(newer);
 
         expect(
-            conditionallyDeletable.compareAndDelete?.('room', newer) ?? false
+            repository.compareAndDelete('room', newer)
         ).toBe(true);
         await repository.whenIdle();
 

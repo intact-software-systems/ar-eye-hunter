@@ -1,12 +1,18 @@
+import { configureLatestRepository } from '@shared/cache/configure-latest-repository.ts';
 import { LatestMementoRepository } from '@shared/cache/LatestMementoRepository.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
-import { configureLatestRepository } from '@shared/cache/LatestRepositoryHelpers.ts';
 import { LoanedMementoRepository } from '@shared/cache/LoanedMementoRepository.ts';
 import { LoanedRepository } from '@shared/cache/LoanedRepository.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { RepositoryToken } from '@shared/cache/RepositoryToken.ts';
 import { latestMementoRepositoryToken, loanedMementoRepositoryToken } from '@shared/cache/RepositoryTokens.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 describe('LatestRepository', () => {
     afterEach(() => {
@@ -193,7 +199,7 @@ describe('LoanedRepository', () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
-        const deferred = createDeferred<number>();
+        const deferred = Promise.withResolvers<number>();
         let mode: 'initial' | 'refresh' = 'initial';
         const repo = new LoanedRepository<string, number>(
             async (_key, current) => {
@@ -306,19 +312,3 @@ describe('RepositoryManager', () => {
         expect(loanedRepo).toBeInstanceOf(LoanedMementoRepository);
     });
 });
-
-function createDeferred<T>() {
-    let resolve!: (value: T) => void;
-    let reject!: (error?: unknown) => void;
-
-    const promise = new Promise<T>((innerResolve, innerReject) => {
-        resolve = innerResolve;
-        reject = innerReject;
-    });
-
-    return {
-        promise,
-        resolve,
-        reject
-    };
-}

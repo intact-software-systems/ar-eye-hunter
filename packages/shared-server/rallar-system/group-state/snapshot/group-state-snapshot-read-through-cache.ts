@@ -3,8 +3,12 @@ import {
     readGroupCausalRevision,
     readGroupVersion
 } from '@shared/api/group-client-views.ts';
-import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
-import { ObservableLoanedRepository } from '@shared/cache/ObservableLoanedRepository.ts';
+import type {
+    GroupRef,
+    GroupSnapshot,
+    GroupStateCausalRevision
+} from '@shared/api/group-types.ts';
+import { ObservableLoanedRepository } from '@shared/cache/observable/observable-loaned-repository.ts';
 import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import {
     findGroupStateSnapshotByRef,
@@ -19,17 +23,17 @@ import type { GroupStateRepository } from '../persistence/group-state-repository
 
 const DEFAULT_TTL_MS = 60_000;
 
-export type GroupStateSnapshotReadThroughCacheOptions = Readonly<{
-    groupsRepository: Pick<GroupStateRepository, 'readSnapshot'>;
-    manager?: RepositoryManager;
-    ttlMs?: number;
-    now?: RallarSnapshotPresenceClock;
-}>;
+export interface GroupStateSnapshotReadThroughCacheOptions {
+    readonly groupsRepository: Pick<GroupStateRepository, 'readSnapshot'>;
+    readonly manager?: RepositoryManager;
+    readonly ttlMs?: number;
+    readonly now?: RallarSnapshotPresenceClock;
+}
 
-export type FindOrLoadGroupStateSnapshotOptions = Readonly<{
-    minSnapshotVersion?: number;
-    minCausalRevision?: GroupStateCausalRevision;
-}>;
+export interface FindOrLoadGroupStateSnapshotOptions {
+    readonly minSnapshotVersion?: number;
+    readonly minCausalRevision?: GroupStateCausalRevision;
+}
 
 export class GroupStateSnapshotNotFoundError extends Error {
     readonly ref: GroupRef;

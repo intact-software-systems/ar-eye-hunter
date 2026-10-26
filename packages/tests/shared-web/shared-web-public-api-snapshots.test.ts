@@ -114,8 +114,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarCrdtOpenScope',
                 'RallarCrdtSnapshotListener',
                 'RallarCreateRoomInput',
-                'RallarDataChangeEvent',
-                'RallarDataChangeListener',
                 'RallarDataDurability',
                 'RallarDataFacade',
                 'RallarDataHydration',
@@ -564,8 +562,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
             ],
             types: [
                 'CreateRallarDataFacadeInput',
-                'RallarDataChangeEvent',
-                'RallarDataChangeListener',
                 'RallarDataDurability',
                 'RallarDataFacade',
                 'RallarDataHydration',

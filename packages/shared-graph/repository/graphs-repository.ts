@@ -1,15 +1,15 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { LatestRepository, type LatestRepositoryOptions } from '@shared/cache/LatestRepository.ts';
 import {
     configureLatestRepository,
     newLatestRepositoryToken,
     readAllLatestRepository,
     readLatestRepositoryValue,
     requireLatestRepository
-} from '@shared/cache/LatestRepositoryHelpers.ts';
-import { ReadableKeyedValues } from '@shared/cache/RepositoryInterfaces.ts';
+} from '@shared/cache/configure-latest-repository.ts';
+import { LatestRepository, type LatestRepositoryOptions } from '@shared/cache/LatestRepository.ts';
+import type { ReadableKeyedValues } from '@shared/cache/RepositoryInterfaces.ts';
 import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
-import { GraphInfoSnapshot } from '../shared-graph-types.ts';
+import type { GraphInfoSnapshot } from '../shared-graph-types.ts';
 
 export type GraphRepositoryOptions =
     & Omit<LatestRepositoryOptions<GraphInfoSnapshot>, 'ttlMs'>

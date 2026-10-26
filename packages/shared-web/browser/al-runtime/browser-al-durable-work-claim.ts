@@ -3,8 +3,13 @@ import { toALDurableOwnerLockName, type ALBrowserLocks } from '@shared/alm/stora
 import type { ALDurableWorkCommit, ALDurableWorkOwnership } from '@shared/alm/work/al-durable-work-ownership.ts';
 import type { ALWorkCommittedRows } from '@shared/alm/work/al-work-readiness-memory.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import { ObservableLatestValue } from '@shared/cache/ObservableLatestValue.ts';
+import { ObservableLatestValue } from '@shared/cache/observable/observable-latest-value.ts';
 import type { ObservableValue } from '@shared/cache/RepositoryInterfaces.ts';
+
+interface ForeignCommitListener {
+    readonly workType: string;
+    readonly listener: (rows: ALWorkCommittedRows) => void;
+}
 
 export namespace BrowserALDurableWorkClaim {
     export interface Input {
@@ -15,11 +20,6 @@ export namespace BrowserALDurableWorkClaim {
         /** The connect's channel to the session's other tabs, which carries the commits; closed on release. */
         readonly sessionChannel: BrowserALSessionChannel;
     }
-}
-
-interface ForeignCommitListener {
-    readonly workType: string;
-    readonly listener: (rows: ALWorkCommittedRows) => void;
 }
 
 /**

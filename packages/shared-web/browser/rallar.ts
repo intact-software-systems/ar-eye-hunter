@@ -38,8 +38,6 @@ export type {
 
 export type {
     CreateRallarDataFacadeInput,
-    RallarDataChangeEvent,
-    RallarDataChangeListener,
     RallarDataDurability,
     RallarDataFacade,
     RallarDataHydration,

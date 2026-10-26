@@ -1,11 +1,11 @@
-import { RttMeasurementInfo } from '@shared/api/api-config.ts';
-import { LatestRepository, type LatestRepositoryOptions } from '@shared/cache/LatestRepository.ts';
+import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import {
     configureLatestRepository,
     newLatestRepositoryToken,
     readAllLatestRepository,
     requireLatestRepository
-} from '@shared/cache/LatestRepositoryHelpers.ts';
+} from '@shared/cache/configure-latest-repository.ts';
+import { LatestRepository, type LatestRepositoryOptions } from '@shared/cache/LatestRepository.ts';
 import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 
 export type RttRepositoryOptions =

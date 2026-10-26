@@ -5,7 +5,7 @@ import type {
 } from '@shared/alm/storage/al-storage-event.ts';
 import type { ALStorageUnavailable } from '@shared/alm/storage/al-storage-unavailable.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
-import { ObservableLatestValue } from '@shared/cache/ObservableLatestValue.ts';
+import { ObservableLatestValue } from '@shared/cache/observable/observable-latest-value.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 export type ALStorageAvailability =

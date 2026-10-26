@@ -1,9 +1,8 @@
-import type { ValueEqualityChecker } from '@shared/cache/ObservableLatestValue.ts';
+import type { ValueEqualityChecker } from '@shared/cache/observable/observable-latest-value.ts';
 import {
-    type ObservableKeyedValueEvent,
     type ObservableKeyedValueListener
 } from '@shared/cache/RepositoryInterfaces.ts';
-import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
+import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import type { PersistenceErrorHandler } from '@shared/cache/store-backed/write-behind-observable-latest-repository.ts';
 
 export {
@@ -17,38 +16,34 @@ export type RallarDataDurability = 'write-through' | 'write-behind';
 
 export type RallarDataHydration = 'eager' | 'lazy';
 
-export type RallarDataChangeEvent<V> = ObservableKeyedValueEvent<string, V>;
+export interface RallarDataStorageEstimate {
+    readonly usage?: number;
+    readonly quota?: number;
+}
 
-export type RallarDataChangeListener<V> = ObservableKeyedValueListener<string, V>;
+export interface RallarDataStoreOptions<V> {
+    readonly scope?: RallarDataScope;
+    readonly dbName?: string;
+    readonly storeName?: string;
+    readonly keyPrefix?: string;
+    readonly ttlMs?: number;
+    readonly durability?: RallarDataDurability;
+    readonly hydrate?: RallarDataHydration;
+    readonly sync?: boolean;
+    readonly isValid?: (value: V) => boolean;
+    readonly equals?: ValueEqualityChecker<V>;
+    readonly expireAtFor?: (value: V) => number;
+    readonly onPersistenceError?: PersistenceErrorHandler<string, V>;
+}
 
-export type RallarDataStorageEstimate = Readonly<{
-    usage?: number;
-    quota?: number;
-}>;
+export interface RallarDataStoreDefinition<V> {
+    readonly name: string;
+    readonly options?: RallarDataStoreOptions<V>;
+}
 
-export type RallarDataStoreOptions<V> = Readonly<{
-    scope?: RallarDataScope;
-    dbName?: string;
-    storeName?: string;
-    keyPrefix?: string;
-    ttlMs?: number;
-    durability?: RallarDataDurability;
-    hydrate?: RallarDataHydration;
-    sync?: boolean;
-    isValid?: (value: V) => boolean;
-    equals?: ValueEqualityChecker<V>;
-    expireAtFor?: (value: V) => number;
-    onPersistenceError?: PersistenceErrorHandler<string, V>;
-}>;
-
-export type RallarDataStoreDefinition<V> = Readonly<{
-    name: string;
-    options?: RallarDataStoreOptions<V>;
-}>;
-
-export type RallarDataStore<V> = Readonly<{
-    name: string;
-    repositoryId: string;
+export interface RallarDataStore<V> {
+    readonly name: string;
+    readonly repositoryId: string;
     hydrate(): Promise<void>;
     whenHydrated(): Promise<void>;
     isHydrated(): boolean;
@@ -83,12 +78,12 @@ export type RallarDataStore<V> = Readonly<{
     close(): Promise<boolean>;
     destroy(): Promise<void>;
     estimateUsage(): Promise<RallarDataStorageEstimate>;
-    onChange(listener: RallarDataChangeListener<V>): RallarUnsubscribe;
-}>;
+    onChange(listener: ObservableKeyedValueListener<string, V>): RallarUnsubscribe;
+}
 
 export type RallarUnsubscribe = () => void;
 
-export type RallarDataFacade = Readonly<{
+export interface RallarDataFacade {
     define<V>(
         name: string,
         options?: RallarDataStoreOptions<V>
@@ -113,9 +108,9 @@ export type RallarDataFacade = Readonly<{
     ): Promise<boolean>;
     destroyScope(scope: RallarDataScope): Promise<number>;
     estimateUsage(): Promise<RallarDataStorageEstimate>;
-}>;
+}
 
-export type CreateRallarDataFacadeInput = Readonly<{
-    manager: RepositoryManager;
+export interface CreateRallarDataFacadeInput {
+    readonly manager: RepositoryManager;
     resolveScopeKey(scope: RallarDataScope): string;
-}>;
+}

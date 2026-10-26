@@ -1,6 +1,6 @@
 import type { ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-types.ts';
 import { readClientStateRevision, readClientVersion } from '@shared/api/group-client-views.ts';
-import { ObservableLoanedRepository } from '@shared/cache/ObservableLoanedRepository.ts';
+import { ObservableLoanedRepository } from '@shared/cache/observable/observable-loaned-repository.ts';
 import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import {
     findClientStateSnapshotByRef,
@@ -15,17 +15,17 @@ import type { ClientStateRepository } from '../persistence/client-state-reposito
 
 const DEFAULT_TTL_MS = 60_000;
 
-export type ClientStateSnapshotReadThroughCacheOptions = Readonly<{
-    clientsRepository: Pick<ClientStateRepository, 'readSnapshot'>;
-    manager?: RepositoryManager;
-    ttlMs?: number;
-    now?: RallarSnapshotPresenceClock;
-}>;
+export interface ClientStateSnapshotReadThroughCacheOptions {
+    readonly clientsRepository: Pick<ClientStateRepository, 'readSnapshot'>;
+    readonly manager?: RepositoryManager;
+    readonly ttlMs?: number;
+    readonly now?: RallarSnapshotPresenceClock;
+}
 
-export type FindOrLoadClientStateSnapshotOptions = Readonly<{
-    minSnapshotVersion?: number;
-    minStateRevision?: number;
-}>;
+export interface FindOrLoadClientStateSnapshotOptions {
+    readonly minSnapshotVersion?: number;
+    readonly minStateRevision?: number;
+}
 
 export class ClientStateSnapshotNotFoundError extends Error {
     readonly ref: ClientPrincipalRef;
