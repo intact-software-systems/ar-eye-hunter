@@ -1,6 +1,14 @@
 import '../../../packages/tests/setup-browser-indexeddb.ts';
 
 import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
+import {
     applyRelicCommand,
     createRelicGame,
     RELIC_PROTOCOL_VERSION,
@@ -13,7 +21,6 @@ import {
 import { waitForSettledRead } from '@shared-web/browser/connection/wait-for-settled-read.ts';
 import { BrowserRallarSubscriptionScope } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import { createRallarDataFacade } from '@shared-web/browser/rallar-data.ts';
-import { RallarRoomDirectory } from '@shared-web/browser/rallar-room-directory.ts';
 import { RallarRecentRooms, RallarRoomEntry } from '@shared-web/browser/rallar-room-entry.ts';
 import type {
     RallarAuthChangeListener,
@@ -22,6 +29,7 @@ import type {
     RallarRoomState,
     RallarStartOptions
 } from '@shared-web/browser/rallar.ts';
+import { RallarRoomDirectory } from '@shared-web/browser/rooms/directory/rallar-room-directory.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type {
     GroupDirectoryEntry,
@@ -30,13 +38,7 @@ import type {
 } from '@shared/api/group-directory/group-directory-types.ts';
 import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
-import {
-    afterEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+
 import { requireRelicCommandApplied } from '../../../packages/tests/relic-hunters/require-relic-command-applied.ts';
 import { createGroupSnapshotFixture } from '../../../packages/tests/shared-web/authoritative-group-fixtures.ts';
 import { createManualTimers } from '../../../packages/tests/shared/resilience/manual-timers.ts';
@@ -55,7 +57,7 @@ afterEach(async () => {
 describe('RelicHuntersRuntime', () => {
     it('clears a private rule refusal when authoritative gameplay advances and ignores late refusals after the finale', async () => {
         const backend = new RelicRuntimeBackend();
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         const refusal = refusedPlan();
         backend.deliverHunterEvent(refusal);
@@ -70,7 +72,7 @@ describe('RelicHuntersRuntime', () => {
 
     it('clears obsolete rule feedback when another live tab records a plan before the finale', async () => {
         const backend = new RelicRuntimeBackend();
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         backend.deliverHunterEvent(refusedPlan());
         backend.deliverHunterEvent({
@@ -89,7 +91,7 @@ describe('RelicHuntersRuntime', () => {
 
     it('preserves a transport failure when a newer snapshot expires earlier rule feedback', async () => {
         const backend = new RelicRuntimeBackend();
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         backend.deliverHunterEvent(refusedPlan());
         backend.sendWsCommand = async () => {
@@ -103,7 +105,7 @@ describe('RelicHuntersRuntime', () => {
 
     it('timestamps hydration, commands, and resets using its injected clock', async () => {
         const backend = new RelicRuntimeBackend();
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         expect(runtime.getState().diagnostics.lastHydratedAtEpochMs).toBe(1_000);
         await backend.timers.advance(17);
@@ -135,7 +137,7 @@ describe('RelicHuntersRuntime', () => {
             backend.reads.push(roomId);
             return snapshot;
         };
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         const initialReads = backend.reads.length;
         await backend.timers.advance(snapshot.roundTimeLimitMs - 1);
@@ -154,7 +156,7 @@ describe('RelicHuntersRuntime', () => {
 
     it('records and returns to recent rooms without joining or resetting the expedition, then stops history', async () => {
         const backend = new RelicRuntimeBackend();
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         expect(runtime.getState().recentRooms).toBe(backend.recentRooms);
         await runtime.getState().joinRoom('recent-a');
@@ -189,7 +191,7 @@ describe('RelicHuntersRuntime', () => {
                 ? { entries: [first, second], nextCursor: null }
                 : { entries: [first], nextCursor: 'next-page' };
         };
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         expect(runtime.getState().directory).toEqual({ status: 'ready', entries: [first, second], error: undefined });
         expect(requests).toEqual([
@@ -203,7 +205,7 @@ describe('RelicHuntersRuntime', () => {
 
     it('refreshes public discovery automatically without adopting a room or changing the expedition', async () => {
         const backend = new RelicRuntimeBackend();
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         const snapshot = runtime.getState().snapshot;
         backend.listDirectory = async () => ({ entries: [directoryEntry('new-room')], nextCursor: null });
@@ -221,7 +223,7 @@ describe('RelicHuntersRuntime', () => {
         const backend = new RelicRuntimeBackend();
         const listed = directoryEntry('listed');
         backend.listDirectory = async () => ({ entries: [listed], nextCursor: null });
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         expect(runtime.getState().directory.entries).toEqual([listed]);
         backend.listDirectory = async () => {
@@ -236,7 +238,7 @@ describe('RelicHuntersRuntime', () => {
 
     it('coalesces overlapping reads and admits a fresh directory refresh after completion', async () => {
         const backend = new RelicRuntimeBackend();
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         const readStarted = Promise.withResolvers<void>();
         const read = Promise.withResolvers<GroupDirectoryPage>();
@@ -262,7 +264,7 @@ describe('RelicHuntersRuntime', () => {
 
     it('discards a pending directory response when the account signs out', async () => {
         const backend = new RelicRuntimeBackend();
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         expect(runtime.getState().directory.status).toBe('ready');
         const readStarted = Promise.withResolvers<void>();
@@ -281,7 +283,7 @@ describe('RelicHuntersRuntime', () => {
 
     it('hydrates the current expedition, accepts newer events, and stops delivery on cleanup', async () => {
         const backend = new RelicRuntimeBackend();
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         expect(runtime.getState()).toMatchObject({ connectionState: 'ready', roomId: 'room-1', snapshot: { updatedAtEpochMs: 20 } });
 
@@ -298,7 +300,7 @@ describe('RelicHuntersRuntime', () => {
         backend.fetchSnapshot = async () => {
             throw new Error('snapshot unavailable');
         };
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         expect(runtime.getState()).toMatchObject({ connectionState: 'degraded', roomId: 'room-1', error: 'snapshot unavailable' });
         expect(runtime.getState().diagnostics).toMatchObject({ middlewareConnected: true, roomListenerReady: true, wsListenerReady: true });
@@ -317,7 +319,7 @@ describe('RelicHuntersRuntime', () => {
             }
             return relicSnapshot(roomId, 25);
         };
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         const started = runtime.start();
         await reading.promise;
         backend.roomEntry.enter({
@@ -344,7 +346,7 @@ describe('RelicHuntersRuntime', () => {
 
     it.each(['open', 'code', 'invite-only'] as const)('creates a %s room without joining the expedition automatically', async (joinMode) => {
         const backend = new RelicRuntimeBackend();
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         const created = await runtime.getState().createRoom(joinMode);
         expect(created?.group).toMatchObject({ groupId: 'created-room', joinMode });
@@ -356,7 +358,7 @@ describe('RelicHuntersRuntime', () => {
     it('keeps the new private room shareable when leaving the previous room is denied', async () => {
         const backend = new RelicRuntimeBackend();
         backend.rejectPreviousLeave = true;
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         const created = await runtime.getState().createRoom('code');
         expect(created?.group.groupId).toBe('created-room');
@@ -366,7 +368,7 @@ describe('RelicHuntersRuntime', () => {
 
     it('keeps creation pending until presence makes the admitted room current', async () => {
         const backend = new RelicRuntimeBackend();
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         const admitted = createGroupSnapshotFixture({
             applicationId: 'rallar-server',
@@ -395,7 +397,7 @@ describe('RelicHuntersRuntime', () => {
         const ready = await backend.start();
         const startup = Promise.withResolvers<typeof ready>();
         backend.start = () => startup.promise;
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         const started = runtime.start();
         const premature = await runtime.getState().createRoom('code');
         expect(premature).toBeUndefined();
@@ -413,7 +415,7 @@ describe('RelicHuntersRuntime', () => {
             throw new Error('The fixture needs a signed-in hunter');
         }
         backend.session = undefined;
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         const started = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
@@ -446,7 +448,7 @@ describe('RelicHuntersRuntime', () => {
             throw new Error('The fixture needs a signed-in hunter');
         }
         backend.session = undefined;
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         const oldLogin = Promise.withResolvers<AuthSession>();
         backend.login = () => oldLogin.promise;
@@ -461,7 +463,7 @@ describe('RelicHuntersRuntime', () => {
     it('sends gameplay over WS and records the receipt without a second REST attempt', async () => {
         const backend = new RelicRuntimeBackend();
         backend.wsDelivery = { state: 'acknowledged', reason: undefined };
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         await runtime.getState().startExpedition();
         expect(backend.commands).toEqual([{
@@ -479,7 +481,7 @@ describe('RelicHuntersRuntime', () => {
 
     it('uses REST only while no WS server is known', async () => {
         const backend = new RelicRuntimeBackend();
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         await runtime.getState().forceResolveRound();
         expect(backend.commands).toEqual([{
@@ -498,7 +500,7 @@ describe('RelicHuntersRuntime', () => {
     it('does not resend a rejected WS command through REST', async () => {
         const backend = new RelicRuntimeBackend();
         backend.wsDelivery = { state: 'failed', reason: 'denied' };
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         await runtime.getState().startExpedition();
         expect(backend.commands.map((entry) => entry.transport)).toEqual(['ws']);
@@ -508,7 +510,7 @@ describe('RelicHuntersRuntime', () => {
     it('keeps signed-out startup free of game reads and commands', async () => {
         const backend = new RelicRuntimeBackend();
         backend.session = undefined;
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         expect(runtime.getState().connectionState).toBe('signed-out');
         expect(backend.reads).toEqual([]);
@@ -517,7 +519,7 @@ describe('RelicHuntersRuntime', () => {
 
     it('adopts a chosen room and applies its reset snapshot', async () => {
         const backend = new RelicRuntimeBackend();
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         await runtime.getState().joinRoom('chosen-room');
         await runtime.getState().resetExpedition();
@@ -527,7 +529,7 @@ describe('RelicHuntersRuntime', () => {
 
     it('does not expose an obsolete creation when the account changes before hydration finishes', async () => {
         const backend = new RelicRuntimeBackend();
-        const runtime = startRuntime(backend);
+        const runtime = createRuntime(backend);
         await runtime.start();
         const late = Promise.withResolvers<RelicPublicSnapshot | undefined>();
         backend.fetchSnapshot = async () => late.promise;
@@ -540,7 +542,7 @@ describe('RelicHuntersRuntime', () => {
     });
 });
 
-function startRuntime(backend: RelicRuntimeBackend): RelicHuntersRuntime {
+function createRuntime(backend: RelicRuntimeBackend): RelicHuntersRuntime {
     const runtime = new RelicHuntersRuntime(backend);
     runtimes.push(runtime);
     return runtime;

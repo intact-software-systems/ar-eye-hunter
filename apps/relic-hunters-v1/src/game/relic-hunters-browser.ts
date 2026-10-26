@@ -1,9 +1,18 @@
-import { RELIC_TOPICS, RELIC_TYPES, type RelicServerEvent } from '@relic-hunters/mod.ts';
-import { RallarRoomDirectory } from '@shared-web/browser/rallar-room-directory.ts';
+import {
+    RELIC_TOPICS,
+    RELIC_TYPES,
+    type RelicServerEvent
+} from '@relic-hunters/mod.ts';
 import { RallarRecentRooms, RallarRoomEntry } from '@shared-web/browser/rallar-room-entry.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
+import { RallarRoomDirectory } from '@shared-web/browser/rooms/directory/rallar-room-directory.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
-import { fetchRelicSnapshot, resetRelicGame, sendRelicCommand } from './api.ts';
+
+import {
+    fetchRelicSnapshot,
+    resetRelicGame,
+    sendRelicCommand
+} from './api.ts';
 import { createRelicAuthorityClientBridge } from './rallar-game-authority-adapter.ts';
 import type { RelicHuntersRuntime } from './relic-hunters-runtime.ts';
 import { sendRelicWsCommand } from './send-relic-ws-command.ts';

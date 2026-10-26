@@ -30,10 +30,10 @@ const budgetsKiB = JSON.parse(readFileSync(path.join(scriptDir, '../bundle-budge
 
 const entries = [
     {
-        label: 'browser/rallar-room-directory.ts',
-        entry: 'packages/shared-web/browser/rallar-room-directory.ts',
+        label: 'browser/rooms/directory/rallar-room-directory.ts',
+        entry: 'packages/shared-web/browser/rooms/directory/rallar-room-directory.ts',
         output: 'rallar-room-directory.min.js',
-        brotliBudgetKiB: budgetsKiB['browser/rallar-room-directory.ts']
+        brotliBudgetKiB: budgetsKiB['browser/rooms/directory/rallar-room-directory.ts']
     },
     {
         label: 'browser/rallar-room-entry.ts',

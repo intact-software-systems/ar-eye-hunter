@@ -7,5 +7,5 @@
   "browser/rallar-media-calls.ts": 10,
   "browser/rallar-messages.ts": 3,
   "browser/rallar-room-entry.ts": 10,
-  "browser/rallar-room-directory.ts": 5
+  "browser/rooms/directory/rallar-room-directory.ts": 5
 }

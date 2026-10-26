@@ -119,9 +119,10 @@ Directory and Quick Join share one listing reader. Hiding invalidates the next c
 read and prevents a stale Quick Join candidate from committing. It does not revoke membership or
 presence. A scoped link still enters through ordinary admission. Both games discover public rooms
 through scoped safe directory summaries and keep those summaries separate from member snapshots.
-The optional `browser/rallar-room-directory.ts` entry exposes `RallarRoomDirectory`, which both games
-use for complete paginated reads and scoped deduplication. It composes shared `SingleFlight`,
-`startRepeating`, and injected timers. Authenticated foreground/online observers read immediately,
+Both games import `RallarRoomDirectory` directly from
+`browser/rooms/directory/rallar-room-directory.ts`. This owner provides complete paginated reads
+and scoped deduplication, composing shared `SingleFlight`, `startRepeating`, and injected timers.
+Authenticated foreground/online observers read immediately,
 then wait 30 seconds after completion; manual refresh resets that interval. Hidden/offline transitions
 abort automatic work, and returning refreshes immediately. Session/query changes and disposal abort
 and fence obsolete reads. A failure retains the complete previous list with visible error state.
@@ -255,7 +256,7 @@ to and invites one adapter to write another feature's tables.
 app that uses several Rallar surfaces. Apps that need a smaller bundle use a
 narrow entry: `rallar-core.ts`, `rallar-realtime.ts`, `rallar-messages.ts`,
 `rallar-data.ts`, `rallar-crdt.ts`, `rallar-media-calls.ts`,
-`rallar-room-entry.ts`, or `rallar-room-directory.ts`.
+`rallar-room-entry.ts`, or the `rooms/directory/rallar-room-directory.ts` owner directly.
 
 The refused alternatives are a second aggregate facade, or making feature
 controllers import the aggregate entry. Controllers depend inward. Room-scoped

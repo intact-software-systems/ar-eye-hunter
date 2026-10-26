@@ -8,8 +8,8 @@ import {
     type SetStateAction
 } from 'react';
 
-import { RallarRoomDirectory } from '@shared-web/browser/rallar-room-directory.ts';
 import { rallar, type RallarRoomSummary } from '@shared-web/browser/rallar.ts';
+import { RallarRoomDirectory } from '@shared-web/browser/rooms/directory/rallar-room-directory.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupDirectoryEntry, GroupDirectoryOrder } from '@shared/api/group-directory/group-directory-types.ts';
 

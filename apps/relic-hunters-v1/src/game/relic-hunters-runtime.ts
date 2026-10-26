@@ -9,7 +9,6 @@ import {
     type RelicRoundTransitionEvent,
     type RelicServerEvent
 } from '@relic-hunters/mod.ts';
-import type { RallarRoomDirectory } from '@shared-web/browser/rallar-room-directory.ts';
 import type { RallarRecentRooms, RallarRoomEntry } from '@shared-web/browser/rallar-room-entry.ts';
 import type {
     ALDeliveryState,
@@ -24,6 +23,7 @@ import type {
     RallarSubscriptionScope,
     RallarUnsubscribe
 } from '@shared-web/browser/rallar.ts';
+import type { RallarRoomDirectory } from '@shared-web/browser/rooms/directory/rallar-room-directory.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
 import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -37,6 +37,7 @@ import { SingleFlight } from '@shared/resilience/single-flight.ts';
 import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+
 import {
     classifyRelicSnapshotAcceptance,
     type RelicSnapshotRejectionReason,

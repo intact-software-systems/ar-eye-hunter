@@ -99,10 +99,10 @@ const budgetedEntries: readonly BundleBoundary[] = [
         brotliBudgetKiB: budgetFor('browser/rallar-media-calls.ts')
     },
     {
-        label: 'browser/rallar-room-directory.ts',
-        entry: 'packages/shared-web/browser/rallar-room-directory.ts',
+        label: 'browser/rooms/directory/rallar-room-directory.ts',
+        entry: 'packages/shared-web/browser/rooms/directory/rallar-room-directory.ts',
         output: 'rallar-room-directory.boundary.min.js',
-        brotliBudgetKiB: budgetFor('browser/rallar-room-directory.ts')
+        brotliBudgetKiB: budgetFor('browser/rooms/directory/rallar-room-directory.ts')
     },
     {
         label: 'browser/rallar-room-entry.ts',
@@ -175,16 +175,19 @@ describe('shared-web browser bundle boundaries', () => {
         }
     });
 
-    it.each(['browser/rallar-room-entry.ts', 'browser/rallar-room-directory.ts'])('keeps %s independent of the facade and storage engines', (label) => {
-        const entry = budgetedEntries.find((boundary) => boundary.label === label);
-        if (!entry) {
-            throw new Error('Missing room-entry bundle boundary');
+    it.each(['browser/rallar-room-entry.ts', 'browser/rooms/directory/rallar-room-directory.ts'])(
+        'keeps %s independent of the facade and storage engines',
+        (label) => {
+            const entry = budgetedEntries.find((boundary) => boundary.label === label);
+            if (!entry) {
+                throw new Error('Missing room-entry bundle boundary');
+            }
+            const inputs = Object.keys(bundleForBoundary(entry).metafile.inputs);
+            expect(inputs).not.toContain('packages/shared-web/browser/rallar.ts');
+            expect(inputs).not.toContainEqual(expect.stringContaining('node_modules/@js-temporal/polyfill'));
+            expect(inputs).not.toContainEqual(expect.stringContaining('indexed-db'));
         }
-        const inputs = Object.keys(bundleForBoundary(entry).metafile.inputs);
-        expect(inputs).not.toContain('packages/shared-web/browser/rallar.ts');
-        expect(inputs).not.toContainEqual(expect.stringContaining('node_modules/@js-temporal/polyfill'));
-        expect(inputs).not.toContainEqual(expect.stringContaining('indexed-db'));
-    });
+    );
 
     it('keeps measured browser entry points under their Brotli budgets', () => {
         for (const entry of budgetedEntries) {

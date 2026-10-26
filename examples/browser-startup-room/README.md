@@ -164,7 +164,7 @@ Use code-protected or invite-only admission when a link alone should not be suff
 To keep public discovery fresh without switching the current room, use the optional directory owner:
 
 ```ts
-import { RallarRoomDirectory } from '@shared-web/browser/rallar-room-directory.ts';
+import { RallarRoomDirectory } from '@shared-web/browser/rooms/directory/rallar-room-directory.ts';
 
 const directory = RallarRoomDirectory.createBrowser(rallar, {
     scope: { applicationId: 'demo-game', workspaceId: 'default' },
