@@ -42,6 +42,8 @@ test(
             { exact: true }
         ).first();
         await expect(diagnostic).toBeVisible();
+        await diagnostic.scrollIntoViewIfNeeded();
+        await expect(diagnostic).toBeInViewport();
         expect(transportAttempts).toEqual([]);
         await page.screenshot({ path: testInfo.outputPath('websocket-host-mismatch.png'), fullPage: true });
 
@@ -53,6 +55,7 @@ test(
         await expect(diagnostic).toHaveCount(0);
         expect(transportAttempts).toContain('ticket');
         expect(transportAttempts).toContain('socket');
+        await page.getByLabel('Room link', { exact: true }).scrollIntoViewIfNeeded();
         await page.screenshot({ path: testInfo.outputPath('websocket-host-recovered.png'), fullPage: true });
     }
 );
