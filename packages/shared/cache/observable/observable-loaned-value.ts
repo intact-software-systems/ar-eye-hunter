@@ -111,7 +111,7 @@ export class ObservableLoanedValue<T> implements ReadableValue<T>, ObservableVal
     }
 
     public refreshing(): boolean {
-        return this.loaned.refreshing();
+        return this.observedRefresh !== undefined;
     }
 
     public clear(): void {

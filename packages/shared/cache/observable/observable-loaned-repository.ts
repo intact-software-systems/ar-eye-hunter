@@ -241,7 +241,9 @@ export class ObservableLoanedRepository<K, V> implements PullKeyedValues<K, V>, 
             await pending;
             // Repository observers may start entry work without publishing its result yet.
             await Promise.all([...this.entries.values()].map((entry) => entry.whenIdle()));
-            if (pending === this.notifications.completion) {
+            // An entry observer may start a refresh after another entry's idle check finished.
+            const hasPendingRefresh = [...this.entries.values()].some((entry) => entry.refreshing());
+            if (pending === this.notifications.completion && !hasPendingRefresh) {
                 return;
             }
         }
