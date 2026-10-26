@@ -3,8 +3,8 @@ import type {
     RallarDirectorStatusListener,
     RallarDirectorStatusOptions
 } from '@shared-web/browser/director/rallar-director-facade.ts';
-import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
+import type { GroupRef, GroupSnapshot } from '@shared-web/browser/rooms/room-group-state-translation.ts';
 import type { RallarRoomStateStorePort } from '@shared-web/browser/rooms/room-state-store.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import {
@@ -14,8 +14,8 @@ import {
     readRallarGroupDirectorFromSnapshot,
     type RallarGroupDirectorAppointment
 } from '@shared/api/group-director.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { readConfiguredValue } from '@shared/cache/RepositoryManager.ts';
+import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 
 export namespace BrowserDirectorStatusRuntime {
     export interface Input {
@@ -34,7 +34,9 @@ export namespace BrowserDirectorStatusRuntime {
 
 export class BrowserDirectorStatusRuntime {
     private readonly input: BrowserDirectorStatusRuntime.Input;
-    private readonly listeners = new Set<RallarDirectorStatusListener>();
+    private readonly notifications = new SynchronousNotifications<RallarDirectorStatus>((error) => {
+        console.error('Error notifying Rallar director status listener', error);
+    });
     private readonly heartbeatByRoom = new Map<string, BrowserDirectorStatusRuntime.Heartbeat>();
 
     public constructor(input: BrowserDirectorStatusRuntime.Input) {
@@ -107,20 +109,16 @@ export class BrowserDirectorStatusRuntime {
     }
 
     public emit(): void {
-        if (this.listeners.size === 0) {
+        if (this.notifications.size === 0) {
             return;
         }
-        const current = this.read();
-        for (const listener of this.listeners) {
-            notifyListener(listener, current);
-        }
+        this.notifications.publishLatest(this.read());
     }
 
     public onStatus(listener: RallarDirectorStatusListener): RallarUnsubscribe {
         const current = this.read();
-        this.listeners.add(listener);
-        notifyListener(listener, current);
-        return () => this.listeners.delete(listener);
+        const subscription = this.notifications.subscribeAndNotify(listener, current);
+        return () => subscription.unsubscribe();
     }
 
     private readMatchingHeartbeat(

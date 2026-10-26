@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('authenticated arena diagnostics observe capability transport evidence', async ({ page }, testInfo) => {
+test('manual director appointment shows capability transport evidence', async ({ page }, testInfo) => {
     test.skip(process.env.RALLAR_ARENA_FULL_STACK !== '1', 'Requires the local API-v1 memory fixture on port 8080.');
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
@@ -16,12 +16,8 @@ test('authenticated arena diagnostics observe capability transport evidence', as
     await operations.getByRole('button', { name: 'Enter Arena', exact: true }).click();
     const createArena = operations.getByRole('button', { name: 'New Arena', exact: true });
     await expect(createArena).toBeVisible();
-    const appointmentResponse = page.waitForResponse((response) =>
-        response.request().method() === 'POST' && response.url().includes('/director/appoint/requests/')
-    );
     await createArena.click();
-    expect((await appointmentResponse).status()).toBe(200);
-    await expect(operations.locator('.attempt-note')).toContainText('succeeded');
+    await expect(operations.getByRole('region', { name: 'Shared room entry' })).toContainText('Entered ');
     const closeOperations = page.getByRole('button', { name: 'Close Ops', exact: true });
     if (await closeOperations.isVisible()) {
         await closeOperations.click();
@@ -41,13 +37,14 @@ test('authenticated arena diagnostics observe capability transport evidence', as
     await expect(delivery).toContainText('transport accepted (hop)');
     await page.screenshot({ path: testInfo.outputPath('capability-delivery.png'), fullPage: true });
     await diagnostics.getByText('JSON', { exact: true }).click();
-    const observation = JSON.parse(await diagnostics.locator('pre').innerText());
-    expect(observation.directorAttempt).toMatchObject({
-        source: 'manual',
-        status: 'succeeded',
-        capabilityDelivery: { state: 'confirmed', evidence: 'transport-accepted' }
+    expect(JSON.parse(await diagnostics.locator('pre').innerText())).toMatchObject({
+        directorAttempt: {
+            source: 'manual',
+            status: 'succeeded',
+            capabilityDelivery: { state: 'confirmed', evidence: 'transport-accepted' }
+        },
+        transport: { ws: { readyState: 'open' } }
     });
-    expect(observation.transport.ws.readyState).toBe('open');
     expect(errors).toEqual([]);
     await diagnostics.getByText('JSON', { exact: true }).click();
 });
@@ -58,11 +55,11 @@ test('copies the displayed diagnostics JSON and resets the copy state when reope
     await page.getByRole('button', { name: 'Diag', exact: true }).click();
     const diagnostics = page.getByRole('complementary', { name: 'Arena diagnostics' });
     await diagnostics.getByText('JSON', { exact: true }).click();
-    const displayed = JSON.parse(await diagnostics.locator('pre').innerText());
+    const displayed = await diagnostics.locator('pre').innerText();
     await diagnostics.getByRole('button', { name: 'Copy JSON', exact: true }).click();
     await expect(diagnostics.getByRole('button', { name: 'Copied', exact: true })).toBeVisible();
     const copied = await page.evaluate(() => navigator.clipboard.readText());
-    expect(JSON.parse(copied)).toEqual(displayed);
+    expect(JSON.parse(copied)).toEqual(JSON.parse(displayed));
     await diagnostics.getByRole('button', { name: 'Close', exact: true }).click();
     await page.getByRole('button', { name: 'Diag', exact: true }).click();
     await diagnostics.getByText('JSON', { exact: true }).click();

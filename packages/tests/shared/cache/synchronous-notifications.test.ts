@@ -157,3 +157,38 @@ it('keeps plain subscription deduplication and captured batches independent of r
     captured.publish();
     expect(delivered).toEqual(['committed']);
 });
+
+it('clears live registrations during delivery without deleting later replacements', () => {
+    const delivered: string[] = [];
+    const notifications = new SynchronousNotifications<string>(() => {});
+    notifications.subscribe(() => {
+        notifications.clear();
+    });
+    const listener = (state: string): void => {
+        delivered.push(state);
+    };
+    const stale = notifications.subscribe(listener);
+    expect(notifications.size).toBe(2);
+    notifications.publishLatest('obsolete');
+    expect(delivered).toEqual([]);
+    expect(notifications.size).toBe(0);
+    notifications.subscribe(listener);
+    stale.unsubscribe();
+    notifications.publishLatest('replacement');
+    expect(delivered).toEqual(['replacement']);
+    expect(notifications.size).toBe(1);
+});
+
+it('preserves committed captured events when live registrations are cleared', () => {
+    const delivered: string[] = [];
+    const notifications = new SynchronousNotifications<string>(() => {});
+    notifications.subscribe((event) => {
+        delivered.push(event);
+    });
+    const committed = notifications.capture(['committed']);
+    notifications.clear();
+    notifications.publishLatest('removed');
+    committed.publish();
+    committed.publish();
+    expect(delivered).toEqual(['committed']);
+});

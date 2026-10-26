@@ -21,6 +21,15 @@ export class SynchronousNotifications<T> {
         this.reportError = reportError;
     }
 
+    get size(): number {
+        return this.listeners.size;
+    }
+
+    clear(): void {
+        ++this.publicationGeneration;
+        this.listeners.clear();
+    }
+
     subscribe(listener: SynchronousNotifications.Listener<T>): Unsubscribe {
         const registration = this.listeners.get(listener) ?? ++this.registrationGeneration;
         this.listeners.set(listener, registration);

@@ -18,6 +18,7 @@ import type {
     RallarCrdtUndoRedoGroupInput
 } from '@shared-web/browser/crdt/rallar-crdt-contracts.ts';
 import type { RallarDataFacade, RallarUnsubscribe } from '@shared-web/browser/rallar-data.ts';
+import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import type * as RallarCrdt from '@shared/crdt/mod.ts';
 import {
     createRallarCrdtDocument,
@@ -73,7 +74,11 @@ export class BrowserRallarCrdtDocument<TValue, TPayload extends RallarCrdtOperat
     public readonly ref: RallarCrdtDocumentRef;
 
     private readonly engine: RallarCrdt.RallarCrdtDocument<TValue, TPayload>;
-    private readonly listeners = new Set<RallarCrdtSnapshotListener<TValue>>();
+    private readonly snapshotNotifications = new SynchronousNotifications<RallarCrdtSnapshotEnvelope<TValue>>(
+        (error) => {
+            console.error('Error notifying CRDT snapshot listener', error);
+        }
+    );
     private readonly pending = new Map<string, RallarCrdtUpdateEnvelope<TPayload>>();
     private readonly failed = new Map<string, RallarCrdtFailedPendingUpdate<TPayload>>();
     private readonly dependencyBlocked = new Map<string, RallarCrdtDependencyBlockedUpdate<TPayload>>();
@@ -184,11 +189,8 @@ export class BrowserRallarCrdtDocument<TValue, TPayload extends RallarCrdtOperat
     public subscribe(
         listener: RallarCrdtSnapshotListener<TValue>
     ): RallarUnsubscribe {
-        this.listeners.add(listener);
-        notifyListener(listener, this.snapshot());
-        return () => {
-            this.listeners.delete(listener);
-        };
+        const subscription = this.snapshotNotifications.subscribeAndNotify(listener, this.snapshot());
+        return () => subscription.unsubscribe();
     }
 
     public async applyLocal(
@@ -354,7 +356,7 @@ export class BrowserRallarCrdtDocument<TValue, TPayload extends RallarCrdtOperat
             listener();
         }
         this.closeListeners.clear();
-        this.listeners.clear();
+        this.snapshotNotifications.clear();
     }
 
     public async destroy(): Promise<void> {
@@ -369,7 +371,7 @@ export class BrowserRallarCrdtDocument<TValue, TPayload extends RallarCrdtOperat
             listener();
         }
         this.closeListeners.clear();
-        this.listeners.clear();
+        this.snapshotNotifications.clear();
     }
 
     public health(): RallarCrdtDocumentHealth {
@@ -408,10 +410,7 @@ export class BrowserRallarCrdtDocument<TValue, TPayload extends RallarCrdtOperat
     }
 
     private emitSnapshot(): void {
-        const snapshot = this.snapshot();
-        for (const listener of this.listeners) {
-            notifyListener(listener, snapshot);
-        }
+        this.snapshotNotifications.publishLatest(this.snapshot());
     }
 
     private assertOpen(): void {
@@ -419,14 +418,4 @@ export class BrowserRallarCrdtDocument<TValue, TPayload extends RallarCrdtOperat
             throw new Error('CRDT document is closed.');
         }
     }
-}
-
-function notifyListener<TValue>(
-    listener: RallarCrdtSnapshotListener<TValue>,
-    snapshot: RallarCrdtSnapshotEnvelope<TValue>
-): void {
-    void Promise.resolve(listener(snapshot)).catch((error) => {
-        const failure = toError(error);
-        console.error('Error notifying CRDT snapshot listener', failure);
-    });
 }
