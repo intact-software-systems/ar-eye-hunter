@@ -237,15 +237,10 @@ export class ObservableLoanedRepository<K, V> implements PullKeyedValues<K, V>, 
 
     public async whenIdle(): Promise<void> {
         while (true) {
-            const valueQueues = [...this.entries.values()].map(
-                async (entry) => await entry.whenIdle()
-            );
-            await Promise.all(valueQueues);
-
             const pending = this.notifications.completion;
             await pending;
-            await Promise.resolve();
-
+            // Repository observers may start entry work without publishing its result yet.
+            await Promise.all([...this.entries.values()].map((entry) => entry.whenIdle()));
             if (pending === this.notifications.completion) {
                 return;
             }

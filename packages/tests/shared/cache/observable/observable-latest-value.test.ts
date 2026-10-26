@@ -97,24 +97,27 @@ describe('ObservableLatestValue', () => {
 
     it('supports type-specific subscriptions and idempotent unsubscribe', async () => {
         const latest = new ObservableLatestValue<number>();
-        const created = vi.fn();
-        const updated = vi.fn();
-        const subscription = latest.onCreatedDo(created);
+        const created: Array<ObservableValueEvent<number>> = [];
+        const updated: Array<ObservableValueEvent<number>> = [];
+        const subscription = latest.onCreatedDo((event) => {
+            created.push(event);
+        });
 
-        latest.onUpdatedDo(updated);
+        latest.onUpdatedDo((event) => {
+            updated.push(event);
+        });
         latest.accept(1);
         subscription.unsubscribe();
         subscription.unsubscribe();
         latest.accept(2);
         await latest.whenIdle();
 
-        expect(created).toHaveBeenCalledTimes(1);
-        expect(updated).toHaveBeenCalledTimes(1);
-        expect(updated.mock.calls[0]?.[0]).toMatchObject({
+        expect(created).toMatchObject([{ type: 'created', value: 1 }]);
+        expect(updated).toMatchObject([{
             type: 'updated',
             value: 2,
             previous: 1
-        });
+        }]);
     });
 
     it('runs async observers in event order without blocking writes', async () => {
@@ -160,18 +163,20 @@ describe('ObservableLatestValue', () => {
                 errors.push(error instanceof Error ? error.message : String(error));
             }
         });
-        const successful = vi.fn();
+        const successful: Array<ObservableValueEvent<number>> = [];
 
         latest.onCreatedDo(() => {
             throw new Error('observer failed');
         });
-        latest.onCreatedDo(successful);
+        latest.onCreatedDo((event) => {
+            successful.push(event);
+        });
 
         latest.accept(1);
         await latest.whenIdle();
 
         expect(errors).toEqual(['observer failed']);
-        expect(successful).toHaveBeenCalledTimes(1);
+        expect(successful).toMatchObject([{ type: 'created', value: 1 }]);
     });
 
     it('waits for events enqueued by observers before becoming idle', async () => {

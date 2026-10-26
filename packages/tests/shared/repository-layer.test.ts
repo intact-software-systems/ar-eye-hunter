@@ -95,11 +95,20 @@ describe('LatestRepository', () => {
     });
 
     it('updateIfNewer creates, updates on higher version, and rejects stale writes', () => {
-        type Versioned = Readonly<{ version: number; payload: string; }>;
+        interface Versioned {
+            readonly version: number;
+            readonly payload: string;
+        }
         const repo = new LatestRepository<string, Versioned>();
         const versionOf = (value: Versioned) => value.version;
-        const onNewer = vi.fn();
-        const onStale = vi.fn();
+        const newerVersions: Array<[number, number]> = [];
+        const staleVersions: Array<[number, number]> = [];
+        const onNewer = (next: Versioned, current: Versioned) => {
+            newerVersions.push([next.version, current.version]);
+        };
+        const onStale = (next: Versioned, current: Versioned) => {
+            staleVersions.push([next.version, current.version]);
+        };
 
         expect(
             repo.updateIfNewer('k', { version: 1, payload: 'a' }, {
@@ -109,7 +118,7 @@ describe('LatestRepository', () => {
             })
         ).toBe(true);
         expect(repo.read('k')).toEqual({ version: 1, payload: 'a' });
-        expect(onNewer).not.toHaveBeenCalled();
+        expect(newerVersions).toEqual([]);
 
         expect(
             repo.updateIfNewer('k', { version: 2, payload: 'b' }, {
@@ -119,7 +128,7 @@ describe('LatestRepository', () => {
             })
         ).toBe(true);
         expect(repo.read('k')).toEqual({ version: 2, payload: 'b' });
-        expect(onNewer).toHaveBeenCalledTimes(1);
+        expect(newerVersions).toEqual([[2, 1]]);
 
         expect(
             repo.updateIfNewer('k', { version: 1, payload: 'old' }, {
@@ -129,7 +138,7 @@ describe('LatestRepository', () => {
             })
         ).toBe(false);
         expect(repo.read('k')).toEqual({ version: 2, payload: 'b' });
-        expect(onStale).toHaveBeenCalledTimes(1);
+        expect(staleVersions).toEqual([[1, 2]]);
 
         expect(
             repo.updateIfNewer('k', { version: 2, payload: 'sameVersion' }, {
@@ -139,7 +148,7 @@ describe('LatestRepository', () => {
             })
         ).toBe(false);
         expect(repo.read('k')).toEqual({ version: 2, payload: 'b' });
-        expect(onStale).toHaveBeenCalledTimes(2);
+        expect(staleVersions).toEqual([[1, 2], [2, 2]]);
     });
 
     it('readable returns a ReadableKeyedValues view backed by the repository', () => {
@@ -235,12 +244,17 @@ describe('LoanedRepository', () => {
 describe('RepositoryManager', () => {
     it('resolves, replaces, deletes, and clears repositories with disposal semantics', async () => {
         const manager = new RepositoryManager();
+        const disposals: string[] = [];
         const created = {
-            dispose: vi.fn()
+            dispose: () => {
+                disposals.push('created');
+            }
         };
         const createdToken = new RepositoryToken('created', () => created);
         const registered = {
-            dispose: vi.fn()
+            dispose: () => {
+                disposals.push('registered');
+            }
         };
         const registeredToken = new RepositoryToken('registered', () => registered);
 
@@ -255,35 +269,40 @@ describe('RepositoryManager', () => {
         );
 
         const replacement = {
-            dispose: vi.fn()
+            dispose: () => {
+                disposals.push('replacement');
+            }
         };
         await manager.replace(registeredToken, replacement);
 
-        expect(registered.dispose).toHaveBeenCalledOnce();
+        expect(disposals).toEqual(['registered']);
         expect(manager.get(registeredToken)).toBe(replacement);
         expect(await manager.delete('registered')).toBe(true);
-        expect(replacement.dispose).toHaveBeenCalledOnce();
+        expect(disposals).toEqual(['registered', 'replacement']);
 
-        const remaining = manager.require(createdToken);
         await manager.clear();
 
-        expect(remaining.dispose).toHaveBeenCalledOnce();
+        expect(disposals).toEqual(['registered', 'replacement', 'created']);
         expect(manager.size()).toBe(0);
     });
 
-    it('disposes replaced latest repositories configured through helpers', () => {
-        const manager = new RepositoryManager();
-        const token = new RepositoryToken(
-            'latest-replace',
-            () => new LatestRepository<string, number>()
-        );
-        const first = configureLatestRepository(token, {}, manager);
-        const dispose = vi.spyOn(first, 'dispose');
+    it('stops the replaced repository eviction timer when configuring a replacement', () => {
+        vi.useFakeTimers();
+        try {
+            const manager = new RepositoryManager();
+            const token = new RepositoryToken('latest-replace', () => new LatestRepository<string, number>());
+            const first = configureLatestRepository(token, { ttlMs: 0, deleteExpiredIntervalMs: 10 }, manager);
+            first.set('retired', 1);
+            const second = configureLatestRepository(token, {}, manager);
+            vi.advanceTimersByTime(20);
 
-        const second = configureLatestRepository(token, {}, manager);
-
-        expect(dispose).toHaveBeenCalledOnce();
-        expect(manager.require(token)).toBe(second);
+            expect(first.size()).toBe(1);
+            expect(first.read('retired')).toBeUndefined();
+            expect(manager.require(token)).toBe(second);
+        }
+        finally {
+            vi.useRealTimers();
+        }
     });
 
     it('validates tokens and creates repository instances from token factories', () => {

@@ -700,6 +700,7 @@ function makeGroupSnapshot(input: MakeGroupSnapshotInput): GroupSnapshot {
             principalId: `principal-${Math.floor(index / sessionsPerClient)}`,
             generationId: `generation-${index}`,
             generationVersion: 1,
+            connectionGenerationId: `generation-${Math.floor(index / sessionsPerClient)}-${index % sessionsPerClient}`,
             status: 'active',
             disconnectedAtEpochMs: null,
             disconnectReason: null,

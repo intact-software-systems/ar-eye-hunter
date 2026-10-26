@@ -23,7 +23,9 @@ changes receives both deliveries; registering twice within one group is deduplic
 unsubscribe handle cannot remove a later registration.
 
 `whenIdle()` includes events enqueued by observers. Loaned values also wait for owned refreshes;
-repositories include their owned entries. A callback may enqueue more work, but must not await
+repositories wait for entry work started by their observers. Removed latest entries remain tracked
+until their committed notifications finish; removed loaned entries cannot publish a late refresh into
+a replacement entry. A callback may enqueue more work, but must not await
 its own cache's `whenIdle()` or `acceptAndNotify()`: that would wait on the callback itself.
 Observer errors are normalized and reported; error handlers are awaited and their own failures
 are isolated. Failed delivery never rolls back the already accepted cache value.

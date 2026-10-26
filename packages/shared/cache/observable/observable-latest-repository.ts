@@ -35,6 +35,7 @@ export type ObservableLatestRepositoryOptions<K, V> = Readonly<
 
 export class ObservableLatestRepository<K, V> implements PushKeyedValues<K, V>, ObservableKeyedValues<K, V> {
     private readonly entries = new Map<K, ObservableLatestValue<V>>();
+    private readonly removedEntryDeliveries = new Set<Promise<void>>();
     private readonly defaultValueOptions: ObservableLatestValueOptions<V>;
     private readonly notifications: QueuedNotifications<ObservableKeyedValueEvent<K, V>>;
     private readonly stopExpiredEntryEviction: (() => void) | undefined;
@@ -131,7 +132,7 @@ export class ObservableLatestRepository<K, V> implements PushKeyedValues<K, V>, 
         }
 
         const value = entry.take();
-        this.entries.delete(key);
+        this.removeEntry(key, entry);
         return value;
     }
 
@@ -144,7 +145,7 @@ export class ObservableLatestRepository<K, V> implements PushKeyedValues<K, V>, 
         const wasExpired = entry.expired();
         const value = entry.takeIfExpired();
         if (wasExpired) {
-            this.entries.delete(key);
+            this.removeEntry(key, entry);
         }
         return value;
     }
@@ -240,7 +241,7 @@ export class ObservableLatestRepository<K, V> implements PushKeyedValues<K, V>, 
         }
 
         entry.clear();
-        this.entries.delete(key);
+        this.removeEntry(key, entry);
         return true;
     }
 
@@ -250,20 +251,13 @@ export class ObservableLatestRepository<K, V> implements PushKeyedValues<K, V>, 
     }
 
     public clear(key: K): void {
-        const entry = this.entries.get(key);
-        if (!entry) {
-            return;
-        }
-
-        entry.clear();
-        this.entries.delete(key);
+        this.delete(key);
     }
 
     public clearAll(): void {
-        for (const entry of this.entries.values()) {
-            entry.clear();
+        for (const key of this.entries.keys()) {
+            this.delete(key);
         }
-        this.entries.clear();
     }
 
     public deleteExpired(): number {
@@ -271,8 +265,7 @@ export class ObservableLatestRepository<K, V> implements PushKeyedValues<K, V>, 
 
         for (const [key, entry] of this.entries) {
             if (entry.expired()) {
-                entry.takeIfExpired();
-                this.entries.delete(key);
+                this.delete(key);
                 removed += 1;
             }
         }
@@ -335,16 +328,14 @@ export class ObservableLatestRepository<K, V> implements PushKeyedValues<K, V>, 
 
     public async whenIdle(): Promise<void> {
         while (true) {
-            const valueQueues = [...this.entries.values()].map(
-                async (entry) => await entry.whenIdle()
-            );
-            await Promise.all(valueQueues);
-
             const pending = this.notifications.completion;
             await pending;
-            await Promise.resolve();
-
-            if (pending === this.notifications.completion) {
+            // Repository observers may start entry work without publishing its result yet.
+            await Promise.all([
+                ...[...this.entries.values()].map((entry) => entry.whenIdle()),
+                ...this.removedEntryDeliveries
+            ]);
+            if (pending === this.notifications.completion && this.removedEntryDeliveries.size === 0) {
                 return;
             }
         }
@@ -352,6 +343,15 @@ export class ObservableLatestRepository<K, V> implements PushKeyedValues<K, V>, 
 
     public readable(): ReadableKeyedValues<K, V> {
         return this;
+    }
+
+    private removeEntry(key: K, entry: ObservableLatestValue<V>): void {
+        this.entries.delete(key);
+        const delivery = entry.whenIdle();
+        this.removedEntryDeliveries.add(delivery);
+        void delivery.then(() => {
+            this.removedEntryDeliveries.delete(delivery);
+        });
     }
 
     private getOrCreate(key: K): ObservableLatestValue<V> {

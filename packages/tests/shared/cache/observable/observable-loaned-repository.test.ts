@@ -149,6 +149,48 @@ describe('ObservableLoanedRepository', () => {
         ]);
     });
 
+    it.each(['source', 'new-entry'])('waits for an observer to start and finish a delayed refresh of %s', async (destination) => {
+        const allowFollowup = Promise.withResolvers<void>();
+        const observerStarted = Promise.withResolvers<void>();
+        const refreshStarted = Promise.withResolvers<void>();
+        const nextValue = Promise.withResolvers<number>();
+        const repository = new ObservableLoanedRepository<string, number>(() => 1);
+        await repository.get('source');
+        await repository.whenIdle();
+        const events: Array<[string, number | undefined]> = [];
+        repository.onChangeDo(async (event) => {
+            events.push([event.key, event.value]);
+            if (event.key === 'source' && event.value === 2) {
+                observerStarted.resolve();
+                await allowFollowup.promise;
+                void repository.refreshWith(destination, () => {
+                    refreshStarted.resolve();
+                    return nextValue.promise;
+                });
+            }
+        });
+
+        await repository.refreshWith('source', () => 2);
+        await observerStarted.promise;
+        let idleFinished = false;
+        const idle = repository.whenIdle().then(() => {
+            idleFinished = true;
+            return { value: repository.read(destination), events: [...events] };
+        });
+        // Allow the initial entry queues to settle while the repository observer waits.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        allowFollowup.resolve();
+        await refreshStarted.promise;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const finishedBeforeRefresh = idleFinished;
+        nextValue.resolve(3);
+        const completed = await idle;
+        await repository.whenIdle();
+
+        expect(finishedBeforeRefresh).toBe(false);
+        expect(completed).toEqual({ value: 3, events: [['source', 2], [destination, 3]] });
+    });
+
     it('supports override refreshers with key and current value', async () => {
         const defaultCalls: Array<[string, number | undefined]> = [];
         const overrideCalls: Array<[string, number | undefined]> = [];
@@ -220,7 +262,7 @@ describe('ObservableLoanedRepository', () => {
         expect(repository.has('job')).toBe(false);
     });
 
-    it('does not forward late refresh events from a deleted entry', async () => {
+    it.each(['removed-first', 'replacement-first'] as const)('keeps replacement state when deleted-entry refreshes finish %s', async (order) => {
         const firstRefresh = Promise.withResolvers<number>();
         const secondRefresh = Promise.withResolvers<number>();
         const refreshes = [firstRefresh, secondRefresh];
@@ -247,11 +289,20 @@ describe('ObservableLoanedRepository', () => {
         const second = repository.get('room-a');
         await Promise.resolve();
 
-        firstRefresh.resolve(1);
-        await expect(first).resolves.toBe(1);
-
-        secondRefresh.resolve(2);
-        await expect(second).resolves.toBe(2);
+        if (order === 'removed-first') {
+            firstRefresh.resolve(1);
+            await expect(first).resolves.toBe(1);
+            secondRefresh.resolve(2);
+            await expect(second).resolves.toBe(2);
+        }
+        else {
+            secondRefresh.resolve(2);
+            await expect(second).resolves.toBe(2);
+            await repository.whenIdle();
+            expect(repository.read('room-a')).toBe(2);
+            firstRefresh.resolve(1);
+            await expect(first).resolves.toBe(1);
+        }
         await repository.whenIdle();
 
         expect(repository.read('room-a')).toBe(2);
@@ -264,15 +315,19 @@ describe('ObservableLoanedRepository', () => {
     });
 
     it('deletes only the exact observed loaned value', async () => {
-        type Snapshot = Readonly<{ revision: number; }>;
+        interface Snapshot {
+            readonly revision: number;
+        }
         let current: Snapshot = { revision: 1 };
         const repository = new ObservableLoanedRepository<string, Snapshot>(
             async () => current
         );
-        const deleted = vi.fn();
+        const deleted: Array<ObservableKeyedValueEvent<string, Snapshot>> = [];
         const first = await repository.get('room');
 
-        repository.onDeletedDo(deleted);
+        repository.onDeletedDo((event) => {
+            deleted.push(event);
+        });
         expect(
             repository.compareAndDelete(
                 'room',
@@ -294,10 +349,10 @@ describe('ObservableLoanedRepository', () => {
         await repository.whenIdle();
 
         expect(repository.peek('room')).toBeUndefined();
-        expect(deleted).toHaveBeenCalledTimes(1);
-        expect(deleted.mock.calls[0]?.[0]).toMatchObject({
+        expect(deleted).toMatchObject([{
             key: 'room',
+            type: ObservableValueEventType.Deleted,
             previous: newer
-        });
+        }]);
     });
 });
