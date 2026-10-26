@@ -4,6 +4,7 @@ import {
     type Page
 } from '@playwright/test';
 
+import { renewRoomAfterDelayedCallbacks } from '../delayed-room-heartbeat.ts';
 import { roomBrowserTest } from '../room-browser-fixture.ts';
 
 test(
@@ -52,6 +53,31 @@ test(
         expect(transportAttempts).toContain('socket');
         await page.getByLabel('Room link', { exact: true }).scrollIntoViewIfNeeded();
         await page.screenshot({ path: testInfo.outputPath('websocket-host-recovered.png'), fullPage: true });
+    }
+);
+
+test(
+    'recovers a private arena after delayed browser callbacks and can still start a match',
+    async ({ page }, testInfo) => {
+        test.skip(process.env.RALLAR_ARENA_FULL_STACK !== '1', 'Requires the local API-v1 memory fixture.');
+        await page.clock.install();
+        const operations = await openOperations(page, '/');
+        await signIn(page, 'alice');
+        await operations.getByRole('button', { name: 'New invite-only arena', exact: true }).click();
+        const roomLink = operations.getByLabel('Room link', { exact: true });
+        await expect(roomLink).toHaveValue(/#rallar-room\?/);
+        const selected = await roomLink.inputValue();
+        await renewRoomAfterDelayedCallbacks(page, selected);
+        await expect(roomLink).toHaveValue(selected);
+        const appoint = operations.getByRole('button', { name: 'Appoint this SPA', exact: true });
+        if (await appoint.isEnabled()) {
+            await appoint.click();
+        }
+        await expect(operations.getByRole('button', { name: '1m', exact: true })).toBeEnabled();
+        await operations.getByRole('button', { name: '1m', exact: true }).click();
+        await expect(operations.locator('.match-panel strong')).toHaveText(/^[01]:\d{2}$/);
+        await roomLink.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: testInfo.outputPath('delayed-heartbeat-arena.png'), fullPage: true });
     }
 );
 

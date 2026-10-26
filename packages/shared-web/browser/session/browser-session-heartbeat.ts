@@ -1,4 +1,5 @@
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
+import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import type { BrowserOwnWsConnectionGeneration } from '@shared-web/browser/connection/browser-own-ws-connection-generation.ts';
 import type { RallarSessionHeartbeat } from '@shared-web/browser/rallar-connection-facade.ts';
 import {
@@ -9,10 +10,14 @@ import {
 import { adoptGroupSnapshotsFromHeartbeat } from '@shared-web/browser/state-cache/group-heartbeat-snapshot-adoption.ts';
 import { BROWSER_STATE_CACHE_TTL_MS } from '@shared-web/browser/state-cache/initialise-browser-cache-repositories.ts';
 import { emitBrowserStateReadDiagnostic } from '@shared-web/browser/state-read/diagnostics.ts';
+import { reconcileCompleteStateSnapshotCollections } from '@shared-web/browser/state-read/reconciliation.ts';
+import { listStateGroups } from '@shared-web/browser/state-read/state-snapshot-http-api.ts';
 import type { AuthSession, ClientInfo } from '@shared/api/api-config.ts';
+import { validateAuthoritativeGroupSnapshotList } from '@shared/api/authoritative-state-validation.ts';
 import type { ClientSession } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID, type StateScope } from '@shared/api/state-types.ts';
+import { Command } from '@shared/cache/Command.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
@@ -97,6 +102,8 @@ class BrowserStateHeartbeatRuntime {
     public readonly handle: RallarSessionHeartbeat;
     readonly #clientData: ClientInfo;
     readonly #options: InitHeartbeatOptions;
+    readonly #scope: StateScope;
+    #groupRecoveryAtEpochMs = 0;
     readonly #timers: Timers = createDefaultTimers();
     #stopped = false;
     #cancelFirstRenewal: (() => void) | undefined;
@@ -105,6 +112,7 @@ class BrowserStateHeartbeatRuntime {
     public constructor(clientData: ClientInfo, options: InitHeartbeatOptions) {
         this.#clientData = clientData;
         this.#options = options;
+        this.#scope = options.scope ?? defaultStateScope();
         this.handle = {
             sessionId: clientData.sessionId,
             generationId: crypto.randomUUID(),
@@ -113,15 +121,12 @@ class BrowserStateHeartbeatRuntime {
     }
 
     public start(): void {
+        this.#groupRecoveryAtEpochMs = this.readGroupCacheDeadline();
         const firstRenewalDelayMs = computeFirstHeartbeatRenewalDelayMs({
             nowEpochMs: this.#timers.nowMs(),
             leaseExpiresAtEpochMs: this.readOwnSessionLease()?.expiresAtEpochMs,
             accessTokenExpiresAtEpochMs: this.#options.authSession?.expiresAtEpochMs,
-            joinedGroupSnapshotsExpireAtEpochMs: readEarliestExpiry(
-                this.readJoinedGroups().map((snapshot) =>
-                    groupStateSnapshotsRepository.findGroupStateSnapshotExpiresAtByRef(snapshot.group)
-                )
-            ),
+            joinedGroupSnapshotsExpireAtEpochMs: this.#groupRecoveryAtEpochMs,
             cacheTtlMs: BROWSER_STATE_CACHE_TTL_MS,
             marginMs: SESSION_HEARTBEAT_RENEWAL_MARGIN_MS
         });
@@ -156,7 +161,7 @@ class BrowserStateHeartbeatRuntime {
             marginMs: SESSION_HEARTBEAT_RENEWAL_MARGIN_MS,
             lease: this.readOwnSessionLease()
         });
-        if (renewal === 'skip') {
+        if (renewal === 'skip' && this.#timers.nowMs() < this.#groupRecoveryAtEpochMs) {
             return;
         }
         try {
@@ -180,30 +185,74 @@ class BrowserStateHeartbeatRuntime {
     }
 
     private async refreshHeartbeat(): Promise<void> {
+        const wsConnectionGeneration = await this.#options.ownWsConnectionGeneration?.read();
+        if (!this.isCurrent()) {
+            return;
+        }
+        if (this.#timers.nowMs() >= this.#groupRecoveryAtEpochMs) {
+            await this.recoverGroupSnapshots();
+        }
+        if (!this.isCurrent()) {
+            return;
+        }
         const joinedGroups = this.readJoinedGroups();
         const refreshed = await refreshStateHeartbeat(this.#clientData, joinedGroups, {
             generationId: this.handle.generationId,
-            wsConnectionGenerationId: (await this.#options.ownWsConnectionGeneration?.read())?.right,
+            wsConnectionGenerationId: wsConnectionGeneration?.right,
             clientSnapshot: clientStateSnapshotsRepository.findClientStateSnapshotByPrincipalId(
                 this.#clientData.clientId
             ),
             authSession: this.#options.authSession,
-            scope: this.#options.scope,
+            scope: this.#scope,
             policies: this.#options.policies
         });
         if (!this.isCurrent()) {
             return;
         }
 
+        const writtenAtEpochMs = this.#timers.nowMs();
         await writeHeartbeatResult(this.#clientData, joinedGroups, refreshed);
+        this.#groupRecoveryAtEpochMs = Math.min(
+            writtenAtEpochMs + BROWSER_STATE_CACHE_TTL_MS,
+            this.readGroupCacheDeadline()
+        );
+    }
+
+    /** Cache expiry loses renewal targets, not membership. Re-read authority without admitting any room. */
+    private async recoverGroupSnapshots(): Promise<void> {
+        const observations = { clients: [], groups: this.readJoinedGroups() };
+        const snapshots = await new Command(
+            (signal) => listStateGroups(this.#scope, { signal, authSession: this.#options.authSession ?? null }),
+            { timeoutMs: this.#options.policies?.command?.timeoutMs ?? SESSION_HEARTBEAT_RETRY_MS }
+        ).run();
+        if (!this.isCurrent()) {
+            return;
+        }
+        validateAuthoritativeGroupSnapshotList(snapshots, this.#scope);
+        reconcileCompleteStateSnapshotCollections(observations, [], snapshots);
+        groupStateSnapshotsRepository.setGroupStateSnapshots(snapshots);
+    }
+
+    private readGroupCacheDeadline(): number {
+        return Math.min(
+            this.#timers.nowMs() + BROWSER_STATE_CACHE_TTL_MS,
+            readEarliestExpiry(
+                this.readJoinedGroups().map((snapshot) =>
+                    groupStateSnapshotsRepository.findGroupStateSnapshotExpiresAtByRef(snapshot.group)
+                )
+            ) ?? Number.POSITIVE_INFINITY
+        );
     }
 
     private readJoinedGroups(): GroupSnapshot[] {
         return groupStateSnapshotsRepository
             .getAllGroupStateSnapshots()
-            .filter((snapshot) => isGroupSnapshotInScope(snapshot, this.#options.scope))
+            .filter((snapshot) => isGroupSnapshotInScope(snapshot, this.#scope))
             .filter((snapshot) =>
-                snapshot.activeSessions.some((session) => session.sessionId === this.#clientData.sessionId)
+                snapshot.activeSessions.some((session) =>
+                    session.sessionId === this.#clientData.sessionId &&
+                    session.principalId === this.#clientData.clientId
+                )
             );
     }
 
@@ -280,12 +329,8 @@ async function writeHeartbeatResult(
 
 function isGroupSnapshotInScope(
     snapshot: GroupSnapshot,
-    scope: StateScope | undefined
+    scope: StateScope
 ): boolean {
-    if (!scope) {
-        return true;
-    }
-
     return snapshot.group.applicationId === scope.applicationId &&
         (snapshot.group.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID) === scope.workspaceId;
 }

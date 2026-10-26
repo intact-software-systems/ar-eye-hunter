@@ -4,6 +4,7 @@ import {
     type Page
 } from '@playwright/test';
 
+import { renewRoomAfterDelayedCallbacks } from '../delayed-room-heartbeat.ts';
 import { roomBrowserTest } from '../room-browser-fixture.ts';
 import { readSceneCanvasMetrics } from './relic-scene-observations.ts';
 
@@ -57,6 +58,29 @@ test(
         expect(transportAttempts).toContain('socket');
         await page.getByLabel('Room link', { exact: true }).scrollIntoViewIfNeeded();
         await page.screenshot({ path: testInfo.outputPath('websocket-host-recovered.png'), fullPage: true });
+    }
+);
+
+test(
+    'recovers a private expedition after delayed browser callbacks and can still begin play',
+    async ({ page }, testInfo) => {
+        test.skip(process.env.RELIC_HUNTERS_FULL_STACK !== '1', 'Requires the paired Relic server.');
+        await page.clock.install();
+        await page.goto('/');
+        await registerPrivateHunter(page, 'delayed-heartbeat');
+        await page.getByRole('button', { name: 'New invite-only room', exact: true }).click();
+        const roomLink = page.getByLabel('Room link', { exact: true });
+        await expect(roomLink).toHaveValue(/#rallar-room\?/);
+        const selected = await roomLink.inputValue();
+        await renewRoomAfterDelayedCallbacks(page, selected);
+        await expect(roomLink).toHaveValue(selected);
+        await expect(page.locator('.lobby-party-row')).toHaveCount(0);
+        await page.getByRole('button', { name: /Join as/ }).click();
+        await expect(page.locator('.lobby-party-row')).toHaveCount(1);
+        await page.locator('.lobby-begin-btn').click();
+        await expect(page.getByRole('button', { name: 'Submit Plan' })).toBeEnabled();
+        await roomLink.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: testInfo.outputPath('delayed-heartbeat-expedition.png'), fullPage: true });
     }
 );
 
