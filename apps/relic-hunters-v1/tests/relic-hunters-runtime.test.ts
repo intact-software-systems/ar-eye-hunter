@@ -543,6 +543,115 @@ describe('RelicHuntersRuntime', () => {
         expect(runtime.getState().error).toContain('leaving the previous room failed');
     });
 
+    it('keeps a created code room shareable when its cache expires before previous-room cleanup fails', async () => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = createRuntime(backend);
+        await runtime.start();
+        const room = createGroupSnapshotFixture({
+            applicationId: 'rallar-server',
+            workspaceId: 'default',
+            groupId: 'created-room',
+            sessionIds: ['alice-session']
+        });
+        const admitted = { ...room, group: { ...room.group, joinMode: 'code' as const } };
+        backend.createRoom = async () => {
+            backend.setRooms({ rooms: [], currentRoomId: undefined, members: [] });
+            throw Object.assign(new Error('Cannot remove the last owner'), {
+                name: 'RallarRoomSwitchPartialFailureError',
+                operation: 'create-and-switch',
+                joinedRoom: admitted
+            });
+        };
+        const created = runtime.getState().createRoom('code');
+        const result = expect(created).resolves.toMatchObject({ group: { groupId: 'created-room' } });
+        // Deliver the already-rejected cleanup result before the independent cache recovery.
+        await Promise.resolve();
+        backend.setRooms(stateFor('created-room'));
+        await result;
+        expect(runtime.getState()).toMatchObject({ roomId: 'created-room', connectionState: 'ready' });
+        expect(backend.commands).toEqual([]);
+    });
+
+    it('does not report a different current room as the newly created room after cleanup fails', async () => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = createRuntime(backend);
+        await runtime.start();
+        const created = createGroupSnapshotFixture({
+            applicationId: 'rallar-server',
+            workspaceId: 'default',
+            groupId: 'created-room',
+            sessionIds: ['alice-session']
+        });
+        backend.createRoom = async () => {
+            backend.setRooms(stateFor('selected-elsewhere'));
+            throw Object.assign(new Error('Cannot remove the last owner'), {
+                name: 'RallarRoomSwitchPartialFailureError',
+                operation: 'create-and-switch',
+                joinedRoom: created
+            });
+        };
+        // Both rooms still have live presence; current selection alone chooses which one the app adopts.
+        backend.waitForPresence = async (roomId) => ({
+            status: 'ready',
+            roomId,
+            activeSessionIds: ['alice-session'],
+            timedOut: false,
+            observedSessionIds: ['alice-session'],
+            missingSessionIds: [],
+            extraSessionIds: [],
+            observedCount: 1
+        });
+        await expect(runtime.getState().createRoom('code')).resolves.toBeUndefined();
+        expect(runtime.getState().roomId).toBe('selected-elsewhere');
+    });
+
+    it.each([undefined, { group: { groupId: 'missing-snapshot-fields' } }])(
+        'rejects a cleanup failure with an invalid created snapshot (%j)',
+        async (joinedRoom) => {
+            const backend = new RelicRuntimeBackend();
+            const runtime = createRuntime(backend);
+            await runtime.start();
+            backend.createRoom = async () => {
+                throw Object.assign(new Error('Invalid partial result'), {
+                    name: 'RallarRoomSwitchPartialFailureError',
+                    operation: 'create-and-switch',
+                    joinedRoom
+                });
+            };
+            await expect(runtime.getState().createRoom('code')).rejects.toThrow();
+            expect(runtime.getState().roomId).toBe('room-1');
+        }
+    );
+
+    it('preserves a real creation failure without accepting the previously selected room', async () => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = createRuntime(backend);
+        await runtime.start();
+        const failure = new Error('Room creation refused');
+        backend.createRoom = async () => {
+            throw failure;
+        };
+        await expect(runtime.getState().createRoom('code')).rejects.toBe(failure);
+        expect(runtime.getState()).toMatchObject({ roomId: 'room-1', connectionState: 'error', error: failure.message });
+    });
+
+    it('discards late creation hydration after the runtime stops', async () => {
+        const backend = new RelicRuntimeBackend();
+        backend.rejectPreviousLeave = true;
+        const runtime = createRuntime(backend);
+        await runtime.start();
+        const late = Promise.withResolvers<RelicPublicSnapshot | undefined>();
+        backend.fetchSnapshot = async () => late.promise;
+        const pending = runtime.getState().createRoom('code');
+        await vi.waitFor(() => expect(runtime.getState().roomId).toBe('created-room'));
+        runtime.stop();
+        const stopped = runtime.getState();
+        late.resolve(relicSnapshot('created-room', 25));
+        await expect(pending).resolves.toBeUndefined();
+        expect(runtime.getState()).toBe(stopped);
+        expect(backend.timers.pendingCount()).toBe(0);
+    });
+
     it('keeps creation pending until presence makes the admitted room current', async () => {
         const backend = new RelicRuntimeBackend();
         const runtime = createRuntime(backend);
@@ -703,19 +812,23 @@ describe('RelicHuntersRuntime', () => {
         expect(runtime.getState().diagnostics.lastSnapshotSource).toBe('rest-reset');
     });
 
-    it('does not expose an obsolete creation when the account changes before hydration finishes', async () => {
-        const backend = new RelicRuntimeBackend();
-        const runtime = createRuntime(backend);
-        await runtime.start();
-        const late = Promise.withResolvers<RelicPublicSnapshot | undefined>();
-        backend.fetchSnapshot = async () => late.promise;
-        const pending = runtime.getState().createRoom('code');
-        await vi.waitFor(() => expect(runtime.getState().roomId).toBe('created-room'));
-        backend.signOut();
-        late.resolve(relicSnapshot('created-room', 25));
-        await expect(pending).resolves.toBeUndefined();
-        expect(runtime.getState()).toMatchObject({ connectionState: 'signed-out', roomId: undefined, snapshot: undefined });
-    });
+    it.each([false, true])(
+        'does not expose an obsolete creation when the account changes before hydration finishes (cleanup failed: %s)',
+        async (cleanupFailed) => {
+            const backend = new RelicRuntimeBackend();
+            backend.rejectPreviousLeave = cleanupFailed;
+            const runtime = createRuntime(backend);
+            await runtime.start();
+            const late = Promise.withResolvers<RelicPublicSnapshot | undefined>();
+            backend.fetchSnapshot = async () => late.promise;
+            const pending = runtime.getState().createRoom('code');
+            await vi.waitFor(() => expect(runtime.getState().roomId).toBe('created-room'));
+            backend.signOut();
+            late.resolve(relicSnapshot('created-room', 25));
+            await expect(pending).resolves.toBeUndefined();
+            expect(runtime.getState()).toMatchObject({ connectionState: 'signed-out', roomId: undefined, snapshot: undefined });
+        }
+    );
 });
 
 function createRuntime(backend: RelicRuntimeBackend): RelicHuntersRuntime {

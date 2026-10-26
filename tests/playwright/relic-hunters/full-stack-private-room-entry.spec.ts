@@ -84,6 +84,66 @@ test(
     }
 );
 
+test(
+    'finishes sharing a code room when cached presence expires during previous-room cleanup',
+    async ({ page }, testInfo) => {
+        test.skip(process.env.RELIC_HUNTERS_FULL_STACK !== '1', 'Requires the paired Relic server.');
+        await page.clock.install();
+        await page.goto('/');
+        await registerPrivateHunter(page, 'code-recovery');
+        await page.getByRole('button', { name: 'New unlisted room', exact: true }).click();
+        const roomLink = page.getByLabel('Room link', { exact: true });
+        await expect(roomLink).toHaveValue(/#rallar-room\?/);
+        const previousLink = await roomLink.inputValue();
+        await expect(page.getByRole('button', { name: 'New code room', exact: true })).toBeEnabled();
+
+        const leavePending = Promise.withResolvers<void>();
+        const releaseLeave = Promise.withResolvers<void>();
+        const leaveDelivered = Promise.withResolvers<void>();
+        const recoveryPending = Promise.withResolvers<void>();
+        const releaseRecovery = Promise.withResolvers<void>();
+        const groupsPath = '/api/state/apps/rallar-server/workspaces/default/groups';
+        await page.route('**/groups/*/members/*/requests/*', async (route) => {
+            const response = await route.fetch();
+            expect(response.status()).toBe(403);
+            leavePending.resolve();
+            await releaseLeave.promise;
+            await route.fulfill({ response });
+            leaveDelivered.resolve();
+        });
+        await page.route((url) => url.pathname === groupsPath, async (route) => {
+            recoveryPending.resolve();
+            await releaseRecovery.promise;
+            await route.continue();
+        });
+        try {
+            await page.getByRole('button', { name: 'New code room', exact: true }).click();
+            await leavePending.promise;
+            // Expire the browser cache while the created room remains live on the server.
+            await page.clock.fastForward(65_000);
+            await recoveryPending.promise;
+            releaseLeave.resolve();
+            await leaveDelivered.promise;
+            // The cache read recovers one browser-clock second after the cleanup refusal arrives.
+            await page.clock.runFor(1_000);
+            releaseRecovery.resolve();
+            await page.clock.setSystemTime(new Date());
+            await page.clock.resume();
+            await expect(roomLink).not.toHaveValue(previousLink);
+            await expect(roomLink).toHaveValue(/joinCode=/);
+            await expect(page.locator('.lobby-party-row')).toHaveCount(0);
+            await page.getByRole('button', { name: /Join as/ }).click();
+            await expect(page.locator('.lobby-party-row')).toHaveCount(1);
+            await roomLink.scrollIntoViewIfNeeded();
+            await page.screenshot({ path: testInfo.outputPath('code-room-cache-recovered.png'), fullPage: true });
+        }
+        finally {
+            releaseLeave.resolve();
+            releaseRecovery.resolve();
+        }
+    }
+);
+
 test('retains a manual private destination through signed-out reload and cancellation', async ({ page }) => {
     await page.goto('/');
     await page.getByLabel('Room reference', { exact: true }).fill('private-expedition');
