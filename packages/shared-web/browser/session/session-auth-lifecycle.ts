@@ -37,6 +37,7 @@ import {
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
+import { Try } from '@shared/resilience/Either.ts';
 import { resolveRtcCaptureConfiguration } from '@shared/webrtc/rtc-capture-configuration.ts';
 
 import { deleteEndedSessionALRuntimeEntries } from './delete-ended-session-al-runtime-entries.ts';
@@ -90,6 +91,7 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         console.error('Error notifying Rallar state listener', error)
     );
     private readonly input: BrowserSessionAuthLifecycle.Input;
+    private loginGeneration = 0;
 
     public constructor(input: BrowserSessionAuthLifecycle.Input) {
         this.input = input;
@@ -190,6 +192,7 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         }
         this.input.sessionDeliveries.beginSession(session);
         writeSession(session);
+        this.loginGeneration += 1;
         this.input.authRuntime.endedAuthSessionKeys().delete(toAuthSessionKey(session));
         this.scheduleAuthExpiry(session);
         this.emitAuthState('login', session);
@@ -214,6 +217,11 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         }
         const currentEnd = this.input.authRuntime.readAuthEndPromise();
         if (currentEnd) {
+            if (sessionKey && !this.input.authRuntime.endedAuthSessionKeys().has(sessionKey)) {
+                // The previous session's caller owns its failure; this session still needs cleanup.
+                await captureError(() => currentEnd);
+                return await this.endAuthSession(reason, { ...options, session });
+            }
             return await currentEnd;
         }
         if (sessionKey && this.input.authRuntime.endedAuthSessionKeys().has(sessionKey)) {
@@ -336,6 +344,7 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         options: RallarAuthSessionEndOptions
     ): Promise<void> {
         const session = options.session;
+        const loginGeneration = this.loginGeneration;
         this.input.authRuntime.clearAuthExpiryTimer();
         if (session) {
             this.input.sessionDeliveries.endSession(session);
@@ -351,14 +360,26 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         // A failed state emit must not hide sign-out; replacement login during
         // cleanup or state emission must not be overwritten by old teardown.
         const stateEmitError = captureSyncError(() => this.input.emitState());
-        if (!readSession()) {
-            this.emitAuthState(reason, undefined);
-        }
+        const authReadError = this.publishAuthSessionEnd(reason, loginGeneration);
 
-        const failure = disconnectError ?? revokeError ?? dataCleanupError ?? stateEmitError;
+        const failure = disconnectError ?? revokeError ?? dataCleanupError ?? stateEmitError ?? authReadError;
         if (failure) {
             throw failure;
         }
+    }
+
+    private publishAuthSessionEnd(
+        reason: Exclude<RallarAuthChangeReason, 'current' | 'login'>,
+        loginGeneration: number
+    ): Error | undefined {
+        if (loginGeneration !== this.loginGeneration) {
+            return undefined;
+        }
+        const sessionPresent = Try.compute(() => readSession() !== undefined);
+        if (sessionPresent.right !== true) {
+            this.emitAuthState(reason, undefined);
+        }
+        return sessionPresent.left;
     }
 
     /** Resolved where it is used, so a session that ends without a connect() still reports a reset. */

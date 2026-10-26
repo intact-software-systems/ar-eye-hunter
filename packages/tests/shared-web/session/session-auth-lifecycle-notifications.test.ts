@@ -9,6 +9,7 @@ import {
 } from 'vitest';
 
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
+import * as authApi from '@shared-web/browser/auth/session-http-api.ts';
 import { BrowserFacadeRuntimeState } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
@@ -278,6 +279,181 @@ describe('Rallar auth state notifications', () => {
 
         expect(readSession()).toEqual(replacement);
         expect(closedSessionIds).toEqual([initialSession.sessionId]);
+        expect(states).toEqual([{ authenticated: true, reason: 'login', session: replacement }]);
+    });
+
+    it.each([false, true])('ends a replacement independently when previous cleanup fails: %s', async (cleanupFails) => {
+        const cleanupStarted = Promise.withResolvers<void>();
+        const cleanupFinished = Promise.withResolvers<void>();
+        const cleanupFailure = new Error('previous cleanup failed');
+        const closedSessionIds: string[] = [];
+        const revokedSessionIds: (string | undefined)[] = [];
+        vi.spyOn(authApi, 'logoutFromApi').mockImplementation(async (options) => {
+            revokedSessionIds.push(options.authSession?.sessionId);
+            return { loggedOut: true };
+        });
+        const fixture = createDefaultAuthFixture(() => {}, (session) => {
+            closedSessionIds.push(session.sessionId);
+            if (closedSessionIds.length === 1) {
+                cleanupStarted.resolve();
+                return cleanupFinished.promise;
+            }
+            return Promise.resolve();
+        });
+        const initialSession = fixture.middleware.session;
+        const replacement = { ...initialSession, sessionId: 'replacement-to-end' };
+        writeSession(initialSession);
+        const states: RallarAuthState[] = [];
+        fixture.lifecycle.onAuthChange((state) => {
+            states.push(state);
+        }, { emitCurrent: false });
+        const firstEnding = fixture.lifecycle.endAuthSession('logout', { revoke: false })
+            .then(() => undefined, (error) => error);
+        await cleanupStarted.promise;
+        await fixture.lifecycle.activateLoginSession(replacement);
+        const replacementEnding = expect(fixture.lifecycle.endAuthSession('logout', { revoke: true }))
+            .resolves.toBeUndefined();
+
+        if (cleanupFails) {
+            cleanupFinished.reject(cleanupFailure);
+        }
+        else {
+            cleanupFinished.resolve();
+        }
+        expect(await firstEnding).toBe(cleanupFails ? cleanupFailure : undefined);
+        await replacementEnding;
+
+        expect(readSession()).toBeUndefined();
+        expect(closedSessionIds).toEqual([initialSession.sessionId, replacement.sessionId]);
+        expect(revokedSessionIds).toEqual([replacement.sessionId]);
+        expect(states).toEqual([
+            { authenticated: true, reason: 'login', session: replacement },
+            { authenticated: false, reason: 'logout', session: undefined }
+        ]);
+    });
+
+    it('shares a pending termination failure for repeated requests ending the same session', async () => {
+        const cleanupStarted = Promise.withResolvers<void>();
+        const cleanupFinished = Promise.withResolvers<void>();
+        const cleanupFailure = new Error('shared cleanup failed');
+        const closedSessionIds: string[] = [];
+        const fixture = createDefaultAuthFixture(() => {}, (session) => {
+            closedSessionIds.push(session.sessionId);
+            cleanupStarted.resolve();
+            return cleanupFinished.promise;
+        });
+        writeSession(fixture.middleware.session);
+        const firstEnding = expect(fixture.lifecycle.endAuthSession('logout', { revoke: false }))
+            .rejects.toBe(cleanupFailure);
+        await cleanupStarted.promise;
+        const repeatedEnding = expect(fixture.lifecycle.endAuthSession('logout', {
+            revoke: false,
+            session: fixture.middleware.session
+        })).rejects.toBe(cleanupFailure);
+
+        cleanupFinished.reject(cleanupFailure);
+        await Promise.all([firstEnding, repeatedEnding]);
+
+        expect(readSession()).toBeUndefined();
+        expect(closedSessionIds).toEqual([fixture.middleware.session.sessionId]);
+    });
+
+    it('does not end a later login when a replacement termination waits for previous cleanup', async () => {
+        const cleanupStarted = Promise.withResolvers<void>();
+        const cleanupFinished = Promise.withResolvers<void>();
+        const closedSessionIds: string[] = [];
+        const fixture = createDefaultAuthFixture(() => {}, (session) => {
+            closedSessionIds.push(session.sessionId);
+            if (closedSessionIds.length === 1) {
+                cleanupStarted.resolve();
+                return cleanupFinished.promise;
+            }
+            return Promise.resolve();
+        });
+        const initialSession = fixture.middleware.session;
+        const replacement = { ...initialSession, sessionId: 'replacement-waiting-to-end' };
+        const latest = { ...initialSession, sessionId: 'latest-login' };
+        writeSession(initialSession);
+        const firstEnding = fixture.lifecycle.endAuthSession('logout', { revoke: false });
+        await cleanupStarted.promise;
+        await fixture.lifecycle.activateLoginSession(replacement);
+        const replacementEnding = fixture.lifecycle.endAuthSession('logout', { revoke: false });
+        await fixture.lifecycle.activateLoginSession(latest);
+
+        cleanupFinished.resolve();
+        await Promise.all([firstEnding, replacementEnding]);
+
+        expect(readSession()).toEqual(latest);
+        expect(closedSessionIds).toEqual([initialSession.sessionId, replacement.sessionId]);
+    });
+
+    it.each([false, true])('publishes sign-out on an unreadable final state, preserving cleanup failure: %s', async (cleanupFails) => {
+        const cleanupStarted = Promise.withResolvers<void>();
+        const cleanupFinished = Promise.withResolvers<void>();
+        const cleanupFailure = new Error('data cleanup failed');
+        const storageFailure = new Error('auth storage unreadable');
+        const fixture = createDefaultAuthFixture(() => {}, () => {
+            cleanupStarted.resolve();
+            return cleanupFinished.promise;
+        });
+        writeSession(fixture.middleware.session);
+        const states: RallarAuthState[] = [];
+        fixture.lifecycle.onAuthChange((state) => {
+            states.push(state);
+        }, { emitCurrent: false });
+        const ending = expect(fixture.lifecycle.endAuthSession('logout', { revoke: false }))
+            .rejects.toBe(cleanupFails ? cleanupFailure : storageFailure);
+        await cleanupStarted.promise;
+        const storedSession = vi.spyOn(localStorage, 'getItem').mockImplementation(() => {
+            throw storageFailure;
+        });
+
+        if (cleanupFails) {
+            cleanupFinished.reject(cleanupFailure);
+        }
+        else {
+            cleanupFinished.resolve();
+        }
+        await ending;
+        storedSession.mockRestore();
+
+        expect(readSession()).toBeUndefined();
+        expect(states).toEqual([{ authenticated: false, reason: 'logout', session: undefined }]);
+    });
+
+    it.each([false, true])('keeps a known replacement when storage fails after activation and cleanup fails: %s', async (cleanupFails) => {
+        const cleanupStarted = Promise.withResolvers<void>();
+        const cleanupFinished = Promise.withResolvers<void>();
+        const cleanupFailure = new Error('previous cleanup failed');
+        const fixture = createDefaultAuthFixture(() => {}, () => {
+            cleanupStarted.resolve();
+            return cleanupFinished.promise;
+        });
+        const initialSession = fixture.middleware.session;
+        const replacement = { ...initialSession, sessionId: 'known-replacement' };
+        writeSession(initialSession);
+        const states: RallarAuthState[] = [];
+        fixture.lifecycle.onAuthChange((state) => {
+            states.push(state);
+        }, { emitCurrent: false });
+        const ending = fixture.lifecycle.endAuthSession('logout', { revoke: false })
+            .then(() => undefined, (error) => error);
+        await cleanupStarted.promise;
+        await fixture.lifecycle.activateLoginSession(replacement);
+        const storedSession = vi.spyOn(localStorage, 'getItem').mockImplementation(() => {
+            throw new Error('auth storage unreadable');
+        });
+
+        if (cleanupFails) {
+            cleanupFinished.reject(cleanupFailure);
+        }
+        else {
+            cleanupFinished.resolve();
+        }
+        expect(await ending).toBe(cleanupFails ? cleanupFailure : undefined);
+        storedSession.mockRestore();
+
+        expect(readSession()).toEqual(replacement);
         expect(states).toEqual([{ authenticated: true, reason: 'login', session: replacement }]);
     });
 

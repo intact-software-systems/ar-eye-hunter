@@ -4586,6 +4586,36 @@ moved or changed test.
       }
     },
     {
+      "id": "shared-web-quick-join-unavailable-keeps-membership",
+      "domain": "Shared Web Quick Join switching",
+      "owner": "Shared Web maintainers",
+      "summary": "Unavailable Quick Join preserves membership and presence in the current room.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/quick-join-room.test.ts#preserves the current room when unavailable and sends no presence or leave mutation",
+      "coverageRelation": "The facade receives an unavailable selection response, retains the previous current-room snapshot, and issues neither a presence request nor a leave workflow.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "LeaveStateGroup workflow boundary",
+        "observableEffect": "Unavailable Quick Join preserves membership and presence in the current room.",
+        "requiredConstraint": "An unavailable selection must issue no current-room leave mutation.",
+        "failureRationale": "The browser could retain a stale current-room snapshot after accidentally revoking its server membership; checking the owned leave boundary detects that independent destructive effect."
+      }
+    },
+    {
+      "id": "shared-web-quick-join-presence-failure-keeps-membership",
+      "domain": "Shared Web Quick Join switching",
+      "owner": "Shared Web maintainers",
+      "summary": "Quick Join presence failure reports the admitted room while preserving membership and presence in the previous room.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/quick-join-room.test.ts#exposes admitted membership when presence fails without selecting another room",
+      "coverageRelation": "The facade accepts selection, receives a failing presence response, returns the admitted-room partial failure, and leaves the previous membership untouched.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "LeaveStateGroup workflow boundary",
+        "observableEffect": "Quick Join presence failure reports the admitted room while preserving membership and presence in the previous room.",
+        "requiredConstraint": "A failed presence step must issue no previous-room leave mutation.",
+        "failureRationale": "The partial failure and previous-room snapshot alone cannot prove that the server-side membership survived; the owned leave boundary must remain unused until the selected room is usable."
+      }
+    },
+    {
       "id": "shared-web-quick-join-preserve-previous-membership",
       "domain": "Shared Web Quick Join switching",
       "owner": "Shared Web maintainers",
@@ -10181,6 +10211,28 @@ moved or changed test.
     },
     {
       "id": "test-structure-coupling-e5462fcd747975d7",
+      "path": "packages/tests/shared-web/rooms/quick-join-room.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-quick-join-unavailable-keeps-membership",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The browser could retain a stale current-room snapshot after accidentally revoking its server membership; checking the owned leave boundary detects that independent destructive effect.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/quick-join-room.test.ts#preserves the current room when unavailable and sends no presence or leave mutation"
+    },
+    {
+      "id": "test-structure-coupling-cbb915d774e3f271",
+      "path": "packages/tests/shared-web/rooms/quick-join-room.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-quick-join-presence-failure-keeps-membership",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The partial failure and previous-room snapshot alone cannot prove that the server-side membership survived; the owned leave boundary must remain unused until the selected room is usable.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/quick-join-room.test.ts#exposes admitted membership when presence fails without selecting another room"
+    },
+    {
+      "id": "test-structure-coupling-c1ea6a952906cddf",
       "path": "packages/tests/shared-web/rooms/quick-join-room.test.ts",
       "kind": "mock-invocation-count-or-order",
       "contract": "shared-web-quick-join-preserve-previous-membership",
