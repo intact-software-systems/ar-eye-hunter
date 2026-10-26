@@ -1,10 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import { RallarRoomDirectory } from '@shared-web/browser/rooms/directory/rallar-room-directory.ts';
 import type { RallarAuthChangeListener } from '@shared-web/browser/session/rallar-auth-facade.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { GroupDirectoryEntry, GroupDirectoryPage, GroupDirectoryRequest } from '@shared/api/group-directory/group-directory-types.ts';
+import type {
+    GroupDirectoryEntry,
+    GroupDirectoryPage,
+    GroupDirectoryRequest
+} from '@shared/api/group-directory/group-directory-types.ts';
+
 import { createManualTimers } from '../../../shared/resilience/manual-timers.ts';
 
 const SCOPE = { applicationId: 'game', workspaceId: 'lobby' };
@@ -224,7 +233,12 @@ describe('room directory freshness', () => {
                 browser.directory.stop();
             }
         });
+        const observed: RallarRoomDirectory.State['status'][] = [];
+        browser.directory.onChange((state) => {
+            observed.push(state.status);
+        });
         await browser.directory.start();
+        expect(observed).toEqual(['idle', 'loading', 'idle']);
         expect(browser.requests).toHaveLength(1);
         expect(browser.timers.pendingCount()).toBe(0);
         await browser.timers.advance(60_000);

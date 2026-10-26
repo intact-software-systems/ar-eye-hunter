@@ -1,12 +1,14 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupDirectoryEntry, GroupDirectoryOrder } from '@shared/api/group-directory/group-directory-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import { SingleFlight } from '@shared/resilience/single-flight.ts';
 import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import { createDefaultTimers, type Timers } from '@shared/resilience/timers.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+
 import { toAuthSessionKey } from '../../auth/to-auth-session-key.ts';
-import { BrowserRallarSubscriptionScope, notifyListener } from '../../messages/rallar-listener-delivery.ts';
+import { BrowserRallarSubscriptionScope } from '../../messages/rallar-listener-delivery.ts';
 import type { RallarStateListener, RallarUnsubscribe } from '../../rallar-shared-contracts.ts';
 import type { RallarAuthFacade } from '../../session/rallar-auth-facade.ts';
 import type { BrowserRallarRooms } from '../browser-rallar-rooms.ts';
@@ -63,7 +65,9 @@ export class RallarRoomDirectory {
     private request: RallarRoomDirectory.Request;
     private state: RallarRoomDirectory.State = { status: 'idle', entries: [], error: undefined };
     private settledState = this.state;
-    private readonly listeners = new Set<RallarStateListener<RallarRoomDirectory.State>>();
+    private readonly notifications = new SynchronousNotifications<RallarRoomDirectory.State>((error) => {
+        console.error('Error notifying room directory listener', error);
+    });
     private readonly flights = new SingleFlight<number, void>();
     private subscriptions: BrowserRallarSubscriptionScope | undefined;
     private stopRepeating: (() => void) | undefined;
@@ -115,11 +119,7 @@ export class RallarRoomDirectory {
     }
 
     public onChange(listener: RallarStateListener<RallarRoomDirectory.State>): RallarUnsubscribe {
-        this.listeners.add(listener);
-        notifyListener(listener, this.state);
-        return () => {
-            this.listeners.delete(listener);
-        };
+        return this.notifications.subscribeAndNotify(listener, this.state).unsubscribe;
     }
 
     public start(): Promise<void> {
@@ -298,12 +298,7 @@ export class RallarRoomDirectory {
 
     private publish(state: RallarRoomDirectory.State): void {
         this.state = state;
-        for (const listener of this.listeners) {
-            notifyListener(listener, state);
-            if (this.state !== state) {
-                return;
-            }
-        }
+        this.notifications.publishLatest(state);
     }
 }
 
