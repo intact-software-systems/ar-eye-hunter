@@ -16,8 +16,8 @@
     "jsr:@std/yaml@*": "1.0.12",
     "jsr:@std/yaml@1.0.12": "1.0.12",
     "npm:@babel/parser@^8.0.4": "8.0.4",
-    "npm:@babylonjs/core@9.17.0": "9.17.0",
-    "npm:@babylonjs/loaders@9.17.0": "9.17.0_@babylonjs+core@9.17.0_babylonjs-gltf2interface@9.17.0",
+    "npm:@babylonjs/core@9.18.1": "9.18.1",
+    "npm:@babylonjs/loaders@9.18.1": "9.18.1_@babylonjs+core@9.18.1_babylonjs-gltf2interface@9.22.2",
     "npm:@electric-sql/pglite@0.5.4": "0.5.4",
     "npm:@js-temporal/polyfill@~0.5.1": "0.5.1",
     "npm:@mlc-ai/web-llm@~0.2.84": "0.2.84",
@@ -130,11 +130,11 @@
         "@babel/helper-validator-identifier"
       ]
     },
-    "@babylonjs/core@9.17.0": {
-      "integrity": "sha512-+yXYuQC6l9FbVeGWtYd4mcY3IJsfDc/R5Re6YtVT1t3ox3WgfaOVYMTjlUcqrG35wp6FbIANqVcos5EPt/IF8A=="
+    "@babylonjs/core@9.18.1": {
+      "integrity": "sha512-i0vnC6twHXhg2CmD+PSboRLUcTO4kxhrYvT1mY90zEqezM06QyL2Stix2u1YJ0y607fYdIl5XJuyfmPdbJfZSw=="
     },
-    "@babylonjs/loaders@9.17.0_@babylonjs+core@9.17.0_babylonjs-gltf2interface@9.17.0": {
-      "integrity": "sha512-Z0XiIzA+v4EJ1L2Miu39LN3gdQpFEuocTCc0NRFnFIC+f5X2D06UkYay1jF26PmKpPQFVSLjUBr1if3tXBLpVA==",
+    "@babylonjs/loaders@9.18.1_@babylonjs+core@9.18.1_babylonjs-gltf2interface@9.22.2": {
+      "integrity": "sha512-qng+KQjChHrSTK326ijPV5USViekCFApiJcbWJh355X337fpm+aWGts6uD21Qi5Z62uF9aBlGJk3ouv07Qhfsg==",
       "dependencies": [
         "@babylonjs/core",
         "babylonjs-gltf2interface"
@@ -989,8 +989,8 @@
     "aws-ssl-profiles@1.1.2": {
       "integrity": "sha512-NZKeq9AfyQvEeNlN0zSYAaWrmBffJh3IELMZfRpJVWgrpEbtEpnjvzqBPf+mxoI287JohRDoa+/nsfqqiZmF6g=="
     },
-    "babylonjs-gltf2interface@9.17.0": {
-      "integrity": "sha512-nqiTh0w/9MODhsa4K4YWGRSXsGgUyPLevcexn4gYEsCxMSYQm48wm9NhXaw+DtvSQTtmh8JL0nqqFYNTyinACw=="
+    "babylonjs-gltf2interface@9.22.2": {
+      "integrity": "sha512-+91oRaxjzWja+//E0uestbku8OIWcrd3vfMFsINjZ7/MroAPrKIHW8/J95mOCSJhS8Vyr/T7otRE03AxEdopHA=="
     },
     "balanced-match@4.0.4": {
       "integrity": "sha512-BLrgEcRTwX2o6gGxGOCNyMvGSp35YofuYzw9h1IMTRmKqttAZZVU67bdb9Pr2vUHA8+j3i2tJfjO6C6+4myGTA=="
@@ -2391,7 +2391,7 @@
       "apps/ar-eye-hunter-v1": {
         "packageJson": {
           "dependencies": [
-            "npm:@babylonjs/core@9.17.0",
+            "npm:@babylonjs/core@9.18.1",
             "npm:@js-temporal/polyfill@~0.5.1",
             "npm:@mlc-ai/web-llm@~0.2.84",
             "npm:@types/react-dom@^19.2.3",
@@ -2435,8 +2435,8 @@
       "apps/relic-hunters-v1": {
         "packageJson": {
           "dependencies": [
-            "npm:@babylonjs/core@9.17.0",
-            "npm:@babylonjs/loaders@9.17.0",
+            "npm:@babylonjs/core@9.18.1",
+            "npm:@babylonjs/loaders@9.18.1",
             "npm:@js-temporal/polyfill@~0.5.1",
             "npm:@types/react-dom@^19.2.3",
             "npm:@types/react@^19.2.17",
