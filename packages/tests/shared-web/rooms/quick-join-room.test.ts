@@ -1,13 +1,20 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import {
     createRoomSnapshot,
     getRoomWorkflowMocks,
-    mockRoomLeaveSuccess,
     rejectLeaveWith,
     resetRoomWorkflowTestRuntime,
     seedRoomSnapshots
@@ -44,9 +51,13 @@ describe('Quick Join through the browser facade and HTTP workflow', () => {
         const admitted = createRoomSnapshot('selected', []);
         const connected = createRoomSnapshot('selected', ['session-1']);
         seedRoomSnapshots([previous]);
-        mockRoomLeaveSuccess(createRoomSnapshot('previous', []));
-        respond((call) => isSelection(call) ? json({ status: 'joined', snapshot: admitted }) : json(connected));
         const facade = createRallarFacade();
+        const currentWhenLeaving: (GroupSnapshot | undefined)[] = [];
+        runtime.leaveStateGroup.mockImplementation(async () => {
+            currentWhenLeaving.push(facade.rooms.current());
+            return createRoomSnapshot('previous', []);
+        });
+        respond((call) => isSelection(call) ? json({ status: 'joined', snapshot: admitted }) : json(connected));
 
         await expect(facade.rooms.quickJoin({ scope, kind: 'room', q: 'eye hunter', includeEmpty: true }))
             .resolves.toEqual({ status: 'joined', snapshot: connected });
@@ -56,7 +67,7 @@ describe('Quick Join through the browser facade and HTTP workflow', () => {
         expect(requests[0].url).toMatch(/\/apps\/app-1\/workspaces\/workspace-1\/groups\/quick-join\/requests\//);
         expect(requests[1]).toMatchObject({ method: 'PUT', body: { principalId: 'principal-1', generationId: 'generation-session-1' } });
         expect(requests[1].url).toMatch(/\/groups\/selected\/sessions\/session-1\/requests\//);
-        expect(runtime.operationLog).toEqual(['hydrate:selected', 'leave:previous', 'hydrate:previous']);
+        expect(currentWhenLeaving).toEqual([connected]);
         expect(facade.rooms.current()).toEqual(connected);
     });
 
@@ -71,7 +82,7 @@ describe('Quick Join through the browser facade and HTTP workflow', () => {
 
         expect(requests).toHaveLength(1);
         expect(requests[0].body).toEqual({});
-        expect(runtime.operationLog).toEqual([]);
+        expect(runtime.leaveStateGroup).not.toHaveBeenCalled();
         expect(facade.rooms.current()).toBe(previous);
     });
 
@@ -112,7 +123,7 @@ describe('Quick Join through the browser facade and HTTP workflow', () => {
         });
 
         expect(requests).toHaveLength(2);
-        expect(runtime.operationLog).toEqual([]);
+        expect(runtime.leaveStateGroup).not.toHaveBeenCalled();
         expect(facade.rooms.current()).toBe(previous);
     });
 
@@ -135,7 +146,7 @@ describe('Quick Join through the browser facade and HTTP workflow', () => {
         });
 
         expect(requests).toHaveLength(stage === 'selection' ? 1 : 2);
-        expect(runtime.operationLog).toEqual([]);
+        expect(runtime.leaveStateGroup).not.toHaveBeenCalled();
         expect(facade.rooms.current()).toBeUndefined();
     });
 
@@ -178,15 +189,17 @@ describe('Quick Join through the browser facade and HTTP workflow', () => {
                 clientId: 'replacement-principal',
                 sessionId: 'replacement-session'
             });
-        const connect = vi.fn(async () => {
+        let connections = 0;
+        const connect = async () => {
+            ++connections;
             if (
-                (stage === 'initial-connect' && connect.mock.calls.length === 1) ||
-                (stage === 'connect' && connect.mock.calls.length === 2)
+                (stage === 'initial-connect' && connections === 1) ||
+                (stage === 'connect' && connections === 2)
             ) {
                 replaceSession();
             }
-            return { ...runtime.context, session: runtime.readSession() };
-        });
+            return { ...runtime.context, session: requireSession() };
+        };
         const adopted: string[] = [];
         respond((call) => {
             if (
@@ -217,7 +230,7 @@ describe('Quick Join through the browser facade and HTTP workflow', () => {
             options: { scope },
             stateStore,
             connect,
-            requireSession: runtime.readSession,
+            requireSession,
             resolveOperationOptions: (options) => options,
             resolveOperationScope: (requested) => requested ?? scope,
             resolveDefaultRoomRef: () => current?.group,
@@ -282,6 +295,14 @@ describe('Quick Join through the browser facade and HTTP workflow', () => {
         expect(requests).toHaveLength(2);
     });
 });
+
+function requireSession(): AuthSession {
+    const session = runtime.readSession();
+    if (!session) {
+        throw new Error('This room workflow requires an authenticated session.');
+    }
+    return session;
+}
 
 function respond(handler: (call: RequestCall) => Response): void {
     vi.stubGlobal('fetch', async (url: RequestInfo | URL, init?: RequestInit) => {

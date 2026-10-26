@@ -37,6 +37,44 @@ test('rejects a private link for another application without admitting a room', 
     expect(admissions).toEqual([]);
 });
 
+test(
+    'switches accounts through Logout and keeps the replacement expedition after reload',
+    async ({ page }, testInfo) => {
+        test.skip(
+            !['1', 'true'].includes(process.env.RELIC_HUNTERS_FULL_STACK ?? ''),
+            'Requires the paired Relic server.'
+        );
+        await page.goto('/');
+        const previousUsername = await registerPrivateHunter(page, 'previous');
+        await expect(page.locator('.profile-row strong')).toHaveText(previousUsername);
+        await expect(page.getByRole('button', { name: 'New unlisted room', exact: true })).toBeEnabled();
+        await page.getByRole('button', { name: 'New unlisted room', exact: true }).click();
+        const roomLink = page.getByLabel('Room link', { exact: true });
+        await expect(roomLink).toHaveValue(/#rallar-room\?/);
+        const previousRoomLink = await roomLink.inputValue();
+
+        await page.getByRole('button', { name: 'Logout', exact: true }).click();
+        await expect(page.getByRole('button', { name: 'Enter', exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'New Room', exact: true })).toHaveCount(0);
+        await expect(roomLink).toHaveCount(0);
+        expect(await page.evaluate(() => localStorage.getItem('auth.session') === null)).toBe(true);
+
+        const replacementUsername = await registerPrivateHunter(page, 'replacement');
+        await expect(page.locator('.profile-row strong')).toHaveText(replacementUsername);
+        await expect(page.getByRole('button', { name: 'New Room', exact: true })).toBeEnabled();
+        await page.getByRole('button', { name: 'New Room', exact: true }).click();
+        await expect(roomLink).toHaveValue(/#rallar-room\?/);
+        await expect(roomLink).not.toHaveValue(previousRoomLink);
+        const replacementRoomLink = await roomLink.inputValue();
+        await page.reload();
+        await expect(page.locator('.profile-row strong')).toHaveText(replacementUsername);
+        await expect(roomLink).toHaveValue(replacementRoomLink);
+        await expect(page.getByRole('button', { name: /Join as/ })).toBeVisible();
+        await page.locator('.profile-row strong').scrollIntoViewIfNeeded();
+        await page.screenshot({ path: testInfo.outputPath('replacement-account-expedition.png'), fullPage: true });
+    }
+);
+
 roomBrowserTest(
     'shares a code expedition, plays together, and returns after code rotation',
     async ({ browser, page: hostPage, guest: guestPage }, testInfo) => {
@@ -376,14 +414,16 @@ test(
     }
 );
 
-async function registerPrivateHunter(page: Page, role: string): Promise<void> {
+async function registerPrivateHunter(page: Page, role: string): Promise<string> {
     const suffix = crypto.randomUUID();
+    const username = `${role}-${suffix}`;
     await page.getByRole('button', { name: 'Register', exact: true }).click();
-    await page.getByLabel('Username', { exact: true }).fill(`${role}-${suffix}`);
+    await page.getByLabel('Username', { exact: true }).fill(username);
     await page.getByLabel('Display name', { exact: true }).fill(role);
     await page.getByLabel('Password', { exact: true }).fill(`private-room-${suffix}`);
     await page.getByRole('button', { name: 'Create Hunter', exact: true }).click();
     await expect(page.getByRole('button', { name: 'New Room', exact: true })).toBeVisible();
+    return username;
 }
 
 async function playPrivateExpedition(host: Page, guest: Page): Promise<void> {
