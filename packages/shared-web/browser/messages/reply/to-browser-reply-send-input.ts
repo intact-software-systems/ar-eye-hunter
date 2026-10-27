@@ -6,8 +6,10 @@ import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-co
 import { AL_CHANNEL_SEND_DEFAULTS } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 
 /**
- * A unicast to the requester's session in the request's route and room, on the `command` purpose's delivery defaults;
- * a request that named no room is answered outside any room, never in the responder's default room.
+ * A unicast to the requester's session on the request's topic and in its room, on the `command` purpose's delivery
+ * defaults. A room unicast routes in its room id whatever context the request used, since the sender and the server
+ * both refuse any other; the requester matches on `replyToMsgId`, never the route. A request that named no room is
+ * answered outside any room, never in the responder's default room.
  */
 export function toBrowserReplySendInput<R>(
     request: ALMessage,
@@ -21,7 +23,7 @@ export function toBrowserReplySendInput<R>(
         scope: roomRef === undefined ? 'world' : 'room',
         roomRef,
         topicId: request.route.topicId,
-        contextId: request.route.contextId,
+        contextId: roomRef?.groupId ?? request.route.contextId,
         typeId: options?.typeId ?? request.payload.typeId,
         payload,
         reliability: defaults.reliability,

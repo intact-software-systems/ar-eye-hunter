@@ -9,7 +9,10 @@ import type {
     BrowserWebSocketInboxHandler
 } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
+import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { describe, expect, it, vi } from 'vitest';
+import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
 describe('browser Rallar message subscriptions', () => {
     it('cleans subscription scopes once and immediately cleans late additions', () => {
@@ -96,13 +99,38 @@ describe('browser Rallar message subscriptions', () => {
         await fixture.deliver(toWsMessage('message-2', undefined));
 
         expect(received).toEqual(['message-2']);
+        expect(fixture.diagnostics).toEqual([]);
+    });
+
+    it('drops a reply that arrives over RTC with a payload-free diagnostic, since replies travel over WS', async () => {
+        const fixture = createSubscriptionsFixture();
+        const received: string[] = [];
+        fixture.subscriptions.subscribe('rtc', 'app.ask.v1', (message) => {
+            received.push(message.raw.id.msgId);
+        });
+
+        await fixture.deliverRtc(toWsMessage('reply-1', 'request-1'));
+
+        expect(received).toEqual([]);
+        expect(fixture.diagnostics).toEqual([{
+            kind: 'reply-late',
+            msgId: 'reply-1',
+            replyToMsgId: 'request-1',
+            corrId: 'request-1',
+            typeId: 'app.ask.v1',
+            senderId: 'peer-1',
+            carrier: 'rtc',
+            cause: 'unobserved'
+        }]);
     });
 });
 
 interface SubscriptionsFixture {
     readonly subscriptions: BrowserRallarMessageSubscriptions;
     readonly sendReply: ReturnType<typeof vi.fn<RallarMessageReplySender>>;
+    readonly diagnostics: ALInboundRuntimeDiagnosticsEvent[];
     deliver(message: ALMessage): Promise<void>;
+    deliverRtc(message: ALMessage): Promise<void>;
 }
 
 function createSubscriptionsFixture(): SubscriptionsFixture {
@@ -118,17 +146,31 @@ function createSubscriptionsFixture(): SubscriptionsFixture {
     };
     const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, retainTerminalMs: 60_000, maxEntries: 512, cancel: () => {} });
     const sendReply = vi.fn<RallarMessageReplySender>(async (request) => await Promise.resolve(registry.open(request, 'ws')));
+    const middleware = createDefaultApiMiddlewareTestDouble();
+    const rtcCallbacks: Parameters<typeof middleware.middleware.rtcRxStreamer.onInboxMessageDo>[1][] = [];
+    vi.mocked(middleware.middleware.rtcRxStreamer.onInboxMessageDo).mockImplementation((_typeId, callback) => {
+        rtcCallbacks.push(callback);
+        return middleware.middleware.rtcRxStreamer;
+    });
+    const diagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
     const subscriptions = new BrowserRallarMessageSubscriptions({
         wsInbox,
         sendReply,
-        readMiddleware: () => undefined
+        readMiddleware: () => middleware,
+        readInboundDiagnostics: () => (event) => diagnostics.push(event)
     });
     return {
         subscriptions,
         sendReply,
+        diagnostics,
         deliver: async (message) => {
             for (const handler of handlers.values()) {
                 await handler.onMessage(message);
+            }
+        },
+        deliverRtc: async (message) => {
+            for (const callback of rtcCallbacks) {
+                await callback.onMessage(message, toResourceEntry(message.payload.typeId, {}));
             }
         }
     };

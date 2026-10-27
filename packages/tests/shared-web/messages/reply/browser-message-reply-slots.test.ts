@@ -73,12 +73,18 @@ describe('BrowserMessageReplySlots', () => {
             }
         );
 
-        it.each(['acknowledged', 'transport-accepted'] as const)(
-            'arms a wait for a request %s, since its reply can still come',
-            async (state) => {
+        it.each(
+            [
+                ['acknowledged', 'receipted'],
+                ['transport-accepted', 'receipted'],
+                ['transport-accepted', 'best-effort']
+            ] as const
+        )(
+            'arms a wait for a request %s (%s), since its reply can still come',
+            async (state, receipt) => {
                 const slots = openSlots(UNICAST_REQUEST);
 
-                const pending = slots.awaitReply(REQUEST_ID, () => toLifecycle(state), { timeoutMs: 1_000 });
+                const pending = slots.awaitReply(REQUEST_ID, () => toLifecycle(state, receipt), { timeoutMs: 1_000 });
 
                 expect(slots.hasOpenWait(REQUEST_ID)).toBe(true);
                 expect(vi.getTimerCount()).toBe(1);
@@ -188,17 +194,53 @@ describe('BrowserMessageReplySlots', () => {
             expect(slots.record(toReply('reply-1', 'responder-1'))).toEqual({ kind: 'matched' });
         });
 
-        it.each(['queued', 'transport-accepted', 'acknowledged'] as const)(
-            'keeps open waits when the request lifecycle reaches %s',
-            (state) => {
+        it.each(
+            [
+                ['queued', 'receipted'],
+                ['transport-accepted', 'receipted'],
+                ['transport-accepted', 'best-effort'],
+                ['acknowledged', 'receipted']
+            ] as const
+        )(
+            'keeps open waits when the request lifecycle reaches %s (%s)',
+            (state, receipt) => {
                 const slots = openSlots(UNICAST_REQUEST);
                 void slots.awaitReply(REQUEST_ID, () => toLifecycle('queued'), { timeoutMs: 1_000 });
 
-                slots.settleLifecycle(REQUEST_ID, toLifecycle(state));
+                slots.settleLifecycle(REQUEST_ID, toLifecycle(state, receipt));
 
                 expect(slots.hasOpenWait(REQUEST_ID)).toBe(true);
             }
         );
+    });
+
+    describe('a lifecycle settled while a reply or a timeout is being delivered', () => {
+        it('resolves every wait replied even when reading a wait\'s lifecycle ends the request', async () => {
+            const slots = openSlots(UNICAST_REQUEST);
+            const lapsing = createLapsingLifecycle(slots);
+            const first = slots.awaitReply(REQUEST_ID, lapsing.read, { timeoutMs: 1_000 });
+            const second = slots.awaitReply(REQUEST_ID, lapsing.read, { timeoutMs: 1_000 });
+            const reply = toReply('reply-1', 'responder-1');
+            lapsing.lapse();
+
+            slots.record(reply);
+
+            expect(await first).toEqual({ status: 'replied', reply, lifecycle: toLifecycle('expired') });
+            expect(await second).toEqual({ status: 'replied', reply, lifecycle: toLifecycle('expired') });
+        });
+
+        it('resolves every wait timeout even when reading a wait\'s lifecycle ends the request', async () => {
+            const slots = openSlots(UNICAST_REQUEST);
+            const lapsing = createLapsingLifecycle(slots);
+            const first = slots.awaitReply(REQUEST_ID, lapsing.read, { timeoutMs: 100 });
+            const second = slots.awaitReply(REQUEST_ID, lapsing.read, { timeoutMs: 1_000 });
+            lapsing.lapse();
+
+            await vi.advanceTimersByTimeAsync(100);
+
+            expect(await first).toEqual({ status: 'timeout', lifecycle: toLifecycle('expired') });
+            expect(await second).toEqual({ status: 'timeout', lifecycle: toLifecycle('expired') });
+        });
     });
 
     describe('release', () => {
@@ -243,18 +285,36 @@ describe('BrowserMessageReplySlots', () => {
     });
 });
 
+/** Models the registry's lazy deadline: once lapsed, a read publishes `expired` back into the slots. */
+function createLapsingLifecycle(slots: BrowserMessageReplySlots): Readonly<{ read(): ALDeliveryLifecycle; lapse(): void; }> {
+    let lapsed = false;
+    return {
+        read: () => {
+            if (!lapsed) {
+                return toLifecycle('queued');
+            }
+            slots.settleLifecycle(REQUEST_ID, toLifecycle('expired'));
+            return toLifecycle('expired');
+        },
+        lapse: () => {
+            lapsed = true;
+        }
+    };
+}
+
 function openSlots(request: BrowserMessageReplySlots.Request): BrowserMessageReplySlots {
     const slots = new BrowserMessageReplySlots();
     slots.open(request);
     return slots;
 }
 
-function toLifecycle(state: ALDeliveryState): ALDeliveryLifecycle {
+/** `best-effort` asks for no receipt, so its `transport-accepted` is terminal. */
+function toLifecycle(state: ALDeliveryState, receipt: 'receipted' | 'best-effort' = 'receipted'): ALDeliveryLifecycle {
     const initial = createInitialALDeliveryLifecycle({
         msgId: REQUEST_ID,
         typeId: 'app.ask.v1',
-        ackMode: 'receiver',
-        receiptAlgo: 'receiver',
+        ackMode: receipt === 'receipted' ? 'receiver' : 'none',
+        receiptAlgo: receipt === 'receipted' ? 'receiver' : 'none',
         expiresAtMs: undefined,
         submittedAtMs: 0
     });

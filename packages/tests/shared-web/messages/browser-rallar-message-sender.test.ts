@@ -592,6 +592,31 @@ describe('the send correlation and the reply path', () => {
         expect(handle).toMatchObject({ corrId: 'corr-0', replyToMsgId: request.id.msgId });
     });
 
+    it('routes a reply to a room request in the room it names, whatever context the request used', async () => {
+        const fixture = createBrowserMessageSenderFixture();
+        const ws = captureEnvelopes(fixture.middleware.middleware.webSocketQueueBox);
+        const request = toRoomRequest({ contextId: 'custom' });
+
+        await fixture.sender.sendReply(request, { answer: 42 }, undefined);
+
+        expect(ws[0]).toMatchObject({
+            route: { topicId: 'room.ask', contextId: ROOM_REF.groupId },
+            targets: { mode: 'unicast', toPeerId: 'requester-1', groupRef: ROOM_REF },
+            actions: { corrId: request.id.msgId, replyToMsgId: request.id.msgId }
+        });
+    });
+
+    it('refuses a reply to a request whose topic WS cannot carry, before queueing', async () => {
+        const fixture = createBrowserMessageSenderFixture();
+        const ws = captureEnvelopes(fixture.middleware.middleware.webSocketQueueBox);
+        const request = toRoomRequest({ topicId: 'ask' });
+
+        const replying = fixture.sender.sendReply(request, { answer: 42 }, undefined);
+
+        await expect(replying).rejects.toMatchObject({ issues: [expect.objectContaining({ path: '$.topicId' })] });
+        expect(ws).toEqual([]);
+    });
+
     it('lets the reply name its own type and lifetime', async () => {
         const fixture = createBrowserMessageSenderFixture();
         const ws = captureEnvelopes(fixture.middleware.middleware.webSocketQueueBox);
@@ -632,10 +657,10 @@ describe('the send correlation and the reply path', () => {
         return envelopes;
     }
 
-    function toRoomRequest(input: Readonly<{ corrId?: string; }>): ALMessage {
+    function toRoomRequest(input: Readonly<{ corrId?: string; contextId?: string; topicId?: string; }>): ALMessage {
         return newALMulticastMessage(
             'requester-1',
-            newALRoute('room.ask', 'room', 'resource-1'),
+            newALRoute(input.topicId ?? 'room.ask', input.contextId ?? 'room', 'resource-1'),
             ROOM_REF,
             'app.ask.v1',
             { question: 'ping' },

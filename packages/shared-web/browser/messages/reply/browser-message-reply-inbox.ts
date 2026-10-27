@@ -1,14 +1,12 @@
 import type { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
-import type { BrowserMessageReplySlots } from '@shared-web/browser/messages/reply/browser-message-reply-slots.ts';
+import { toBrowserReplyDropDiagnostic } from '@shared-web/browser/messages/reply/to-browser-reply-drop-diagnostic.ts';
 import { toRallarMessage, type RallarMessageReplySender } from '@shared-web/browser/messages/to-rallar-message.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { BrowserWebSocketInbox } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { toALCorrId } from '@shared/al-contracts/reply/to-al-reply-actions.ts';
 import {
     recordALInboundDiagnostic,
-    type ALInboundRuntimeDiagnosticsEvent,
     type ALInboundRuntimeDiagnosticsSink
 } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 
@@ -32,7 +30,6 @@ export class BrowserMessageReplyInbox {
         this.input = input;
     }
 
-    /** Subscribes the WS inbox as `message-replies` at order 15. */
     start(): RallarUnsubscribe {
         return this.input.wsInbox.subscribe({
             id: 'message-replies',
@@ -52,29 +49,8 @@ export class BrowserMessageReplyInbox {
         if (admission.kind !== 'matched') {
             recordALInboundDiagnostic(
                 this.input.readInboundDiagnostics(),
-                toReplyDropDiagnostic({ message, replyToMsgId, admission })
+                toBrowserReplyDropDiagnostic({ message, replyToMsgId, carrier: 'ws', admission })
             );
         }
     }
-}
-
-interface ReplyDrop {
-    readonly message: ALMessage;
-    readonly replyToMsgId: string;
-    readonly admission: Exclude<BrowserMessageReplySlots.Admission, Readonly<{ kind: 'matched'; }>>;
-}
-
-/** Payload-free: a dropped reply states its identity and why it was dropped, never what it carried. */
-function toReplyDropDiagnostic({ message, replyToMsgId, admission }: ReplyDrop): ALInboundRuntimeDiagnosticsEvent {
-    const identity = {
-        msgId: message.id.msgId,
-        replyToMsgId,
-        corrId: toALCorrId(message),
-        typeId: message.payload.typeId,
-        senderId: message.id.senderId,
-        carrier: 'ws'
-    } as const;
-    return admission.kind === 'late'
-        ? { kind: 'reply-late', ...identity, cause: admission.cause }
-        : { kind: 'reply-wrong-responder', ...identity, expectedSenderId: admission.expectedSenderId };
 }

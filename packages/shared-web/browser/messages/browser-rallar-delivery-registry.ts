@@ -176,7 +176,7 @@ export class BrowserRallarDeliveryRegistry {
     releaseAll(): void {
         for (const { observation } of [...this.entries.values()]) {
             this.releaseObservation(observation);
-            this.slots.release(observation.msgId, observation.lifecycle);
+            this.slots.endWaits(observation.msgId, observation.lifecycle);
         }
     }
 
@@ -397,14 +397,14 @@ export class BrowserRallarDeliveryRegistry {
                 break;
             }
             this.entries.delete(msgId);
+            this.slots.release(msgId, computeALDeliveryUnobservable(entry.observation.lifecycle));
             evicted.push(entry.observation);
         }
 
-        // Listeners run only once the map has settled: one that re-sends on `unobservable`
-        // re-enters `open()`, and it must not do that inside a live eviction.
+        // Listeners run only once the map and the slots have settled: one that re-sends on `unobservable`
+        // re-enters `open()`, and it must not do that inside a live eviction, nor lose the slot it opens.
         for (const observation of evicted) {
             this.releaseObservation(observation);
-            this.slots.release(observation.msgId, observation.lifecycle);
         }
     }
 }

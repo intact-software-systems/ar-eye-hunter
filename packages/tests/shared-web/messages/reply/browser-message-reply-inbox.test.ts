@@ -73,6 +73,22 @@ describe('BrowserMessageReplyInbox', () => {
         }]);
     });
 
+    it('emits reply-late timed-out for a reply after the wait timed out', async () => {
+        const fixture = createReplyInboxFixture();
+        const pending = fixture.openRequest('responder-1').awaitReply({ timeoutMs: 100 });
+        await vi.advanceTimersByTimeAsync(100);
+        await pending;
+
+        await fixture.deliver(toReplyMessage('reply-1', 'responder-1', REQUEST_ID));
+
+        expect(fixture.diagnostics).toEqual([expect.objectContaining({
+            kind: 'reply-late',
+            msgId: 'reply-1',
+            carrier: 'ws',
+            cause: 'timed-out'
+        })]);
+    });
+
     it('emits reply-late unobserved for a reply to a request it never observed', async () => {
         const fixture = createReplyInboxFixture();
 

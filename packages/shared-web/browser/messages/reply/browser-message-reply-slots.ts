@@ -39,7 +39,6 @@ interface ReplyWaitStart {
 
 interface ReplyWait {
     readonly readLifecycle: () => ALDeliveryLifecycle;
-    /** Drops the wait from its slot, clears its timer and abort listener, then resolves it. */
     end(outcome: ReplyOutcome): void;
 }
 
@@ -82,10 +81,22 @@ export class BrowserMessageReplySlots {
         return await this.readReply(msgId, readLifecycle, options) as RallarMessageReplyOutcome<T>;
     }
 
-    /** Resolves the request's open waits `undelivered` once its lifecycle is terminal and not delivered. */
+    /**
+     * Resolves an open slot's waits `undelivered` once the request's lifecycle is terminal and not delivered. A slot a
+     * reply or a timeout already closed is left alone: reading a wait's lifecycle while delivering that outcome can
+     * apply a lapsed deadline and land here.
+     */
     settleLifecycle(msgId: string, lifecycle: ALDeliveryLifecycle): void {
         const slot = this.slots.get(msgId);
-        if (slot !== undefined && isReplyUndeliverable(lifecycle)) {
+        if (slot?.state === 'open' && isReplyUndeliverable(lifecycle)) {
+            endWaits(slot, { status: 'undelivered', lifecycle });
+        }
+    }
+
+    /** Session end: open waits resolve `undelivered`, and the slot keeps any reply for as long as the registry retains it. */
+    endWaits(msgId: string, lifecycle: ALDeliveryLifecycle): void {
+        const slot = this.slots.get(msgId);
+        if (slot !== undefined) {
             endWaits(slot, { status: 'undelivered', lifecycle });
         }
     }
@@ -127,7 +138,6 @@ export class BrowserMessageReplySlots {
         });
     }
 
-    /** The only place a timer exists: one for the caller's timeout, besides one abort listener. */
     private startWait(start: ReplyWaitStart): void {
         const { slot, readLifecycle, options, resolve } = start;
         this.waitCount += 1;
@@ -152,9 +162,10 @@ export class BrowserMessageReplySlots {
     }
 }
 
-/** `acknowledged` is the one terminal state in which the request reached its addressee. */
+/** A request terminal `acknowledged`, or `transport-accepted` without a receipt to wait for, reached its addressee. */
 function isReplyUndeliverable(lifecycle: ALDeliveryLifecycle): boolean {
-    return isALDeliveryTerminal(lifecycle) && lifecycle.state !== 'acknowledged';
+    return isALDeliveryTerminal(lifecycle) && lifecycle.state !== 'acknowledged' &&
+        lifecycle.state !== 'transport-accepted';
 }
 
 function endWaits(slot: ReplySlot, outcome: ReplyOutcome): void {

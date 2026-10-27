@@ -154,7 +154,7 @@ class RoomEvents implements RallarRoomEventsPort {
     }
 
     async dispatch(message: UnvalidatedRallarMessage): Promise<void> {
-        const event = resolveDispatchedGroupEvent(message.payload);
+        const event = decodeDispatchedGroupEvent(message.payload);
         if (event === undefined) {
             return;
         }
@@ -290,7 +290,7 @@ function isGroupEventPayload(value: unknown): value is GroupEvent {
     }
 }
 
-function resolveDispatchedGroupEvent(value: unknown): GroupEvent | undefined {
+function decodeDispatchedGroupEvent(value: unknown): GroupEvent | undefined {
     try {
         validateGroupStateDeltaEnvelope(value);
         return value.event;

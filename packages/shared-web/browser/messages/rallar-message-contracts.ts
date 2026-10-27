@@ -130,7 +130,7 @@ export interface RallarMessageReplyWaitOptions {
 }
 
 /** `lifecycle` is the request's when the wait resolves; the reply payload is unvalidated. */
-export type RallarMessageReplyOutcome<T = unknown> =
+export type RallarMessageReplyOutcome<T> =
     | Readonly<{ status: 'replied'; reply: RallarMessage<T>; lifecycle: ALDeliveryLifecycle; }>
     | Readonly<{ status: 'timeout' | 'aborted' | 'undelivered'; lifecycle: ALDeliveryLifecycle; }>;
 
@@ -148,9 +148,10 @@ export interface RallarMessageHandle {
     wait(options?: RallarMessageWaitOptions): Promise<RallarMessageDeliveryOutcome>;
     /**
      * Never throws. A timeout leaves the request as it is; `aborted` and `undelivered` end only this wait, and the
-     * first timeout ends every wait of the request.
+     * first timeout ends every wait of the request. The request's deadline arms no timer here: a deadline that lapses
+     * during the wait ends it `undelivered` at the next lifecycle read or settlement, else the wait's own timeout ends it.
      */
-    awaitReply<T = unknown>(options: RallarMessageReplyWaitOptions): Promise<RallarMessageReplyOutcome<T>>;
+    awaitReply<T>(options: RallarMessageReplyWaitOptions): Promise<RallarMessageReplyOutcome<T>>;
     cancel(): void;
 }
 

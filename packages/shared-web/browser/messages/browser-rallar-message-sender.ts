@@ -76,7 +76,6 @@ interface CreateWsMessageInput<T> {
     readonly actions: ALActions | undefined;
 }
 
-/** A send that names its audience by scope or peer; `actions` is written verbatim on the envelope. */
 interface ScopedSend<T> {
     readonly send: RallarWsSendInput<T>;
     readonly carrier: 'ws' | 'rtc';
@@ -362,7 +361,7 @@ export class BrowserRallarMessageSender {
         });
     }
 
-    private capturePayload(payload: unknown): CapturedMessagePayload {
+    private capturePayload<T>(payload: T): CapturedMessagePayload {
         const validation = this.input.inputValidator.readPayloadValidation(payload);
         throwIfMessageIssues(validation.issues.filter((issue) => issue.code !== 'payload-too-large'));
         if (validation.serialized === undefined) {
@@ -520,7 +519,6 @@ export class BrowserRallarMessageSender {
     }
 }
 
-/** A public send carries only the correlation it names; the reply fields belong to `sendReply`. */
 function toSendActions(send: Pick<RallarMessageSendBase<never>, 'corrId'>): ALActions | undefined {
     return send.corrId === undefined ? undefined : { corrId: send.corrId };
 }

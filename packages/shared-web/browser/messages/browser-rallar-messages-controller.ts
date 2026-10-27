@@ -70,7 +70,8 @@ export class BrowserRallarMessagesController {
         this.subscriptions = new BrowserRallarMessageSubscriptions({
             wsInbox: input.wsInbox,
             sendReply,
-            readMiddleware: input.readMiddleware
+            readMiddleware: input.readMiddleware,
+            readInboundDiagnostics: input.readInboundDiagnostics
         });
         new BrowserMessageReplyInbox({
             wsInbox: input.wsInbox,
