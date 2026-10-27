@@ -83,7 +83,10 @@ export class BrowserRallarMessagesController {
         this.operations = this.createOperations(
             inputValidator,
             input.recoveryOwners,
-            () => input.requireMiddleware().middleware.volatileBudget.readReport(input.nowMs())
+            () => ({
+                ...input.requireMiddleware().middleware.volatileBudget.readReport(input.nowMs()),
+                ...input.deliveries.getReplyCounts()
+            })
         );
         this.crdtTransport = createRallarCrdtMessageTransport(this.operations);
     }

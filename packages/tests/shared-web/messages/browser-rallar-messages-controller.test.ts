@@ -54,7 +54,9 @@ describe('rallar.messages.readUsage', () => {
             own: { admissions: 1, bytes: 100 },
             inbound: { admissions: 0, bytes: 0 },
             limits: LIMITS,
-            overloaded: false
+            overloaded: false,
+            replySlotsOpen: 0,
+            replyWaitsOpen: 0
         });
         expect(report.usage.oldestAgeMs).toBeGreaterThanOrEqual(1_000);
         expect(report.usage.oldestAgeMs).toBeLessThan(31_000);
@@ -102,7 +104,23 @@ describe('rallar.messages.readUsage', () => {
             own: { admissions: 0, bytes: 0 },
             inbound: { admissions: 0, bytes: 0 },
             limits: LIMITS,
-            overloaded: false
+            overloaded: false,
+            replySlotsOpen: 0,
+            replyWaitsOpen: 0
         });
+    });
+
+    it('reads the open reply slots and reply waits of this page beside the ledger', async () => {
+        const facade = createRallarTestFacade();
+        await facade.connect();
+        const handle = await facade.messages.ws.send({ scope: 'world', topicId: 'app.ask', typeId: 'app.ask.v1', payload: {} });
+        const stop = new AbortController();
+        const pending = handle.awaitReply({ timeoutMs: 60_000, signal: stop.signal });
+
+        expect(facade.messages.readUsage()).toMatchObject({ replySlotsOpen: 1, replyWaitsOpen: 1 });
+
+        stop.abort();
+        expect((await pending).status).toBe('aborted');
+        expect(facade.messages.readUsage()).toMatchObject({ replySlotsOpen: 1, replyWaitsOpen: 0 });
     });
 });

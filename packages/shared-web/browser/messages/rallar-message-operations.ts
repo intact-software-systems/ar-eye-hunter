@@ -27,6 +27,12 @@ export interface RallarWsMessageLane {
     ): RallarUnsubscribe;
 }
 
+/** The volatile ledger beside this page's open reply slots and reply waits, both bounded by its delivery observations. */
+export interface RallarMessagesUsage extends ALVolatileSessionReport {
+    readonly replySlotsOpen: number;
+    readonly replyWaitsOpen: number;
+}
+
 export interface RallarMessagesOperations {
     readonly rtc: RallarRtcMessageLane;
     readonly ws: RallarWsMessageLane;
@@ -37,5 +43,5 @@ export interface RallarMessagesOperations {
         definition: RallarRoomMessageChannelDefinition
     ): RallarTypedMessageChannel<T>;
     /** The connected session's volatile ledger: what it holds, its four bounds, and whether it sheds (D180). */
-    readUsage(): ALVolatileSessionReport;
+    readUsage(): RallarMessagesUsage;
 }

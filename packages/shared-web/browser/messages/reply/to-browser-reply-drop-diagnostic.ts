@@ -1,4 +1,4 @@
-import type { BrowserMessageReplySlots } from '@shared-web/browser/messages/reply/browser-message-reply-slots.ts';
+import type { BrowserMessageReplySlot } from '@shared-web/browser/messages/reply/browser-message-reply-slot.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toALCorrId } from '@shared/al-contracts/reply/to-al-reply-actions.ts';
 import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
@@ -8,7 +8,7 @@ export interface BrowserReplyDrop {
     readonly message: ALMessage;
     readonly replyToMsgId: string;
     readonly carrier: ALDeliveryCarrier;
-    readonly admission: Exclude<BrowserMessageReplySlots.Admission, Readonly<{ kind: 'matched'; }>>;
+    readonly admission: Exclude<BrowserMessageReplySlot.Admission, Readonly<{ kind: 'matched'; }>>;
 }
 
 /** Payload-free: a dropped reply states its identity and why it was dropped, never what it carried. */

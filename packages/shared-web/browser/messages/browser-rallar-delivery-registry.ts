@@ -29,7 +29,7 @@ import {
     BrowserMessageFallbackController,
     type BrowserMessageFallbackCandidate
 } from './browser-message-fallback-controller.ts';
-import { BrowserMessageReplySlots } from './reply/browser-message-reply-slots.ts';
+import { BrowserMessageReplySlot } from './reply/browser-message-reply-slot.ts';
 
 /** The mutable observation of one message; the handle handed to the sender closes over exactly this object. */
 interface DeliveryObservation {
@@ -39,6 +39,7 @@ interface DeliveryObservation {
     readonly replyToMsgId: string | undefined;
     readonly listeners: Set<RallarMessageDeliveryListener>;
     readonly waits: Map<number, DeliveryWait>;
+    readonly replySlot: BrowserMessageReplySlot;
     lifecycle: ALDeliveryLifecycle;
     /**
      * The carrier of the last settlement seen, which is the one a cancel is recorded against; after a
@@ -77,6 +78,11 @@ export namespace BrowserRallarDeliveryRegistry {
         /** Reaches every carrier owner the message was admitted to; the registry records the `cancelled` settlement itself. */
         cancel(msgId: string): void;
     }
+
+    export interface ReplyCounts {
+        readonly replySlotsOpen: number;
+        readonly replyWaitsOpen: number;
+    }
 }
 
 /** Owns the browser's delivery observations: the open handles, their listeners and waits, and retention. */
@@ -84,7 +90,6 @@ export class BrowserRallarDeliveryRegistry {
     private readonly entries = new Map<string, DeliveryEntry>();
     private readonly input: BrowserRallarDeliveryRegistry.Input;
     private readonly fallback: BrowserMessageFallbackController;
-    private readonly slots = new BrowserMessageReplySlots();
     private waitCount = 0;
 
     constructor(input: BrowserRallarDeliveryRegistry.Input) {
@@ -109,11 +114,6 @@ export class BrowserRallarDeliveryRegistry {
         const observation = this.createObservation(message, carrier, rtcCapture);
         const entry: DeliveryEntry = { observation, handle: this.createHandle(observation) };
         this.entries.set(observation.msgId, entry);
-        this.slots.open({
-            msgId: observation.msgId,
-            corrId: observation.corrId,
-            expectedResponderId: message.targets?.mode === 'unicast' ? message.targets.toPeerId : undefined
-        });
         this.retainEntries();
         return entry.handle;
     }
@@ -160,8 +160,21 @@ export class BrowserRallarDeliveryRegistry {
         }
     }
 
-    recordReply(reply: RallarMessage<RallarMessagePayload>): BrowserMessageReplySlots.Admission {
-        return this.slots.record(reply);
+    /** A reply to a msgId the registry no longer retains is `unobserved`: it has no entry, so it has no slot. */
+    recordReply(reply: RallarMessage<RallarMessagePayload>): BrowserMessageReplySlot.Admission {
+        const replyToMsgId = reply.raw.actions?.replyToMsgId;
+        const entry = replyToMsgId === undefined ? undefined : this.entries.get(replyToMsgId);
+        return entry === undefined
+            ? { kind: 'late', cause: 'unobserved' }
+            : entry.observation.replySlot.record(reply);
+    }
+
+    getReplyCounts(): BrowserRallarDeliveryRegistry.ReplyCounts {
+        const slots = [...this.entries.values()].map(({ observation }) => observation.replySlot);
+        return {
+            replySlotsOpen: slots.filter((slot) => slot.isOpen()).length,
+            replyWaitsOpen: slots.reduce((waits, slot) => waits + slot.getWaitCount(), 0)
+        };
     }
 
     /** Ends one observation whose captured transport no longer exists. */
@@ -176,7 +189,7 @@ export class BrowserRallarDeliveryRegistry {
     releaseAll(): void {
         for (const { observation } of [...this.entries.values()]) {
             this.releaseObservation(observation);
-            this.slots.endWaits(observation.msgId, observation.lifecycle);
+            observation.replySlot.endWaits(observation.lifecycle);
         }
     }
 
@@ -210,7 +223,10 @@ export class BrowserRallarDeliveryRegistry {
                 submittedAtMs: this.input.nowMs()
             }),
             carrier,
-            terminalAtMs: undefined
+            terminalAtMs: undefined,
+            replySlot: new BrowserMessageReplySlot(
+                message.targets?.mode === 'unicast' ? message.targets.toPeerId : undefined
+            )
         };
     }
 
@@ -225,7 +241,7 @@ export class BrowserRallarDeliveryRegistry {
             onEvent: (listener) => subscribeToObservation(observation, listener),
             wait: async (options) => await this.wait(observation, options ?? {}),
             awaitReply: async (options) =>
-                await this.slots.awaitReply(observation.msgId, () => this.readLifecycle(observation), options),
+                await observation.replySlot.awaitReply(() => this.readLifecycle(observation), options),
             cancel: () => this.cancel(observation)
         };
     }
@@ -239,7 +255,7 @@ export class BrowserRallarDeliveryRegistry {
         }
 
         settleReachedWaits(observation, next);
-        this.slots.settleLifecycle(observation.msgId, next);
+        observation.replySlot.settleLifecycle(next);
         notifyObservationListeners(observation, next);
     }
 
@@ -363,11 +379,11 @@ export class BrowserRallarDeliveryRegistry {
 
     private dropAgedTerminalEntries(): void {
         const nowMs = this.input.nowMs();
-        for (const [msgId, entry] of this.entries) {
+        for (const entry of this.entries.values()) {
             const terminalAtMs = entry.observation.terminalAtMs;
             if (
                 terminalAtMs !== undefined && nowMs - terminalAtMs > this.input.retainTerminalMs &&
-                !this.slots.hasOpenWait(msgId)
+                entry.observation.replySlot.getWaitCount() === 0
             ) {
                 this.dropTerminalEntry(entry.observation);
             }
@@ -387,7 +403,7 @@ export class BrowserRallarDeliveryRegistry {
 
     private dropTerminalEntry(observation: DeliveryObservation): void {
         this.entries.delete(observation.msgId);
-        this.slots.release(observation.msgId, observation.lifecycle);
+        observation.replySlot.release(observation.lifecycle);
     }
 
     private releaseOldestEntries(): void {
@@ -397,12 +413,12 @@ export class BrowserRallarDeliveryRegistry {
                 break;
             }
             this.entries.delete(msgId);
-            this.slots.release(msgId, computeALDeliveryUnobservable(entry.observation.lifecycle));
+            entry.observation.replySlot.release(computeALDeliveryUnobservable(entry.observation.lifecycle));
             evicted.push(entry.observation);
         }
 
-        // Listeners run only once the map and the slots have settled: one that re-sends on `unobservable`
-        // re-enters `open()`, and it must not do that inside a live eviction, nor lose the slot it opens.
+        // Listeners run only once the map has settled: one that re-sends on `unobservable`
+        // re-enters `open()`, and it must not do that inside a live eviction.
         for (const observation of evicted) {
             this.releaseObservation(observation);
         }

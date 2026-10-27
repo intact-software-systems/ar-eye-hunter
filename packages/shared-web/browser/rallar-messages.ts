@@ -31,6 +31,7 @@ export type {
 
 export type {
     RallarMessagesOperations,
+    RallarMessagesUsage,
     RallarRtcMessageLane,
     RallarWsMessageLane
 } from '@shared-web/browser/messages/rallar-message-operations.ts';

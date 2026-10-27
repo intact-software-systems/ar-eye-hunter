@@ -683,6 +683,38 @@ describe('BrowserRallarDeliveryRegistry', () => {
         });
     });
 
+    describe('reply counts', () => {
+        it('counts the open reply slots and the open reply waits of the retained entries', async () => {
+            const harness = new DeliveryRegistryHarness();
+            const waiting = harness.registry.open(toUnicastTestMessage('msg-1', 'responder-1'), 'ws');
+            harness.registry.open(toUnicastTestMessage('msg-2', 'responder-1'), 'ws');
+            harness.registry.open(toUnicastTestMessage('msg-3', 'responder-1'), 'ws');
+            const first = waiting.awaitReply({ timeoutMs: 1_000 });
+            const second = waiting.awaitReply({ timeoutMs: 1_000 });
+            harness.registry.recordReply(toReply('reply-3', 'responder-1', 'msg-3'));
+
+            expect(harness.registry.getReplyCounts()).toEqual({ replySlotsOpen: 2, replyWaitsOpen: 2 });
+
+            harness.registry.recordReply(toReply('reply-1', 'responder-1', 'msg-1'));
+            await Promise.all([first, second]);
+            expect(harness.registry.getReplyCounts()).toEqual({ replySlotsOpen: 1, replyWaitsOpen: 0 });
+        });
+
+        it('stops counting and matching an entry retention dropped', () => {
+            const harness = new DeliveryRegistryHarness({ retainTerminalMs: RETAIN_TERMINAL_MS, maxEntries: 1 });
+            harness.registry.open(toUnicastTestMessage('msg-1', 'responder-1'), 'ws');
+
+            harness.registry.open(toUnicastTestMessage('msg-2', 'responder-1'), 'ws');
+
+            expect(harness.registry.getHandle('msg-1')).toBeUndefined();
+            expect(harness.registry.recordReply(toReply('reply-1', 'responder-1', 'msg-1'))).toEqual({
+                kind: 'late',
+                cause: 'unobserved'
+            });
+            expect(harness.registry.getReplyCounts()).toEqual({ replySlotsOpen: 1, replyWaitsOpen: 0 });
+        });
+    });
+
     describe('getHandle', () => {
         it('returns the retained handle for its msgId and nothing for a msgId it never opened', () => {
             const harness = new DeliveryRegistryHarness();

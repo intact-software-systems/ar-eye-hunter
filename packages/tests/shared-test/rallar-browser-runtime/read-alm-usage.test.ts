@@ -1,19 +1,19 @@
 import { beforeEach, expect, it } from 'vitest';
 
+import type { RallarMessagesUsage } from '@shared-web/browser/rallar-messages.ts';
 import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
-import {
-    AL_VOLATILE_SESSION_LIMITS,
-    type ALVolatileSessionReport
-} from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 import { events, facade, loadRuntime, resetFacade } from './browser-rallar-runtime-test-harness.ts';
 
-const REPORT: ALVolatileSessionReport = {
+const REPORT: RallarMessagesUsage = {
     usage: { admissions: 2, bytes: 640, oldestAgeMs: 800, tracks: 1 },
     own: { admissions: 1, bytes: 320 },
     inbound: { admissions: 1, bytes: 320 },
     limits: AL_VOLATILE_SESSION_LIMITS,
-    overloaded: false
+    overloaded: false,
+    replySlotsOpen: 3,
+    replyWaitsOpen: 1
 };
 
 const CONNECTION = {
@@ -34,6 +34,7 @@ it('answers the facade ledger report once the facade is connected, with no order
     facade.behavior.readUsage.mockReturnValue(REPORT);
 
     await expect(runtime.readAlmUsage()).resolves.toEqual({ ...REPORT, orderingTracks: 0, deliveredMarkers: 0 });
+    await expect(runtime.readAlmUsage()).resolves.toMatchObject({ replySlotsOpen: 3, replyWaitsOpen: 1 });
 });
 
 it('answers undefined before the facade is connected, where the facade read would throw', async () => {

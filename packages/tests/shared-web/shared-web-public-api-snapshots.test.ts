@@ -649,6 +649,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarMessageTransport',
                 'RallarMessageWaitOptions',
                 'RallarMessagesOperations',
+                'RallarMessagesUsage',
                 'RallarRoomMessageChannelDefinition',
                 'RallarRtcMessageLane',
                 'RallarRtcSendInput',
