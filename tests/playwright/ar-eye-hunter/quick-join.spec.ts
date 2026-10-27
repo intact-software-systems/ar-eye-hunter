@@ -126,12 +126,18 @@ roomBrowserTest(
             await bobResults.getByRole('button', { name: 'Continue infinite chaos' }).click();
             await expect(aliceResults).toBeHidden();
             await expect(bobResults).toBeHidden();
-            await expect(aliceOperations.getByLabel('Account reference', { exact: true })).toHaveValue('alice');
-            await expect(bobOperations.getByLabel('Account reference', { exact: true })).toHaveValue('bob');
-            await expect(aliceOperations.locator('.room-row.active')).toContainText(snapshot.group.displayName);
-            await expect(bobOperations.locator('.room-row.active')).toContainText(snapshot.group.displayName);
             await aliceOperations.getByRole('button', { name: '1m', exact: true }).click();
             await assertRunningMatch(aliceOperations, bobOperations);
+            await expect(aliceOperations.getByLabel('Account reference', { exact: true })).toHaveValue('alice');
+            await expect(bobOperations.getByLabel('Account reference', { exact: true })).toHaveValue('bob');
+            await expect(aliceOperations.locator('.room-row.active')).toHaveAttribute(
+                'data-room-id',
+                snapshot.group.groupId
+            );
+            await expect(bobOperations.locator('.room-row.active')).toHaveAttribute(
+                'data-room-id',
+                snapshot.group.groupId
+            );
         });
     }
 );

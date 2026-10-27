@@ -351,12 +351,12 @@ roomBrowserTest(
             await host.getByRole('button', { name: 'Reset', exact: true }).click();
             await expect(host.locator('.victory-panel')).toBeHidden();
             await expect(guest.locator('.victory-panel')).toBeHidden();
+            await playPrivateExpedition(host, guest);
             await expect(host.locator('.profile-row strong')).toHaveText(hostUsername);
             await expect(guest.locator('.profile-row strong')).toHaveText(guestUsername);
             await expect(link).toHaveValue(roomLink);
             await expect(host.locator('.room-row.active')).toHaveAttribute('data-room-id', roomId);
             await expect(guest.locator('.room-row.active')).toHaveAttribute('data-room-id', roomId);
-            await playPrivateExpedition(host, guest);
         });
     }
 );

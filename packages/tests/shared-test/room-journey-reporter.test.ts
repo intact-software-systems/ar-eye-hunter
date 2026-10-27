@@ -188,7 +188,7 @@ describe('room journey evidence', () => {
         expect(await readReport()).toMatchObject({ runStatus: 'failed', observations: [], issues: [] });
     });
 
-    it('retains real Playwright retries and fails the runner for missing phase evidence', async () => {
+    it('retains native retries and skips while failing the runner for missing evidence', async () => {
         const playwright = new URL('../../../node_modules/@playwright/test/index.mjs', import.meta.url).href;
         const reporterPath = fileURLToPath(new URL('../../shared-test/room-journey-reporter.ts', import.meta.url));
         const configPath = join(outputDirectory, 'playwright.config.mjs');
@@ -217,6 +217,23 @@ describe('room journey evidence', () => {
                 await test.step('room-journey:recovery', async () => { expect(info.retry).toBe(1); });
             });
             test('missing evidence', { annotation: { type: 'room-journey', description: 'repeat-play' } }, async () => {});
+            test('skip during phase', { annotation: [
+                { type: 'room-journey', description: 'entry' },
+                { type: 'room-journey', description: 'recovery' },
+                { type: 'room-journey', description: 'repeat-play' }
+            ] }, async () => {
+                await test.step('room-journey:entry', async () => { expect(true).toBe(true); });
+                await test.step('room-journey:recovery', async () => { test.skip(true, 'unavailable fixture'); });
+            });
+            test('caught failure before skip', { annotation: [
+                { type: 'room-journey', description: 'entry' },
+                { type: 'room-journey', description: 'recovery' }
+            ] }, async () => {
+                try {
+                    await test.step('room-journey:entry', async () => { throw new Error('Failed phase'); });
+                } catch {}
+                await test.step('room-journey:recovery', async () => { test.skip(true, 'unavailable fixture'); });
+            });
         `
         );
         const runner = spawnSync(process.execPath, [
@@ -246,7 +263,12 @@ describe('room journey evidence', () => {
                 { retry: 0, phase: 'recovery', status: 'not-reached', durationMs: null },
                 { retry: 1, phase: 'entry', status: 'passed' },
                 { retry: 1, phase: 'recovery', status: 'passed' },
-                { phase: 'repeat-play', status: 'invalid', durationMs: null }
+                { phase: 'repeat-play', status: 'invalid', durationMs: null },
+                { attemptStatus: 'skipped', phase: 'entry', status: 'passed' },
+                { attemptStatus: 'skipped', phase: 'recovery', status: 'skipped', durationMs: null },
+                { attemptStatus: 'skipped', phase: 'repeat-play', status: 'skipped', durationMs: null },
+                { attemptStatus: 'skipped', phase: 'entry', status: 'failed' },
+                { attemptStatus: 'skipped', phase: 'recovery', status: 'skipped', durationMs: null }
             ]
         });
     }, 20_000);

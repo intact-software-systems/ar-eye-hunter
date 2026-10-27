@@ -156,7 +156,11 @@ function computePhaseEvidence(
     if (!step) {
         return computeMissingPhaseEvidence(attemptStatus);
     }
-    if (step.annotations.some((annotation) => annotation.type === 'skip')) {
+    // test.skip inside a step annotates the attempt and throws this native interruption.
+    // Preserve earlier caught failures in that skipped attempt as failed evidence.
+    const interruptedBySkip = attemptStatus === 'skipped' &&
+        step.error?.message?.startsWith('Error: Test is skipped:');
+    if (step.annotations.some((annotation) => annotation.type === 'skip') || interruptedBySkip) {
         return { status: 'skipped', durationMs: null, issue: undefined };
     }
     if (!Number.isFinite(step.duration) || step.duration < 0) {

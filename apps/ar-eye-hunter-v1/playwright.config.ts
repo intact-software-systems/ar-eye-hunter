@@ -1,4 +1,8 @@
-import { defineConfig, devices, type PlaywrightTestConfig } from '@playwright/test';
+import {
+    defineConfig,
+    devices,
+    type PlaywrightTestConfig
+} from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 
 const fullStackEnabled = process.env.RALLAR_ARENA_FULL_STACK === '1';

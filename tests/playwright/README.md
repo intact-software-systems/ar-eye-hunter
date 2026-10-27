@@ -66,6 +66,10 @@ room links, and room identifiers are excluded from this JSON.
 The release workflow uploads `game-room-journeys-<game>` on success or failure
 before component tests clear the output directory. Existing failure traces and
 screenshots remain separate. Local output belongs under ignored `tmp/perf/`.
+Repeat-play checks account and exact active-room identity after the second activity
+starts. AR Eye exposes that identity on its existing room rows with `data-room-id`,
+matching the existing Relic pattern. This does not change gameplay behavior.
+
 Record OS, runtime/browser versions, server profile, renderer and source revision
 with any comparison. AR Eye uses a built SPA and local memory API; Relic uses a
 Vite development SPA and local server. Both use Chromium software rendering.
