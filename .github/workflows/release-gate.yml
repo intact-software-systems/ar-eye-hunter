@@ -251,12 +251,13 @@ jobs:
             tests/playwright/ar-eye-hunter/quick-join.spec.ts --project=desktop-delivery \
             --grep 'director canvas shot'
 
-      - name: Run Relic feedback and discovery click regressions
+      - name: Run Relic feedback, discovery and turn lifecycle click regressions
         if: ${{ matrix.game == 'relic' }}
         run: |
           npx playwright test --config apps/relic-hunters-v1/playwright.config.ts \
             tests/playwright/relic-hunters/private-feedback.spec.ts \
-            tests/playwright/relic-hunters/directory-freshness.spec.ts --trace=retain-on-failure --workers=1
+            tests/playwright/relic-hunters/directory-freshness.spec.ts \
+            tests/playwright/relic-hunters/turn-reset.spec.ts --trace=retain-on-failure --workers=1
 
       - name: Upload game room failure evidence
         if: failure()

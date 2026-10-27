@@ -612,7 +612,8 @@ async function playPrivateExpedition(host: Page, guest: Page): Promise<void> {
     await expect(guest.locator('.lobby-party-row')).toHaveCount(2);
     await host.locator('.lobby-begin-btn').click();
     for (const hunter of [host, guest]) {
-        await hunter.locator('.action-picker').getByRole('button', { name: /^Search/ }).click();
+        await expect(hunter.locator('.action-picker').getByRole('button', { name: /^Search/ }))
+            .toHaveAttribute('aria-pressed', 'true');
     }
     await expect(guest.getByRole('button', { name: 'Submit Plan' })).toBeEnabled();
     await host.getByRole('button', { name: 'Submit Plan' }).click();

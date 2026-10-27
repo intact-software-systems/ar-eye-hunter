@@ -44,8 +44,11 @@ games. Delayed heartbeat recovery now restores authorized joined-room targets af
 expiry while the server presence lease remains live. Merged
 [PR #721](https://github.com/intact-software-systems/ar-eye-hunter/pull/721) repairs a reproduced
 Relic code-room sharing failure from #712: preserve the committed creation result when leaving the
-previous room fails while the browser cache is expired. The maintainer selected repeatable browser
-measurements of entry, recovery and repeat play as the next increment.
+previous room fails while the browser cache is expired. The maintainer-selected repeatable browser
+measurements of entry, recovery and repeat play are present through merged
+[PR #722](https://github.com/intact-software-systems/ar-eye-hunter/pull/722). The repeat-play baseline
+exposed a stale Escape selection after Relic Reset. The next increment repairs local turn state
+across accepted expedition resets, including automatic submission when round numbers repeat.
 
 ## Current foundation
 
@@ -138,11 +141,11 @@ all-or-none admission decisions before it becomes a platform promise.
 
 ## Delivery priorities
 
-| Priority    | Outcomes                                                                                                                                                  |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Current     | Measure entry, reload recovery, and repeat play with the same people in both games through existing clickable journeys; retain every attempt and failure. |
-| Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them.                                                               |
-| Later       | Scheduled rooms (8) and a separate tournament capability.                                                                                                 |
+| Priority    | Outcomes                                                                                                                     |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Current     | Repair Relic turn state after accepted Reset; prove repeat play without manually replacing the previous expedition’s action. |
+| Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them.                                  |
+| Later       | Scheduled rooms (8) and a separate tournament capability.                                                                    |
 
 Relic validation is a constraint throughout, not a dependency postponed to slice 9. Operator
 reliability work may ship independently where a concrete operational need warrants it. Freshness and
@@ -371,7 +374,7 @@ outcomes, reconnect success, repeat participation with the same people, and the 
 required to implement those flows. Baseline these before choosing numeric targets. HTTP admission
 success alone does not prove successful participation.
 
-The current measurement increment uses native Playwright phase durations from the existing private
+The browser baseline uses native Playwright phase durations from the existing private
 entry, reload and completed-activity journeys. Repeat play proceeds into another activity with the
 same accounts and room. One shared reporter retains failures, retries, skips and unreached phases;
 invalid evidence or failed artifact delivery fails the run. The [browser guide](../../tests/playwright/README.md#room-journey-measurements)
@@ -381,6 +384,13 @@ observations, not a latency SLO or production adoption evidence. Discovery failu
 rates, real OS suspension and user demand remain unmeasured by this baseline. Use the results to
 select the next justified improvement; do not infer demand for a party or spectator system from
 successful automated play.
+
+Relic repeat play starts with the existing Search default after an accepted Reset, including for
+the peer who did not click Reset. Local selected targets, primed actions and old locked-action
+feedback clear with the new expedition identity. Ordinary snapshots and refused Reset preserve
+the draft. Automatic submission distinguishes expeditions even when the room, session and round
+number repeat. The real two-player journey reaches round two again in the same room without
+manual Search selection; controlled browser tests cover preservation and timer boundaries.
 
 - REST behavior changes update OpenAPI and black-box recipes in the same change.
 - Shared browser public-surface changes include API snapshots and bundle-boundary checks. Report any
