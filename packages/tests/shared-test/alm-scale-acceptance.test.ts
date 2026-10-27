@@ -69,7 +69,9 @@ const HEALTHY: RallarBlackBoxTestAlmUsage = {
     limits: { maxAdmissions: 1_000, maxBytes: 4_194_304, maxAgeMs: 300_000, maxTracks: 64 },
     overloaded: false,
     orderingTracks: 85,
-    deliveredMarkers: 85
+    deliveredMarkers: 85,
+    repliesHeld: 0,
+    replyWaitsOpen: 0
 };
 const EMPTY: RallarBlackBoxTestAlmUsage = {
     ...HEALTHY,
@@ -77,7 +79,9 @@ const EMPTY: RallarBlackBoxTestAlmUsage = {
     inbound: { admissions: 0, bytes: 0 },
     usage: { admissions: 0, bytes: 0, oldestAgeMs: 0, tracks: 0 },
     orderingTracks: 0,
-    deliveredMarkers: 0
+    deliveredMarkers: 0,
+    repliesHeld: 0,
+    replyWaitsOpen: 0
 };
 const READY_ROOM: RallarRoomTransportStatus = {
     ws: {

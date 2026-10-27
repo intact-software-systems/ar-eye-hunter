@@ -134,4 +134,19 @@ describe('the server reply to a request', () => {
 
         expect(decoded.right?.actions).toEqual({ corrId: request.id.msgId, replyToMsgId: request.id.msgId });
     });
+
+    it('decodes a re-ask that carries only a correlation id', () => {
+        const reAsk = newRequest('client-session', ROOM, { corrId: 'first-ask' });
+        const decoded = decodeALMessageValue(JSON.parse(JSON.stringify(reAsk)));
+
+        expect(decoded.right?.actions).toEqual({ corrId: 'first-ask' });
+        expect(decoded.right === undefined ? undefined : toALCorrId(decoded.right)).toBe('first-ask');
+    });
+
+    it('decodes a message without an actions section', () => {
+        const decoded = decodeALMessageValue(JSON.parse(JSON.stringify(newRequest('client-session', ROOM))));
+
+        expect(decoded.right).toBeDefined();
+        expect(decoded.right?.actions).toBeUndefined();
+    });
 });

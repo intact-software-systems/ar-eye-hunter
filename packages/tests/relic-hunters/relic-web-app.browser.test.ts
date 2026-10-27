@@ -83,6 +83,7 @@ const rallarMock = vi.hoisted(() => ({
     answerPlanningRequest: undefined as PlanningRequestAnswer | undefined,
     planningRequests: [] as RallarAiJsonRequest[],
     localPlanningProviderOff: false,
+    localGenerateJson: vi.fn(),
     wsSend: vi.fn(async (input: RallarWsSendInput<object>) => ({
         transport: 'ws',
         status: 'queued',
@@ -253,7 +254,16 @@ vi.mock('../../../apps/relic-hunters-v1/src/game/sound.ts', () => soundMock);
 vi.mock('../../../apps/relic-hunters-v1/src/game/ai/create-default-relic-planning-ai-provider.ts', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../../../apps/relic-hunters-v1/src/game/ai/create-default-relic-planning-ai-provider.ts')>();
     return {
-        createDefaultRelicPlanningAiProvider: () => rallarMock.localPlanningProviderOff ? undefined : actual.createDefaultRelicPlanningAiProvider()
+        createDefaultRelicPlanningAiProvider: () => {
+            const provider = rallarMock.localPlanningProviderOff ? undefined : actual.createDefaultRelicPlanningAiProvider();
+            return provider && {
+                ...provider,
+                generateJson: (request: RallarAiJsonRequest) => {
+                    rallarMock.localGenerateJson();
+                    return provider.generateJson(request);
+                }
+            };
+        }
     };
 });
 
@@ -619,6 +629,7 @@ describe('Relic Hunters browser app', () => {
         });
 
         expect(sentPlanningProposals()).toEqual([]);
+        expect(rallarMock.localGenerateJson).not.toHaveBeenCalled();
     });
 
     describe('in a build without a local companion', () => {

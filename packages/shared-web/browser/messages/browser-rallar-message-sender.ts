@@ -361,7 +361,7 @@ export class BrowserRallarMessageSender {
         });
     }
 
-    private capturePayload<T>(payload: T): CapturedMessagePayload {
+    private capturePayload(payload: unknown): CapturedMessagePayload {
         const validation = this.input.inputValidator.readPayloadValidation(payload);
         throwIfMessageIssues(validation.issues.filter((issue) => issue.code !== 'payload-too-large'));
         if (validation.serialized === undefined) {

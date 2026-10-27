@@ -554,6 +554,22 @@ describe('BrowserRallarDeliveryRegistry', () => {
             expect(harness.registry.recordReply(toReply('reply-1', 'responder-1', 'msg-1'))).toEqual({ kind: 'matched' });
         });
 
+        it('resolves a reply wait undelivered at the deadline a carrier shortened after the wait opened', async () => {
+            const harness = new DeliveryRegistryHarness();
+            const message = {
+                ...toUnicastTestMessage('msg-1', 'responder-1'),
+                constraints: { expiresAtMs: START_MS + 5_000 }
+            };
+            const handle = harness.registry.open(message, 'ws');
+            const pending = handle.awaitReply({ timeoutMs: 10_000 });
+
+            harness.registry.updateDeadline({ ...message, constraints: { expiresAtMs: START_MS + 1_000 } });
+            await harness.advanceMs(1_000);
+
+            expect(await pending).toMatchObject({ status: 'undelivered', lifecycle: { state: 'expired' } });
+            expect(vi.getTimerCount()).toBe(0);
+        });
+
         it('resolves an open reply wait undelivered when the request fails', async () => {
             const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(toUnicastTestMessage('msg-1', 'responder-1'), 'ws');

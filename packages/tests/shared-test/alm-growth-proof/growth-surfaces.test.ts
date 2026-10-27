@@ -188,6 +188,16 @@ describe('Growth surface classification', () => {
         expect(markers?.classification).toEqual({ growthClass: 'count-capped', cap: 512 });
     });
 
+    it('bounds a page\'s reply slots at the 512 entries of its delivery registry, reading both reply counts', () => {
+        const slots = GROWTH_SURFACES.find((surface) => surface.owner.endsWith('reply/browser-message-reply-slot.ts'));
+
+        expect(slots?.classification).toEqual({ growthClass: 'count-capped', cap: 512 });
+        expect(slots?.readers.map((reader) => [reader.source, reader.path.join('.')])).toEqual([
+            ['browser-stats', 'rallar.alm.repliesHeld'],
+            ['browser-stats', 'rallar.alm.replyWaitsOpen']
+        ]);
+    });
+
     describe('group current-snapshot cache', () => {
         const audience = GROWTH_SURFACES.filter((surface) => surface.id === 20 || surface.id === 21);
         const windowStartedAtEpochMs = 1_800_000_000_000;

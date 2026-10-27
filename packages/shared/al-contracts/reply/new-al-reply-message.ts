@@ -8,7 +8,6 @@ export interface ALReplyMessageInput<T> {
     readonly payload: T;
 }
 
-/** A unicast to the requester's session, in the request's room, on the `command` purpose's delivery defaults. */
 export function newALReplyMessage<T>(request: ALMessage, input: ALReplyMessageInput<T>): ALMessage {
     return newALUnicastMessage(
         input.senderId,

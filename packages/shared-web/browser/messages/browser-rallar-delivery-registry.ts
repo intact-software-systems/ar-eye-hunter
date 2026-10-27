@@ -41,6 +41,7 @@ interface DeliveryObservation {
     readonly replyToMsgId: string | undefined;
     readonly listeners: Set<RallarMessageDeliveryListener>;
     readonly waits: Map<number, DeliveryWait>;
+    readonly replyDeadlines: Set<DeliveryDeadlineTimer>;
     readonly replySlot: BrowserMessageReplySlot;
     lifecycle: ALDeliveryLifecycle;
     /**
@@ -136,6 +137,9 @@ export class BrowserRallarDeliveryRegistry {
         for (const wait of observation.waits.values()) {
             wait.updateDeadline();
         }
+        for (const deadline of observation.replyDeadlines) {
+            this.rescheduleDeadlineTimer(deadline);
+        }
     }
 
     /** The dispatch hands the admitted RTC leg of an `rtc-with-ws-fallback` send to the one fallback owner (D56). */
@@ -216,6 +220,7 @@ export class BrowserRallarDeliveryRegistry {
             replyToMsgId: message.actions?.replyToMsgId,
             listeners: new Set(),
             waits: new Map(),
+            replyDeadlines: new Set(),
             lifecycle: createInitialALDeliveryLifecycle({
                 msgId: message.id.msgId,
                 typeId: message.payload.typeId,
@@ -321,11 +326,13 @@ export class BrowserRallarDeliveryRegistry {
         options: RallarMessageReplyWaitOptions
     ): Promise<RallarMessageReplyOutcome<T>> {
         const deadline: DeliveryDeadlineTimer = { observation, timerId: undefined };
+        observation.replyDeadlines.add(deadline);
         this.scheduleDeadlineTimer(deadline);
         try {
             return await observation.replySlot.awaitReply<T>(() => this.readLifecycle(observation), options);
         }
         finally {
+            observation.replyDeadlines.delete(deadline);
             clearTimeout(deadline.timerId);
         }
     }
@@ -351,8 +358,7 @@ export class BrowserRallarDeliveryRegistry {
         };
 
         const updateDeadline = (): void => {
-            clearTimeout(deadline.timerId);
-            this.scheduleDeadlineTimer(deadline);
+            this.rescheduleDeadlineTimer(deadline);
         };
         observation.waits.set(waitId, { until: options.until, resolve, release, updateDeadline });
         options.signal?.addEventListener('abort', () => {
@@ -368,6 +374,11 @@ export class BrowserRallarDeliveryRegistry {
         }
 
         updateDeadline();
+    }
+
+    private rescheduleDeadlineTimer(deadline: DeliveryDeadlineTimer): void {
+        clearTimeout(deadline.timerId);
+        this.scheduleDeadlineTimer(deadline);
     }
 
     /** Re-read the current deadline if a timer fires before the wall clock reaches it. */

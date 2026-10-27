@@ -9,7 +9,6 @@ export function isALReplyMessage(message: ALMessage): boolean {
     return message.actions?.replyToMsgId !== undefined;
 }
 
-/** The one place reply fields are minted, so the browser and the server reply the same way. */
 export function toALReplyActions(request: ALMessage): Required<ALActions> {
     return {
         corrId: toALCorrId(request),
