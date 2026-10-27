@@ -6,14 +6,17 @@ import {
     RELIC_PLANNING_AI_SCHEMA_VERSION,
     RELIC_TOPICS,
     RELIC_TYPES,
+    toRelicRoomGroupRef,
     type RelicPlanningAiSuggestion
 } from '@relic-hunters/mod.ts';
 import { createRallarServerAi } from '@shared-server/rallar-ai/create-rallar-server-ai.ts';
 import {
     installRallarServerAiWebSocketTopic,
+    type RallarServerAiWebSocketMessageContext,
     type RallarServerAiWebSocketPort
 } from '@shared-server/rallar-ai/install-rallar-server-ai-websocket-topic.ts';
 import type { RallarServerAi } from '@shared-server/rallar-ai/rallar-server-ai-contracts.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import {
     createRallarAiMockProvider,
     RallarAiError,
@@ -26,13 +29,9 @@ export interface InstallRelicPlanningAiTopicInput {
     readonly serverSenderId: string;
 }
 
-/**
- * The planning companion on the server (D444): a hunter's planning request is answered with proposal data only,
- * to the asking session alone. Submit Plan stays the only authoritative path.
- */
 export function installRelicPlanningAiTopic(input: InstallRelicPlanningAiTopicInput): () => boolean {
     return installRallarServerAiWebSocketTopic({
-        websocket: input.websocket,
+        websocket: toRelicRoomAiWebSocketPort(input.websocket),
         serverAi: createRelicPlanningServerAi(),
         config: {
             requestTopicId: RELIC_TOPICS.aiPlanning,
@@ -48,7 +47,6 @@ export function installRelicPlanningAiTopic(input: InstallRelicPlanningAiTopicIn
     });
 }
 
-/** The deterministic planner: production answers with it, and an Ollama-backed planner is not built. */
 export function createRelicPlanningServerAi(): RallarServerAi {
     return createRallarServerAi({
         provider: createRallarAiMockProvider({
@@ -67,6 +65,25 @@ export function createRelicPlanningServerAi(): RallarServerAi {
     });
 }
 
+/** The topic admits a request only in a Relic room: its GroupRef must be the Relic scope's ref for its room id. */
+function toRelicRoomAiWebSocketPort(port: RallarServerAiWebSocketPort): RallarServerAiWebSocketPort {
+    return {
+        defineTopic: (definition) =>
+            port.defineTopic({
+                ...definition,
+                authorize: async (message, context) =>
+                    isRelicRoomContext(context) && await definition.authorize(message, context)
+            }),
+        on: (selector, handler) => port.on(selector, handler),
+        publish: (input) => port.publish(input)
+    };
+}
+
+function isRelicRoomContext(context: RallarServerAiWebSocketMessageContext): boolean {
+    return context.roomId !== undefined && context.roomRef !== undefined &&
+        isSameGroupRef(context.roomRef, toRelicRoomGroupRef(context.roomId));
+}
+
 function isRelicPlanningAiRequestAuthorized(context: RallarAiAuthorizationContext): boolean {
     return context.action === 'generate' &&
         context.schemaId === RELIC_PLANNING_AI_SCHEMA_ID &&
@@ -74,7 +91,6 @@ function isRelicPlanningAiRequestAuthorized(context: RallarAiAuthorizationContex
         context.roomId !== undefined;
 }
 
-/** Its own suggestion is decoded like a model's before it leaves the server: proposal data, never authority. */
 function computeRelicPlanningServerSuggestion(request: RallarAiJsonRequest): RelicPlanningAiSuggestion {
     const context = decodeRelicPlanningAiContext(request.context);
     if (context.right === undefined) {

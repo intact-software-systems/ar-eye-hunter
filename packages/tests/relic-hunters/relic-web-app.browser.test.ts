@@ -65,7 +65,10 @@ interface MockWsAiMessage extends MockWsMessage {
     readonly raw: ALMessage;
 }
 
-type PlanningRequestAnswer = (request: RallarAiJsonRequest) => RallarMessageReplyOutcome<object>;
+type PlanningRequestAnswer = (
+    request: RallarAiJsonRequest,
+    signal: AbortSignal | undefined
+) => RallarMessageReplyOutcome<object> | Promise<RallarMessageReplyOutcome<object>>;
 
 const rallarMock = vi.hoisted(() => ({
     session: undefined as AuthSession | undefined,
@@ -79,6 +82,7 @@ const rallarMock = vi.hoisted(() => ({
     serverPeerId: undefined as string | undefined,
     answerPlanningRequest: undefined as PlanningRequestAnswer | undefined,
     planningRequests: [] as RallarAiJsonRequest[],
+    localPlanningProviderOff: false,
     wsSend: vi.fn(async (input: RallarWsSendInput<object>) => ({
         transport: 'ws',
         status: 'queued',
@@ -198,8 +202,10 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
                         throw new Error(`Unexpected WS send on ${definition.topicId}`);
                     }
                     rallarMock.planningRequests.push(request);
-                    const outcome = rallarMock.answerPlanningRequest(request);
-                    return { awaitReply: async () => outcome };
+                    const answer = rallarMock.answerPlanningRequest;
+                    return {
+                        awaitReply: async (options: { readonly signal?: AbortSignal; }) => await answer(request, options.signal)
+                    };
                 }
             })
         },
@@ -243,6 +249,14 @@ vi.mock('../../../apps/relic-hunters-v1/src/game/OpeningRelicScene.tsx', async (
 
 vi.mock('../../../apps/relic-hunters-v1/src/game/sound.ts', () => soundMock);
 
+// A production build has no local planning provider; these tests run as a test build, which has one.
+vi.mock('../../../apps/relic-hunters-v1/src/game/ai/create-default-relic-planning-ai-provider.ts', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../../apps/relic-hunters-v1/src/game/ai/create-default-relic-planning-ai-provider.ts')>();
+    return {
+        createDefaultRelicPlanningAiProvider: () => rallarMock.localPlanningProviderOff ? undefined : actual.createDefaultRelicPlanningAiProvider()
+    };
+});
+
 import App from '../../../apps/relic-hunters-v1/src/app.tsx';
 import { computePartyCoordination } from '../../../apps/relic-hunters-v1/src/game/hud/relic-party.tsx';
 
@@ -270,6 +284,7 @@ describe('Relic Hunters browser app', () => {
         rallarMock.serverPeerId = undefined;
         rallarMock.answerPlanningRequest = undefined;
         rallarMock.planningRequests = [];
+        rallarMock.localPlanningProviderOff = false;
         rallarMock.wsSend.mockClear();
         container = document.createElement('div');
         document.body.appendChild(container);
@@ -576,6 +591,86 @@ describe('Relic Hunters browser app', () => {
         expect(rallarMock.planningRequests).toHaveLength(1);
         expect(container.textContent).toContain('Move toward Hallway');
         expect(sentPlanningProposals()).toHaveLength(1);
+    });
+
+    it('publishes nothing and runs no local companion for an ask cancelled while it awaits the server', async () => {
+        const snapshot = snapshotWithPlayers(1, 'planning');
+        writeSession(session());
+        rallarMock.roomState = roomState(1);
+        rallarMock.serverPeerId = 'default-qbox-server';
+        rallarMock.answerPlanningRequest = (_request, signal) =>
+            new Promise((resolve) => {
+                signal?.addEventListener('abort', () => resolve({ status: 'aborted', lifecycle: PLANNING_REQUEST_LIFECYCLE }));
+            });
+        stubSnapshotFetch(snapshot);
+
+        await renderApp();
+        await waitFor(() => aiAskButton() !== undefined);
+        await act(async () => {
+            aiAskButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+        await waitFor(() => rallarMock.planningRequests.length === 1);
+        act(() => {
+            root?.unmount();
+        });
+        root = undefined;
+        await act(async () => {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+
+        expect(sentPlanningProposals()).toEqual([]);
+    });
+
+    describe('in a build without a local companion', () => {
+        beforeEach(() => {
+            rallarMock.localPlanningProviderOff = true;
+        });
+
+        it('asks the server, which alone answers', async () => {
+            writeSession(session());
+            rallarMock.serverPeerId = 'default-qbox-server';
+            rallarMock.answerPlanningRequest = (request) => repliedWith(request, SERVER_SUGGESTION);
+            stubSnapshotFetch(snapshotWithPlayers(1, 'planning'));
+
+            await renderApp();
+            await waitFor(() => aiAskButton() !== undefined && !aiAskButton()!.disabled);
+            await act(async () => {
+                aiAskButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            });
+
+            await waitFor(() => container.textContent?.includes('Suggestion ready') === true);
+            expect(container.textContent).toContain(SERVER_SUGGESTION.headline);
+            expect(sentPlanningProposals()).toHaveLength(1);
+        });
+
+        it('reads unavailable and publishes nothing when the server\'s reply times out', async () => {
+            writeSession(session());
+            rallarMock.serverPeerId = 'default-qbox-server';
+            rallarMock.answerPlanningRequest = () => ({ status: 'timeout', lifecycle: PLANNING_REQUEST_LIFECYCLE });
+            stubSnapshotFetch(snapshotWithPlayers(1, 'planning'));
+
+            await renderApp();
+            await waitFor(() => aiAskButton() !== undefined && !aiAskButton()!.disabled);
+            await act(async () => {
+                aiAskButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            });
+
+            await waitFor(() => container.querySelector('#hud-ai')?.textContent?.includes('Unavailable') === true);
+            expect(rallarMock.planningRequests).toHaveLength(1);
+            expect(container.querySelectorAll('.relic-ai-card')).toHaveLength(0);
+            expect(sentPlanningProposals()).toEqual([]);
+        });
+
+        it('offers no Ask before the server is known', async () => {
+            writeSession(session());
+            stubSnapshotFetch(snapshotWithPlayers(1, 'planning'));
+
+            await renderApp();
+            await waitFor(() => aiAskButton() !== undefined);
+
+            expect(aiAskButton()?.disabled).toBe(true);
+            expect(container.querySelector('#hud-ai')?.textContent).toContain('Unavailable');
+        });
     });
 
     it('primes the normal draft from a local browser AI suggestion', async () => {

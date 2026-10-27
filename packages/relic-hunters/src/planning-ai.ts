@@ -4,7 +4,7 @@ import {
     type RallarAiJsonValue
 } from '@shared/rallar-ai/mod.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import type { RelicActionKind, RelicGamePhase } from './model.ts';
+import { RELIC_GAME_PHASES, type RelicActionKind, type RelicGamePhase } from './model.ts';
 
 export const RELIC_PLANNING_AI_SCHEMA_ID = 'relic-hunters.planning-companion';
 export const RELIC_PLANNING_AI_SCHEMA_VERSION = '1';
@@ -17,47 +17,47 @@ const RELIC_PLANNING_AI_CONFIDENCES: readonly RelicPlanningAiConfidence[] = ['lo
 
 export type RelicPlanningAiConfidence = 'low' | 'medium' | 'high';
 
-export type RelicPlanningAiSuggestedAction = Readonly<{
-    kind: RelicActionKind;
-    targetRoomId?: string;
-    targetPlayerId?: string;
-}>;
+export interface RelicPlanningAiSuggestedAction {
+    readonly kind: RelicActionKind;
+    readonly targetRoomId?: string;
+    readonly targetPlayerId?: string;
+}
 
-export type RelicPlanningAiSuggestion = Readonly<{
-    headline: string;
-    action?: RelicPlanningAiSuggestedAction;
-    rationale: string;
-    risks: readonly string[];
-    confidence: RelicPlanningAiConfidence;
-}>;
+export interface RelicPlanningAiSuggestion {
+    readonly headline: string;
+    readonly action?: RelicPlanningAiSuggestedAction;
+    readonly rationale: string;
+    readonly risks: readonly string[];
+    readonly confidence: RelicPlanningAiConfidence;
+}
 
-export type RelicPlanningAiContextAction = Readonly<{
-    kind: RelicActionKind;
-    label: string;
-    description: string;
-    legal: boolean;
-    blocker?: string;
-    consequence: Readonly<{
+export interface RelicPlanningAiContextAction {
+    readonly kind: RelicActionKind;
+    readonly label: string;
+    readonly description: string;
+    readonly legal: boolean;
+    readonly blocker?: string;
+    readonly consequence: Readonly<{
         text: string;
         status: string;
     }>;
-}>;
+}
 
 /** The public view of one hunter's turn the companion plans from: no hidden relic names, values or locations. */
-export type RelicPlanningAiContext = Readonly<{
-    schema: 'relic-planning-ai-context-v1';
-    lang: 'en' | 'no';
-    roomId: string;
-    phase: RelicGamePhase;
-    round: number;
-    roundsLeft: number;
-    turn: Readonly<{
+export interface RelicPlanningAiContext {
+    readonly schema: 'relic-planning-ai-context-v1';
+    readonly lang: 'en' | 'no';
+    readonly roomId: string;
+    readonly phase: RelicGamePhase;
+    readonly round: number;
+    readonly roundsLeft: number;
+    readonly turn: Readonly<{
         activePlayerCount: number;
         submittedPlayerCount: number;
         waitingPlayerCount: number;
         localSubmitted: boolean;
     }>;
-    localPlayer?: Readonly<{
+    readonly localPlayer?: Readonly<{
         username: string;
         health: number;
         score: number;
@@ -65,7 +65,7 @@ export type RelicPlanningAiContext = Readonly<{
         escaped: boolean;
         defeated: boolean;
     }>;
-    currentRoom?: Readonly<{
+    readonly currentRoom?: Readonly<{
         id: string;
         name: string;
         kind: string;
@@ -73,11 +73,11 @@ export type RelicPlanningAiContext = Readonly<{
         collapsed: boolean;
         investigated: boolean;
     }>;
-    objective: string;
-    sceneRecommendation?: RelicPlanningAiSuggestedAction;
-    currentDraft: RelicPlanningAiSuggestedAction;
-    actionOptions: readonly RelicPlanningAiContextAction[];
-    moveTargets: readonly Readonly<{
+    readonly objective: string;
+    readonly sceneRecommendation?: RelicPlanningAiSuggestedAction;
+    readonly currentDraft: RelicPlanningAiSuggestedAction;
+    readonly actionOptions: readonly RelicPlanningAiContextAction[];
+    readonly moveTargets: readonly Readonly<{
         roomId: string;
         name: string;
         kind: string;
@@ -86,19 +86,19 @@ export type RelicPlanningAiContext = Readonly<{
         unstable: boolean;
         collapsed: boolean;
     }>[];
-    stealTargets: readonly Readonly<{
+    readonly stealTargets: readonly Readonly<{
         playerId: string;
         username: string;
         health: number;
         score: number;
         relicCount: number;
     }>[];
-    warnings: readonly Readonly<{
+    readonly warnings: readonly Readonly<{
         kind: string;
         severity: string;
         message: string;
     }>[];
-    knownInvestigations: readonly Readonly<{
+    readonly knownInvestigations: readonly Readonly<{
         roomName: string;
         result: string;
         summary: string;
@@ -106,13 +106,13 @@ export type RelicPlanningAiContext = Readonly<{
         danger?: string;
         revealedRoomName?: string;
     }>[];
-    recentEvents: readonly Readonly<{
+    readonly recentEvents: readonly Readonly<{
         round: number;
         type: string;
         message: string;
         tone?: string;
     }>[];
-}>;
+}
 
 const SUGGESTED_ACTION_SCHEMA: RallarAiJsonSchema = {
     type: 'object',
@@ -174,7 +174,7 @@ const CONTEXT_SCHEMA = objectSchema({
     schema: { type: 'string', const: 'relic-planning-ai-context-v1' },
     lang: { type: 'string', enum: ['en', 'no'] },
     roomId: STRING,
-    phase: { type: 'string', enum: ['lobby', 'planning', 'review', 'finished'] },
+    phase: { type: 'string', enum: RELIC_GAME_PHASES },
     round: NUMBER,
     roundsLeft: NUMBER,
     turn: objectSchema({

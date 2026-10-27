@@ -17,7 +17,7 @@ import type {
 } from '@shared-server/rallar-ai/install-rallar-server-ai-websocket-topic.ts';
 import type { JsonWireObject } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { RallarServerWsPublishInputDto } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
-import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALRoute, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { expect } from '@std/expect';
 import { describe, it } from '@std/testing/bdd';
 import { RELIC_PLANNING_AI_CONTEXT_FIXTURE } from '../../../packages/tests/relic-hunters/relic-planning-ai-context-fixture.ts';
@@ -40,6 +40,7 @@ function createRouterDouble() {
         handler: RallarServerAiWebSocketHandler | null;
     } = { topic: null, handler: null };
     const publications: RallarServerWsPublishInputDto[] = [];
+    const requests: ALMessage[] = [];
     const port: RallarServerAiWebSocketPort = {
         defineTopic: (definition) => {
             state.topic = definition;
@@ -73,13 +74,14 @@ function createRouterDouble() {
             requestJson,
             { groupRef: context.roomRef, reliability: 'at-least-once', ack: 'receiver' }
         );
+        requests.push(raw);
         const message = { payload: decodeRallarServerAiJsonRequest(requestJson), raw };
         if (!await state.topic.authorize(message, context)) {
             return;
         }
         await state.handler(message, context);
     }
-    return { state, publications, port, route };
+    return { state, publications, requests, port, route };
 }
 
 function planningRequest(overrides: Partial<JsonWireObject> = {}): JsonWireObject {
@@ -122,7 +124,8 @@ describe('the Relic planning AI topic', () => {
         expect(reply.message.id.senderId).toBe(SERVER_PEER_ID);
         expect(reply.message.payload.typeId).toBe(RELIC_TYPES.aiPlanningReply);
         expect(reply.message.targets).toEqual({ mode: 'unicast', toPeerId: ASKER_SESSION_ID, groupRef: REF });
-        expect(reply.message.actions?.replyToMsgId).toEqual(expect.any(String));
+        const request = router.requests[0]!;
+        expect(reply.message.actions).toEqual({ corrId: request.id.msgId, replyToMsgId: request.id.msgId });
         const result = JSON.parse(reply.message.payload.resource);
         expect(result).toMatchObject({
             requestId: 'relic-planning:room-1:r1:alice',
@@ -149,6 +152,15 @@ describe('the Relic planning AI topic', () => {
         installRelicPlanningAiTopic({ websocket: router.port, serverSenderId: SERVER_PEER_ID });
 
         await router.route(planningRequest(), { ...MEMBER_CONTEXT, roomId: undefined, roomRef: undefined });
+
+        expect(router.publications).toEqual([]);
+    });
+
+    it('answers no request whose room belongs to another application or workspace', async () => {
+        const router = createRouterDouble();
+        installRelicPlanningAiTopic({ websocket: router.port, serverSenderId: SERVER_PEER_ID });
+
+        await router.route(planningRequest(), { ...MEMBER_CONTEXT, roomRef: { ...REF, workspaceId: 'other-workspace' } });
 
         expect(router.publications).toEqual([]);
     });

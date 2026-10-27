@@ -30,6 +30,7 @@ import {
     RELIC_TYPES,
     type RelicCommand,
     type RelicHunterEvent,
+    type RelicPlanningAiSuggestion,
     type RelicPublicSnapshot
 } from '../../../packages/relic-hunters/mod.ts';
 import {
@@ -95,6 +96,7 @@ namespace RelicBrowserBackend {
          * companion's suggestion under this headline.
          */
         readonly planningReplyHeadline?: string;
+        readonly planningReplies?: RelicPlanningAiSuggestion[];
     }
 }
 
@@ -156,10 +158,15 @@ class RelicBrowserBackend {
         if (context === undefined) {
             throw new Error('Browser sent a planning request with an undecodable context');
         }
+        const suggestion = {
+            ...computeRelicPlanningAiSuggestion(context),
+            headline: this.options.planningReplyHeadline
+        };
+        this.options.planningReplies?.push(suggestion);
         const result = createRallarAiJsonResult({
             request,
             provider: createRallarAiMockProvider({ providerId: 'relic-planning-deterministic' }),
-            value: { ...computeRelicPlanningAiSuggestion(context), headline: this.options.planningReplyHeadline }
+            value: suggestion
         });
         socket.send(JSON.stringify(newALReplyMessage(message, {
             senderId: 'default-qbox-server',

@@ -154,6 +154,13 @@ export function buildRelicPlanningAiContext({
     };
 }
 
+/** The request as it crosses the wire: without `signal`, and always naming its id and the revision it was asked at. */
+export interface RelicPlanningAiRequest
+    extends Omit<RallarAiJsonRequest<RelicPlanningAiContext>, 'signal' | 'requestId' | 'baseStateRevision'> {
+    readonly requestId: string;
+    readonly baseStateRevision: string;
+}
+
 export function createRelicPlanningAiRequest({
     context,
     baseStateRevision,
@@ -164,7 +171,7 @@ export function createRelicPlanningAiRequest({
     baseStateRevision: string;
     dedupeKey: string;
     requestId?: string;
-}>): Omit<RallarAiJsonRequest<RelicPlanningAiContext>, 'signal'> {
+}>): RelicPlanningAiRequest {
     return {
         requestId: requestId ?? `relic-planning:${dedupeKey}`,
         schemaId: RELIC_PLANNING_AI_SCHEMA_ID,

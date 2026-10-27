@@ -6,7 +6,6 @@ import {
     type RelicPlanningAiSuggestion
 } from './planning-ai.ts';
 
-/** The deterministic planning companion: a legal suggestion from the public context alone, or a hold with none. */
 export function computeRelicPlanningAiSuggestion(context: RelicPlanningAiContext): RelicPlanningAiSuggestion {
     const action = computeFirstLegalAction(context);
     if (!action) {

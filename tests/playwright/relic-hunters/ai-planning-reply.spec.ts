@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { RELIC_TYPES, type RelicCommand } from '../../../packages/relic-hunters/mod.ts';
+import { RELIC_TYPES, type RelicCommand, type RelicPlanningAiSuggestion } from '../../../packages/relic-hunters/mod.ts';
 import { createGroupSnapshot, initBrowserTestTransport, startRelicBrowserBackend } from './relic-browser-backend.ts';
 import { createRelicSnapshotWithPlayers } from './relic-browser-snapshots.ts';
 
@@ -10,7 +10,13 @@ const SERVER_HEADLINE = 'The server companion says: take this route';
 test('shows the server companion\'s reply to the asking hunter and still submits the plan the hunter primed', async ({ page }) => {
     const commandBodies: RelicCommand[] = [];
     const receivedFrames: ALMessage[] = [];
-    await startPlanningExpedition(page, { commandBodies, receivedFrames, planningReplyHeadline: SERVER_HEADLINE });
+    const planningReplies: RelicPlanningAiSuggestion[] = [];
+    await startPlanningExpedition(page, {
+        commandBodies,
+        receivedFrames,
+        planningReplies,
+        planningReplyHeadline: SERVER_HEADLINE
+    });
 
     await page.locator('#hud-ai').getByRole('button', { name: 'Ask' }).click();
 
@@ -19,6 +25,9 @@ test('shows the server companion\'s reply to the asking hunter and still submits
     await page.locator('#hud-ai').getByRole('button', { name: 'Prime' }).click();
     await page.getByRole('button', { name: 'Submit Plan' }).click();
     await expect.poll(() => commandBodies.map((command) => command.kind)).toContain('submit-action');
+    const submitted = commandBodies.find((command) => command.kind === 'submit-action');
+    expect(planningReplies[0]?.action).toBeDefined();
+    expect(submitted?.kind === 'submit-action' ? submitted.action : undefined).toEqual(planningReplies[0]?.action);
 });
 
 test('answers with the local companion once the silent server lets the reply time out', async ({ page }) => {
@@ -34,7 +43,12 @@ test('answers with the local companion once the silent server lets the reply tim
 
 async function startPlanningExpedition(
     page: Page,
-    options: Readonly<{ commandBodies?: RelicCommand[]; receivedFrames: ALMessage[]; planningReplyHeadline?: string; }>
+    options: Readonly<{
+        commandBodies?: RelicCommand[];
+        receivedFrames: ALMessage[];
+        planningReplies?: RelicPlanningAiSuggestion[];
+        planningReplyHeadline?: string;
+    }>
 ): Promise<void> {
     await initBrowserTestTransport(page);
     await startRelicBrowserBackend(page, {

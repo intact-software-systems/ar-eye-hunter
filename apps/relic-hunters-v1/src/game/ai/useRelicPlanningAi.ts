@@ -19,22 +19,23 @@ import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type 
 import type { ActionDraft, RelicGameViewModel } from '../game-view-model.ts';
 import type { Lang } from '../lang.ts';
 import type { SceneObjective } from '../scene/objectives.ts';
+import { createDefaultRelicPlanningAiProvider } from './create-default-relic-planning-ai-provider.ts';
 import { isRelicPlanningAiProposalOfPrincipal } from './is-relic-planning-ai-proposal-of-principal.ts';
 import {
     addRelicPlanningAiProposal,
     buildRelicPlanningAiContext,
     canGenerateRelicPlanningAi,
-    createRelicPlanningAiMockProvider,
     createRelicPlanningAiRequest,
     isRelicPlanningAiRevisionCurrent,
     pruneRelicPlanningAiProposals,
     relicPlanningAiBaseStateRevision,
     relicPlanningAiDedupeKey,
     type RelicPlanningAiProposal,
+    type RelicPlanningAiRequest,
     type RelicPlanningAiState,
     type RelicPlanningAiStatus
 } from './relic-planning-ai.ts';
-import { sendRelicPlanningRequest, type RelicPlanningRequestInput } from './send-relic-planning-request.ts';
+import { sendRelicPlanningRequest } from './send-relic-planning-request.ts';
 
 export type UseRelicPlanningAiInput = Readonly<{
     snapshot?: RelicPublicSnapshot;
@@ -48,6 +49,7 @@ export type UseRelicPlanningAiInput = Readonly<{
     provider?: RallarAiJsonProvider;
     enabled?: boolean;
     now?: () => number;
+    /** Local generation only: the server request and the proposal send to the hunter's sessions emit none. */
     diagnostics?: (event: RallarAiDiagnosticEvent) => void;
 }>;
 
@@ -99,7 +101,7 @@ export function useRelicPlanningAi({
             ? relicPlanningAiDedupeKey({ snapshot, localPlayerId, baseStateRevision })
             : undefined, [baseStateRevision, localPlayerId, snapshot]);
     const defaultProvider = useMemo(
-        () => provider ?? (defaultBrowserAiProviderEnabled() ? createRelicPlanningAiMockProvider() : undefined),
+        () => provider ?? createDefaultRelicPlanningAiProvider(),
         [provider]
     );
 
@@ -230,6 +232,9 @@ export function useRelicPlanningAi({
                 readCurrentRevision: () => revisionRef.current,
                 signal: abort.signal
             });
+            if (abort.signal.aborted || suggestion.kind === 'aborted') {
+                return;
+            }
             if (suggestion.kind !== 'suggested') {
                 setStatus(suggestion.kind === 'invalid' ? 'error' : suggestion.kind);
                 setError(suggestion.kind === 'invalid' ? suggestion.reason : undefined);
@@ -323,8 +328,7 @@ function acceptRemoteProposal(
 }
 
 interface ReadRelicPlanningSuggestionInput {
-    readonly request: RelicPlanningRequestInput['request'];
-    /** The context the request was built from. */
+    readonly request: RelicPlanningAiRequest;
     readonly context: RelicPlanningAiContext;
     readonly roomId: string;
     readonly provider: RallarAiJsonProvider | undefined;
@@ -336,10 +340,9 @@ interface ReadRelicPlanningSuggestionInput {
 
 type RelicPlanningSuggestionOutcome =
     | Readonly<{ kind: 'suggested'; result: RallarAiJsonResult<RelicPlanningAiSuggestion>; }>
-    | Readonly<{ kind: 'stale' | 'unavailable'; }>
+    | Readonly<{ kind: 'aborted' | 'stale' | 'unavailable'; }>
     | Readonly<{ kind: 'invalid'; reason: string; }>;
 
-/** The Relic server's companion first (D444); on any fallback, the local provider when this build has one. */
 async function readRelicPlanningSuggestion(
     input: ReadRelicPlanningSuggestionInput
 ): Promise<RelicPlanningSuggestionOutcome> {
@@ -352,6 +355,9 @@ async function readRelicPlanningSuggestion(
     });
     if (answered.right !== undefined) {
         return { kind: 'suggested', result: answered.right };
+    }
+    if (answered.left === 'aborted') {
+        return { kind: 'aborted' };
     }
     return input.provider === undefined
         ? { kind: 'unavailable' }
@@ -406,7 +412,6 @@ function deriveVisibleStatus({
     baseStateRevision
 }: Readonly<{
     canAsk: boolean;
-    /** The Relic server's companion or a local provider can answer. */
     canAnswer: boolean;
     status: RelicPlanningAiStatus;
     localProposal?: RelicPlanningAiProposal;
@@ -430,17 +435,4 @@ function deriveVisibleStatus({
         return 'stale';
     }
     return status;
-}
-
-function defaultBrowserAiProviderEnabled(): boolean {
-    const env = (import.meta as {
-        env?: Readonly<{ DEV?: boolean; MODE?: string; VITEST?: string; }>;
-    }).env;
-    const processEnv = (globalThis as {
-        process?: { env?: Readonly<Record<string, string | undefined>>; };
-    }).process?.env;
-    return !!env?.DEV ||
-        env?.MODE === 'test' ||
-        !!env?.VITEST ||
-        !!processEnv?.VITEST;
 }

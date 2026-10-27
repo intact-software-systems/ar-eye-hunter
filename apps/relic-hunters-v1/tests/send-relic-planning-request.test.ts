@@ -90,6 +90,14 @@ describe('a Relic planning request to the server (D444)', () => {
         expect((await sendRelicPlanningRequest(facade, input())).left).toBe('invalid-reply');
     });
 
+    it('refuses a reply that arrives once the turn has no revision to plan for', async () => {
+        const { facade } = createFacadeDouble('default-qbox-server', replied(serverResult()));
+
+        const outcome = await sendRelicPlanningRequest(facade, input({ currentBaseStateRevision: () => undefined }));
+
+        expect(outcome.left).toBe('invalid-reply');
+    });
+
     it('refuses a reply that arrives after the draft or turn changed', async () => {
         const { facade } = createFacadeDouble('default-qbox-server', replied(serverResult()));
 
