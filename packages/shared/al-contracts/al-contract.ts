@@ -177,6 +177,7 @@ export type ALMessage = Readonly<{
 type ALMessageBuilderOptions = Readonly<{
     qos?: ALQosPolicyRequest;
     ttlMs?: number;
+    actions?: ALActions;
 }>;
 
 export type ALBroadcastMessageBuilderOptions = Readonly<{
@@ -189,6 +190,7 @@ export type ALBroadcastMessageBuilderOptions = Readonly<{
     ack?: ALAckMode;
     ownership?: 'shared' | 'exclusive';
     qos?: ALQosPolicyRequest;
+    actions?: ALActions;
     /** A sequence left out is minted by the WS server's outbound for its own publication. */
     ordering?: Readonly<{ orderingKey: string; epoch?: number; seq?: number; }>;
 }>;
@@ -247,6 +249,7 @@ function buildALMessage<T>(
             ? { expiresAtMs }
             : undefined,
         qos: options?.qos,
+        ...(options?.actions === undefined ? {} : { actions: options.actions }),
         payload: {
             typeId: typeId,
             contentType: 'application/json',
@@ -314,11 +317,13 @@ export function newALMulticastMessage<T>(
         overlayId?: string;
         fanoutLimit?: number;
         qos?: ALQosPolicyRequest;
+        actions?: ALActions;
     }>
 ): ALMessage {
     const untargeted = newALUntargetedMessage(senderId, route, typeId, resource, {
         qos: options?.qos,
-        ttlMs: options?.ttlMs
+        ttlMs: options?.ttlMs,
+        actions: options?.actions
     });
     const expiresAtMs = untargeted.constraints?.expiresAtMs;
     const targetGroupRef = toALGroupRef(groupRef);
@@ -434,7 +439,8 @@ export function newALBroadcastMessage<T>(
         : undefined;
     const untargeted = newALUntargetedMessage(senderId, route, typeId, resource, {
         qos: options?.qos,
-        ttlMs: options?.ttlMs
+        ttlMs: options?.ttlMs,
+        actions: options?.actions
     });
     const expiresAtMs = untargeted.constraints?.expiresAtMs;
 
