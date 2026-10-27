@@ -684,7 +684,7 @@ describe('BrowserRallarDeliveryRegistry', () => {
     });
 
     describe('reply counts', () => {
-        it('counts the open reply slots and the open reply waits of the retained entries', async () => {
+        it('counts the replies the retained entries hold and the reply waits in flight', async () => {
             const harness = new DeliveryRegistryHarness();
             const waiting = harness.registry.open(toUnicastTestMessage('msg-1', 'responder-1'), 'ws');
             harness.registry.open(toUnicastTestMessage('msg-2', 'responder-1'), 'ws');
@@ -693,25 +693,27 @@ describe('BrowserRallarDeliveryRegistry', () => {
             const second = waiting.awaitReply({ timeoutMs: 1_000 });
             harness.registry.recordReply(toReply('reply-3', 'responder-1', 'msg-3'));
 
-            expect(harness.registry.getReplyCounts()).toEqual({ replySlotsOpen: 2, replyWaitsOpen: 2 });
+            expect(harness.registry.getReplyCounts()).toEqual({ repliesHeld: 1, replyWaitsOpen: 2 });
 
             harness.registry.recordReply(toReply('reply-1', 'responder-1', 'msg-1'));
             await Promise.all([first, second]);
-            expect(harness.registry.getReplyCounts()).toEqual({ replySlotsOpen: 1, replyWaitsOpen: 0 });
+            expect(harness.registry.getReplyCounts()).toEqual({ repliesHeld: 2, replyWaitsOpen: 0 });
         });
 
         it('stops counting and matching an entry retention dropped', () => {
             const harness = new DeliveryRegistryHarness({ retainTerminalMs: RETAIN_TERMINAL_MS, maxEntries: 1 });
             harness.registry.open(toUnicastTestMessage('msg-1', 'responder-1'), 'ws');
+            harness.registry.recordReply(toReply('reply-1', 'responder-1', 'msg-1'));
+            expect(harness.registry.getReplyCounts()).toEqual({ repliesHeld: 1, replyWaitsOpen: 0 });
 
             harness.registry.open(toUnicastTestMessage('msg-2', 'responder-1'), 'ws');
 
             expect(harness.registry.getHandle('msg-1')).toBeUndefined();
-            expect(harness.registry.recordReply(toReply('reply-1', 'responder-1', 'msg-1'))).toEqual({
+            expect(harness.registry.recordReply(toReply('reply-2', 'responder-1', 'msg-1'))).toEqual({
                 kind: 'late',
                 cause: 'unobserved'
             });
-            expect(harness.registry.getReplyCounts()).toEqual({ replySlotsOpen: 1, replyWaitsOpen: 0 });
+            expect(harness.registry.getReplyCounts()).toEqual({ repliesHeld: 0, replyWaitsOpen: 0 });
         });
     });
 

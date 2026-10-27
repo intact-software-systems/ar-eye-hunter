@@ -12,7 +12,7 @@ const REPORT: RallarMessagesUsage = {
     inbound: { admissions: 1, bytes: 320 },
     limits: AL_VOLATILE_SESSION_LIMITS,
     overloaded: false,
-    replySlotsOpen: 3,
+    repliesHeld: 3,
     replyWaitsOpen: 1
 };
 
@@ -34,7 +34,7 @@ it('answers the facade ledger report once the facade is connected, with no order
     facade.behavior.readUsage.mockReturnValue(REPORT);
 
     await expect(runtime.readAlmUsage()).resolves.toEqual({ ...REPORT, orderingTracks: 0, deliveredMarkers: 0 });
-    await expect(runtime.readAlmUsage()).resolves.toMatchObject({ replySlotsOpen: 3, replyWaitsOpen: 1 });
+    await expect(runtime.readAlmUsage()).resolves.toMatchObject({ repliesHeld: 3, replyWaitsOpen: 1 });
 });
 
 it('answers undefined before the facade is connected, where the facade read would throw', async () => {

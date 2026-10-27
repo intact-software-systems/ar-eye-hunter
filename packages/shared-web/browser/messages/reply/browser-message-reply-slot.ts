@@ -36,8 +36,8 @@ export class BrowserMessageReplySlot {
         this.expectedResponderId = expectedResponderId;
     }
 
-    isOpen(): boolean {
-        return this.state === 'open';
+    holdsReply(): boolean {
+        return this.reply !== undefined;
     }
 
     getWaitCount(): number {

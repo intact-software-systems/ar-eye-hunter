@@ -27,9 +27,9 @@ export interface RallarWsMessageLane {
     ): RallarUnsubscribe;
 }
 
-/** The volatile ledger beside this page's open reply slots and reply waits, both bounded by its delivery observations. */
+/** The volatile ledger beside the matched replies this page's retained deliveries hold and its reply waits in flight. */
 export interface RallarMessagesUsage extends ALVolatileSessionReport {
-    readonly replySlotsOpen: number;
+    readonly repliesHeld: number;
     readonly replyWaitsOpen: number;
 }
 

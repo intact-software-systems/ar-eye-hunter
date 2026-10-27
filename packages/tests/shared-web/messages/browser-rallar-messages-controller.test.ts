@@ -55,7 +55,7 @@ describe('rallar.messages.readUsage', () => {
             inbound: { admissions: 0, bytes: 0 },
             limits: LIMITS,
             overloaded: false,
-            replySlotsOpen: 0,
+            repliesHeld: 0,
             replyWaitsOpen: 0
         });
         expect(report.usage.oldestAgeMs).toBeGreaterThanOrEqual(1_000);
@@ -105,22 +105,22 @@ describe('rallar.messages.readUsage', () => {
             inbound: { admissions: 0, bytes: 0 },
             limits: LIMITS,
             overloaded: false,
-            replySlotsOpen: 0,
+            repliesHeld: 0,
             replyWaitsOpen: 0
         });
     });
 
-    it('reads the open reply slots and reply waits of this page beside the ledger', async () => {
+    it('reads the replies this page holds and its reply waits in flight beside the ledger', async () => {
         const facade = createRallarTestFacade();
         await facade.connect();
         const handle = await facade.messages.ws.send({ scope: 'world', topicId: 'app.ask', typeId: 'app.ask.v1', payload: {} });
         const stop = new AbortController();
         const pending = handle.awaitReply({ timeoutMs: 60_000, signal: stop.signal });
 
-        expect(facade.messages.readUsage()).toMatchObject({ replySlotsOpen: 1, replyWaitsOpen: 1 });
+        expect(facade.messages.readUsage()).toMatchObject({ repliesHeld: 0, replyWaitsOpen: 1 });
 
         stop.abort();
         expect((await pending).status).toBe('aborted');
-        expect(facade.messages.readUsage()).toMatchObject({ replySlotsOpen: 1, replyWaitsOpen: 0 });
+        expect(facade.messages.readUsage()).toMatchObject({ repliesHeld: 0, replyWaitsOpen: 0 });
     });
 });

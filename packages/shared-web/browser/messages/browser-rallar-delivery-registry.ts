@@ -80,7 +80,7 @@ export namespace BrowserRallarDeliveryRegistry {
     }
 
     export interface ReplyCounts {
-        readonly replySlotsOpen: number;
+        readonly repliesHeld: number;
         readonly replyWaitsOpen: number;
     }
 }
@@ -172,7 +172,7 @@ export class BrowserRallarDeliveryRegistry {
     getReplyCounts(): BrowserRallarDeliveryRegistry.ReplyCounts {
         const slots = [...this.entries.values()].map(({ observation }) => observation.replySlot);
         return {
-            replySlotsOpen: slots.filter((slot) => slot.isOpen()).length,
+            repliesHeld: slots.filter((slot) => slot.holdsReply()).length,
             replyWaitsOpen: slots.reduce((waits, slot) => waits + slot.getWaitCount(), 0)
         };
     }

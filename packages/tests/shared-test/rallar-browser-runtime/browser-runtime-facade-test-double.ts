@@ -153,7 +153,7 @@ const IDLE_SESSION_REPORT: RallarMessagesUsage = {
     inbound: { admissions: 0, bytes: 0 },
     limits: AL_VOLATILE_SESSION_LIMITS,
     overloaded: false,
-    replySlotsOpen: 0,
+    repliesHeld: 0,
     replyWaitsOpen: 0
 };
 
