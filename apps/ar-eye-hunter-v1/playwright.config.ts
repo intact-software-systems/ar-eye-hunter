@@ -42,7 +42,18 @@ export default defineConfig({
     },
     fullyParallel: false,
     workers: fullStackEnabled ? 1 : undefined,
-    reporter: [['list']],
+    reporter: [
+        ['list'],
+        ...(fullStackEnabled
+            ? [
+                ['../../packages/shared-test/room-journey-reporter.ts', {
+                    application: 'ar-eye-hunter',
+                    environment: 'local-api-memory-built-spa-chromium',
+                    sourceRevision: process.env.RALLAR_ROOM_JOURNEY_REVISION ?? null
+                }] as const
+            ]
+            : [])
+    ],
     use: {
         baseURL: 'http://127.0.0.1:5186',
         trace: fullStackEnabled

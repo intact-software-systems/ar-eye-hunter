@@ -230,6 +230,7 @@ test(
 
 roomBrowserTest(
     'shares a code expedition, plays together, and returns after code rotation',
+    { annotation: [{ type: 'room-journey', description: 'entry' }, { type: 'room-journey', description: 'recovery' }] },
     async ({ browser, page: hostPage, guest: guestPage }, testInfo) => {
         roomBrowserTest.skip(
             !['1', 'true'].includes(process.env.RELIC_HUNTERS_FULL_STACK ?? ''),
@@ -250,10 +251,12 @@ roomBrowserTest(
             await expect(outsiderPage.getByRole('button', { name: 'New Room', exact: true })).toBeEnabled();
             await expect(outsiderPage.locator('button.room-row')).toHaveCount(0);
             await outsiderPage.goto('about:blank');
-            await guestPage.goto(link);
-            await expect(guestPage.getByText('Sign in to enter this room.', { exact: true })).toBeVisible();
-            await registerPrivateHunter(guestPage, 'guest');
-            await playPrivateExpedition(hostPage, guestPage);
+            await roomBrowserTest.step('room-journey:entry', async () => {
+                await guestPage.goto(link);
+                await expect(guestPage.getByText('Sign in to enter this room.', { exact: true })).toBeVisible();
+                await registerPrivateHunter(guestPage, 'guest');
+                await playPrivateExpedition(hostPage, guestPage);
+            });
             await hostPage.getByRole('button', { name: 'Rotate room code', exact: true }).click();
             await expect(hostPage.getByLabel('Room link', { exact: true })).not.toHaveValue(link);
             await expect(hostPage.getByLabel('Room link', { exact: true })).not.toHaveValue('');
@@ -267,8 +270,12 @@ roomBrowserTest(
             await hostPage.screenshot({ path: testInfo.outputPath('relic-host.png'), fullPage: true });
             // The host's assertions are complete; release its software WebGL renderer before reload.
             await hostPage.goto('about:blank');
-            await guestPage.reload();
-            await expect(guestPage.locator('.turn-plan-status .panel-label')).toHaveText('Round 2');
+            await roomBrowserTest.step('room-journey:recovery', async () => {
+                await guestPage.reload();
+                await expect(guestPage.locator('.turn-plan-status .panel-label')).toHaveText('Round 2');
+                await guestPage.getByRole('button', { name: 'Submit Plan' }).click();
+                await expect(guestPage.locator('.turn-plan-status')).toContainText('Plan locked');
+            });
             await guestPage.screenshot({ path: testInfo.outputPath('relic-guest.png'), fullPage: true });
             await guestPage.goto('about:blank');
             await outsiderPage.goto(link);
@@ -285,6 +292,7 @@ roomBrowserTest(
 
 roomBrowserTest(
     'plays a two-hunter expedition through visible move, escape, and matching finale controls',
+    { annotation: { type: 'room-journey', description: 'repeat-play' } },
     async ({ page: host, guest }, testInfo) => {
         // Six transitions retain their 30 s limits; setup and two rendered clients' actions have two more minutes.
         roomBrowserTest.setTimeout(6 * automaticReviewTransitionTimeoutMs + 120_000);
@@ -293,12 +301,13 @@ roomBrowserTest(
             'Requires the paired Relic server.'
         );
         await host.goto('/');
-        await registerPrivateHunter(host, 'finale-host');
+        const hostUsername = await registerPrivateHunter(host, 'finale-host');
         await host.getByRole('button', { name: 'New unlisted room', exact: true }).click();
         const link = host.getByLabel('Room link', { exact: true });
         await expect(link).toHaveValue(/#rallar-room\?/);
-        await guest.goto(await link.inputValue());
-        await registerPrivateHunter(guest, 'finale-guest');
+        const roomLink = await link.inputValue();
+        await guest.goto(roomLink);
+        const guestUsername = await registerPrivateHunter(guest, 'finale-guest');
         await playPrivateExpedition(host, guest);
         for (const [index, destination] of ['Hallway', 'Trap Room', 'Monster Lair', 'Exit'].entries()) {
             for (const hunter of [host, guest]) {
@@ -334,6 +343,16 @@ roomBrowserTest(
         );
         await host.screenshot({ path: testInfo.outputPath('relic-host-finale.png'), fullPage: true });
         await guest.screenshot({ path: testInfo.outputPath('relic-guest-finale.png'), fullPage: true });
+        await roomBrowserTest.step('room-journey:repeat-play', async () => {
+            await host.getByRole('button', { name: 'Reset', exact: true }).click();
+            await expect(host.locator('.victory-panel')).toBeHidden();
+            await expect(guest.locator('.victory-panel')).toBeHidden();
+            await expect(host.locator('.profile-row strong')).toHaveText(hostUsername);
+            await expect(guest.locator('.profile-row strong')).toHaveText(guestUsername);
+            await expect(link).toHaveValue(roomLink);
+            await expect(guest.getByLabel('Room link', { exact: true })).toHaveValue(roomLink);
+            await playPrivateExpedition(host, guest);
+        });
     }
 );
 

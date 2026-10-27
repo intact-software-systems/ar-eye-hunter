@@ -41,9 +41,11 @@ renderer repair prevents asynchronous work from outliving Relic logout while kee
 account rendering and scene controls usable. Advertised WebSocket host validation now diagnoses #683
 at server startup and before browser connection, with visible login and recovery controls in both
 games. Delayed heartbeat recovery now restores authorized joined-room targets after browser snapshot
-expiry while the server presence lease remains live. The current increment repairs a reproduced
+expiry while the server presence lease remains live. Merged
+[PR #721](https://github.com/intact-software-systems/ar-eye-hunter/pull/721) repairs a reproduced
 Relic code-room sharing failure from #712: preserve the committed creation result when leaving the
-previous room fails while the browser cache is expired.
+previous room fails while the browser cache is expired. The maintainer selected repeatable browser
+measurements of entry, recovery and repeat play as the next increment.
 
 ## Current foundation
 
@@ -136,11 +138,11 @@ all-or-none admission decisions before it becomes a platform promise.
 
 ## Delivery priorities
 
-| Priority    | Outcomes                                                                                                                                                                                                                 |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Current     | Preserve Relic code-room sharing through cache expiry during previous-room cleanup ([#712](https://github.com/intact-software-systems/ar-eye-hunter/issues/712)), with runtime and visible workflow regression coverage. |
-| Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them.                                                                                                                              |
-| Later       | Scheduled rooms (8) and a separate tournament capability.                                                                                                                                                                |
+| Priority    | Outcomes                                                                                                                                                  |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Current     | Measure entry, reload recovery, and repeat play with the same people in both games through existing clickable journeys; retain every attempt and failure. |
+| Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them.                                                               |
+| Later       | Scheduled rooms (8) and a separate tournament capability.                                                                                                 |
 
 Relic validation is a constraint throughout, not a dependency postponed to slice 9. Operator
 reliability work may ship independently where a concrete operational need warrants it. Freshness and
@@ -368,6 +370,17 @@ Measure invitation/discovery-to-participation time, join failures by reason, emp
 outcomes, reconnect success, repeat participation with the same people, and the application glue
 required to implement those flows. Baseline these before choosing numeric targets. HTTP admission
 success alone does not prove successful participation.
+
+The current measurement increment uses native Playwright phase durations from the existing private
+entry, reload and completed-activity journeys. Repeat play proceeds into another activity with the
+same accounts and room. One shared reporter retains failures, retries, skips and unreached phases;
+invalid evidence or failed artifact delivery fails the run. The [browser guide](../../tests/playwright/README.md#room-journey-measurements)
+defines exact boundaries, reproducible commands and environment limitations. CI publishes the JSON
+before later tests clear the output directory. Three serial local repetitions establish descriptive
+observations, not a latency SLO or production adoption evidence. Discovery failures, empty-directory
+rates, real OS suspension and user demand remain unmeasured by this baseline. Use the results to
+select the next justified improvement; do not infer demand for a party or spectator system from
+successful automated play.
 
 - REST behavior changes update OpenAPI and black-box recipes in the same change.
 - Shared browser public-surface changes include API snapshots and bundle-boundary checks. Report any

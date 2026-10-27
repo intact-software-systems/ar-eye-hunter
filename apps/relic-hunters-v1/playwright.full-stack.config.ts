@@ -50,7 +50,18 @@ export default defineConfig({
     },
     fullyParallel: false,
     workers: 1,
-    reporter: [['list']],
+    reporter: [
+        ['list'],
+        ...(fullStackEnabled
+            ? [
+                ['../../packages/shared-test/room-journey-reporter.ts', {
+                    application: 'relic-hunters',
+                    environment: 'local-relic-server-vite-chromium',
+                    sourceRevision: process.env.RALLAR_ROOM_JOURNEY_REVISION ?? null
+                }] as const
+            ]
+            : [])
+    ],
     use: {
         baseURL: 'http://127.0.0.1:5175',
         trace: 'on-first-retry',

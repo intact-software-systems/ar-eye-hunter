@@ -152,6 +152,7 @@ test('switches accounts through Logout and keeps the replacement arena after rel
 
 roomBrowserTest(
     'shares a code arena through sign-in, participation, rotation, and member reload',
+    { annotation: [{ type: 'room-journey', description: 'entry' }, { type: 'room-journey', description: 'recovery' }] },
     async ({ page: host, guest }, testInfo) => {
         roomBrowserTest.skip(
             process.env.RALLAR_ARENA_FULL_STACK !== '1',
@@ -169,29 +170,37 @@ roomBrowserTest(
             'groupId'
         );
         expect(reference).toBeTruthy();
-        const guestOperations = await openOperations(guest, originalLink);
-        await expect(guestOperations.getByText(`Sign in to enter ${reference}.`, { exact: true })).toBeVisible();
-        await signIn(guest, 'bob');
-        await expect(guestOperations.getByText(`Entered ${reference}.`, { exact: true })).toBeVisible();
+        const guestOperations = await roomBrowserTest.step('room-journey:entry', async () => {
+            const guestOperations = await openOperations(guest, originalLink);
+            await expect(guestOperations.getByText(`Sign in to enter ${reference}.`, { exact: true })).toBeVisible();
+            await signIn(guest, 'bob');
+            await expect(guestOperations.getByText(`Entered ${reference}.`, { exact: true })).toBeVisible();
 
-        const appoint = hostOperations.getByRole('button', { name: 'Appoint this SPA', exact: true });
-        if (await appoint.isEnabled()) {
-            await appoint.click();
-        }
-        await expect(hostOperations.getByRole('button', { name: '1m', exact: true })).toBeEnabled({
-            timeout: 20_000
-        });
-        await hostOperations.getByRole('button', { name: '1m', exact: true }).click();
-        await expect(guestOperations.locator('.match-panel strong')).toHaveText(/^[01]:\d{2}$/, {
-            timeout: 20_000
+            const appoint = hostOperations.getByRole('button', { name: 'Appoint this SPA', exact: true });
+            if (await appoint.isEnabled()) {
+                await appoint.click();
+            }
+            await expect(hostOperations.getByRole('button', { name: '1m', exact: true })).toBeEnabled({
+                timeout: 20_000
+            });
+            await hostOperations.getByRole('button', { name: '1m', exact: true }).click();
+            await expect(guestOperations.locator('.match-panel strong')).toHaveText(/^[01]:\d{2}$/, {
+                timeout: 20_000
+            });
+            return guestOperations;
         });
         await guest.screenshot({ path: testInfo.outputPath('private-arena-participating.png'), fullPage: true });
         await hostOperations.getByRole('button', { name: 'Rotate room code', exact: true }).click();
         await expect(linkField).toHaveValue(/#rallar-room\?.*joinCode=/);
         await expect(linkField).not.toHaveValue(originalLink);
-        await guest.reload();
-        await openOperationsPanel(guest);
-        await expect(guestOperations.getByText(`Entered ${reference}.`, { exact: true })).toBeVisible();
+        await roomBrowserTest.step('room-journey:recovery', async () => {
+            await guest.reload();
+            await openOperationsPanel(guest);
+            await expect(guestOperations.getByText(`Entered ${reference}.`, { exact: true })).toBeVisible();
+            await expect(guestOperations.locator('.match-panel strong')).toHaveText(/^[01]:\d{2}$/, {
+                timeout: 20_000
+            });
+        });
     }
 );
 
