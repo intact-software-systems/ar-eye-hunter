@@ -223,7 +223,7 @@ describe('BrowserMessageReplySlot', () => {
             expect(await second).toEqual({ status: 'replied', reply, lifecycle: toLifecycle('expired') });
         });
 
-        it('resolves every wait timeout even when reading a wait\'s lifecycle ends the request', async () => {
+        it('resolves every wait undelivered when the timeout\'s lifecycle read finds the deadline lapsed', async () => {
             const slot = new BrowserMessageReplySlot('responder-1');
             const lapsing = createLapsingLifecycle(slot);
             const first = slot.awaitReply(lapsing.read, { timeoutMs: 100 });
@@ -232,8 +232,10 @@ describe('BrowserMessageReplySlot', () => {
 
             await vi.advanceTimersByTimeAsync(100);
 
-            expect(await first).toEqual({ status: 'timeout', lifecycle: toLifecycle('expired') });
-            expect(await second).toEqual({ status: 'timeout', lifecycle: toLifecycle('expired') });
+            expect(await first).toEqual({ status: 'undelivered', lifecycle: toLifecycle('expired') });
+            expect(await second).toEqual({ status: 'undelivered', lifecycle: toLifecycle('expired') });
+            expect(vi.getTimerCount()).toBe(0);
+            expect(slot.record(toReply('reply-1', 'responder-1'))).toEqual({ kind: 'matched' });
         });
     });
 

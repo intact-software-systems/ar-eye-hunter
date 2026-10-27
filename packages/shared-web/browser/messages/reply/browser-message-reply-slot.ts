@@ -122,7 +122,7 @@ export class BrowserMessageReplySlot {
         resolve: (outcome: ReplyOutcome) => void
     ): void {
         const armed = new AbortController();
-        const timerId = setTimeout(() => this.timeOut(), options.timeoutMs);
+        const timerId = setTimeout(() => this.timeOut(readLifecycle), options.timeoutMs);
         const wait: ReplyWait = {
             readLifecycle,
             end: (outcome) => {
@@ -138,7 +138,16 @@ export class BrowserMessageReplySlot {
         }, { signal: armed.signal });
     }
 
-    private timeOut(): void {
+    /**
+     * Reads the lifecycle while the slot is still open: a deadline that lapsed during the wait is applied by that read,
+     * and the request then ends every wait `undelivered` and leaves the slot open, instead of a timeout closing it.
+     */
+    private timeOut(readLifecycle: () => ALDeliveryLifecycle): void {
+        const lifecycle = readLifecycle();
+        if (isReplyUndeliverable(lifecycle)) {
+            this.endWaits(lifecycle);
+            return;
+        }
         this.state = 'timed-out';
         for (const wait of [...this.waits]) {
             wait.end({ status: 'timeout', lifecycle: wait.readLifecycle() });

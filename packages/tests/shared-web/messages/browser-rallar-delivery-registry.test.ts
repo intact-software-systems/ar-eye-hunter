@@ -526,6 +526,34 @@ describe('BrowserRallarDeliveryRegistry', () => {
             expect(await pending).toMatchObject({ status: 'replied', reply, lifecycle: { state: 'expired' } });
         });
 
+        it('resolves a lone reply wait undelivered when the request deadline lapses before its timeout', async () => {
+            const harness = new DeliveryRegistryHarness();
+            const handle = harness.registry.open(
+                { ...toUnicastTestMessage('msg-1', 'responder-1'), constraints: { expiresAtMs: START_MS + 1_000 } },
+                'ws'
+            );
+            const pending = handle.awaitReply({ timeoutMs: 5_000 });
+
+            await harness.advanceMs(1_000);
+
+            expect(await pending).toMatchObject({ status: 'undelivered', lifecycle: { state: 'expired' } });
+            expect(vi.getTimerCount()).toBe(0);
+        });
+
+        it('resolves a lone reply wait undelivered when its timeout fires as the request deadline lapses', async () => {
+            const harness = new DeliveryRegistryHarness();
+            const handle = harness.registry.open(
+                { ...toUnicastTestMessage('msg-1', 'responder-1'), constraints: { expiresAtMs: START_MS + 1_000 } },
+                'ws'
+            );
+            const pending = handle.awaitReply({ timeoutMs: 1_000 });
+
+            await harness.advanceMs(1_000);
+
+            expect(await pending).toMatchObject({ status: 'undelivered', lifecycle: { state: 'expired' } });
+            expect(harness.registry.recordReply(toReply('reply-1', 'responder-1', 'msg-1'))).toEqual({ kind: 'matched' });
+        });
+
         it('resolves an open reply wait undelivered when the request fails', async () => {
             const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(toUnicastTestMessage('msg-1', 'responder-1'), 'ws');

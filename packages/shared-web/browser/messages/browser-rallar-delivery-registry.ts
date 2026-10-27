@@ -5,6 +5,8 @@ import type {
     RallarMessageDeliveryOutcome,
     RallarMessageHandle,
     RallarMessagePayload,
+    RallarMessageReplyOutcome,
+    RallarMessageReplyWaitOptions,
     RallarMessageWaitOptions
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
@@ -240,8 +242,7 @@ export class BrowserRallarDeliveryRegistry {
             lifecycle: () => this.readLifecycle(observation),
             onEvent: (listener) => subscribeToObservation(observation, listener),
             wait: async (options) => await this.wait(observation, options ?? {}),
-            awaitReply: async (options) =>
-                await observation.replySlot.awaitReply(() => this.readLifecycle(observation), options),
+            awaitReply: async (options) => await this.awaitReply(observation, options),
             cancel: () => this.cancel(observation)
         };
     }
@@ -314,7 +315,22 @@ export class BrowserRallarDeliveryRegistry {
         });
     }
 
-    /** The only place a timer exists: one for the caller's timeout, one for the message deadline. */
+    /** The message deadline ends a reply wait `undelivered` when it lapses, whoever reads the lifecycle first. */
+    private async awaitReply<T>(
+        observation: DeliveryObservation,
+        options: RallarMessageReplyWaitOptions
+    ): Promise<RallarMessageReplyOutcome<T>> {
+        const deadline: DeliveryDeadlineTimer = { observation, timerId: undefined };
+        this.scheduleDeadlineTimer(deadline);
+        try {
+            return await observation.replySlot.awaitReply<T>(() => this.readLifecycle(observation), options);
+        }
+        finally {
+            clearTimeout(deadline.timerId);
+        }
+    }
+
+    /** The only place a delivery wait's timers exist: one for the caller's timeout, one for the message deadline. */
     private startWait(
         observation: DeliveryObservation,
         options: RallarMessageWaitOptions,
