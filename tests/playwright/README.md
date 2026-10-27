@@ -90,9 +90,9 @@ and recovery that first observes an already-expired new round.
 
 ## Chromium room timing diagnostics
 
-Set `RALLAR_BROWSER_TIMING=1` to capture both players in suites using
-`roomBrowserTest` (currently the AR Eye private entry and Quick Join suites, and
-Relic full-stack private entry). Each test attempt writes `browser-timing-host.jsonl`
+Set `RALLAR_BROWSER_TIMING=1` to capture both players in cases using
+`roomBrowserTest` (the two-player AR Eye private entry and Quick Join cases, and
+Relic full-stack private entry cases). Each test attempt writes `browser-timing-host.jsonl`
 and, when a guest is used, `browser-timing-guest.jsonl` in its output directory.
 The flag is off by default; the hosted AR Eye room lane enables it. It does not
 change rendering, workflow assertions, browser topology or deadlines.

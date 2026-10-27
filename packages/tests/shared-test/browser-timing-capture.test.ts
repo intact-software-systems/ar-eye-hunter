@@ -1,12 +1,13 @@
-import type { CDPSession } from '@playwright/test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BrowserTimingCapture } from '../../shared-test/browser-timing-capture.ts';
 import { createDefaultTimers } from '../../shared/resilience/timers.ts';
 
 function createProtocolChannel() {
+    let detached = false;
     return {
         send: vi.fn(),
-        detach: vi.fn<CDPSession['detach']>().mockResolvedValue(undefined)
+        detach: async () => { detached = true; },
+        get detached() { return detached; }
     };
 }
 
@@ -42,8 +43,8 @@ describe('BrowserTimingCapture', () => {
         const countAfterStop = observations.length;
         await vi.advanceTimersByTimeAsync(5000);
         expect(observations).toHaveLength(countAfterStop);
-        expect(renderer.detach).toHaveBeenCalledOnce();
-        expect(browser.detach).toHaveBeenCalledOnce();
+        expect(renderer.detached).toBe(true);
+        expect(browser.detached).toBe(true);
     });
 
     it('keeps process evidence when renderer sampling stalls and records the unfinished request at shutdown', async () => {
@@ -77,8 +78,8 @@ describe('BrowserTimingCapture', () => {
         await capture.start();
         await vi.advanceTimersByTimeAsync(1);
         await expect(capture.stop()).rejects.toBe(failure);
-        expect(renderer.detach).toHaveBeenCalledOnce();
-        expect(browser.detach).toHaveBeenCalledOnce();
+        expect(renderer.detached).toBe(true);
+        expect(browser.detached).toBe(true);
     });
 
     it('does not publish a late renderer response after shutdown', async () => {
