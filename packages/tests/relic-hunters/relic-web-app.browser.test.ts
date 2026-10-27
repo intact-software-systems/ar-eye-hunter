@@ -84,6 +84,8 @@ const rallarMock = vi.hoisted(() => ({
     planningRequests: [] as RallarAiJsonRequest[],
     localPlanningProviderOff: false,
     localGenerateJson: vi.fn(),
+    /** Set, the planning send settles only when this does: a rejection is a send the transport refused. */
+    planningSendSettled: undefined as Promise<void> | undefined,
     wsSend: vi.fn(async (input: RallarWsSendInput<object>) => ({
         transport: 'ws',
         status: 'queued',
@@ -203,6 +205,7 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
                         throw new Error(`Unexpected WS send on ${definition.topicId}`);
                     }
                     rallarMock.planningRequests.push(request);
+                    await rallarMock.planningSendSettled;
                     const answer = rallarMock.answerPlanningRequest;
                     return {
                         awaitReply: async (options: { readonly signal?: AbortSignal; }) => await answer(request, options.signal)
@@ -295,6 +298,7 @@ describe('Relic Hunters browser app', () => {
         rallarMock.answerPlanningRequest = undefined;
         rallarMock.planningRequests = [];
         rallarMock.localPlanningProviderOff = false;
+        rallarMock.planningSendSettled = undefined;
         rallarMock.wsSend.mockClear();
         container = document.createElement('div');
         document.body.appendChild(container);
@@ -624,6 +628,43 @@ describe('Relic Hunters browser app', () => {
             root?.unmount();
         });
         root = undefined;
+        await act(async () => {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+
+        expect(sentPlanningProposals()).toEqual([]);
+        expect(rallarMock.localGenerateJson).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        { label: 'its send is refused after the cancel', refuseSend: true },
+        { label: 'its request reads undelivered when the cancelled wait ends', refuseSend: false }
+    ])('runs no local companion and publishes nothing for a cancelled ask when $label', async ({ refuseSend }) => {
+        let refuse: (reason: Error) => void = () => undefined;
+        writeSession(session());
+        rallarMock.serverPeerId = 'default-qbox-server';
+        rallarMock.planningSendSettled = refuseSend
+            ? new Promise((_resolve, reject) => {
+                refuse = reject;
+            })
+            : undefined;
+        rallarMock.answerPlanningRequest = (_request, signal) =>
+            new Promise((resolve) => {
+                signal?.addEventListener('abort', () => resolve({ status: 'undelivered', lifecycle: PLANNING_REQUEST_LIFECYCLE }));
+            });
+        stubSnapshotFetch(snapshotWithPlayers(1, 'planning'));
+
+        await renderApp();
+        await waitFor(() => aiAskButton() !== undefined);
+        await act(async () => {
+            aiAskButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+        await waitFor(() => rallarMock.planningRequests.length === 1);
+        act(() => {
+            root?.unmount();
+        });
+        root = undefined;
+        refuse(new Error('The WS connection closed before the send was admitted.'));
         await act(async () => {
             await new Promise((resolve) => setTimeout(resolve, 0));
         });

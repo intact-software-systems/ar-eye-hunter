@@ -29,7 +29,10 @@ export interface RelicPlanningRequestInput {
     readonly signal: AbortSignal;
 }
 
-/** A rejected send (the peer changed, the connect failed) reaches no server, so it falls back like an undelivered one. */
+/**
+ * A rejected send (the peer changed, the connect failed) reaches no server, so it falls back like an undelivered
+ * one.
+ */
 async function sendRelicPlanningWs(
     facade: Pick<RallarFacade, 'messages'>,
     serverPeerId: string,

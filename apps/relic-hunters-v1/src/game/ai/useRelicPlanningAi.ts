@@ -356,7 +356,8 @@ async function readRelicPlanningSuggestion(
     if (answered.right !== undefined) {
         return { kind: 'suggested', result: answered.right };
     }
-    if (answered.left === 'aborted') {
+    // A cancelled ask ends here whatever the wait read: a refused send or an undelivered request then is no fallback.
+    if (input.signal.aborted || answered.left === 'aborted') {
         return { kind: 'aborted' };
     }
     return input.provider === undefined

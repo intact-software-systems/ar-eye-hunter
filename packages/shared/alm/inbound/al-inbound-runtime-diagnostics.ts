@@ -113,7 +113,10 @@ export type ALInboundRuntimeDiagnosticsEvent =
         rejection: ALMessageRejection['code'];
     }>
     | Readonly<{
-        /** A reply no open slot admitted: already replied, timed out, or unobserved (no retained request, or it came over RTC). */
+        /**
+         * A reply no open slot admitted: already replied, timed out, or unobserved (no retained request, or it came
+         * over RTC).
+         */
         kind: 'reply-late';
         msgId: string;
         replyToMsgId: string;
