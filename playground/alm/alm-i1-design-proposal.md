@@ -5,7 +5,7 @@ Release 8, slice I1 of [alm-improvement-plan.md](alm-improvement-plan.md). Writt
 maintainer's rulings R1–R4 of 2026-10-27. I1 lands as two pull requests (R1). **I1a** is reply correlation: `corrId`
 and `replyToMsgId` on the delivery handle, `awaitReply`, the inbound reply matcher, the reply helper on both sides,
 the conformance `reply` family and the Relic planning request as the consumer proof; it closes F16. **I1b** is trace
-propagation and payload-free harness diagnostics; it closes PC9 and stays outcome-shaped here (§2.i). Completion
+propagation and payload-free harness diagnostics; it closes PC9; its design is §6 (2026-10-27, after I1a's merge). Completion
 criterion 9 asks that correlation and tracing work across retry, repair, restart and every carrier attempt; I1a takes
 its correlation half.
 
@@ -307,7 +307,7 @@ response-schema registration, durable reply waits across a reload, an Ollama pla
 ### 2.i I1b, outcome-shaped: trace propagation and payload-free harness diagnostics
 
 I1b closes PC9 ("one observable identity") with the chain the trace survey names in its "Gaps for I1". Its
-decisions are taken when it enters the concrete horizon.
+decisions are taken in §6, written after I1a merged; the four points below are the outcome shape they refine.
 
 1. **A trace id on the envelope at creation.** A `traceId` builder option and a byte and charset bound for `id.traceId`
    (today it falls in the resource limits' `other` bucket, `al-message-resource-limits.ts:235-260`); a send option,
@@ -392,3 +392,158 @@ they need; several replies per request or a collection mode; a registered respon
 survives a reload; a typed server-side refusal reply when generation fails (the browser's timeout and local fallback
 cover it); an Ollama-backed Relic planner; AR Eye Hunter (no change, as the consumer row says); the game authority
 client's and the CRDT topics' payload correlation, which keep working and are not migrated.
+
+## 6. I1b design: the trace bridge and the payload-free diagnostics class (2026-10-27)
+
+Written after I1a merged (`0754c40c5`) from two read-only sweeps of that `main` (the server trace seams; the harness
+payload consumers) and the maintainer's rulings R6–R10 of 2026-10-27. I1b lands as two pull requests (R10):
+**I1b-i** carries the trace end to end (D447–D452, proof D453); **I1b-ii** puts it on the diagnostics and the harness
+identity, makes the diagnostics class payload-free and closes PC9 (D454). One correction to the I1 surveys:
+`id.sessionId` is live, not unset. The topology hydration unicast stamps it
+(`rtc-topology-hydration-message.ts:37`) and the browser compares it
+(`state-cache/is-rtc-topology-current-state-message.ts:44`); I1b leaves it alone and is trace only.
+
+### 6.a One identity, three carriers (R6, D447)
+
+The trace id is one string with one grammar, `[A-Za-z0-9_-]{1,128}` (a UUID fits), owned by
+`packages/shared/al-contracts/trace/al-trace-id.ts`: `newALTraceId()` mints a UUID, `validateALTraceId(value)` returns
+every issue, and `decodeALTraceId(value: unknown)` is the boundary decoder. It travels as the HTTP request header
+`x-request-id`, as the AppInbox command envelope's `id.traceId`, and as `id.traceId` on every publication, reply and
+control the server mints for it. The HTTP timing line's `requestId` is therefore the trace: the middleware already
+keys on that header, echoes it and records it; I1b makes it validate the header with the grammar instead of trusting
+it, mint one when the header is absent or invalid, and set it on the Hono context, from which one reader,
+`readApiRequestTraceId(context)`, gives it to every route. `x-request-id` joins the CORS `allowHeaders`, and the
+OpenAPI document names it as the optional request header and the echoed response header. The mutation `requestId` in
+the path stays what it is: the logical command's idempotency key, stable across a client's retries, while the trace
+names one attempt. A retry with a new trace is not an idempotency conflict.
+
+### 6.b The envelope: `traceId` required, version 4 (R8, D447)
+
+`ALMessageId.traceId` becomes `string` and `AL_MESSAGE_ENVELOPE_VERSION` becomes `4`; decoders refuse any other
+version as `unsupported`, as the version-3 bump did for `targets.rosterVersion`. `buildALMessage` stamps
+`newALTraceId()` when the builder input carries none; the builder options and every typed builder accept `traceId`.
+The persisted validator and the inbound decoder require the grammar, so a foreign trace that is too long or
+malformed is refused `malformed`, not admitted into the `other` resource bucket. The outbound canonical identity
+already hashes `traceId` (`al-outbound-canonical-message.ts:236`), so the trace is fixed before first admission and
+retry, fallback, repair and restore carry it unchanged with no new code; I1b-i pins that on the browser dispatch,
+the fallback controller, the repair retransmission and the checkpoint restore. Every literal envelope in tests and
+recipes moves to version 4 with a trace; the hand-built `id` literals in production (25) take the trace from their
+input, and the four exact-key or byte-exact `id` validators (admin prune page, the group presence summary recompute,
+the auth logout provenance re-derivation, the formation timer recompute) accept and reproduce it.
+
+### 6.c The browser: a trace per send, inherited by the reply (D448)
+
+`RallarMessageSendBase` gains `traceId?: string` with the validator issue `$.traceId`; a send without one mints one in
+`buildALMessage`, so each logical send has its own trace and the same trace across every carrier attempt. The handle
+exposes `traceId`, `RallarMessage` exposes `traceId` from `raw.id`, and `RallarMessage.reply()` copies the request's
+trace into the reply (the reply is a new envelope whose trace is the request's, as its `corrId` is). The optional
+input exists for one purpose: linking a send to an earlier operation's trace, such as a reply the caller composes
+by hand or a send that continues an HTTP mutation; it is not a default. Every browser HTTP call to api-v1 or the Relic
+server sends `x-request-id`, minted per request in `executeHttpRequest`, the one place browser HTTP headers are
+built; the two direct `fetch` callers (`state-read/point-read.ts`, the Relic app's `game/api.ts`) go through it, and
+the unused `authFetch` is deleted.
+
+### 6.d AppInbox: the command envelope carries the request's trace (D450)
+
+`AppInboxEnqueueInput.traceId: string` is required: every enqueue names the trace of the request it serves. The one
+factory, `createDefaultAppInboxQueueMessage`, stamps it on the command envelope's `id.traceId` and the stored command
+(the payload JSON, the idempotency identity's `{type, authority, data}` and the persisted command decoder's exact
+keys) does not carry it: the envelope is the one carrier, and handlers read `context.message.id.traceId`. The
+reservation winner's envelope is the retained one, so a replay or a loser observes the first request's trace, which
+is the trace of the command that ran. The 56 HTTP mutation routes pass `readApiRequestTraceId(context)` into their
+command builders; the WS-origin commands (the Relic command topic, the CRDT append ingress) inherit
+`message.raw.id.traceId`; the autonomous enqueues (retention, presence expiry, formation timers, session cleanup,
+WS connect and disconnect) mint `newALTraceId()`; the auth service, which builds its own inbox rows, stamps the request
+trace on them.
+
+### 6.e Server publications, replies and controls (D451)
+
+Every envelope the server mints carries the trace of the command that caused it, and nothing else decides a trace:
+
+- handler-minted publications (Relic game publications, the CRDT audit and fanout outbox, auth logout, the client
+  continuation and state-sync rows, the formation timer, the connect trigger, the presence summary, the topology
+  outbox, the admin prune page) take `traceId` in their compute input from the handler's `context.message.id.traceId`;
+- work-derived publications (the coalesced topology revision, the topology promotion, the connect trigger replay,
+  the presence summary worker's state-sync entries, the prune page worker, the overlay topology messages) inherit it
+  from the work row's envelope (`entry`) or, for the presence summary and its state-sync entries, from the event's
+  `traceId`, which D452 makes non-null;
+- replies inherit the request's trace: `newALReplyMessage(request, …)` copies `request.id.traceId`, so the server AI
+  topic, the Relic planning topic and the CRDT catch-up reply carry it;
+- controls (ACK, NACK, receipt, relay ACK) carry the subject message's trace, since they are about that message;
+- autonomous publications with no command behind them (the activation status clock, the retention entry, the
+  topology hydration unicast, the replay repair) mint `newALTraceId()`.
+
+Snapshot paging already copies `id` (`state-snapshot-page.ts:186`), so pages inherit it.
+
+### 6.f The audit stamp is the trace (R9, D452)
+
+The mutation request bodies lose their optional `traceId` (27 OpenAPI schemas, the group and client validators, the
+browser translation's pass-through) and `MutationActorInput.traceId` becomes `string`, filled by the inbox handler
+from the command envelope before `compute`; the group and client idempotency identities no longer contain a body
+trace. `AuditStamp`, `GroupEvent` and `ClientEvent` keep `traceId: string | null` as persisted and response
+contracts, because rows written before I1b hold `null` and no migration rewrites them; every writer after I1b writes
+a string, the autonomous mutations included (their enqueue minted one). So a state event the browser reads names the
+same trace as the HTTP request that caused it, the AppInbox envelope that ran it and the publications it minted.
+
+### 6.g The proof of I1b-i (D453)
+
+Unit (`packages/tests/shared`, `shared-web`, `shared-server`): the grammar and the decoders; a builder without a
+trace mints one and a builder with one keeps it; a version-3 envelope is refused `unsupported`; the same trace across
+the RTC-to-WS fallback, the repair retransmission, the checkpoint restore and the persisted round trip; the handle's
+and the message's `traceId`; `reply()` copies the request's trace; `executeHttpRequest` sends `x-request-id` and
+mints it per request; the enqueue factory stamps the envelope and keeps the stored command trace-free; each
+handler-minted and work-derived publication carries its command's trace, each control its subject's, each
+autonomous publication a fresh one; the audit stamp equals the envelope trace. Deno (`apps/api-v1/test`,
+`apps/relic-hunter-server-v1/test`): the middleware validates, mints, echoes and exposes the header; the CORS
+allow-list names it; a mutation route's enqueue carries the request's header value; a body `traceId` is refused as
+an unknown field; the Relic HTTP command's publication and the Relic WS command's publication carry the request's
+trace; the planning reply carries the request's trace. The black-box runner's raw WS recipes (18 JSON files) move to
+version 4 with a trace. The conformance lane and the hosted manifests change only where version 4 forces it; trace
+evidence in the lane is I1b-ii.
+
+### 6.h I1b-ii, outcome-shaped (R7, D454)
+
+`traceId` (and `corrId`) appended at the end of the message-scoped runtime diagnostics (scenario waits match key
+order), on `RallarTimingEvent` and the AppInbox timing lines, the ws-receipt facts and the admin receipt recorder,
+and in the black-box safe projections' allow-lists; the harness `messages.send` result value and the typed-channel
+message event gain `traceId`, the identity assessors assert sender and receiver trace equality and the same trace
+across the reload and fallback cells, and a server-originated cell proves HTTP through AppInbox to the browser. The
+payload-free diagnostics class: the console-warning bridge sends a fixed token and source instead of
+`JSON.stringify(args)`, the `ws.send` result stops echoing the sent `message`, the distributed-run diagnostic rows
+carry identity instead of `payloadSummary` and no longer fall back to a payload's `topic`, and a sentinel-payload
+guard over every diagnostic the lane records pins it. Message evidence events (`rallar.browser.*.message`, wait
+results, the framework conformance fixtures, the realtime lane, the director diagnostics) keep their payloads as the
+recipes' assertion surface (R7). Docs close PC9. The hosted manifests regenerate from their builders.
+
+### 6.i Decisions
+
+- **D447** One trace identity: `id.traceId` is required, `[A-Za-z0-9_-]{1,128}`, owned by `al-contracts/trace/`;
+  envelope version 4, other versions refused `unsupported`; `buildALMessage` mints when absent; retries, fallback,
+  repair and restore carry it unchanged.
+- **D448** Browser: `traceId?` send input, a trace per send, `traceId` on the handle and on `RallarMessage`,
+  `reply()` copies the request's; `x-request-id` minted per request in `executeHttpRequest`, the direct `fetch`
+  callers folded onto it, `authFetch` deleted.
+- **D449** HTTP: `x-request-id` is the carrier; the timing middleware validates, mints when absent or invalid,
+  echoes, records and sets it; `readApiRequestTraceId(context)` is the one reader; CORS allows it; OpenAPI names it.
+- **D450** AppInbox: `AppInboxEnqueueInput.traceId: string`; the factory stamps the envelope; the stored command
+  and the idempotency identity stay trace-free; routes pass the request trace, WS-origin commands inherit the
+  inbound envelope's, autonomous enqueues mint, auth stamps its own rows.
+- **D451** Every server-minted envelope carries its command's trace: handler-minted through the compute input,
+  work-derived from the work row or the event, replies from the request, controls from the subject message,
+  autonomous publications mint.
+- **D452** The request body `traceId` is removed; `MutationActorInput.traceId: string` is filled from the envelope;
+  `AuditStamp`, `GroupEvent` and `ClientEvent` keep `string | null` for rows written before I1b.
+- **D453** Proof as in §6.g; the raw WS recipes move to version 4; lane trace evidence is I1b-ii.
+- **D454** I1b-ii as in §6.h: diagnostics and harness identity, the payload-free diagnostics class with its sentinel
+  guard, message evidence keeps payloads (R7), docs close PC9.
+
+### 6.j Corrections and carries
+
+- The roadmap's I1b row reads "a trace id stamped at envelope creation and carried from the HTTP request through
+  AppInbox into server publications and replies, preserved across retries and fallback; payload-free runtime and
+  harness diagnostics". As applied: the trace is required on a version-4 envelope; "payload-free harness
+  diagnostics" is the diagnostics class, not the message evidence (R7); the row splits into I1b-i and I1b-ii.
+- The product description's "PLANNED — I1b, session and trace identity" becomes trace identity only: session
+  identity exists on the hydration unicast and is not a planned part.
+- Carries: a trace on the realtime JSON lane (no msgId there); authored trace sentinels in receiver waits (the
+  recipes keep payload sentinels); `traceparent` interoperability; a trace column beside the stored audit JSON.
