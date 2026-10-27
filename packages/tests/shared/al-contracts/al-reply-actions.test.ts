@@ -18,7 +18,10 @@ import { AL_CHANNEL_SEND_DEFAULTS } from '@shared/al-contracts/resolve-al-channe
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
 const ROUTE = newALRoute('app.command', 'room-1', 'resource-1');
 const ACTIONS = { corrId: 'corr-1', replyToMsgId: 'request-1' };
-const PRINCIPAL = { groupRef: ROOM, principalRef: { kind: 'user', userId: 'user-1' } } as const;
+const PRINCIPAL = {
+    groupRef: ROOM,
+    principalRef: { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId, principalId: 'user-1' }
+} as const;
 
 function newRequest(senderId: string, groupRef?: typeof ROOM, actions?: ALMessage['actions']): ALMessage {
     return newALUnicastMessage(senderId, ROUTE, 'server', 'app.ask.v1', { q: 1 }, { groupRef, actions });
