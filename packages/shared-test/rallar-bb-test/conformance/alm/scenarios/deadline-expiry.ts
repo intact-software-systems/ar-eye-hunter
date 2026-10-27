@@ -1,12 +1,8 @@
 import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
 
-import { EXPIRY_TTL_MS, toBudgetMs } from '../alm-conformance-budgets.ts';
+import { EXPIRY_TTL_MS } from '../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '../alm-conformance-carriers.ts';
-import {
-    FAULT_TIMEOUT_MS,
-    toFaultCarriers,
-    type AlmConformanceFaultCarrier
-} from '../alm-conformance-fault-commands.ts';
+import { toTypeDropFaultCommands } from '../alm-conformance-fault-commands.ts';
 import {
     toAdmissionCommands,
     toObserveCommand,
@@ -19,13 +15,6 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../alm-conformance-scenario-definition.ts';
-import { toCommandId, toScenarioTypeId } from '../alm-conformance-step-identities.ts';
-
-interface AlmConformanceFaultInput extends AlmConformanceStepInput {
-    readonly faultCarrier: AlmConformanceFaultCarrier;
-    readonly name: 'fault' | 'release';
-    readonly remaining: 'until-cleared' | 0;
-}
 
 export const deadlineExpiry: AlmConformanceScenarioDefinition = {
     scenarioId: 'deadline-expiry',
@@ -53,7 +42,7 @@ function toDeadlineExpirySenderCommands(
     sender: AlmConformanceStepInput
 ): readonly RallarBlackBoxTestCommand[] {
     return [
-        ...toFaultCommands(sender, 'fault', 'until-cleared'),
+        ...toTypeDropFaultCommands(sender, 'fault', 'until-cleared'),
         toSendCommand({
             ...sender,
             index: 1,
@@ -70,31 +59,6 @@ function toDeadlineExpirySenderCommands(
             operator: 'equals',
             expected: 'expired'
         }),
-        ...toFaultCommands(sender, 'release', 0)
+        ...toTypeDropFaultCommands(sender, 'release', 0)
     ];
-}
-
-/** A hold, not a frame count: an RTC drop is retried every 50 ms, so a count runs out before the lifetime ends. */
-function toFaultCommands(
-    sender: AlmConformanceStepInput,
-    name: AlmConformanceFaultInput['name'],
-    remaining: AlmConformanceFaultInput['remaining']
-): readonly RallarBlackBoxTestCommand[] {
-    return toFaultCarriers(sender.input.carrier).map((faultCarrier) =>
-        toFaultCommand({ ...sender, faultCarrier, name, remaining })
-    );
-}
-
-function toFaultCommand(fault: AlmConformanceFaultInput): RallarBlackBoxTestCommand {
-    const typeId = toScenarioTypeId(fault);
-    return {
-        kind: 'fault.inject',
-        commandId: toCommandId(fault, `${fault.name}-${fault.faultCarrier}`),
-        faultId: `drop-${fault.faultCarrier}-${typeId}`,
-        carrier: fault.faultCarrier,
-        match: { typeId },
-        action: 'drop',
-        remaining: fault.remaining,
-        timeoutMs: toBudgetMs(FAULT_TIMEOUT_MS, fault.input.deadlineMs)
-    };
 }

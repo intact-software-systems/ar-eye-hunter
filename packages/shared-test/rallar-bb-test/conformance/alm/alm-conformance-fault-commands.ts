@@ -181,6 +181,29 @@ function toFaultCommand(
     };
 }
 
+/**
+ * Drops every frame of the scenario's type this page sends on each carrier the cell can hold, until the same ids with
+ * `remaining: 0` release it. A hold, not a frame count: an RTC drop is retried every 50 ms, so a count runs out before
+ * a message's lifetime ends.
+ */
+export function toTypeDropFaultCommands(
+    step: AlmConformanceStepInput,
+    name: 'fault' | 'release',
+    remaining: 'until-cleared' | 0
+): readonly RallarBlackBoxTestTransportFaultInjectCommand[] {
+    const typeId = toScenarioTypeId(step);
+    return toFaultCarriers(step.input.carrier).map((carrier) => ({
+        kind: 'fault.inject',
+        commandId: toCommandId(step, `${name}-${carrier}`),
+        faultId: `drop-${carrier}-${typeId}`,
+        carrier,
+        match: { typeId },
+        action: 'drop',
+        remaining,
+        timeoutMs: toBudgetMs(FAULT_TIMEOUT_MS, step.input.deadlineMs)
+    }));
+}
+
 export function toFaultCarriers(
     carrier: AlmConformanceCarrier
 ): readonly AlmConformanceFaultCarrier[] {

@@ -1,28 +1,23 @@
-import type {
-    RallarBlackBoxTestCommand,
-    RallarBlackBoxTestTransportFaultInjectCommand
-} from '../../../../rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
-import { EXPIRY_TTL_MS, NON_EXPIRING_SEND_TIMEOUT_MS, toBudgetMs } from '../../alm-conformance-budgets.ts';
+import { EXPIRY_TTL_MS, NON_EXPIRING_SEND_TIMEOUT_MS } from '../../alm-conformance-budgets.ts';
 import type { AlmConformanceCarrier } from '../../alm-conformance-carriers.ts';
-import { FAULT_TIMEOUT_MS } from '../../alm-conformance-fault-commands.ts';
-import { toAdmissionCommands, toSendCommand, toVerdictCommands } from '../../alm-conformance-message-commands.ts';
+import { toTypeDropFaultCommands } from '../../alm-conformance-fault-commands.ts';
+import { toAdmissionCommands, toSendCommand } from '../../alm-conformance-message-commands.ts';
 import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
-import { toCommandId, toScenarioTypeId } from '../../alm-conformance-step-identities.ts';
 import { toAwaitReplyCommands } from './reply-commands.ts';
 
 const REPLY_UNDELIVERED_CARRIERS: readonly AlmConformanceCarrier[] = ['ws'];
 
 /**
- * D445, the `deadline-expiry.ts` pattern: the transport fault port drops the `command` on its only carrier until its
- * short deadline lapses, and the receiver never receives it. The reply wait arms no deadline timer, so a deadline that
- * lapses during the wait would leave it to its own timeout; the cell first observes the expiry, then reads the reply
- * wait `undelivered` on the `expired` request.
+ * D445, the `deadline-expiry.ts` pattern: the transport fault port drops the `command` on its only carrier, and the
+ * receiver never receives it. The reply wait is armed at admission, while the request is alive, and outlasts its short
+ * deadline; the deadline ends the wait `undelivered` on the `expired` request, before the wait's own timeout.
  */
 export const replyUndelivered: AlmConformanceScenarioDefinition = {
     scenarioId: 'reply-undelivered',
@@ -37,7 +32,7 @@ export const replyUndelivered: AlmConformanceScenarioDefinition = {
 
 function toReplyUndeliveredSenderCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
-        toRequestDropFaultCommand(sender, 'fault', 'until-cleared'),
+        ...toTypeDropFaultCommands(sender, 'fault', 'until-cleared'),
         toSendCommand({
             ...sender,
             index: 1,
@@ -45,30 +40,10 @@ function toReplyUndeliveredSenderCommands(sender: AlmConformanceStepInput): read
             delivery: { toPeer: 'receiver', ack: 'receiver', ttlMs: EXPIRY_TTL_MS }
         }),
         ...toAdmissionCommands({ ...sender, index: 1 }),
-        ...toVerdictCommands(sender, 'expired', [['expired', 'state', 'equals', 'expired']]),
         ...toAwaitReplyCommands(
             { ...sender, index: 1 },
             { timeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS, status: 'undelivered', requestState: 'expired' }
         ),
-        toRequestDropFaultCommand(sender, 'release', 0)
+        ...toTypeDropFaultCommands(sender, 'release', 0)
     ];
-}
-
-/** A hold, not a frame count, as in `deadline-expiry`; the same id with `remaining: 0` releases it. */
-function toRequestDropFaultCommand(
-    sender: AlmConformanceStepInput,
-    name: 'fault' | 'release',
-    remaining: 'until-cleared' | 0
-): RallarBlackBoxTestTransportFaultInjectCommand {
-    const typeId = toScenarioTypeId(sender);
-    return {
-        kind: 'fault.inject',
-        commandId: toCommandId(sender, `${name}-ws`),
-        faultId: `drop-ws-${typeId}`,
-        carrier: 'ws',
-        match: { typeId },
-        action: 'drop',
-        remaining,
-        timeoutMs: toBudgetMs(FAULT_TIMEOUT_MS, sender.input.deadlineMs)
-    };
 }

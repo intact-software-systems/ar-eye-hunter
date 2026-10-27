@@ -267,8 +267,8 @@ returns a payload-free value: `{ handleId, status, state, corrId }`, with `statu
 `replied` adds `reply: { msgId, replyToMsgId, corrId, senderId, typeId }`. What the reply carried stays in the page.
 The page ends its wait 250 ms before `timeoutMs`, so a `timeout` is the command's value and never its failure, unlike
 `messages.observe`; the first timeout ends every wait of the request, and a reply arriving after it is dropped with a
-`reply-late` inbound diagnostic whose `cause` is `timed-out`. A request whose lifecycle ends terminal without reaching
-its addressee (`acknowledged`, or `transport-accepted` with no receipt to wait for) reads `undelivered`. A handle the
+`reply-late` inbound diagnostic whose `cause` is `timed-out`. A request whose lifecycle ends terminal in any state other
+than `acknowledged`, or `transport-accepted` with no receipt to wait for, reads `undelivered`. A handle the
 page never sent, or no longer retains, fails the command as invalid input. Replies travel over WS only.
 
 `messages.reply` names `typeId`, `index`, `payload` and `handleId`, and optionally `connection`. The typed channel
@@ -458,11 +458,12 @@ adapter's `rallar.bb.messages.reply_awaited` diagnostic for that command, whose 
   request. Only then does it release the receiver with a second `command`; the receiver replies to the first, and the
   sender waits for its own `reply-late` inbound diagnostic with `cause` `timed-out`.
 - `reply-undelivered` (`ws`, addressed, the `deadline-expiry` pattern): a WS drop fault held until released keeps the
-  request, whose `ttlMs` is 7500, from its only carrier, and the receiver never receives it. A reply wait arms no
-  deadline timer, so a deadline that lapses during the wait leaves it to its own timeout; the sender first observes
-  the request `expired`, and its reply wait then reads `undelivered` on the `expired` request.
+  request, whose `ttlMs` is 7500, from its only carrier, and the receiver never receives it. The sender arms its reply
+  wait at admission, with a timeout beyond the deadline; the lapsed deadline ends the wait `undelivered` on the
+  `expired` request.
 - `reply-first-wins` (`ws`, three agents): a room request asking for `all-logical-recipients`, which both recipients
-  answer. The sender reads `replied` once and waits for one `reply-late` with `cause` `replied`; after its receipt
+  answer. The sender reads `replied` once and waits for at least one `reply-late` with `cause` `replied` (a
+  diagnostic wait counts no events; the slot admits only one reply); after its receipt
   window it finds the reply's `senderId` among the recipients its receipt confirmed. Each recipient reads its reply
   `acknowledged` and keeps its page through a closing window.
 

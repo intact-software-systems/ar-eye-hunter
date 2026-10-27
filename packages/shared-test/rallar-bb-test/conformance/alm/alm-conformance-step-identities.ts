@@ -28,6 +28,11 @@ export function toSendHandleId(step: AlmConformanceMessageStepInput): string {
     return `alm-${step.input.carrier}-${step.scenarioKey}-${origin}send-${step.index}`;
 }
 
+/** A responder's reply to the `step.index`-th arrival names its role, so the reply handles of a cell stay apart. */
+export function toReplyHandleId(step: AlmConformanceMessageStepInput): string {
+    return `alm-${step.input.carrier}-${step.scenarioKey}-${step.role}-reply-${step.index}`;
+}
+
 export function toConnectionName(step: AlmConformanceStepInput): string {
     return isSenderPage(step.role) ? step.input.senderConnection : step.input.receiverConnection;
 }

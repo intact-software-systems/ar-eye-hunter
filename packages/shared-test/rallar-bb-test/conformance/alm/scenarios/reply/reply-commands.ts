@@ -18,6 +18,7 @@ import type { AlmConformanceMessageStepInput } from '../../alm-conformance-scena
 import {
     toCommandId,
     toConnectionName,
+    toReplyHandleId,
     toScenarioTypeId,
     toSendHandleId
 } from '../../alm-conformance-step-identities.ts';
@@ -125,8 +126,7 @@ export function toReplyLateWait(
  * acknowledged: the requester admitted it, whether it matched a wait or arrived late.
  */
 export function toReplyCommands(responder: AlmConformanceMessageStepInput): readonly RallarBlackBoxTestCommand[] {
-    const handleId =
-        `alm-${responder.input.carrier}-${responder.scenarioKey}-${responder.role}-reply-${responder.index}`;
+    const handleId = toReplyHandleId(responder);
     const observeName = `observe-reply-acknowledged-${responder.index}`;
     return [
         {

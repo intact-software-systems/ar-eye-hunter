@@ -134,9 +134,7 @@ const MINIMUM_DEADLINE_MS = MAX_DEADLINE_EXPIRY_FAULT_BUDGET_MS +
 
 /**
  * `volatileDefault` runs first on its pages, before any scenario leaves durable work there. The hosted
- * combined recipe hoists every `delivery-reload` ahead of it, so there it runs after durable work. The reply cells
- * follow the volatile-bound cells on the addressed pages: run ahead of them, they left the capacity cell's second
- * send refused.
+ * combined recipe hoists every `delivery-reload` ahead of it, so there it runs after durable work.
  */
 const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     volatileDefault,

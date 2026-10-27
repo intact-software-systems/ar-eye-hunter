@@ -55,7 +55,10 @@ export namespace BlackBoxRallarTypedChannels {
 
 export class BlackBoxRallarTypedChannels {
     readonly #input: BlackBoxRallarTypedChannels.Input;
-    /** Oldest first, per type; the subscriptions' release on close forgets them with the lanes they arrived on. */
+    /**
+     * Oldest first, per type. Close releases every subscription together (`cleanupWsSubscriptions`), so each release
+     * forgets the arrivals of every type: a typed and a selector subscription are released in the same close.
+     */
     readonly #receivedByType = new Map<string, RallarMessage<RallarMessagePayload>[]>();
 
     constructor(input: BlackBoxRallarTypedChannels.Input) {

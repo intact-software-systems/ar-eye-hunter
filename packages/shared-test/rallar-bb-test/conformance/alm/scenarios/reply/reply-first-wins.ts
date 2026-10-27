@@ -31,9 +31,10 @@ const BOTH_CONFIRMED: AlmConformanceReceiptRoles = { confirmed: ['receiver', 're
 
 /**
  * D445: a room request asking for every logical recipient, which both recipients answer. The sender reads `replied`
- * once, drops the other reply as `reply-late` with `cause` `replied`, and after its receipt window finds the reply's
- * sender among the recipients its receipt confirmed. Each recipient's closing window, through which no second copy
- * arrives, keeps its page until its ACK of the request has left.
+ * once and waits for at least one `reply-late` with `cause` `replied`: a diagnostic wait counts no events, and the
+ * slot admits only one reply. After its receipt window it finds the reply's sender among the recipients its receipt
+ * confirmed. Each recipient's closing window, through which no second copy arrives, keeps its page until its ACK of
+ * the request has left.
  */
 export const replyFirstWins: AlmConformanceScenarioDefinition = {
     scenarioId: 'reply-first-wins',

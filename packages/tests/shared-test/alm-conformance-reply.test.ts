@@ -339,7 +339,7 @@ describe('reply-timeout-late', () => {
 });
 
 describe('reply-undelivered', () => {
-    it('drops the request on WS until its short deadline lapses, observes the expiry, and reads the reply wait undelivered on the expired request', async () => {
+    it('drops the request on WS and arms the reply wait at admission, which its short deadline ends undelivered on the expired request', async () => {
         const scenario = findScenario('ws', 'reply-undelivered');
 
         expect(toCommandNames(scenario.sender)).toEqual([
@@ -347,8 +347,6 @@ describe('reply-undelivered', () => {
             'storage-counters-connected',
             'fault-ws',
             ...ADMISSION,
-            'observe-expired-1',
-            'assert-expired-1',
             'await-reply-1',
             'assert-reply-undelivered-1',
             'assert-reply-request-expired-1',
