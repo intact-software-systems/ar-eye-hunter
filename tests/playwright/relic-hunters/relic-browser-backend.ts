@@ -13,12 +13,21 @@ import {
 } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodeALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { newALReplyMessage } from '@shared/al-contracts/reply/new-al-reply-message.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupTopologyManagementView } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import {
+    createRallarAiJsonResult,
+    createRallarAiMockProvider,
+    type RallarAiJsonRequest
+} from '@shared/rallar-ai/mod.ts';
+import {
+    computeRelicPlanningAiSuggestion,
+    decodeRelicPlanningAiContext,
     isRelicCommand,
+    RELIC_TYPES,
     type RelicCommand,
     type RelicHunterEvent,
     type RelicPublicSnapshot
@@ -81,6 +90,11 @@ namespace RelicBrowserBackend {
         readonly commandResponse?: (command: RelicCommand) => RelicPublicSnapshot;
         readonly requests?: string[];
         readonly commandBodies?: RelicCommand[];
+        /**
+         * Absent, the server admits a planning request and never replies; present, it replies with the deterministic
+         * companion's suggestion under this headline.
+         */
+        readonly planningReplyHeadline?: string;
     }
 }
 
@@ -110,6 +124,10 @@ class RelicBrowserBackend {
             return;
         }
         this.options.receivedFrames?.push(message);
+        if (message.payload.typeId === RELIC_TYPES.aiPlanningRequest) {
+            this.respondPlanningRequest(socket, message);
+            return;
+        }
         if (message.payload.typeId !== 'relic.command.v1') {
             return;
         }
@@ -125,6 +143,29 @@ class RelicBrowserBackend {
         this.acceptCommand(command);
         socket.send(toServerAckFrame(message));
         socket.send(toSnapshotFrame(this.snapshot));
+    }
+
+    /** As the Relic server's planning topic does: a reply to the asking session alone, under the request's correlation. */
+    private respondPlanningRequest(socket: WebSocketRoute, message: ALMessage): void {
+        socket.send(toServerAckFrame(message));
+        if (this.options.planningReplyHeadline === undefined) {
+            return;
+        }
+        const request: RallarAiJsonRequest = JSON.parse(message.payload.resource);
+        const context = decodeRelicPlanningAiContext(request.context).right;
+        if (context === undefined) {
+            throw new Error('Browser sent a planning request with an undecodable context');
+        }
+        const result = createRallarAiJsonResult({
+            request,
+            provider: createRallarAiMockProvider({ providerId: 'relic-planning-deterministic' }),
+            value: { ...computeRelicPlanningAiSuggestion(context), headline: this.options.planningReplyHeadline }
+        });
+        socket.send(JSON.stringify(newALReplyMessage(message, {
+            senderId: 'default-qbox-server',
+            typeId: RELIC_TYPES.aiPlanningReply,
+            payload: result
+        })));
     }
 
     publishSnapshot(snapshot: RelicPublicSnapshot): void {

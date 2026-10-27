@@ -131,7 +131,7 @@ interface ToRallarServerAiResultMessageInput<TValue extends RallarAiJsonValue> {
     readonly target: RallarServerAiResultPublicationTarget;
 }
 
-export function toRallarServerAiResultMessage<TValue extends RallarAiJsonValue>(
+function toRallarServerAiResultMessage<TValue extends RallarAiJsonValue>(
     input: ToRallarServerAiResultMessageInput<TValue>
 ): ALMessage {
     const contextId = input.target.scope === 'room'
@@ -157,7 +157,7 @@ export function toRallarServerAiResultMessage<TValue extends RallarAiJsonValue>(
 }
 
 /** A world result reaches the scope it names; a room result is scoped by its groupRef and an all result by none. */
-export function toRallarServerAiPublishInput(
+function toRallarServerAiPublishInput(
     message: ALMessage,
     fanout: RallarServerWsFanout | undefined,
     worldScope: StateScope | undefined

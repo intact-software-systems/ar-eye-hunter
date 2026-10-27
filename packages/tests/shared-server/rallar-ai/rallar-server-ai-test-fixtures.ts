@@ -2,6 +2,7 @@ import { createRallarServerAi } from '@shared-server/rallar-ai/create-rallar-ser
 import { decodeRallarServerAiJsonRequest, type RallarServerAiJsonRequest } from '@shared-server/rallar-ai/decode-rallar-server-ai-json-request.ts';
 import type {
     RallarServerAiWebSocketHandler,
+    RallarServerAiWebSocketMessage,
     RallarServerAiWebSocketMessageContext,
     RallarServerAiWebSocketPort,
     RallarServerAiWebSocketSelector,
@@ -10,8 +11,12 @@ import type {
 import type { RallarServerAi, RallarServerAiLimits } from '@shared-server/rallar-ai/rallar-server-ai-contracts.ts';
 import type { RallarServerAiResultPublicationPort } from '@shared-server/rallar-ai/rallar-server-ai-result-publication.ts';
 import type { JsonWireObject } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
-import type { RallarServerWsFanout, RallarServerWsPublishResult } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type {
+    RallarServerWsFanout,
+    RallarServerWsPublishInputDto,
+    RallarServerWsPublishResult
+} from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
+import { newALRoute, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     createRallarAiJsonResult,
@@ -86,6 +91,27 @@ export function createRallarServerAiTestRequestJson(
     };
 }
 
+export const RALLAR_SERVER_AI_TEST_REQUEST_TOPIC_ID = 'room.ai.generate';
+export const RALLAR_SERVER_AI_TEST_REQUEST_TYPE_ID = 'rallar.ai.generate-json.request.v1';
+export const RALLAR_SERVER_AI_TEST_SERVER_SENDER_ID = 'rallar-ai-server';
+
+/** The request as a room session sends it: a unicast to the server in the room, its payload the request JSON. */
+export function createRallarServerAiTestMessage(
+    requestId = 'request-1'
+): RallarServerAiWebSocketMessage {
+    return {
+        payload: createRallarServerAiTestRequest(requestId),
+        raw: newALUnicastMessage(
+            'peer-1',
+            newALRoute(RALLAR_SERVER_AI_TEST_REQUEST_TOPIC_ID, RALLAR_SERVER_AI_TEST_ROOM_REF.groupId, requestId),
+            RALLAR_SERVER_AI_TEST_SERVER_SENDER_ID,
+            RALLAR_SERVER_AI_TEST_REQUEST_TYPE_ID,
+            createRallarServerAiTestRequestJson(requestId),
+            { groupRef: RALLAR_SERVER_AI_TEST_ROOM_REF, reliability: 'at-least-once', ack: 'receiver' }
+        )
+    };
+}
+
 export function createRallarServerAiTestResult(
     value: RallarAiJsonValue = { kind: 'spawn' }
 ): RallarAiJsonResult<RallarAiJsonValue> {
@@ -103,14 +129,9 @@ export interface RallarServerAiTestWebSocket {
     readonly port: RallarServerAiWebSocketPort & RallarServerAiResultPublicationPort;
     readonly topics: RallarServerAiWebSocketTopicDefinition[];
     readonly selectors: RallarServerAiWebSocketSelector[];
-    readonly publications: Array<
-        Readonly<{
-            message: ALMessage;
-            fanout?: RallarServerWsFanout;
-        }>
-    >;
+    readonly publications: RallarServerWsPublishInputDto[];
     invoke(
-        request: RallarServerAiJsonRequest,
+        message: RallarServerAiWebSocketMessage,
         context?: RallarServerAiWebSocketMessageContext
     ): Promise<void>;
 }
@@ -118,12 +139,7 @@ export interface RallarServerAiTestWebSocket {
 export function createRallarServerAiTestWebSocket(): RallarServerAiTestWebSocket {
     const topics: RallarServerAiWebSocketTopicDefinition[] = [];
     const selectors: RallarServerAiWebSocketSelector[] = [];
-    const publications: Array<
-        Readonly<{
-            message: ALMessage;
-            fanout?: RallarServerWsFanout;
-        }>
-    > = [];
+    const publications: RallarServerWsPublishInputDto[] = [];
     let handler: RallarServerAiWebSocketHandler | undefined;
     const port: RallarServerAiWebSocketPort & RallarServerAiResultPublicationPort = {
         defineTopic: (definition) => {
@@ -134,9 +150,9 @@ export function createRallarServerAiTestWebSocket(): RallarServerAiTestWebSocket
             handler = registeredHandler;
             return () => true;
         },
-        publish: async ({ message, fanout }) => {
-            publications.push({ message, fanout });
-            return successfulPublication(message, fanout);
+        publish: async (input) => {
+            publications.push(input);
+            return successfulPublication(input.message, input.fanout);
         }
     };
 
@@ -145,11 +161,11 @@ export function createRallarServerAiTestWebSocket(): RallarServerAiTestWebSocket
         topics,
         selectors,
         publications,
-        invoke: async (request, context = defaultContext()) => {
+        invoke: async (message, context = defaultContext()) => {
             if (handler === undefined) {
                 throw new Error('RallarAI WebSocket handler is not installed.');
             }
-            await handler({ payload: request }, context);
+            await handler(message, context);
         }
     };
 }

@@ -1,6 +1,7 @@
 import {
     applyRelicCommand,
     createRelicGame,
+    decodeRelicPlanningAiSuggestion,
     RELIC_PROTOCOL_VERSION,
     toPublicRelicSnapshot,
     type RelicGameState,
@@ -27,8 +28,7 @@ import {
     createRelicPlanningAiMockProvider,
     createRelicPlanningAiRequest,
     relicPlanningAiBaseStateRevision,
-    relicPlanningAiDedupeKey,
-    validateRelicPlanningAiSuggestion
+    relicPlanningAiDedupeKey
 } from '../src/game/ai/relic-planning-ai.ts';
 import { computeRelicGameViewModel } from '../src/game/game-view-model.ts';
 import { deriveSceneObjective } from '../src/game/scene/objectives.ts';
@@ -128,27 +128,7 @@ describe('Relic planning browser AI', () => {
             kind: 'move',
             targetRoomId: 'hallway'
         });
-        expect(validateRelicPlanningAiSuggestion(result.value, context).ok).toBe(true);
-    });
-
-    it('rejects illegal targets and text beyond caps', () => {
-        const context = contextFor(planningSnapshot());
-
-        expect(validateRelicPlanningAiSuggestion({
-            headline: 'Bad move',
-            action: { kind: 'move', targetRoomId: 'monster' },
-            rationale: 'Monster is not adjacent from the entrance.',
-            risks: [],
-            confidence: 'medium'
-        }, context)).toMatchObject({ ok: false });
-
-        expect(validateRelicPlanningAiSuggestion({
-            headline: 'x'.repeat(81),
-            action: { kind: 'search' },
-            rationale: 'Too much headline.',
-            risks: [],
-            confidence: 'medium'
-        }, context)).toMatchObject({ ok: false });
+        expect(decodeRelicPlanningAiSuggestion(result.value, context).right).toEqual(result.value);
     });
 
     it('de-dupes proposals and ignores wrong-room, stale, and expired entries', async () => {

@@ -1,9 +1,10 @@
 import type {
     RelicActionInput,
+    RelicPlanningAiSuggestion,
     RelicPublicSnapshot
 } from '@relic-hunters/mod.ts';
 import { roomName, shortId } from '../lang.ts';
-import type { RelicPlanningAiProposal, RelicPlanningAiSuggestion } from './relic-planning-ai.ts';
+import type { RelicPlanningAiProposal } from './relic-planning-ai.ts';
 import { type UseRelicPlanningAiResult } from './useRelicPlanningAi.ts';
 
 interface RelicAiCompanionPanelProps {

@@ -1,24 +1,17 @@
+import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALReplyMessage } from '@shared/al-contracts/reply/new-al-reply-message.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import {
-    assertRallarAiAuthorized,
-    type RallarAiAuthorize,
-    type RallarAiJsonResult,
-    type RallarAiJsonValue
-} from '@shared/rallar-ai/mod.ts';
+import { assertRallarAiAuthorized, type RallarAiAuthorize } from '@shared/rallar-ai/mod.ts';
 import type { JsonWireValue } from '../rallar-system/protocol/json-wire-identity.ts';
 import type {
     RallarServerWsFanout,
     RallarServerWsPublishInputDto,
-    RallarServerWsPublishResult
+    RallarServerWsPublishResult,
+    RallarServerWsTopicScope
 } from '../rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import { isRallarServerAiJsonRequest, type RallarServerAiJsonRequest } from './decode-rallar-server-ai-json-request.ts';
 import type { RallarServerAi } from './rallar-server-ai-contracts.ts';
-import {
-    toRallarServerAiPublicationTarget,
-    toRallarServerAiPublishInput,
-    toRallarServerAiResultMessage
-} from './rallar-server-ai-result-publication.ts';
 
 export interface RallarServerAiWebSocketPort {
     defineTopic(definition: RallarServerAiWebSocketTopicDefinition): void;
@@ -38,6 +31,7 @@ export interface RallarServerAiWebSocketSelector {
 
 export interface RallarServerAiWebSocketMessage {
     readonly payload: RallarServerAiJsonRequest;
+    readonly raw: ALMessage;
 }
 
 export interface RallarServerAiWebSocketMessageContext {
@@ -55,6 +49,7 @@ export type RallarServerAiWebSocketHandler = (
 export interface RallarServerAiWebSocketTopicDefinition {
     readonly topicId: string;
     readonly typeId: string;
+    readonly scope: RallarServerWsTopicScope;
     readonly fanout: RallarServerWsFanout;
     readonly maxPayloadBytes: number;
     readonly validate: (value: JsonWireValue) => boolean;
@@ -69,11 +64,11 @@ export type RallarServerAiWebSocketHandlerAuthorization = (
 export interface RallarServerAiWebSocketConfig {
     readonly requestTopicId: string;
     readonly requestTypeId: string;
-    readonly resultTopicId: string;
-    readonly resultTypeId: string;
+    readonly requestScope: RallarServerWsTopicScope;
     readonly requestFanout: RallarServerWsFanout;
-    readonly resultFanout: RallarServerWsFanout;
-    readonly resultScope: 'room' | 'world' | 'all';
+    /** The reply is a unicast to the asking session under the request's correlation. */
+    readonly replyTypeId: string;
+    readonly replyFanout: RallarServerWsFanout;
     readonly maxPayloadBytes: number;
     readonly serverSenderId: string;
 }
@@ -91,6 +86,7 @@ export function installRallarServerAiWebSocketTopic(
     input.websocket.defineTopic({
         topicId: input.config.requestTopicId,
         typeId: input.config.requestTypeId,
+        scope: input.config.requestScope,
         fanout: input.config.requestFanout,
         maxPayloadBytes: input.config.maxPayloadBytes,
         validate: (value) => isRallarServerAiJsonRequest(value),
@@ -122,17 +118,14 @@ export function installRallarServerAiWebSocketTopic(
                 actorId: context.senderId,
                 roomId: context.roomId
             });
-            const target = toRallarServerAiPublicationTarget(input.config.resultScope, context.roomRef);
-            const resultMessage = toRallarServerAiResultMessage({
-                publication: { result, topicId: input.config.resultTopicId, typeId: input.config.resultTypeId },
+            const reply = newALReplyMessage(message.raw, {
                 senderId: input.config.serverSenderId,
-                target
+                typeId: input.config.replyTypeId,
+                payload: result
             });
-            await input.websocket.publish(toRallarServerAiPublishInput(
-                resultMessage,
-                input.config.resultFanout,
-                target.scope === 'world' ? context.authenticatedScope : undefined
-            ));
+            // A reply in the request's room is scoped by its groupRef; any other unicast reaches the asker's proven scope.
+            const scope = readALTargetGroupRef(message.raw) === undefined ? context.authenticatedScope : undefined;
+            await input.websocket.publish({ message: reply, fanout: input.config.replyFanout, scope });
         }
     );
 }
