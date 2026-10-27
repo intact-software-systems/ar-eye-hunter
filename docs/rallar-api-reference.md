@@ -1126,8 +1126,10 @@ gets its answer as a separate reply message, correlated by id.
   (`rejected`, `failed`, `expired`, `superseded`, `cancelled`, `unobservable`), so
   no reply can arrive through this observation; `transport-accepted` counts as
   delivered when the send awaits no receipt. A request deadline that lapses during
-  the wait also ends it `undelivered`. A reply that arrives after the deadline
-  still resolves `replied` while a wait is open. `lifecycle` says why.
+  the wait also ends it `undelivered`. A reply that arrives after the deadline is
+  still matched and kept, so a later `awaitReply` resolves `replied`. `lifecycle`
+  says why, unless the registry released the request (eviction, session end),
+  which ends the waits `undelivered` whatever its lifecycle.
 - **One reply.** The first accepted reply resolves every open wait and is kept for
   a later `awaitReply`. A unicast request accepts a reply only from its addressee;
   an audience request accepts one from any sender. A second reply, a reply after
@@ -1148,8 +1150,9 @@ gets its answer as a separate reply message, correlated by id.
   with the issue `$.topicId`. Room and people state events
   (`RallarStateEventMessage<T>`, the message without `reply`) cannot be replied to.
 - **WS only.** A reply travels over WS whatever carrier the request used. A reply
-  that arrives over RTC is not matched: it is dropped with `reply-late` (cause
-  `unobserved`), even while the request is awaited. A reply never reaches an
+  that arrives over RTC is not matched: when the page subscribes to its type over RTC
+  it is dropped with `reply-late` (cause `unobserved`), even while the request is
+  awaited. A reply never reaches an
   `onMessage` subscriber of its type.
 
 ```ts

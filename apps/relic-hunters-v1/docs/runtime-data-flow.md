@@ -289,7 +289,7 @@ The browser accepts a reply only when its result decodes, its `requestId`, schem
 id and version are the request's, its `baseStateRevision` is still the current
 revision (exactly), and the suggestion passes `decodeRelicPlanningAiSuggestion`
 against the context that was asked. Any other outcome is a fallback reason: no
-server peer, `timeout`, `undelivered` or an invalid reply. On a fallback, a build
+server peer, `timeout`, `undelivered` (a rejected send included) or an invalid reply. On a fallback, a build
 with a local provider runs the local path below, and a build without one reads
 Unavailable. A cancelled ask (the panel unmounts or Ask is pressed again) neither
 falls back nor publishes. The local path uses the existing RallarAI browser facade

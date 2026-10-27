@@ -848,11 +848,12 @@ fallback-identity test pins `actions` across the admission retry, the post-admis
 downgrade.
 
 [`toALReplyActions`](../../al-contracts/reply/to-al-reply-actions.ts) mints a reply's fields from its request, and
-both reply builders use it. The browser's
+[`toALReplyContextId`](../../al-contracts/reply/to-al-reply-context-id.ts) its context: the room's id when the request
+named a room, whatever context it used, else the request's context. Both reply builders use the two. The browser's
 [`BrowserRallarMessageSender.sendReply`](../../../shared-web/browser/messages/browser-rallar-message-sender.ts)
 builds a reply as a WS unicast to the requester's session, on the request's topic and in its room (the room's id as
 the context), with the `command` purpose's reliability, receipt and TTL, and returns an ordinary handle. The server's
-[`newALReplyMessage`](../../al-contracts/reply/new-al-reply-message.ts) builds the same unicast. No RTC send builds a
+[`newALReplyMessage`](../../al-contracts/reply/new-al-reply-message.ts) builds the same unicast, in the same context. No RTC send builds a
 reply. The reply slot, the matcher and the two reply diagnostics are described in the
 [inbound navigation map](../inbound/README.md#replies-and-their-diagnostics).
 

@@ -42,6 +42,6 @@ export interface RallarMessagesOperations {
     room<T>(
         definition: RallarRoomMessageChannelDefinition
     ): RallarTypedMessageChannel<T>;
-    /** The connected session's volatile ledger: what it holds, its four bounds, whether it sheds (D180), and the reply counts `repliesHeld` and `replyWaitsOpen`. */
+    /** The connected session's `RallarMessagesUsage`. */
     readUsage(): RallarMessagesUsage;
 }

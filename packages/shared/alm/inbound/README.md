@@ -924,8 +924,9 @@ admission is `matched` (the first reply, from the unicast's addressee or any sen
 longer retains has no entry, so its reply is `late`.
 
 Replies travel over WS only. The RTC inbox keeps one callback per type, which the messaging subscriptions own, so a
-reply that arrives over RTC is not matched: the subscriptions drop it and state `reply-late` with cause `unobserved`
-and `carrier: 'rtc'`, even while the request is awaited.
+reply that arrives over RTC is not matched: when the page subscribes to its type over RTC, the subscriptions drop it and
+state `reply-late` with cause `unobserved` and `carrier: 'rtc'`, even while the request is awaited. A reply on a type
+with no RTC subscription never reaches the inbox, so nothing is stated.
 
 Each dropped reply states one event on the session's inbound diagnostics sink, built by
 [`toBrowserReplyDropDiagnostic`](../../../shared-web/browser/messages/reply/to-browser-reply-drop-diagnostic.ts) and

@@ -5,10 +5,6 @@ export function toALCorrId(message: ALMessage): string {
     return message.actions?.corrId ?? message.id.msgId;
 }
 
-export function isALReplyMessage(message: ALMessage): boolean {
-    return message.actions?.replyToMsgId !== undefined;
-}
-
 export function toALReplyActions(request: ALMessage): Required<ALActions> {
     return {
         corrId: toALCorrId(request),

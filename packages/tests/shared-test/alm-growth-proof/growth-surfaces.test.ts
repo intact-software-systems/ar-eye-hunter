@@ -188,12 +188,20 @@ describe('Growth surface classification', () => {
         expect(markers?.classification).toEqual({ growthClass: 'count-capped', cap: 512 });
     });
 
-    it('bounds a page\'s reply slots at the 512 entries of its delivery registry, reading both reply counts', () => {
-        const slots = GROWTH_SURFACES.find((surface) => surface.owner.endsWith('reply/browser-message-reply-slot.ts'));
+    it('bounds a page\'s held replies at the 512 entries of its delivery registry', () => {
+        const held = GROWTH_SURFACES.find((surface) => surface.id === 83);
 
-        expect(slots?.classification).toEqual({ growthClass: 'count-capped', cap: 512 });
-        expect(slots?.readers.map((reader) => [reader.source, reader.path.join('.')])).toEqual([
-            ['browser-stats', 'rallar.alm.repliesHeld'],
+        expect(held?.classification).toEqual({ growthClass: 'count-capped', cap: 512 });
+        expect(held?.readers.map((reader) => [reader.source, reader.path.join('.')])).toEqual([
+            ['browser-stats', 'rallar.alm.repliesHeld']
+        ]);
+    });
+
+    it('leaves a page\'s open reply waits unbounded by count, each ended only by its own timeout', () => {
+        const waits = GROWTH_SURFACES.find((surface) => surface.id === 84);
+
+        expect(waits?.classification).toMatchObject({ growthClass: 'unbounded' });
+        expect(waits?.readers.map((reader) => [reader.source, reader.path.join('.')])).toEqual([
             ['browser-stats', 'rallar.alm.replyWaitsOpen']
         ]);
     });

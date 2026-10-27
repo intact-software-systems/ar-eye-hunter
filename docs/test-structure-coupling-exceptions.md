@@ -4871,6 +4871,21 @@ moved or changed test.
       "summary": "The strict recipe gate refuses any increase in ignored or vacuous expectation findings beyond the recorded per-recipe allowance.",
       "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#adds no expectation the runner would silently ignore",
       "coverageRelation": "The test reads the actual strict-expectation allowance, executes each API-v1 recipe through strict preflight, and compares independent findings with its recorded allowance."
+    },
+    {
+      "id": "relic-cancelled-planning-ask-runs-no-local-companion",
+      "domain": "Relic Hunters planning companion",
+      "owner": "Relic Hunters maintainers",
+      "summary": "A planning ask cancelled while it awaits the server publishes nothing and does not fall back to the local companion.",
+      "semanticCoverage": "packages/tests/relic-hunters/relic-web-app.browser.test.ts#publishes nothing and runs no local companion for an ask cancelled while it awaits the server",
+      "coverageRelation": "The test starts an ask whose server reply never arrives, unmounts the app so the ask is aborted, and checks that no proposal was sent and that the local provider was not called.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "the local RallarAI provider generateJson",
+        "observableEffect": "A cancelled ask makes no local generation request.",
+        "requiredConstraint": "An aborted ask neither falls back to the local companion nor publishes a proposal.",
+        "failureRationale": "A local fallback that ran would only surface as a proposal sent after the cancel; the absent local call is the direct witness that the abort is not treated as a fallback reason."
+      }
     }
   ],
   "entries": [
@@ -10274,6 +10289,17 @@ moved or changed test.
       "owner": "AR Eye Hunter maintainers",
       "rationale": "The one-call assertion observes the pending external read directly and proves the load-suppression contract; the remaining assertions prove completion and later recovery.",
       "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#coalesces overlapping directory reads and allows a fresh read after completion"
+    },
+    {
+      "id": "test-structure-coupling-09b987c87af0e21d",
+      "path": "packages/tests/relic-hunters/relic-web-app.browser.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-cancelled-planning-ask-runs-no-local-companion",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(rallarMock.localGenerateJson).not.toHaveBeenCalled();` pins that a cancelled planning ask does not run the local provider as a fallback.",
+      "semanticCoverage": "packages/tests/relic-hunters/relic-web-app.browser.test.ts#publishes nothing and runs no local companion for an ask cancelled while it awaits the server"
     }
   ]
 }

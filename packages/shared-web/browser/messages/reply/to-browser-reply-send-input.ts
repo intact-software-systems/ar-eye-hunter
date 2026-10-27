@@ -3,13 +3,13 @@ import type {
     RallarWsSendInput
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { toALReplyContextId } from '@shared/al-contracts/reply/to-al-reply-context-id.ts';
 import { AL_CHANNEL_SEND_DEFAULTS } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 
 /**
  * A unicast to the requester's session on the request's topic and in its room, on the `command` purpose's delivery
- * defaults. A room unicast routes in its room id whatever context the request used, since the sender and the server
- * both refuse any other; the requester matches on `replyToMsgId`, never the route. A request that named no room is
- * answered outside any room, never in the responder's default room.
+ * defaults. The context is `toALReplyContextId`, the server reply's rule; the requester matches on `replyToMsgId`,
+ * never the route. A request that named no room is answered outside any room, never in the responder's default room.
  */
 export function toBrowserReplySendInput<R>(
     request: ALMessage,
@@ -23,7 +23,7 @@ export function toBrowserReplySendInput<R>(
         scope: roomRef === undefined ? 'world' : 'room',
         roomRef,
         topicId: request.route.topicId,
-        contextId: roomRef?.groupId ?? request.route.contextId,
+        contextId: toALReplyContextId(request),
         typeId: options?.typeId ?? request.payload.typeId,
         payload,
         reliability: defaults.reliability,

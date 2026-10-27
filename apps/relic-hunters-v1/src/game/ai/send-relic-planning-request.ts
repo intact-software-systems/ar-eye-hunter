@@ -4,7 +4,7 @@ import {
     type RelicPlanningAiContext,
     type RelicPlanningAiSuggestion
 } from '@relic-hunters/mod.ts';
-import type { RallarMessagePayload } from '@shared-web/browser/rallar-messages.ts';
+import type { RallarMessageHandle, RallarMessagePayload } from '@shared-web/browser/rallar-messages.ts';
 import type { RallarFacade } from '@shared-web/browser/rallar.ts';
 import type { RallarAiJsonResult } from '@shared/rallar-ai/mod.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -29,6 +29,29 @@ export interface RelicPlanningRequestInput {
     readonly signal: AbortSignal;
 }
 
+/** A rejected send (the peer changed, the connect failed) reaches no server, so it falls back like an undelivered one. */
+async function sendRelicPlanningWs(
+    facade: Pick<RallarFacade, 'messages'>,
+    serverPeerId: string,
+    input: RelicPlanningRequestInput
+): Promise<Either<'undelivered', RallarMessageHandle>> {
+    try {
+        return Either.ofRight(
+            await facade.messages
+                .room<RelicPlanningRequestInput['request']>({
+                    topicId: RELIC_TOPICS.aiPlanning,
+                    typeId: RELIC_TYPES.aiPlanningRequest,
+                    purpose: 'command',
+                    roomId: input.roomId
+                })
+                .sendWs(input.request, { peerId: serverPeerId })
+        );
+    }
+    catch {
+        return Either.ofLeft('undelivered');
+    }
+}
+
 export async function sendRelicPlanningRequest(
     facade: Pick<RallarFacade, 'serverPeerId' | 'messages'>,
     input: RelicPlanningRequestInput
@@ -37,14 +60,11 @@ export async function sendRelicPlanningRequest(
     if (serverPeerId === undefined) {
         return Either.ofLeft('no-server');
     }
-    const handle = await facade.messages
-        .room<RelicPlanningRequestInput['request']>({
-            topicId: RELIC_TOPICS.aiPlanning,
-            typeId: RELIC_TYPES.aiPlanningRequest,
-            purpose: 'command',
-            roomId: input.roomId
-        })
-        .sendWs(input.request, { peerId: serverPeerId });
+    const sent = await sendRelicPlanningWs(facade, serverPeerId, input);
+    const handle = sent.right;
+    if (handle === undefined) {
+        return Either.ofLeft('undelivered');
+    }
     const outcome = await handle.awaitReply<RallarMessagePayload>({
         timeoutMs: RELIC_PLANNING_REPLY_TIMEOUT_MS,
         signal: input.signal

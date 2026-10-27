@@ -12,7 +12,8 @@ import {
 } from '@shared/al-contracts/al-contract.ts';
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { newALReplyMessage } from '@shared/al-contracts/reply/new-al-reply-message.ts';
-import { isALReplyMessage, toALCorrId, toALReplyActions } from '@shared/al-contracts/reply/to-al-reply-actions.ts';
+import { toALCorrId, toALReplyActions } from '@shared/al-contracts/reply/to-al-reply-actions.ts';
+import { toALReplyContextId } from '@shared/al-contracts/reply/to-al-reply-context-id.ts';
 import { AL_CHANNEL_SEND_DEFAULTS } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
@@ -32,18 +33,12 @@ describe('the correlation id of a message', () => {
         const request = newRequest('client');
 
         expect(toALCorrId(request)).toBe(request.id.msgId);
-        expect(isALReplyMessage(request)).toBe(false);
     });
 
     it('is the actions.corrId a re-ask carries', () => {
         const reAsk = newRequest('client', undefined, { corrId: 'first-ask' });
 
         expect(toALCorrId(reAsk)).toBe('first-ask');
-        expect(isALReplyMessage(reAsk)).toBe(false);
-    });
-
-    it('marks a message that names the request it answers as a reply', () => {
-        expect(isALReplyMessage(newRequest('client', undefined, ACTIONS))).toBe(true);
     });
 });
 
@@ -58,6 +53,22 @@ describe('the reply actions of a request', () => {
         const reAsk = newRequest('client', undefined, { corrId: 'first-ask' });
 
         expect(toALReplyActions(reAsk)).toEqual({ corrId: 'first-ask', replyToMsgId: reAsk.id.msgId });
+    });
+});
+
+describe('the context a reply routes in', () => {
+    const customContext = newALRoute('app.command', 'custom', 'resource-1');
+
+    it('is the room id when the request names a room, whatever context it used', () => {
+        const roomBroadcast = newALBroadcastMessage('client', customContext, 'room', 't', {}, { groupRef: ROOM });
+
+        expect(toALReplyContextId(roomBroadcast)).toBe(ROOM.groupId);
+        expect(toALReplyContextId(newALUnicastMessage('client', customContext, 'server', 't', {}, { groupRef: ROOM })))
+            .toBe(ROOM.groupId);
+    });
+
+    it('is the request context when the request names no room', () => {
+        expect(toALReplyContextId(newALUnicastMessage('client', customContext, 'server', 't', {}))).toBe('custom');
     });
 });
 
@@ -110,6 +121,21 @@ describe('the server reply to a request', () => {
         const reply = newALReplyMessage(reAsk, { senderId: 'server', typeId: 't', payload: {} });
 
         expect(reply.actions).toEqual({ corrId: 'first-ask', replyToMsgId: reAsk.id.msgId });
+    });
+
+    it('routes a reply to a room broadcast with a custom context in the room id, as the server ingress requires', () => {
+        const request = newALBroadcastMessage(
+            'client-session',
+            newALRoute('app.command', 'custom', 'resource-1'),
+            'room',
+            'app.ask.v1',
+            { q: 1 },
+            { groupRef: ROOM }
+        );
+        const reply = newALReplyMessage(request, { senderId: 'server', typeId: 't', payload: {} });
+
+        expect(reply.route.contextId).toBe(ROOM.groupId);
+        expect(reply.targets).toEqual({ mode: 'unicast', toPeerId: 'client-session', groupRef: ROOM });
     });
 
     it('names no room when the request named none', () => {

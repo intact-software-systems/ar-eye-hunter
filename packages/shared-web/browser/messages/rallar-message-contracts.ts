@@ -149,7 +149,8 @@ export interface RallarMessageHandle {
     /**
      * Never throws. A timeout leaves the request as it is; `aborted` and `undelivered` end only this wait, and the
      * first timeout ends every wait of the request. A request deadline that lapses during the wait ends it
-     * `undelivered`; a reply that arrives after the deadline still resolves `replied` when the wait is open.
+     * `undelivered`; a reply that arrives after the deadline is still matched and kept, so a later `awaitReply`
+     * resolves `replied`.
      */
     awaitReply<T>(options: RallarMessageReplyWaitOptions): Promise<RallarMessageReplyOutcome<T>>;
     cancel(): void;

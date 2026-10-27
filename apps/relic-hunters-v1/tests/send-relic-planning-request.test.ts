@@ -90,6 +90,13 @@ describe('a Relic planning request to the server (D444)', () => {
         expect((await sendRelicPlanningRequest(facade, input())).left).toBe('invalid-reply');
     });
 
+    it('falls back as undelivered when the send itself is rejected', async () => {
+        const { facade, sendWs } = createFacadeDouble('default-qbox-server', replied(serverResult()));
+        sendWs.mockRejectedValueOnce(new Error('the server peer changed'));
+
+        expect((await sendRelicPlanningRequest(facade, input())).left).toBe('undelivered');
+    });
+
     it('refuses a reply that arrives once the turn has no revision to plan for', async () => {
         const { facade } = createFacadeDouble('default-qbox-server', replied(serverResult()));
 

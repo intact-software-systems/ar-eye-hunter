@@ -171,8 +171,8 @@ export class BrowserRallarMessageSender {
     }
 
     /**
-     * The browser's one place that sets `replyToMsgId`: a WS unicast to the requester's session, in the request's
-     * route and room, on the `command` purpose's delivery defaults.
+     * The browser's one place that sets `replyToMsgId`: a WS unicast to the requester's session on the `command`
+     * purpose's delivery defaults, addressed by `toBrowserReplySendInput`.
      */
     public async sendReply<R>(
         request: ALMessage,

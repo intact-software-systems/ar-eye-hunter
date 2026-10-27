@@ -4,7 +4,7 @@ import {
     type RallarServerAiWebSocketPort
 } from '@shared-server/rallar-ai/install-rallar-server-ai-websocket-topic.ts';
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
-import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALBroadcastMessage, newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { createRallarAiMockProvider } from '@shared/rallar-ai/mod.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
@@ -15,7 +15,8 @@ import {
     createRallarServerAiTestMessage,
     createRallarServerAiTestRequestJson,
     createRallarServerAiTestService,
-    createRallarServerAiTestWebSocket
+    createRallarServerAiTestWebSocket,
+    RALLAR_SERVER_AI_TEST_ROOM_REF
 } from './rallar-server-ai-test-fixtures.ts';
 
 const TEST_WEBSOCKET_CONFIG: RallarServerAiWebSocketConfig = {
@@ -77,6 +78,35 @@ describe('Rallar server AI WebSocket topic', () => {
             value: { kind: 'spawn' }
         });
         expect(unregister()).toBe(true);
+    });
+
+    it('replies to a room broadcast request with a custom context in the room id', async () => {
+        const websocket = createRallarServerAiTestWebSocket();
+        installRallarServerAiWebSocketTopic({
+            websocket: websocket.port,
+            serverAi: createRallarServerAiTestService({
+                provider: createRallarAiMockProvider({ value: { kind: 'spawn' } })
+            }),
+            config: TEST_WEBSOCKET_CONFIG
+        });
+        const unicast = createRallarServerAiTestMessage();
+        const request = {
+            payload: unicast.payload,
+            raw: newALBroadcastMessage(
+                'peer-1',
+                newALRoute('room.ai.generate', 'custom-context', 'request-1'),
+                'room',
+                unicast.raw.payload.typeId,
+                createRallarServerAiTestRequestJson('request-1'),
+                { groupRef: RALLAR_SERVER_AI_TEST_ROOM_REF }
+            )
+        };
+
+        await websocket.invoke(request);
+
+        expect(websocket.publications).toHaveLength(1);
+        expect(websocket.publications[0]!.message.route.contextId).toBe(RALLAR_SERVER_AI_TEST_ROOM_REF.groupId);
+        expect(websocket.publications[0]!.message.targets).toMatchObject({ mode: 'unicast', toPeerId: 'peer-1' });
     });
 
     it('validates current request JSON before the handler can run', () => {

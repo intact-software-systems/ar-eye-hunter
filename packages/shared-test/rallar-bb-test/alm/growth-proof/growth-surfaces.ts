@@ -678,9 +678,19 @@ export const GROWTH_SURFACES: readonly GrowthSurface[] = [
     },
     {
         id: 83,
-        name: 'browser reply slots, the replies held and the reply waits open (not in the survey)',
+        name: 'browser reply slots, the replies held (not in the survey)',
         owner: 'packages/shared-web/browser/messages/reply/browser-message-reply-slot.ts',
         classification: { growthClass: 'count-capped', cap: BROWSER_DELIVERY_REGISTRY_ENTRIES },
-        readers: [toBrowserReading('rallar', 'alm', 'repliesHeld'), toBrowserReading('rallar', 'alm', 'replyWaitsOpen')]
+        readers: [toBrowserReading('rallar', 'alm', 'repliesHeld')]
+    },
+    {
+        id: 84,
+        name: 'browser reply waits open (not in the survey)',
+        owner: 'packages/shared-web/browser/messages/reply/browser-message-reply-slot.ts',
+        classification: {
+            growthClass: 'unbounded',
+            missingBound: 'one wait per awaitReply call; each ends by its required timeoutMs and no count caps them'
+        },
+        readers: [toBrowserReading('rallar', 'alm', 'replyWaitsOpen')]
     }
 ];

@@ -316,7 +316,8 @@ Message ownership is concentrated under [`messages/`](./messages/):
   `RallarMessage<T>`), `timeout`, `aborted` or `undelivered`, each with the request's lifecycle. The reply timeout
   is the caller's own clock beside the ACK timeout and the message deadline: a `timeout` leaves the request alive,
   the first timeout ends every wait of the request, and a request deadline that lapses during the wait ends it
-  `undelivered`. A reply that arrives after the deadline still resolves `replied` while a wait is open.
+  `undelivered`. A reply that arrives after the deadline is still matched and kept, so a later `awaitReply` resolves
+  `replied`.
   [BrowserMessageReplySlot](./messages/reply/browser-message-reply-slot.ts) is the reply side of one
   delivery-registry entry, so the registry's retention (terminal entries for 60 s, 512 entries; an entry with an
   open reply wait outlives the age rule) is its only bound; the slot is `open`, `replied`, `timed-out`, or
@@ -330,7 +331,7 @@ Message ownership is concentrated under [`messages/`](./messages/):
   place that sets `replyToMsgId`: a WS unicast to the requester's session on the request's topic, in the room's id
   when the request named a room (the request's custom `contextId` is not used), on the `command` purpose's
   defaults. A request on a topic that WS cannot carry rejects `reply()` with the `$.topicId` issue. Replies travel
-  over WS only: a reply that arrives over RTC is dropped with `reply-late` (cause `unobserved`). Room and people
+  over WS only: a reply that arrives over RTC is dropped with `reply-late` (cause `unobserved`) when the page subscribes to its type over RTC. Room and people
   event listeners take `RallarStateEventMessage<T>`, the message without `reply`, because those events replay
   locally. `messages.readUsage()` returns `RallarMessagesUsage`, the volatile ledger report with `repliesHeld`
   (retained entries holding a matched reply) and `replyWaitsOpen` (reply waits in flight).

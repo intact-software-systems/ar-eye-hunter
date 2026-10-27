@@ -841,7 +841,7 @@ identity survives fallback and repair; trace identity does so once I1b lands.
   resolves `undelivered` when the request is terminal in a state other than
   `acknowledged` (or `transport-accepted` where no receipt is awaited), and also
   when the request's deadline lapses during the wait. A reply that arrives after
-  the deadline, while a wait is open, still resolves `replied`.
+  the deadline is still matched and kept, so a later `awaitReply` resolves `replied`.
 - Each browser delivery-registry entry owns one reply slot, so the registry's
   retention bounds it (60 s after the terminal state, 512 entries; an entry with
   an open reply wait is spared by the age rule). The first accepted reply is
@@ -868,8 +868,9 @@ identity survives fallback and repair; trace identity does so once I1b lands.
   RTC-with-WS-fallback strategy; a wrong responder is pinned at the matcher's unit level.
 
 **Limits of I1a:** replies travel over WS only. A request may travel on any
-carrier, but a reply that arrives over RTC is never matched; it is dropped with
-`reply-late` (cause `unobserved`), even while the request is awaited. A request
+carrier, but a reply that arrives over RTC is never matched; when the page
+subscribes to its type over RTC it is dropped with `reply-late` (cause
+`unobserved`), even while the request is awaited. A request
 on a topic that WS cannot carry cannot be replied to. A room reply routes in the
 room's id, not in a request's custom `contextId`. There is one reply per request,
 no registered response schema (the caller validates), and no reply wait that

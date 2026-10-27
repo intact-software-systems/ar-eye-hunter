@@ -113,7 +113,7 @@ export type ALInboundRuntimeDiagnosticsEvent =
         rejection: ALMessageRejection['code'];
     }>
     | Readonly<{
-        /** A reply that reached an inbox after its request's observation had ended, so nothing consumed it. */
+        /** A reply no open slot admitted: already replied, timed out, or unobserved (no retained request, or it came over RTC). */
         kind: 'reply-late';
         msgId: string;
         replyToMsgId: string;
