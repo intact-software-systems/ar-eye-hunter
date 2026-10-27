@@ -280,6 +280,7 @@ function ArenaRoomList({ arena }: Pick<ArenaOperationsProps, 'arena'>) {
                     <button
                         type="button"
                         key={room.roomId}
+                        data-room-id={room.roomId}
                         className={room.roomId === arena.roomId ? 'room-row active' : 'room-row'}
                         onClick={() => arena.joinRoom(room.roomId)}
                     >
@@ -292,6 +293,7 @@ function ArenaRoomList({ arena }: Pick<ArenaOperationsProps, 'arena'>) {
                     <button
                         type="button"
                         key={room.groupRef.groupId}
+                        data-room-id={room.groupRef.groupId}
                         className="room-row"
                         disabled={room.isFull}
                         onClick={() => arena.joinRoom(room.groupRef.groupId)}

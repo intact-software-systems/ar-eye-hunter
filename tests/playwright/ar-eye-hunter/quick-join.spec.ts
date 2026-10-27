@@ -71,6 +71,7 @@ roomBrowserTest(
 
 roomBrowserTest(
     'Quick Joined peers keep the match countdown and results when the host renderer was paused',
+    { annotation: { type: 'room-journey', description: 'repeat-play' } },
     async ({ page: alice, guest: bob }, testInfo) => {
         // One-minute play plus paused-render setup and captured peer results can exceed two minutes.
         roomBrowserTest.setTimeout(180_000);
@@ -120,10 +121,24 @@ roomBrowserTest(
             { useInnerText: true }
         );
         await bob.screenshot({ path: testInfo.outputPath('quick-join-results.png'), fullPage: true });
-        await aliceResults.getByRole('button', { name: 'Continue infinite chaos' }).click();
-        await bobResults.getByRole('button', { name: 'Continue infinite chaos' }).click();
-        await expect(aliceResults).toBeHidden();
-        await expect(bobResults).toBeHidden();
+        await roomBrowserTest.step('room-journey:repeat-play', async () => {
+            await aliceResults.getByRole('button', { name: 'Continue infinite chaos' }).click();
+            await bobResults.getByRole('button', { name: 'Continue infinite chaos' }).click();
+            await expect(aliceResults).toBeHidden();
+            await expect(bobResults).toBeHidden();
+            await aliceOperations.getByRole('button', { name: '1m', exact: true }).click();
+            await assertRunningMatch(aliceOperations, bobOperations);
+            await expect(aliceOperations.getByLabel('Account reference', { exact: true })).toHaveValue('alice');
+            await expect(bobOperations.getByLabel('Account reference', { exact: true })).toHaveValue('bob');
+            await expect(aliceOperations.locator('.room-row.active')).toHaveAttribute(
+                'data-room-id',
+                snapshot.group.groupId
+            );
+            await expect(bobOperations.locator('.room-row.active')).toHaveAttribute(
+                'data-room-id',
+                snapshot.group.groupId
+            );
+        });
     }
 );
 

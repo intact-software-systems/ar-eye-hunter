@@ -18,3 +18,67 @@ acknowledges; its CPU profile covers the minimal plan only.
 
 Avoid bare `npx playwright test` from the repository root. There is no root
 config because a root default can silently start the wrong app for a test path.
+
+## Room journey measurements
+
+The full-stack AR Eye and Relic configs use the shared room journey reporter.
+Existing clickable tests declare `room-journey` annotations and delimit each
+phase with a native `test.step('room-journey:<phase>', ...)`. Assertions inside
+the step establish the user-visible outcome; an HTTP admission alone is not
+participation.
+
+| Phase       | AR Eye                                                                                                  | Relic                                                                                                                            |
+| ----------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Entry       | Open a code invitation, sign in, enter the arena, and observe the shared running match.                 | Open a code invitation, register, join the expedition, and submit both plans through round two.                                  |
+| Recovery    | Reload the guest and observe the same arena's running match.                                            | Reload the guest at round two and submit a plan successfully.                                                                    |
+| Repeat play | After matching results, both players continue and the host starts another timed match in the same room. | After the two-player finale, reset, rejoin with the same accounts, start, select Search, and advance the same room to round two. |
+
+Collect three serial repetitions from a clean committed checkout. Run the two
+commands sequentially so their renderers do not compete. Each command retains
+all attempts in one artifact; `repeatEachIndex` distinguishes repetitions.
+
+```sh
+RALLAR_ROOM_JOURNEY_REVISION=$(git rev-parse HEAD) RALLAR_ARENA_FULL_STACK=1 \
+  npx playwright test --config apps/ar-eye-hunter-v1/playwright.config.ts \
+  tests/playwright/ar-eye-hunter/private-room-entry.spec.ts \
+  tests/playwright/ar-eye-hunter/quick-join.spec.ts \
+  --project=desktop-delivery --grep 'shares a code arena|Quick Joined peers keep' \
+  --workers=1 --repeat-each=3 --trace=on --output=tmp/perf/room-journeys/ar-eye
+
+RALLAR_ROOM_JOURNEY_REVISION=$(git rev-parse HEAD) RELIC_HUNTERS_FULL_STACK=1 \
+  npx playwright test --config apps/relic-hunters-v1/playwright.full-stack.config.ts \
+  tests/playwright/relic-hunters/full-stack-private-room-entry.spec.ts \
+  --grep 'shares a code expedition|plays a two-hunter expedition' \
+  --workers=1 --repeat-each=3 --trace=on --output=tmp/perf/room-journeys/relic
+```
+
+`room-journeys.json` is written in the selected output directory. It records the
+application, environment, explicit source revision (null if not supplied),
+worker count, native run status, and each phase's attempt status and duration.
+Retries retain earlier failures. Skipped or unreached phases have null duration;
+invalid or missing evidence after a passed test fails the runner, as does an
+artifact write failure. Inspect both `issues` and attempt/phase statuses before
+summarizing successful durations. Report sample counts, failures, and descriptive
+medians/ranges together; do not calculate latency percentiles from three samples.
+An empty selection supplies no coverage evidence. Raw errors, credentials,
+room links, and room identifiers are excluded from this JSON.
+
+The release workflow uploads `game-room-journeys-<game>` on success or failure
+before component tests clear the output directory. Existing failure traces and
+screenshots remain separate. Local output belongs under ignored `tmp/perf/`.
+Repeat-play checks account and exact active-room identity after the second activity
+starts. AR Eye exposes that identity on its existing room rows with `data-room-id`,
+matching the existing Relic pattern. This does not change gameplay behavior.
+
+Record OS, runtime/browser versions, server profile, renderer and source revision
+with any comparison. AR Eye uses a built SPA and local memory API; Relic uses a
+Vite development SPA and local server. Both use Chromium software rendering.
+These timings include automated interactions and assertion waits: they measure
+the defined synthetic journeys, not production latency or user adoption. The
+reload checks do not establish operating-system suspension recovery. No numeric
+performance threshold or gameplay policy is introduced.
+
+Relic repeat play explicitly selects a fresh Search action: the current UI retains
+the previous Escape draft after Reset, and Escape is unavailable at the new
+entrance. This journey includes that extra choice; it does not claim Reset clears
+the draft or measure a one-click replay flow.

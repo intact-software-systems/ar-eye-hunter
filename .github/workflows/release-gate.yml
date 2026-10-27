@@ -210,6 +210,9 @@ jobs:
           deno: 'true'
           playwright: 'true'
 
+      - name: Record room journey source
+        run: echo "RALLAR_ROOM_JOURNEY_REVISION=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
       - name: Run AR Eye room entry browser tests
         if: ${{ matrix.game == 'ar-eye' }}
         env:
@@ -221,13 +224,6 @@ jobs:
             tests/playwright/ar-eye-hunter/private-room-entry.spec.ts \
             tests/playwright/ar-eye-hunter/quick-join.spec.ts --project=desktop-delivery
 
-      - name: Run AR Eye real-canvas reconciliation regression
-        if: ${{ matrix.game == 'ar-eye' }}
-        run: |
-          npx playwright test --config apps/ar-eye-hunter-v1/playwright.config.ts \
-            tests/playwright/ar-eye-hunter/quick-join.spec.ts --project=desktop-delivery \
-            --grep 'director canvas shot'
-
       - name: Run Relic private room entry browser tests
         if: ${{ matrix.game == 'relic' }}
         env:
@@ -236,6 +232,24 @@ jobs:
           npx playwright test --config apps/relic-hunters-v1/playwright.full-stack.config.ts \
             tests/playwright/relic-hunters/full-stack-private-room-entry.spec.ts \
             tests/playwright/relic-hunters/full-stack-http.spec.ts --trace=retain-on-failure
+
+      - name: Upload room journey observations
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: game-room-journeys-${{ matrix.game }}
+          path: |
+            apps/ar-eye-hunter-v1/test-results/room-journeys.json
+            apps/relic-hunters-v1/test-results/room-journeys.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Run AR Eye real-canvas reconciliation regression
+        if: ${{ matrix.game == 'ar-eye' }}
+        run: |
+          npx playwright test --config apps/ar-eye-hunter-v1/playwright.config.ts \
+            tests/playwright/ar-eye-hunter/quick-join.spec.ts --project=desktop-delivery \
+            --grep 'director canvas shot'
 
       - name: Run Relic feedback and discovery click regressions
         if: ${{ matrix.game == 'relic' }}
@@ -436,7 +450,8 @@ jobs:
           npm run test:rallar:full-stack:postgres:rest
           npm run test:rallar:full-stack:postgres:control
 
-      # Last in this lane: presence expiry leaves fixed-ID outbox evidence that later outbox workers would see.
+      # Run twice to prove retained outbox rows cannot contaminate a later invocation.
+      # Keep this last because other outbox workers would see those fixed-ID rows.
       - name: Run Postgres presence-expiry integration tests
         run: |
           npm run test:postgres:presence-expiry
