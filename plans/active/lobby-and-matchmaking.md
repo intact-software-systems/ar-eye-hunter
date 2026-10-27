@@ -40,8 +40,10 @@ awaited observer completion and entry/refresh quiescence through the shared noti
 renderer repair prevents asynchronous work from outliving Relic logout while keeping replacement
 account rendering and scene controls usable. Advertised WebSocket host validation now diagnoses #683
 at server startup and before browser connection, with visible login and recovery controls in both
-games. The current increment addresses delayed heartbeat callbacks in #714: recover authorized
-joined-room targets after browser snapshot expiry while the server presence lease remains live.
+games. Delayed heartbeat recovery now restores authorized joined-room targets after browser snapshot
+expiry while the server presence lease remains live. The current increment repairs a reproduced
+Relic code-room sharing failure from #712: preserve the committed creation result when leaving the
+previous room fails while the browser cache is expired.
 
 ## Current foundation
 
@@ -134,11 +136,11 @@ all-or-none admission decisions before it becomes a platform promise.
 
 ## Delivery priorities
 
-| Priority    | Outcomes                                                                                                                                                                                                             |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Current     | Recover joined-group heartbeat targets after cached snapshots expire ([#714](https://github.com/intact-software-systems/ar-eye-hunter/issues/714)), with deterministic timer and visible game workflow coverage. |
-| Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them.                                                                                                                          |
-| Later       | Scheduled rooms (8) and a separate tournament capability.                                                                                                                                                            |
+| Priority    | Outcomes                                                                                                                                                                                                                 |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Current     | Preserve Relic code-room sharing through cache expiry during previous-room cleanup ([#712](https://github.com/intact-software-systems/ar-eye-hunter/issues/712)), with runtime and visible workflow regression coverage. |
+| Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them.                                                                                                                              |
+| Later       | Scheduled rooms (8) and a separate tournament capability.                                                                                                                                                                |
 
 Relic validation is a constraint throughout, not a dependency postponed to slice 9. Operator
 reliability work may ship independently where a concrete operational need warrants it. Freshness and
@@ -308,9 +310,20 @@ the current principal/session's presence through existing heartbeat mutations. C
 leave or permission to rejoin. Stop/account replacement fences late reads; causal snapshot adoption
 preserves newer explicit leaves. Removed or expired server presence remains absent. There is no
 second membership registry. Synthetic delayed-callback tests prove this timer failure class, not
-actual operating-system suspension. After this repair, investigate the intermittent Relic code-room
-share-link failure in [#712](https://github.com/intact-software-systems/ar-eye-hunter/issues/712) only
-if it still reproduces; no implementation is selected without a causal diagnosis.
+actual operating-system suspension.
+
+Relic room creation recovers the exact validated `joinedRoom` snapshot from a create-and-switch
+partial failure. A refused previous-room leave must not replace the already committed creation result
+with an empty cache or a different current room. The browser adapter supplies the explicit Relic
+application/workspace scope to presence waiting; resolving a bare room ID from an expired cache would
+otherwise report the admitted room as missing. The existing presence wait and session/current-room
+checks still govern completion before the hosting UI rotates and displays the code. Admission does
+not join the expedition automatically. A controlled browser workflow reproduces a blank share link
+when cleanup refusal arrives during cache expiry, then verifies sharing and explicit participation
+after recovery. This establishes a current failure class for
+[#712](https://github.com/intact-software-systems/ar-eye-hunter/issues/712); the older untraced
+intermittent occurrence may have a different cause. Revisit that occurrence only with new failure
+evidence, and choose further social capability from the product evidence described below.
 
 Corrupt-row isolation belongs to operator reliability in slice 9, not this recovery feature.
 

@@ -26,12 +26,12 @@ import type { RallarRoomDirectory } from '@shared-web/browser/rooms/directory/ra
 import type { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
 import type { RallarRecentRooms } from '@shared-web/browser/rooms/recent-rooms/rallar-recent-rooms.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import type { GroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
 import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import {
     createRallarAiFunnyRoomName,
-    createRallarAiRoomNameSeed,
     type RallarAiFunnyRoomNameTheme
 } from '@shared/rallar-ai/mod.ts';
 import type { RallarGameAuthorityClientStatus } from '@shared/rallar-game/mod.ts';
@@ -170,6 +170,7 @@ export namespace RelicHuntersRuntime {
         onHunterEventMessage(roomId: string, subscription: RelicHunterEventSubscription): RallarUnsubscribe;
         authorityStatus(): RallarGameAuthorityClientStatus | undefined;
         publishRtcSnapshot(snapshot: RelicPublicSnapshot): Promise<boolean>;
+        createRoomNameSeed(): string;
         createRoom(
             displayName: string,
             joinMode: GroupJoinMode,
@@ -947,7 +948,7 @@ export class RelicHuntersRuntime {
         const displayName = createRallarAiFunnyRoomName({
             baseName: RELIC_ROOM_NAME_THEME.defaultBaseName,
             theme: RELIC_ROOM_NAME_THEME,
-            seed: createRallarAiRoomNameSeed('relic-hunters'),
+            seed: this.deps.createRoomNameSeed(),
             existingNames: this.connection.rooms.map((room) => room.name)
         });
         let snapshot: GroupSnapshot;
@@ -958,15 +959,16 @@ export class RelicHuntersRuntime {
             if (!this.current(attempt)) {
                 return undefined;
             }
-            const admitted = this.deps.roomState().currentRoom;
-            if (!admitted || !isCreatedRoomCleanupFailure(toError(error))) {
-                this.operationFailed(toError(error));
+            const failure = toError(error);
+            const admitted = toCreatedRoomSnapshot(failure);
+            if (!admitted) {
+                this.operationFailed(failure);
                 throw error;
             }
             snapshot = admitted;
             this.publish({
                 error:
-                    'The new expedition room is ready, but leaving the previous room failed. Your membership there remains.'
+                    'The new expedition room was created, but leaving the previous room failed. Your membership there remains.'
             });
         }
         if (!this.current(attempt)) {
@@ -1160,9 +1162,21 @@ function sameSession(left: AuthSession | undefined, right: AuthSession): boolean
     return left?.sessionId === right.sessionId && left?.clientId === right.clientId;
 }
 
-function isCreatedRoomCleanupFailure(error: Error): boolean {
-    return error.name === 'RallarRoomSwitchPartialFailureError' &&
-        'operation' in error && error.operation === 'create-and-switch';
+function toCreatedRoomSnapshot(error: Error): GroupSnapshot | undefined {
+    if (
+        error.name !== 'RallarRoomSwitchPartialFailureError' ||
+        !('operation' in error) || error.operation !== 'create-and-switch' || !('joinedRoom' in error)
+    ) {
+        return undefined;
+    }
+    try {
+        // The committed result identifies this creation even while its cached room is absent or replaced.
+        validateAuthoritativeGroupSnapshot(error.joinedRoom);
+        return error.joinedRoom;
+    }
+    catch {
+        return undefined;
+    }
 }
 
 export function initialRelicDiagnostics(session: AuthSession | undefined): RelicRuntimeDiagnostics {
