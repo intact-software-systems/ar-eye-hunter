@@ -150,8 +150,9 @@ membership-epoch field to the group-state roster version it fences on
 (`AL_MESSAGE_ENVELOPE_VERSION`); an envelope of any other version is refused
 `unsupported`.
 
-**PLANNED — I1, session and trace identity:** Builders do not populate AL
-`sessionId`/`traceId`, and no end-to-end trace propagation behavior exists.
+**PLANNED — I1b, session and trace identity:** Builders do not populate AL
+`sessionId`/`traceId`, and no end-to-end trace propagation behavior exists. I1a
+delivered the correlation half (see Correlation and actions).
 
 ## Validation, trust, and authorization
 
@@ -327,8 +328,9 @@ ALM supports RTC and WS as first-class carriers.
 - Fallback never duplicates logical ownership: a message ID has one lifecycle,
   deduplication domain, acknowledgement obligation, and terminal outcome across
   transport attempts.
-- A transport switch preserves expiry, correlation, and trace identity; ordering and
-  supersedence tracks are per carrier runtime, so a message handed to another carrier leaves its
+- A transport switch preserves expiry and correlation identity (I1a: the envelope's
+  `actions` ride every re-shaping of the first envelope) and, once I1b lands, trace
+  identity; ordering and supersedence tracks are per carrier runtime, so a message handed to another carrier leaves its
   track on the first.
 
 **CURRENT:** Both RTC and WS use the AL envelope and core admission runtimes.
@@ -812,16 +814,71 @@ contract and its evidence.
 ## Correlation and actions
 
 `corrId` groups a request lifecycle across retries/transports. `replyToMsgId`
-links a response to the exact request. A request can register an optional
-response schema, expected sender/audience, deadline, and one/many response mode.
-Duplicate replies are deduplicated; late replies receive an explicit late/
-expired outcome. Correlation identity and trace identity survive fallback and
-repair.
+links a response to the exact request. A request has one reply: the first one
+accepted, from the addressee of a unicast request or from any member of an
+audience request. The caller validates the reply payload and sets the reply
+timeout. A reply that is late, a second reply, and a reply from a sender other
+than the addressee are dropped with a payload-free diagnostic, and a copy of one
+reply is dropped by the receiver's message-id deduplication. Correlation
+identity survives fallback and repair; trace identity does so once I1b lands.
 
-**PLANNED — I1, correlation behavior:** The fields are only decoded and
-persisted; there is no builder support, matching, timeout, or reply API. I1
-puts `corrId` and `replyToMsgId` on the delivery handle with
-`awaitReply({ timeoutMs })` and bridges the AppInbox trace id.
+**CURRENT — reply correlation (I1a):**
+
+- Every message has a correlation id. It is derived, not stamped: a message
+  without `actions.corrId` correlates as its own `msgId`
+  (`toALCorrId`), and the wire carries `actions.corrId` only when a caller passes
+  `corrId` to re-ask under an earlier request's correlation, so ordinary sends
+  keep their bytes. The builders take an `actions` option and mint nothing.
+  `replyToMsgId` is set only by the reply helpers, never by a caller's send.
+  The browser validates `corrId` as a non-empty string of at most 128 UTF-8 bytes.
+- The delivery handle carries `corrId` and `replyToMsgId` and
+  `awaitReply<T>({ timeoutMs, signal? })`, which never throws and resolves
+  `replied` with the reply message, `timeout`, `aborted` or `undelivered`, each
+  with the request's lifecycle. The timeout is required. Three clocks stay
+  independent: the ACK timeout ends one receipt attempt, the message deadline
+  ends the request's lifetime, and the reply timeout ends only the caller's wait.
+  A receipt is not a reply, and a `timeout` leaves the request alive. The wait
+  resolves `undelivered` when the request is terminal in a state other than
+  `acknowledged` (or `transport-accepted` where no receipt is awaited), and also
+  when the request's deadline lapses during the wait. A reply that arrives after
+  the deadline, while a wait is open, still resolves `replied`.
+- Each browser delivery-registry entry owns one reply slot, so the registry's
+  retention bounds it (60 s after the terminal state, 512 entries; an entry with
+  an open reply wait is spared by the age rule). The first accepted reply is
+  kept, even if no one awaits yet; the first wait to time out closes the slot for
+  every wait; after a reload a durable request has no handle and no slot, so its
+  reply is dropped as late. `rallar.messages.readUsage()` reports
+  `repliesHeld` and `replyWaitsOpen`, which reach the growth proof.
+- A message whose `actions.replyToMsgId` is set is a reply and reaches only the
+  reply matcher, a WS inbox handler, never an `onMessage` subscriber of its
+  type. The matcher admits it as `matched`, or drops it as `wrong-responder`
+  (the request was a unicast to another peer) or `late`, with the typed
+  inbound diagnostics `reply-wrong-responder` and `reply-late` (cause `replied`,
+  `timed-out` or `unobserved`), which carry identity and never the payload.
+- A received message offers `reply(payload, { typeId?, ttlMs? })`: a WS unicast to
+  the requester's session on the request's topic, in its room when it named
+  one, under the request's correlation and the `command` delivery defaults. The
+  server's one reply builder is `newALReplyMessage`. Room and people state events
+  are not repliable (`RallarStateEventMessage`).
+- Consumers: the server AI WebSocket topic replies to the asking session, and
+  Relic Hunters' planning companion asks the server and awaits the reply, with
+  its local companion as the fallback. The conformance `reply` family
+  (`reply-correlated`, `reply-timeout-late`, `reply-first-wins`,
+  `reply-undelivered`) proves the outcomes over the WS carrier and the
+  RTC-with-WS-fallback strategy; a wrong responder is pinned at the matcher's unit level.
+
+**Limits of I1a:** replies travel over WS only. A request may travel on any
+carrier, but a reply that arrives over RTC is never matched; it is dropped with
+`reply-late` (cause `unobserved`), even while the request is awaited. A request
+on a topic that WS cannot carry cannot be replied to. A room reply routes in the
+room's id, not in a request's custom `contextId`. There is one reply per request,
+no registered response schema (the caller validates), and no reply wait that
+survives a reload.
+
+**PLANNED — I1b, trace propagation:** a trace id stamped on the envelope at
+creation and carried from the HTTP request through AppInbox into the envelope,
+and payload-free harness diagnostics. Replies over RTC, several replies per
+request and a registered response schema are not scheduled.
 
 ## Repair and resynchronization
 
@@ -911,10 +968,10 @@ most recently updated receipted messages, who confirmed each receipt and whether
 reason: the refusal reason, the unroutable reason, or whether a receipt ran out of budget or was refused by a hop
 (S3c-ii, D75).
 
-**PLANNED — F1, S1, and I1, end-to-end observability:** There is no shared
+**PLANNED — F1, S1, and I1b, end-to-end observability:** There is no shared
 lifecycle event stream, IndexedDB cost telemetry, trace propagation, or
 payload-safe logging contract. F1 adds the AL-owned IndexedDB counter and ALM
-metrics in the lanes, S1 the lifecycle events, I1 trace propagation and the
+metrics in the lanes, S1 the lifecycle events, I1b trace propagation and the
 payload-free diagnostics contract.
 
 **PLANNED — I2a, storage health:** In production the storage-reset sink does
@@ -1068,14 +1125,17 @@ paths; legacy exports/classes remain. The current outbound owner map is
 documented in
 [`alm/outbound/README.md`](../../packages/shared/alm/outbound/README.md).
 
-**PLANNED — I1, I2a, and I2b, complete safe surface:** The delivery handle
+**PLANNED — I1b, I2a, and I2b, complete safe surface:** The delivery handle
 (S1) and the channel purpose (S3a) exist. They are exported by
 `browser/rallar-messages.ts`, the narrow entry point F1 added. A1 added the
 principal and fixed-recipient builders (`newALPrincipalBroadcastMessage`, and
 `recipientPeerIds` on `newALBroadcastMessage`) and the browser's `principalId`
-and `recipientPeerIds` send inputs. Three parts are absent:
+and `recipientPeerIds` send inputs. I1a added the correlation surface: the
+`actions` option on the envelope builders, `newALReplyMessage`, and in the
+browser the `corrId` send input, the handle's `corrId`, `replyToMsgId` and
+`awaitReply`, and `RallarMessage.reply()`. Three parts are absent:
 
-- correlation and trace builders (I1);
+- trace builders (I1b);
 - the channel's storage-unavailable policy (I2a);
 - `local-checkpoint` with its per-store settings (I2b).
 

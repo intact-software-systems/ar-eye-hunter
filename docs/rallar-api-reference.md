@@ -744,7 +744,9 @@ the age of the oldest counted message, 0 when none is counted, and `tracks`),
 while the smallest next send would be refused at the count or the byte limit:
 the total and the own pool both at their bounds. It throws while the session is not
 connected, before `connect` and again after `disconnect`, so a poll guards it
-with `rallar.isConnected()`.
+with `rallar.isConnected()`. The report is a `RallarMessagesUsage`: beside the
+ledger it states `repliesHeld`, the retained deliveries that hold a matched reply, and
+`replyWaitsOpen`, the `awaitReply` waits in flight (see Replies below).
 
 ```ts
 if (rallar.isConnected()) {
@@ -873,8 +875,8 @@ own.
 `messages.room<T>(definition)` creates a room channel directly;
 `roomSession.message(...)` delegates to it. A typed channel exposes `send`,
 `sendRtc`, `sendWs`, `onRtc` and `onWs`. A `RallarMessageHandle` exposes
-`msgId`, `typeId`, `lifecycle()`, `onEvent(listener)`, `wait(options?)` and
-`cancel()`.
+`msgId`, `typeId`, `corrId`, `replyToMsgId`, `lifecycle()`, `onEvent(listener)`,
+`wait(options?)`, `awaitReply(options)` and `cancel()`.
 
 Selectors can be a `typeId` string or `{ topicId, typeId }`.
 
@@ -1098,6 +1100,78 @@ handle `submitted`; the wait resolves on the next settlement.
 then reports whether the resolved state is `accepted`, `queued`,
 `transport-accepted`, or `acknowledged`. Surface every other outcome to the
 product as degraded or failed delivery.
+
+### Replies
+
+An acknowledgement is protocol acceptance, not an application answer. A request
+gets its answer as a separate reply message, correlated by id.
+
+- **`corrId`.** Every message has one. A send that passes no `corrId` correlates as
+  its own `msgId`, and the wire carries `actions.corrId` only when a send passes
+  `corrId` to re-ask under an earlier request's correlation (a non-empty string of
+  at most 128 UTF-8 bytes; anything else is refused with the issue `$.corrId`).
+  `handle.corrId` states it. `handle.replyToMsgId` is the request a reply answers,
+  absent on any other message; no send input sets it.
+- **`handle.awaitReply<T>({ timeoutMs, signal? })`.** The timeout is required, and
+  the call never throws. It resolves with the request's `lifecycle` and a `status`:
+  `replied` (with `reply`, a `RallarMessage<T>` whose payload is unvalidated: the
+  caller validates it), `timeout`, `aborted` or `undelivered`. `T` has no default,
+  so the call names it.
+- **Three clocks.** The ACK timeout ends one receipt attempt, the message deadline
+  (`ttlMs`) ends the request's lifetime, and `timeoutMs` ends only this wait. A
+  `timeout` leaves the request alive and claims no failure; the first `timeout`
+  ends every wait of that request, and later waits read `timeout` at once.
+  `aborted` ends only its own wait.
+- **`undelivered`.** The request is terminal in a state other than `acknowledged`
+  (`rejected`, `failed`, `expired`, `superseded`, `cancelled`, `unobservable`), so
+  no reply can arrive through this observation; `transport-accepted` counts as
+  delivered when the send awaits no receipt. A request deadline that lapses during
+  the wait also ends it `undelivered`. A reply that arrives after the deadline
+  still resolves `replied` while a wait is open. `lifecycle` says why.
+- **One reply.** The first accepted reply resolves every open wait and is kept for
+  a later `awaitReply`. A unicast request accepts a reply only from its addressee;
+  an audience request accepts one from any sender. A second reply, a reply after
+  the first wait timed out, a reply from another sender, and a reply to a request
+  this page no longer retains are dropped, each with a payload-free inbound
+  diagnostic: `reply-late` (cause `replied`, `timed-out` or `unobserved`) or
+  `reply-wrong-responder`. The reply slot lives in the delivery registry's entry,
+  so the registry's retention bounds it: terminal entries for 60 s and 512 entries,
+  with an entry whose reply wait is open outliving the age rule. A request that
+  resumes after a reload has no handle and no slot.
+- **`message.reply(payload, { typeId?, ttlMs? })`.** A received `RallarMessage`
+  replies to its sender's session: a WS unicast on the request's topic, in the
+  request's room when it named one, under the request's correlation, with the
+  `command` purpose's defaults (at-least-once, receipted, 30 s). Without `typeId`
+  the reply takes the request's type. It resolves to an ordinary
+  `RallarMessageHandle`. A room reply is sent in the room's id even when the request
+  used another `contextId`, and a request on a topic that WS cannot carry rejects
+  with the issue `$.topicId`. Room and people state events
+  (`RallarStateEventMessage<T>`, the message without `reply`) cannot be replied to.
+- **WS only.** A reply travels over WS whatever carrier the request used. A reply
+  that arrives over RTC is not matched: it is dropped with `reply-late` (cause
+  `unobserved`), even while the request is awaited. A reply never reaches an
+  `onMessage` subscriber of its type.
+
+```ts
+const asks = rallar.messages.room<AskPayload>({
+    topicId: 'room.assist',
+    typeId: 'assist.ask.v1',
+    purpose: 'command',
+    roomId
+});
+const handle = await asks.sendWs({ question: 'where next?' }, { peerId: serverPeerId });
+const outcome = await handle.awaitReply<AnswerPayload>({ timeoutMs: 5_000 });
+if (outcome.status === 'replied') {
+    const answer = decodeAnswer(outcome.reply.payload);
+}
+
+rallar.messages.ws.onMessage('assist.ask.v1', async (message) => {
+    await message.reply({ answer: 'north' });
+});
+```
+
+The server answers with `newALReplyMessage(request, { senderId, typeId, payload })`;
+the RallarAI WebSocket topic does so for each request (see `docs/rallar-ai-recipes.md`).
 
 ### Message Audiences
 

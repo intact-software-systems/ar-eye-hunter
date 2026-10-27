@@ -835,6 +835,27 @@ one-member receipt (D71). A peer send to the server id is refused `unsupported` 
 RTC strategy: the server is addressed over WS (D76). A peer send whose `contextId` names another room than its own is
 refused at the sender.
 
+### Replies and `actions`
+
+The envelope's `actions` (`ALActions`: `corrId`, `replyToMsgId`) are written by the builders and by nothing
+else. `newALUnicastMessage`, `newALMulticastMessage` and `newALBroadcastMessage` take an `actions` option and write
+it verbatim; none mints a value, so an ordinary send carries no `actions` and keeps its bytes. A message without
+`actions.corrId` correlates as its own `msgId` ([`toALCorrId`](../../al-contracts/reply/to-al-reply-actions.ts)); the
+browser puts `corrId` on the wire only when the caller passes one to re-ask under an earlier request's correlation.
+`replyToMsgId` is no send input: only a reply carries it. The canonical outbound identity covers the id fields
+(`outboundMessageIdentity`) and not `actions`, and a fallback re-admits the first envelope's object, so the
+fallback-identity test pins `actions` across the admission retry, the post-admission hand-over and the volatile
+downgrade.
+
+[`toALReplyActions`](../../al-contracts/reply/to-al-reply-actions.ts) mints a reply's fields from its request, and
+both reply builders use it. The browser's
+[`BrowserRallarMessageSender.sendReply`](../../../shared-web/browser/messages/browser-rallar-message-sender.ts)
+builds a reply as a WS unicast to the requester's session, on the request's topic and in its room (the room's id as
+the context), with the `command` purpose's reliability, receipt and TTL, and returns an ordinary handle. The server's
+[`newALReplyMessage`](../../al-contracts/reply/new-al-reply-message.ts) builds the same unicast. No RTC send builds a
+reply. The reply slot, the matcher and the two reply diagnostics are described in the
+[inbound navigation map](../inbound/README.md#replies-and-their-diagnostics).
+
 ### The volatile bound
 
 The volatile pairs keep their owner and sent-message rows until the message deadline plus the receipt grace
